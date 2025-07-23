@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: grpo-framework-service
+  namespace: grpo-framework
+  labels:
+    app: grpo-framework
+spec:
+  type: ClusterIP
+  selector:
+    app: grpo-framework
+  ports:
+  - name: http
+    port: 8001
+    targetPort: 8001
+    protocol: TCP
+  - name: training
+    port: 8002
+    targetPort: 8002
+    protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grpo-framework-lb
+  namespace: grpo-framework
+  labels:
+    app: grpo-framework
+spec:
+  type: LoadBalancer
+  selector:
+    app: grpo-framework
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8001
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 8001
+    protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: grpo-framework
+  labels:
+    app: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: grpo-framework
+  labels:
+    app: redis
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP

@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grpo-framework-config
+  namespace: grpo-framework
+data:
+  # Application configuration
+  LOG_LEVEL: "INFO"
+  WORKERS: "4"
+  ENABLE_MONITORING: "true"
+  CACHE_SIZE: "1000"
+  
+  # Database configuration
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "grpo_framework"
+  
+  # Redis configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  
+  # Training configuration
+  TRAINING_BATCH_SIZE: "32"
+  TRAINING_EPOCHS: "100"
+  LEARNING_RATE: "0.0001"
+  
+  # Computational engine configuration
+  NUM_WORKERS: "8"
+  TRAJECTORY_BATCH_SIZE: "64"
+  USE_LEARNED_REWARDS: "true"
+  
+  # Multi-turn agent configuration
+  MAX_CONVERSATION_TURNS: "20"
+  MAX_CONTEXT_LENGTH: "4096"
+  
+  # Reward system configuration
+  REWARD_WEIGHTS: |
+    {
+      "neural_reward": 0.3,
+      "multi_objective_reward": 0.4,
+      "ruler_reward": 0.3
+    }

@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  grpo-framework:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: grpo-framework
+    ports:
+      - "8001:8001"
+      - "8002:8002"
+    environment:
+      - GRPO_LOG_LEVEL=INFO
+      - GRPO_WORKERS=4
+      - GRPO_ENABLE_MONITORING=true
+      - GRPO_CACHE_SIZE=1000
+    volumes:
+      - grpo_data:/app/data
+      - grpo_logs:/app/logs
+      - grpo_models:/app/models
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - grpo-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: grpo-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - grpo-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: grpo-postgres
+    environment:
+      - POSTGRES_DB=grpo_framework
+      - POSTGRES_USER=grpo
+      - POSTGRES_PASSWORD=grpo_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - grpo-network
+
+  monitoring:
+    image: prom/prometheus:latest
+    container_name: grpo-monitoring
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - grpo-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grpo-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=grpo_grafana
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - monitoring
+    networks:
+      - grpo-network
+
+volumes:
+  grpo_data:
+  grpo_logs:
+  grpo_models:
+  redis_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  grpo-network:
+    driver: bridge

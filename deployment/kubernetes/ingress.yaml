@@ -1,0 +1,49 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grpo-framework-ingress
+  namespace: grpo-framework
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - grpo-framework.example.com
+    secretName: grpo-framework-tls
+  rules:
+  - host: grpo-framework.example.com
+    http:
+      paths:
+      - path: /api/(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: grpo-framework-service
+            port:
+              number: 8001
+      - path: /ws
+        pathType: Prefix
+        backend:
+          service:
+            name: grpo-framework-service
+            port:
+              number: 8001
+      - path: /training/(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: grpo-framework-service
+            port:
+              number: 8002
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grpo-framework-service
+            port:
+              number: 8001

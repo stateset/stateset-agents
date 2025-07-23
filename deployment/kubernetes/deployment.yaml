@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grpo-framework
+  namespace: grpo-framework
+  labels:
+    app: grpo-framework
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: grpo-framework
+  template:
+    metadata:
+      labels:
+        app: grpo-framework
+    spec:
+      containers:
+      - name: grpo-framework
+        image: grpo-framework:latest
+        ports:
+        - containerPort: 8001
+          name: http
+        - containerPort: 8002
+          name: training
+        env:
+        - name: GRPO_LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: grpo-framework-config
+              key: LOG_LEVEL
+        - name: GRPO_WORKERS
+          valueFrom:
+            configMapKeyRef:
+              name: grpo-framework-config
+              key: WORKERS
+        - name: GRPO_ENABLE_MONITORING
+          valueFrom:
+            configMapKeyRef:
+              name: grpo-framework-config
+              key: ENABLE_MONITORING
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: grpo-framework-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: grpo-framework-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: grpo-framework-secrets
+              key: POSTGRES_PASSWORD
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: grpo-framework-secrets
+              key: DATABASE_URL
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: grpo-framework-secrets
+              key: REDIS_URL
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: grpo-framework-secrets
+              key: OPENAI_API_KEY
+              optional: true
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: grpo-data
+          mountPath: /app/data
+        - name: grpo-logs
+          mountPath: /app/logs
+        - name: grpo-models
+          mountPath: /app/models
+      volumes:
+      - name: grpo-data
+        persistentVolumeClaim:
+          claimName: grpo-data-pvc
+      - name: grpo-logs
+        persistentVolumeClaim:
+          claimName: grpo-logs-pvc
+      - name: grpo-models
+        persistentVolumeClaim:
+          claimName: grpo-models-pvc
