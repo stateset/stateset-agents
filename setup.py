@@ -9,7 +9,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="grpo-agent-framework",
-    version="0.1.0",
+    version="0.3.0",
     author="GRPO Framework Team",
     author_email="team@grpo-framework.ai",
     description="A comprehensive framework for training multi-turn AI agents using Group Relative Policy Optimization (GRPO)",
@@ -43,6 +43,10 @@ setup(
         "pydantic>=2.0.0",
         "rich>=13.0.0",
         "typer>=0.9.0",
+        # Enhanced dependencies for v0.3.0
+        "aiohttp>=3.8.0",
+        "psutil>=5.9.0",
+        "typing-extensions>=4.0.0",
     ],
     extras_require={
         "dev": [
