@@ -21,9 +21,30 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
+try:
+    from textblob import TextBlob
+    TEXTBLOB_AVAILABLE = True
+except ImportError:
+    TEXTBLOB_AVAILABLE = False
+
+try:
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    VADER_AVAILABLE = True
+except ImportError:
+    VADER_AVAILABLE = False
+
+try:
+    import re
+    from collections import Counter
+    import statistics
+    ANALYSIS_LIBS_AVAILABLE = True
+except ImportError:
+    ANALYSIS_LIBS_AVAILABLE = False
+
 from ..core.reward import RewardFunction, RewardResult
-from ..utils.cache import CacheService
-from ..utils.monitoring import MonitoringService
+from ..core.trajectory import ConversationTurn
+# from ..utils.cache import CacheService  # TODO: Implement cache service
+# from ..utils.monitoring import MonitoringService  # TODO: Implement monitoring service
 
 logger = logging.getLogger(__name__)
 
@@ -119,13 +140,14 @@ class LengthRewardComponent(BaseRewardComponent):
 
 
 class EmpathyRewardComponent(BaseRewardComponent):
-    """Reward component based on empathy indicators"""
+    """Reward component based on empathy indicators with sentiment analysis"""
     
     def __init__(
         self,
         name: str = "empathy",
         weight: float = 0.2,
         empathy_keywords: Optional[List[str]] = None,
+        use_sentiment_analysis: bool = True,
         **kwargs
     ):
         super().__init__(name, weight, **kwargs)
@@ -134,40 +156,146 @@ class EmpathyRewardComponent(BaseRewardComponent):
             "worry", "help", "support", "appreciate", "thank", "welcome",
             "please", "certainly", "absolutely", "definitely", "of course"
         ]
+        self.use_sentiment_analysis = use_sentiment_analysis and (TEXTBLOB_AVAILABLE or VADER_AVAILABLE)
+        
+        # Initialize sentiment analyzers if available
+        self.vader_analyzer = SentimentIntensityAnalyzer() if VADER_AVAILABLE else None
+        
+        # Emotional intensity keywords
+        self.high_empathy_phrases = [
+            "i understand how", "that must be", "i can imagine", "i'm so sorry",
+            "that sounds", "i feel for you", "i completely understand",
+            "i know this is", "that's really", "i hear you"
+        ]
+        
+        self.supportive_phrases = [
+            "let me help", "i'll take care", "don't worry", "we'll figure",
+            "i'm here to", "let's work", "together we", "i'll make sure"
+        ]
     
     async def compute_score(
         self,
         turns: List[Dict[str, Any]],
         context: Optional[Dict[str, Any]] = None
     ) -> float:
-        """Score based on empathy indicators"""
+        """Score based on empathy indicators with sentiment analysis"""
         if not turns:
             return 0.0
         
-        # Get assistant responses
+        # Get user and assistant responses
+        user_messages = [t for t in turns if t.get("role") == "user"]
         assistant_responses = [t for t in turns if t.get("role") == "assistant"]
+        
         if not assistant_responses:
             return 0.0
         
-        # Check for empathy keywords
-        total_matches = 0
-        total_words = 0
+        # Analyze user sentiment to understand emotional context
+        user_emotional_state = self._analyze_user_sentiment(user_messages)
+        
+        # Analyze assistant empathy response
+        empathy_score = await self._analyze_empathy_response(assistant_responses, user_emotional_state)
+        
+        return empathy_score
+    
+    def _analyze_user_sentiment(self, user_messages: List[Dict[str, Any]]) -> Dict[str, float]:
+        """Analyze user's emotional state from their messages"""
+        if not user_messages or not self.use_sentiment_analysis:
+            return {"negative": 0.0, "neutral": 0.5, "positive": 0.0, "compound": 0.0}
+        
+        # Combine all user messages
+        user_text = " ".join([msg.get("content", "") for msg in user_messages])
+        
+        sentiment_scores = {"negative": 0.0, "neutral": 0.5, "positive": 0.0, "compound": 0.0}
+        
+        # VADER sentiment analysis (better for social media text)
+        if self.vader_analyzer:
+            vader_scores = self.vader_analyzer.polarity_scores(user_text)
+            sentiment_scores.update(vader_scores)
+        
+        # TextBlob sentiment analysis
+        elif TEXTBLOB_AVAILABLE:
+            blob = TextBlob(user_text)
+            sentiment_scores["compound"] = blob.sentiment.polarity
+            sentiment_scores["positive"] = max(0, blob.sentiment.polarity)
+            sentiment_scores["negative"] = abs(min(0, blob.sentiment.polarity))
+            sentiment_scores["neutral"] = 1 - abs(blob.sentiment.polarity)
+        
+        return sentiment_scores
+    
+    async def _analyze_empathy_response(
+        self, 
+        assistant_responses: List[Dict[str, Any]], 
+        user_sentiment: Dict[str, float]
+    ) -> float:
+        """Analyze empathy in assistant responses based on user emotional state"""
+        
+        empathy_score = 0.0
+        total_responses = len(assistant_responses)
+        
+        # Determine if user is in distress
+        user_distress_level = user_sentiment.get("negative", 0.0)
+        user_is_distressed = user_distress_level > 0.3
         
         for response in assistant_responses:
             content = response.get("content", "").lower()
-            words = content.split()
-            total_words += len(words)
+            response_score = 0.0
             
-            for keyword in self.empathy_keywords:
-                if keyword in content:
-                    total_matches += 1
+            # Base empathy keyword matching
+            keyword_matches = sum(1 for keyword in self.empathy_keywords if keyword in content)
+            response_score += min(0.3, keyword_matches * 0.05)
+            
+            # High empathy phrases (stronger indicators)
+            high_empathy_matches = sum(1 for phrase in self.high_empathy_phrases if phrase in content)
+            response_score += min(0.4, high_empathy_matches * 0.2)
+            
+            # Supportive phrases
+            supportive_matches = sum(1 for phrase in self.supportive_phrases if phrase in content)
+            response_score += min(0.3, supportive_matches * 0.15)
+            
+            # Analyze response sentiment to match user's emotional state
+            if self.use_sentiment_analysis:
+                response_sentiment = self._get_response_sentiment(content)
+                
+                # If user is distressed, reward compassionate/understanding responses
+                if user_is_distressed:
+                    if response_sentiment.get("compound", 0) > 0.1:  # Positive but not overly cheerful
+                        response_score += 0.2
+                    elif response_sentiment.get("neutral", 0) > 0.5:  # Calm, understanding tone
+                        response_score += 0.3
+                else:
+                    # For neutral/positive users, positive responses are good
+                    if response_sentiment.get("compound", 0) > 0.2:
+                        response_score += 0.2
+            
+            # Check for dismissive language (penalty)
+            dismissive_phrases = ["just", "simply", "only need to", "all you have to do"]
+            if user_is_distressed and any(phrase in content for phrase in dismissive_phrases):
+                response_score -= 0.2
+            
+            # Personal pronouns indicating engagement
+            personal_engagement = len(re.findall(r'\b(you|your|we|us|together)\b', content))
+            response_score += min(0.1, personal_engagement * 0.02)
+            
+            empathy_score += response_score
         
-        # Normalize by response length
-        if total_words == 0:
-            return 0.0
-        
-        empathy_density = total_matches / max(1, len(assistant_responses))
-        return min(1.0, empathy_density / 2.0)  # Scale to 0-1
+        # Normalize by number of responses and ensure [0, 1] range
+        final_score = empathy_score / max(1, total_responses)
+        return max(0.0, min(1.0, final_score))
+    
+    def _get_response_sentiment(self, text: str) -> Dict[str, float]:
+        """Get sentiment scores for a response"""
+        if self.vader_analyzer:
+            return self.vader_analyzer.polarity_scores(text)
+        elif TEXTBLOB_AVAILABLE:
+            blob = TextBlob(text)
+            polarity = blob.sentiment.polarity
+            return {
+                "compound": polarity,
+                "positive": max(0, polarity),
+                "negative": abs(min(0, polarity)),
+                "neutral": 1 - abs(polarity)
+            }
+        return {"compound": 0.0, "positive": 0.0, "negative": 0.0, "neutral": 1.0}
 
 
 class ActionOrientedRewardComponent(BaseRewardComponent):
@@ -274,7 +402,7 @@ class SimilarityRewardComponent(BaseRewardComponent):
 
 
 class ProfessionalismRewardComponent(BaseRewardComponent):
-    """Reward component based on professionalism indicators"""
+    """Reward component based on professionalism indicators with sentiment analysis"""
     
     def __init__(
         self,
@@ -282,6 +410,7 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
         weight: float = 0.2,
         professional_indicators: Optional[List[str]] = None,
         unprofessional_indicators: Optional[List[str]] = None,
+        use_sentiment_analysis: bool = True,
         **kwargs
     ):
         super().__init__(name, weight, **kwargs)
@@ -294,13 +423,28 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
             "whatever", "dunno", "idk", "lol", "omg", "wtf", "stupid",
             "dumb", "sucks", "hate", "annoying", "frustrated", "angry"
         ]
+        self.use_sentiment_analysis = use_sentiment_analysis and (TEXTBLOB_AVAILABLE or VADER_AVAILABLE)
+        
+        # Initialize sentiment analyzer
+        self.vader_analyzer = SentimentIntensityAnalyzer() if VADER_AVAILABLE else None
+        
+        # Professional language patterns
+        self.formal_phrases = [
+            "i would be happy to", "i'd be pleased to", "it would be my pleasure",
+            "i understand your concern", "let me assist you", "i'll be glad to help"
+        ]
+        
+        self.business_language = [
+            "regarding", "concerning", "furthermore", "additionally", "however",
+            "therefore", "consequently", "nevertheless", "appropriate", "efficient"
+        ]
     
     async def compute_score(
         self,
         turns: List[Dict[str, Any]],
         context: Optional[Dict[str, Any]] = None
     ) -> float:
-        """Score based on professionalism"""
+        """Score based on professionalism with sentiment analysis"""
         if not turns:
             return 0.0
         
@@ -309,27 +453,315 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
         if not assistant_responses:
             return 0.0
         
-        professional_count = 0
-        unprofessional_count = 0
+        total_score = 0.0
         
         for response in assistant_responses:
-            content = response.get("content", "").lower()
-            
-            for indicator in self.professional_indicators:
-                if indicator in content:
-                    professional_count += 1
-            
-            for indicator in self.unprofessional_indicators:
-                if indicator in content:
-                    unprofessional_count += 1
+            content = response.get("content", "")
+            response_score = await self._analyze_professionalism(content)
+            total_score += response_score
         
-        # Calculate professionalism score
-        total_responses = len(assistant_responses)
-        professional_density = professional_count / max(1, total_responses)
-        unprofessional_penalty = unprofessional_count / max(1, total_responses)
+        # Average across all responses
+        return total_score / len(assistant_responses)
+    
+    async def _analyze_professionalism(self, content: str) -> float:
+        """Analyze professionalism of a single response"""
+        score = 0.5  # Base professional score
+        content_lower = content.lower()
         
-        score = min(1.0, professional_density / 2.0) - unprofessional_penalty
-        return max(0.0, score)
+        # Professional indicators
+        professional_count = sum(1 for indicator in self.professional_indicators 
+                                if indicator in content_lower)
+        score += min(0.25, professional_count * 0.05)
+        
+        # Formal phrases (higher weight)
+        formal_count = sum(1 for phrase in self.formal_phrases 
+                          if phrase in content_lower)
+        score += min(0.15, formal_count * 0.1)
+        
+        # Business language
+        business_count = sum(1 for term in self.business_language 
+                           if term in content_lower)
+        score += min(0.1, business_count * 0.02)
+        
+        # Unprofessional penalties
+        unprofessional_count = sum(1 for indicator in self.unprofessional_indicators 
+                                 if indicator in content_lower)
+        score -= unprofessional_count * 0.1
+        
+        # Sentiment analysis for tone professionalism
+        if self.use_sentiment_analysis:
+            sentiment_score = self._analyze_professional_tone(content)
+            score += sentiment_score
+        
+        # Grammar and structure analysis
+        structure_score = self._analyze_structure(content)
+        score += structure_score
+        
+        return max(0.0, min(1.0, score))
+    
+    def _analyze_professional_tone(self, content: str) -> float:
+        """Analyze tone professionalism using sentiment"""
+        if not self.use_sentiment_analysis:
+            return 0.0
+        
+        tone_score = 0.0
+        
+        if self.vader_analyzer:
+            sentiment = self.vader_analyzer.polarity_scores(content)
+            
+            # Professional tone should be neutral to slightly positive
+            compound = sentiment.get('compound', 0)
+            
+            if 0.1 <= compound <= 0.6:  # Appropriately positive
+                tone_score += 0.1
+            elif -0.1 <= compound <= 0.1:  # Professional neutral
+                tone_score += 0.08
+            elif compound > 0.6:  # Too enthusiastic
+                tone_score -= 0.05
+            elif compound < -0.3:  # Too negative
+                tone_score -= 0.1
+        
+        elif TEXTBLOB_AVAILABLE:
+            blob = TextBlob(content)
+            polarity = blob.sentiment.polarity
+            
+            if 0.1 <= polarity <= 0.5:  # Appropriately positive
+                tone_score += 0.1
+            elif -0.1 <= polarity <= 0.1:  # Professional neutral
+                tone_score += 0.08
+            elif polarity > 0.5:  # Too enthusiastic
+                tone_score -= 0.05
+            elif polarity < -0.3:  # Too negative
+                tone_score -= 0.1
+        
+        return tone_score
+    
+    def _analyze_structure(self, content: str) -> float:
+        """Analyze structural professionalism"""
+        if not ANALYSIS_LIBS_AVAILABLE:
+            return 0.0
+        
+        structure_score = 0.0
+        
+        # Sentence length analysis (professional responses have moderate sentence length)
+        sentences = re.split(r'[.!?]+', content)
+        if sentences:
+            avg_sentence_length = statistics.mean([len(s.split()) for s in sentences if s.strip()])
+            
+            if 8 <= avg_sentence_length <= 20:  # Optimal range
+                structure_score += 0.05
+            elif avg_sentence_length < 5 or avg_sentence_length > 30:  # Too short or long
+                structure_score -= 0.03
+        
+        # Capitalization (proper capitalization is professional)
+        if content and content[0].isupper():
+            structure_score += 0.02
+        
+        # Punctuation analysis
+        if content.endswith(('.', '!', '?')):
+            structure_score += 0.02
+        
+        # Check for excessive punctuation (unprofessional)
+        excessive_punct = len(re.findall(r'[!]{2,}|[?]{2,}|[.]{3,}', content))
+        if excessive_punct > 0:
+            structure_score -= 0.05
+        
+        return structure_score
+
+
+class SentimentAwarenessComponent(BaseRewardComponent):
+    """Reward component that analyzes emotional intelligence and sentiment appropriateness"""
+    
+    def __init__(
+        self,
+        name: str = "sentiment_awareness",
+        weight: float = 0.15,
+        **kwargs
+    ):
+        super().__init__(name, weight, **kwargs)
+        self.vader_analyzer = SentimentIntensityAnalyzer() if VADER_AVAILABLE else None
+        
+        # Emotion detection keywords
+        self.emotion_keywords = {
+            'frustration': ['frustrated', 'annoying', 'irritating', 'upset', 'angry'],
+            'confusion': ['confused', 'unclear', 'don\'t understand', 'puzzled'],
+            'urgency': ['urgent', 'asap', 'immediately', 'quickly', 'emergency'],
+            'satisfaction': ['great', 'excellent', 'perfect', 'wonderful', 'amazing'],
+            'disappointment': ['disappointed', 'expected', 'hoped', 'let down']
+        }
+    
+    async def compute_score(
+        self,
+        turns: List[Dict[str, Any]],
+        context: Optional[Dict[str, Any]] = None
+    ) -> float:
+        """Score based on sentiment awareness and emotional intelligence"""
+        if not turns or not (TEXTBLOB_AVAILABLE or VADER_AVAILABLE):
+            return 0.5  # Neutral score if sentiment analysis unavailable
+        
+        user_messages = [t for t in turns if t.get("role") == "user"]
+        assistant_responses = [t for t in turns if t.get("role") == "assistant"]
+        
+        if not user_messages or not assistant_responses:
+            return 0.5
+        
+        # Analyze user emotional journey
+        user_emotions = self._track_user_emotions(user_messages)
+        
+        # Analyze assistant's emotional responsiveness
+        response_quality = await self._analyze_emotional_responsiveness(
+            assistant_responses, user_emotions
+        )
+        
+        return response_quality
+    
+    def _track_user_emotions(self, user_messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Track user's emotional state throughout conversation"""
+        emotions = []
+        
+        for message in user_messages:
+            content = message.get("content", "")
+            emotion_data = {
+                "content": content,
+                "sentiment": self._get_sentiment(content),
+                "detected_emotions": self._detect_emotions(content),
+                "intensity": self._calculate_emotional_intensity(content)
+            }
+            emotions.append(emotion_data)
+        
+        return emotions
+    
+    def _get_sentiment(self, text: str) -> Dict[str, float]:
+        """Get sentiment scores for text"""
+        if self.vader_analyzer:
+            return self.vader_analyzer.polarity_scores(text)
+        elif TEXTBLOB_AVAILABLE:
+            blob = TextBlob(text)
+            polarity = blob.sentiment.polarity
+            return {
+                "compound": polarity,
+                "positive": max(0, polarity),
+                "negative": abs(min(0, polarity)),
+                "neutral": 1 - abs(polarity)
+            }
+        return {"compound": 0.0, "positive": 0.0, "negative": 0.0, "neutral": 1.0}
+    
+    def _detect_emotions(self, text: str) -> List[str]:
+        """Detect specific emotions in text"""
+        detected = []
+        text_lower = text.lower()
+        
+        for emotion, keywords in self.emotion_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                detected.append(emotion)
+        
+        return detected
+    
+    def _calculate_emotional_intensity(self, text: str) -> float:
+        """Calculate emotional intensity based on various factors"""
+        intensity = 0.0
+        
+        # Exclamation marks
+        intensity += min(0.3, text.count('!') * 0.1)
+        
+        # Question marks (confusion/urgency)
+        intensity += min(0.2, text.count('?') * 0.05)
+        
+        # Capitalization (shouting)
+        caps_ratio = sum(1 for c in text if c.isupper()) / max(1, len(text))
+        if caps_ratio > 0.3:
+            intensity += min(0.4, caps_ratio)
+        
+        # Repetitive punctuation
+        repetitive_punct = len(re.findall(r'[!]{2,}|[?]{2,}|[.]{3,}', text))
+        intensity += min(0.3, repetitive_punct * 0.15)
+        
+        return min(1.0, intensity)
+    
+    async def _analyze_emotional_responsiveness(
+        self, 
+        responses: List[Dict[str, Any]], 
+        user_emotions: List[Dict[str, Any]]
+    ) -> float:
+        """Analyze how well assistant responds to user emotions"""
+        
+        if not user_emotions:
+            return 0.5
+        
+        total_score = 0.0
+        scored_responses = 0
+        
+        for i, response in enumerate(responses):
+            # Match response to user emotion (current or previous)
+            relevant_user_emotion = user_emotions[min(i, len(user_emotions) - 1)]
+            
+            response_score = self._score_emotional_response(
+                response.get("content", ""), 
+                relevant_user_emotion
+            )
+            
+            total_score += response_score
+            scored_responses += 1
+        
+        return total_score / max(1, scored_responses)
+    
+    def _score_emotional_response(self, response_content: str, user_emotion: Dict[str, Any]) -> float:
+        """Score a single response against user's emotional state"""
+        score = 0.5  # Base score
+        
+        user_sentiment = user_emotion.get("sentiment", {})
+        user_emotions_detected = user_emotion.get("detected_emotions", [])
+        user_intensity = user_emotion.get("intensity", 0.0)
+        
+        response_sentiment = self._get_sentiment(response_content)
+        
+        # Score based on appropriate emotional response
+        if user_sentiment.get("negative", 0) > 0.5:  # User is negative
+            # Response should be empathetic but not overly positive
+            if 0.0 <= response_sentiment.get("compound", 0) <= 0.3:
+                score += 0.3  # Appropriate supportive tone
+            elif response_sentiment.get("compound", 0) > 0.5:
+                score -= 0.2  # Too cheerful for negative user
+            
+            # Check for empathetic language
+            empathetic_words = ["understand", "sorry", "help", "support"]
+            if any(word in response_content.lower() for word in empathetic_words):
+                score += 0.2
+        
+        elif user_sentiment.get("positive", 0) > 0.5:  # User is positive
+            # Response can be positive but professional
+            if response_sentiment.get("compound", 0) > 0.1:
+                score += 0.2
+        
+        # Handle specific emotions
+        if "frustration" in user_emotions_detected:
+            calming_words = ["understand", "help", "resolve", "fix", "solution"]
+            if any(word in response_content.lower() for word in calming_words):
+                score += 0.25
+            
+            # Avoid dismissive language
+            dismissive = ["just", "simply", "only"]
+            if any(word in response_content.lower() for word in dismissive):
+                score -= 0.2
+        
+        if "urgency" in user_emotions_detected:
+            urgent_response = ["immediately", "right away", "asap", "quickly", "priority"]
+            if any(word in response_content.lower() for word in urgent_response):
+                score += 0.2
+        
+        if "confusion" in user_emotions_detected:
+            clarifying_words = ["explain", "clarify", "help you understand", "let me break"]
+            if any(word in response_content.lower() for word in clarifying_words):
+                score += 0.25
+        
+        # Adjust for emotional intensity
+        if user_intensity > 0.7:  # High emotional intensity
+            # Response should acknowledge the intensity
+            acknowledging_phrases = ["i understand this is", "i know this", "this must be"]
+            if any(phrase in response_content.lower() for phrase in acknowledging_phrases):
+                score += 0.15
+        
+        return max(0.0, min(1.0, score))
 
 
 class MultiObjectiveRewardFunction(RewardFunction):
@@ -343,8 +775,8 @@ class MultiObjectiveRewardFunction(RewardFunction):
         components: Optional[List[BaseRewardComponent]] = None,
         weight: float = 1.0,
         normalization_method: str = "weighted_sum",
-        cache_service: Optional[CacheService] = None,
-        monitoring_service: Optional[MonitoringService] = None
+        cache_service: Optional[Any] = None,  # TODO: Type with CacheService when implemented
+        monitoring_service: Optional[Any] = None  # TODO: Type with MonitoringService when implemented
     ):
         """
         Initialize multi-objective reward function.
@@ -396,7 +828,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
     
     async def compute_reward(
         self,
-        turns: List[Dict[str, Any]],
+        turns: List[ConversationTurn],
         context: Optional[Dict[str, Any]] = None
     ) -> RewardResult:
         """
@@ -409,8 +841,11 @@ class MultiObjectiveRewardFunction(RewardFunction):
         Returns:
             RewardResult with combined score and component breakdown
         """
+        # Convert ConversationTurn objects to dict format for backward compatibility
+        turns_dict = [turn.to_dict() if hasattr(turn, 'to_dict') else turn for turn in turns]
+        
         if not self.components:
-            return RewardResult(score=0.0, breakdown={"error": "No components configured"})
+            return RewardResult(score=0.0, breakdown={"error": "No components configured"}, metadata={})
         
         # Compute scores for each component
         component_scores = {}
@@ -418,7 +853,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
         
         for component in self.components:
             try:
-                score = await component.compute_score(turns, context)
+                score = await component.compute_score(turns_dict, context)
                 component_scores[component.name] = score
                 weighted_scores.append(score * component.weight)
                 
@@ -468,7 +903,11 @@ class MultiObjectiveRewardFunction(RewardFunction):
                 tags={"method": self.normalization_method}
             )
         
-        return RewardResult(score=final_score, breakdown=breakdown)
+        return RewardResult(
+            score=final_score, 
+            breakdown=breakdown,
+            metadata={"evaluation_timestamp": datetime.now().isoformat()}
+        )
     
     def get_component_statistics(self) -> Dict[str, Dict[str, float]]:
         """Get statistics for each component"""
@@ -501,16 +940,21 @@ class MultiObjectiveRewardFunction(RewardFunction):
 def create_customer_service_reward(
     expected_responses: Optional[List[str]] = None,
     weight: float = 1.0,
+    use_sentiment_analysis: bool = True,
     **kwargs
 ) -> MultiObjectiveRewardFunction:
-    """Create a multi-objective reward for customer service"""
+    """Create a multi-objective reward for customer service with sentiment analysis"""
     components = [
-        EmpathyRewardComponent(weight=0.25),
-        ActionOrientedRewardComponent(weight=0.25),
-        ProfessionalismRewardComponent(weight=0.25),
+        EmpathyRewardComponent(weight=0.25, use_sentiment_analysis=use_sentiment_analysis),
+        ActionOrientedRewardComponent(weight=0.2),
+        ProfessionalismRewardComponent(weight=0.2, use_sentiment_analysis=use_sentiment_analysis),
         LengthRewardComponent(weight=0.1, min_length=20, optimal_range=(50, 200)),
-        SimilarityRewardComponent(weight=0.15, expected_responses=expected_responses)
+        SimilarityRewardComponent(weight=0.1, expected_responses=expected_responses)
     ]
+    
+    # Add sentiment awareness if available
+    if use_sentiment_analysis and (TEXTBLOB_AVAILABLE or VADER_AVAILABLE):
+        components.append(SentimentAwarenessComponent(weight=0.15))
     
     return MultiObjectiveRewardFunction(
         components=components,
@@ -522,15 +966,20 @@ def create_customer_service_reward(
 def create_technical_support_reward(
     expected_responses: Optional[List[str]] = None,
     weight: float = 1.0,
+    use_sentiment_analysis: bool = True,
     **kwargs
 ) -> MultiObjectiveRewardFunction:
-    """Create a multi-objective reward for technical support"""
+    """Create a multi-objective reward for technical support with sentiment analysis"""
     components = [
-        ActionOrientedRewardComponent(weight=0.4),  # High weight for solutions
-        ProfessionalismRewardComponent(weight=0.2),
+        ActionOrientedRewardComponent(weight=0.35),  # High weight for solutions
+        ProfessionalismRewardComponent(weight=0.2, use_sentiment_analysis=use_sentiment_analysis),
         LengthRewardComponent(weight=0.1, min_length=30, optimal_range=(100, 300)),
-        SimilarityRewardComponent(weight=0.3, expected_responses=expected_responses)
+        SimilarityRewardComponent(weight=0.2, expected_responses=expected_responses)
     ]
+    
+    # Add sentiment awareness for technical support
+    if use_sentiment_analysis and (TEXTBLOB_AVAILABLE or VADER_AVAILABLE):
+        components.append(SentimentAwarenessComponent(weight=0.15))
     
     return MultiObjectiveRewardFunction(
         components=components,

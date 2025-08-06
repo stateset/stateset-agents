@@ -21,11 +21,11 @@ try:
     LITELLM_AVAILABLE = True
 except ImportError:
     LITELLM_AVAILABLE = False
-    ChatCompletionMessageParam = Dict[str, Any]
 
 from ..core.reward import RewardFunction, RewardResult
-from ..utils.cache import CacheService
-from ..utils.monitoring import MonitoringService
+from ..core.trajectory import ConversationTurn
+# from ..utils.cache import CacheService  # TODO: Implement cache service  
+# from ..utils.monitoring import MonitoringService  # TODO: Implement monitoring service
 
 logger = logging.getLogger(__name__)
 
@@ -128,8 +128,8 @@ class RulerRewardFunction(RewardFunction):
         max_retries: int = 3,
         timeout: float = 30.0,
         weight: float = 1.0,
-        cache_service: Optional[CacheService] = None,
-        monitoring_service: Optional[MonitoringService] = None
+        cache_service: Optional[Any] = None,  # TODO: Type with CacheService when implemented
+        monitoring_service: Optional[Any] = None  # TODO: Type with MonitoringService when implemented
     ):
         """
         Initialize LLM Judge reward function.
@@ -177,7 +177,7 @@ class RulerRewardFunction(RewardFunction):
         
     async def compute_reward(
         self,
-        turns: List[Dict[str, Any]],
+        turns: List[ConversationTurn],
         context: Optional[Dict[str, Any]] = None
     ) -> RewardResult:
         """
@@ -190,8 +190,11 @@ class RulerRewardFunction(RewardFunction):
         Returns:
             RewardResult with score and breakdown
         """
+        # Convert ConversationTurn objects to dict format for backward compatibility
+        turns_dict = [turn.to_dict() if hasattr(turn, 'to_dict') else turn for turn in turns]
+        
         # Convert turns to messages
-        messages = self._turns_to_messages(turns)
+        messages = self._turns_to_messages(turns_dict)
         
         # For single trajectory, create a comparison batch
         if len(messages) == 1:
@@ -212,14 +215,15 @@ class RulerRewardFunction(RewardFunction):
                     "model": self.model,
                     "rubric_type": self.rubric_type,
                     "cache_hit": False  # Will be updated by cache check
-                }
+                },
+                metadata={"evaluation_timestamp": datetime.now().isoformat()}
             )
             
         except Exception as e:
             logger.error(f"RULER reward computation failed: {e}")
             
             if self.fallback_enabled:
-                fallback_score = self._heuristic_fallback(turns)
+                fallback_score = self._heuristic_fallback(turns_dict)
                 self.fallback_uses += 1
                 
                 return RewardResult(
@@ -228,14 +232,15 @@ class RulerRewardFunction(RewardFunction):
                         "ruler_score": fallback_score,
                         "fallback_used": True,
                         "error": str(e)
-                    }
+                    },
+                    metadata={"evaluation_timestamp": datetime.now().isoformat()}
                 )
             else:
                 raise
     
     async def compute_batch_rewards(
         self,
-        batch_turns: List[List[Dict[str, Any]]],
+        batch_turns: List[List[ConversationTurn]],
         context: Optional[Dict[str, Any]] = None
     ) -> List[RewardResult]:
         """
@@ -251,8 +256,14 @@ class RulerRewardFunction(RewardFunction):
         if not batch_turns:
             return []
         
+        # Convert ConversationTurn objects to dict format for backward compatibility
+        all_turns_dict = []
+        for turns in batch_turns:
+            turns_dict = [turn.to_dict() if hasattr(turn, 'to_dict') else turn for turn in turns]
+            all_turns_dict.append(turns_dict)
+        
         # Convert all turns to messages
-        all_messages = [self._turns_to_messages(turns) for turns in batch_turns]
+        all_messages = [self._turns_to_messages(turns) for turns in all_turns_dict]
         
         # Flatten for batch processing
         flat_messages = [msg for msgs in all_messages for msg in msgs]
@@ -274,14 +285,15 @@ class RulerRewardFunction(RewardFunction):
                     "model": self.model,
                     "rubric_type": self.rubric_type,
                     "batch_index": i
-                }
+                },
+                metadata={"evaluation_timestamp": datetime.now().isoformat()}
             ))
         
         return results
     
     async def _compute_scores(
         self,
-        messages_list: List[List[ChatCompletionMessageParam]],
+        messages_list: List[List[Dict[str, Any]]],
         context: Optional[Dict[str, Any]] = None
     ) -> List[float]:
         """Compute scores for a list of message sequences"""
@@ -332,7 +344,7 @@ class RulerRewardFunction(RewardFunction):
     
     async def _ruler_judge(
         self,
-        message_lists: List[List[ChatCompletionMessageParam]]
+        message_lists: List[List[Dict[str, Any]]]
     ) -> List[float]:
         """Core LLM Judge implementation"""
         if not message_lists:
@@ -437,7 +449,7 @@ class RulerRewardFunction(RewardFunction):
             )
         )
     
-    def _turns_to_messages(self, turns: List[Dict[str, Any]]) -> List[ChatCompletionMessageParam]:
+    def _turns_to_messages(self, turns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Convert conversation turns to message format"""
         messages = []
         for turn in turns:
@@ -487,7 +499,7 @@ class RulerRewardFunction(RewardFunction):
         # Ensure score is in [0, 1]
         return max(0.0, min(1.0, score))
     
-    def _get_cache_key(self, messages_list: List[List[ChatCompletionMessageParam]]) -> str:
+    def _get_cache_key(self, messages_list: List[List[Dict[str, Any]]]) -> str:
         """Generate cache key for LLM Judge results"""
         import hashlib
         content = json.dumps({

@@ -12,7 +12,7 @@ setup(
     version="0.3.0",
     author="GRPO Framework Team",
     author_email="team@grpo-framework.ai",
-    description="A comprehensive framework for training multi-turn AI agents using Group Relative Policy Optimization (GRPO)",
+    description="A comprehensive framework for training multi-turn AI agents using Group Relative Policy Optimization (GRPO) with advanced sentiment analysis",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/grpo-agent-framework",
@@ -47,6 +47,10 @@ setup(
         "aiohttp>=3.8.0",
         "psutil>=5.9.0",
         "typing-extensions>=4.0.0",
+        # Sentiment analysis dependencies for enhanced reward system
+        "textblob>=0.17.1",
+        "vaderSentiment>=3.3.2",
+        "nltk>=3.8.1",
     ],
     extras_require={
         "dev": [
@@ -63,6 +67,24 @@ setup(
             "openai>=1.0.0",
             "anthropic>=0.5.0",
             "langchain>=0.1.0",
+        ],
+        "sentiment": [
+            # Advanced sentiment analysis libraries
+            "spacy>=3.4.0",
+            "pandas>=1.5.0",
+            "scikit-learn>=1.1.0",
+            "emoji>=2.2.0",
+            "flair>=0.12.2",
+        ],
+        "sentiment-full": [
+            # All sentiment analysis dependencies including advanced transformers
+            "spacy>=3.4.0",
+            "pandas>=1.5.0",
+            "scikit-learn>=1.1.0",
+            "emoji>=2.2.0",
+            "flair>=0.12.2",
+            "sentence-transformers>=2.2.0",
+            "transformers[sentencepiece]>=4.21.0",
         ],
     },
     entry_points={

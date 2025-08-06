@@ -10,6 +10,12 @@ tqdm>=4.65.0
 pydantic>=2.0.0
 rich>=13.0.0
 typer>=0.9.0
+aiohttp>=3.8.0
+psutil>=5.9.0
+typing-extensions>=4.0.0
+textblob>=0.17.1
+vaderSentiment>=3.3.2
+nltk>=3.8.1
 
 [dev]
 pytest>=7.0.0
@@ -25,3 +31,19 @@ sphinx-rtd-theme>=1.2.0
 openai>=1.0.0
 anthropic>=0.5.0
 langchain>=0.1.0
+
+[sentiment]
+spacy>=3.4.0
+pandas>=1.5.0
+scikit-learn>=1.1.0
+emoji>=2.2.0
+flair>=0.12.2
+
+[sentiment-full]
+spacy>=3.4.0
+pandas>=1.5.0
+scikit-learn>=1.1.0
+emoji>=2.2.0
+flair>=0.12.2
+sentence-transformers>=2.2.0
+transformers[sentencepiece]>=4.21.0
