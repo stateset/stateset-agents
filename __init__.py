@@ -54,8 +54,12 @@ from .core.data_processing import (
     load_and_prepare_data
 )
 
-# Training exports
-from .training.trainer import GRPOTrainer, MultiTurnGRPOTrainer
+# Training exports (optional to avoid hard dependency on torch at import time)
+try:
+    from .training.trainer import GRPOTrainer, MultiTurnGRPOTrainer
+except Exception:  # pragma: no cover - allow import without training deps
+    GRPOTrainer = None
+    MultiTurnGRPOTrainer = None
 from .training.config import TrainingConfig, TrainingProfile, get_config_for_task
 from .training.train import train, AutoTrainer
 
@@ -117,7 +121,7 @@ __all__ = [
     "ConversationExample",
     "load_and_prepare_data",
     
-    # Training
+    # Training (optional)
     "GRPOTrainer",
     "MultiTurnGRPOTrainer",
     "TrainingProfile",

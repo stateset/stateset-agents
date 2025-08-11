@@ -74,6 +74,11 @@ class MultiTurnGRPOTrainer:
         self.train_dataset = None
         self.eval_dataset = None
         
+        # GRPO enhancements
+        self._global_reward_mean: float = 0.0
+        self._global_reward_count: int = 0
+        self.reference_model = None
+        
         logger.info(f"GRPO Trainer initialized with {type(agent).__name__}")
     
     async def initialize(self):
@@ -84,12 +89,41 @@ class MultiTurnGRPOTrainer:
         if not hasattr(self.agent, 'model') or self.agent.model is None:
             await self.agent.initialize()
         
+        # Set seeds for reproducibility if provided
+        try:
+            import random
+            import numpy as np
+            seed_value = getattr(self.config, 'seed', None)
+            if seed_value is not None:
+                random.seed(seed_value)
+                np.random.seed(seed_value)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(seed_value)
+                torch.manual_seed(seed_value)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
+        except Exception as seed_err:
+            logger.warning(f"Failed to fully set deterministic seeds: {seed_err}")
+        
         # Initialize optimizer with HuggingFace best practices
         self._setup_optimizer()
         
         # Initialize mixed precision scaler
         if hasattr(self.config, 'bf16') and (self.config.bf16 or getattr(self.config, 'fp16', False)):
             self.scaler = GradScaler()
+        
+        # Optional reference model for KL penalty
+        try:
+            if getattr(self.config, 'use_reference_model', False) and self.reference_model is None:
+                # Lazy import to avoid circulars
+                from copy import deepcopy
+                self.reference_model = deepcopy(self.agent.model).eval()
+                for param in self.reference_model.parameters():
+                    param.requires_grad = False
+                logger.info("Reference model initialized for KL regularization")
+        except Exception as ref_err:
+            logger.warning(f"Could not initialize reference model: {ref_err}")
+            self.reference_model = None
         
         # Initialize W&B if configured
         if self.wandb_logger and hasattr(self.config, 'report_to') and self.config.report_to == "wandb":
@@ -234,40 +268,66 @@ class MultiTurnGRPOTrainer:
         self,
         trajectory_groups: List[TrajectoryGroup]
     ) -> Dict[str, torch.Tensor]:
-        """Compute GRPO loss from trajectory groups"""
+        """Compute GRPO loss from trajectory groups with configurable baseline and normalization"""
         total_loss = 0.0
         policy_losses = []
-        advantages_list = []
+        all_advantages_for_logging: List[float] = []
+        
+        # Configuration controls
+        baseline_type = getattr(self.config, 'baseline_type', 'group_mean')
+        normalize_adv = getattr(self.config, 'advantage_normalization', True)
+        reward_clip = getattr(self.config, 'reward_clip', None)
         
         for group in trajectory_groups:
-            # Compute advantages using group-relative rewards
-            rewards = torch.tensor([t.total_reward for t in group.trajectories], dtype=torch.float32)
+            if not group.trajectories:
+                continue
             
-            # Use group mean as baseline (key GRPO innovation)
-            baseline = rewards.mean()
+            # Extract rewards and optionally clip
+            rewards = torch.tensor([t.total_reward for t in group.trajectories], dtype=torch.float32)
+            if reward_clip is not None:
+                rewards = torch.clamp(rewards, min=-float(reward_clip), max=float(reward_clip))
+            
+            # Select baseline
+            if baseline_type == 'group_median':
+                baseline = rewards.median()
+            elif baseline_type == 'global_mean':
+                # Update running global mean baseline
+                with torch.no_grad():
+                    batch_mean = rewards.mean().item()
+                    self._global_reward_mean = (
+                        (self._global_reward_mean * self._global_reward_count + batch_mean * len(rewards)) /
+                        max(1, self._global_reward_count + len(rewards))
+                    )
+                    self._global_reward_count += len(rewards)
+                baseline = torch.tensor(self._global_reward_mean, dtype=torch.float32)
+            else:  # group_mean (default)
+                baseline = rewards.mean()
+            
             advantages = rewards - baseline
             
-            # Normalize advantages
-            if len(advantages) > 1:
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            # Normalize advantages if configured and variance > 0
+            if normalize_adv and len(advantages) > 1:
+                std = advantages.std()
+                if torch.isfinite(std) and std > 0:
+                    advantages = (advantages - advantages.mean()) / (std + 1e-8)
             
-            advantages_list.extend(advantages.tolist())
+            all_advantages_for_logging.extend(advantages.detach().cpu().tolist())
             
-            # Compute policy loss for this group
+            # Compute policy loss for this group (placeholder; model-based loss computed elsewhere)
             group_loss = self._compute_group_policy_loss(group, advantages)
             policy_losses.append(group_loss)
         
         # Aggregate losses
         if policy_losses:
-            total_loss = torch.stack(policy_losses).mean()
+            total_loss_tensor = torch.stack(policy_losses).mean()
         else:
-            total_loss = torch.tensor(0.0, requires_grad=True)
+            total_loss_tensor = torch.tensor(0.0, requires_grad=True)
         
         return {
-            "policy_loss": total_loss,
-            "total_loss": total_loss,
-            "mean_advantage": np.mean(advantages_list) if advantages_list else 0.0,
-            "advantage_std": np.std(advantages_list) if advantages_list else 0.0
+            "policy_loss": total_loss_tensor,
+            "total_loss": total_loss_tensor,
+            "mean_advantage": float(np.mean(all_advantages_for_logging)) if all_advantages_for_logging else 0.0,
+            "advantage_std": float(np.std(all_advantages_for_logging)) if all_advantages_for_logging else 0.0
         }
     
     def _compute_group_policy_loss(
@@ -535,8 +595,15 @@ class MultiTurnGRPOTrainer:
         
         # Compute GRPO loss
         use_amp = getattr(self.config, 'bf16', False) or getattr(self.config, 'fp16', False)
+        use_enhanced = bool(getattr(self.config, 'beta', 0.0) > 0.0 or getattr(self.config, 'use_reference_model', False))
         with autocast(enabled=use_amp):
-            loss_dict = self.compute_grpo_loss(trajectory_groups)
+            if use_enhanced:
+                loss_dict = self.compute_enhanced_grpo_loss(
+                    trajectory_groups,
+                    beta=float(getattr(self.config, 'beta', 0.0))
+                )
+            else:
+                loss_dict = self.compute_grpo_loss(trajectory_groups)
             loss = loss_dict["total_loss"]
         
         # Backward pass with gradient scaling
