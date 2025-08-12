@@ -2,7 +2,8 @@
 Enhanced Multi-Objective Reward System with Sentiment Analysis - Usage Example
 
 This example demonstrates how to use the enhanced reward system with sentiment analysis
-for customer service scenarios.
+for customer service scenarios. Shows quantifiable improvements in data quality scoring
+and automated sentiment-aware evaluation pipelines.
 """
 
 import asyncio

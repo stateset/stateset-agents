@@ -14,24 +14,109 @@ import torch
 import torch.nn as nn
 from datetime import datetime
 
-# Import enhanced GRPO framework components
-from grpo_agent_framework.core import (
-    # Core components
-    MultiTurnAgent, ConversationEnvironment, RewardFunction,
-    
-    # Enhanced components  
-    ErrorHandler, PerformanceOptimizer, OptimizationLevel,
-    
-    # Advanced AI capabilities
-    AdaptiveLearningController, create_adaptive_learning_controller,
-    NeuralArchitectureSearch, create_nas_controller,
-    MultimodalProcessor, create_multimodal_processor, create_modality_input,
-    IntelligentOrchestrator, create_intelligent_orchestrator,
-    
-    # Enums and configs
-    CurriculumStrategy, ExplorationStrategy, SearchStrategy,
-    ModalityType, FusionStrategy, OrchestrationMode, OptimizationObjective
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
+
+# Import enhanced GRPO framework components
+try:
+    from grpo_agent_framework.core import (
+        # Core components
+        MultiTurnAgent, ConversationEnvironment, RewardFunction,
+        
+        # Enhanced components  
+        ErrorHandler, PerformanceOptimizer, OptimizationLevel,
+        
+        # Advanced AI capabilities
+        AdaptiveLearningController, create_adaptive_learning_controller,
+        NeuralArchitectureSearch, create_nas_controller,
+        MultimodalProcessor, create_multimodal_processor, create_modality_input,
+        IntelligentOrchestrator, create_intelligent_orchestrator,
+        
+        # Enums and configs
+        CurriculumStrategy, ExplorationStrategy, SearchStrategy,
+        ModalityType, FusionStrategy, OrchestrationMode, OptimizationObjective
+    )
+except ImportError:
+    # Fallback for demo - create mock classes
+    logger.warning("Enhanced GRPO components not found, using demo implementations")
+    
+    class MultiTurnAgent:
+        def __init__(self, config): self.config = config
+        async def generate_response(self, prompt): return f"Mock response to: {prompt}"
+    
+    class ConversationEnvironment:
+        def __init__(self): pass
+        async def reset(self): return {}
+        async def step(self, action): return {}
+    
+    class RewardFunction:
+        async def compute_reward(self, turns, context=None): return {"score": 0.5}
+    
+    class ErrorHandler:
+        def __init__(self): pass
+    
+    class PerformanceOptimizer:
+        def __init__(self): pass
+    
+    class OptimizationLevel:
+        BASIC = "basic"
+    
+    class AdaptiveLearningController:
+        async def step(self, *args): return (0.5, True, "respond", {})
+        async def get_learning_insights(self): return {"overall_stats": {}}
+    
+    def create_adaptive_learning_controller(*args, **kwargs):
+        return AdaptiveLearningController()
+    
+    class NeuralArchitectureSearch:
+        async def search_optimal_architecture(self, *args, **kwargs): return None
+        def get_search_insights(self): return {"total_architectures_evaluated": 0}
+    
+    def create_nas_controller(*args, **kwargs):
+        return NeuralArchitectureSearch()
+    
+    class MultimodalProcessor:
+        async def initialize(self, modalities): pass
+        async def process_multimodal_input(self, inputs): return np.zeros((1, 512)), {"modalities_processed": [], "feature_shape": (1, 512), "total_processing_time": 0.1}
+        def get_processing_stats(self): return {"supported_modalities": []}
+    
+    def create_multimodal_processor(*args, **kwargs):
+        return MultimodalProcessor()
+    
+    def create_modality_input(modality, data, **kwargs):
+        return {"modality": modality, "data": data}
+    
+    class IntelligentOrchestrator:
+        async def initialize(self, *args, **kwargs): pass
+        async def orchestrate_training_step(self, *args, **kwargs): 
+            return {}, type('Decision', (), {"action": "continue", "confidence": 0.8})()
+        def get_orchestration_status(self): return {"performance_summary": {"total_steps": 0, "recent_performance": 0.5, "performance_trend": 0.01}}
+        def get_optimization_insights(self): return {"performance_bottlenecks": []}
+        async def shutdown(self): pass
+    
+    def create_intelligent_orchestrator(*args, **kwargs):
+        return IntelligentOrchestrator()
+    
+    # Mock enums
+    class CurriculumStrategy:
+        pass
+    class ExplorationStrategy:
+        pass
+    class SearchStrategy:
+        pass
+    class ModalityType:
+        TEXT = "text"
+        STRUCTURED = "structured"
+    class FusionStrategy:
+        pass
+    class OrchestrationMode:
+        pass
+    class OptimizationObjective:
+        pass
 
 # Set up logging
 logging.basicConfig(
@@ -207,10 +292,8 @@ async def demonstrate_multimodal_processing():
     )
     
     # Initialize with available modalities (skip image/audio for demo)
-    from grpo_agent_framework.core.multimodal_processing import ModalityType
-    await processor.initialize([ModalityType.TEXT, ModalityType.STRUCTURED])
-    
-    # Create sample multimodal inputs
+    from core.multimodal_processing import ModalityType
+    await processor.initialize([ModalityType.TEXT, ModalityType.STRUCTURED])    # Create sample multimodal inputs
     text_input = create_modality_input(
         modality="text",
         data="This is a sample conversation about machine learning and AI capabilities.",
