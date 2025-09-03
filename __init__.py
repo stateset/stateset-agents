@@ -5,7 +5,7 @@ A comprehensive framework for training multi-turn AI agents using
 Group Relative Policy Optimization (GRPO).
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "GRPO Framework Team"
 __email__ = "team@grpo-framework.ai"
 
@@ -26,14 +26,40 @@ from .core.reward import (
     create_domain_reward, create_adaptive_reward
 )
 
+# New enhanced features
+from .core.error_handling import (
+    GRPOException, TrainingException, ModelException, DataException,
+    NetworkException, ResourceException, ValidationException,
+    ErrorHandler, RetryConfig, CircuitBreakerConfig,
+    retry_async, circuit_breaker, handle_error, get_error_summary
+)
+from .core.performance_optimizer import (
+    PerformanceOptimizer, MemoryMonitor, ModelOptimizer, BatchOptimizer,
+    OptimizationLevel, MemoryConfig, ComputeConfig, DataConfig, PerformanceMetrics
+)
+from .core.type_system import (
+    TypeValidator, ConfigValidator, TypeSafeSerializer,
+    create_typed_config, ensure_type_safety, ensure_async_type_safety,
+    ModelConfig, TrainingConfig, ConversationTurn as TypedConversationTurn,
+    TrajectoryData, RewardMetrics, DeviceType, ModelSize, TrainingStage
+)
+from .core.async_pool import (
+    AsyncResourcePool, AsyncTaskManager, PooledResource, 
+    get_http_pool, get_task_manager, managed_async_resources
+)
+
 # Data processing exports
 from .core.data_processing import (
     DataLoader, DataProcessor, ConversationExample,
     load_and_prepare_data
 )
 
-# Training exports
-from .training.trainer import GRPOTrainer, MultiTurnGRPOTrainer
+# Training exports (optional to avoid hard dependency on torch at import time)
+try:
+    from .training.trainer import GRPOTrainer, MultiTurnGRPOTrainer
+except Exception:  # pragma: no cover - allow import without training deps
+    GRPOTrainer = None
+    MultiTurnGRPOTrainer = None
 from .training.config import TrainingConfig, TrainingProfile, get_config_for_task
 from .training.train import train, AutoTrainer
 
@@ -69,16 +95,35 @@ __all__ = [
     "create_domain_reward",
     "create_adaptive_reward",
     
+    # Enhanced error handling
+    "GRPOException", "TrainingException", "ModelException", "DataException",
+    "NetworkException", "ResourceException", "ValidationException",
+    "ErrorHandler", "RetryConfig", "CircuitBreakerConfig",
+    "retry_async", "circuit_breaker", "handle_error", "get_error_summary",
+    
+    # Performance optimization
+    "PerformanceOptimizer", "MemoryMonitor", "ModelOptimizer", "BatchOptimizer",
+    "OptimizationLevel", "MemoryConfig", "ComputeConfig", "DataConfig", "PerformanceMetrics",
+    
+    # Type system
+    "TypeValidator", "ConfigValidator", "TypeSafeSerializer",
+    "create_typed_config", "ensure_type_safety", "ensure_async_type_safety",
+    "ModelConfig", "TrainingConfig", "TypedConversationTurn",
+    "TrajectoryData", "RewardMetrics", "DeviceType", "ModelSize", "TrainingStage",
+    
+    # Async resource management
+    "AsyncResourcePool", "AsyncTaskManager", "PooledResource", 
+    "get_http_pool", "get_task_manager", "managed_async_resources",
+    
     # Data processing
     "DataLoader",
     "DataProcessor",
     "ConversationExample",
     "load_and_prepare_data",
     
-    # Training
+    # Training (optional)
     "GRPOTrainer",
     "MultiTurnGRPOTrainer",
-    "TrainingConfig",
     "TrainingProfile",
     "get_config_for_task",
     "train",
