@@ -86,7 +86,7 @@ class CustomerServiceAgent(MultiTurnAgent):
     Specialized customer service agent with domain-specific behaviors
     """
     
-    def __init__(self, model_name: str = "gpt2"):
+    def __init__(self, model_name: str = "openai/gpt-oss-120b"):
         config = AgentConfig(
             model_name=model_name,
             system_prompt="""You are a professional customer service representative. Your goals are to:
@@ -300,7 +300,7 @@ async def main():
     
     # Create agent
     logger.info("Creating customer service agent...")
-    agent = CustomerServiceAgent(model_name="gpt2")  # Use small model for demo
+    agent = CustomerServiceAgent(model_name="openai/gpt-oss-120b")  # Use the openai/gpt-oss-120b model
     await agent.initialize()
     
     # Create environment
@@ -327,7 +327,7 @@ async def main():
     auto_trainer = AutoTrainer(auto_adjust=True, early_stopping=True)
     
     # Create fresh agent for auto training
-    agent_auto = CustomerServiceAgent(model_name="gpt2")
+    agent_auto = CustomerServiceAgent(model_name="openai/gpt-oss-120b")
     await agent_auto.initialize()
     
     trained_agent_auto = await auto_trainer.train(

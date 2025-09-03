@@ -50,6 +50,19 @@ variable "machine_type" {
   default     = "e2-standard-4"
 }
 
+# Database credentials (do not set defaults for sensitive values)
+variable "db_username" {
+  description = "Cloud SQL PostgreSQL username"
+  type        = string
+  default     = "grpo"
+}
+
+variable "db_password" {
+  description = "Cloud SQL PostgreSQL password"
+  type        = string
+  sensitive   = true
+}
+
 # Enable required APIs
 resource "google_project_service" "gke_api" {
   service = "container.googleapis.com"
@@ -213,9 +226,9 @@ resource "google_sql_database" "grpo_db" {
 }
 
 resource "google_sql_user" "grpo_user" {
-  name     = "grpo"
+  name     = var.db_username
   instance = google_sql_database_instance.grpo_postgres.name
-  password = "grpo_password_change_me"
+  password = var.db_password
 }
 
 # Cloud Memorystore Redis Instance

@@ -1,0 +1,11 @@
+# Example variables for AWS deployment
+# Copy to terraform.tfvars and provide real values
+
+aws_region   = "us-west-2"
+environment  = "production"
+cluster_name = "grpo-framework"
+
+# Database credentials
+db_username = "grpo"
+db_password = "CHANGE_ME_STRONG"
+

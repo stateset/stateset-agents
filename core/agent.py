@@ -452,7 +452,7 @@ class ToolAgent(MultiTurnAgent):
 # Factory functions
 def create_agent(
     agent_type: str,
-    model_name: str,
+    model_name: str = "openai/gpt-oss-120b",
     **kwargs
 ) -> Agent:
     """Factory function for creating agents"""
@@ -555,7 +555,7 @@ AGENT_CONFIGS = {
 # Helper functions for agent creation
 def create_agent(
     agent_type: str = "multi_turn",
-    model_name: str = "gpt2",
+    model_name: str = "openai/gpt-oss-120b",
     **kwargs
 ) -> Union[Agent, MultiTurnAgent]:
     """Create an agent of specified type"""

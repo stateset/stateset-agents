@@ -1,0 +1,12 @@
+# Example variables for GCP deployment
+# Copy to terraform.tfvars and provide real values
+
+project_id   = "your-gcp-project-id"
+region       = "us-central1"
+zone         = "us-central1-a"
+cluster_name = "grpo-framework"
+
+# Database credentials
+db_username = "grpo"
+db_password = "CHANGE_ME_STRONG"
+

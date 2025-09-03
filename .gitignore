@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+.cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Outputs and artifacts
+outputs/
+logs/
+models/
+artifacts/
+checkpoints/
+wandb/
+
+# Secrets and keys
+*.pem
+*.key
+*.p12
+*.crt
+*.der
+id_rsa
+id_rsa.*
+
+# Kubernetes/infra secrets (keep only examples)
+**/secret.yaml
+*secret*.yaml
+!secret.example.yaml
+
+# Data and logs
+*.db
+*.sqlite
+*.log
+

@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 async def create_enhanced_customer_service_agent(
-    model_name: str = "microsoft/DialoGPT-medium",
+    model_name: str = "openai/gpt-oss-120b",
     use_lora: bool = True
 ) -> MultiTurnAgent:
     """Create an enhanced customer service agent with LoRA optimization"""
@@ -68,7 +68,7 @@ async def create_enhanced_customer_service_agent(
             "task_type": "CAUSAL_LM"
         } if use_lora else None,
         torch_dtype="bfloat16",  # Use bfloat16 for better stability
-        attn_implementation="flash_attention_2" if model_name not in ["gpt2"] else None
+                    attn_implementation="flash_attention_2" if model_name not in ["gpt2", "openai/gpt-oss-120b"] else None
     )
     
     # Create agent
@@ -149,7 +149,7 @@ async def main():
     
     # Configuration
     DATA_PATH = "customer_service_conversations.jsonl"  # Your data file
-    MODEL_NAME = "microsoft/DialoGPT-medium"  # Or "gpt2", "Qwen/Qwen2.5-7B-Instruct", etc.
+    MODEL_NAME = "openai/gpt-oss-120b"  # Using the openai/gpt-oss-120b model
     OUTPUT_DIR = "./outputs/enhanced_customer_service"
     
     # Training configuration with enhanced settings

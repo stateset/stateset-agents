@@ -27,7 +27,7 @@ grpo-train [OPTIONS] CONFIG_FILE
 #### Options
 
 ```bash
---model-name TEXT          Model name or path [default: gpt2]
+--model-name TEXT          Model name or path [default: openai/gpt-oss-120b]
 --output-dir TEXT          Output directory for checkpoints [default: ./outputs]
 --num-episodes INTEGER     Number of training episodes [default: 1000]
 --profile TEXT             Training profile: conservative, balanced, aggressive [default: balanced]
@@ -50,7 +50,7 @@ grpo-train configs/customer_service.yaml
 
 # Training with custom parameters
 grpo-train configs/tutoring.yaml \
-  --model-name microsoft/DialoGPT-medium \
+  --model-name openai/gpt-oss-120b \
   --num-episodes 2000 \
   --profile aggressive \
   --auto-adjust
@@ -67,7 +67,7 @@ grpo-train configs/my_agent.yaml \
 # Example: customer_service.yaml
 agent:
   type: "multi_turn"
-  model_name: "microsoft/DialoGPT-medium"
+  model_name: "openai/gpt-oss-120b"
   system_prompt: "You are a helpful customer service representative."
   temperature: 0.7
   max_new_tokens: 256
@@ -321,7 +321,7 @@ Detailed training configuration options:
 # Complete training configuration example
 agent:
   type: "multi_turn"  # or "tool", "custom"
-  model_name: "microsoft/DialoGPT-medium"
+  model_name: "openai/gpt-oss-120b"
   
   # Agent behavior
   system_prompt: "You are a helpful AI assistant."
@@ -463,7 +463,7 @@ Key environment variables for the CLI tools:
 
 ```bash
 # Model and training
-export GRPO_DEFAULT_MODEL="microsoft/DialoGPT-medium"
+export GRPO_DEFAULT_MODEL="openai/gpt-oss-120b"
 export GRPO_CACHE_DIR="~/.cache/grpo"
 export GRPO_DATA_DIR="./data"
 

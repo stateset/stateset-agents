@@ -101,7 +101,7 @@ async def lifespan(app: FastAPI):
     services['cache'] = CacheService()
     
     # Initialize example components
-    model_config = {"model_type": "gpt2", "model_name": "gpt2"}
+            model_config = {"model_type": "gpt-oss", "model_name": "openai/gpt-oss-120b"}
     
     # Create computational engine
     from ..core.agent import Agent

@@ -115,7 +115,7 @@ from grpo_agent_framework import MultiTurnAgent, ConversationEnvironment, train
 
 async def main():
     # 1. Create agent
-    agent = MultiTurnAgent.from_model("microsoft/DialoGPT-medium")
+    agent = MultiTurnAgent.from_model("openai/gpt-oss-120b")
     
     # 2. Create environment
     scenarios = [{"user_responses": ["Hi!", "How are you?", "Thanks!"]}]
@@ -138,7 +138,7 @@ asyncio.run(main())
 from grpo_agent_framework.examples import CustomerServiceAgent
 
 # Specialized agent with domain knowledge
-agent = CustomerServiceAgent("microsoft/DialoGPT-medium")
+agent = CustomerServiceAgent("openai/gpt-oss-120b")
 
 # Custom environment with realistic scenarios
 env = CustomerServiceEnvironment()
@@ -165,7 +165,7 @@ grpo-train configs/my_agent.yaml
 
 # Advanced training with monitoring
 grpo-train configs/customer_service.yaml \
-  --model-name microsoft/DialoGPT-medium \
+  --model-name openai/gpt-oss-120b \
   --num-episodes 2000 \
   --profile aggressive \
   --auto-adjust \

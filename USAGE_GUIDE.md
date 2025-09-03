@@ -35,7 +35,7 @@ from grpo_agent_framework.core.agent import AgentConfig
 async def quick_example():
     # 1. Create an agent
     config = AgentConfig(
-        model_name="gpt2",
+        model_name="openai/gpt-oss-120b",
         system_prompt="You are a helpful AI assistant.",
         temperature=0.8
     )
@@ -109,7 +109,7 @@ Reward functions evaluate agent performance:
 from grpo_agent_framework.core.agent import AgentConfig, MultiTurnAgent
 
 config = AgentConfig(
-    model_name="microsoft/DialoGPT-medium",
+    model_name="openai/gpt-oss-120b",
     system_prompt="You are a helpful assistant.",
     temperature=0.8,
     max_new_tokens=256,

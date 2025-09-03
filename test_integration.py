@@ -71,7 +71,7 @@ class IntegrationTester:
         try:
             # Test 1: Basic model loading
             config = AgentConfig(
-                model_name="gpt2",
+                model_name="openai/gpt-oss-120b",
                 torch_dtype="float32",  # Use float32 for compatibility
                 device_map=None,  # Disable auto device mapping for testing
                 attn_implementation=None  # Use default attention
@@ -123,7 +123,7 @@ class IntegrationTester:
             }
             
             agent = create_peft_agent(
-                model_name="gpt2",
+                model_name="openai/gpt-oss-120b",
                 peft_config=peft_config,
                 torch_dtype="float32",
                 device_map=None
@@ -155,7 +155,7 @@ class IntegrationTester:
             # Create and initialize agent
             agent = create_agent(
                 agent_type="multi_turn",
-                model_name="gpt2",
+                model_name="openai/gpt-oss-120b",
                 torch_dtype="float32",
                 device_map=None
             )
@@ -209,7 +209,7 @@ class IntegrationTester:
             
             # Test configuration preparation
             config = {
-                "model_name": "gpt2",
+                "model_name": "openai/gpt-oss-120b",
                 "learning_rate": 5e-6,
                 "num_episodes": 100
             }
@@ -304,7 +304,7 @@ class IntegrationTester:
             # Create minimal agent
             agent = create_agent(
                 agent_type="multi_turn",
-                model_name="gpt2",
+                model_name="openai/gpt-oss-120b",
                 torch_dtype="float32",
                 device_map=None
             )

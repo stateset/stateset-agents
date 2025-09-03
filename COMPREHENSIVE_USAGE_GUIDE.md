@@ -55,7 +55,7 @@ async def quick_start():
     # 1. Create a multi-turn agent
     agent = MultiTurnAgent(
         model_config={
-            "model_type": "gpt2",
+            "model_type": "gpt-oss",
             "temperature": 0.7,
             "max_tokens": 200
         },

@@ -173,7 +173,7 @@ with open("data.json", "r") as f:
     data = json.load(f)
 
 # Create agent
-agent = MultiTurnAgent.from_model("gpt2")
+agent = MultiTurnAgent.from_model("openai/gpt-oss-120b")
 
 # Create environment
 env = ConversationEnvironment(scenarios=data)
@@ -204,7 +204,7 @@ train_data, eval_data = load_and_prepare_data(
 
 # Create enhanced agent
 config = AgentConfig(
-    model_name="microsoft/DialoGPT-medium",
+            model_name="openai/gpt-oss-120b",
     use_peft=True,
     bf16=True
 )

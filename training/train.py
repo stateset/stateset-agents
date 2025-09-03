@@ -229,7 +229,7 @@ class AutoTrainer:
 # Convenience functions for common training scenarios
 
 async def train_customer_service_agent(
-    model_name: str = "gpt2",
+    model_name: str = "openai/gpt-oss-120b",
     scenarios_file: Optional[str] = None,
     num_episodes: int = 500,
     **kwargs
@@ -273,7 +273,7 @@ async def train_customer_service_agent(
 
 
 async def train_tutoring_agent(
-    model_name: str = "gpt2",
+    model_name: str = "openai/gpt-oss-120b",
     subject: str = "general",
     num_episodes: int = 800,
     **kwargs
@@ -312,7 +312,7 @@ async def train_tutoring_agent(
 
 
 async def train_task_agent(
-    model_name: str = "gpt2",
+    model_name: str = "openai/gpt-oss-120b",
     task_type: str = "data_analysis",
     num_episodes: int = 600,
     **kwargs

@@ -60,6 +60,10 @@ setup(
             "anthropic>=0.5.0",
             "langchain>=0.1.0",
         ],
+        "trl": [
+            "trl>=0.7.0",
+            "bitsandbytes>=0.41.0",  # For quantization support
+        ],
     },
     entry_points={
         "console_scripts": [

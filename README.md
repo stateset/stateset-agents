@@ -1,6 +1,6 @@
-# GRPO Agent Framework
+# StateSet RL Agent Framework
 
-A comprehensive framework for training multi-turn AI agents using Group Relative Policy Optimization (GRPO).
+A comprehensive framework for training multi-turn AI agents using reinforcement learning (RL).
 
 ## 🎉 What's New in v0.3.0
 
@@ -20,8 +20,9 @@ GRPO Agent Framework provides a flexible and robust infrastructure for training 
 ### Key Features
 
 - 🚀 **Multi-turn Conversation Support**: Native support for training agents on extended dialogues
-- 🎯 **Advanced Reward Systems**: RULER LLM judges, multi-objective rewards, and neural reward models
+- 🎯 **Advanced Reward Systems**: LLM judges, multi-objective rewards, and neural reward models
 - 🔧 **Production-Ready Training**: Distributed multi-GPU training with memory optimization
+- 🏆 **TRL GRPO Integration**: Fine-tune large models like `openai/gpt-oss-120b` using HuggingFace TRL's GRPO trainer with LoRA adapters
 - 📊 **Comprehensive Monitoring**: Real-time metrics, W&B integration, and system diagnostics
 - 🔌 **Extensible Architecture**: Easy to add custom agents, environments, and rewards
 - ☁️ **Cloud Deployment**: Automated RunPod deployment with dynamic scaling
@@ -31,13 +32,13 @@ GRPO Agent Framework provides a flexible and robust infrastructure for training 
 ## Installation
 
 ```bash
-pip install grpo-agent-framework
+pip install stateset-agents
 ```
 
 For development:
 ```bash
-git clone https://github.com/stateset/grpo-agent-framework
-cd grpo-agent_framework
+git clone https://github.com/stateset/stateset-agents
+cd stateset-agents
 pip install -e ".[dev]"
 ```
 
@@ -46,10 +47,10 @@ pip install -e ".[dev]"
 ### Training a Simple Agent
 
 ```python
-from grpo_agent_framework import Agent, Environment, train
+from stateset_agents import Agent, Environment, train
 
 # Define your agent
-agent = Agent.from_pretrained("gpt2")
+agent = Agent.from_pretrained("openai/gpt-oss-120b")
 
 # Create environment
 env = Environment.from_task("conversation")
@@ -137,6 +138,28 @@ trained_agent = await trainer.train()
 # Comprehensive evaluation with visualizations
 eval_results = await trainer.run_post_training_evaluation(eval_data)
 ```
+
+### TRL GRPO Training
+
+Fine-tune large models like `openai/gpt-oss-120b` using HuggingFace TRL's GRPO trainer:
+
+```python
+from training import train_customer_service_with_trl
+
+# Quick training with TRL GRPO
+agent = await train_customer_service_with_trl(
+    model_name="openai/gpt-oss-120b",
+    num_episodes=1000,
+    use_lora=True,  # Efficient training with LoRA adapters
+    lora_r=16,
+    output_dir="./outputs/my_trl_agent"
+)
+
+# Or use the production script
+# ./scripts/train_trl_grpo.sh
+```
+
+See the [TRL GRPO Training Guide](TRL_GRPO_TRAINING_GUIDE.md) for detailed instructions.
 
 ## Architecture
 

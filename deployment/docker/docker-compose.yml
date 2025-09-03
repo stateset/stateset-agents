@@ -47,7 +47,7 @@ services:
     environment:
       - POSTGRES_DB=grpo_framework
       - POSTGRES_USER=grpo
-      - POSTGRES_PASSWORD=grpo_password
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -79,7 +79,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=grpo_grafana
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
     volumes:
       - grafana_data:/var/lib/grafana
     depends_on:

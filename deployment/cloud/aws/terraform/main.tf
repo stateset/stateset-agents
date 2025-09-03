@@ -59,6 +59,19 @@ variable "node_group_scaling_config" {
   }
 }
 
+# Database credentials (do not set defaults for sensitive values)
+variable "db_username" {
+  description = "RDS PostgreSQL username"
+  type        = string
+  default     = "grpo"
+}
+
+variable "db_password" {
+  description = "RDS PostgreSQL password"
+  type        = string
+  sensitive   = true
+}
+
 # VPC
 resource "aws_vpc" "grpo_vpc" {
   cidr_block           = "10.0.0.0/16"
@@ -356,8 +369,8 @@ resource "aws_db_instance" "grpo_postgres" {
   storage_encrypted      = true
   
   db_name  = "grpo_framework"
-  username = "grpo"
-  password = "grpo_password_change_me"
+  username = var.db_username
+  password = var.db_password
   
   vpc_security_group_ids = [aws_security_group.grpo_rds_sg.id]
   db_subnet_group_name   = aws_db_subnet_group.grpo_db_subnet_group.name
