@@ -8,20 +8,26 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="grpo-agent-framework",
+    name="stateset-agents",
     version="0.3.0",
     author="GRPO Framework Team",
     author_email="team@grpo-framework.ai",
     description="A comprehensive framework for training multi-turn AI agents using Group Relative Policy Optimization (GRPO)",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/grpo-agent-framework",
-    packages=find_packages(),
+    url="https://github.com/stateset/stateset-agents",
+    packages=find_packages(include=[
+        "stateset_agents",
+        "stateset_agents.*",
+        "grpo_agent_framework",
+        "grpo_agent_framework.*",
+    ]),
+    license="Business Source License 1.1",
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
         "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: MIT License",
+        "License :: Other/Proprietary License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
@@ -59,6 +65,10 @@ setup(
             "sphinx>=6.0.0",
             "sphinx-rtd-theme>=1.2.0",
         ],
+        "api": [
+            "fastapi>=0.110.0",
+            "uvicorn>=0.23.0",
+        ],
         "examples": [
             "openai>=1.0.0",
             "anthropic>=0.5.0",
@@ -71,9 +81,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "grpo-train=grpo_agent_framework.cli:main",
-            "grpo-evaluate=grpo_agent_framework.cli:evaluate",
-            "grpo-serve=grpo_agent_framework.cli:serve",
+            "stateset-agents=stateset_agents.cli:run",
         ],
     },
 )

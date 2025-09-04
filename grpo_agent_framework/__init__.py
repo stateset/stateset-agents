@@ -18,7 +18,7 @@ except Exception:
 # Provide subpackages by proxying to existing modules
 for _subpkg in ("core", "training", "utils", "rewards", "api", "examples", "benchmarks"):
     try:
-        _mod = import_module(_subpkg)
+        _mod = import_module('stateset_agents.' + _subpkg)
         globals()[_subpkg] = _mod
         _sys.modules[__name__ + f'.{_subpkg}'] = _mod
     except Exception:

@@ -15,21 +15,21 @@ import uuid
 from datetime import datetime
 
 # Core components
-from ..core.agent import Agent
-from ..core.environment import Environment
-from ..core.reward import RewardFunction, RewardResult
-from ..core.trajectory import Trajectory
-from ..core.computational_engine import ComputationalGRPOEngine, ComputationalTrajectory
-from ..core.multiturn_agent import MultiTurnAgent, ConversationContext, DialogueDatabase
+from stateset_agents.core.agent import Agent
+from stateset_agents.core.environment import Environment
+from stateset_agents.core.reward import RewardFunction, RewardResult
+from stateset_agents.core.trajectory import Trajectory
+from stateset_agents.core.computational_engine import ComputationalGRPOEngine, ComputationalTrajectory
+from stateset_agents.core.multiturn_agent import MultiTurnAgent, ConversationContext, DialogueDatabase
 
 # Training components
-from ..training.trainer import GRPOTrainer
-from ..training.neural_reward_trainer import NeuralRewardTrainer, NeuralRewardFunction
-from ..training.config import TrainingConfig
+from stateset_agents.training.trainer import GRPOTrainer
+from stateset_agents.training.neural_reward_trainer import NeuralRewardTrainer, NeuralRewardFunction
+from stateset_agents.training.config import TrainingConfig
 
 # Reward components
-from ..rewards.ruler_reward import RulerRewardFunction
-from ..rewards.multi_objective_reward import (
+from stateset_agents.rewards.ruler_reward import RulerRewardFunction
+from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction, 
     EmpathyRewardComponent,
     ActionOrientedRewardComponent,
@@ -37,8 +37,8 @@ from ..rewards.multi_objective_reward import (
 )
 
 # Utils
-from ..utils.cache import CacheService
-from ..utils.monitoring import MonitoringService
+from stateset_agents.utils.cache import CacheService
+from stateset_agents.utils.monitoring import MonitoringService
 
 
 class TestAgent(Agent):

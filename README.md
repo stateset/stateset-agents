@@ -65,6 +65,20 @@ cd stateset-agents
 pip install -e ".[dev]"
 ```
 
+### CLI
+
+Basic CLI is available via the `stateset-agents` entrypoint:
+
+```bash
+stateset-agents version
+stateset-agents train --dry-run  # guidance and environment checks
+stateset-agents serve            # starts the FastAPI service (requires [api] extras)
+```
+Install API extras to enable serving:
+```bash
+pip install "stateset-agents[api]"
+```
+
 ## Quick Start
 
 ### Training a Simple Agent
@@ -90,7 +104,7 @@ trainer = train(
 ### Enhanced Production Agent (v0.3.0)
 
 ```python
-from grpo_agent_framework import (
+from stateset_agents import (
     # Core components
     MultiTurnAgent, ConversationEnvironment,
     HelpfulnessReward, SafetyReward, CompositeReward,
@@ -168,7 +182,7 @@ async with managed_async_resources():
 Fine-tune large models like `openai/gpt-oss-120b` using HuggingFace TRL's GRPO trainer:
 
 ```python
-from training import train_customer_service_with_trl
+from stateset_agents.training import train_customer_service_with_trl
 
 # Quick training with TRL GRPO
 agent = await train_customer_service_with_trl(
@@ -266,7 +280,11 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Business Source License 1.1 (BUSL-1.1).
+
+- Additional Use Grant: non-production use (development, testing, staging, evaluation, research, personal use) is permitted prior to the Change Date.
+- Change Date: 2029-09-03, after which the project will be available under the Apache License 2.0.
+- See the full terms in the [LICENSE](LICENSE) file.
 
 ## Citation
 

@@ -1,0 +1,68 @@
+Business Source License 1.1 (BUSL-1.1)
+
+Parameters
+
+- Licensor: The StateSet Authors
+- Licensed Work: stateset-agents (StateSet RL Agent Framework)
+- Additional Use Grant: You may use the Licensed Work for non-production use,
+  including development, testing, staging, evaluation, research, and personal
+  use, subject to the terms below. No production use is permitted prior to the
+  Change Date except as expressly allowed by this Additional Use Grant.
+- Change Date: 2029-09-03
+- Change License: Apache License, Version 2.0
+
+Terms
+
+The Licensed Work is licensed under the Business Source License 1.1 (the
+“License”). You may make, use, copy, modify, create derivative works, and
+redistribute the Licensed Work, but only for the uses and purposes permitted by
+the Additional Use Grant until the Change Date. Any use not expressly permitted
+by the Additional Use Grant is prohibited prior to the Change Date. After the
+Change Date, the Licensed Work will be made available under the Change
+License, as set forth above.
+
+1. Grant of Rights. Subject to the terms and conditions of this License,
+   Licensor grants you a non-exclusive, worldwide, non-transferable,
+   non-sublicensable, royalty-free license to use, copy, modify, create
+   derivative works of, and redistribute the Licensed Work solely as permitted
+   by the Additional Use Grant prior to the Change Date. No right is granted to
+   use the Licensed Work in production prior to the Change Date, except as
+   specifically allowed by the Additional Use Grant.
+
+2. Change License. On or after the Change Date, the Licensor will make the
+   Licensed Work available under the Change License. Your rights to the
+   Licensed Work from and after the Change Date shall be governed by the terms
+   of the Change License.
+
+3. Notices. You must (a) include a complete copy of this License with all
+   copies of the Licensed Work and any derivative works, and (b) preserve all
+   copyright, patent, trademark, and attribution notices in the Licensed Work
+   and in any copies or derivative works that you create.
+
+4. No Trademark License. This License does not grant you rights to use the
+   names, logos, or trademarks of Licensor.
+
+5. Disclaimer of Warranty. THE LICENSED WORK IS PROVIDED “AS IS” AND WITHOUT
+   WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+   NON-INFRINGEMENT.
+
+6. Limitation of Liability. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO
+   EVENT WILL LICENSOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+   EXEMPLARY, OR CONSEQUENTIAL DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE,
+   DATA, OR USE, EVEN IF LICENSOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH
+   DAMAGES.
+
+7. Termination. If you materially breach this License, your rights under this
+   License will terminate automatically. Upon termination, you must immediately
+   cease all use, copying, modification, and distribution of the Licensed Work
+   and destroy all copies in your possession or control. Sections 3–7 survive
+   termination.
+
+8. Governing Law. This License will be governed by and construed in accordance
+   with the laws applicable to the Licensor’s principal place of business,
+   without regard to its conflict of laws rules.
+
+For the full text and background on the Business Source License 1.1, see
+https://mariadb.com/bsl11/.
+

@@ -15,22 +15,22 @@ from typing import Dict, Any, List
 from unittest.mock import Mock, patch, AsyncMock
 
 # Import framework components
-from grpo_agent_framework.core.error_handling import (
+from stateset_agents.core.error_handling import (
     GRPOException, TrainingException, ModelException, DataException,
     NetworkException, ResourceException, ValidationException,
     ErrorHandler, RetryConfig, CircuitBreakerConfig, CircuitBreaker,
     retry_async, handle_error, get_error_summary
 )
-from grpo_agent_framework.core.performance_optimizer import (
+from stateset_agents.core.performance_optimizer import (
     PerformanceOptimizer, MemoryMonitor, ModelOptimizer, BatchOptimizer,
     OptimizationLevel, MemoryConfig, ComputeConfig, DataConfig, PerformanceMetrics
 )
-from grpo_agent_framework.core.type_system import (
+from stateset_agents.core.type_system import (
     TypeValidator, ConfigValidator, TypeSafeSerializer,
     create_typed_config, ensure_type_safety,
     ModelConfig, TrainingConfig, DeviceType, ModelSize, TrainingStage
 )
-from grpo_agent_framework.core.async_pool import (
+from stateset_agents.core.async_pool import (
     AsyncResourcePool, AsyncTaskManager, PooledResource,
     AsyncResourceFactory, HTTPSessionFactory, PoolStats
 )

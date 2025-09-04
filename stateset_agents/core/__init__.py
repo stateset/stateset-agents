@@ -1,6 +1,35 @@
 """
-Core abstractions for the GRPO Agent Framework
+Proxy module for `stateset_agents.core`.
+
+This forwards imports to the top-level `core` package so users can
+import `stateset_agents.core.*` without us physically moving files.
 """
+
+from importlib import import_module as _import_module
+import sys as _sys
+
+# Load underlying top-level package
+_core_pkg = _import_module('core')
+
+# Re-export common submodules for dotted imports
+_submodules = (
+    'agent', 'environment', 'trajectory', 'reward', 'async_pool',
+    'computational_engine', 'data_processing', 'error_handling',
+    'performance_optimizer', 'type_system', 'multiturn_agent',
+    'advanced_monitoring', 'enhanced_state_management',
+    'intelligent_orchestrator', 'multimodal_processing',
+    'adaptive_learning_controller', 'neural_architecture_search'
+)
+
+for _name in _submodules:
+    try:
+        _mod = _import_module(f'core.{_name}')
+        _sys.modules[__name__ + f'.{_name}'] = _mod
+    except Exception:
+        pass
+
+# Alias this package to the underlying one for attribute access
+_sys.modules[__name__] = _core_pkg
 
 # Core components that do not hard-require torch at import time
 from .trajectory import Trajectory, MultiTurnTrajectory, ConversationTurn

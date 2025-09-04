@@ -1,4 +1,0 @@
-[console_scripts]
-grpo-evaluate = grpo_agent_framework.cli:evaluate
-grpo-serve = grpo_agent_framework.cli:serve
-grpo-train = grpo_agent_framework.cli:main
