@@ -1,0 +1,160 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  schedule:
+    # Run security scans weekly
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-security-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-security-
+    
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit safety semgrep trivy
+    
+    - name: Run Bandit security linter
+      run: |
+        bandit -r stateset_agents grpo_agent_framework -f json -o bandit-report.json || true
+        bandit -r stateset_agents grpo_agent_framework -f txt -o bandit-report.txt || true
+    
+    - name: Run Safety dependency check
+      run: |
+        safety check --json > safety-report.json || true
+        safety check > safety-report.txt || true
+    
+    - name: Run Semgrep security analysis
+      run: |
+        semgrep --config=auto --json > semgrep-report.json || true
+        semgrep --config=auto > semgrep-report.txt || true
+    
+    - name: Run Trivy vulnerability scan
+      run: |
+        trivy fs --format json --output trivy-report.json . || true
+        trivy fs --format table --output trivy-report.txt . || true
+    
+    - name: Check for secrets
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          bandit-report.txt
+          safety-report.json
+          safety-report.txt
+          semgrep-report.json
+          semgrep-report.txt
+          trivy-report.json
+          trivy-report.txt
+    
+    - name: Security check results
+      run: |
+        echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f bandit-report.txt ]; then
+          echo "### Bandit Results" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat bandit-report.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ -f safety-report.txt ]; then
+          echo "### Safety Results" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat safety-report.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "### Security Status" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Security scanning completed" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Fail on critical security issues
+      if: contains(github.event_name, 'pull_request')
+      run: |
+        # Check for critical security issues
+        if grep -q "CRITICAL\|HIGH" bandit-report.txt 2>/dev/null; then
+          echo "🚨 Critical security issues found in Bandit scan!"
+          exit 1
+        fi
+        
+        if grep -q "vulnerable" safety-report.txt 2>/dev/null; then
+          echo "🚨 Vulnerable dependencies found!"
+          exit 1
+        fi
+        
+        echo "✅ No critical security issues found"
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v3
+      with:
+        config-file: '.github/dependency-review-config.yml'
+
+  secrets-detection:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Secret Detection
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+        extra_args: --debug --only-verified
+
+  codeql-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: python
+        config-file: ./.github/codeql-config.yml
+    
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v2
+    
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2

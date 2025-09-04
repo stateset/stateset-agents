@@ -1,0 +1,23 @@
+# Ignore test files
+tests/
+**/test_*.py
+**/*_test.py
+
+# Ignore example files
+examples/
+
+# Ignore documentation
+docs/
+
+# Ignore build artifacts
+__pycache__/
+*.pyc
+build/
+dist/
+*.egg-info/
+
+# Ignore generated files
+.mypy_cache/
+.pytest_cache/
+htmlcov/
+.coverage

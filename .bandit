@@ -1,0 +1,3 @@
+[bandit]
+exclude_dirs = tests,examples,docs,__pycache__
+skips = B101,B601  # Skip assert checks and shell usage warnings for now

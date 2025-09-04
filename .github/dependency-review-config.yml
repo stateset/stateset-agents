@@ -1,0 +1,22 @@
+fail_on_severity: moderate
+allow_licenses:
+  - Apache-2.0
+  - MIT
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - ISC
+  - CC0-1.0
+  - 0BSD
+
+deny_licenses:
+  - MS-PL
+  - GPL-2.0
+  - GPL-3.0
+  - LGPL-2.0
+  - LGPL-2.1
+  - LGPL-3.0
+
+vulnerability_check: true
+license_check: true
+base_ref: main
+head_ref: HEAD

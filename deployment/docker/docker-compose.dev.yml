@@ -1,0 +1,173 @@
+version: '3.8'
+
+services:
+  # ================================
+  # Development API Service
+  # ================================
+  stateset-agents-dev:
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile
+      target: development
+    ports:
+      - "8000:8000"
+      - "5678:5678"  # Debug port
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ../../:/app
+      - /app/__pycache__
+      - ../../logs:/app/logs
+    command: ["uvicorn", "stateset_agents.api.ultimate_grpo_service:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
+    networks:
+      - dev-network
+
+  # ================================
+  # Test Runner
+  # ================================
+  stateset-agents-test:
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile
+      target: testing
+    environment:
+      - ENVIRONMENT=testing
+      - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app
+    volumes:
+      - ../../:/app
+      - /app/__pycache__
+      - ../../test-results:/app/test-results
+    command: ["pytest", "--cov=stateset_agents", "--cov-report=html:/app/test-results/coverage.html", "--cov-report=xml:/app/test-results/coverage.xml", "-v"]
+    networks:
+      - dev-network
+    profiles:
+      - test
+
+  # ================================
+  # Linter and Formatter
+  # ================================
+  stateset-agents-lint:
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile
+      target: development
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app
+    volumes:
+      - ../../:/app
+      - /app/__pycache__
+    command: ["sh", "-c", "black . && isort . && ruff check . --fix && mypy ."]
+    networks:
+      - dev-network
+    profiles:
+      - lint
+
+  # ================================
+  # Documentation Builder
+  # ================================
+  stateset-agents-docs:
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile
+      target: development
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app
+    volumes:
+      - ../../:/app
+      - /app/__pycache__
+      - ../../docs/_build:/app/docs/_build
+    command: ["sphinx-build", "-b", "html", "docs", "docs/_build/html"]
+    networks:
+      - dev-network
+    profiles:
+      - docs
+
+  # ================================
+  # Benchmark Runner
+  # ================================
+  stateset-agents-benchmark:
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile
+      target: development
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app
+    volumes:
+      - ../../:/app
+      - /app/__pycache__
+      - ../../benchmarks/results:/app/benchmarks/results
+    command: ["python", "scripts/benchmark.py", "--output-dir", "/app/benchmarks/results"]
+    networks:
+      - dev-network
+    profiles:
+      - benchmark
+
+  # ================================
+  # Security Scanner
+  # ================================
+  stateset-agents-security:
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile
+      target: development
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app
+    volumes:
+      - ../../:/app
+      - /app/__pycache__
+      - ../../security-reports:/app/security-reports
+    command: ["sh", "-c", "bandit -r . -f json -o /app/security-reports/bandit.json && safety check --json > /app/security-reports/safety.json"]
+    networks:
+      - dev-network
+    profiles:
+      - security
+
+  # ================================
+  # Redis for Development
+  # ================================
+  redis-dev:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - dev-network
+    profiles:
+      - redis
+
+  # ================================
+  # PostgreSQL for Development
+  # ================================
+  postgres-dev:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: stateset_agents_dev
+      POSTGRES_USER: stateset
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    networks:
+      - dev-network
+    profiles:
+      - postgres
+
+volumes:
+  redis_dev_data:
+  postgres_dev_data:
+
+networks:
+  dev-network:
+    driver: bridge

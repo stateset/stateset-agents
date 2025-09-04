@@ -66,6 +66,12 @@ docs: ## Build documentation
 sphinx-build docs docs/_build/html
 
 docs-serve: ## Build and serve documentation
+docs-build: ## Build documentation
+	sphinx-build docs docs/_build/html
+docs-clean: ## Clean documentation build artifacts
+	rm -rf docs/_build
+docs-api: ## Generate API documentation
+	sphinx-apidoc -f -o docs/api stateset_agents
 benchmark: ## Run performance benchmarks
 	python scripts/benchmark.py
 sphinx-build docs docs/_build/html && cd docs/_build/html && python -m http.server 8000
@@ -100,6 +106,16 @@ docker-build: ## Build Docker image
 docker build -t stateset-agents .
 
 docker-run: ## Run Docker container
+docker-dev: ## Run development environment
+	docker-compose -f deployment/docker/docker-compose.dev.yml up stateset-agents-dev
+docker-test: ## Run tests in Docker
+	docker-compose -f deployment/docker/docker-compose.dev.yml --profile test up stateset-agents-test
+docker-build-all: ## Build all Docker images
+	docker-compose -f deployment/docker/docker-compose.yml build
+docker-up: ## Start all services
+	docker-compose -f deployment/docker/docker-compose.yml up -d
+docker-down: ## Stop all services
+	docker-compose -f deployment/docker/docker-compose.yml down
 docker run -p 8000:8000 stateset-agents
 
 # Utilities
@@ -114,3 +130,7 @@ dev-test: lint-fix check-types test-unit ## Run quick development checks
 
 # CI simulation
 ci: dev-test test-cov ## Simulate CI pipeline locally
+security-scan: ## Run security scanning tools
+	bandit -r stateset_agents grpo_agent_framework || true
+	safety check || true
+	semgrep --config=auto . || true

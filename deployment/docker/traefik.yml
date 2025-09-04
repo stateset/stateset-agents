@@ -1,0 +1,86 @@
+api:
+  dashboard: true
+  insecure: true
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: stateset-network
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: admin@stateset.ai
+      storage: /etc/traefik/acme/acme.json
+      httpChallenge:
+        entryPoint: web
+
+http:
+  routers:
+    stateset-agents-router:
+      rule: "Host(`api.stateset.localhost`)"
+      service: stateset-agents-service
+      entryPoints:
+        - web
+      middlewares:
+        - rate-limit
+        - auth
+
+    stateset-agents-gpu-router:
+      rule: "Host(`gpu.stateset.localhost`)"
+      service: stateset-agents-gpu-service
+      entryPoints:
+        - web
+      middlewares:
+        - rate-limit
+
+    grafana-router:
+      rule: "Host(`grafana.stateset.localhost`)"
+      service: grafana-service
+      entryPoints:
+        - web
+
+    prometheus-router:
+      rule: "Host(`prometheus.stateset.localhost`)"
+      service: prometheus-service
+      entryPoints:
+        - web
+
+  services:
+    stateset-agents-service:
+      loadBalancer:
+        servers:
+          - url: "http://stateset-agents:8000"
+
+    stateset-agents-gpu-service:
+      loadBalancer:
+        servers:
+          - url: "http://stateset-agents-gpu:8000"
+
+    grafana-service:
+      loadBalancer:
+        servers:
+          - url: "http://grafana:3000"
+
+    prometheus-service:
+      loadBalancer:
+        servers:
+          - url: "http://prometheus:9090"
+
+  middlewares:
+    rate-limit:
+      rateLimit:
+        burst: 100
+        average: 50
+
+    auth:
+      basicAuth:
+        users:
+          - "admin:$apr1$8Vz8JZ8Z$Z8Vz8JZ8Z8Vz8JZ8Z8Vz8JZ8Z/"  # admin:admin (change in production)

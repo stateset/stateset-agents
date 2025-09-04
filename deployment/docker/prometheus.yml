@@ -3,33 +3,35 @@ global:
   evaluation_interval: 15s
 
 rule_files:
-  - "alert_rules.yml"
+  # - "first_rules.yml"
+  # - "second_rules.yml"
 
 scrape_configs:
-  - job_name: 'grpo-framework'
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: 'prometheus'
     static_configs:
-      - targets: ['grpo-framework:8001']
-    scrape_interval: 10s
-    metrics_path: /metrics
-    
-  - job_name: 'grpo-training'
+      - targets: ['localhost:9090']
+
+  - job_name: 'stateset-agents'
     static_configs:
-      - targets: ['grpo-framework:8002']
-    scrape_interval: 30s
-    metrics_path: /training/metrics
+      - targets: ['stateset-agents:8000']
+    scrape_interval: 5s
+    metrics_path: '/metrics'
+
+  - job_name: 'stateset-agents-gpu'
+    static_configs:
+      - targets: ['stateset-agents-gpu:8000']
+    scrape_interval: 5s
+    metrics_path: '/metrics'
 
   - job_name: 'redis'
     static_configs:
       - targets: ['redis:6379']
-    scrape_interval: 30s
 
   - job_name: 'postgres'
     static_configs:
-      - targets: ['postgres:5432']
-    scrape_interval: 30s
+      - targets: ['postgres:9187']
 
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets:
-          - alertmanager:9093
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']

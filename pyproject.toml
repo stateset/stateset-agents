@@ -56,6 +56,9 @@ dev = [
     "sphinx>=6.0.0",
     "sphinx-rtd-theme>=1.2.0",
     "ruff>=0.1.0",
+bandit>=1.7.0
+safety>=2.0.0
+semgrep>=1.0.0
 ]
 api = [
     "fastapi>=0.110.0",
