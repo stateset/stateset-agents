@@ -6,8 +6,8 @@ Group Relative Policy Optimization (GRPO).
 """
 
 __version__ = "0.3.0"
-__author__ = "GRPO Framework Team"
-__email__ = "team@grpo-framework.ai"
+__author__ = "StateSet Team"
+__email__ = "team@stateset.ai"
 
 # Core exports
 from .core.agent import Agent, MultiTurnAgent, ToolAgent

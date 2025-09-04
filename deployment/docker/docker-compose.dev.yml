@@ -154,7 +154,7 @@ services:
     environment:
       POSTGRES_DB: stateset_agents_dev
       POSTGRES_USER: stateset
-      POSTGRES_PASSWORD: dev_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_stateset_2024}
     ports:
       - "5432:5432"
     volumes:

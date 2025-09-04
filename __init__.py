@@ -7,7 +7,7 @@ Group Relative Policy Optimization (GRPO).
 
 __version__ = "0.3.0"
 __author__ = "GRPO Framework Team"
-__email__ = "team@grpo-framework.ai"
+__email__ = "team@stateset.ai"
 
 # Re-export everything from the stateset_agents package for backward compatibility
 try:

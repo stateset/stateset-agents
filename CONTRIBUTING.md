@@ -299,7 +299,7 @@ For feature requests, please include:
 ### Security Issues
 
 - **DO NOT** report security issues in public
-- Email security concerns to: security@grpo-framework.ai
+- Email security concerns to: security@stateset.ai
 - Include detailed information about the vulnerability
 
 ## Getting Help

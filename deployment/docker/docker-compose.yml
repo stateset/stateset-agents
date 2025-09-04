@@ -133,7 +133,7 @@ services:
     environment:
       POSTGRES_DB: stateset_agents
       POSTGRES_USER: stateset
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stateset_secure_2024}
     ports:
       - "5432:5432"
     volumes:

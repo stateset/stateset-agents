@@ -19,7 +19,7 @@ If you discover a security vulnerability in StateSet Agents, please help us by r
 **Please DO NOT report security vulnerabilities through public GitHub issues.**
 
 Instead, please report security vulnerabilities by emailing:
-- **security@grpo-framework.ai**
+- **security@stateset.ai**
 
 Include the following information in your report:
 - A clear description of the vulnerability
@@ -249,17 +249,17 @@ def test_authentication_security():
 
 ### Contact Information
 
-- **Security Team**: security@grpo-framework.ai
+- **Security Team**: security@stateset.ai
 - **Emergency**: +1-555-0123 (24/7 emergency line)
-- **PGP Key**: Available at https://grpo-framework.ai/security/pgp.txt
+- **PGP Key**: Available at https://stateset.ai/security/pgp.txt
 
 ## Security Updates
 
 We recommend subscribing to our security mailing list for important security updates:
 
-- **Mailing List**: security-announce@grpo-framework.ai
-- **RSS Feed**: https://grpo-framework.ai/security/rss.xml
-- **Advisories**: https://grpo-framework.ai/security/advisories/
+- **Mailing List**: security-announce@stateset.ai
+- **RSS Feed**: https://stateset.ai/security/rss.xml
+- **Advisories**: https://stateset.ai/security/advisories/
 
 ## Acknowledgments
 

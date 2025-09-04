@@ -2,7 +2,7 @@
 
 -- Create database and user
 CREATE DATABASE IF NOT EXISTS stateset_agents;
-CREATE USER IF NOT EXISTS stateset WITH PASSWORD 'changeme123';
+CREATE USER IF NOT EXISTS stateset WITH PASSWORD '${POSTGRES_PASSWORD:-stateset_secure_2024}';
 GRANT ALL PRIVILEGES ON DATABASE stateset_agents TO stateset;
 
 -- Connect to the database
