@@ -17,12 +17,12 @@ This guide covers all the latest innovations that have been integrated into the 
 ### Migration Example
 ```python
 # Before (Old Framework)
-from grpo_agent_framework import train
+from stateset_agents import train
 
 trainer = train(agent, environment, num_episodes=1000)
 
 # After (New Computational Engine)
-from grpo_agent_framework.core.computational_engine import create_computational_engine
+from stateset_agents.core.computational_engine import create_computational_engine
 
 engine = create_computational_engine(
     agent=agent,
@@ -55,14 +55,14 @@ results = await engine.train_iteration(prompts)
 ### Migration Example
 ```python
 # Before (Simple Rewards)
-from grpo_agent_framework.core.reward import RewardFunction
+from stateset_agents.core.reward import RewardFunction
 
 class SimpleReward(RewardFunction):
     def compute_reward(self, turns):
         return 0.5  # Fixed reward
 
 # After (RULER LLM Judge)
-from grpo_agent_framework.rewards.ruler_reward import create_customer_service_ruler
+from stateset_agents.rewards.ruler_reward import create_customer_service_ruler
 
 ruler_reward = create_customer_service_ruler(
     model="openai/gpt-4",
@@ -96,13 +96,13 @@ ruler_reward = create_customer_service_ruler(
 ### Migration Example
 ```python
 # Before (Single-turn Agent)
-from grpo_agent_framework.core.agent import Agent
+from stateset_agents.core.agent import Agent
 
 agent = Agent(config)
 response = await agent.generate_response(prompt)
 
 # After (Multi-turn Agent)
-from grpo_agent_framework.core.multiturn_agent import MultiTurnAgent
+from stateset_agents.core.multiturn_agent import MultiTurnAgent
 
 multiturn_agent = MultiTurnAgent(
     model_config=config,
@@ -140,13 +140,13 @@ response = await multiturn_agent.generate_multiturn_response(
 ### Migration Example
 ```python
 # Before (Single GPU)
-from grpo_agent_framework.training.trainer import GRPOTrainer
+from stateset_agents.training.trainer import GRPOTrainer
 
 trainer = GRPOTrainer(agent, environment, reward_function)
 await trainer.train()
 
 # After (Distributed Multi-GPU)
-from grpo_agent_framework.training.distributed_trainer import (
+from stateset_agents.training.distributed_trainer import (
     DistributedGRPOTrainer, 
     DistributedConfig,
     launch_distributed_training
@@ -199,7 +199,7 @@ class ManualReward(RewardFunction):
         return score
 
 # After (Neural Reward Model)
-from grpo_agent_framework.training.neural_reward_trainer import create_neural_reward_function
+from stateset_agents.training.neural_reward_trainer import create_neural_reward_function
 
 neural_reward = create_neural_reward_function(
     embedding_dim=128,
@@ -232,7 +232,7 @@ neural_reward = create_neural_reward_function(
 ### Migration Example
 ```python
 # Before (Simple Multi-objective)
-from grpo_agent_framework.rewards.multi_objective_reward import MultiObjectiveRewardFunction
+from stateset_agents.rewards.multi_objective_reward import MultiObjectiveRewardFunction
 
 components = [
     LengthRewardComponent(weight=0.3),
@@ -241,7 +241,7 @@ components = [
 reward = MultiObjectiveRewardFunction(components)
 
 # After (Enhanced Multi-objective)
-from grpo_agent_framework.rewards.multi_objective_reward import create_customer_service_reward
+from stateset_agents.rewards.multi_objective_reward import create_customer_service_reward
 
 reward = create_customer_service_reward(
     expected_responses=["I'll help you with that", "Let me check on that"],
@@ -283,7 +283,7 @@ trainer = GRPOTrainer(agent, environment, reward)
 
 # After (Ultimate Service)
 # Start the service
-from grpo_agent_framework.api.ultimate_grpo_service import main
+from stateset_agents.api.ultimate_grpo_service import main
 main()
 
 # Use HTTP API

@@ -19,8 +19,6 @@ setup(
     packages=find_packages(include=[
         "stateset_agents",
         "stateset_agents.*",
-        "grpo_agent_framework",
-        "grpo_agent_framework.*",
     ]),
     license="Business Source License 1.1",
     classifiers=[

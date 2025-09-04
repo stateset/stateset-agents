@@ -11,13 +11,13 @@ import json
 from pathlib import Path
 
 # Framework imports
-from grpo_agent_framework import (
+from stateset_agents import (
     MultiTurnAgent, ConversationEnvironment, 
     CompositeReward, HelpfulnessReward, SafetyReward, ConcisenessReward,
     train, AutoTrainer
 )
-from grpo_agent_framework.core.agent import AgentConfig
-from grpo_agent_framework.core.trajectory import ConversationTurn
+from stateset_agents.core.agent import AgentConfig
+from stateset_agents.core.trajectory import ConversationTurn
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

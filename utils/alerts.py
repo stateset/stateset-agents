@@ -282,7 +282,7 @@ class WebhookNotificationHandler(NotificationHandler):
             payload = {
                 "alert": alert.to_dict(),
                 "timestamp": datetime.now().isoformat(),
-                "source": "grpo_agent_framework"
+                "source": "stateset_agents"
             }
             
             headers = self.config.config.get("headers", {})

@@ -45,7 +45,7 @@ pip install grpo-agent-framework
 
 ```python
 import asyncio
-from grpo_agent_framework import (
+from stateset_agents import (
     MultiTurnAgent, 
     create_computational_engine,
     create_customer_service_reward
@@ -88,7 +88,7 @@ asyncio.run(quick_start())
 Multi-turn agents maintain conversation context across multiple exchanges:
 
 ```python
-from grpo_agent_framework.core.multiturn_agent import MultiTurnAgent, DialogueDatabase
+from stateset_agents.core.multiturn_agent import MultiTurnAgent, DialogueDatabase
 
 # Create dialogue database for examples
 sample_dialogues = [
@@ -120,9 +120,9 @@ agent = MultiTurnAgent(
 The computational engine enables massive parallel trajectory generation:
 
 ```python
-from grpo_agent_framework.core.computational_engine import create_computational_engine
-from grpo_agent_framework.core.agent import Agent
-from grpo_agent_framework.core.environment import Environment
+from stateset_agents.core.computational_engine import create_computational_engine
+from stateset_agents.core.agent import Agent
+from stateset_agents.core.environment import Environment
 
 # Create simple agent
 class MyAgent(Agent):
@@ -158,7 +158,7 @@ results = await engine.train_iteration([
 #### Multi-Objective Rewards
 
 ```python
-from grpo_agent_framework.rewards.multi_objective_reward import (
+from stateset_agents.rewards.multi_objective_reward import (
     create_customer_service_reward,
     MultiObjectiveRewardFunction
 )
@@ -170,7 +170,7 @@ reward_func = create_customer_service_reward(
 )
 
 # Custom multi-objective reward
-from grpo_agent_framework.rewards.multi_objective_reward import (
+from stateset_agents.rewards.multi_objective_reward import (
     EmpathyRewardComponent,
     ProfessionalismRewardComponent,
     ActionOrientedRewardComponent
@@ -188,7 +188,7 @@ multi_reward = MultiObjectiveRewardFunction(
 #### Neural Reward Models
 
 ```python
-from grpo_agent_framework.training.neural_reward_trainer import create_neural_reward_function
+from stateset_agents.training.neural_reward_trainer import create_neural_reward_function
 
 # Create neural reward that learns from trajectory data
 neural_reward = create_neural_reward_function(
@@ -321,7 +321,7 @@ response = await agent.generate_multiturn_response(
 ### 1. Distributed Training
 
 ```python
-from grpo_agent_framework.training.distributed_trainer import (
+from stateset_agents.training.distributed_trainer import (
     DistributedGRPOTrainer,
     TrainingConfig,
     DistributedConfig
@@ -358,7 +358,7 @@ trained_agent = await trainer.train()
 ### 2. Real-Time Monitoring
 
 ```python
-from grpo_agent_framework.utils.monitoring import MonitoringService
+from stateset_agents.utils.monitoring import MonitoringService
 
 # Initialize monitoring
 monitoring = MonitoringService()
@@ -381,7 +381,7 @@ metrics = await monitoring.get_metrics()
 ### 3. Caching and Performance
 
 ```python
-from grpo_agent_framework.utils.cache import CacheService
+from stateset_agents.utils.cache import CacheService
 
 # Initialize cache
 cache = CacheService()
@@ -459,7 +459,7 @@ async def create_mixed_reward_system():
 ### 1. API Service
 
 ```python
-from grpo_agent_framework.api.ultimate_grpo_service import app
+from stateset_agents.api.ultimate_grpo_service import app
 import uvicorn
 
 # Run the production API
@@ -482,11 +482,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY grpo_agent_framework/ grpo_agent_framework/
+COPY stateset_agents/ stateset_agents/
 
 EXPOSE 8001
 
-CMD ["python", "-m", "grpo_agent_framework.api.ultimate_grpo_service"]
+CMD ["python", "-m", "stateset_agents.api.ultimate_grpo_service"]
 ```
 
 ### 3. Kubernetes Deployment
@@ -728,8 +728,8 @@ The framework includes comprehensive examples in the `examples/` directory:
 
 Run examples:
 ```bash
-python -m grpo_agent_framework.examples.grpo_showcase
-python -m grpo_agent_framework.examples.ultimate_customer_service_demo
+python -m stateset_agents.examples.grpo_showcase
+python -m stateset_agents.examples.ultimate_customer_service_demo
 ```
 
 ## Support and Community

@@ -8,12 +8,12 @@ a multi-turn conversational agent.
 import asyncio
 import logging
 
-from grpo_agent_framework import (
+from stateset_agents import (
     MultiTurnAgent, ConversationEnvironment, 
     HelpfulnessReward, SafetyReward,
     train
 )
-from grpo_agent_framework.core.agent import AgentConfig
+from stateset_agents.core.agent import AgentConfig
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -76,7 +76,7 @@ async def basic_example():
     # Step 3: Define reward function (optional - can use defaults)
     logger.info("Step 3: Setting up rewards...")
     
-    from grpo_agent_framework.core.reward import CompositeReward
+    from stateset_agents.core.reward import CompositeReward
     reward_fn = CompositeReward([
         HelpfulnessReward(weight=0.7),
         SafetyReward(weight=0.3)
@@ -136,7 +136,7 @@ async def auto_training_example():
     logger.info("\nAuto Training Example")
     logger.info("=" * 30)
     
-    from grpo_agent_framework.training.train import AutoTrainer
+    from stateset_agents.training.train import AutoTrainer
     
     # Create agent and environment (same as before)
     config = AgentConfig(
@@ -187,7 +187,7 @@ async def custom_reward_example():
     logger.info("\nCustom Reward Example")
     logger.info("=" * 25)
     
-    from grpo_agent_framework.core.reward import RewardFunction, RewardResult
+    from stateset_agents.core.reward import RewardFunction, RewardResult
     
     class PolitenesReward(RewardFunction):
         """Custom reward for politeness"""
@@ -238,7 +238,7 @@ async def custom_reward_example():
     environment = ConversationEnvironment(scenarios=scenarios, max_turns=4)
     
     # Use custom reward
-    from grpo_agent_framework.core.reward import CompositeReward
+    from stateset_agents.core.reward import CompositeReward
     reward_fn = CompositeReward([
         PolitenesReward(weight=0.6),
         HelpfulnessReward(weight=0.4)
@@ -271,7 +271,7 @@ async def main():
     
     logger.info("\n🎉 All examples completed successfully!")
     logger.info("\nNext steps:")
-    logger.info("1. Try the customer service example: python -m grpo_agent_framework.examples.customer_service_agent")
+    logger.info("1. Try the customer service example: python -m stateset_agents.examples.customer_service_agent")
     logger.info("2. Explore the documentation for advanced features")
     logger.info("3. Create your own custom agents and environments")
 

@@ -438,7 +438,7 @@ class TestIntegration:
         """Test overall framework integration"""
         
         # Test that all new components can be imported together
-        from grpo_agent_framework import (
+        from stateset_agents import (
             PerformanceOptimizer, ErrorHandler, TypeValidator,
             AsyncResourcePool, OptimizationLevel, ModelConfig
         )

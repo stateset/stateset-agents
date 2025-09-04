@@ -207,7 +207,7 @@ class RunPodDeploymentManager:
         docker_commands = [
             "cd /workspace",
             "pip install -r requirements.txt" if requirements else "",
-            "python -m grpo_agent_framework.training.distributed_trainer"
+            "python -m stateset_agents.training.distributed_trainer"
         ]
         
         # Filter out empty commands

@@ -9,7 +9,7 @@ The **GRPO Agent Framework** is a comprehensive library for training multi-turn 
 ### Core Components
 
 ```
-grpo_agent_framework/
+stateset_agents/
 ├── core/                    # Core abstractions and interfaces
 │   ├── agent.py            # Agent base classes and implementations
 │   ├── environment.py      # Training environments and scenarios
@@ -111,7 +111,7 @@ profiles = {
 ### Quick Start
 ```python
 import asyncio
-from grpo_agent_framework import MultiTurnAgent, ConversationEnvironment, train
+from stateset_agents import MultiTurnAgent, ConversationEnvironment, train
 
 async def main():
     # 1. Create agent
@@ -135,7 +135,7 @@ asyncio.run(main())
 
 ### Advanced Customer Service Agent
 ```python
-from grpo_agent_framework.examples import CustomerServiceAgent
+from stateset_agents.examples import CustomerServiceAgent
 
 # Specialized agent with domain knowledge
 agent = CustomerServiceAgent("openai/gpt-oss-120b")

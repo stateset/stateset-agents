@@ -236,7 +236,7 @@ See the [TRL GRPO Training Guide](TRL_GRPO_TRAINING_GUIDE.md) for detailed instr
 ### Automatic Configuration Optimization
 
 ```python
-from grpo_agent_framework.training import ConfigOptimizer
+from stateset_agents.training import ConfigOptimizer
 
 optimizer = ConfigOptimizer()
 best_config = optimizer.optimize(agent, environment, num_trials=20)
@@ -246,7 +246,7 @@ best_config = optimizer.optimize(agent, environment, num_trials=20)
 
 ```python
 # Customer Service
-from grpo_agent_framework import create_domain_reward
+from stateset_agents import create_domain_reward
 
 reward = create_domain_reward("customer_service")
 

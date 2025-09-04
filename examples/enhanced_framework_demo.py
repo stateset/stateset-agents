@@ -15,7 +15,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 
 # Import enhanced framework features
-from grpo_agent_framework import (
+from stateset_agents import (
     # Core components
     MultiTurnAgent, ConversationEnvironment,
     HelpfulnessReward, SafetyReward, CompositeReward,
@@ -250,7 +250,7 @@ async def demonstrate_integrated_agent():
             logger.info(f"🗣️ Agent response: {response}")
             
             # Evaluate response
-            from grpo_agent_framework.core.trajectory import ConversationTurn
+            from stateset_agents.core.trajectory import ConversationTurn
             turn = ConversationTurn(
                 user_message="Hello! How can you help me today?",
                 agent_response=response,

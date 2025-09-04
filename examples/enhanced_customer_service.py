@@ -16,14 +16,14 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any
 
-from grpo_agent_framework import (
+from stateset_agents import (
     MultiTurnAgent,
     ConversationEnvironment,
     train
 )
-from grpo_agent_framework.core.agent import AgentConfig
-from grpo_agent_framework.core.data_processing import load_and_prepare_data
-from grpo_agent_framework.core.reward import (
+from stateset_agents.core.agent import AgentConfig
+from stateset_agents.core.data_processing import load_and_prepare_data
+from stateset_agents.core.reward import (
     create_domain_reward,
     create_adaptive_reward,
     CompositeReward,
@@ -31,9 +31,9 @@ from grpo_agent_framework.core.reward import (
     SafetyReward,
     ConcisenessReward
 )
-from grpo_agent_framework.training.config import TrainingConfig
-from grpo_agent_framework.training.trainer import MultiTurnGRPOTrainer
-from grpo_agent_framework.utils.wandb_integration import init_wandb
+from stateset_agents.training.config import TrainingConfig
+from stateset_agents.training.trainer import MultiTurnGRPOTrainer
+from stateset_agents.utils.wandb_integration import init_wandb
 
 # Configure logging
 logging.basicConfig(

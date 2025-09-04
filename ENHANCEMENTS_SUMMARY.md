@@ -219,18 +219,18 @@ with managed_async_resources():
 #### **Easy Upgrades (Minimal Changes)**
 ```python
 # Add type safety
-from grpo_agent_framework import create_typed_config, ModelConfig
+from stateset_agents import create_typed_config, ModelConfig
 config = create_typed_config(ModelConfig, **your_params)
 
 # Add error handling
-from grpo_agent_framework import ErrorHandler, handle_error
+from stateset_agents import ErrorHandler, handle_error
 try:
     # your existing code
 except Exception as e:
     handle_error(e, "component", "operation")
 
 # Add performance optimization
-from grpo_agent_framework import PerformanceOptimizer, OptimizationLevel
+from stateset_agents import PerformanceOptimizer, OptimizationLevel
 optimizer = PerformanceOptimizer(OptimizationLevel.BALANCED)
 ```
 

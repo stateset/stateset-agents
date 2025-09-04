@@ -146,7 +146,7 @@ class ObservabilityTracer:
     
     def __init__(
         self,
-        service_name: str = "grpo_agent_framework",
+        service_name: str = "stateset_agents",
         enable_jaeger: bool = False,
         enable_otlp: bool = False,
         jaeger_endpoint: str = "http://localhost:14268/api/traces",
@@ -410,7 +410,7 @@ class ObservabilityManager:
     
     def __init__(
         self,
-        service_name: str = "grpo_agent_framework",
+        service_name: str = "stateset_agents",
         enable_tracing: bool = True,
         enable_metrics: bool = True,
         enable_logging: bool = True,
@@ -607,7 +607,7 @@ def get_observability() -> ObservabilityManager:
 
 
 def setup_observability(
-    service_name: str = "grpo_agent_framework",
+    service_name: str = "stateset_agents",
     enable_tracing: bool = True,
     enable_metrics: bool = True,
     enable_logging: bool = True,

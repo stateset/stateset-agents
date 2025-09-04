@@ -274,7 +274,7 @@ WS   /ws/v2            - Real-time WebSocket updates
 
 ```python
 # 1. Enhanced Training
-from grpo_agent_framework.api.enhanced_ultimate_grpo_service import main
+from stateset_agents.api.enhanced_ultimate_grpo_service import main
 
 # Start the enhanced service
 main()  # Runs on http://localhost:8002

@@ -487,7 +487,7 @@ export GRPO_AUTH_TOKEN="your-secret-token"
 
 ### Common CLI Issues
 
-1. **ImportError: No module named 'grpo_agent_framework'**
+1. **ImportError: No module named 'stateset_agents'**
    ```bash
    pip install grpo-agent-framework
    ```

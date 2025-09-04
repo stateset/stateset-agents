@@ -13,13 +13,13 @@ import torch
 from pathlib import Path
 
 # Framework imports
-from grpo_agent_framework import (
+from stateset_agents import (
     MultiTurnAgent, ConversationEnvironment,
     HelpfulnessReward, SafetyReward, CompositeReward,
     TrainingConfig, TrainingProfile,
     MultiTurnGRPOTrainer, WandBLogger
 )
-from grpo_agent_framework.core.agent import (
+from stateset_agents.core.agent import (
     AgentConfig, create_agent, create_peft_agent,
     save_agent_checkpoint, load_agent_from_checkpoint
 )

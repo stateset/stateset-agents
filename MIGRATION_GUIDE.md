@@ -38,7 +38,7 @@ for item in data:
 
 **New (v0.2.0):**
 ```python
-from grpo_agent_framework import load_and_prepare_data
+from stateset_agents import load_and_prepare_data
 
 # Automatic loading with train/eval split
 train_data, eval_data = load_and_prepare_data(
@@ -60,7 +60,7 @@ class MyReward(RewardFunction):
 
 **New (v0.2.0):**
 ```python
-from grpo_agent_framework.core.reward import RewardResult
+from stateset_agents.core.reward import RewardResult
 
 class MyReward(RewardFunction):
     async def compute_reward(self, turns, context):
@@ -86,7 +86,7 @@ reward_fn = CompositeReward([
 
 **New (v0.2.0):**
 ```python
-from grpo_agent_framework import create_domain_reward
+from stateset_agents import create_domain_reward
 
 # Automatic domain-specific reward
 reward_fn = create_domain_reward(
@@ -166,7 +166,7 @@ if config.run_post_eval:
 
 ```python
 import json
-from grpo_agent_framework import MultiTurnAgent, ConversationEnvironment, train
+from stateset_agents import MultiTurnAgent, ConversationEnvironment, train
 
 # Load data manually
 with open("data.json", "r") as f:
@@ -189,11 +189,11 @@ trained_agent = train(
 ### After (v0.2.0)
 
 ```python
-from grpo_agent_framework import (
+from stateset_agents import (
     MultiTurnAgent, ConversationEnvironment,
     load_and_prepare_data, create_domain_reward
 )
-from grpo_agent_framework.training import MultiTurnGRPOTrainer, TrainingConfig
+from stateset_agents.training import MultiTurnGRPOTrainer, TrainingConfig
 
 # Load and prepare data automatically
 train_data, eval_data = load_and_prepare_data(

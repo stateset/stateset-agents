@@ -185,7 +185,7 @@ The GRPO (Group Relative Policy Optimization) Agent Framework has been dramatica
 ### Simplified API
 ```python
 # Create an intelligent agent with all enhancements
-from grpo_agent_framework.core import create_intelligent_orchestrator
+from stateset_agents.core import create_intelligent_orchestrator
 
 orchestrator = create_intelligent_orchestrator(
     mode="adaptive",

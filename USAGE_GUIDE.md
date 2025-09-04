@@ -26,11 +26,11 @@ pip install grpo-agent-framework
 
 ```python
 import asyncio
-from grpo_agent_framework import (
+from stateset_agents import (
     MultiTurnAgent, ConversationEnvironment, 
     HelpfulnessReward, train
 )
-from grpo_agent_framework.core.agent import AgentConfig
+from stateset_agents.core.agent import AgentConfig
 
 async def quick_example():
     # 1. Create an agent
@@ -106,7 +106,7 @@ Reward functions evaluate agent performance:
 ### Basic Agent Configuration
 
 ```python
-from grpo_agent_framework.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 
 config = AgentConfig(
     model_name="openai/gpt-oss-120b",
@@ -149,7 +149,7 @@ class CustomAgent(MultiTurnAgent):
 ### Tool-Using Agents
 
 ```python
-from grpo_agent_framework.core.agent import ToolAgent
+from stateset_agents.core.agent import ToolAgent
 
 # Define tools
 def calculator_tool(expression):
@@ -174,7 +174,7 @@ await tool_agent.initialize()
 ### Conversation Environment
 
 ```python
-from grpo_agent_framework.core.environment import ConversationEnvironment
+from stateset_agents.core.environment import ConversationEnvironment
 
 scenarios = [
     {
@@ -200,7 +200,7 @@ env = ConversationEnvironment(
 ### Task Environment
 
 ```python
-from grpo_agent_framework.core.environment import TaskEnvironment
+from stateset_agents.core.environment import TaskEnvironment
 
 tasks = [{
     "description": "Help user plan a vacation",
@@ -267,7 +267,7 @@ class CustomEnvironment(Environment):
 ### Built-in Rewards
 
 ```python
-from grpo_agent_framework.core.reward import (
+from stateset_agents.core.reward import (
     HelpfulnessReward, SafetyReward, CorrectnessReward,
     ConcisenessReward, EngagementReward, CompositeReward
 )
@@ -287,7 +287,7 @@ composite = CompositeReward([
 ### Custom Reward Functions
 
 ```python
-from grpo_agent_framework.core.reward import RewardFunction, RewardResult
+from stateset_agents.core.reward import RewardFunction, RewardResult
 
 class CustomReward(RewardFunction):
     async def compute_reward(self, turns, context=None):
@@ -318,7 +318,7 @@ class CustomReward(RewardFunction):
 ### Reward Function Decorator
 
 ```python
-from grpo_agent_framework.core.reward import reward_function, RewardType
+from stateset_agents.core.reward import reward_function, RewardType
 
 @reward_function(weight=0.5, reward_type=RewardType.IMMEDIATE)
 async def creativity_reward(turns, context=None):
@@ -341,7 +341,7 @@ async def creativity_reward(turns, context=None):
 ### Training Profiles
 
 ```python
-from grpo_agent_framework.training.train import train
+from stateset_agents.training.train import train
 
 # Conservative: Maximum stability
 await train(agent, environment, profile="conservative")
@@ -376,7 +376,7 @@ await train(
 ### Automatic Training
 
 ```python
-from grpo_agent_framework.training.train import AutoTrainer
+from stateset_agents.training.train import AutoTrainer
 
 auto_trainer = AutoTrainer(
     auto_adjust=True,      # Automatically adjust hyperparameters
@@ -396,7 +396,7 @@ trained_agent = await auto_trainer.train(
 ### Multi-GPU Training
 
 ```python
-from grpo_agent_framework.training.distributed import DistributedTrainer
+from stateset_agents.training.distributed import DistributedTrainer
 
 trainer = DistributedTrainer(
     num_gpus=4,
@@ -409,7 +409,7 @@ await trainer.train(agent, environment, config)
 ### Real-time Monitoring
 
 ```python
-from grpo_agent_framework.training.diagnostics import DiagnosticsMonitor
+from stateset_agents.training.diagnostics import DiagnosticsMonitor
 
 monitor = DiagnosticsMonitor()
 
@@ -436,7 +436,7 @@ await train(
 )
 
 # Load trained agent
-from grpo_agent_framework.core.agent import load_agent_from_checkpoint
+from stateset_agents.core.agent import load_agent_from_checkpoint
 
 loaded_agent = await load_agent_from_checkpoint(
     "./checkpoints/my_agent",
@@ -475,18 +475,18 @@ loaded_agent = await load_agent_from_checkpoint(
 
 ### Complete Examples
 
-1. **Quick Start**: `grpo_agent_framework/examples/quick_start.py`
+1. **Quick Start**: `stateset_agents/examples/quick_start.py`
    - Basic agent training
    - Simple reward functions
    - Minimal configuration
 
-2. **Customer Service Agent**: `grpo_agent_framework/examples/customer_service_agent.py`
+2. **Customer Service Agent**: `stateset_agents/examples/customer_service_agent.py`
    - Specialized agent class
    - Custom environment
    - Domain-specific rewards
    - Professional conversation handling
 
-3. **Tutoring Agent**: `grpo_agent_framework/examples/tutoring_agent.py`
+3. **Tutoring Agent**: `stateset_agents/examples/tutoring_agent.py`
    - Educational conversation scenarios
    - Knowledge assessment rewards
    - Student progress tracking
@@ -495,10 +495,10 @@ loaded_agent = await load_agent_from_checkpoint(
 
 ```bash
 # Quick start example
-python -m grpo_agent_framework.examples.quick_start
+python -m stateset_agents.examples.quick_start
 
 # Customer service example
-python -m grpo_agent_framework.examples.customer_service_agent
+python -m stateset_agents.examples.customer_service_agent
 
 # Create your own based on the templates
 ```

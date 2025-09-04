@@ -15,7 +15,7 @@ import torch.nn as nn
 from datetime import datetime
 
 # Import enhanced GRPO framework components
-from grpo_agent_framework.core import (
+from stateset_agents.core import (
     # Core components
     MultiTurnAgent, ConversationEnvironment, RewardFunction,
     
@@ -207,7 +207,7 @@ async def demonstrate_multimodal_processing():
     )
     
     # Initialize with available modalities (skip image/audio for demo)
-    from grpo_agent_framework.core.multimodal_processing import ModalityType
+    from stateset_agents.core.multimodal_processing import ModalityType
     await processor.initialize([ModalityType.TEXT, ModalityType.STRUCTURED])
     
     # Create sample multimodal inputs
