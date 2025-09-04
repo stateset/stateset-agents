@@ -5,6 +5,30 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2025-09-04
+
+### Changed
+- Refactored `training` package imports to absolute paths (`core.*`, `utils.*`, `rewards.*`) so `import training` works directly from installed packages
+- CI publish workflow hardened: idempotent uploads (`twine upload --skip-existing`), resilient tag creation, and Docker/docs jobs also run on GitHub release events
+
+### Fixed
+- Resolved import errors when using `training` modules from PyPI install
+- Ensured packaged distribution includes all required top-level modules used by `stateset_agents`
+
+### Publishing
+- Released `stateset-agents==0.3.3` to PyPI
+
+## [0.3.2] - 2025-09-04
+
+### Added
+- Packaged top-level implementation modules with the library: `core`, `rewards`, `utils`, `api`, `environments`, and a lightweight `grpo_agent_framework` proxy
+
+### Fixed
+- Added proxy module for `stateset_agents.core` to forward to top-level `core` package to avoid duplication while enabling stable imports
+
+### Publishing
+- Released `stateset-agents==0.3.2` to TestPyPI and PyPI
+
 ## [0.3.1] - 2024-12-XX
 
 ### Added
