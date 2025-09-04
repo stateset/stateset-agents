@@ -71,6 +71,30 @@ docs-build: ## Build documentation
 docs-clean: ## Clean documentation build artifacts
 	rm -rf docs/_build
 docs-api: ## Generate API documentation
+build: ## Build distribution package
+	python -m build
+test-package: ## Test built package
+	pip install dist/*.whl && python -c "import stateset_agents; print(stateset_agents.__version__)"
+publish-test: ## Publish to TestPyPI
+	python scripts/publish.py --test
+publish: ## Publish to PyPI
+	python scripts/publish.py --production
+release: ## Create full release
+	python scripts/publish.py --version $(VERSION)
+release-patch: ## Create patch release
+	python scripts/publish.py --version patch
+release-minor: ## Create minor release
+	python scripts/publish.py --version minor
+release-major: ## Create major release
+	python scripts/publish.py --version major
+docker-build-release: ## Build Docker images for release
+	docker build -t stateset/agents:$(VERSION) -f deployment/docker/Dockerfile .
+docker-push-release: ## Push Docker images for release
+	docker push stateset/agents:$(VERSION)
+docker-release: ## Build and push Docker images
+quick-publish: ## Interactive publishing script
+	./scripts/quick_publish.sh
+	make docker-build-release docker-push-release
 	sphinx-apidoc -f -o docs/api stateset_agents
 benchmark: ## Run performance benchmarks
 	python scripts/benchmark.py

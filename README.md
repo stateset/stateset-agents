@@ -279,6 +279,48 @@ config = TrainingConfig(
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ## License
+## 📦 Installation & Distribution
+
+### PyPI
+
+```bash
+pip install stateset-agents
+```
+
+### Docker
+
+```bash
+# CPU version
+docker run -p 8000:8000 stateset/agents:latest
+
+# GPU version
+docker run --gpus all -p 8000:8000 stateset/agents:gpu
+```
+
+### From Source
+
+```bash
+git clone https://github.com/stateset/stateset-agents.git
+cd stateset-agents
+pip install -e ".[dev]"
+```
+
+## 🚀 Publishing
+
+See [PUBLISHING_SETUP.md](PUBLISHING_SETUP.md) and [RELEASE_GUIDE.md](RELEASE_GUIDE.md) for detailed publishing instructions.
+
+### Quick Publish
+
+```bash
+# Interactive publishing script
+./scripts/quick_publish.sh
+
+# Or use make commands
+make release VERSION=1.2.3
+make publish-test
+make publish
+```
+
 
 This project is licensed under the Business Source License 1.1 (BUSL-1.1).
 

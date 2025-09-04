@@ -195,7 +195,7 @@ class TypedComponent(Generic[T], ABC):
         self._validate_config()
 
 
-class Agent(TypedComponent[ModelConfig], Protocol):
+class Agent(Protocol):
     """Type-safe agent interface"""
     
     async def generate_response(
@@ -215,7 +215,7 @@ class Agent(TypedComponent[ModelConfig], Protocol):
         ...
 
 
-class Environment(TypedComponent[Dict[str, Any]], Protocol):
+class Environment(Protocol):
     """Type-safe environment interface"""
     
     async def reset(self) -> Dict[str, Any]:
@@ -231,7 +231,7 @@ class Environment(TypedComponent[Dict[str, Any]], Protocol):
         ...
 
 
-class RewardFunction(TypedComponent[Dict[str, Any]], Protocol):
+class RewardFunction(Protocol):
     """Type-safe reward function interface"""
     
     async def compute_reward(

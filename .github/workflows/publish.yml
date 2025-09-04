@@ -1,0 +1,216 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish'
+        required: true
+        default: 'patch'
+      environment:
+        description: 'Publish environment'
+        required: true
+        default: 'testpypi'
+        options:
+          - testpypi
+          - pypi
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: 
+      name: ${{ github.event.inputs.environment || 'testpypi' }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-publish-${{ hashFiles('**/pyproject.toml') }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+    
+    - name: Get version
+      id: version
+      run: |
+        if [ "${{ github.event.inputs.version }}" = "patch" ]; then
+          # Auto-increment patch version
+          CURRENT_VERSION=$(python -c "import stateset_agents; print(stateset_agents.__version__)")
+          IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+          PATCH_VERSION=$((VERSION_PARTS[2] + 1))
+          NEW_VERSION="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.$PATCH_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        else
+          echo "new_version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Update version
+      run: |
+        python scripts/publish.py --version ${{ steps.version.outputs.new_version }}
+    
+    - name: Build package
+      run: python -m build
+    
+    - name: Test package
+      run: |
+        pip install dist/*.whl
+        python -c "import stateset_agents; print('✅ Package import successful')"
+    
+    - name: Publish to TestPyPI
+      if: github.event.inputs.environment == 'testpypi' || github.event_name == 'release'
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+      run: |
+        twine upload --repository testpypi dist/*
+    
+    - name: Publish to PyPI
+      if: github.event.inputs.environment == 'pypi'
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        twine upload dist/*
+    
+    - name: Create Git tag
+      if: github.event.inputs.environment == 'pypi'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .
+        git commit -m "Release v${{ steps.version.outputs.new_version }}"
+        git tag "v${{ steps.version.outputs.new_version }}"
+        git push origin "v${{ steps.version.outputs.new_version }}"
+    
+    - name: Create GitHub release
+      if: github.event.inputs.environment == 'pypi'
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.version.outputs.new_version }}
+        release_name: Release v${{ steps.version.outputs.new_version }}
+        body: |
+          ## What's Changed
+          
+          ### 🚀 New Features
+          - [Add new features here]
+          
+          ### 🐛 Bug Fixes
+          - [Add bug fixes here]
+          
+          ### 📚 Documentation
+          - [Add documentation updates here]
+          
+          ### 🔧 Technical Changes
+          - [Add technical changes here]
+          
+          ## Installation
+          
+          ```bash
+          pip install stateset-agents==${{ steps.version.outputs.new_version }}
+          ```
+          
+          ## Docker
+          
+          ```bash
+          docker pull stateset/agents:v${{ steps.version.outputs.new_version }}
+          ```
+        draft: false
+        prerelease: false
+
+  docker-publish:
+    runs-on: ubuntu-latest
+    needs: publish
+    if: github.event.inputs.environment == 'pypi'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: stateset/agents
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./deployment/docker/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build and push GPU Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./deployment/docker/Dockerfile
+        target: gpu-production
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}-gpu
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  docs-publish:
+    runs-on: ubuntu-latest
+    needs: publish
+    if: github.event.inputs.environment == 'pypi'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install sphinx sphinx-rtd-theme
+    
+    - name: Build documentation
+      run: |
+        sphinx-build docs docs/_build/html
+    
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: docs/_build/html
+        cname: docs.stateset.ai

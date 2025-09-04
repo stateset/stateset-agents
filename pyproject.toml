@@ -56,9 +56,9 @@ dev = [
     "sphinx>=6.0.0",
     "sphinx-rtd-theme>=1.2.0",
     "ruff>=0.1.0",
-bandit>=1.7.0
-safety>=2.0.0
-semgrep>=1.0.0
+"bandit>=1.7.0",
+"safety>=2.0.0",
+"semgrep>=1.0.0"
 ]
 api = [
     "fastapi>=0.110.0",
@@ -126,7 +126,7 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 show_error_codes = true
-mypy_path = stubs
+mypy_path = "stubs"
 
 # Module-specific mypy settings
 [[tool.mypy.overrides]]
@@ -200,3 +200,11 @@ ignore = [
 
 [tool.ruff.isort]
 known-first-party = ["stateset_agents", "grpo_agent_framework"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["stateset_agents*"]
+exclude = ["tests*", "docs*", "scripts*", "deployment*", "examples*", "benchmarks*", "grpo_agent_framework*"]
+
+[tool.setuptools.package-data]
+stateset_agents = ["py.typed"]

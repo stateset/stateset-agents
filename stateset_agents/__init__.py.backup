@@ -54,29 +54,17 @@ from .core.data_processing import (
     load_and_prepare_data
 )
 
-# Training exports (optional to avoid import issues)
+# Training exports (optional to avoid hard dependency on torch at import time)
 try:
-    from training.trainer import GRPOTrainer, MultiTurnGRPOTrainer
+    from .training.trainer import GRPOTrainer, MultiTurnGRPOTrainer
 except Exception:  # pragma: no cover - allow import without training deps
     GRPOTrainer = None
     MultiTurnGRPOTrainer = None
-
-try:
-    from training.config import TrainingConfig, TrainingProfile, get_config_for_task
-    from training.train import train, AutoTrainer
-except Exception:
-    TrainingConfig = None
-    TrainingProfile = None
-    get_config_for_task = None
-    train = None
-    AutoTrainer = None
+from .training.config import TrainingConfig, TrainingProfile, get_config_for_task
+from .training.train import train, AutoTrainer
 
 # Utilities
-try:
-    from utils.wandb_integration import WandBLogger, init_wandb
-except Exception:
-    WandBLogger = None
-    init_wandb = None
+from .utils.wandb_integration import WandBLogger, init_wandb
 
 __all__ = [
     # Core classes
