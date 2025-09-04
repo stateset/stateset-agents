@@ -20,6 +20,24 @@
 
 ---
 
+## 📚 Table of Contents
+
+- [🔥 What's New in v0.3.0](#-whats-new-in-v030)
+- [🏗️ Architecture Overview](#-architecture-overview)
+- [🚀 Quick Start](#-quick-start)
+- [🎨 Real-World Applications](#-real-world-applications)
+- [⚙️ Advanced Training Capabilities](#-advanced-training-capabilities)
+- [📊 Performance & Benchmarks](#-performance--benchmarks)
+- [🔧 Installation Options](#-installation-options)
+- [🐳 Docker Deployment](#-docker-deployment)
+- [🛠️ CLI Tools](#-cli-tools)
+- [📚 Documentation & Resources](#-documentation--resources)
+- [🎯 Why Choose StateSet Agents?](#-why-choose-stateset-agents)
+- [🏢 Enterprise Features](#-enterprise-features)
+- [🚀 Roadmap](#-roadmap)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+
 ## 🔥 What's New in v0.3.0
 
 <div align="center">
@@ -54,7 +72,7 @@
 ```mermaid
 graph TB
     A[User Input] --> B[MultiTurnAgent]
-    B --> C[Conversation Engine]
+    B --> C[Environment]
     C --> D[Reward System]
     D --> E[Training Loop]
     E --> F[Model Updates]
@@ -83,33 +101,38 @@ graph TB
 
 ## 🚀 Quick Start
 
-### Install & Train Your First Agent in 5 Minutes
+### Install & Run a Minimal Agent
 
 ```bash
 # Install the framework
 pip install stateset-agents
 
-# Create your first agent
-python -c "
-import asyncio
-from stateset_agents import MultiTurnAgent, create_domain_reward
-
-async def demo():
-    # Create customer service agent
-    reward = create_domain_reward('customer_service')
-    agent = MultiTurnAgent(reward_function=reward)
-    
-    # Start a conversation
-    response = await agent.generate_response(
-        'Hi, my order is delayed. What can you do?'
-    )
-    print(f'Agent: {response}')
-
-asyncio.run(demo())
-"
+# (Optional) Install extras for training and API serving
+# pip install "stateset-agents[dev,api,trl]"
 ```
 
-> 💡 **Pro Tip**: Check out our [interactive examples](examples/) for more advanced use cases!
+```python
+import asyncio
+from stateset_agents import MultiTurnAgent
+from stateset_agents.core.agent import AgentConfig
+
+async def demo():
+    # Create and initialize a small model for testing
+    agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+    await agent.initialize()
+
+    # Provide conversation history as a list of messages
+    messages = [
+        {"role": "user", "content": "Hi, my order is delayed. What can you do?"}
+    ]
+
+    response = await agent.generate_response(messages)
+    print(f"Agent: {response}")
+
+asyncio.run(demo())
+```
+
+> 💡 Tip: Domain rewards (e.g., `create_domain_reward('customer_service')`) are used for training. See training examples below.
 
 ---
 
@@ -121,59 +144,64 @@ asyncio.run(demo())
 **Handle complex customer interactions with domain-specific intelligence**
 
 ```python
-from stateset_agents import MultiTurnAgent, create_domain_reward
+from stateset_agents import MultiTurnAgent
+from stateset_agents.core.agent import AgentConfig
 
-# Domain-aware customer service agent
-reward = create_domain_reward("customer_service")
-agent = MultiTurnAgent(reward_function=reward)
+agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+await agent.initialize()
 
-response = await agent.generate_response(
-    "My order is delayed and I need a refund",
-    context={"order_status": "delayed", "customer_value": "high"}
-)
+messages = [
+    {"role": "user", "content": "My order is delayed and I need a refund"}
+]
+response = await agent.generate_response(messages, context={"order_status": "delayed", "customer_value": "high"})
 ```
 
 ### 🔧 Technical Support Assistant
-**Debug code and provide expert assistance**
+**Use tools to analyze code or docs when needed**
 
 ```python
 from stateset_agents import ToolAgent
+from stateset_agents.core.agent import AgentConfig
 
-# Agent with technical capabilities
-agent = ToolAgent(tools=["code_analyzer", "documentation_search"])
+async def code_analyzer(ctx):
+    return "Static analysis complete. No obvious leaks found."
 
-response = await agent.handle_query(
-    "How do I fix a memory leak in my Python app?",
-    tools_enabled=True
+agent = ToolAgent(
+    AgentConfig(model_name="gpt2"),
+    tools=[{"name": "code_analyzer", "description": "Analyze code", "function": code_analyzer}],
 )
+await agent.initialize()
+
+messages = [{"role": "user", "content": "How do I fix a memory leak in my Python app?"}]
+response = await agent.generate_response(messages)
 ```
 
 ### 📈 Sales Intelligence
-**Qualify leads and close deals with AI assistance**
+**Qualify leads and summarize insights**
 
 ```python
-# Sales-focused agent with lead scoring
-agent = MultiTurnAgent(strategy="sales_qualification")
+from stateset_agents import MultiTurnAgent
+from stateset_agents.core.agent import AgentConfig
 
-insights = await agent.analyze_lead(
-    customer_profile, 
-    product_catalog,
-    sales_goals={"monthly_target": 100000}
-)
+agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+await agent.initialize()
+
+messages = [{"role": "user", "content": "This is our ICP: mid-market e‑commerce. Priorities?"}]
+insights = await agent.generate_response(messages, context={"region": "NA", "quarter": "Q3"})
 ```
 
 ### 🎓 Adaptive Learning
 **Personalized education with real-time adaptation**
 
 ```python
-# Educational agent with adaptive learning
-agent = MultiTurnAgent(learning_profile="adaptive")
+from stateset_agents import MultiTurnAgent
+from stateset_agents.core.agent import AgentConfig
 
-lesson = await agent.teach_concept(
-    topic="machine_learning",
-    student_level="intermediate",
-    learning_style="hands_on"
-)
+agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+await agent.initialize()
+
+messages = [{"role": "user", "content": "Explain backpropagation in simple terms."}]
+lesson = await agent.generate_response(messages, context={"student_level": "intermediate"})
 ```
 
 </div>
@@ -182,51 +210,42 @@ lesson = await agent.teach_concept(
 
 ## ⚙️ Advanced Training Capabilities
 
-### Production-Ready Training Pipeline
+### Production-Ready Training (from source)
 
 ```python
-from stateset_agents import (
-    MultiTurnAgent, ConversationEnvironment,
-    CompositeReward, PerformanceOptimizer,
-    train_with_production_setup
-)
+# Requires a dev install from source: pip install -e ".[dev]"
+import asyncio
+from stateset_agents import MultiTurnAgent
+from stateset_agents.core.agent import AgentConfig
+from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.reward import create_customer_service_reward
+from training.train import train  # available when running from the repo
 
-# Production training with full observability
 async def train_production_agent():
-    # Multi-objective rewards
-    reward_fn = CompositeReward([
-        HelpfulnessReward(weight=0.4),
-        SafetyReward(weight=0.3),
-        EngagementReward(weight=0.2),
-        CustomReward(weight=0.1)
-    ])
-    
-    # Production training with monitoring
-    agent = await train_with_production_setup(
-        model_name="gpt2-large",
-        reward_function=reward_fn,
-        training_profile="balanced",
-        monitoring_enabled=True,
-        num_episodes=10000
+    agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+    await agent.initialize()
+
+    environment = ConversationEnvironment(
+        scenarios=[
+            {"topic": "refund", "user_goal": "Get a refund", "context": "Order delayed"},
+            {"topic": "shipping", "user_goal": "Track shipment", "context": "Order in transit"},
+        ],
+        max_turns=6,
+        reward_fn=create_customer_service_reward(),
     )
-    
-    return agent
+
+    trained_agent = await train(agent=agent, environment=environment, num_episodes=100)
+    return trained_agent
+
+asyncio.run(train_production_agent())
 ```
 
 ### TRL GRPO Integration
 
-```python
-from stateset_agents.training import train_with_trl_grpo
-
-# Fine-tune massive models efficiently
-agent = await train_with_trl_grpo(
-    model_name="openai/gpt-oss-120b",  # 120B parameters!
-    reward_function=custom_reward,
-    use_lora=True,                     # Parameter-efficient training
-    lora_r=16,                         # Low-rank adaptation
-    num_episodes=1000,
-    output_dir="./production_agent"
-)
+```bash
+# Install TRL extras and run the example (from repo)
+pip install -e ".[trl]"
+python examples/train_with_trl_grpo.py
 ```
 
 ---
@@ -268,19 +287,24 @@ pip install stateset-agents
 # With API serving capabilities
 pip install "stateset-agents[api]"
 
-# Full development environment
+# Full development environment (from source)
 pip install -e ".[dev,api,examples,trl]"
 
-# GPU-optimized installation
+# GPU-optimized PyTorch (example for CUDA 12.1)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
-### Docker Deployment
+---
+
+## 🐳 Docker Deployment
+
 ```bash
-# CPU version
+# Build and run (CPU)
+docker build -t stateset/agents:latest -f deployment/docker/Dockerfile .
 docker run -p 8000:8000 stateset/agents:latest
 
-# GPU version
+# Build and run (GPU)
+docker build --target gpu-production -t stateset/agents:gpu -f deployment/docker/Dockerfile .
 docker run --gpus all -p 8000:8000 stateset/agents:gpu
 ```
 
@@ -289,17 +313,20 @@ docker run --gpus all -p 8000:8000 stateset/agents:gpu
 ## 🛠️ CLI Tools
 
 ```bash
-# Check framework status
+# Show version and environment
 stateset-agents version
 
-# Validate training environment
+# Validate training environment (guidance only)
 stateset-agents train --dry-run
 
-# Start production API server
+# Evaluate scaffold (guidance only)
+stateset-agents evaluate --dry-run
+
+# Start API server (requires extras)
 stateset-agents serve --host 0.0.0.0 --port 8000
 
-# Run performance benchmarks
-stateset-agents benchmark --model gpt2-large
+# From source: run benchmarks
+python scripts/benchmark.py
 ```
 
 ---
@@ -310,11 +337,11 @@ stateset-agents benchmark --model gpt2-large
 
 | Resource | Description | Link |
 |----------|-------------|------|
-| 📖 **Full Documentation** | Complete API reference and guides | [docs.stateset.ai](https://docs.stateset.ai) |
+| 📖 **Full Documentation** | Complete API reference and guides | [stateset-agents.readthedocs.io](https://stateset-agents.readthedocs.io/) |
 | 🚀 **Quick Start Guide** | Get up and running in 15 minutes | [Quick Start](USAGE_GUIDE.md) |
 | 🎯 **Training Guide** | Advanced training techniques | [TRL Training](TRL_GRPO_TRAINING_GUIDE.md) |
 | 💡 **Examples** | Production-ready code samples | [examples/](examples/) |
-| 🔧 **API Reference** | Complete API documentation | [API Docs](docs/api/) |
+| 🔧 **API Reference** | Generated API docs | [docs/api/](docs/api/) |
 
 </div>
 
