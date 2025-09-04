@@ -28,10 +28,13 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from ..core.reward import RewardFunction, RewardResult
-from ..core.trajectory import Trajectory
-from ..utils.cache import CacheService
-from ..utils.monitoring import MonitoringService
+from core.reward import RewardFunction, RewardResult
+from core.trajectory import Trajectory
+try:
+    from utils.cache import CacheService  # optional utility
+except Exception:  # pragma: no cover
+    CacheService = None  # type: ignore
+from utils.monitoring import MonitoringService
 
 logger = logging.getLogger(__name__)
 

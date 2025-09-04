@@ -7,9 +7,9 @@ import logging
 from typing import Optional, Dict, Any, List
 from enum import Enum
 
-from ..core.agent import Agent, MultiTurnAgent
-from ..core.environment import Environment
-from ..core.reward import RewardFunction
+from core.agent import Agent, MultiTurnAgent
+from core.environment import Environment
+from core.reward import RewardFunction
 from .trainer import MultiTurnGRPOTrainer
 from .config import TrainingConfig, TrainingProfile
 from .diagnostics import DiagnosticsMonitor
@@ -236,9 +236,9 @@ async def train_customer_service_agent(
 ) -> Agent:
     """Train a customer service agent"""
     
-    from ..core.agent import create_agent, AGENT_CONFIGS
-    from ..core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
-    from ..core.reward import create_customer_service_reward
+    from core.agent import create_agent, AGENT_CONFIGS
+    from core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
+    from core.reward import create_customer_service_reward
     
     # Create agent
     agent_config = AGENT_CONFIGS["customer_service"].copy()
@@ -280,9 +280,9 @@ async def train_tutoring_agent(
 ) -> Agent:
     """Train a tutoring agent"""
     
-    from ..core.agent import create_agent, AGENT_CONFIGS
-    from ..core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
-    from ..core.reward import create_tutoring_reward
+    from core.agent import create_agent, AGENT_CONFIGS
+    from core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
+    from core.reward import create_tutoring_reward
     
     # Create agent
     agent_config = AGENT_CONFIGS["tutor"].copy()
@@ -319,9 +319,9 @@ async def train_task_agent(
 ) -> Agent:
     """Train a task-oriented agent"""
     
-    from ..core.agent import create_agent, AGENT_CONFIGS
-    from ..core.environment import TaskEnvironment, TASK_CONFIGS
-    from ..core.reward import create_task_agent_reward
+    from core.agent import create_agent, AGENT_CONFIGS
+    from core.environment import TaskEnvironment, TASK_CONFIGS
+    from core.reward import create_task_agent_reward
     
     # Create agent
     agent_config = AGENT_CONFIGS["helpful_assistant"].copy()

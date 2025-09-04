@@ -25,9 +25,9 @@ import torch.distributed.checkpoint as dist_checkpoint
 from accelerate import Accelerator, DistributedType
 from pathlib import Path
 
-from ..core.agent import MultiTurnAgent
-from ..core.environment import Environment
-from ..core.reward import RewardFunction
+from core.agent import MultiTurnAgent
+from core.environment import Environment
+from core.reward import RewardFunction
 from .trainer import MultiTurnGRPOTrainer
 from .config import TrainingConfig
 

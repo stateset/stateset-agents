@@ -9,7 +9,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="stateset-agents",
-    version="0.3.0",
+    version="0.3.3",
     author="StateSet Team",
     author_email="team@stateset.ai",
     description="A comprehensive framework for training multi-turn AI agents using Group Relative Policy Optimization (GRPO)",
@@ -17,8 +17,24 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/stateset/stateset-agents",
     packages=find_packages(include=[
+        # Primary namespace
         "stateset_agents",
         "stateset_agents.*",
+        # Top-level implementation packages used by stateset_agents
+        "core",
+        "core.*",
+        "training",
+        "training.*",
+        "utils",
+        "utils.*",
+        "rewards",
+        "rewards.*",
+        "api",
+        "api.*",
+        "grpo_agent_framework",
+        "grpo_agent_framework.*",
+        "environments",
+        "environments.*",
     ]),
     license="Business Source License 1.1",
     classifiers=[

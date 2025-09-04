@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateset-agents"
-version = "0.3.0"
+version = "0.3.3"
 description = "A comprehensive framework for training multi-turn AI agents using Group Relative Policy Optimization (GRPO)"
 readme = "README.md"
 license = {text = "Business Source License 1.1"}
@@ -83,6 +83,27 @@ Issues = "https://github.com/stateset/stateset-agents/issues"
 
 [project.scripts]
 stateset-agents = "stateset_agents.cli:run"
+
+# Setuptools package discovery
+[tool.setuptools.packages.find]
+include = [
+    "stateset_agents*",
+    "core*",
+    "training*",
+    "utils*",
+    "rewards*",
+    "api*",
+    "grpo_agent_framework*",
+    "environments*",
+]
+exclude = [
+    "tests*",
+    "docs*",
+    "benchmarks*",
+    "scripts*",
+    "htmlcov*",
+    "dist*",
+]
 
 # Black configuration
 [tool.black]
@@ -202,10 +223,7 @@ ignore = [
 [tool.ruff.isort]
 known-first-party = ["stateset_agents", "grpo_agent_framework"]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["stateset_agents*"]
-exclude = ["tests*", "docs*", "scripts*", "deployment*", "examples*", "benchmarks*", "grpo_agent_framework*"]
+ 
 
 [tool.setuptools.package-data]
 stateset_agents = ["py.typed"]

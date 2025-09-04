@@ -33,10 +33,10 @@ except ImportError:
 
 from .trainer import GRPOTrainer
 from .config import TrainingConfig
-from ..core.agent import Agent
-from ..core.environment import Environment
-from ..core.reward import RewardFunction
-from ..utils.monitoring import MonitoringService
+from core.agent import Agent
+from core.environment import Environment
+from core.reward import RewardFunction
+from utils.monitoring import MonitoringService
 
 logger = logging.getLogger(__name__)
 
