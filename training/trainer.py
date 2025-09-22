@@ -25,12 +25,26 @@ from transformers import (
 )
 from datasets import Dataset
 
-from core.agent import Agent, MultiTurnAgent, AgentConfig
-from core.environment import Environment
-from core.trajectory import MultiTurnTrajectory, TrajectoryGroup, ConversationTurn
-from core.reward import RewardFunction, CompositeReward
-from utils.wandb_integration import WandBLogger
 
+import core.agent
+Agent = core.agent.Agent
+MultiTurnAgent = core.agent.MultiTurnAgent
+AgentConfig = core.agent.AgentConfig
+
+import core.environment
+Environment = core.environment.Environment
+
+import core.trajectory
+MultiTurnTrajectory = core.trajectory.MultiTurnTrajectory
+TrajectoryGroup = core.trajectory.TrajectoryGroup
+ConversationTurn = core.trajectory.ConversationTurn
+
+import core.reward
+RewardFunction = core.reward.RewardFunction
+CompositeReward = core.reward.CompositeReward
+
+WandBLogger = None  # Lazy import
+WandBLogger = None  # Lazy import
 logger = logging.getLogger(__name__)
 
 

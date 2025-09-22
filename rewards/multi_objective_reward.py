@@ -21,9 +21,13 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from ..core.reward import RewardFunction, RewardResult
-from ..utils.cache import CacheService
-from ..utils.monitoring import MonitoringService
+import core.reward
+RewardFunction = core.reward.RewardFunction
+RewardResult = core.reward.RewardResult
+import utils.cache
+CacheService = utils.cache.CacheService
+import utils.monitoring
+MonitoringService = utils.monitoring.MonitoringService
 
 logger = logging.getLogger(__name__)
 
@@ -468,7 +472,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
                 tags={"method": self.normalization_method}
             )
         
-        return RewardResult(score=final_score, breakdown=breakdown)
+        return RewardResult(score=final_score, breakdown=breakdown, metadata={}) 
     
     def get_component_statistics(self) -> Dict[str, Dict[str, float]]:
         """Get statistics for each component"""

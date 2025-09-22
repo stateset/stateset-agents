@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3] - 2025-09-04
 
+## [0.3.4] - 2025-09-22
+
+### Fixed
+- Made `stateset_agents.core` proxy resilient to missing optional dependencies by wrapping `async_pool` import in a safe try/except. This prevents import-time failures when `aiohttp` is not installed and allows tests and consumers to import the package without optional extras.
+
+### Changed
+- Bumped package version to `0.3.4` in `pyproject.toml` and `stateset_agents/__init__.py` to keep versions in sync.
+
+### Notes
+- No API changes; this release improves import robustness and packaging hygiene only.
+
 ### Changed
 - Refactored `training` package imports to absolute paths (`core.*`, `utils.*`, `rewards.*`) so `import training` works directly from installed packages
 - CI publish workflow hardened: idempotent uploads (`twine upload --skip-existing`), resilient tag creation, and Docker/docs jobs also run on GitHub release events

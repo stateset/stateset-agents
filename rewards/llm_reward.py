@@ -23,10 +23,16 @@ except ImportError:
     LITELLM_AVAILABLE = False
     ChatCompletionMessageParam = Dict[str, Any]
 
-from ..core.reward import RewardFunction, RewardResult
-from ..utils.cache import CacheService
-from ..utils.monitoring import MonitoringService
 
+import core.reward
+RewardFunction = core.reward.RewardFunction
+RewardResult = core.reward.RewardResult
+
+import utils.cache
+CacheService = utils.cache.CacheService
+
+import utils.monitoring
+MonitoringService = utils.monitoring.MonitoringService
 logger = logging.getLogger(__name__)
 
 

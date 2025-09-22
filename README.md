@@ -22,6 +22,8 @@
 
 ## 📚 Table of Contents
 
+- [🛠 What's New in v0.3.4](#-whats-new-in-v034)
+
 - [🔥 What's New in v0.3.0](#-whats-new-in-v030)
 - [🏗️ Architecture Overview](#-architecture-overview)
 - [🚀 Quick Start](#-quick-start)
@@ -37,6 +39,36 @@
 - [🚀 Roadmap](#-roadmap)
 - [🤝 Contributing](#-contributing)
 - [📄 License](#-license)
+
+## 🛠 What's New in v0.3.4
+
+Small but important improvements to packaging and import robustness.
+
+- Import resilience for optional extras: importing `stateset_agents` and most
+  modules no longer fails if optional dependencies (e.g., `aiohttp`, Prometheus,
+  OpenTelemetry) aren’t installed.
+- Safer module resolution: the `stateset_agents.core` proxy now prefers the
+  top‑level `core` package shipped with this distribution, avoiding collisions in
+  monorepos or notebooks where another `core` might exist earlier on `sys.path`.
+- Stable training namespace: added `stateset_agents.training` proxy so you can
+  import training APIs via the public namespace while keeping a single source of
+  truth in the top‑level `training` package.
+- No API changes; this is a packaging/import hotfix.
+
+Upgrade
+
+```bash
+pip install -U stateset-agents==0.3.4
+```
+
+Verify installation
+
+```python
+import stateset_agents as sa
+print(sa.__version__)  # 0.3.4
+```
+
+See CHANGELOG.md and RELEASE_NOTES.md for details.
 
 ## 🔥 What's New in v0.3.0
 

@@ -5,7 +5,7 @@ A comprehensive framework for training multi-turn AI agents using
 Group Relative Policy Optimization (GRPO).
 """
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
 
@@ -33,20 +33,39 @@ from .core.error_handling import (
     ErrorHandler, RetryConfig, CircuitBreakerConfig,
     retry_async, circuit_breaker, handle_error, get_error_summary
 )
-from .core.performance_optimizer import (
-    PerformanceOptimizer, MemoryMonitor, ModelOptimizer, BatchOptimizer,
-    OptimizationLevel, MemoryConfig, ComputeConfig, DataConfig, PerformanceMetrics
-)
+try:
+    from .core.performance_optimizer import (
+        PerformanceOptimizer, MemoryMonitor, ModelOptimizer, BatchOptimizer,
+        OptimizationLevel, MemoryConfig, ComputeConfig, DataConfig, PerformanceMetrics
+    )
+except Exception:  # pragma: no cover - optional heavy deps (torch/transformers)
+    PerformanceOptimizer = None  # type: ignore
+    MemoryMonitor = None  # type: ignore
+    ModelOptimizer = None  # type: ignore
+    BatchOptimizer = None  # type: ignore
+    OptimizationLevel = None  # type: ignore
+    MemoryConfig = None  # type: ignore
+    ComputeConfig = None  # type: ignore
+    DataConfig = None  # type: ignore
+    PerformanceMetrics = None  # type: ignore
 from .core.type_system import (
     TypeValidator, ConfigValidator, TypeSafeSerializer,
     create_typed_config, ensure_type_safety, ensure_async_type_safety,
     ModelConfig, TrainingConfig, ConversationTurn as TypedConversationTurn,
     TrajectoryData, RewardMetrics, DeviceType, ModelSize, TrainingStage
 )
-from .core.async_pool import (
-    AsyncResourcePool, AsyncTaskManager, PooledResource, 
-    get_http_pool, get_task_manager, managed_async_resources
-)
+try:
+    from .core.async_pool import (
+        AsyncResourcePool, AsyncTaskManager, PooledResource, 
+        get_http_pool, get_task_manager, managed_async_resources
+    )
+except Exception:  # pragma: no cover - optional aiohttp
+    AsyncResourcePool = None  # type: ignore
+    AsyncTaskManager = None  # type: ignore
+    PooledResource = None  # type: ignore
+    get_http_pool = None  # type: ignore
+    get_task_manager = None  # type: ignore
+    managed_async_resources = None  # type: ignore
 
 # Data processing exports
 from .core.data_processing import (

@@ -19,7 +19,7 @@ from .agent import Agent
 from .trajectory import Trajectory
 from .environment import Environment
 from .reward import RewardFunction, RewardResult
-from ..utils.cache import CacheService
+import utils.cache; CacheService = utils.cache.CacheService
 
 logger = logging.getLogger(__name__)
 

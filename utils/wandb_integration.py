@@ -33,11 +33,20 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from ..core.trajectory import MultiTurnTrajectory, TrajectoryGroup, Trajectory
-from ..core.agent import AgentConfig
-from ..core.reward import RewardResult
-from ..training.config import TrainingConfig
 from .monitoring import MonitoringService
+import core.trajectory
+MultiTurnTrajectory = core.trajectory.MultiTurnTrajectory
+TrajectoryGroup = core.trajectory.TrajectoryGroup
+Trajectory = core.trajectory.Trajectory
+
+import core.agent
+AgentConfig = core.agent.AgentConfig
+
+import core.reward
+RewardResult = core.reward.RewardResult
+
+TrainingConfig = None  # Lazy import
+TrainingConfig = None
 
 logger = logging.getLogger(__name__)
 

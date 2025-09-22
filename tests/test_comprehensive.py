@@ -15,21 +15,21 @@ import uuid
 from datetime import datetime
 
 # Core components
-from stateset_agents.core.agent import Agent
-from stateset_agents.core.environment import Environment
-from stateset_agents.core.reward import RewardFunction, RewardResult
-from stateset_agents.core.trajectory import Trajectory
-from stateset_agents.core.computational_engine import ComputationalGRPOEngine, ComputationalTrajectory
-from stateset_agents.core.multiturn_agent import MultiTurnAgent, ConversationContext, DialogueDatabase
+from core.agent import Agent
+from core.environment import Environment
+from core.reward import RewardFunction, RewardResult
+from core.trajectory import Trajectory
+from core.computational_engine import ComputationalGRPOEngine, ComputationalTrajectory
+from core.multiturn_agent import MultiTurnAgent, ConversationContext, DialogueDatabase
 
 # Training components
-from stateset_agents.training.trainer import GRPOTrainer
-from stateset_agents.training.neural_reward_trainer import NeuralRewardTrainer, NeuralRewardFunction
-from stateset_agents.training.config import TrainingConfig
+from training.trainer import GRPOTrainer
+from training.neural_reward_trainer import NeuralRewardTrainer, NeuralRewardFunction
+from training.config import TrainingConfig
 
 # Reward components
-from stateset_agents.rewards.ruler_reward import RulerRewardFunction
-from stateset_agents.rewards.multi_objective_reward import (
+from rewards.ruler_reward import RulerRewardFunction
+from rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction, 
     EmpathyRewardComponent,
     ActionOrientedRewardComponent,
@@ -37,8 +37,8 @@ from stateset_agents.rewards.multi_objective_reward import (
 )
 
 # Utils
-from stateset_agents.utils.cache import CacheService
-from stateset_agents.utils.monitoring import MonitoringService
+from utils.cache import CacheService
+from utils.monitoring import MonitoringService
 
 
 class TestAgent(Agent):
@@ -99,16 +99,16 @@ class TestRewardFunction(RewardFunction):
     ) -> RewardResult:
         # Simple test reward based on response length
         if not turns:
-            return RewardResult(score=0.0, breakdown={"error": "No turns"})
+            return RewardResult(metadata={}, score=0.0, breakdown={"error": "No turns"})
         
         assistant_turns = [t for t in turns if t.get("role") == "assistant"]
         if not assistant_turns:
-            return RewardResult(score=0.0, breakdown={"error": "No assistant turns"})
+            return RewardResult(score=0.0, breakdown={"error": "No assistant turns"}, metadata={}) 
         
         last_response = assistant_turns[-1].get("content", "")
         score = min(1.0, len(last_response.split()) / 20.0)
         
-        return RewardResult(
+        return RewardResult(metadata={}, 
             score=score,
             breakdown={"length_score": score, "word_count": len(last_response.split())}
         )
@@ -464,7 +464,7 @@ class TestNeuralRewardTrainer:
         """Test neural reward trainer initialization"""
         trainer = NeuralRewardTrainer(
             learning_rate=1e-4,
-            batch_size=16,
+            per_device_train_batch_size=16,
             max_epochs=10
         )
         
@@ -497,23 +497,23 @@ class TestTrainingConfig:
         """Test training configuration creation"""
         config = TrainingConfig(
             num_epochs=10,
-            batch_size=32,
+            per_device_train_batch_size=32,
             learning_rate=1e-4,
             max_grad_norm=1.0,
-            use_mixed_precision=True
+            bf16=True
         )
         
         assert config.num_epochs == 10
-        assert config.batch_size == 32
+        assert config.per_device_train_batch_size == 32
         assert config.learning_rate == 1e-4
         assert config.max_grad_norm == 1.0
-        assert config.use_mixed_precision is True
+        assert config.bf16 is True
     
     def test_config_serialization(self):
         """Test configuration serialization"""
         config = TrainingConfig(
             num_epochs=5,
-            batch_size=16,
+            per_device_train_batch_size=16,
             learning_rate=5e-5
         )
         
@@ -521,7 +521,7 @@ class TestTrainingConfig:
         
         assert isinstance(config_dict, dict)
         assert config_dict["num_epochs"] == 5
-        assert config_dict["batch_size"] == 16
+        assert config_dict["per_device_train_batch_size"] == 16
         assert config_dict["learning_rate"] == 5e-5
 
 

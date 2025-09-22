@@ -9,6 +9,19 @@ used across different test categories.
 import unittest
 
 import pytest
+import sys
+from pathlib import Path
+
+# Ensure the repository root is at the front of sys.path so that imports like
+# `import core` resolve to this repo's top-level packages, not similarly named
+# packages from other local projects.
+try:
+    _repo_root = str(Path(__file__).resolve().parents[1])
+    if _repo_root in sys.path:
+        sys.path.remove(_repo_root)
+    sys.path.insert(0, _repo_root)
+except Exception:
+    pass
 import asyncio
 import tempfile
 import shutil

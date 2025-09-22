@@ -23,10 +23,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import framework components
-from core.agent import Agent, MultiTurnAgent, AgentConfig
-from core.environment import ConversationEnvironment
-from core.trajectory import MultiTurnTrajectory, ConversationTurn
-from rewards.multi_objective_reward import MultiObjectiveReward
+from ..core.agent import Agent, MultiTurnAgent, AgentConfig
+from ..core.environment import ConversationEnvironment
+from ..core.trajectory import MultiTurnTrajectory, ConversationTurn
+from ..rewards.multi_objective_reward import MultiObjectiveReward
 from .config import TrainingConfig, get_config_for_task
 
 # Import additional dependencies
@@ -498,12 +498,12 @@ async def train_customer_service_with_trl(
     await agent.initialize()
     
     # Create environment
-    from core.environment import CONVERSATION_CONFIGS
+    from ..core.environment import CONVERSATION_CONFIGS
     env_config = CONVERSATION_CONFIGS["customer_service"].copy()
     environment = ConversationEnvironment(**env_config)
     
     # Create reward model
-    from rewards.multi_objective_reward import create_customer_service_reward
+    from ..rewards.multi_objective_reward import create_customer_service_reward
     reward_model = create_customer_service_reward()
     
     # Run training

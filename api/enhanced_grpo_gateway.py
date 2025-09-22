@@ -37,7 +37,7 @@ from ..core.performance_optimizer import PerformanceOptimizer, OptimizationLevel
 from ..core.async_pool import AsyncResourcePool, managed_async_resources
 from ..core.type_system import TypeValidator, DeviceType
 from ..utils.monitoring import MonitoringService
-from ..utils.cache import CacheService
+import utils.cache; CacheService = utils.cache.CacheService
 
 logger = logging.getLogger(__name__)
 

@@ -7,6 +7,19 @@ import `stateset_agents.core.*` without us physically moving files.
 
 from importlib import import_module as _import_module
 import sys as _sys
+from pathlib import Path as _Path
+
+# Prefer the sibling/top-level 'core' package that ships with this distribution
+# by pushing its parent directory to the front of sys.path. This avoids picking
+# up unrelated 'core' packages that may exist earlier on sys.path in some
+# environments (e.g., monorepos or notebooks).
+try:
+    _root_dir = _Path(__file__).resolve().parents[2]
+    _root_str = str(_root_dir)
+    if _root_str not in _sys.path:
+        _sys.path.insert(0, _root_str)
+except Exception:
+    pass
 
 # Load underlying top-level package
 _core_pkg = _import_module('core')
@@ -52,9 +65,21 @@ except Exception:  # pragma: no cover
     PerformanceOptimizer = None
     OptimizationLevel = None
 from .type_system import TypeValidator, create_typed_config
-from .async_pool import AsyncResourcePool, managed_async_resources
-from .advanced_monitoring import get_monitoring_service, monitor_async_function
-from .enhanced_state_management import get_state_service
+try:
+    # Optional: requires aiohttp
+    from .async_pool import AsyncResourcePool, managed_async_resources
+except Exception:  # pragma: no cover
+    AsyncResourcePool = None  # type: ignore
+    managed_async_resources = None  # type: ignore
+try:
+    from .advanced_monitoring import get_monitoring_service, monitor_async_function
+except Exception:  # pragma: no cover
+    get_monitoring_service = None  # type: ignore
+    monitor_async_function = None  # type: ignore
+try:
+    from .enhanced_state_management import get_state_service
+except Exception:  # pragma: no cover
+    get_state_service = None  # type: ignore
 
 # Advanced AI capabilities (wrap in try to avoid optional deps at import)
 try:

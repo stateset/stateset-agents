@@ -32,8 +32,8 @@ from ..training.distributed_trainer import DistributedGRPOTrainer, DistributedCo
 from ..training.neural_reward_trainer import NeuralRewardTrainer, create_neural_reward_function
 from ..rewards.ruler_reward import RulerRewardFunction, create_customer_service_ruler
 from ..rewards.multi_objective_reward import MultiObjectiveRewardFunction, create_customer_service_reward
-from ..utils.monitoring import MonitoringService
-from ..utils.cache import CacheService
+import utils.monitoring; MonitoringService = utils.monitoring.MonitoringService
+import utils.cache; CacheService = utils.cache.CacheService
 
 logger = logging.getLogger(__name__)
 
