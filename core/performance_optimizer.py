@@ -10,16 +10,44 @@ import gc
 import logging
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
-import psutil
-import torch
-import torch.nn as nn
-import torch.amp as amp
-from transformers import PreTrainedModel
+try:  # pragma: no cover - optional dependency
+    import psutil  # type: ignore
+except ImportError:  # pragma: no cover
+    psutil = None  # type: ignore[assignment]
+
+try:  # pragma: no cover - optional dependency
+    import torch  # type: ignore
+    import torch.nn as nn  # type: ignore
+except ImportError:  # pragma: no cover
+    torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
+
+if torch is not None:  # pragma: no cover - optional dependency
+    try:
+        from torch.cuda.amp import GradScaler, autocast  # type: ignore
+    except Exception:  # pragma: no cover
+        GradScaler = None  # type: ignore[assignment]
+        autocast = None  # type: ignore[assignment]
+else:  # pragma: no cover
+    GradScaler = None  # type: ignore[assignment]
+    autocast = None  # type: ignore[assignment]
+
+try:  # pragma: no cover - optional dependency
+    from transformers import PreTrainedModel  # type: ignore
+except ImportError:  # pragma: no cover
+    PreTrainedModel = Any  # type: ignore[assignment]
+
+if TYPE_CHECKING:
+    from torch import Tensor
+    from torch.optim import Optimizer
+else:
+    Tensor = Any
+    Optimizer = Any
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +115,11 @@ class MemoryMonitor:
     """Real-time memory monitoring and management"""
 
     def __init__(self, config: MemoryConfig):
+        if psutil is None:
+            raise ImportError(
+                "psutil is required for MemoryMonitor. Install the 'training' extra: "
+                "pip install stateset-agents[training]"
+            )
         self.config = config
         self.peak_memory = 0.0
         self.memory_history: List[float] = []
@@ -95,12 +128,13 @@ class MemoryMonitor:
     def get_memory_usage(self) -> Dict[str, float]:
         """Get current memory usage"""
         # CPU memory
+        assert psutil is not None  # Narrow type for type checkers
         process = psutil.Process()
         cpu_memory_mb = process.memory_info().rss / 1024 / 1024
 
         # GPU memory
         gpu_memory_mb = 0.0
-        if torch.cuda.is_available():
+        if torch and torch.cuda.is_available():
             gpu_memory_mb = torch.cuda.memory_allocated() / 1024 / 1024
             self.peak_memory = max(self.peak_memory, gpu_memory_mb)
 
@@ -112,10 +146,12 @@ class MemoryMonitor:
             "cpu_memory_mb": cpu_memory_mb,
             "gpu_memory_mb": gpu_memory_mb,
             "peak_gpu_memory_mb": self.peak_memory,
-            "memory_percent": gpu_memory_mb
-            / (torch.cuda.get_device_properties(0).total_memory / 1024 / 1024)
-            if torch.cuda.is_available()
-            else 0.0,
+            "memory_percent": (
+                gpu_memory_mb
+                / (torch.cuda.get_device_properties(0).total_memory / 1024 / 1024)
+                if torch and torch.cuda.is_available()
+                else 0.0
+            ),
         }
 
     def cleanup_memory(self) -> float:
@@ -123,7 +159,7 @@ class MemoryMonitor:
         initial_memory = self.get_memory_usage()["gpu_memory_mb"]
 
         # Clear PyTorch cache
-        if torch.cuda.is_available():
+        if torch and torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
 
@@ -169,13 +205,20 @@ class ModelOptimizer:
     """Model-specific optimizations"""
 
     def __init__(self, config: ComputeConfig):
+        if torch is None or nn is None:
+            raise ImportError(
+                "PyTorch is required for ModelOptimizer. Install the 'training' extra: "
+                "pip install stateset-agents[training]"
+            )
         self.config = config
         self.scaler = None
         if config.use_mixed_precision:
-            # Use new torch.amp API (device-aware). Even if CUDA is not available,
-            # constructing the scaler keeps interfaces consistent for callers.
-            # PyTorch will disable scaling internally on unsupported devices.
-            self.scaler = amp.GradScaler("cuda")
+            if GradScaler is None:
+                raise ImportError(
+                    "torch.cuda.amp.GradScaler is unavailable. Upgrade PyTorch or "
+                    "disable mixed precision."
+                )
+            self.scaler = GradScaler()
 
     def optimize_model(self, model: PreTrainedModel) -> PreTrainedModel:
         """Apply model optimizations"""
@@ -204,9 +247,7 @@ class ModelOptimizer:
 
         return model
 
-    def optimize_optimizer(
-        self, optimizer: torch.optim.Optimizer
-    ) -> torch.optim.Optimizer:
+    def optimize_optimizer(self, optimizer: Optimizer) -> Optimizer:
         """Optimize optimizer settings"""
 
         # Use fused optimizer if available
@@ -230,8 +271,16 @@ class ModelOptimizer:
     def mixed_precision_context(self):
         """Context manager for mixed precision operations"""
         if self.config.use_mixed_precision and self.scaler:
-            with autocast():
-                yield self.scaler
+            if autocast is None:
+                logger.warning(
+                    "Requested mixed precision but torch.cuda.amp.autocast is unavailable. "
+                    "Proceeding without autocast."
+                )
+                with nullcontext():
+                    yield None
+            else:
+                with autocast():
+                    yield self.scaler
         else:
             yield None
 
@@ -240,6 +289,11 @@ class BatchOptimizer:
     """Dynamic batch size optimization"""
 
     def __init__(self, config: DataConfig):
+        if torch is None:
+            raise ImportError(
+                "PyTorch is required for BatchOptimizer. Install the 'training' extra: "
+                "pip install stateset-agents[training]"
+            )
         self.config = config
         self.optimal_batch_size = 1
         self.performance_history: List[PerformanceMetrics] = []
@@ -248,7 +302,7 @@ class BatchOptimizer:
     def find_optimal_batch_size(
         self,
         model: PreTrainedModel,
-        sample_input: torch.Tensor,
+        sample_input: Tensor,
         max_batch_size: int = 64,
         growth_factor: float = 1.5,
     ) -> int:

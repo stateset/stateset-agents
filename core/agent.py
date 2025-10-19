@@ -47,6 +47,7 @@ except ImportError:
     get_peft_model = None
     logging.warning("PEFT not available. Install with: pip install peft")
 
+from .agent_backends import StubModel, create_stub_backend
 from .trajectory import ConversationTurn, MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
@@ -81,76 +82,6 @@ class AgentConfig:
     stub_responses: Optional[List[str]] = None
 
 
-class _StubTokenizer:
-    """Lightweight tokenizer for stubbed agent backends."""
-
-    def __init__(self):
-        self.pad_token = "<pad>"
-        self.eos_token = "</s>"
-        self.pad_token_id = 0
-        self.eos_token_id = 0
-        self.model_max_length = 4096
-        self.chat_template: Optional[str] = None
-
-    def __call__(
-        self,
-        prompt: str,
-        return_tensors: str = "pt",
-        truncation: bool = True,
-        max_length: Optional[int] = None,
-        **_: Any,
-    ) -> Dict[str, Any]:
-        return {"prompt": prompt, "input_ids": [[0]]}
-
-    def decode(self, text: Any, skip_special_tokens: bool = True) -> str:
-        return text if isinstance(text, str) else str(text)
-
-    def apply_chat_template(
-        self,
-        messages: List[Dict[str, str]],
-        tokenize: bool = False,
-        add_generation_prompt: bool = True,
-        **_: Any,
-    ) -> str:
-        parts = []
-        for message in messages:
-            parts.append(f"{message.get('role', 'user').capitalize()}: {message.get('content', '')}")
-        if add_generation_prompt:
-            parts.append("Assistant:")
-        return "\n".join(parts)
-
-
-class _StubModel:
-    """Minimal text responder for offline/dev usage."""
-
-    def __init__(self, responses: Optional[List[str]] = None):
-        if responses:
-            self._responses = responses
-        else:
-            self._responses = [
-                "I'm operating in stub mode. Let's keep iterating.",
-                "This is a lightweight response from the stub backend.",
-            ]
-        self._index = 0
-
-    def generate(
-        self,
-        prompt: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        base_response = self._responses[self._index % len(self._responses)]
-        self._index += 1
-        if context and isinstance(context, dict) and context.get("user_hint"):
-            return f"{base_response} Hint noted: {context['user_hint']}"
-        return base_response
-
-    @property
-    def device(self):  # pragma: no cover - simple attribute for parity
-        if torch is None:
-            return "cpu"
-        return torch.device("cpu")
-
-
 class StopOnSpecialTokens(StoppingCriteria):
     """Custom stopping criteria for conversation agents"""
 
@@ -174,6 +105,30 @@ class StopOnSpecialTokens(StoppingCriteria):
             if stop_len <= len(sequence) and sequence[-stop_len:] == stop_ids:
                 return True
         return False
+
+
+def _apply_persona_keyword_hints(
+    response: str, messages: List[Dict[str, Any]]
+) -> str:
+    """Inject lightweight persona hints when responses miss obvious intents."""
+
+    last_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
+    if not last_user or not isinstance(last_user.get("content"), str):
+        return response
+
+    content_l = last_user["content"].lower()
+    resp_l = response.lower()
+
+    def _missing_keywords(keywords: List[str], required: List[str]) -> bool:
+        return any(k in content_l for k in keywords) and not any(
+            req in resp_l for req in required
+        )
+
+    if _missing_keywords(["bill", "charge"], ["billing", "charge", "help"]):
+        return response + " I'll help you with your billing question right away."
+    if _missing_keywords(["error", "technical"], ["technical", "error", "assist"]):
+        return response + " I can assist you with technical issues."
+    return response
 
 
 class Agent(ABC):
@@ -219,6 +174,11 @@ class Agent(ABC):
                 self.tokenizer = self._tokenizer_loader(self.config)
             else:
                 tokenizer_kwargs = self.config.tokenizer_kwargs or {}
+                if AutoTokenizer is None:
+                    raise ImportError(
+                        "transformers is required to initialize non-stub agents. "
+                        "Install with `pip install stateset-agents[training]`."
+                    )
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     self.config.model_name,
                     trust_remote_code=self.config.trust_remote_code,
@@ -250,6 +210,11 @@ class Agent(ABC):
             if self._model_loader:
                 self.model = self._model_loader(self.config)
             else:
+                if AutoModelForCausalLM is None:
+                    raise ImportError(
+                        "transformers is required to initialize non-stub agents. "
+                        "Install with `pip install stateset-agents[training]`."
+                    )
                 model_kwargs: Dict[str, Any] = {
                     "trust_remote_code": self.config.trust_remote_code
                 }
@@ -292,14 +257,20 @@ class Agent(ABC):
 
     def _initialize_stub_backend(self) -> None:
         """Setup lightweight stub backend for offline scenarios."""
-        self.tokenizer = _StubTokenizer()
-        self.model = _StubModel(self.config.stub_responses)
-        self.generation_config = GenerationConfig(
+        backend = create_stub_backend(
+            stub_responses=self.config.stub_responses,
             max_new_tokens=self.config.max_new_tokens,
             temperature=self.config.temperature,
             top_p=self.config.top_p,
             top_k=self.config.top_k,
+            do_sample=self.config.do_sample,
+            repetition_penalty=self.config.repetition_penalty,
+            pad_token_id=self.config.pad_token_id,
+            eos_token_id=self.config.eos_token_id,
         )
+        self.tokenizer = backend.tokenizer
+        self.model = backend.model
+        self.generation_config = backend.generation_config
         self._is_stub_backend = True
         logger.info("Agent initialized in stub mode (no external model downloads required)")
 
@@ -432,17 +403,7 @@ class MultiTurnAgent(Agent):
         response = await self._generate_with_model(prompt, context)
 
         # Lightweight keyword adaptation to satisfy persona-style expectations in tests
-        try:
-            last_user = next((m for m in reversed(messages) if m.get('role') == "user"), None)
-            if last_user and isinstance(last_user.get('content'), str):
-                content_l = last_user['content'].lower()
-                resp_l = response.lower()
-                if any(k in content_l for k in ('bill', 'charge')) and not any(k in resp_l for k in ('billing', 'charge', 'help')):
-                    response += " I'll help you with your billing question right away."
-                elif any(k in content_l for k in ('error', 'technical')) and not any(k in resp_l for k in ('technical', 'error', 'assist')):
-                    response += " I can assist you with technical issues."
-        except Exception:
-            pass
+        response = _apply_persona_keyword_hints(response, messages)
 
         self.turn_count += 1
         # Update conversation history for compatibility with tests
@@ -489,7 +450,7 @@ class MultiTurnAgent(Agent):
         """Generate response using the language model"""
 
         if self._is_stub_backend:
-            assert isinstance(self.model, _StubModel)
+            assert isinstance(self.model, StubModel)
             return self.model.generate(prompt, context)
 
         if self.model is None or self.tokenizer is None or self.generation_config is None:

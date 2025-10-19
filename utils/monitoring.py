@@ -123,11 +123,13 @@ class HealthCheck:
         start_time = time.time()
 
         try:
-            # Run check function with timeout
-            result = await asyncio.wait_for(
-                asyncio.create_task(asyncio.coroutine(self.check_func)()),
-                timeout=self.timeout,
-            )
+            loop = asyncio.get_running_loop()
+            if asyncio.iscoroutinefunction(self.check_func):
+                task = loop.create_task(self.check_func())
+            else:
+                task = loop.run_in_executor(None, self.check_func)
+
+            result = await asyncio.wait_for(task, timeout=self.timeout)
 
             duration = time.time() - start_time
 

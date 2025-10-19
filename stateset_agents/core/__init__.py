@@ -18,6 +18,7 @@ from typing import Iterable, Optional
 _CORE_NAMESPACE = "core"
 _SUBMODULES: Iterable[str] = (
     "agent",
+    "agent_backends",
     "environment",
     "trajectory",
     "reward",
