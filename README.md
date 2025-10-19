@@ -22,6 +22,7 @@
 
 ## 📚 Table of Contents
 
+- [🛠 What's New in v0.4.0](#-whats-new-in-v040)
 - [🛠 What's New in v0.3.4](#-whats-new-in-v034)
 
 - [🔥 What's New in v0.3.0](#-whats-new-in-v030)
@@ -41,6 +42,38 @@
 - [🤝 Contributing](#-contributing)
 - [📄 License](#-license)
 
+## 🛠 What's New in v0.4.0
+
+This release focuses on developer experience and prepares the project for a
+stable v1 interface.
+
+- 🪄 **Stub backend everywhere** – enable lightning-fast demos and CI runs with
+  `stateset-agents train --stub` or `AgentConfig(use_stub_model=True)`. No large
+  checkpoints required.
+- 🧭 **Canonical imports** – the entire codebase (and docs/examples/tests) now
+  import from `stateset_agents.core.*`. Legacy `core.*` imports emit deprecation
+  warnings so downstream consumers can migrate at their own pace.
+- 🧪 **Regressions locked down** – new unit coverage ensures the stub backend
+  works through `ComputationalGRPOEngine` and raw string prompts, so future
+  refactors stay safe.
+- 📝 **Docs & CLI polish** – README quick starts, release notes, and the CLI all
+  highlight stub usage and the new workflow.
+
+Upgrade
+
+```bash
+pip install -U stateset-agents==0.4.0
+```
+
+Verify installation
+
+```python
+import stateset_agents as sa
+print(sa.__version__)  # 0.4.0
+```
+
+See CHANGELOG.md and RELEASE_NOTES.md for details.
+
 ## 🛠 What's New in v0.3.4
 
 Small but important improvements to packaging and import robustness.
@@ -54,7 +87,6 @@ Small but important improvements to packaging and import robustness.
 - Stable training namespace: added `stateset_agents.training` proxy so you can
   import training APIs via the public namespace while keeping a single source of
   truth in the top‑level `training` package.
-- No API changes; this is a packaging/import hotfix.
 
 Upgrade
 
