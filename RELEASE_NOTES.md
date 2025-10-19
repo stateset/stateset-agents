@@ -1,45 +1,41 @@
-# StateSet Agents v0.4.0
+# StateSet Agents v0.5.0
 
-A developer-experience upgrade that makes the library trivial to demo, unify, and
-ship in CI/CD pipelines.
+A maintainability-focused release that extracts the stub backend, hardens optional
+dependency handling, and locks down mission-critical smoke tests.
 
 ## Highlights
-- **Offline-friendly stub backend**
-  - `AgentConfig(use_stub_model=True, stub_responses=...)` now powers the entire
-    stack, including `ComputationalGRPOEngine`.
-  - `stateset-agents train --stub` provides a one-command smoke test.
-  - New `examples/backend_switch_demo.py` shows how to flip between stub and HF
-    backends programmatically.
-- **Canonical import pathway**
-  - Every module, example, and test imports from `stateset_agents.core.*`.
-  - Legacy `import core.*` remains as a shim but now emits a `DeprecationWarning`
-    so downstream projects can migrate safely.
-- **Docs, CLI, and tests refreshed**
-  - README quick starts, release notes, and CLI help all spotlight the stub flow.
-  - Added regression coverage to ensure the stub backend and string prompts keep
-    working through training utilities.
+- **Modular Stub Backend**
+  - New `core.agent_backends` module encapsulates tokenizer/model scaffolding so
+    `core.agent` stays readable and easier to extend.
+  - Persona hinting hooks now live in a focused helper, keeping runtime tweaks controllable.
+- **Resilient Optional Dependencies**
+  - Performance optimizers and batch utilities now raise actionable guidance when
+    Torch or psutil are missing instead of crashing at import time.
+  - Monitoring health checks use the active asyncio loop and seamlessly support
+    synchronous or asynchronous check functions.
+- **Confidence via Tests**
+  - Added unit coverage for CLI stub mode, backend factories, and health-check flows.
+  - Test fixtures were modernised and now skip cleanly when Torch is unavailable.
 
 ## Upgrade Notes
 ```bash
-pip install -U stateset-agents==0.4.0
+pip install -U stateset-agents==0.5.0
 ```
 
-If you have custom extensions that relied on `import core.*`, update them to use
-`stateset_agents.core.*`. The legacy namespace will be removed in a future major
-release.
+No breaking APIs. If you previously relied on internal stub helpers inside
+`core.agent`, import from `core.agent_backends` instead.
 
 ## Verification
 - `pytest -q`
 - `stateset-agents train --stub`
-- (Optional) `python examples/backend_switch_demo.py --stub`
+- `python -m build`
 
 ## Artifacts
-- `dist/stateset_agents-0.4.0-py3-none-any.whl`
-- `dist/stateset_agents-0.4.0.tar.gz`
+- `dist/stateset_agents-0.5.0-py3-none-any.whl`
+- `dist/stateset_agents-0.5.0.tar.gz`
 
 ---
 
-## Previous Release: v0.3.4
+## Previous Release: v0.4.0
 
-See prior notes for the packaging/import hotfix that introduced the
-`stateset_agents.training` proxy and improved optional-dependency handling.
+See prior notes for the canonical import migration and end-to-end stub polish.

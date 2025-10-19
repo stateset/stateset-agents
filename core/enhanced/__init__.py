@@ -69,4 +69,4 @@ __all__ = [
     "quick_agent_comparison",
 ]
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"

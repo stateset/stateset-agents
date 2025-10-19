@@ -22,6 +22,7 @@
 
 ## 📚 Table of Contents
 
+- [🛠 What's New in v0.5.0](#-whats-new-in-v050)
 - [🛠 What's New in v0.4.0](#-whats-new-in-v040)
 - [🛠 What's New in v0.3.4](#-whats-new-in-v034)
 
@@ -41,6 +42,30 @@
 - [🚀 Roadmap](#-roadmap)
 - [🤝 Contributing](#-contributing)
 - [📄 License](#-license)
+
+## 🛠 What's New in v0.5.0
+
+This release focuses on long-term maintainability and smoother distribution.
+
+- 🧱 **Modular stub backend** – a dedicated `core.agent_backends` module keeps the primary agent orchestration lean while preserving fast stub flows.
+- 🛡️ **Defensive optional dependencies** – performance optimizers and monitoring utilities now degrade gracefully when heavy packages (Torch, psutil, transformers) are absent.
+- 🪬 **Modern async health checks** – deprecated coroutine wrappers are gone; sync and async health checks now run reliably under `asyncio`.
+- ✅ **Locked-in regression tests** – new unit coverage validates CLI stub mode, monitoring checks, and backend factories so release builds highlight breaking changes early.
+
+Upgrade
+
+```bash
+pip install -U stateset-agents==0.5.0
+```
+
+Verify installation
+
+```python
+import stateset_agents as sa
+print(sa.__version__)  # 0.5.0
+```
+
+See CHANGELOG.md and RELEASE_NOTES.md for details.
 
 ## 🛠 What's New in v0.4.0
 

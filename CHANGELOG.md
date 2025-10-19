@@ -5,6 +5,29 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-10-19
+
+### Added
+- Unit coverage for CLI stub mode, monitoring health checks, and stub backend factories to protect critical workflows.
+
+### Changed
+- Extracted stub tokenizer/model scaffolding into `core.agent_backends`, keeping `core.agent` focused on orchestration.
+- Modernised test fixtures and README/RELEASE_NOTES to document the new backend module and verification steps.
+
+### Fixed
+- Hardened optional dependency guards in performance optimisers and monitoring utilities so imports fail gracefully with actionable guidance.
+- Replaced deprecated `asyncio.coroutine` usage in health checks with loop-aware execution that supports sync or async callables.
+
+## [0.4.0] - 2025-10-05
+
+### Added
+- End-to-end stub mode surfaced in CLI and examples for fast demos and CI validation.
+- Regression coverage ensuring stub responses flow through the computational engine and raw prompt paths.
+
+### Changed
+- Standardised all internal and external imports on the `stateset_agents.*` namespace to smooth integration.
+- Refreshed documentation and CLI messaging to highlight the stub workflow.
+
 ## [0.3.3] - 2025-09-04
 
 ## [0.3.4] - 2025-09-22
