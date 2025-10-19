@@ -30,4 +30,3 @@ try:
 except Exception:
     # Do not fail interpreter startup; keep environment as-is
     pass
-

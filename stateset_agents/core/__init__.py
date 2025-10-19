@@ -1,165 +1,197 @@
 """
-Proxy module for `stateset_agents.core`.
+Compatibility bridge exposing the top-level ``core`` package through the
+``stateset_agents.core`` namespace without mutating ``sys.path`` or aliasing
+the entire package.
 
-This forwards imports to the top-level `core` package so users can
-import `stateset_agents.core.*` without us physically moving files.
+The goal is to keep backwards compatibility for ``stateset_agents.core.*``
+imports while gradually consolidating implementations under the
+``stateset_agents`` namespace.
 """
 
-from importlib import import_module as _import_module
-import sys as _sys
-from pathlib import Path as _Path
+from __future__ import annotations
 
-# Prefer the sibling/top-level 'core' package that ships with this distribution
-# by pushing its parent directory to the front of sys.path. This avoids picking
-# up unrelated 'core' packages that may exist earlier on sys.path in some
-# environments (e.g., monorepos or notebooks).
-try:
-    _root_dir = _Path(__file__).resolve().parents[2]
-    _root_str = str(_root_dir)
-    if _root_str not in _sys.path:
-        _sys.path.insert(0, _root_str)
-except Exception:
-    pass
+import importlib
+import sys
+from types import ModuleType
+from typing import Iterable, Optional
 
-# Load underlying top-level package
-_core_pkg = _import_module('core')
-
-# Re-export common submodules for dotted imports
-_submodules = (
-    'agent', 'environment', 'trajectory', 'reward', 'async_pool',
-    'computational_engine', 'data_processing', 'error_handling',
-    'performance_optimizer', 'type_system', 'multiturn_agent',
-    'advanced_monitoring', 'enhanced_state_management',
-    'intelligent_orchestrator', 'multimodal_processing',
-    'adaptive_learning_controller', 'neural_architecture_search'
+_CORE_NAMESPACE = "core"
+_SUBMODULES: Iterable[str] = (
+    "agent",
+    "environment",
+    "trajectory",
+    "reward",
+    "async_pool",
+    "computational_engine",
+    "data_processing",
+    "error_handling",
+    "performance_optimizer",
+    "type_system",
+    "multiturn_agent",
+    "advanced_monitoring",
+    "enhanced_state_management",
+    "intelligent_orchestrator",
+    "multimodal_processing",
+    "adaptive_learning_controller",
+    "neural_architecture_search",
+    "enhanced",
+    "enhanced.enhanced_agent",
+    "enhanced.advanced_evaluation",
+    "enhanced.advanced_rl_algorithms",
 )
 
-for _name in _submodules:
+
+def _import_core_submodule(name: str) -> Optional[ModuleType]:
+    """Attempt to import a submodule from the top-level ``core`` package."""
+    full_name = f"{_CORE_NAMESPACE}.{name}"
     try:
-        _mod = _import_module(f'core.{_name}')
-        _sys.modules[__name__ + f'.{_name}'] = _mod
+        module = importlib.import_module(full_name)
     except Exception:
-        pass
+        return None
+    sys.modules[f"{__name__}.{name}"] = module
+    return module
 
-# Alias this package to the underlying one for attribute access
-_sys.modules[__name__] = _core_pkg
 
-# Core components that do not hard-require torch at import time
-from .trajectory import Trajectory, MultiTurnTrajectory, ConversationTurn
-from .reward import RewardFunction, CompositeReward
-from .environment import Environment, ConversationEnvironment, TaskEnvironment
+def __getattr__(name: str):
+    """Lazy attribute access for direct ``core`` submodules."""
+    module = _import_core_submodule(name)
+    if module is not None:
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-# Delay agent import to avoid torch requirement if importing just the package
-try:
-    from .agent import Agent, MultiTurnAgent, ToolAgent
-except Exception:  # pragma: no cover
-    Agent = None
-    MultiTurnAgent = None
-    ToolAgent = None
 
-# Enhanced framework components (lightweight)
-from .error_handling import ErrorHandler, retry_async, RetryConfig
+# Prime common submodules so dotted imports continue to work.
+for _submodule in _SUBMODULES:
+    _import_core_submodule(_submodule)
+
+# Re-export frequently used symbols with compatibility guards.
 try:
-    from .performance_optimizer import PerformanceOptimizer, OptimizationLevel
+    from core.agent import Agent, MultiTurnAgent, ToolAgent
+except Exception:  # pragma: no cover - optional heavy deps
+    Agent = None  # type: ignore
+    MultiTurnAgent = None  # type: ignore
+    ToolAgent = None  # type: ignore
+
+try:
+    from core.environment import ConversationEnvironment, Environment, TaskEnvironment
 except Exception:  # pragma: no cover
-    PerformanceOptimizer = None
-    OptimizationLevel = None
-from .type_system import TypeValidator, create_typed_config
+    ConversationEnvironment = None  # type: ignore
+    Environment = None  # type: ignore
+    TaskEnvironment = None  # type: ignore
+
 try:
-    # Optional: requires aiohttp
-    from .async_pool import AsyncResourcePool, managed_async_resources
+    from core.reward import CompositeReward, RewardFunction
 except Exception:  # pragma: no cover
-    AsyncResourcePool = None  # type: ignore
-    managed_async_resources = None  # type: ignore
+    CompositeReward = None  # type: ignore
+    RewardFunction = None  # type: ignore
+
 try:
-    from .advanced_monitoring import get_monitoring_service, monitor_async_function
+    from core.trajectory import ConversationTurn, MultiTurnTrajectory, Trajectory
 except Exception:  # pragma: no cover
-    get_monitoring_service = None  # type: ignore
-    monitor_async_function = None  # type: ignore
+    ConversationTurn = None  # type: ignore
+    MultiTurnTrajectory = None  # type: ignore
+    Trajectory = None  # type: ignore
+
 try:
-    from .enhanced_state_management import get_state_service
+    from core.error_handling import ErrorHandler, RetryConfig, retry_async
+except Exception:  # pragma: no cover
+    ErrorHandler = RetryConfig = retry_async = None  # type: ignore
+
+try:
+    from core.performance_optimizer import OptimizationLevel, PerformanceOptimizer
+except Exception:  # pragma: no cover
+    OptimizationLevel = PerformanceOptimizer = None  # type: ignore
+
+try:
+    from core.type_system import TypeValidator, create_typed_config
+except Exception:  # pragma: no cover
+    TypeValidator = create_typed_config = None  # type: ignore
+
+try:
+    from core.async_pool import AsyncResourcePool, managed_async_resources
+except Exception:  # pragma: no cover
+    AsyncResourcePool = managed_async_resources = None  # type: ignore
+
+try:
+    from core.advanced_monitoring import get_monitoring_service, monitor_async_function
+except Exception:  # pragma: no cover
+    get_monitoring_service = monitor_async_function = None  # type: ignore
+
+try:
+    from core.enhanced_state_management import get_state_service
 except Exception:  # pragma: no cover
     get_state_service = None  # type: ignore
 
-# Advanced AI capabilities (wrap in try to avoid optional deps at import)
 try:
-    from .adaptive_learning_controller import (
-        AdaptiveLearningController, 
-        create_adaptive_learning_controller,
+    from core.adaptive_learning_controller import (
+        AdaptiveLearningController,
         CurriculumStrategy,
-        ExplorationStrategy
+        ExplorationStrategy,
+        create_adaptive_learning_controller,
     )
 except Exception:  # pragma: no cover
-    AdaptiveLearningController = None
-    create_adaptive_learning_controller = None
-    CurriculumStrategy = None
-    ExplorationStrategy = None
+    AdaptiveLearningController = None  # type: ignore
+    CurriculumStrategy = None  # type: ignore
+    ExplorationStrategy = None  # type: ignore
+    create_adaptive_learning_controller = None  # type: ignore
 
 try:
-    from .neural_architecture_search import (
-        NeuralArchitectureSearch,
-        create_nas_controller,
+    from core.neural_architecture_search import (
         ArchitectureConfig,
-        SearchStrategy
+        NeuralArchitectureSearch,
+        SearchStrategy,
+        create_nas_controller,
     )
 except Exception:  # pragma: no cover
-    NeuralArchitectureSearch = None
-    create_nas_controller = None
-    ArchitectureConfig = None
-    SearchStrategy = None
+    ArchitectureConfig = NeuralArchitectureSearch = None  # type: ignore
+    SearchStrategy = create_nas_controller = None  # type: ignore
 
 try:
-    from .multimodal_processing import (
-        MultimodalProcessor,
-        create_multimodal_processor,
+    from core.multimodal_processing import (
+        FusionStrategy,
         ModalityInput,
         ModalityType,
+        MultimodalProcessor,
         create_modality_input,
-        FusionStrategy
+        create_multimodal_processor,
     )
 except Exception:  # pragma: no cover
-    MultimodalProcessor = None
-    create_multimodal_processor = None
-    ModalityInput = None
-    ModalityType = None
-    create_modality_input = None
-    FusionStrategy = None
+    FusionStrategy = ModalityInput = None  # type: ignore
+    ModalityType = MultimodalProcessor = None  # type: ignore
+    create_modality_input = create_multimodal_processor = None  # type: ignore
 
 try:
-    from .intelligent_orchestrator import (
+    from core.intelligent_orchestrator import (
         IntelligentOrchestrator,
-        create_intelligent_orchestrator,
+        OptimizationObjective,
         OrchestrationConfig,
         OrchestrationMode,
-        OptimizationObjective
+        create_intelligent_orchestrator,
     )
 except Exception:  # pragma: no cover
-    IntelligentOrchestrator = None
-    create_intelligent_orchestrator = None
-    OrchestrationConfig = None
-    OrchestrationMode = None
-    OptimizationObjective = None
+    IntelligentOrchestrator = None  # type: ignore
+    OptimizationObjective = None  # type: ignore
+    OrchestrationConfig = None  # type: ignore
+    OrchestrationMode = None  # type: ignore
+    create_intelligent_orchestrator = None  # type: ignore
 
 __all__ = [
-    # Core framework
     "Agent",
-    "MultiTurnAgent", 
+    "MultiTurnAgent",
     "ToolAgent",
     "Environment",
     "ConversationEnvironment",
-    "TaskEnvironment", 
+    "TaskEnvironment",
     "Trajectory",
     "MultiTurnTrajectory",
     "ConversationTurn",
     "RewardFunction",
     "CompositeReward",
-    
-    # Enhanced components
     "ErrorHandler",
-    "retry_async",
     "RetryConfig",
+    "retry_async",
     "PerformanceOptimizer",
-    "OptimizationLevel", 
+    "OptimizationLevel",
     "TypeValidator",
     "create_typed_config",
     "AsyncResourcePool",
@@ -167,8 +199,6 @@ __all__ = [
     "get_monitoring_service",
     "monitor_async_function",
     "get_state_service",
-    
-    # Advanced AI capabilities (may be None if optional deps missing)
     "AdaptiveLearningController",
     "create_adaptive_learning_controller",
     "CurriculumStrategy",

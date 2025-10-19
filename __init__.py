@@ -12,6 +12,7 @@ __email__ = "team@stateset.ai"
 # Re-export everything from the stateset_agents package for backward compatibility
 try:
     from stateset_agents import *
-    __all__ = getattr(__import__('stateset_agents'), '__all__', [])
+
+    __all__ = getattr(__import__("stateset_agents"), "__all__", [])
 except ImportError:
     __all__ = []

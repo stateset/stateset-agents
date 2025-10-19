@@ -27,6 +27,7 @@
 - [🔥 What's New in v0.3.0](#-whats-new-in-v030)
 - [🏗️ Architecture Overview](#-architecture-overview)
 - [🚀 Quick Start](#-quick-start)
+  - [CLI Quickstart](#cli-quickstart)
 - [🎨 Real-World Applications](#-real-world-applications)
 - [⚙️ Advanced Training Capabilities](#-advanced-training-capabilities)
 - [📊 Performance & Benchmarks](#-performance--benchmarks)
@@ -165,6 +166,54 @@ asyncio.run(demo())
 ```
 
 > 💡 Tip: Domain rewards (e.g., `create_domain_reward('customer_service')`) are used for training. See training examples below.
+
+### Offline / Stub Mode for CI and Prototyping
+
+Want to experiment without downloading large checkpoints? Enable the stub backend
+to keep your workflow lightweight while the rest of the GRPO stack remains the
+same:
+
+```python
+async def main():
+    agent = MultiTurnAgent(
+        AgentConfig(
+            model_name="stub://demo",
+            use_stub_model=True,
+            stub_responses=["Stub response ready to help!"],
+        )
+    )
+    await agent.initialize()
+    reply = await agent.generate_response([{"role": "user", "content": "Hello"}])
+    print(reply)
+
+asyncio.run(main())
+```
+
+The stub backend is especially handy for smoke tests and local development
+pipelines where transformer weights are not available.
+
+> 🎓 Try `python examples/backend_switch_demo.py --stub` to see the live switch in action.
+> ⚠️ Legacy note: imports from `core.*` are deprecated—use `stateset_agents.core.*` instead.
+
+### CLI Quickstart
+
+```bash
+# 1) Check your environment
+stateset-agents doctor
+
+# 2) Scaffold a minimal config
+stateset-agents init --path ./stateset_agents.yaml
+
+# 3) Run a minimal CPU training (2–5 episodes)
+stateset-agents train --config ./stateset_agents.yaml --dry-run false --save ./outputs/checkpoint
+
+# 4) Load the checkpoint and evaluate one message
+stateset-agents evaluate --checkpoint ./outputs/checkpoint --message "Hello!"
+
+# Need an offline smoke test?
+stateset-agents train --stub
+```
+
 
 ---
 

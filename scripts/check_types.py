@@ -21,7 +21,7 @@ def run_mypy(paths: List[str]) -> Tuple[int, str, str]:
 def main():
     """Main entry point."""
     print("🔍 Running type checks on StateSet Agents...")
-    
+
     # Define paths to check
     paths_to_check = [
         "stateset_agents",
@@ -34,28 +34,28 @@ def main():
         # "tests",
         # "examples"
     ]
-    
+
     # Filter out paths that don't exist
     existing_paths = [p for p in paths_to_check if Path(p).exists()]
-    
+
     if not existing_paths:
         print("❌ No valid paths found to check")
         return 1
-    
+
     print(f"📁 Checking paths: {', '.join(existing_paths)}")
-    
+
     # Run mypy
     returncode, stdout, stderr = run_mypy(existing_paths)
-    
+
     # Print results
     if stdout:
         print("\n📋 Type check results:")
         print(stdout)
-    
+
     if stderr:
         print("\n⚠️  Errors/Warnings:")
         print(stderr)
-    
+
     # Summary
     if returncode == 0:
         print("\n✅ All type checks passed!")

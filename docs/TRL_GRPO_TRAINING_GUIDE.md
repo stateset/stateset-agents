@@ -85,8 +85,8 @@ Create a custom TRL GRPO configuration:
 
 ```python
 from training import TRLGRPOConfig, train_with_trl_grpo
-from core.agent import MultiTurnAgent, AgentConfig
-from core.environment import ConversationEnvironment
+from stateset_agents.core.agent import MultiTurnAgent, AgentConfig
+from stateset_agents.core.environment import ConversationEnvironment
 from rewards.multi_objective_reward import MultiObjectiveReward
 
 # Create configuration

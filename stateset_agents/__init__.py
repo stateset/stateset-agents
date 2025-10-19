@@ -10,33 +10,67 @@ __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
 
 # Core exports
-from .core.agent import Agent, MultiTurnAgent, ToolAgent
-from .core.environment import Environment, ConversationEnvironment, TaskEnvironment
-from .core.trajectory import Trajectory, MultiTurnTrajectory, ConversationTurn
-from .core.reward import (
-    RewardFunction, CompositeReward,
-    # Pre-built rewards
-    HelpfulnessReward, SafetyReward, CorrectnessReward,
-    ConcisenessReward, EngagementReward, TaskCompletionReward,
-    # Domain-specific rewards
-    CustomerServiceReward, TechnicalSupportReward, SalesAssistantReward,
-    # Enhanced rewards
-    DomainSpecificReward, SimilarityAwareReward,
-    # Factory functions
-    create_domain_reward, create_adaptive_reward
-)
+try:
+    from .core.agent import Agent, MultiTurnAgent, ToolAgent
+except Exception:  # pragma: no cover - optional heavy dependencies
+    Agent = None  # type: ignore
+    MultiTurnAgent = None  # type: ignore
+    ToolAgent = None  # type: ignore
+
+try:
+    from .core.environment import ConversationEnvironment, Environment, TaskEnvironment
+except Exception:  # pragma: no cover
+    ConversationEnvironment = None  # type: ignore
+    Environment = None  # type: ignore
+    TaskEnvironment = None  # type: ignore
 
 # New enhanced features
 from .core.error_handling import (
-    GRPOException, TrainingException, ModelException, DataException,
-    NetworkException, ResourceException, ValidationException,
-    ErrorHandler, RetryConfig, CircuitBreakerConfig,
-    retry_async, circuit_breaker, handle_error, get_error_summary
+    CircuitBreakerConfig,
+    DataException,
+    ErrorHandler,
+    GRPOException,
+    ModelException,
+    NetworkException,
+    ResourceException,
+    RetryConfig,
+    TrainingException,
+    ValidationException,
+    circuit_breaker,
+    get_error_summary,
+    handle_error,
+    retry_async,
 )
+from .core.reward import (  # Pre-built rewards; Domain-specific rewards; Enhanced rewards; Factory functions
+    CompositeReward,
+    ConcisenessReward,
+    CorrectnessReward,
+    CustomerServiceReward,
+    DomainSpecificReward,
+    EngagementReward,
+    HelpfulnessReward,
+    RewardFunction,
+    SafetyReward,
+    SalesAssistantReward,
+    SimilarityAwareReward,
+    TaskCompletionReward,
+    TechnicalSupportReward,
+    create_adaptive_reward,
+    create_domain_reward,
+)
+from .core.trajectory import ConversationTurn, MultiTurnTrajectory, Trajectory
+
 try:
     from .core.performance_optimizer import (
-        PerformanceOptimizer, MemoryMonitor, ModelOptimizer, BatchOptimizer,
-        OptimizationLevel, MemoryConfig, ComputeConfig, DataConfig, PerformanceMetrics
+        BatchOptimizer,
+        ComputeConfig,
+        DataConfig,
+        MemoryConfig,
+        MemoryMonitor,
+        ModelOptimizer,
+        OptimizationLevel,
+        PerformanceMetrics,
+        PerformanceOptimizer,
     )
 except Exception:  # pragma: no cover - optional heavy deps (torch/transformers)
     PerformanceOptimizer = None  # type: ignore
@@ -48,16 +82,31 @@ except Exception:  # pragma: no cover - optional heavy deps (torch/transformers)
     ComputeConfig = None  # type: ignore
     DataConfig = None  # type: ignore
     PerformanceMetrics = None  # type: ignore
+from .core.type_system import ConfigValidator
+from .core.type_system import ConversationTurn as TypedConversationTurn
 from .core.type_system import (
-    TypeValidator, ConfigValidator, TypeSafeSerializer,
-    create_typed_config, ensure_type_safety, ensure_async_type_safety,
-    ModelConfig, TrainingConfig, ConversationTurn as TypedConversationTurn,
-    TrajectoryData, RewardMetrics, DeviceType, ModelSize, TrainingStage
+    DeviceType,
+    ModelConfig,
+    ModelSize,
+    RewardMetrics,
+    TrainingConfig,
+    TrainingStage,
+    TrajectoryData,
+    TypeSafeSerializer,
+    TypeValidator,
+    create_typed_config,
+    ensure_async_type_safety,
+    ensure_type_safety,
 )
+
 try:
     from .core.async_pool import (
-        AsyncResourcePool, AsyncTaskManager, PooledResource, 
-        get_http_pool, get_task_manager, managed_async_resources
+        AsyncResourcePool,
+        AsyncTaskManager,
+        PooledResource,
+        get_http_pool,
+        get_task_manager,
+        managed_async_resources,
     )
 except Exception:  # pragma: no cover - optional aiohttp
     AsyncResourcePool = None  # type: ignore
@@ -69,8 +118,10 @@ except Exception:  # pragma: no cover - optional aiohttp
 
 # Data processing exports
 from .core.data_processing import (
-    DataLoader, DataProcessor, ConversationExample,
-    load_and_prepare_data
+    ConversationExample,
+    DataLoader,
+    DataProcessor,
+    load_and_prepare_data,
 )
 
 # Training exports (optional to avoid import issues)
@@ -82,7 +133,7 @@ except Exception:  # pragma: no cover - allow import without training deps
 
 try:
     from training.config import TrainingConfig, TrainingProfile, get_config_for_task
-    from training.train import train, AutoTrainer
+    from training.train import AutoTrainer, train
 except Exception:
     TrainingConfig = None
     TrainingProfile = None
@@ -100,17 +151,16 @@ except Exception:
 __all__ = [
     # Core classes
     "Agent",
-    "MultiTurnAgent", 
+    "MultiTurnAgent",
     "ToolAgent",
     "Environment",
     "ConversationEnvironment",
-    "TaskEnvironment", 
+    "TaskEnvironment",
     "Trajectory",
     "MultiTurnTrajectory",
     "ConversationTurn",
     "RewardFunction",
     "CompositeReward",
-    
     # Reward functions
     "HelpfulnessReward",
     "SafetyReward",
@@ -125,33 +175,58 @@ __all__ = [
     "SimilarityAwareReward",
     "create_domain_reward",
     "create_adaptive_reward",
-    
     # Enhanced error handling
-    "GRPOException", "TrainingException", "ModelException", "DataException",
-    "NetworkException", "ResourceException", "ValidationException",
-    "ErrorHandler", "RetryConfig", "CircuitBreakerConfig",
-    "retry_async", "circuit_breaker", "handle_error", "get_error_summary",
-    
+    "GRPOException",
+    "TrainingException",
+    "ModelException",
+    "DataException",
+    "NetworkException",
+    "ResourceException",
+    "ValidationException",
+    "ErrorHandler",
+    "RetryConfig",
+    "CircuitBreakerConfig",
+    "retry_async",
+    "circuit_breaker",
+    "handle_error",
+    "get_error_summary",
     # Performance optimization
-    "PerformanceOptimizer", "MemoryMonitor", "ModelOptimizer", "BatchOptimizer",
-    "OptimizationLevel", "MemoryConfig", "ComputeConfig", "DataConfig", "PerformanceMetrics",
-    
+    "PerformanceOptimizer",
+    "MemoryMonitor",
+    "ModelOptimizer",
+    "BatchOptimizer",
+    "OptimizationLevel",
+    "MemoryConfig",
+    "ComputeConfig",
+    "DataConfig",
+    "PerformanceMetrics",
     # Type system
-    "TypeValidator", "ConfigValidator", "TypeSafeSerializer",
-    "create_typed_config", "ensure_type_safety", "ensure_async_type_safety",
-    "ModelConfig", "TrainingConfig", "TypedConversationTurn",
-    "TrajectoryData", "RewardMetrics", "DeviceType", "ModelSize", "TrainingStage",
-    
+    "TypeValidator",
+    "ConfigValidator",
+    "TypeSafeSerializer",
+    "create_typed_config",
+    "ensure_type_safety",
+    "ensure_async_type_safety",
+    "ModelConfig",
+    "TrainingConfig",
+    "TypedConversationTurn",
+    "TrajectoryData",
+    "RewardMetrics",
+    "DeviceType",
+    "ModelSize",
+    "TrainingStage",
     # Async resource management
-    "AsyncResourcePool", "AsyncTaskManager", "PooledResource", 
-    "get_http_pool", "get_task_manager", "managed_async_resources",
-    
+    "AsyncResourcePool",
+    "AsyncTaskManager",
+    "PooledResource",
+    "get_http_pool",
+    "get_task_manager",
+    "managed_async_resources",
     # Data processing
     "DataLoader",
     "DataProcessor",
     "ConversationExample",
     "load_and_prepare_data",
-    
     # Training (optional)
     "GRPOTrainer",
     "MultiTurnGRPOTrainer",
@@ -159,7 +234,6 @@ __all__ = [
     "get_config_for_task",
     "train",
     "AutoTrainer",
-    
     # Utilities
     "WandBLogger",
     "init_wandb",
