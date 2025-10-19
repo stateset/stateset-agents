@@ -11,7 +11,13 @@ import os
 import tempfile
 from pathlib import Path
 
-import torch
+import pytest
+
+if not os.environ.get("RUN_FULL_INTEGRATION_TESTS"):
+    pytest.skip(
+        "Set RUN_FULL_INTEGRATION_TESTS=1 to enable resource-intensive integration tests.",
+        allow_module_level=True,
+    )
 
 # Framework imports
 from stateset_agents import (

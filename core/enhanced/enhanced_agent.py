@@ -20,9 +20,11 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import torch
-import torch.nn as nn
-from transformers import AutoModel, AutoTokenizer
+
+try:
+    import torch
+except ImportError:  # pragma: no cover - optional dependency
+    torch = None  # type: ignore
 
 from ..agent import Agent, AgentConfig, MultiTurnAgent
 from ..reward import RewardFunction, RewardResult
@@ -93,7 +95,15 @@ class VectorMemory:
         self.entries: List[MemoryEntry] = []
         self.tokenizer = None
         self.model = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch is not None:
+            cuda_available = False
+            try:  # pragma: no cover - device probing
+                cuda_available = torch.cuda.is_available()
+            except Exception:
+                cuda_available = False
+            self.device = torch.device("cuda" if cuda_available else "cpu")
+        else:
+            self.device = "cpu"
 
     async def initialize(self):
         """Initialize the embedding model"""
@@ -164,7 +174,10 @@ class VectorMemory:
     async def _generate_embedding(self, text: str) -> np.ndarray:
         """Generate embedding for text"""
         if self.model:
-            with torch.no_grad():
+            if torch is not None and hasattr(torch, "no_grad"):
+                with torch.no_grad():
+                    embedding = self.model.encode(text, convert_to_numpy=True)
+            else:
                 embedding = self.model.encode(text, convert_to_numpy=True)
             return embedding
         else:

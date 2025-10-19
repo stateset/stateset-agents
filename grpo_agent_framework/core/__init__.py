@@ -7,8 +7,8 @@ from stateset_agents.core.reward import CompositeReward, RewardFunction
 from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory, Trajectory
 
 warnings.warn(
-    "Importing from 'grpo_agent_framework.core' is deprecated; use '
-    stateset_agents.core' instead.",
+    "Importing from 'grpo_agent_framework.core' is deprecated; use "
+    "'stateset_agents.core' instead.",
     DeprecationWarning,
     stacklevel=2,
 )

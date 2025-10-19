@@ -34,7 +34,7 @@ class StubReward(RewardFunction):
     async def compute_reward(
         self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
     ) -> RewardResult:
-        return RewardResult(score=0.5, components={}, metadata={})
+        return RewardResult(score=0.5, breakdown={}, metadata={})
 
 
 @pytest.mark.asyncio
