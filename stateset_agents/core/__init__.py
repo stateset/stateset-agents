@@ -22,6 +22,7 @@ _SUBMODULES: Iterable[str] = (
     "environment",
     "trajectory",
     "reward",
+    "value_function",
     "async_pool",
     "computational_engine",
     "data_processing",
@@ -85,6 +86,13 @@ try:
 except Exception:  # pragma: no cover
     CompositeReward = None  # type: ignore
     RewardFunction = None  # type: ignore
+
+try:
+    from core.value_function import ValueFunction, ValueHead, create_value_function
+except Exception:  # pragma: no cover
+    ValueFunction = None  # type: ignore
+    ValueHead = None  # type: ignore
+    create_value_function = None  # type: ignore
 
 try:
     from core.trajectory import ConversationTurn, MultiTurnTrajectory, Trajectory
@@ -188,6 +196,9 @@ __all__ = [
     "ConversationTurn",
     "RewardFunction",
     "CompositeReward",
+    "ValueFunction",
+    "ValueHead",
+    "create_value_function",
     "ErrorHandler",
     "RetryConfig",
     "retry_async",

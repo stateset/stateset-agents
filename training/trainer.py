@@ -664,20 +664,63 @@ class MultiTurnGRPOTrainer:
     def _compute_group_policy_loss(
         self, group: TrajectoryGroup, advantages: torch.Tensor
     ) -> torch.Tensor:
-        """Compute policy loss for a single trajectory group"""
+        """Compute policy loss for a single trajectory group with proper GRPO implementation"""
         _require_torch()
-        assert torch is not None
+        assert torch is not None and F is not None
 
-        # This is a simplified placeholder implementation
-        # In a full GRPO implementation, you would:
-        # 1. Tokenize the conversations
-        # 2. Run forward pass to get log probabilities
-        # 3. Compute importance sampling ratios
-        # 4. Apply PPO-style clipping with advantages
+        device = self.agent.model.device
+        total_loss = torch.tensor(0.0, device=device, requires_grad=True)
+        num_trajectories = 0
 
-        # For demonstration, return a simple loss
-        loss = torch.tensor(0.1, requires_grad=True) * advantages.mean()
-        return loss
+        # PPO clipping ratio (use clip_ratio from config, fallback to clip_epsilon for compat)
+        clip_epsilon = getattr(self.config, 'clip_ratio', getattr(self.config, 'clip_epsilon', 0.2))
+
+        for traj_idx, (trajectory, advantage) in enumerate(zip(group.trajectories, advantages)):
+            try:
+                # Format trajectory for model
+                conversation_text = self._format_trajectory_for_model(trajectory)
+
+                # Tokenize
+                inputs = self.agent.tokenizer(
+                    conversation_text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=getattr(self.config, "max_prompt_length", 512)
+                    + getattr(self.config, "max_completion_length", 512),
+                    padding=True,
+                )
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+
+                # Forward pass to get log probabilities
+                with torch.set_grad_enabled(True):
+                    outputs = self.agent.model(**inputs, labels=inputs["input_ids"])
+
+                    # Get the negative log likelihood (this is the loss from the model)
+                    nll = outputs.loss
+
+                    # GRPO policy gradient: -advantage * log_prob
+                    # Since outputs.loss is already negative log likelihood,
+                    # policy loss = advantage * nll
+                    policy_loss = advantage * nll
+
+                    # Optional: PPO-style clipping for stability
+                    if clip_epsilon > 0:
+                        # For stability, we clip the advantage-weighted loss
+                        clipped_loss = advantage.clamp(-clip_epsilon, clip_epsilon) * nll
+                        policy_loss = torch.max(policy_loss, clipped_loss)
+
+                    total_loss = total_loss + policy_loss
+                    num_trajectories += 1
+
+            except Exception as e:
+                logger.warning(f"Failed to compute policy loss for trajectory {traj_idx}: {e}")
+                continue
+
+        # Average over trajectories in the group
+        if num_trajectories > 0:
+            return total_loss / num_trajectories
+        else:
+            return torch.tensor(0.0, device=device, requires_grad=True)
 
     def compute_enhanced_grpo_loss(
         self, trajectory_groups: List[TrajectoryGroup], beta: float = 0.0

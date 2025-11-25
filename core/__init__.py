@@ -82,6 +82,13 @@ from .reward import (
     create_adaptive_reward,
     create_domain_reward,
 )
+
+# Value function for advantage estimation
+from .value_function import (
+    ValueFunction,
+    ValueHead,
+    create_value_function,
+)
 from .trajectory import ConversationTurn, MultiTurnTrajectory, Trajectory
 from .type_system import ConfigValidator
 from .type_system import ConversationTurn as TypedConversationTurn
@@ -130,6 +137,10 @@ __all__ = [
     "SimilarityAwareReward",
     "create_domain_reward",
     "create_adaptive_reward",
+    # Value function
+    "ValueFunction",
+    "ValueHead",
+    "create_value_function",
     # Enhanced features
     "GRPOException",
     "TrainingException",
