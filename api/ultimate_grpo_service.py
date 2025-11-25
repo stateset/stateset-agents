@@ -9,7 +9,9 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,13 +21,18 @@ try:
     import uvicorn
     from fastapi import (
         BackgroundTasks,
+        Depends,
         FastAPI,
         HTTPException,
+        Request,
         WebSocket,
         WebSocketDisconnect,
     )
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.exceptions import RequestValidationError
     from fastapi.middleware.cors import CORSMiddleware
-    from pydantic import BaseModel, Field
+    from fastapi.responses import JSONResponse
+    from pydantic import BaseModel, Field, field_validator
 
     FASTAPI_AVAILABLE = True
 except ImportError:
@@ -33,23 +40,13 @@ except ImportError:
 
 import utils.monitoring
 
-from ..core.agent import Agent
-from ..core.computational_engine import (
+from core.agent import Agent
+from core.computational_engine import (
     ComputationalGRPOEngine,
     create_computational_engine,
 )
-from ..core.environment import Environment
-from ..core.multiturn_agent import DialogueDatabase, MultiTurnAgent
-from ..rewards.multi_objective_reward import (
-    MultiObjectiveRewardFunction,
-    create_customer_service_reward,
-)
-from ..rewards.ruler_reward import RulerRewardFunction, create_customer_service_ruler
-from ..training.distributed_trainer import DistributedConfig, DistributedGRPOTrainer
-from ..training.neural_reward_trainer import (
-    NeuralRewardTrainer,
-    create_neural_reward_function,
-)
+from core.environment import Environment
+from core.multiturn_agent import DialogueDatabase, MultiTurnAgent
 
 MonitoringService = utils.monitoring.MonitoringService
 import utils.cache
@@ -58,11 +55,237 @@ CacheService = utils.cache.CacheService
 
 logger = logging.getLogger(__name__)
 
+
+def _get_int_from_env(env_var: str, default: int) -> int:
+    """Parse an integer environment variable safely."""
+    try:
+        return int(os.getenv(env_var, str(default)))
+    except ValueError:
+        logger.warning("Invalid value for %s, using default %s", env_var, default)
+        return default
+
+
+@dataclass
+class APIConfig:
+    """Runtime configuration for the API surface."""
+
+    api_keys: Dict[str, List[str]]
+    rate_limit_per_minute: int
+    max_prompts: int
+    max_prompt_length: int
+    max_message_length: int
+    max_iterations: int
+
+    @classmethod
+    def from_env(cls) -> "APIConfig":
+        raw_keys = os.getenv("GRPO_API_KEYS", "")
+        parsed_keys: Dict[str, List[str]] = {}
+
+        for item in raw_keys.split(","):
+            cleaned = item.strip()
+            if not cleaned:
+                continue
+
+            key, _, roles_raw = cleaned.partition(":")
+            roles = [role.strip() for role in roles_raw.split("|") if role.strip()]
+            parsed_keys[key] = roles or ["user"]
+
+        return cls(
+            api_keys=parsed_keys,
+            rate_limit_per_minute=_get_int_from_env("GRPO_RATE_LIMIT_PER_MIN", 60),
+            max_prompts=_get_int_from_env("GRPO_MAX_PROMPTS", 8),
+            max_prompt_length=_get_int_from_env("GRPO_MAX_PROMPT_CHARS", 4000),
+            max_message_length=_get_int_from_env("GRPO_MAX_MESSAGE_CHARS", 4000),
+            max_iterations=_get_int_from_env("GRPO_MAX_ITERATIONS", 50),
+        )
+
+
+class SlidingWindowRateLimiter:
+    """In-memory sliding window rate limiter."""
+
+    def __init__(self, window_seconds: int = 60):
+        self.window_seconds = window_seconds
+        self.windows: Dict[str, deque] = defaultdict(deque)
+
+    def allow(self, key: str, limit: int) -> bool:
+        """Return True if the request is within the rate limit."""
+        now = time.monotonic()
+        window = self.windows[key]
+        cutoff = now - self.window_seconds
+
+        while window and window[0] <= cutoff:
+            window.popleft()
+
+        if len(window) >= limit:
+            return False
+
+        window.append(now)
+        return True
+
+
+class APIMetrics:
+    """Lightweight request metrics tracker."""
+
+    def __init__(self) -> None:
+        self.request_counts: Dict[str, int] = defaultdict(int)
+        self.status_counts: Dict[int, int] = defaultdict(int)
+        self.latencies: deque = deque(maxlen=1000)
+        self.rate_limit_hits: int = 0
+
+    def record(self, path: str, status_code: int, latency: float) -> None:
+        """Record a request/response pair."""
+        self.request_counts[path] += 1
+        self.status_counts[status_code] += 1
+        self.latencies.append(latency)
+
+    def snapshot(self) -> Dict[str, Any]:
+        """Return a serializable view of metrics."""
+        average_latency = (
+            sum(self.latencies) / len(self.latencies) if self.latencies else 0.0
+        )
+        percentile_95 = 0.0
+        if self.latencies:
+            sorted_latencies = sorted(self.latencies)
+            index = int(0.95 * (len(sorted_latencies) - 1))
+            percentile_95 = sorted_latencies[index]
+
+        return {
+            "total_requests": sum(self.request_counts.values()),
+            "requests_by_path": dict(self.request_counts),
+            "status_codes": dict(self.status_counts),
+            "average_latency_seconds": round(average_latency, 4),
+            "p95_latency_seconds": round(percentile_95, 4),
+            "rate_limit_hits": self.rate_limit_hits,
+        }
+
+
+@dataclass
+class RequestContext:
+    """Captured request metadata after auth/rate limiting."""
+
+    request_id: str
+    user_id: str
+    roles: List[str]
+    api_key: Optional[str]
+    client: str
+
+
+API_CONFIG = APIConfig.from_env()
+RATE_LIMITER = SlidingWindowRateLimiter()
+API_METRICS = APIMetrics()
+
+
+class LightweightDemoEngine:
+    """Lightweight demo engine to keep the API responsive in constrained envs."""
+
+    def __init__(self) -> None:
+        self.scale_factor = 1.0
+        self.total_trajectories = 0
+        self.total_reward = 0.0
+
+    async def train_iteration(self, prompts: List[str]) -> Dict[str, Any]:
+        """Simulate a training iteration without heavy compute."""
+        trajectories = len(prompts)
+        average_reward = 0.5
+        computation_used = trajectories * self.scale_factor
+
+        self.total_trajectories += trajectories
+        self.total_reward += average_reward * trajectories
+
+        return {
+            "trajectories_generated": trajectories,
+            "average_reward": average_reward,
+            "total_computation_used": computation_used,
+            "scale_factor": self.scale_factor,
+        }
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Return simple engine metrics."""
+        average_reward = (
+            self.total_reward / self.total_trajectories
+            if self.total_trajectories
+            else 0.0
+        )
+        return {
+            "total_trajectories": self.total_trajectories,
+            "average_reward": average_reward,
+            "scale_factor": self.scale_factor,
+        }
+
+    def scale_computation(self, scale_factor: float) -> Dict[str, Any]:
+        """Adjust the simulated computation scale."""
+        self.scale_factor = scale_factor
+        return {"scale_factor": scale_factor}
+
+    def cleanup(self) -> None:
+        """Cleanup hook for parity with real engines."""
+        return None
+
+
+def _build_error_response(
+    request: Request, status_code: int, message: str, details: Optional[Any] = None
+) -> JSONResponse:
+    """Consistent error envelope across the API."""
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    payload = {
+        "error": {"message": message, "status_code": status_code},
+        "request_id": request_id,
+        "path": str(request.url.path),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    if details is not None:
+        payload["error"]["details"] = jsonable_encoder(details)
+
+    return JSONResponse(status_code=status_code, content=payload)
+
 # Global state
 services = {}
 active_engines = {}
 active_conversations = {}
 training_jobs = {}
+
+
+def _extract_api_key(request: Request) -> Optional[str]:
+    """Get API key from headers (supports Bearer and X-API-Key)."""
+    auth_header = request.headers.get("authorization") or ""
+    if auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip()
+    api_key = request.headers.get("x-api-key")
+    return api_key.strip() if api_key else None
+
+
+async def verify_request(request: Request) -> RequestContext:
+    """Authenticate request and enforce rate limits."""
+    client_ip = request.client.host if request.client else "unknown"
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    api_key = _extract_api_key(request)
+
+    if API_CONFIG.api_keys:
+        if not api_key or api_key not in API_CONFIG.api_keys:
+            raise HTTPException(
+                status_code=401, detail="A valid API key is required for this API"
+            )
+        roles = API_CONFIG.api_keys[api_key]
+        user_id = request.headers.get("x-user-id", client_ip)
+    else:
+        roles = ["anonymous"]
+        user_id = request.headers.get("x-user-id", client_ip)
+
+    limit_key = api_key or client_ip
+    if not RATE_LIMITER.allow(limit_key, API_CONFIG.rate_limit_per_minute):
+        API_METRICS.rate_limit_hits += 1
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Please retry after a short delay.",
+        )
+
+    return RequestContext(
+        request_id=request_id,
+        user_id=user_id,
+        roles=roles,
+        api_key=api_key,
+        client=client_ip,
+    )
 
 
 # API Models
@@ -77,6 +300,53 @@ class TrainingRequest(BaseModel):
     use_ruler_rewards: bool = False
     distributed_config: Optional[Dict[str, Any]] = None
 
+    @field_validator("prompts")
+    @classmethod
+    def validate_prompts(cls, prompts: List[str]) -> List[str]:
+        cleaned = [prompt.strip() for prompt in prompts if prompt and prompt.strip()]
+        if not cleaned:
+            raise ValueError("At least one prompt is required")
+        if len(cleaned) > API_CONFIG.max_prompts:
+            raise ValueError(
+                f"Maximum {API_CONFIG.max_prompts} prompts are supported per request"
+            )
+        for prompt in cleaned:
+            if len(prompt) > API_CONFIG.max_prompt_length:
+                raise ValueError(
+                    f"Prompt exceeds {API_CONFIG.max_prompt_length} characters"
+                )
+        return cleaned
+
+    @field_validator("num_iterations")
+    @classmethod
+    def validate_iterations(cls, iterations: int) -> int:
+        if iterations < 1:
+            raise ValueError("num_iterations must be positive")
+        if iterations > API_CONFIG.max_iterations:
+            raise ValueError(
+                f"num_iterations cannot exceed {API_CONFIG.max_iterations}"
+            )
+        return iterations
+
+    @field_validator("strategy")
+    @classmethod
+    def validate_strategy(cls, strategy: str) -> str:
+        allowed = {"computational", "distributed"}
+        if strategy not in allowed:
+            raise ValueError(
+                f"strategy must be one of: {', '.join(sorted(allowed))}"
+            )
+        return strategy
+
+    @field_validator("parallel_batch_size")
+    @classmethod
+    def validate_parallel_batch_size(
+        cls, parallel_batch_size: Optional[int]
+    ) -> Optional[int]:
+        if parallel_batch_size is not None and parallel_batch_size < 1:
+            raise ValueError("parallel_batch_size must be positive when provided")
+        return parallel_batch_size
+
 
 class ConversationRequest(BaseModel):
     """Request model for conversations"""
@@ -86,6 +356,18 @@ class ConversationRequest(BaseModel):
     strategy: str = "default"
     user_id: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, message: str) -> str:
+        cleaned = message.strip()
+        if not cleaned:
+            raise ValueError("message cannot be empty")
+        if len(cleaned) > API_CONFIG.max_message_length:
+            raise ValueError(
+                f"message exceeds {API_CONFIG.max_message_length} characters"
+            )
+        return cleaned
 
 
 class TrainingResponse(BaseModel):
@@ -98,6 +380,10 @@ class TrainingResponse(BaseModel):
     average_reward: float = 0.0
     computation_used: float = 0.0
     metrics: Dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    request_id: Optional[str] = None
 
 
 class ConversationResponse(BaseModel):
@@ -115,6 +401,13 @@ class ScaleRequest(BaseModel):
     scale_factor: float
     apply_to_all: bool = False
 
+    @field_validator("scale_factor")
+    @classmethod
+    def validate_scale_factor(cls, scale_factor: float) -> float:
+        if scale_factor <= 0:
+            raise ValueError("scale_factor must be positive")
+        return scale_factor
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -123,43 +416,58 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Ultimate GRPO Service")
 
     # Initialize services
-    services["monitoring"] = MonitoringService()
+    enable_prometheus = (
+        os.getenv("GRPO_ENABLE_PROMETHEUS", "false").lower() == "true"
+    )
+    services["monitoring"] = MonitoringService(enable_prometheus=enable_prometheus)
     services["cache"] = CacheService()
 
     # Initialize example components
     model_config = {"model_type": "gpt-oss", "model_name": "openai/gpt-oss-120b"}
 
-    # Create computational engine
-    from ..core.agent import Agent
-    from ..core.environment import Environment
-    from ..core.reward import RewardFunction
+    # Create computational engine (lightweight by default to avoid heavy spawning)
+    from core.agent import Agent
+    from core.environment import Environment
+    from core.reward import RewardFunction
 
-    class DemoAgent(Agent):
-        async def generate_response(self, prompt: str) -> str:
-            return f"Response to: {prompt[:50]}..."
+    use_lightweight_engine = (
+        os.getenv("GRPO_API_LIGHT_ENGINE", "true").lower() != "false"
+    )
 
-    class DemoEnvironment(Environment):
-        async def reset(self) -> Dict[str, Any]:
-            return {"state": "initial"}
+    if use_lightweight_engine:
+        services["demo_engine"] = LightweightDemoEngine()
+    else:
+        class DemoAgent(Agent):
+            async def generate_response(self, prompt: str) -> str:
+                return f"Response to: {prompt[:50]}..."
 
-        async def step(self, action: str) -> Dict[str, Any]:
-            return {"reward": 0.5, "done": False}
+        class DemoEnvironment(Environment):
+            async def reset(self) -> Dict[str, Any]:
+                return {"state": "initial"}
 
-        async def get_reward(self, trajectory) -> float:
-            return 0.5
+            async def step(self, action: str) -> Dict[str, Any]:
+                return {"reward": 0.5, "done": False}
 
-    class DemoReward(RewardFunction):
-        async def compute_reward(self, turns, context=None):
-            from ..core.reward import RewardResult
+            async def get_reward(self, trajectory) -> float:
+                return 0.5
 
-            return RewardResult(score=0.5, breakdown={})
+        class DemoReward(RewardFunction):
+            async def compute_reward(self, turns, context=None):
+                from core.reward import RewardResult
 
-    demo_agent = DemoAgent(model_config)
-    demo_environment = DemoEnvironment()
-    demo_reward = DemoReward()
+                return RewardResult(score=0.5, breakdown={})
 
-    services["demo_engine"] = create_computational_engine(
-        demo_agent, demo_environment, demo_reward
+        demo_agent = DemoAgent(model_config)
+        demo_environment = DemoEnvironment()
+        demo_reward = DemoReward()
+
+        services["demo_engine"] = create_computational_engine(
+            demo_agent, demo_environment, demo_reward, num_workers=1
+        )
+
+    logger.info(
+        "Initialized demo engine (%s)",
+        "lightweight" if use_lightweight_engine else "computational",
     )
 
     # Create multi-turn agent
@@ -199,6 +507,63 @@ if FASTAPI_AVAILABLE:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def request_context_middleware(request: Request, call_next):
+        """Attach request id, capture metrics, and normalize errors."""
+        request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+        request.state.request_id = request_id
+        start_time = time.monotonic()
+
+        try:
+            response = await call_next(request)
+        except RequestValidationError as exc:
+            response = _build_error_response(
+                request,
+                422,
+                "Invalid request payload",
+                details=exc.errors(),
+            )
+        except HTTPException as exc:
+            response = _build_error_response(
+                request, exc.status_code, str(exc.detail)
+            )
+        except Exception as exc:  # pragma: no cover - safety net
+            logger.exception("Unhandled exception for request %s", request_id)
+            response = _build_error_response(
+                request, 500, "Internal server error, please retry later."
+            )
+
+        API_METRICS.record(
+            request.url.path, response.status_code, time.monotonic() - start_time
+        )
+        response.headers["x-request-id"] = request_id
+        return response
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        """Return consistent error envelopes for HTTP errors."""
+        return _build_error_response(request, exc.status_code, str(exc.detail))
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ):
+        """Normalize validation errors into the API envelope."""
+        return _build_error_response(
+            request,
+            422,
+            "Invalid request payload",
+            details=exc.errors(),
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        """Catch-all handler to avoid leaking stack traces."""
+        logger.exception("Unhandled exception on path %s", request.url.path)
+        return _build_error_response(
+            request, 500, "Internal server error, please retry later."
+        )
 else:
     app = None
 
@@ -219,6 +584,10 @@ async def root():
             "🎯 Multi-Objective Rewards",
             "🚀 Auto-Scaling",
         ],
+        "security": {
+            "auth_enabled": bool(API_CONFIG.api_keys),
+            "rate_limit_per_minute": API_CONFIG.rate_limit_per_minute,
+        },
         "endpoints": {
             "training": "/api/train",
             "conversations": "/api/chat",
@@ -230,7 +599,11 @@ async def root():
 
 
 @app.post("/api/train", response_model=TrainingResponse)
-async def train_agent(request: TrainingRequest, background_tasks: BackgroundTasks):
+async def train_agent(
+    request: TrainingRequest,
+    background_tasks: BackgroundTasks,
+    user_context: RequestContext = Depends(verify_request),
+):
     """
     Launch advanced GRPO training with all innovations
     """
@@ -242,7 +615,10 @@ async def train_agent(request: TrainingRequest, background_tasks: BackgroundTask
         "strategy": request.strategy,
         "iterations_completed": 0,
         "total_trajectories": 0,
-        "start_time": datetime.now(),
+        "start_time": datetime.utcnow(),
+        "request_id": user_context.request_id,
+        "user_id": user_context.user_id,
+        "error": None,
         "results": [],
     }
 
@@ -277,11 +653,17 @@ async def train_agent(request: TrainingRequest, background_tasks: BackgroundTask
         average_reward=0.0,
         computation_used=0.0,
         metrics={"strategy": request.strategy},
+        started_at=training_jobs[job_id]["start_time"],
+        completed_at=None,
+        request_id=user_context.request_id,
     )
 
 
 @app.post("/api/chat", response_model=ConversationResponse)
-async def chat(request: ConversationRequest):
+async def chat(
+    request: ConversationRequest,
+    user_context: RequestContext = Depends(verify_request),
+):
     """
     Advanced multi-turn conversational interface
     """
@@ -299,13 +681,22 @@ async def chat(request: ConversationRequest):
             response = turns[-1]["content"] if turns else "No response generated"
 
             context = multiturn_agent.get_conversation_summary(request.conversation_id)
+            active_conversations.setdefault(
+                request.conversation_id,
+                {
+                    "user_id": request.user_id or user_context.user_id,
+                    "started_at": datetime.utcnow(),
+                    "strategy": request.strategy,
+                },
+            )
 
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
     else:
         # Start new conversation
         conversation_context = await multiturn_agent.start_conversation(
-            user_id=request.user_id, initial_context=request.context
+            user_id=request.user_id or user_context.user_id,
+            initial_context=request.context,
         )
 
         # Generate first response
@@ -320,6 +711,11 @@ async def chat(request: ConversationRequest):
 
         context = conversation_context.get_context_summary()
         request.conversation_id = conversation_context.conversation_id
+        active_conversations[request.conversation_id] = {
+            "user_id": request.user_id or user_context.user_id,
+            "started_at": datetime.utcnow(),
+            "strategy": request.strategy,
+        }
 
     return ConversationResponse(
         conversation_id=request.conversation_id,
@@ -333,7 +729,9 @@ async def chat(request: ConversationRequest):
 
 
 @app.post("/api/scale")
-async def scale_computation(request: ScaleRequest):
+async def scale_computation(
+    request: ScaleRequest, user_context: RequestContext = Depends(verify_request)
+):
     """
     Scale computational resources across engines
     """
@@ -374,7 +772,7 @@ async def scale_computation(request: ScaleRequest):
 
 
 @app.get("/api/metrics")
-async def get_metrics():
+async def get_metrics(user_context: RequestContext = Depends(verify_request)):
     """Get comprehensive system metrics"""
     metrics = {
         "system": {
@@ -415,11 +813,19 @@ async def get_metrics():
             "tools_registered": list(agent.tools.keys()),
         }
 
+    metrics["api"] = API_METRICS.snapshot()
+    metrics["rate_limit"] = {
+        "requests_per_minute": API_CONFIG.rate_limit_per_minute,
+        "auth_enabled": bool(API_CONFIG.api_keys),
+    }
+
     return metrics
 
 
 @app.get("/api/status/{job_id}", response_model=TrainingResponse)
-async def get_training_status(job_id: str):
+async def get_training_status(
+    job_id: str, user_context: RequestContext = Depends(verify_request)
+):
     """Get training job status"""
     if job_id not in training_jobs:
         raise HTTPException(status_code=404, detail="Training job not found")
@@ -448,11 +854,17 @@ async def get_training_status(job_id: str):
         average_reward=avg_reward,
         computation_used=total_computation,
         metrics=latest_metrics,
+        error=job.get("error"),
+        started_at=job.get("start_time"),
+        completed_at=job.get("completed_at"),
+        request_id=job.get("request_id"),
     )
 
 
 @app.delete("/api/conversations/{conversation_id}")
-async def end_conversation(conversation_id: str):
+async def end_conversation(
+    conversation_id: str, user_context: RequestContext = Depends(verify_request)
+):
     """End a conversation"""
     multiturn_agent = services.get("multiturn_agent")
     if not multiturn_agent:
@@ -461,6 +873,8 @@ async def end_conversation(conversation_id: str):
     context = multiturn_agent.end_conversation(conversation_id)
     if not context:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    active_conversations.pop(conversation_id, None)
 
     return {
         "message": "Conversation ended",
@@ -472,6 +886,17 @@ async def end_conversation(conversation_id: str):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time interactions"""
+    if API_CONFIG.api_keys:
+        api_key = websocket.headers.get("x-api-key") or websocket.headers.get(
+            "authorization"
+        )
+        if api_key and api_key.lower().startswith("bearer "):
+            api_key = api_key.split(" ", 1)[1].strip()
+
+        if not api_key or api_key not in API_CONFIG.api_keys:
+            await websocket.close(code=1008, reason="Unauthorized")
+            return
+
     await websocket.accept()
 
     try:
@@ -533,6 +958,7 @@ async def run_computational_training(
     """Run computational training job"""
     job = training_jobs[job_id]
     job["status"] = "running"
+    job.setdefault("start_time", datetime.utcnow())
 
     try:
         # Get or create computational engine
@@ -557,15 +983,18 @@ async def run_computational_training(
                 logger.error(f"Training iteration {i+1} failed: {e}")
                 job["status"] = "error"
                 job["error"] = str(e)
+                job["completed_at"] = datetime.utcnow()
                 return
 
         job["status"] = "completed"
+        job["completed_at"] = datetime.utcnow()
         logger.info(f"Job {job_id}: Training completed successfully")
 
     except Exception as e:
         logger.error(f"Job {job_id}: Training failed: {e}")
         job["status"] = "failed"
         job["error"] = str(e)
+        job["completed_at"] = datetime.utcnow()
 
 
 async def run_distributed_training(
@@ -577,14 +1006,16 @@ async def run_distributed_training(
     """Run distributed training job"""
     job = training_jobs[job_id]
     job["status"] = "running"
+    job.setdefault("start_time", datetime.utcnow())
 
     try:
-        # Create distributed configuration
-        config = DistributedConfig(**distributed_config)
-
-        # Note: This is a simplified implementation
-        # In practice, you would use the actual distributed trainer
-        logger.info(f"Job {job_id}: Starting distributed training (simulated)")
+        # Note: This is a simplified implementation that avoids heavy imports.
+        config = distributed_config or {}
+        logger.info(
+            "Job %s: Starting distributed training (simulated) with config %s",
+            job_id,
+            config,
+        )
 
         # Simulate distributed training
         for i in range(num_iterations):
@@ -607,12 +1038,14 @@ async def run_distributed_training(
             )
 
         job["status"] = "completed"
+        job["completed_at"] = datetime.utcnow()
         logger.info(f"Job {job_id}: Distributed training completed successfully")
 
     except Exception as e:
         logger.error(f"Job {job_id}: Distributed training failed: {e}")
         job["status"] = "failed"
         job["error"] = str(e)
+        job["completed_at"] = datetime.utcnow()
 
 
 # Health check endpoint

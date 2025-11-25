@@ -10,13 +10,10 @@ from .observability import ObservabilityManager
 from .performance_monitor import PerformanceMonitor
 from .profiler import PerformanceReport
 from .security import SecurityMonitor
-from .wandb_integration import WandBLogger, init_wandb
 
 __all__ = [
     "CacheService",
     "get_cache_service",
-    "WandBLogger",
-    "init_wandb",
     "get_logger",
     "MonitoringService",
     "ObservabilityManager",
@@ -25,3 +22,15 @@ __all__ = [
     "PerformanceMonitor",
     "PerformanceReport",
 ]
+
+
+def __getattr__(name):
+    """Lazily import optional W&B dependencies."""
+    if name in {"WandBLogger", "init_wandb"}:
+        from .wandb_integration import WandBLogger, init_wandb
+
+        globals()["WandBLogger"] = WandBLogger
+        globals()["init_wandb"] = init_wandb
+        return globals()[name]
+
+    raise AttributeError(f"module 'utils' has no attribute '{name}'")
