@@ -84,11 +84,21 @@ class TestCustomerServiceE2E:
     ):
         """Test complete customer service workflow from agent creation to conversation handling."""
 
-        # Setup comprehensive mocks
+        # Setup comprehensive mocks with proper torch device
+        import torch
+
         mock_model_instance = MagicMock()
+        mock_model_instance.device = torch.device("cpu")  # Proper torch.device
+
+        # Mock model parameters for device detection
+        mock_param = MagicMock()
+        mock_param.device = torch.device("cpu")
+        mock_model_instance.parameters.return_value = iter([mock_param])
+
         mock_tokenizer_instance = MagicMock()
         mock_tokenizer_instance.pad_token_id = None
         mock_tokenizer_instance.eos_token_id = 2
+        mock_tokenizer_instance.model_max_length = 2048
         mock_tokenizer_instance.apply_chat_template.return_value = [1, 2, 3, 4, 5]
 
         # Create varied responses for different scenarios
@@ -110,7 +120,15 @@ class TestCustomerServiceE2E:
 
         mock_output = MagicMock()
         mock_output.tolist.return_value = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        mock_output.sequences = torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])
         mock_model_instance.generate.return_value = mock_output
+
+        # Mock forward pass for training
+        mock_forward_output = MagicMock()
+        mock_forward_output.loss = torch.tensor(0.5, requires_grad=True)
+        mock_forward_output.logits = torch.randn(1, 10, 50257)  # (batch, seq, vocab)
+        mock_model_instance.return_value = mock_forward_output
+        mock_model_instance.__call__ = lambda *args, **kwargs: mock_forward_output
 
         mock_model.from_pretrained.return_value = mock_model_instance
         mock_tokenizer.from_pretrained.return_value = mock_tokenizer_instance

@@ -1,0 +1,136 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stateset-agents
+  labels:
+    name: stateset-agents
+    environment: production
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stateset-agents-config
+  namespace: stateset-agents
+data:
+  # Agent Configuration
+  MODEL_NAME: "gpt2"
+  MAX_NEW_TOKENS: "512"
+  TEMPERATURE: "0.8"
+  TOP_P: "0.9"
+  USE_STUB_MODEL: "false"
+
+  # Training Configuration
+  NUM_EPISODES: "1000"
+  LEARNING_RATE: "5e-6"
+  BATCH_SIZE: "4"
+
+  # API Configuration
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  WORKERS: "4"
+
+  # Monitoring
+  ENABLE_METRICS: "true"
+  METRICS_PORT: "9090"
+  LOG_LEVEL: "INFO"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stateset-agents-api
+  namespace: stateset-agents
+  labels:
+    app: stateset-agents-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: stateset-agents-api
+  template:
+    metadata:
+      labels:
+        app: stateset-agents-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      containers:
+      - name: stateset-agents
+        image: stateset/agents:0.5.0
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 9090
+          name: metrics
+        envFrom:
+        - configMapRef:
+            name: stateset-agents-config
+        resources:
+          requests:
+            cpu: "2"
+            memory: "8Gi"
+            nvidia.com/gpu: "1"
+          limits:
+            cpu: "4"
+            memory: "16Gi"
+            nvidia.com/gpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stateset-agents-api
+  namespace: stateset-agents
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8000
+    name: http
+  - port: 9090
+    targetPort: 9090
+    name: metrics
+  selector:
+    app: stateset-agents-api
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: stateset-agents-api-hpa
+  namespace: stateset-agents
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: stateset-agents-api
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

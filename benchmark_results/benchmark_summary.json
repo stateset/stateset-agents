@@ -1,0 +1,88 @@
+{
+  "timestamp": "2025-11-25T11:42:40.784659",
+  "framework_version": "0.5.0",
+  "benchmarks": [
+    {
+      "name": "response_time",
+      "metrics": {
+        "iterations": 100,
+        "mean_ms": 0.009053650428541005,
+        "median_ms": 0.008901464752852917,
+        "std_ms": 0.001039004667723102,
+        "min_ms": 0.007301976438611746,
+        "max_ms": 0.011824013199657202,
+        "p95_ms": 0.010613567428663373,
+        "p99_ms": 0.010879529872909193
+      },
+      "metadata": {
+        "timestamp": "2025-11-25T11:42:30.660186",
+        "framework_version": "0.5.0"
+      }
+    },
+    {
+      "name": "throughput",
+      "metrics": {
+        "duration_seconds": 10.000027179718018,
+        "total_conversations": 204930,
+        "total_turns": 614790,
+        "conversations_per_second": 20492.944300755255,
+        "turns_per_second": 61478.83290226576
+      },
+      "metadata": {
+        "timestamp": "2025-11-25T11:42:30.685963",
+        "framework_version": "0.5.0"
+      }
+    },
+    {
+      "name": "concurrent_conversations",
+      "metrics": {
+        "num_concurrent": 100,
+        "total_time_seconds": 0.011832714080810547,
+        "total_turns": 500,
+        "turns_per_second": 42255.73241990731,
+        "avg_time_per_conversation_ms": 0.11832714080810547
+      },
+      "metadata": {
+        "timestamp": "2025-11-25T11:42:40.752443",
+        "framework_version": "0.5.0"
+      }
+    },
+    {
+      "name": "memory_efficiency",
+      "metrics": {
+        "num_conversations": 1000,
+        "baseline_memory_mb": 654.55078125,
+        "final_memory_mb": 654.55078125,
+        "memory_increase_mb": 0.0,
+        "memory_per_conversation_kb": 0.0,
+        "memory_efficiency_percent": 100.0
+      },
+      "metadata": {
+        "timestamp": "2025-11-25T11:42:40.764421",
+        "framework_version": "0.5.0"
+      }
+    },
+    {
+      "name": "training_iteration",
+      "metrics": {
+        "num_episodes": 10,
+        "total_time_seconds": 0.0017101764678955078,
+        "episodes_per_second": 5847.349783911892,
+        "avg_episode_time_seconds": 0.00017044544219970703,
+        "median_episode_time_seconds": 0.00016021728515625
+      },
+      "metadata": {
+        "timestamp": "2025-11-25T11:42:40.782642",
+        "framework_version": "0.5.0"
+      }
+    }
+  ],
+  "key_metrics": {
+    "avg_response_time_ms": 0.009053650428541005,
+    "p99_response_time_ms": 0.010879529872909193,
+    "conversations_per_second": 20492.944300755255,
+    "concurrent_capacity": 100,
+    "concurrent_throughput": 42255.73241990731,
+    "memory_efficiency_percent": 100.0
+  }
+}

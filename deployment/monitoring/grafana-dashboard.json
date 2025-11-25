@@ -1,0 +1,126 @@
+{
+  "dashboard": {
+    "title": "StateSet Agents - Production Monitoring",
+    "tags": ["stateset", "agents", "grpo", "ml"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Requests Per Second",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"stateset-agents\"}[5m])",
+            "legendFormat": "{{method}} {{endpoint}}"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Response Time (P95, P99)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"stateset-agents\"}[5m]))",
+            "legendFormat": "P95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job=\"stateset-agents\"}[5m]))",
+            "legendFormat": "P99"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Error Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"stateset-agents\",status=~\"5..\"}[5m]) / rate(http_requests_total{job=\"stateset-agents\"}[5m])",
+            "legendFormat": "Error Rate"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Active Conversations",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 8, "w": 6, "h": 8},
+        "targets": [
+          {
+            "expr": "stateset_active_conversations{job=\"stateset-agents\"}",
+            "legendFormat": "Active"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "GPU Utilization",
+        "type": "graph",
+        "gridPos": {"x": 18, "y": 8, "w": 6, "h": 8},
+        "targets": [
+          {
+            "expr": "nvidia_gpu_utilization{job=\"stateset-agents\"}",
+            "legendFormat": "GPU {{gpu}}"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Memory Usage",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes{job=\"stateset-agents\"} / 1024 / 1024 / 1024",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Training Metrics",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "stateset_training_loss{job=\"stateset-agents\"}",
+            "legendFormat": "Loss"
+          },
+          {
+            "expr": "stateset_training_reward{job=\"stateset-agents\"}",
+            "legendFormat": "Reward"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Cache Hit Rate",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 24, "w": 8, "h": 6},
+        "targets": [
+          {
+            "expr": "rate(stateset_cache_hits_total{job=\"stateset-agents\"}[5m]) / rate(stateset_cache_requests_total{job=\"stateset-agents\"}[5m])",
+            "legendFormat": "Hit Rate"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Concurrent Conversations",
+        "type": "graph",
+        "gridPos": {"x": 8, "y": 24, "w": 16, "h": 6},
+        "targets": [
+          {
+            "expr": "stateset_concurrent_conversations{job=\"stateset-agents\"}",
+            "legendFormat": "Concurrent"
+          }
+        ]
+      }
+    ]
+  }
+}
