@@ -382,6 +382,123 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
         return max(0.0, score)
 
 
+class ModelBasedRewardComponent(BaseRewardComponent):
+    """
+    Reward component that uses an LLM (Judge) to evaluate response quality.
+    "LLM-as-a-Judge" implementation.
+    """
+
+    def __init__(
+        self,
+        name: str = "model_judge",
+        weight: float = 0.5,
+        judge_prompt_template: Optional[str] = None,
+        api_client: Optional[Any] = None, # Placeholder for OpenAI/Anthropic/Local client
+        **kwargs,
+    ):
+        super().__init__(name, weight, **kwargs)
+        self.judge_prompt_template = judge_prompt_template or (
+            "You are an impartial judge evaluating the quality of an AI assistant's response.\n"
+            "User Query: {user_query}\n"
+            "Assistant Response: {assistant_response}\n\n"
+            "Rate the response on a scale of 0 to 1 (float), focusing on helpfulness, accuracy, and tone.\n"
+            "Output ONLY the score."
+        )
+        self.api_client = api_client
+
+    async def compute_score(
+        self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
+    ) -> float:
+        """Score using Model-as-a-Judge"""
+        if not turns:
+            return 0.0
+
+        # Get relevant content
+        assistant_responses = [t for t in turns if t.get("role") == "assistant"]
+        user_turns = [t for t in turns if t.get("role") == "user"]
+        
+        if not assistant_responses or not user_turns:
+            return 0.0
+
+        assistant_response = assistant_responses[-1].get("content", "")
+        user_query = user_turns[-1].get("content", "")
+
+        # Format prompt
+        prompt = self.judge_prompt_template.format(
+            user_query=user_query,
+            assistant_response=assistant_response
+        )
+
+        try:
+            # TODO: Integrate actual API client (e.g., OpenAI, Anthropic, or local vLLM)
+            # For now, we simulate a score or use a heuristic fallback if no client
+            if self.api_client:
+                 # Placeholder for actual async API call
+                 # response = await self.api_client.generate(prompt)
+                 # score = float(response.strip())
+                 score = 0.8 # Mock
+            else:
+                 # Heuristic fallback (length + keyword mix) purely for demo/testing without API key
+                 score = min(1.0, len(assistant_response) / 200.0)
+            
+            return max(0.0, min(1.0, score))
+            
+        except Exception as e:
+            logger.error(f"Model judge failed: {e}")
+            return 0.5 # Neutral fallback
+
+
+class ReasoningRewardComponent(BaseRewardComponent):
+    """
+    Reward component based on the presence and quality of reasoning traces.
+    (e.g., <think>...</think> blocks captured in metadata)
+    """
+
+    def __init__(
+        self,
+        name: str = "reasoning",
+        weight: float = 0.3,
+        min_length: int = 50,
+        optimal_length: int = 500,
+        **kwargs,
+    ):
+        super().__init__(name, weight, **kwargs)
+        self.min_length = min_length
+        self.optimal_length = optimal_length
+
+    async def compute_score(
+        self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
+    ) -> float:
+        """Score based on reasoning trace"""
+        if not turns:
+            return 0.0
+
+        # Get last assistant turn
+        assistant_turns = [t for t in turns if t.get("role") == "assistant"]
+        if not assistant_turns:
+            return 0.0
+            
+        last_turn = assistant_turns[-1]
+        metadata = last_turn.get("metadata", {})
+        reasoning = metadata.get("reasoning", "")
+        
+        if not reasoning:
+            return 0.0
+            
+        # Length-based heuristic
+        length = len(reasoning.split())
+        
+        if length < self.min_length:
+            return 0.2 * (length / self.min_length) # Penalty for too short
+            
+        # Reward curve: linear up to optimal, then plateau or slight decay
+        if length <= self.optimal_length:
+             # Scale 0.2 -> 1.0
+             return 0.2 + 0.8 * ((length - self.min_length) / (self.optimal_length - self.min_length))
+        else:
+            return 1.0 # Plateau at max score for long reasoning (DeepSeek style)
+
+
 class MultiObjectiveRewardFunction(RewardFunction):
     """
     Multi-objective reward function that combines multiple reward components

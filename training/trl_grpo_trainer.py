@@ -54,6 +54,13 @@ except ImportError as e:
     logger.error("Please install: pip install transformers peft datasets trl")
     raise
 
+try:
+    from vllm import LLM, SamplingParams
+    VLLM_AVAILABLE = True
+except ImportError:
+    VLLM_AVAILABLE = False
+    logger.warning("vLLM not installed. Install with `pip install vllm` for faster generation.")
+
 
 @dataclass
 class TRLGRPOConfig(TrainingConfig):
@@ -62,8 +69,12 @@ class TRLGRPOConfig(TrainingConfig):
     # TRL GRPO specific parameters
     beta: float = 0.0  # KL penalty coefficient
     num_generations: int = 4  # Number of generations per prompt
-    num_iterations: int = 1  # PPO-style iterations
+    num_iterations: int = 1  # PPO-style iterations (inner loop)
     mini_batch_size: int = 1  # Mini batch size for GRPO
+
+    # Iterative/Online parameters
+    num_outer_iterations: int = 1  # Number of Generate -> Train cycles
+    generations_per_iteration: int = 100  # Number of prompts to generate per cycle
 
     # Generation parameters
     max_prompt_length: int = 256
@@ -82,6 +93,9 @@ class TRLGRPOConfig(TrainingConfig):
     gradient_checkpointing: bool = True
     use_8bit: bool = False
     use_4bit: bool = False
+    
+    # Backend
+    use_vllm: bool = False  # Enable vLLM for generation
 
     @classmethod
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> "TRLGRPOConfig":
@@ -89,6 +103,106 @@ class TRLGRPOConfig(TrainingConfig):
         config_dict = config.to_dict()
         config_dict.update(kwargs)
         return cls(**config_dict)
+
+
+class TrajectoryGenerator:
+    """Handles efficient trajectory generation for iterative training"""
+    
+    def __init__(self, config: TRLGRPOConfig, agent: Agent, environment: ConversationEnvironment):
+        self.config = config
+        self.agent = agent
+        self.environment = environment
+        self.vllm_engine = None
+        
+        if self.config.use_vllm and VLLM_AVAILABLE:
+            self._init_vllm()
+            
+    def _init_vllm(self):
+        """Initialize vLLM engine"""
+        logger.info("Initializing vLLM engine for fast generation...")
+        try:
+            self.vllm_engine = LLM(
+                model=self.config.model_name,
+                trust_remote_code=True,
+                dtype="float16" if self.config.fp16 else "bfloat16",
+                gpu_memory_utilization=0.6, # Reserve memory for training
+            )
+            self.sampling_params = SamplingParams(
+                temperature=self.config.temperature,
+                top_p=self.config.top_p,
+                max_tokens=self.config.max_completion_length,
+            )
+            logger.info("vLLM engine initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize vLLM: {e}. Falling back to standard generation.")
+            self.vllm_engine = None
+
+    async def generate_batch(self, num_episodes: int) -> List[MultiTurnTrajectory]:
+        """Generate a batch of trajectories"""
+        trajectories = []
+        
+        # Determine generation method
+        if self.vllm_engine:
+            return await self._generate_vllm(num_episodes)
+        else:
+            return await self._generate_standard(num_episodes)
+            
+    async def _generate_standard(self, num_episodes: int) -> List[MultiTurnTrajectory]:
+        """Generate using standard agent loop"""
+        logger.info(f"Generating {num_episodes} trajectories (standard)...")
+        trajectories = []
+        for _ in range(num_episodes):
+            traj = await self.environment.run_episode(self.agent)
+            trajectories.append(traj)
+        return trajectories
+        
+    async def _generate_vllm(self, num_episodes: int) -> List[MultiTurnTrajectory]:
+        """
+        Generate using vLLM optimization.
+        
+        Note: This currently only optimizes the *first* turn or requires 
+        the environment to provide a batch of initial prompts.
+        For true multi-turn with vLLM, we'd need a more complex loop handling state.
+        This implementation assumes a simplified 'prompt -> response' flow for speed.
+        """
+        logger.info(f"Generating {num_episodes} trajectories (vLLM)...")
+        
+        # Get prompts from environment scenarios
+        prompts = []
+        scenarios = []
+        
+        # Naive sampling from environment scenarios
+        for _ in range(num_episodes):
+            scenario = self.environment._get_random_scenario()
+            scenarios.append(scenario)
+            # Format prompt based on agent configuration
+            # This mimics what MultiTurnAgent does internally
+            msgs = [{"role": "system", "content": self.config.system_prompt or ""}, 
+                   {"role": "user", "content": scenario.get("context", "")}]
+            
+            # Simple prompt formatting
+            formatted = f"{msgs[0]['content']}\n\nUser: {msgs[1]['content']}\nAssistant:"
+            prompts.append(formatted)
+            
+        # Run vLLM batch generation
+        # Run in a thread to avoid blocking asyncio loop
+        outputs = await asyncio.to_thread(
+            self.vllm_engine.generate, 
+            prompts, 
+            self.sampling_params
+        )
+        
+        trajectories = []
+        for i, output in enumerate(outputs):
+            generated_text = output.outputs[0].text
+            
+            # Construct a synthetic trajectory
+            traj = MultiTurnTrajectory()
+            traj.add_turn(ConversationTurn(role="user", content=prompts[i])) # Simplification
+            traj.add_turn(ConversationTurn(role="assistant", content=generated_text))
+            trajectories.append(traj)
+            
+        return trajectories
 
 
 class ModelManager:
@@ -517,6 +631,166 @@ async def train_customer_service_with_trl(
     )
 
 
+async def train_iterative_grpo(
+    config: TRLGRPOConfig,
+    agent: Agent,
+    environment: ConversationEnvironment,
+    reward_model: MultiObjectiveReward,
+) -> Agent:
+    """
+    Run iterative (online) GRPO training.
+    
+    Loop:
+    1. Generate trajectories using current policy (supports vLLM)
+    2. Train for N epochs
+    3. Repeat
+    """
+    logger.info(f"Starting Iterative GRPO Training ({config.num_outer_iterations} iterations)")
+    
+    # Initialize WandB once
+    if config.report_to == "wandb" and config.wandb_project:
+        wandb.init(
+            project=config.wandb_project,
+            name=config.run_name or f"iterative-grpo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            config=config.to_dict(),
+            tags=["iterative", "grpo"] + (config.wandb_tags or []),
+        )
+
+    # Initialize model manager first (load base model)
+    model_manager = ModelManager(config)
+    model, tokenizer = model_manager.load_model_and_tokenizer()
+    
+    # Update agent with loaded model to ensure generation uses correct weights
+    # Note: If vLLM is used, it loads its own model instance.
+    agent.model = model
+    agent.tokenizer = tokenizer
+    
+    # Initialize trajectory generator
+    generator = TrajectoryGenerator(config, agent, environment)
+    
+    # Initialize dataset builder
+    dataset_builder = TRLGRPODatasetBuilder(tokenizer, config)
+    
+    # Initialize Reward Function Wrapper
+    reward_wrapper = TRLGRPORewardFunction(reward_model, agent, environment)
+    
+    def sync_reward_function(completions, prompts, **kwargs):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(
+                reward_wrapper.compute_rewards(completions, prompts, **kwargs)
+            )
+        finally:
+            loop.close()
+
+    # --- Rich Dashboard Setup ---
+    try:
+        from rich.live import Live
+        from rich.layout import Layout
+        from rich.panel import Panel
+        from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
+        from rich.table import Table
+        from rich import box
+        RICH_AVAILABLE = True
+    except ImportError:
+        RICH_AVAILABLE = False
+        
+    if RICH_AVAILABLE:
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=3),
+            Layout(name="main", ratio=1),
+            Layout(name="footer", size=3)
+        )
+        layout["main"].split_row(
+            Layout(name="left"),
+            Layout(name="right"),
+        )
+        
+        status_progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        )
+        task_id = status_progress.add_task("[green]Iterative Training", total=config.num_outer_iterations)
+        
+        metrics_table = Table(title="Training Metrics", box=box.SIMPLE)
+        metrics_table.add_column("Metric", style="cyan")
+        metrics_table.add_column("Value", style="magenta")
+
+    # Context manager for Live display
+    from contextlib import nullcontext
+    live_ctx = Live(layout, refresh_per_second=4) if RICH_AVAILABLE else nullcontext()
+    
+    with live_ctx:
+        for iteration in range(config.num_outer_iterations):
+            current_iter_label = f"Iteration {iteration + 1}/{config.num_outer_iterations}"
+            logger.info(f"=== {current_iter_label} ===")
+            
+            if RICH_AVAILABLE:
+                layout["header"].update(Panel(f"StateSet Agents - GRPO Training\n{current_iter_label}", style="bold white on blue"))
+                layout["left"].update(Panel(status_progress, title="Progress"))
+                layout["right"].update(Panel(metrics_table, title="Metrics"))
+            
+            # Step 1: Generate Data
+            logger.info("Phase 1: Generating Trajectories...")
+            if RICH_AVAILABLE:
+                 status_progress.update(task_id, description=f"{current_iter_label}: Generating Data")
+            
+            trajectories = await generator.generate_batch(config.generations_per_iteration)
+            
+            # Step 2: Build Dataset
+            train_dataset = dataset_builder.build_from_trajectories(trajectories)
+            
+            # Step 3: Train
+            logger.info("Phase 2: Training...")
+            if RICH_AVAILABLE:
+                 status_progress.update(task_id, description=f"{current_iter_label}: Training")
+
+            # Create a new trainer instance for this iteration
+            trainer_wrapper = TRLGRPOTrainerWrapper(
+                config=config,
+                model=agent.model,
+                tokenizer=agent.tokenizer,
+                train_dataset=train_dataset,
+                reward_function=sync_reward_function,
+                ref_model=model_manager.ref_model,
+            )
+            
+            trainer_wrapper.train()
+            
+            # Update agent model with trained weights
+            agent.model = trainer_wrapper.trainer.model
+            
+            # Update Dashboard Metrics (Mocking some values or extracting from trainer logs if available)
+            if RICH_AVAILABLE:
+                metrics_table = Table(title="Training Metrics", box=box.SIMPLE)
+                metrics_table.add_column("Metric", style="cyan")
+                metrics_table.add_column("Value", style="magenta")
+                metrics_table.add_row("Trajectories", str(len(trajectories)))
+                metrics_table.add_row("Dataset Size", str(len(train_dataset)))
+                # In a real scenario, we'd extract the loss/reward from the trainer's history
+                metrics_table.add_row("Last Iteration", str(iteration + 1))
+                layout["right"].update(Panel(metrics_table, title="Metrics"))
+                
+                status_progress.advance(task_id)
+
+            if generator.vllm_engine:
+                logger.warning("Note: vLLM engine weights are not automatically updated in this loop implementation yet.")
+                
+            # Save intermediate checkpoint
+            checkpoint_dir = os.path.join(config.output_dir, f"iter_{iteration}")
+            trainer_wrapper.save_model(checkpoint_dir)
+        
+    logger.info("Iterative training completed.")
+    if config.report_to == "wandb":
+        wandb.finish()
+        
+    return agent
+
+
 # Export main components
 __all__ = [
     "TRLGRPOConfig",
@@ -524,6 +798,8 @@ __all__ = [
     "TRLGRPODatasetBuilder",
     "TRLGRPORewardFunction",
     "TRLGRPOTrainerWrapper",
+    "TrajectoryGenerator",
     "train_with_trl_grpo",
+    "train_iterative_grpo",
     "train_customer_service_with_trl",
 ]

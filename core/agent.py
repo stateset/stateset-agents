@@ -80,6 +80,10 @@ class AgentConfig:
     peft_config: Optional[Dict[str, Any]] = None
     use_stub_model: bool = False
     stub_responses: Optional[List[str]] = None
+    
+    # Reasoning Capabilities (DeepSeek-R1 style)
+    enable_reasoning: bool = False
+    reasoning_tag: str = "think"
 
 
 class StopOnSpecialTokens(StoppingCriteria):
@@ -401,12 +405,25 @@ class MultiTurnAgent(Agent):
 
         # Generate response
         response = await self._generate_with_model(prompt, context)
+        
+        # Handle Reasoning Traces (DeepSeek-R1 style)
+        self._last_reasoning = None
+        if self.config.enable_reasoning:
+            import re
+            tag = self.config.reasoning_tag
+            pattern = f"<{tag}>(.*?)</{tag}>"
+            match = re.search(pattern, response, re.DOTALL)
+            if match:
+                self._last_reasoning = match.group(1).strip()
+                # Remove reasoning from the final response presented to user
+                response = re.sub(pattern, "", response, flags=re.DOTALL).strip()
 
         # Lightweight keyword adaptation to satisfy persona-style expectations in tests
         response = _apply_persona_keyword_hints(response, messages)
 
         self.turn_count += 1
         # Update conversation history for compatibility with tests
+        # We store the FINAL answer in history, not the reasoning (usually)
         self.conversation_history.append({"role": "assistant", "content": response})
         return response
 
@@ -530,16 +547,22 @@ class MultiTurnAgent(Agent):
 
         # Generate response
         response = await self.generate_response(messages, context)
+        
+        # Capture reasoning if available
+        metadata = {
+            "turn_count": self.turn_count,
+            "model_name": self.config.model_name,
+            "context": context,
+        }
+        
+        if hasattr(self, "_last_reasoning") and self._last_reasoning:
+            metadata["reasoning"] = self._last_reasoning
 
         # Create conversation turn
         turn = ConversationTurn(
             role="assistant",
             content=response,
-            metadata={
-                "turn_count": self.turn_count,
-                "model_name": self.config.model_name,
-                "context": context,
-            },
+            metadata=metadata,
         )
 
         return turn
@@ -591,9 +614,29 @@ class ToolAgent(MultiTurnAgent):
 
         # Add tool descriptions to context
         tool_context = self._format_tool_descriptions()
-        enhanced_messages = messages + [
-            {"role": "system", "content": f"Available tools: {tool_context}"}
-        ]
+        
+        # System prompt addition for tool usage
+        system_msg = (
+            f"You have access to the following tools:\n{tool_context}\n\n"
+            "To use a tool, respond with a JSON block in the following format:\n"
+            "```json\n"
+            "{\n"
+            '  "tool": "tool_name",\n'
+            '  "parameters": {\n'
+            '    "param1": "value1"\n'
+            "  }\n"
+            "}\n"
+            "```\n"
+        )
+        
+        # Inject into system prompt or as a new system message
+        enhanced_messages = []
+        if messages and messages[0]["role"] == "system":
+            enhanced_messages = [
+                {"role": "system", "content": messages[0]["content"] + "\n\n" + system_msg}
+            ] + messages[1:]
+        else:
+            enhanced_messages = [{"role": "system", "content": system_msg}] + messages
 
         # Generate response
         response = await super().generate_response(enhanced_messages, context)
@@ -605,29 +648,58 @@ class ToolAgent(MultiTurnAgent):
 
     def _format_tool_descriptions(self) -> str:
         """Format tool descriptions for model context"""
+        import json
         descriptions = []
         for tool in self.tools:
-            desc = f"{tool['name']}: {tool.get('description', 'No description')}"
-            descriptions.append(desc)
+            # Create a clean schema representation
+            schema = {
+                "name": tool["name"],
+                "description": tool.get("description", ""),
+                "parameters": tool.get("parameters", {}) # Expecting JSON Schema if available
+            }
+            descriptions.append(json.dumps(schema))
         return "\n".join(descriptions)
 
     async def _process_tool_calls(
         self, response: str, context: Optional[Dict[str, Any]] = None
     ) -> str:
         """Process any tool calls in the response"""
-        # Simple tool call parsing (in practice, this would be more sophisticated)
-        if "TOOL_CALL:" in response:
-            parts = response.split("TOOL_CALL:")
-            if len(parts) > 1:
-                tool_call = parts[1].strip().split()[0]
-                if tool_call in self.tool_registry:
-                    tool_result = await self._execute_tool(tool_call, context)
-                    response = parts[0] + f"Tool result: {tool_result}"
+        import json
+        import re
+        
+        # Regex to find JSON blocks or raw JSON objects
+        # Matches ```json {...} ``` or just {...} if it looks like a tool call
+        json_block_pattern = r"```json\s*(\{.*?\})\s*```"
+        raw_json_pattern = r"(\{[\s\S]*?\"tool\"\s*:[\s\S]*?\})"
+        
+        match = re.search(json_block_pattern, response, re.DOTALL)
+        if not match:
+             match = re.search(raw_json_pattern, response, re.DOTALL)
+             
+        if match:
+            json_str = match.group(1)
+            try:
+                tool_data = json.loads(json_str)
+                tool_name = tool_data.get("tool")
+                tool_params = tool_data.get("parameters", {})
+                
+                if tool_name in self.tool_registry:
+                    # Execute
+                    tool_result = await self._execute_tool(tool_name, tool_params, context)
+                    
+                    # Append result to response
+                    # In a real chat loop, this would be a new "tool" role message, 
+                    # but here we append to the text for simplicity in this architecture
+                    response += f"\n\nTool Output ({tool_name}): {tool_result}"
+                else:
+                    response += f"\n\nError: Tool '{tool_name}' not found."
+            except json.JSONDecodeError:
+                pass # Fail silently if JSON is invalid
 
         return response
 
     async def _execute_tool(
-        self, tool_name: str, context: Optional[Dict[str, Any]] = None
+        self, tool_name: str, params: Dict[str, Any], context: Optional[Dict[str, Any]] = None
     ) -> str:
         """Execute a tool call"""
         tool = self.tool_registry.get(tool_name)
@@ -637,7 +709,25 @@ class ToolAgent(MultiTurnAgent):
         try:
             # Execute tool function
             if "function" in tool:
-                result = await tool["function"](context)
+                # Check if function expects specific args or just context
+                func = tool["function"]
+                import inspect
+                sig = inspect.signature(func)
+                
+                # If function accepts **kwargs, pass params
+                # Or if it accepts specific named args matching params
+                try:
+                    if asyncio.iscoroutinefunction(func):
+                        result = await func(**params)
+                    else:
+                        result = func(**params)
+                except TypeError:
+                     # Fallback to passing context if params fail (legacy behavior)
+                     if asyncio.iscoroutinefunction(func):
+                        result = await func(context)
+                     else:
+                        result = func(context)
+                        
                 return str(result)
             else:
                 return f"Tool {tool_name} executed (mock result)"
