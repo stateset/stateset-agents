@@ -79,7 +79,10 @@ async def train(
             agent=agent, environment=environment, reward_fn=reward_fn, config=config
         )
     else:
-        raise NotImplementedError("Single-turn training not yet implemented")
+        from training.trainer import SingleTurnGRPOTrainer
+        trainer = SingleTurnGRPOTrainer(
+            agent=agent, environment=environment, reward_fn=reward_fn, config=config
+        )
 
     # Add diagnostics
     diagnostics = DiagnosticsMonitor(config)

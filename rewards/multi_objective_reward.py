@@ -430,22 +430,91 @@ class ModelBasedRewardComponent(BaseRewardComponent):
         )
 
         try:
-            # TODO: Integrate actual API client (e.g., OpenAI, Anthropic, or local vLLM)
-            # For now, we simulate a score or use a heuristic fallback if no client
+            # API client integration for model-based judging
             if self.api_client:
-                 # Placeholder for actual async API call
-                 # response = await self.api_client.generate(prompt)
-                 # score = float(response.strip())
-                 score = 0.8 # Mock
+                # Check client type and call appropriate API
+                client_type = type(self.api_client).__name__.lower()
+
+                if 'openai' in client_type:
+                    # OpenAI API client
+                    response = await self._call_openai_api(prompt)
+                    score = self._parse_score_from_response(response)
+                elif 'anthropic' in client_type:
+                    # Anthropic API client
+                    response = await self._call_anthropic_api(prompt)
+                    score = self._parse_score_from_response(response)
+                elif hasattr(self.api_client, 'generate'):
+                    # Generic client with generate method (e.g., vLLM, local model)
+                    response = await self.api_client.generate(prompt)
+                    score = self._parse_score_from_response(response)
+                else:
+                    logger.warning(f"Unknown API client type: {client_type}, using heuristic")
+                    score = min(1.0, len(assistant_response) / 200.0)
             else:
-                 # Heuristic fallback (length + keyword mix) purely for demo/testing without API key
+                 # Heuristic fallback (length + keyword mix) for demo/testing without API key
                  score = min(1.0, len(assistant_response) / 200.0)
-            
+
             return max(0.0, min(1.0, score))
-            
+
         except Exception as e:
             logger.error(f"Model judge failed: {e}")
             return 0.5 # Neutral fallback
+
+    async def _call_openai_api(self, prompt: str) -> str:
+        """Call OpenAI API for scoring"""
+        try:
+            # Async OpenAI client call
+            if hasattr(self.api_client, 'chat'):
+                response = await self.api_client.chat.completions.create(
+                    model=getattr(self, 'model_name', 'gpt-4'),
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=10,
+                    temperature=0.0
+                )
+                return response.choices[0].message.content
+            else:
+                # Fallback for older API structure
+                response = await self.api_client.completions.create(
+                    model=getattr(self, 'model_name', 'gpt-3.5-turbo-instruct'),
+                    prompt=prompt,
+                    max_tokens=10,
+                    temperature=0.0
+                )
+                return response.choices[0].text
+        except Exception as e:
+            logger.error(f"OpenAI API call failed: {e}")
+            raise
+
+    async def _call_anthropic_api(self, prompt: str) -> str:
+        """Call Anthropic API for scoring"""
+        try:
+            response = await self.api_client.messages.create(
+                model=getattr(self, 'model_name', 'claude-3-sonnet-20240229'),
+                max_tokens=10,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0
+            )
+            return response.content[0].text
+        except Exception as e:
+            logger.error(f"Anthropic API call failed: {e}")
+            raise
+
+    def _parse_score_from_response(self, response: str) -> float:
+        """Parse numerical score from API response"""
+        try:
+            # Try to extract first number from response
+            import re
+            numbers = re.findall(r'\d+\.?\d*', response)
+            if numbers:
+                score = float(numbers[0])
+                # Normalize to 0-1 range if needed
+                if score > 1.0:
+                    score = score / 10.0  # Assume 1-10 scale
+                return min(1.0, max(0.0, score))
+            return 0.5  # Default if no number found
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Failed to parse score from response: {response}, error: {e}")
+            return 0.5
 
 
 class ReasoningRewardComponent(BaseRewardComponent):

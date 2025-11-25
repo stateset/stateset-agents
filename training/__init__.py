@@ -3,7 +3,7 @@ Training infrastructure for GRPO Agent Framework
 """
 
 from .config import TrainingConfig, TrainingProfile, get_config_for_task
-from .trainer import GRPOTrainer, MultiTurnGRPOTrainer
+from .trainer import GRPOTrainer, MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
 
 # TRL-based GRPO training
 try:
@@ -24,6 +24,7 @@ except ImportError:
 __all__ = [
     "GRPOTrainer",
     "MultiTurnGRPOTrainer",
+    "SingleTurnGRPOTrainer",
     "TrainingConfig",
     "TrainingProfile",
     "get_config_for_task",
