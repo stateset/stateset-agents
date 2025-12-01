@@ -43,6 +43,40 @@
 - [🤝 Contributing](#-contributing)
 - [📄 License](#-license)
 
+## 🛠 What's New in v0.6.0 (Current)
+
+This release adds comprehensive **automatic hyperparameter optimization (HPO)** to help you find the best training configuration without manual tuning.
+
+- 🎯 **Automatic HPO** – Built-in hyperparameter optimization using Optuna, Ray Tune, or W&B Sweeps
+- 🔍 **Smart Search Spaces** – Pre-defined search spaces for GRPO, domain-specific tasks, and training profiles
+- ⚡ **Intelligent Pruning** – Early stopping of unpromising trials saves compute time
+- 📊 **Rich Visualization** – Optimization history, parameter importance, and parallel coordinate plots
+- 🚀 **One-Line HPO** – `quick_hpo()` function for instant hyperparameter search
+- 🎨 **Domain Templates** – Specialized search spaces for customer service, technical support, sales
+
+**Quick HPO Example:**
+
+```python
+from training.hpo import quick_hpo
+
+summary = await quick_hpo(
+    agent=agent,
+    environment=environment,
+    reward_function=reward_function,
+    base_config=config,
+    n_trials=50
+)
+print(f"Best params: {summary.best_params}")
+```
+
+Upgrade:
+
+```bash
+pip install -U stateset-agents[hpo]
+```
+
+See `docs/HPO_GUIDE.md` for complete documentation.
+
 ## 🛠 What's New in v0.5.0
 
 This release focuses on long-term maintainability and smoother distribution.

@@ -111,6 +111,11 @@ setup(
             "trl>=0.7.0",
             "bitsandbytes>=0.41.0",  # For quantization support
         ],
+        "hpo": [
+            "optuna>=3.0.0",  # Primary HPO backend
+            "plotly>=5.0.0",  # For Optuna visualizations
+            "kaleido>=0.2.0",  # For saving plots
+        ],
     },
     entry_points={
         "console_scripts": [
