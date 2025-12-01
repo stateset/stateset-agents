@@ -60,7 +60,23 @@ try:
     VLLM_AVAILABLE = True
 except ImportError:
     VLLM_AVAILABLE = False
+    LLM = None
+    SamplingParams = None
     logger.warning("vLLM not installed. Install with `pip install vllm` for faster generation.")
+
+# Import vLLM backend
+try:
+    from .vllm_backend import (
+        VLLMConfig,
+        VLLMGenerator,
+        HuggingFaceGeneratorFallback,
+        GenerationResult,
+        create_generator,
+    )
+    VLLM_BACKEND_AVAILABLE = True
+except ImportError:
+    VLLM_BACKEND_AVAILABLE = False
+    logger.warning("vLLM backend module not available")
 
 
 @dataclass
@@ -215,36 +231,68 @@ class GSPOModelManager:
 
 
 class GSPOTrajectoryGenerator:
-    """Handles efficient trajectory generation for GSPO training"""
+    """
+    Handles efficient trajectory generation for GSPO training.
+
+    Supports two generation backends:
+    1. vLLM (preferred): 5-20x faster with automatic log prob extraction
+    2. HuggingFace (fallback): Standard generation when vLLM unavailable
+    """
 
     def __init__(self, config: GSPOConfig, agent: Agent, environment: ConversationEnvironment):
         self.config = config
         self.agent = agent
         self.environment = environment
-        self.vllm_engine = None
+        self.vllm_generator = None
+        self._vllm_initialized = False
 
-        if self.config.use_vllm and VLLM_AVAILABLE:
-            self._init_vllm()
+        # Initialize vLLM if configured and available
+        if self.config.use_vllm and VLLM_BACKEND_AVAILABLE:
+            self._setup_vllm_generator()
 
-    def _init_vllm(self):
-        """Initialize vLLM engine"""
-        logger.info("Initializing vLLM engine for fast generation...")
+    def _setup_vllm_generator(self):
+        """Setup vLLM generator with config parameters"""
+        logger.info("Setting up vLLM generator for fast generation...")
+
+        vllm_config = VLLMConfig(
+            model_name=self.config.model_name,
+            gpu_memory_utilization=getattr(self.config, 'vllm_gpu_memory_utilization', 0.85),
+            tensor_parallel_size=getattr(self.config, 'vllm_tensor_parallel_size', 1),
+            enable_prefix_caching=getattr(self.config, 'vllm_enable_prefix_caching', True),
+            max_model_len=getattr(self.config, 'vllm_max_model_len', None),
+            quantization=getattr(self.config, 'vllm_quantization', None),
+            enable_chunked_prefill=getattr(self.config, 'vllm_enable_chunked_prefill', True),
+            max_tokens=self.config.max_completion_length,
+            temperature=self.config.temperature,
+            top_p=self.config.top_p,
+            dtype="float16" if self.config.fp16 else ("bfloat16" if self.config.bf16 else "auto"),
+        )
+
+        self.vllm_generator = VLLMGenerator(vllm_config)
+
+    async def initialize_vllm(self) -> bool:
+        """Initialize vLLM engine (call this before generation)"""
+        if self.vllm_generator is None:
+            return False
+
+        if self._vllm_initialized:
+            return True
+
         try:
-            self.vllm_engine = LLM(
-                model=self.config.model_name,
-                trust_remote_code=True,
-                dtype="float16" if self.config.fp16 else "bfloat16",
-                gpu_memory_utilization=0.6,
-            )
-            self.sampling_params = SamplingParams(
-                temperature=self.config.temperature,
-                top_p=self.config.top_p,
-                max_tokens=self.config.max_completion_length,
-            )
-            logger.info("vLLM engine initialized")
+            success = await self.vllm_generator.initialize()
+            self._vllm_initialized = success
+            if success:
+                logger.info("vLLM generator initialized - 5-20x faster generation enabled!")
+            return success
         except Exception as e:
-            logger.warning(f"Failed to initialize vLLM: {e}. Falling back to standard generation.")
-            self.vllm_engine = None
+            logger.warning(f"Failed to initialize vLLM: {e}. Using HuggingFace fallback.")
+            self._vllm_initialized = False
+            return False
+
+    @property
+    def using_vllm(self) -> bool:
+        """Check if vLLM is being used for generation"""
+        return self._vllm_initialized and self.vllm_generator is not None
 
     async def generate_group_responses(
         self, prompt: str, num_responses: int
@@ -252,9 +300,49 @@ class GSPOTrajectoryGenerator:
         """
         Generate a group of responses for a single prompt.
 
+        Uses vLLM for batched generation if available, otherwise falls back
+        to sequential HuggingFace generation.
+
         Returns:
             List of (response_text, log_prob) tuples
         """
+        # Try vLLM first (much faster)
+        if self.using_vllm:
+            return await self._generate_with_vllm(prompt, num_responses)
+
+        # Fallback to standard generation
+        return await self._generate_with_hf(prompt, num_responses)
+
+    async def _generate_with_vllm(
+        self, prompt: str, num_responses: int
+    ) -> List[Tuple[str, float]]:
+        """Generate responses using vLLM (batched, with log probs)"""
+        try:
+            # Generate all responses in a single batched call
+            grouped_results = await self.vllm_generator.generate_groups(
+                prompts=[prompt],
+                num_generations_per_prompt=num_responses,
+            )
+
+            results = grouped_results[prompt]
+
+            # Extract (response, log_prob) tuples
+            responses = [
+                (result.response, result.cumulative_logprob)
+                for result in results
+            ]
+
+            logger.debug(f"vLLM generated {len(responses)} responses for prompt")
+            return responses
+
+        except Exception as e:
+            logger.warning(f"vLLM generation failed: {e}. Falling back to HuggingFace.")
+            return await self._generate_with_hf(prompt, num_responses)
+
+    async def _generate_with_hf(
+        self, prompt: str, num_responses: int
+    ) -> List[Tuple[str, float]]:
+        """Generate responses using HuggingFace (sequential)"""
         responses = []
 
         for _ in range(num_responses):
@@ -268,6 +356,39 @@ class GSPOTrajectoryGenerator:
             responses.append((response, log_prob))
 
         return responses
+
+    async def generate_batch_groups(
+        self, prompts: List[str], num_responses_per_prompt: int
+    ) -> Dict[str, List[Tuple[str, float]]]:
+        """
+        Generate response groups for multiple prompts efficiently.
+
+        This is more efficient than calling generate_group_responses() for each prompt
+        because vLLM can batch all generations together.
+
+        Returns:
+            Dict mapping each prompt to its list of (response, log_prob) tuples
+        """
+        if self.using_vllm:
+            try:
+                grouped_results = await self.vllm_generator.generate_groups(
+                    prompts=prompts,
+                    num_generations_per_prompt=num_responses_per_prompt,
+                )
+
+                # Convert to (response, log_prob) format
+                return {
+                    prompt: [(r.response, r.cumulative_logprob) for r in results]
+                    for prompt, results in grouped_results.items()
+                }
+            except Exception as e:
+                logger.warning(f"Batch vLLM generation failed: {e}. Falling back to sequential.")
+
+        # Sequential fallback
+        results = {}
+        for prompt in prompts:
+            results[prompt] = await self._generate_with_hf(prompt, num_responses_per_prompt)
+        return results
 
     async def _compute_sequence_log_prob(self, prompt: str, response: str) -> float:
         """Compute the log probability of a sequence"""
@@ -684,6 +805,15 @@ async def train_with_gspo(
         reward_model=reward_model,
         ref_model=model_manager.ref_model,
     )
+
+    # Initialize vLLM if configured
+    if config.use_vllm:
+        logger.info("Initializing vLLM for fast generation...")
+        vllm_success = await trainer.generator.initialize_vllm()
+        if vllm_success:
+            logger.info("vLLM initialized - generation will be 5-20x faster!")
+        else:
+            logger.warning("vLLM initialization failed - using HuggingFace generation")
 
     # Training loop
     for iteration in range(config.num_outer_iterations):

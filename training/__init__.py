@@ -7,10 +7,32 @@ Includes state-of-the-art RL algorithms:
 - GEPO: Group Expectation Policy Optimization (best for heterogeneous/distributed)
 - DAPO: Decoupled Clip and Dynamic Sampling Policy Optimization (best for reasoning)
 - VAPO: Value-Augmented Policy Optimization (SOTA: 60.4 on AIME 2024)
+
+Generation backends:
+- vLLM: 5-20x faster generation with automatic log probability extraction
+- HuggingFace: Standard generation fallback
 """
 
 from .config import TrainingConfig, TrainingProfile, get_config_for_task
 from .trainer import GRPOTrainer, MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
+
+# vLLM backend for fast generation
+try:
+    from .vllm_backend import (
+        VLLM_AVAILABLE,
+        VLLMConfig,
+        VLLMGenerator,
+        HuggingFaceGeneratorFallback,
+        GenerationResult,
+        BatchGenerationResult,
+        create_generator,
+        quick_generate,
+    )
+
+    VLLM_BACKEND_AVAILABLE = True
+except ImportError:
+    VLLM_BACKEND_AVAILABLE = False
+    VLLM_AVAILABLE = False
 
 # TRL-based GRPO training
 try:
@@ -90,7 +112,24 @@ __all__ = [
     "TrainingConfig",
     "TrainingProfile",
     "get_config_for_task",
+    # vLLM backend availability flag
+    "VLLM_BACKEND_AVAILABLE",
 ]
+
+# Add vLLM exports if available
+if VLLM_BACKEND_AVAILABLE:
+    __all__.extend(
+        [
+            "VLLM_AVAILABLE",
+            "VLLMConfig",
+            "VLLMGenerator",
+            "HuggingFaceGeneratorFallback",
+            "GenerationResult",
+            "BatchGenerationResult",
+            "create_generator",
+            "quick_generate",
+        ]
+    )
 
 # Add TRL exports if available
 if TRL_AVAILABLE:

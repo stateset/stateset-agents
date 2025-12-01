@@ -51,6 +51,20 @@ except ImportError as e:
     logger.error("Please install: pip install transformers peft datasets")
     raise
 
+# Import vLLM backend for fast generation
+try:
+    from .vllm_backend import (
+        VLLMConfig,
+        VLLMGenerator,
+        GenerationResult,
+        VLLM_AVAILABLE as VLLM_BACKEND_AVAILABLE,
+    )
+except ImportError:
+    VLLM_BACKEND_AVAILABLE = False
+    VLLMConfig = None
+    VLLMGenerator = None
+    GenerationResult = None
+
 
 @dataclass
 class DAPOConfig(TrainingConfig):
@@ -111,6 +125,12 @@ class DAPOConfig(TrainingConfig):
     lr_scheduler_type: str = "constant"  # DAPO uses constant LR
     temperature: float = 1.0
     top_p: float = 0.7
+
+    # vLLM configuration (5-20x faster generation)
+    use_vllm: bool = False  # Enable vLLM for generation
+    vllm_gpu_memory_utilization: float = 0.85
+    vllm_tensor_parallel_size: int = 1
+    vllm_enable_prefix_caching: bool = True
 
     # Evaluation
     eval_repeats: int = 32
@@ -306,6 +326,8 @@ class DAPOTrainer:
     4. Overlong Reward Shaping: Applies soft then hard penalties as sequences
        approach maximum length.
 
+    Now with optional vLLM support for 5-20x faster generation!
+
     Reference: https://arxiv.org/abs/2503.14476
     """
 
@@ -323,6 +345,14 @@ class DAPOTrainer:
         self.reward_fn = reward_fn
         self.verifier_fn = verifier_fn  # For binary correctness (e.g., math)
         self.device = next(model.parameters()).device
+
+        # vLLM generator for fast generation
+        self.vllm_generator: Optional[VLLMGenerator] = None
+        self._vllm_initialized = False
+
+        # Setup vLLM if configured
+        if config.use_vllm and VLLM_BACKEND_AVAILABLE:
+            self._setup_vllm()
 
         # Reward shaper for length penalty
         self.reward_shaper = DAPORewardShaper(
@@ -359,6 +389,46 @@ class DAPOTrainer:
         }
 
         self.global_step = 0
+
+    def _setup_vllm(self):
+        """Setup vLLM generator"""
+        logger.info("Setting up vLLM for fast DAPO generation...")
+
+        vllm_config = VLLMConfig(
+            model_name=self.config.model_name,
+            gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
+            tensor_parallel_size=self.config.vllm_tensor_parallel_size,
+            enable_prefix_caching=self.config.vllm_enable_prefix_caching,
+            max_tokens=self.config.max_completion_length,
+            temperature=self.config.temperature,
+            top_p=self.config.top_p,
+            dtype="bfloat16" if self.config.bf16 else "float16",
+        )
+
+        self.vllm_generator = VLLMGenerator(vllm_config)
+
+    async def initialize_vllm(self) -> bool:
+        """Initialize vLLM engine"""
+        if self.vllm_generator is None:
+            return False
+
+        if self._vllm_initialized:
+            return True
+
+        try:
+            success = await self.vllm_generator.initialize()
+            self._vllm_initialized = success
+            if success:
+                logger.info("vLLM initialized for DAPO - generation will be 5-20x faster!")
+            return success
+        except Exception as e:
+            logger.warning(f"Failed to initialize vLLM: {e}")
+            return False
+
+    @property
+    def using_vllm(self) -> bool:
+        """Check if vLLM is being used"""
+        return self._vllm_initialized and self.vllm_generator is not None
 
     def compute_token_log_probs(
         self,
@@ -463,12 +533,64 @@ class DAPOTrainer:
         """
         Generate a group of responses for a prompt.
 
+        Uses vLLM for fast batched generation if available.
+
         Returns list of dicts containing:
             - response: Generated text
             - input_ids: Full tokenized sequence
             - response_mask: Mask for response tokens
             - sequence_length: Length of response
         """
+        # Try vLLM first (much faster for batched generation)
+        if self.using_vllm:
+            return await self._generate_with_vllm(prompt)
+
+        # Fallback to HuggingFace generation
+        return await self._generate_with_hf(prompt)
+
+    async def _generate_with_vllm(self, prompt: str) -> List[Dict[str, Any]]:
+        """Generate responses using vLLM (5-20x faster)"""
+        try:
+            # Generate all responses in a single batched call
+            grouped_results = await self.vllm_generator.generate_groups(
+                prompts=[prompt],
+                num_generations_per_prompt=self.config.group_size,
+            )
+
+            results = grouped_results[prompt]
+            responses = []
+
+            for result in results:
+                prompt_length = len(result.prompt_token_ids)
+                full_ids = torch.tensor(
+                    result.prompt_token_ids + result.response_token_ids,
+                    device=self.device,
+                )
+
+                # Create response mask
+                response_mask = torch.zeros(len(full_ids), device=self.device)
+                response_mask[prompt_length:] = 1.0
+
+                responses.append({
+                    "response": result.response,
+                    "input_ids": full_ids,
+                    "attention_mask": torch.ones_like(full_ids),
+                    "response_mask": response_mask,
+                    "sequence_length": result.sequence_length,
+                    "prompt_length": prompt_length,
+                    "token_logprobs": result.token_logprobs,  # Already computed!
+                    "cumulative_logprob": result.cumulative_logprob,
+                })
+
+            logger.debug(f"vLLM generated {len(responses)} responses for DAPO")
+            return responses
+
+        except Exception as e:
+            logger.warning(f"vLLM generation failed: {e}. Falling back to HuggingFace.")
+            return await self._generate_with_hf(prompt)
+
+    async def _generate_with_hf(self, prompt: str) -> List[Dict[str, Any]]:
+        """Generate responses using HuggingFace (sequential fallback)"""
         responses = []
 
         # Tokenize prompt
@@ -817,6 +939,15 @@ async def train_with_dapo(
         reward_fn=reward_fn,
         verifier_fn=verifier_fn,
     )
+
+    # Initialize vLLM if configured
+    if config.use_vllm:
+        logger.info("Initializing vLLM for fast DAPO generation...")
+        vllm_success = await trainer.initialize_vllm()
+        if vllm_success:
+            logger.info("vLLM initialized - generation will be 5-20x faster!")
+        else:
+            logger.warning("vLLM initialization failed - using HuggingFace generation")
 
     # Training loop
     logger.info(f"Starting training with {len(train_prompts)} prompts")

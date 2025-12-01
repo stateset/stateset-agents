@@ -120,6 +120,15 @@ class TrainingConfig:
     top_k: int = 50
     repetition_penalty: float = 1.1
 
+    # vLLM configuration (5-20x faster generation)
+    use_vllm: bool = False  # Enable vLLM for generation
+    vllm_gpu_memory_utilization: float = 0.85  # Fraction of GPU memory for vLLM
+    vllm_tensor_parallel_size: int = 1  # Number of GPUs for tensor parallelism
+    vllm_enable_prefix_caching: bool = True  # Cache KV for repeated prefixes
+    vllm_max_model_len: Optional[int] = None  # Max sequence length (auto if None)
+    vllm_quantization: Optional[str] = None  # "awq", "gptq", or None
+    vllm_enable_chunked_prefill: bool = True  # Better memory efficiency
+
     # Advanced options
     seed: int = 42
     remove_unused_columns: bool = False
