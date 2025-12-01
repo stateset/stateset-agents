@@ -40,6 +40,10 @@ _SUBMODULES: Iterable[str] = (
     "enhanced.enhanced_agent",
     "enhanced.advanced_evaluation",
     "enhanced.advanced_rl_algorithms",
+    # New 10/10 features
+    "curriculum_learning",
+    "multi_agent_coordination",
+    "few_shot_adaptation",
 )
 
 
@@ -184,50 +188,143 @@ except Exception:  # pragma: no cover
     OrchestrationMode = None  # type: ignore
     create_intelligent_orchestrator = None  # type: ignore
 
+# New 10/10 features
+try:
+    from core.curriculum_learning import (
+        CurriculumLearning,
+        CurriculumScheduler,
+        CurriculumStage,
+        CurriculumProgress,
+        DifficultyMetric,
+        ProgressionStrategy,
+        PerformanceBasedScheduler,
+        AdaptiveScheduler,
+        TaskDifficultyController,
+    )
+except Exception:  # pragma: no cover
+    CurriculumLearning = None  # type: ignore
+    CurriculumScheduler = CurriculumStage = CurriculumProgress = None  # type: ignore
+    DifficultyMetric = ProgressionStrategy = None  # type: ignore
+    PerformanceBasedScheduler = AdaptiveScheduler = None  # type: ignore
+    TaskDifficultyController = None  # type: ignore
+
+try:
+    from core.multi_agent_coordination import (
+        MultiAgentCoordinator,
+        AgentTeam,
+        AgentRole,
+        AgentMessage,
+        AgentState,
+        TeamState,
+        CommunicationProtocol,
+        CoordinationStrategy,
+    )
+except Exception:  # pragma: no cover
+    MultiAgentCoordinator = AgentTeam = None  # type: ignore
+    AgentRole = AgentMessage = AgentState = TeamState = None  # type: ignore
+    CommunicationProtocol = CoordinationStrategy = None  # type: ignore
+
+try:
+    from core.few_shot_adaptation import (
+        FewShotAdapter,
+        FewShotExample,
+        DomainProfile,
+        AdaptationStrategy,
+        PromptBasedAdaptation,
+        GradientBasedAdaptation,
+        MetaLearningAdaptation,
+    )
+except Exception:  # pragma: no cover
+    FewShotAdapter = FewShotExample = DomainProfile = None  # type: ignore
+    AdaptationStrategy = PromptBasedAdaptation = None  # type: ignore
+    GradientBasedAdaptation = MetaLearningAdaptation = None  # type: ignore
+
 __all__ = [
+    # Core agents
     "Agent",
     "MultiTurnAgent",
     "ToolAgent",
+    # Environments
     "Environment",
     "ConversationEnvironment",
     "TaskEnvironment",
+    # Trajectories
     "Trajectory",
     "MultiTurnTrajectory",
     "ConversationTurn",
+    # Rewards
     "RewardFunction",
     "CompositeReward",
+    # Value functions
     "ValueFunction",
     "ValueHead",
     "create_value_function",
+    # Error handling
     "ErrorHandler",
     "RetryConfig",
     "retry_async",
+    # Performance
     "PerformanceOptimizer",
     "OptimizationLevel",
+    # Type system
     "TypeValidator",
     "create_typed_config",
+    # Async utilities
     "AsyncResourcePool",
     "managed_async_resources",
+    # Monitoring
     "get_monitoring_service",
     "monitor_async_function",
+    # State management
     "get_state_service",
+    # Adaptive learning
     "AdaptiveLearningController",
     "create_adaptive_learning_controller",
     "CurriculumStrategy",
     "ExplorationStrategy",
+    # Neural architecture search
     "NeuralArchitectureSearch",
     "create_nas_controller",
     "ArchitectureConfig",
     "SearchStrategy",
+    # Multimodal processing
     "MultimodalProcessor",
     "create_multimodal_processor",
     "ModalityInput",
     "ModalityType",
     "create_modality_input",
     "FusionStrategy",
+    # Orchestration
     "IntelligentOrchestrator",
     "create_intelligent_orchestrator",
     "OrchestrationConfig",
     "OrchestrationMode",
     "OptimizationObjective",
+    # Curriculum learning (new)
+    "CurriculumLearning",
+    "CurriculumScheduler",
+    "CurriculumStage",
+    "CurriculumProgress",
+    "DifficultyMetric",
+    "ProgressionStrategy",
+    "PerformanceBasedScheduler",
+    "AdaptiveScheduler",
+    "TaskDifficultyController",
+    # Multi-agent coordination (new)
+    "MultiAgentCoordinator",
+    "AgentTeam",
+    "AgentRole",
+    "AgentMessage",
+    "AgentState",
+    "TeamState",
+    "CommunicationProtocol",
+    "CoordinationStrategy",
+    # Few-shot adaptation (new)
+    "FewShotAdapter",
+    "FewShotExample",
+    "DomainProfile",
+    "AdaptationStrategy",
+    "PromptBasedAdaptation",
+    "GradientBasedAdaptation",
+    "MetaLearningAdaptation",
 ]

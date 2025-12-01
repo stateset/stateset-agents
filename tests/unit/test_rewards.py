@@ -7,13 +7,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.reward import (
+from stateset_agents.core.reward import (
     CompositeReward,
     HelpfulnessReward,
     RewardFunction,
     RewardResult,
     SafetyReward,
 )
+from stateset_agents.core.trajectory import ConversationTurn
+
+
+def make_turns(turn_dicts):
+    """Helper to convert dict turns to ConversationTurn objects."""
+    return [ConversationTurn(role=t["role"], content=t["content"]) for t in turn_dicts]
 
 
 # ===========================
@@ -127,15 +133,14 @@ class TestHelpfulnessReward:
         reward = HelpfulnessReward()
         assert reward.weight == 1.0
 
-    @pytest.mark.skip(reason="Requires ConversationTurn objects, not dicts")
     @pytest.mark.asyncio
     async def test_helpfulness_reward_with_turns(self):
         """Test helpfulness reward computation"""
         reward = HelpfulnessReward()
-        turns = [
+        turns = make_turns([
             {"role": "user", "content": "How do I reset my password?"},
             {"role": "assistant", "content": "To reset your password, click on 'Forgot Password' and follow the email instructions."}
-        ]
+        ])
 
         result = await reward.compute_reward(turns)
 
@@ -153,17 +158,16 @@ class TestHelpfulnessReward:
         # Should handle empty input gracefully
         assert result.score >= 0.0
 
-    @pytest.mark.skip(reason="Requires ConversationTurn objects, not dicts")
     @pytest.mark.asyncio
     async def test_helpfulness_reward_multiple_turns(self):
         """Test helpfulness reward with multiple conversation turns"""
         reward = HelpfulnessReward()
-        turns = [
+        turns = make_turns([
             {"role": "user", "content": "I need help"},
             {"role": "assistant", "content": "Sure, I can help you!"},
             {"role": "user", "content": "What about shipping?"},
             {"role": "assistant", "content": "Shipping takes 3-5 business days."}
-        ]
+        ])
 
         result = await reward.compute_reward(turns)
 
@@ -185,15 +189,13 @@ class TestSafetyReward:
         assert reward.weight == 0.6
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Requires ConversationTurn objects, not dicts")
-    @pytest.mark.asyncio
-    async def test_(self):
+    async def test_safety_reward_with_safe_content(self):
         """Test safety reward with safe content"""
         reward = SafetyReward()
-        turns = [
+        turns = make_turns([
             {"role": "user", "content": "Tell me about your product"},
             {"role": "assistant", "content": "Our product is a cloud-based solution for business."}
-        ]
+        ])
 
         result = await reward.compute_reward(turns)
 
@@ -210,12 +212,10 @@ class TestSafetyReward:
         assert result.score >= 0.0
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Requires ConversationTurn objects, not dicts")
-    @pytest.mark.asyncio
-    async def test_(self):
+    async def test_safety_reward_with_context(self):
         """Test safety reward with context"""
         reward = SafetyReward()
-        turns = [{"role": "user", "content": "Hello"}]
+        turns = make_turns([{"role": "user", "content": "Hello"}])
         context = {"user_age": 18, "content_rating": "general"}
 
         result = await reward.compute_reward(turns, context=context)
@@ -248,9 +248,7 @@ class TestCompositeReward:
         assert len(reward.reward_functions) == 0
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Requires ConversationTurn objects, not dicts")
-    @pytest.mark.asyncio
-    async def test_(self):
+    async def test_composite_reward_computes_combined_score(self):
         """Test composite reward computes combined score"""
         reward_functions = [
             HelpfulnessReward(weight=0.5),
@@ -258,10 +256,10 @@ class TestCompositeReward:
         ]
 
         reward = CompositeReward(reward_functions)
-        turns = [
+        turns = make_turns([
             {"role": "user", "content": "Need help"},
             {"role": "assistant", "content": "I'm here to help!"}
-        ]
+        ])
 
         result = await reward.compute_reward(turns)
 
@@ -270,25 +268,25 @@ class TestCompositeReward:
         assert isinstance(result.breakdown, dict)
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Requires ConversationTurn objects, not dicts")
-    @pytest.mark.asyncio
-    async def test_(self):
+    async def test_composite_reward_respects_weights(self):
         """Test composite reward respects component weights"""
         # Create mock rewards with known scores
         mock_reward1 = MagicMock(spec=RewardFunction)
         mock_reward1.weight = 0.7
+        mock_reward1.name = "MockReward1"
         mock_reward1.compute_reward = AsyncMock(
             return_value=RewardResult(score=1.0, breakdown={}, metadata={})
         )
 
         mock_reward2 = MagicMock(spec=RewardFunction)
         mock_reward2.weight = 0.3
+        mock_reward2.name = "MockReward2"
         mock_reward2.compute_reward = AsyncMock(
             return_value=RewardResult(score=0.0, breakdown={}, metadata={})
         )
 
         reward = CompositeReward([mock_reward1, mock_reward2])
-        turns = [{"role": "user", "content": "Test"}]
+        turns = make_turns([{"role": "user", "content": "Test"}])
 
         result = await reward.compute_reward(turns)
 
@@ -299,14 +297,12 @@ class TestCompositeReward:
         assert result.score >= 0.5  # At least half of max
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Requires ConversationTurn objects, not dicts")
-    @pytest.mark.asyncio
-    async def test_(self):
+    async def test_composite_reward_passes_context(self):
         """Test composite reward passes context to components"""
         reward_functions = [HelpfulnessReward(), SafetyReward()]
         reward = CompositeReward(reward_functions)
 
-        turns = [{"role": "user", "content": "Question"}]
+        turns = make_turns([{"role": "user", "content": "Question"}])
         context = {"domain": "customer_service"}
 
         result = await reward.compute_reward(turns, context=context)
@@ -333,17 +329,16 @@ class TestCompositeReward:
 class TestRewardIntegration:
     """Test reward system integration"""
 
-    @pytest.mark.skip(reason="Requires ConversationTurn objects, not dicts - API clarification needed")
     @pytest.mark.asyncio
     async def test_chained_reward_computation(self):
         """Test computing rewards in sequence"""
         helpfulness = HelpfulnessReward()
         safety = SafetyReward()
 
-        turns = [
+        turns = make_turns([
             {"role": "user", "content": "Help me"},
             {"role": "assistant", "content": "I'm here to assist!"}
-        ]
+        ])
 
         result1 = await helpfulness.compute_reward(turns)
         result2 = await safety.compute_reward(turns)
@@ -351,12 +346,11 @@ class TestRewardIntegration:
         assert isinstance(result1, RewardResult)
         assert isinstance(result2, RewardResult)
 
-    @pytest.mark.skip(reason="Requires ConversationTurn objects, not dicts - API clarification needed")
     @pytest.mark.asyncio
     async def test_reward_caching_behavior(self):
         """Test reward function can be called multiple times"""
         reward = HelpfulnessReward()
-        turns = [{"role": "user", "content": "Test"}]
+        turns = make_turns([{"role": "user", "content": "Test"}])
 
         result1 = await reward.compute_reward(turns)
         result2 = await reward.compute_reward(turns)
@@ -365,24 +359,23 @@ class TestRewardIntegration:
         assert isinstance(result1, RewardResult)
         assert isinstance(result2, RewardResult)
 
-    @pytest.mark.skip(reason="Requires ConversationTurn objects, not dicts - API clarification needed")
     @pytest.mark.asyncio
     async def test_reward_with_various_turn_lengths(self):
         """Test reward functions handle different conversation lengths"""
         reward = CompositeReward([HelpfulnessReward(), SafetyReward()])
 
         # Single turn
-        single = [{"role": "user", "content": "Hi"}]
+        single = make_turns([{"role": "user", "content": "Hi"}])
         result_single = await reward.compute_reward(single)
         assert isinstance(result_single, RewardResult)
 
         # Multiple turns
-        multiple = [
+        multiple = make_turns([
             {"role": "user", "content": "Hi"},
             {"role": "assistant", "content": "Hello!"},
             {"role": "user", "content": "How are you?"},
             {"role": "assistant", "content": "I'm doing well!"}
-        ]
+        ])
         result_multiple = await reward.compute_reward(multiple)
         assert isinstance(result_multiple, RewardResult)
 
