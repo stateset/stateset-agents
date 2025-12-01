@@ -3,9 +3,11 @@ Advanced RL Algorithms for StateSet Agents
 
 This module implements multiple RL algorithms including:
 - Proximal Policy Optimization (PPO)
-- Direct Preference Optimization (DPO) 
+- Direct Preference Optimization (DPO)
 - Advantage Actor-Critic (A2C)
 - Trust Region Policy Optimization (TRPO)
+- Group Sequence Policy Optimization (GSPO)
+- Group Sequence Policy Optimization - Token variant (GSPO-token)
 """
 
 import asyncio
@@ -70,6 +72,20 @@ class A2CConfig:
     gamma: float = 0.99
     gae_lambda: float = 0.95
     n_steps: int = 5
+
+
+@dataclass
+class GSPOConfig:
+    """Configuration for GSPO training"""
+
+    learning_rate: float = 1e-5
+    num_generations: int = 4  # Group size (G)
+    clip_range_left: float = 3e-4  # Sequence-level clipping
+    clip_range_right: float = 4e-4
+    beta: float = 0.0  # KL penalty coefficient
+    max_grad_norm: float = 1.0
+    gamma: float = 0.99
+    use_gspo_token: bool = False  # Use token-level variant
 
 
 class ActorCriticNetwork(nn.Module):
@@ -788,6 +804,50 @@ def create_a2c_trainer(agent: EnhancedMultiTurnAgent, **kwargs) -> A2CTrainer:
     return A2CTrainer(agent, config)
 
 
+class GSPOTrainerStub:
+    """
+    Stub for GSPO trainer integration.
+
+    For full GSPO training, use training.gspo_trainer.GSPOTrainer
+    This stub provides a consistent interface for the RL orchestrator.
+    """
+
+    def __init__(
+        self, agent: EnhancedMultiTurnAgent, config: GSPOConfig, device: str = "auto"
+    ):
+        self.agent = agent
+        self.config = config
+        self.device = torch.device(
+            device
+            if device != "auto"
+            else ("cuda" if torch.cuda.is_available() else "cpu")
+        )
+
+        logger.info("GSPO trainer stub initialized")
+        logger.info(
+            "For full GSPO training, use: from training.gspo_trainer import train_with_gspo"
+        )
+
+    async def train_step(self, environment: Environment, **kwargs):
+        """Train step stub - directs to full implementation"""
+        logger.warning(
+            "GSPO stub called. Use training.gspo_trainer for full implementation."
+        )
+        return {"info": "Use training.gspo_trainer.train_with_gspo for full training"}
+
+
+def create_gspo_trainer(agent: EnhancedMultiTurnAgent, **kwargs) -> GSPOTrainerStub:
+    """
+    Create GSPO trainer stub.
+
+    For production GSPO training, use:
+        from training.gspo_trainer import train_with_gspo
+        await train_with_gspo(config, agent, environment, reward_model)
+    """
+    config = GSPOConfig(**kwargs)
+    return GSPOTrainerStub(agent, config)
+
+
 def create_advanced_rl_orchestrator(
     agent: EnhancedMultiTurnAgent,
 ) -> AdvancedRLOrchestrator:
@@ -798,5 +858,6 @@ def create_advanced_rl_orchestrator(
     orchestrator.add_algorithm("ppo", create_ppo_trainer(agent))
     orchestrator.add_algorithm("dpo", create_dpo_trainer(agent))
     orchestrator.add_algorithm("a2c", create_a2c_trainer(agent))
+    orchestrator.add_algorithm("gspo", create_gspo_trainer(agent))
 
     return orchestrator

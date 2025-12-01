@@ -45,10 +45,39 @@
 
 ## 🛠 What's New in v0.6.0 (Current)
 
-This release adds comprehensive **automatic hyperparameter optimization (HPO)** to help you find the best training configuration without manual tuning.
+### 🌟 **GSPO Algorithm - Production Ready!**
+
+We've implemented **Group Sequence Policy Optimization (GSPO)**, a state-of-the-art RL algorithm from Alibaba's Qwen Team that offers superior stability and efficiency compared to GRPO.
+
+- 🎯 **Sequence-Level Optimization** – Uses sequence-level importance ratios for more stable training
+- 🛡️ **No Model Collapse** – Prevents catastrophic failures even with long sequences and MoE models
+- ⚡ **Better Efficiency** – Superior sample utilization despite higher clipping fractions
+- 🔥 **Native MoE Support** – No need for Routing Replay or other workarounds
+- 📊 **Proven Results** – Powers the latest Qwen3 models achieving SOTA performance
+- 🔀 **GSPO-token Variant** – Token-level advantages for fine-grained control
+
+**Quick GSPO Training:**
+
+```python
+from training.gspo_trainer import train_with_gspo, GSPOConfig
+
+# Train with GSPO (more stable than GRPO!)
+trained_agent = await train_with_gspo(
+    config=gspo_config,
+    agent=agent,
+    environment=environment,
+    reward_model=reward_model,
+)
+```
+
+See `docs/GSPO_GUIDE.md` for complete documentation.
+
+### 📈 **Automatic Hyperparameter Optimization (HPO)**
+
+This release also adds comprehensive **automatic hyperparameter optimization** to help you find the best training configuration without manual tuning.
 
 - 🎯 **Automatic HPO** – Built-in hyperparameter optimization using Optuna, Ray Tune, or W&B Sweeps
-- 🔍 **Smart Search Spaces** – Pre-defined search spaces for GRPO, domain-specific tasks, and training profiles
+- 🔍 **Smart Search Spaces** – Pre-defined search spaces for GRPO, GSPO, domain-specific tasks, and training profiles
 - ⚡ **Intelligent Pruning** – Early stopping of unpromising trials saves compute time
 - 📊 **Rich Visualization** – Optimization history, parameter importance, and parallel coordinate plots
 - 🚀 **One-Line HPO** – `quick_hpo()` function for instant hyperparameter search
@@ -426,6 +455,21 @@ pip install -e ".[trl]"
 python examples/train_with_trl_grpo.py
 ```
 
+### Fine-tune Qwen3 with GSPO
+
+GSPO was specifically designed by Alibaba for training Qwen3 models:
+
+```bash
+# Fine-tune Qwen2.5-7B for customer service
+python examples/finetune_qwen3_gspo.py \
+    --model Qwen/Qwen2.5-7B \
+    --task customer_service \
+    --use-lora \
+    --use-4bit
+
+# See docs/QWEN3_FINETUNING_GUIDE.md for complete guide
+```
+
 ---
 
 ## 📊 Framework Capabilities
@@ -437,6 +481,7 @@ python examples/train_with_trl_grpo.py
 | Feature | Description | Status |
 |---------|-------------|--------|
 | **Multi-Turn GRPO** | Native support for extended conversations | ✅ Production Ready |
+| **GSPO Algorithm** | Stable, efficient sequence-level policy optimization | ✅ NEW! |
 | **Value Function with GAE** | Generalized Advantage Estimation | ✅ Implemented |
 | **Real Policy Gradients** | Actual gradient-based updates | ✅ Complete |
 | **KL Regularization** | Reference model divergence penalty | ✅ Available |
@@ -451,7 +496,7 @@ python examples/train_with_trl_grpo.py
 - **98%** test coverage on core components
 - **Async-first** design for high concurrency
 - **10+ pre-built** reward functions
-- **5+ RL algorithms** (GRPO, PPO, DPO, A2C, TRPO)
+- **6+ RL algorithms** (GRPO, GSPO, PPO, DPO, A2C, TRPO)
 - **Kubernetes-ready** with auto-scaling
 
 </div>
@@ -522,7 +567,9 @@ python scripts/benchmark.py
 |----------|-------------|------|
 | 📖 **Full Documentation** | Complete API reference and guides | [stateset-agents.readthedocs.io](https://stateset-agents.readthedocs.io/) |
 | 🚀 **Quick Start Guide** | Get up and running in 15 minutes | [Quick Start](USAGE_GUIDE.md) |
-| 🎯 **Training Guide** | Advanced training techniques | [TRL Training](TRL_GRPO_TRAINING_GUIDE.md) |
+| 🎯 **GSPO Guide** | Group Sequence Policy Optimization | [GSPO Guide](docs/GSPO_GUIDE.md) |
+| 🤖 **Qwen3 Fine-tuning** | Fine-tune Qwen3 models with GSPO | [Qwen3 Guide](docs/QWEN3_FINETUNING_GUIDE.md) |
+| 📊 **Training Guide** | Advanced training techniques | [TRL Training](TRL_GRPO_TRAINING_GUIDE.md) |
 | 💡 **Examples** | Production-ready code samples | [examples/](examples/) |
 | 🔧 **API Reference** | Generated API docs | [docs/api/](docs/api/) |
 
