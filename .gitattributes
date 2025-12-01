@@ -1,0 +1,80 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Source code
+*.py text diff=python
+*.pyx text diff=python
+*.pyi text diff=python
+
+# Documentation
+*.md text diff=markdown
+*.rst text
+*.txt text
+
+# Configuration
+*.yml text
+*.yaml text
+*.json text
+*.toml text
+*.ini text
+*.cfg text
+*.conf text
+
+# Shell scripts
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Docker
+Dockerfile text
+*.dockerfile text
+
+# Data files
+*.csv text
+*.tsv text
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.7z binary
+*.whl binary
+*.egg binary
+*.so binary
+*.dylib binary
+*.dll binary
+
+# Model files
+*.pt binary
+*.pth binary
+*.onnx binary
+*.safetensors binary
+*.bin binary
+*.ckpt binary
+
+# Jupyter notebooks
+*.ipynb text
+
+# Lock files
+poetry.lock text
+Pipfile.lock text
+package-lock.json text
+
+# Git
+.gitattributes text
+.gitignore text
+.gitmodules text
+
+# GitHub
+*.md linguist-detectable
