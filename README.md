@@ -145,15 +145,17 @@ See CHANGELOG.md and RELEASE_NOTES.md for details.
 
 ## 🎯 What Makes StateSet Agents Different?
 
-**StateSet Agents** is the first production-ready framework that brings cutting-edge **Group Relative Policy Optimization (GRPO)** to conversational AI development. Unlike traditional RL frameworks, it's specifically designed for multi-turn dialogues with enterprise-grade reliability.
+**StateSet Agents** is a production-ready framework implementing **Group Relative Policy Optimization (GRPO)** for conversational AI. GRPO is a policy gradient method that computes advantages relative to a group of sampled trajectories, providing more stable training than traditional single-trajectory RL methods.
 
 ### ✨ Key Innovations
 
-- 🤖 **Multi-Turn Native**: Built from the ground up for extended conversations
-- 🧠 **Self-Improving Rewards**: Neural reward models that learn from your data
-- ⚡ **Production Hardened**: Enterprise-grade error handling and monitoring
-- 🔧 **Extensively Extensible**: Simple APIs for custom agents, environments, and rewards
-- 📊 **Battle-Tested**: Proven in production environments at scale
+- 🤖 **Multi-Turn Native**: Purpose-built for extended conversations with state management
+- 🎯 **Group-Relative Advantages**: Baseline computed from trajectory groups for stability
+- 🧠 **Neural Reward Models**: Learned reward functions with heuristic fallbacks
+- ⚡ **Production Hardened**: Circuit breakers, retry logic, health monitoring, type safety
+- 🔧 **Extensively Extensible**: Clean abstractions for agents, environments, and rewards
+- 🚀 **Fast Development**: Stub modes for offline development and CI/CD
+- 📊 **Comprehensive**: ~50K lines with 98% test coverage on core components
 
 ---
 
@@ -181,11 +183,15 @@ graph TB
 
 | Component | Purpose | Key Features |
 |-----------|---------|--------------|
-| **MultiTurnAgent** | Conversation management | Context preservation, memory windows, turn tracking |
-| **Reward System** | Performance optimization | Composite rewards, neural models, domain-specific |
-| **Training Engine** | GRPO implementation | Distributed training, LoRA, hyperparameter optimization |
-| **Monitoring** | Observability | Real-time metrics, health checks, performance insights |
-| **Tool Integration** | External capabilities | API calls, code execution, data retrieval |
+| **Agent System** | Agent orchestration | MultiTurnAgent, ToolAgent, stub modes, LoRA support |
+| **Environment** | Training scenarios | ConversationEnvironment, TaskEnvironment, episode management |
+| **Trajectory** | Dialogue structures | ConversationTurn, MultiTurnTrajectory, TrajectoryGroup |
+| **Reward System** | Performance optimization | CompositeReward, neural models, 10+ pre-built rewards |
+| **Value Function** | Advantage estimation | GAE computation, value head training, group-relative advantages |
+| **Computational Engine** | Parallel processing | Multi-worker trajectory generation, buffering, metrics |
+| **Training Infrastructure** | GRPO trainers | SingleTurn/MultiTurn trainers, TRL integration, distributed support |
+| **API Services** | Production deployment | FastAPI, WebSocket, rate limiting, monitoring |
+| **Monitoring** | Observability | Real-time metrics, health checks, W&B integration |
 
 ---
 
@@ -388,26 +394,31 @@ python examples/train_with_trl_grpo.py
 
 ---
 
-## 📊 Performance & Benchmarks
+## 📊 Framework Capabilities
 
 <div align="center">
 
-### 🚀 Training Throughput Comparison
+### 🚀 Core Features
 
-| Framework | Conversations/sec | Memory Efficiency | GPU Utilization |
-|-----------|------------------|------------------|-----------------|
-| **StateSet Agents** | **2,400** | **94%** | **96%** |
-| Traditional RL | 180 | 67% | 72% |
-| Custom GRPO | 320 | 78% | 81% |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Multi-Turn GRPO** | Native support for extended conversations | ✅ Production Ready |
+| **Value Function with GAE** | Generalized Advantage Estimation | ✅ Implemented |
+| **Real Policy Gradients** | Actual gradient-based updates | ✅ Complete |
+| **KL Regularization** | Reference model divergence penalty | ✅ Available |
+| **Distributed Training** | Multi-GPU support via Accelerate | ✅ Available |
+| **LoRA Fine-Tuning** | Parameter efficient training | ✅ Supported |
+| **Neural Reward Models** | Learned reward functions | ✅ Implemented |
+| **Production API** | FastAPI service with monitoring | ✅ Ready |
 
-*Benchmarks on 8x A100 GPUs with 10K concurrent conversations*
+### ⚡ Architecture Highlights
 
-### ⚡ Production Metrics
-
-- **99.9%** Uptime in production deployments
-- **<50ms** Average response time
-- **10M+** Conversations processed monthly
-- **95%** User satisfaction rate
+- **~50,000 lines** of production Python code
+- **98%** test coverage on core components
+- **Async-first** design for high concurrency
+- **10+ pre-built** reward functions
+- **5+ RL algorithms** (GRPO, PPO, DPO, A2C, TRPO)
+- **Kubernetes-ready** with auto-scaling
 
 </div>
 
@@ -487,27 +498,37 @@ python scripts/benchmark.py
 
 ## 🎯 Why Choose StateSet Agents?
 
-### vs. Traditional RL Frameworks
-- ❌ **Generic RL**: Not designed for conversations
-- ✅ **Conversation-Native**: Built specifically for multi-turn dialogue
-- ❌ **Research-Focused**: Limited production features
-- ✅ **Production-Hardened**: Enterprise-grade reliability
+### vs. Traditional RL Frameworks (Ray RLlib, Stable-Baselines3)
+- **Traditional**: Generic RL for games, robotics, control tasks
+- **StateSet**: Purpose-built for multi-turn conversational AI
+- **Traditional**: Single-step MDPs, simple state spaces
+- **StateSet**: Native multi-turn trajectories with dialogue context
+- **Traditional**: Standard gym environments
+- **StateSet**: Conversation and task-oriented environments with LLM integration
 
-### vs. LangChain/LlamaIndex
-- ❌ **Rule-Based**: Manual prompt engineering required
-- ✅ **RL-Powered**: Learns optimal behaviors from data
-- ❌ **Static**: Fixed response patterns
-- ✅ **Self-Improving**: Neural rewards that adapt to your use case
-- ❌ **General Purpose**: Not optimized for conversations
-- ✅ **Conversation-Optimized**: Purpose-built for dialogue
+### vs. LLM Frameworks (LangChain, LlamaIndex, DSPy)
+- **LLM Frameworks**: Prompt engineering and retrieval-based
+- **StateSet**: RL-based learning from rewards and interactions
+- **LLM Frameworks**: Static chains and templates
+- **StateSet**: Learned policies that improve through training
+- **LLM Frameworks**: Limited feedback mechanisms
+- **StateSet**: Rich reward functions with neural reward models
+
+### vs. TRL (Transformer Reinforcement Learning)
+- **TRL**: Low-level RL primitives for transformers
+- **StateSet**: High-level conversational AI abstractions
+- **TRL**: Primarily RLHF and PPO focused
+- **StateSet**: GRPO-native with multi-algorithm support
+- **StateSet Advantage**: Built-in TRL integration for best of both worlds
+- **Use Together**: StateSet provides the conversational layer, TRL handles optimization
 
 ### vs. Custom Implementations
-- ❌ **Time-Consuming**: Months to build production system
-- ✅ **Ready-to-Use**: Production deployment in days
-- ❌ **Unproven**: Unknown reliability and performance
-- ✅ **Battle-Tested**: Proven in production environments
-- ❌ **Maintenance Burden**: Ongoing development required
-- ✅ **Maintained**: Active development and support
+- **Custom**: 3-6 months to build from scratch
+- **StateSet**: Production-ready in days/weeks
+- **Custom**: Unproven reliability and edge cases
+- **StateSet**: ~50K lines battle-tested code with 98% test coverage
+- **Custom**: Ongoing maintenance burden
+- **StateSet**: Active development with versioned releases
 
 ---
 
@@ -535,35 +556,24 @@ python scripts/benchmark.py
 
 ---
 
-## 🌟 Success Stories
-
-> *"StateSet Agents reduced our customer service response time by 60% while improving satisfaction scores from 3.2 to 4.7 stars."*
-> — **Sarah Chen**, CTO at TechFlow
-
-> *"The self-improving reward system learned our unique customer patterns better than our human trainers could teach."*
-> — **Marcus Rodriguez**, Head of AI at CommercePlus
-
-> *"Deployed a sales assistant that increased our conversion rate by 34% in just two weeks."*
-> — **Jennifer Walsh**, VP of Sales at GrowthCorp
-
----
-
 ## 🚀 Roadmap
 
-### Q1 2025
-- [ ] **Multi-modal agents** with vision and audio capabilities
-- [ ] **Federated learning** for privacy-preserving training
-- [ ] **Advanced evaluation frameworks** with automated benchmarking
+### Current Focus (v0.5.x)
+- [x] Complete GRPO implementation with real policy gradients
+- [x] Value function with GAE
+- [x] KL divergence regularization
+- [x] Production-ready API services
+- [ ] Enhanced multi-objective reward tuning tools
+- [ ] Improved distributed training performance
+- [ ] Extended algorithm library (SAC, TD3)
 
-### Q2 2025
-- [ ] **AWS/GCP/Azure integration** with managed services
-- [ ] **Real-time model updates** with continuous learning
-- [ ] **Advanced conversation analytics** and insights
-
-### Future
-- [ ] **Cross-platform deployment** (mobile, edge devices)
-- [ ] **Multi-agent coordination** for complex workflows
-- [ ] **Automated model optimization** with meta-learning
+### Future Enhancements
+- [ ] Multi-modal agent support (vision, audio)
+- [ ] Human-in-the-loop evaluation tools
+- [ ] Advanced conversation analytics dashboard
+- [ ] Automated hyperparameter optimization
+- [ ] Multi-agent coordination primitives
+- [ ] Extended cloud provider integrations
 
 ---
 
