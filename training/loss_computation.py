@@ -167,14 +167,21 @@ def _compute_group_policy_loss(
 
                 # GRPO policy gradient: -advantage * log_prob
                 # Since outputs.loss is already negative log likelihood,
-                # policy loss = advantage * nll
+                # For GRPO, we want to maximize reward-weighted log prob
+                # policy loss = -advantage * log_prob = advantage * nll (since nll = -log_prob)
                 policy_loss = advantage * nll
 
                 # Optional: PPO-style clipping for stability
+                # Note: In PPO, we use min() not max() to be conservative
+                # and clip the advantage (surrogate objective) for stability
                 if clip_epsilon > 0:
-                    # For stability, we clip the advantage-weighted loss
-                    clipped_loss = advantage.clamp(-clip_epsilon, clip_epsilon) * nll
-                    policy_loss = torch.max(policy_loss, clipped_loss)
+                    # Clamp the advantage to prevent extremely large updates
+                    clamped_advantage = advantage.clamp(-clip_epsilon, clip_epsilon)
+                    clipped_loss = clamped_advantage * nll
+                    # Use min for conservative updates (take the more pessimistic estimate)
+                    # When advantage > 0: min ensures we don't over-incentivize
+                    # When advantage < 0: min ensures we don't over-penalize
+                    policy_loss = torch.min(policy_loss, clipped_loss)
 
                 total_loss = total_loss + policy_loss
                 num_trajectories += 1

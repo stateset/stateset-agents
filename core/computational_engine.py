@@ -193,10 +193,9 @@ class ComputationalGRPOEngine:
             return reward
         except Exception as e:
             logger.warning(f"Failed to get environmental reward: {e}")
-            # Fallback to simple signal
-            signal_strength = np.random.random()
-            noise = np.random.normal(0, 0.1)
-            return float(np.clip(signal_strength + noise, 0, 1))
+            # Return a neutral reward instead of random noise
+            # Random rewards would corrupt training and make results non-reproducible
+            return 0.5
 
     async def train_iteration(self, prompts: List[str]) -> Dict[str, Any]:
         """
@@ -401,8 +400,12 @@ class ComputationalGRPOEngine:
         }
 
     def cleanup(self):
-        """Cleanup resources"""
-        self.executor.shutdown(wait=True)
+        """Cleanup resources safely"""
+        if self.executor is not None:
+            try:
+                self.executor.shutdown(wait=False)
+            except Exception as e:
+                logger.warning(f"Error during executor shutdown: {e}")
 
 
 # Convenience functions

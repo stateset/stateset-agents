@@ -95,6 +95,42 @@ class Environment(ABC):
         """Get initial prompt/context (override in subclasses)"""
         return ""
 
+    async def get_reward(self, trajectory: Any) -> float:
+        """Compute reward for a trajectory.
+
+        This method provides a unified interface for getting rewards from the environment.
+        It uses the reward_fn if configured, otherwise returns a neutral reward.
+
+        Args:
+            trajectory: A Trajectory object or similar with a `turns` attribute
+
+        Returns:
+            float: The computed reward score
+        """
+        if self.reward_fn is not None:
+            try:
+                # Extract turns from trajectory
+                turns = getattr(trajectory, 'turns', [])
+                if not turns and hasattr(trajectory, '__iter__'):
+                    turns = list(trajectory)
+
+                result = await self.reward_fn.compute_reward(turns)
+                if hasattr(result, 'score'):
+                    return float(result.score)
+                elif isinstance(result, dict) and 'score' in result:
+                    return float(result['score'])
+                elif isinstance(result, (int, float)):
+                    return float(result)
+                else:
+                    logger.warning(f"Unexpected reward result type: {type(result)}")
+                    return 0.5
+            except Exception as e:
+                logger.warning(f"Failed to compute reward from reward_fn: {e}")
+                return 0.5
+
+        # No reward function configured, return neutral reward
+        return 0.5
+
     async def run_episode(
         self,
         agent_fn: Callable,

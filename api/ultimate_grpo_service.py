@@ -238,11 +238,73 @@ def _build_error_response(
 
     return JSONResponse(status_code=status_code, content=payload)
 
-# Global state
+# TTL-enabled dictionary for bounded state storage
+class TTLDict(dict):
+    """Dictionary with automatic cleanup of expired entries."""
+
+    def __init__(self, ttl_seconds: int = 3600, max_size: int = 10000):
+        super().__init__()
+        self.ttl_seconds = ttl_seconds
+        self.max_size = max_size
+        self._timestamps: Dict[str, float] = {}
+        self._lock = asyncio.Lock()
+
+    def __setitem__(self, key, value):
+        # Enforce max size by removing oldest entries
+        if len(self) >= self.max_size:
+            self._evict_oldest(len(self) - self.max_size + 1)
+        super().__setitem__(key, value)
+        self._timestamps[key] = time.time()
+
+    def __getitem__(self, key):
+        # Check if expired
+        if key in self._timestamps:
+            if time.time() - self._timestamps[key] > self.ttl_seconds:
+                self.pop(key, None)
+                self._timestamps.pop(key, None)
+                raise KeyError(key)
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def setdefault(self, key, default=None):
+        if key not in self or key not in self._timestamps:
+            self[key] = default
+        elif time.time() - self._timestamps[key] > self.ttl_seconds:
+            self[key] = default
+        return self[key]
+
+    def _evict_oldest(self, count: int = 1):
+        """Remove the oldest entries."""
+        if not self._timestamps:
+            return
+        sorted_keys = sorted(self._timestamps.keys(), key=lambda k: self._timestamps[k])
+        for key in sorted_keys[:count]:
+            super().pop(key, None)
+            self._timestamps.pop(key, None)
+
+    def cleanup_expired(self):
+        """Remove all expired entries."""
+        now = time.time()
+        expired_keys = [
+            k for k, ts in self._timestamps.items()
+            if now - ts > self.ttl_seconds
+        ]
+        for key in expired_keys:
+            super().pop(key, None)
+            self._timestamps.pop(key, None)
+        return len(expired_keys)
+
+
+# Global state with TTL for automatic cleanup
 services = {}
 active_engines = {}
-active_conversations = {}
-training_jobs = {}
+active_conversations = TTLDict(ttl_seconds=3600, max_size=10000)  # 1 hour TTL, max 10K
+training_jobs = TTLDict(ttl_seconds=86400, max_size=1000)  # 24 hour TTL, max 1K
 
 
 def _extract_api_key(request: Request) -> Optional[str]:
@@ -499,13 +561,24 @@ if FASTAPI_AVAILABLE:
         lifespan=lifespan,
     )
 
-    # Add CORS middleware
+    # Add CORS middleware with secure configuration
+    # In production, set GRPO_CORS_ORIGINS environment variable to comma-separated allowed origins
+    cors_origins_env = os.getenv("GRPO_CORS_ORIGINS", "")
+    if cors_origins_env:
+        cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+    else:
+        # Default to permissive for development; restrict in production
+        cors_origins = ["*"] if os.getenv("GRPO_ENV", "development") == "development" else []
+
+    # Only allow credentials when origins are explicitly specified (not wildcard)
+    allow_credentials = cors_origins and cors_origins != ["*"]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=cors_origins,
+        allow_credentials=allow_credentials,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "X-API-Key", "X-Request-ID", "X-User-ID"],
     )
 
     @app.middleware("http")
@@ -886,6 +959,7 @@ async def end_conversation(
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time interactions"""
+    # Authenticate before accepting connection
     if API_CONFIG.api_keys:
         api_key = websocket.headers.get("x-api-key") or websocket.headers.get(
             "authorization"
@@ -897,30 +971,145 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.close(code=1008, reason="Unauthorized")
             return
 
+        # Rate limit WebSocket connections
+        limit_key = f"ws:{api_key}"
+        if not RATE_LIMITER.allow(limit_key, API_CONFIG.rate_limit_per_minute):
+            await websocket.close(code=1008, reason="Rate limit exceeded")
+            return
+
     await websocket.accept()
+
+    # Constants for WebSocket security
+    MAX_MESSAGE_SIZE = 65536  # 64KB max message size
+    MAX_MESSAGES_PER_SECOND = 10
+    message_timestamps = deque(maxlen=MAX_MESSAGES_PER_SECOND)
 
     try:
         while True:
             # Receive message
             data = await websocket.receive_text()
-            message_data = json.loads(data)
+
+            # Validate message size
+            if len(data) > MAX_MESSAGE_SIZE:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": f"Message exceeds maximum size of {MAX_MESSAGE_SIZE} bytes"
+                })
+                continue
+
+            # Rate limit messages
+            now = time.monotonic()
+            message_timestamps.append(now)
+            if len(message_timestamps) >= MAX_MESSAGES_PER_SECOND:
+                oldest = message_timestamps[0]
+                if now - oldest < 1.0:  # More than MAX messages in 1 second
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Message rate limit exceeded"
+                    })
+                    continue
+
+            # Parse JSON with error handling
+            try:
+                message_data = json.loads(data)
+            except json.JSONDecodeError as e:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": f"Invalid JSON: {str(e)[:100]}"
+                })
+                continue
+
+            # Validate message structure
+            if not isinstance(message_data, dict):
+                await websocket.send_json({
+                    "type": "error",
+                    "message": "Message must be a JSON object"
+                })
+                continue
 
             # Handle different message types
             if message_data.get("type") == "chat":
                 # Handle chat message
-                request = ConversationRequest(**message_data.get("data", {}))
-                response = await chat(request)
+                try:
+                    chat_data = message_data.get("data", {})
+                    if not isinstance(chat_data, dict):
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "chat data must be an object"
+                        })
+                        continue
 
-                await websocket.send_text(
-                    json.dumps({"type": "chat_response", "data": response.dict()})
-                )
+                    request = ConversationRequest(**chat_data)
+                    multiturn_agent = services.get("multiturn_agent")
+                    if not multiturn_agent:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Multi-turn agent not initialized"
+                        })
+                        continue
+
+                    # Direct handling instead of calling endpoint that expects HTTP context
+                    conversation_id = request.conversation_id
+                    if conversation_id:
+                        turns = await multiturn_agent.continue_conversation(
+                            conversation_id, request.message, strategy=request.strategy
+                        )
+                        response_text = turns[-1]["content"] if turns else "No response"
+                        context = multiturn_agent.get_conversation_summary(conversation_id)
+                    else:
+                        ctx = await multiturn_agent.start_conversation(
+                            user_id=request.user_id or "ws_user",
+                            initial_context=request.context,
+                        )
+                        response_text = await multiturn_agent.generate_multiturn_response(
+                            ctx.conversation_id, request.message, strategy=request.strategy
+                        )
+                        ctx.add_turn({"role": "assistant", "content": response_text})
+                        context = ctx.get_context_summary()
+                        conversation_id = ctx.conversation_id
+
+                    await websocket.send_json({
+                        "type": "chat_response",
+                        "data": {
+                            "conversation_id": conversation_id,
+                            "response": response_text,
+                            "context": context,
+                            "metadata": {"strategy": request.strategy}
+                        }
+                    })
+
+                except ValueError as e:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Invalid chat request: {str(e)[:200]}"
+                    })
+                except Exception as e:
+                    logger.error(f"WebSocket chat error: {e}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Failed to process chat request"
+                    })
 
             elif message_data.get("type") == "metrics":
-                # Send metrics
-                metrics = await get_metrics()
-                await websocket.send_text(
-                    json.dumps({"type": "metrics_response", "data": metrics})
-                )
+                # Send metrics (direct implementation instead of endpoint call)
+                try:
+                    metrics = {
+                        "system": {
+                            "active_engines": len(active_engines),
+                            "active_conversations": len(active_conversations),
+                            "training_jobs": len(training_jobs),
+                        },
+                        "api": API_METRICS.snapshot(),
+                    }
+                    if "demo_engine" in services:
+                        metrics["demo_engine"] = services["demo_engine"].get_metrics()
+                    await websocket.send_json({"type": "metrics_response", "data": metrics})
+                except Exception as e:
+                    logger.error(f"WebSocket metrics error: {e}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Failed to retrieve metrics"
+                    })
 
             elif message_data.get("type") == "ping":
                 # Ping/pong

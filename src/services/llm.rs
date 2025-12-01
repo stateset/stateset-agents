@@ -52,7 +52,7 @@ impl LLMService {
         })
     }
 
-    /// Generate a chat completion
+    /// Generate a chat completion with timeout
     pub async fn chat_completion(
         &self,
         system_prompt: &str,
@@ -80,12 +80,23 @@ impl LLMService {
             .temperature(self.temperature)
             .build()?;
 
-        let response = self.client.chat().create(request).await?;
+        // Add timeout to prevent hanging on slow LLM responses
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            self.client.chat().create(request)
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("LLM chat completion timed out after 60 seconds"))?
+        .map_err(|e| anyhow::anyhow!("LLM API error: {}", e))?;
 
         let content = response.choices
             .first()
             .and_then(|c| c.message.content.clone())
-            .ok_or_else(|| anyhow::anyhow!("No response content from LLM"))?;
+            .ok_or_else(|| anyhow::anyhow!(
+                "No response content from LLM. Choices count: {}, finish reason: {:?}",
+                response.choices.len(),
+                response.choices.first().map(|c| &c.finish_reason)
+            ))?;
 
         debug!("Chat completion response length: {} chars", content.len());
 
@@ -139,7 +150,14 @@ impl LLMService {
             .temperature(self.temperature)
             .build()?;
 
-        let response = self.client.chat().create(request).await?;
+        // Add timeout to prevent hanging on slow LLM responses
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(120), // Longer timeout for history-based calls
+            self.client.chat().create(request)
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("LLM chat completion with history timed out after 120 seconds"))?
+        .map_err(|e| anyhow::anyhow!("LLM API error: {}", e))?;
 
         let content = response.choices
             .first()
@@ -198,9 +216,15 @@ impl LLMService {
         let response = self.chat_completion(&system, data).await?;
 
         // Try to extract JSON if wrapped in code blocks
+        // Ensure bounds are valid: start <= end to prevent slice panic
         let json_str = if let Some(start) = response.find('{') {
             if let Some(end) = response.rfind('}') {
-                &response[start..=end]
+                if start <= end {
+                    &response[start..=end]
+                } else {
+                    // Malformed JSON: opening brace appears after closing brace
+                    &response
+                }
             } else {
                 &response
             }

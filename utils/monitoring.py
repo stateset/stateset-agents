@@ -7,6 +7,7 @@ alerting, health checks, and integration with external monitoring systems.
 
 import asyncio
 import json
+import logging
 import statistics
 import threading
 import time
@@ -163,12 +164,15 @@ class HealthCheck:
 
 
 class MetricsCollector:
-    """Collects and manages metrics"""
+    """Collects and manages metrics with thread-safe operations"""
 
     def __init__(self, enable_prometheus: bool = True):
         self.enable_prometheus = enable_prometheus and HAS_PROMETHEUS
         self.metrics: Dict[str, List[Metric]] = defaultdict(list)
         self.prometheus_metrics: Dict[str, Any] = {}
+
+        # Thread lock for protecting shared state
+        self._lock = threading.RLock()
 
         # System metrics
         self.system_metrics = {
@@ -245,38 +249,44 @@ class MetricsCollector:
         if not HAS_PSUTIL:
             return
 
+        # Create a logger for the monitoring thread
+        monitoring_logger = logging.getLogger(__name__ + ".system_monitoring")
+
         def collect_system_metrics():
             while True:
                 try:
                     # CPU usage
                     cpu_percent = psutil.cpu_percent(interval=1)
-                    self.system_metrics["cpu_usage"].append(cpu_percent)
 
                     # Memory usage
                     memory = psutil.virtual_memory()
-                    self.system_metrics["memory_usage"].append(memory.percent)
 
                     # Disk usage
                     disk = psutil.disk_usage("/")
-                    self.system_metrics["disk_usage"].append(disk.percent)
 
                     # Network I/O
                     net_io = psutil.net_io_counters()
-                    self.system_metrics["network_io"].append(
-                        {
-                            "bytes_sent": net_io.bytes_sent,
-                            "bytes_recv": net_io.bytes_recv,
-                            "timestamp": time.time(),
-                        }
-                    )
 
-                    # Update Prometheus metrics
+                    # Thread-safe update of all metrics
+                    with self._lock:
+                        self.system_metrics["cpu_usage"].append(cpu_percent)
+                        self.system_metrics["memory_usage"].append(memory.percent)
+                        self.system_metrics["disk_usage"].append(disk.percent)
+                        self.system_metrics["network_io"].append(
+                            {
+                                "bytes_sent": net_io.bytes_sent,
+                                "bytes_recv": net_io.bytes_recv,
+                                "timestamp": time.time(),
+                            }
+                        )
+
+                    # Update Prometheus metrics (these are thread-safe by design)
                     if self.enable_prometheus:
                         self.prometheus_metrics["cpu_usage"].set(cpu_percent)
                         self.prometheus_metrics["memory_usage"].set(memory.used)
 
                 except Exception as e:
-                    print(f"Error collecting system metrics: {e}")
+                    monitoring_logger.warning(f"Error collecting system metrics: {e}")
 
                 time.sleep(30)  # Collect every 30 seconds
 
@@ -401,12 +411,14 @@ class MetricsCollector:
 
 
 class AlertManager:
-    """Manages alerts and notifications"""
+    """Manages alerts and notifications with thread-safe operations"""
 
     def __init__(self):
-        self.alerts: List[Alert] = []
+        self.alerts: deque = deque(maxlen=10000)  # Bounded to prevent memory leak
         self.alert_rules: List[Dict[str, Any]] = []
         self.notification_handlers: List[Callable] = []
+        self._lock = threading.RLock()
+        self._logger = logging.getLogger(__name__ + ".AlertManager")
 
     def add_alert_rule(
         self,
@@ -431,56 +443,62 @@ class AlertManager:
         self.notification_handlers.append(handler)
 
     def check_alerts(self, metrics: Dict[str, Any]):
-        """Check all alert rules against current metrics"""
-        for rule in self.alert_rules:
-            try:
-                if rule["condition"](metrics):
-                    # Check if alert already exists
-                    existing_alert = next(
-                        (
-                            a
-                            for a in self.alerts
-                            if a.name == rule["name"] and not a.resolved
-                        ),
-                        None,
-                    )
+        """Check all alert rules against current metrics (thread-safe)"""
+        # Take a snapshot of rules to avoid holding lock during condition evaluation
+        with self._lock:
+            rules_snapshot = list(self.alert_rules)
 
-                    if not existing_alert:
-                        # Create new alert
-                        alert = Alert(
-                            id=str(uuid.uuid4()),
-                            name=rule["name"],
-                            severity=rule["severity"],
-                            message=rule["message"],
-                            labels=rule["labels"],
+        for rule in rules_snapshot:
+            try:
+                condition_met = rule["condition"](metrics)
+
+                with self._lock:
+                    if condition_met:
+                        # Check if alert already exists
+                        existing_alert = next(
+                            (
+                                a
+                                for a in self.alerts
+                                if a.name == rule["name"] and not a.resolved
+                            ),
+                            None,
                         )
 
-                        self.alerts.append(alert)
+                        if not existing_alert:
+                            # Create new alert
+                            alert = Alert(
+                                id=str(uuid.uuid4()),
+                                name=rule["name"],
+                                severity=rule["severity"],
+                                message=rule["message"],
+                                labels=rule["labels"],
+                            )
 
-                        # Send notifications
-                        for handler in self.notification_handlers:
-                            try:
-                                handler(alert)
-                            except Exception as e:
-                                print(f"Notification handler error: {e}")
+                            self.alerts.append(alert)
 
-                else:
-                    # Check if we should resolve existing alert
-                    existing_alert = next(
-                        (
-                            a
-                            for a in self.alerts
-                            if a.name == rule["name"] and not a.resolved
-                        ),
-                        None,
-                    )
+                            # Send notifications (outside lock to avoid deadlock)
+                            handlers_copy = list(self.notification_handlers)
+                    else:
+                        existing_alert = None
+                        handlers_copy = []
 
-                    if existing_alert:
-                        existing_alert.resolved = True
-                        existing_alert.resolved_at = datetime.now()
+                        # Check if we should resolve existing alert
+                        for a in self.alerts:
+                            if a.name == rule["name"] and not a.resolved:
+                                a.resolved = True
+                                a.resolved_at = datetime.now()
+                                break
+
+                # Send notifications outside the lock
+                if condition_met and not existing_alert:
+                    for handler in handlers_copy:
+                        try:
+                            handler(alert)
+                        except Exception as e:
+                            self._logger.warning(f"Notification handler error: {e}")
 
             except Exception as e:
-                print(f"Error checking alert rule {rule['name']}: {e}")
+                self._logger.warning(f"Error checking alert rule {rule['name']}: {e}")
 
     def get_active_alerts(self) -> List[Alert]:
         """Get all active (unresolved) alerts"""
@@ -569,13 +587,16 @@ class MonitoringService:
         self.alert_manager = AlertManager() if enable_alerts else None
         self.health_checker = HealthChecker() if enable_health_checks else None
 
+        # Logger for this service
+        self._logger = logging.getLogger(__name__ + ".MonitoringService")
+
         # Start Prometheus server
         if enable_prometheus and HAS_PROMETHEUS:
             try:
                 start_http_server(prometheus_port)
-                print(f"Prometheus metrics server started on port {prometheus_port}")
+                self._logger.info(f"Prometheus metrics server started on port {prometheus_port}")
             except Exception as e:
-                print(f"Failed to start Prometheus server: {e}")
+                self._logger.error(f"Failed to start Prometheus server: {e}")
 
         # Setup default health checks
         self._setup_default_health_checks()
@@ -684,7 +705,7 @@ class MonitoringService:
                         self.alert_manager.check_alerts(metrics)
 
                 except Exception as e:
-                    print(f"Error in monitoring loop: {e}")
+                    self._logger.warning(f"Error in monitoring loop: {e}")
 
                 time.sleep(60)  # Check every minute
 

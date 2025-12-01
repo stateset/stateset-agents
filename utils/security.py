@@ -160,16 +160,69 @@ class SecureConfig:
         return value
 
     def _simple_encrypt(self, value: str) -> str:
-        """Simple encryption for demonstration (use proper encryption in production)."""
-        # WARNING: This is NOT secure! Use proper encryption libraries
-        key = os.environ.get("CONFIG_ENCRYPTION_KEY", "default_key")
-        return "".join(
-            chr(ord(c) ^ ord(key[i % len(key)])) for i, c in enumerate(value)
-        )
+        """Encrypt value using Fernet symmetric encryption.
+
+        Requires CONFIG_ENCRYPTION_KEY environment variable (32+ character key).
+        Falls back to a warning and base64 encoding if cryptography is not installed.
+        """
+        key_str = os.environ.get("CONFIG_ENCRYPTION_KEY")
+
+        if not key_str:
+            logger.warning(
+                "CONFIG_ENCRYPTION_KEY not set. Secrets will be stored in plaintext. "
+                "Set a 32+ character key for production use."
+            )
+            import base64
+            return base64.b64encode(value.encode()).decode()
+
+        try:
+            from cryptography.fernet import Fernet
+            import base64
+
+            # Derive a valid Fernet key from the provided key
+            # Fernet requires 32 url-safe base64-encoded bytes
+            key_bytes = hashlib.sha256(key_str.encode()).digest()
+            fernet_key = base64.urlsafe_b64encode(key_bytes)
+            cipher = Fernet(fernet_key)
+            return cipher.encrypt(value.encode()).decode()
+        except ImportError:
+            logger.warning(
+                "cryptography package not installed. Using base64 encoding only. "
+                "Install cryptography for secure secret storage: pip install cryptography"
+            )
+            import base64
+            return base64.b64encode(value.encode()).decode()
 
     def _simple_decrypt(self, value: str) -> str:
-        """Simple decryption for demonstration."""
-        return self._simple_encrypt(value)  # XOR is symmetric
+        """Decrypt value using Fernet symmetric encryption."""
+        key_str = os.environ.get("CONFIG_ENCRYPTION_KEY")
+
+        if not key_str:
+            # Assume base64 encoded if no key
+            import base64
+            try:
+                return base64.b64decode(value.encode()).decode()
+            except Exception:
+                return value
+
+        try:
+            from cryptography.fernet import Fernet
+            import base64
+
+            # Derive the same Fernet key
+            key_bytes = hashlib.sha256(key_str.encode()).digest()
+            fernet_key = base64.urlsafe_b64encode(key_bytes)
+            cipher = Fernet(fernet_key)
+            return cipher.decrypt(value.encode()).decode()
+        except ImportError:
+            import base64
+            try:
+                return base64.b64decode(value.encode()).decode()
+            except Exception:
+                return value
+        except Exception as e:
+            logger.error(f"Failed to decrypt secret: {e}")
+            raise ValueError("Failed to decrypt secret. Check CONFIG_ENCRYPTION_KEY.")
 
     def save_config(self):
         """Save configuration to file."""

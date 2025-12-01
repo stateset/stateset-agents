@@ -218,9 +218,14 @@ class CircuitBreaker:
 class ErrorHandler:
     """Centralized error handling and recovery"""
 
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    def __init__(
+        self,
+        logger: Optional[logging.Logger] = None,
+        max_error_history: int = 10000,
+    ):
         self.logger = logger or logging.getLogger(__name__)
         self.error_history: List[ErrorContext] = []
+        self._max_error_history = max_error_history
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
 
     def handle_error(
@@ -255,6 +260,12 @@ class ErrorHandler:
             )
 
         self.error_history.append(error_context)
+
+        # Enforce bounded history to prevent memory leaks
+        if len(self.error_history) > self._max_error_history:
+            # Remove oldest errors, keeping the most recent
+            self.error_history = self.error_history[-self._max_error_history:]
+
         self._log_error(error_context)
 
         return error_context
