@@ -1,0 +1,90 @@
+[package]
+name = "stateset-agents"
+version = "0.1.0"
+edition = "2021"
+authors = ["StateSet <engineering@stateset.io>"]
+description = "AI Agents Framework for Intelligent Commerce - integrates with StateSet API via REST and gRPC"
+license = "MIT"
+repository = "https://github.com/stateset/stateset-agents"
+keywords = ["ai", "agents", "commerce", "automation", "llm"]
+categories = ["api-bindings", "asynchronous"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full", "tracing"] }
+
+# HTTP/REST client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+# gRPC client
+tonic = { version = "0.12", features = ["tls", "tls-roots"] }
+prost = "0.13"
+prost-types = "0.13"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_urlencoded = "0.7"
+
+# URL encoding
+urlencoding = "2.1"
+
+# AI/LLM
+async-openai = "0.24"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging/Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+
+# Async utilities
+async-trait = "0.1"
+futures = "0.3"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+# Configuration
+config = "0.14"
+dotenvy = "0.15"
+
+# Redis for state/caching (optional)
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"], optional = true }
+
+# Metrics
+prometheus = { version = "0.13", optional = true }
+
+# Retry logic
+backoff = { version = "0.4", features = ["tokio"] }
+
+# Rate limiting
+governor = "0.6"
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[features]
+default = ["rest"]
+rest = []
+grpc = []
+redis = ["dep:redis"]
+metrics = ["dep:prometheus"]
+full = ["rest", "grpc", "redis", "metrics"]
+
+[[bin]]
+name = "stateset-agents"
+path = "src/main.rs"
+
+[[example]]
+name = "fulfillment_agent"
+path = "examples/fulfillment_agent.rs"
+
+[[example]]
+name = "multi_agent_orchestration"
+path = "examples/multi_agent_orchestration.rs"

@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # StateSet Agents - AI Commerce Automation
+  stateset-agents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stateset-agents
+    restart: unless-stopped
+    environment:
+      # API Configuration
+      - STATESET_API_URL=http://stateset-api:8080/api/v1
+      - STATESET_GRPC_URL=http://stateset-api:8081
+      - STATESET_API_KEY=${STATESET_API_KEY}
+      - STATESET_PREFER_GRPC=false
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=gpt-4o-mini
+      # Redis
+      - REDIS_URL=redis://redis:6379
+      # Logging
+      - LOG_LEVEL=info
+      - LOG_JSON=true
+    depends_on:
+      - redis
+    networks:
+      - stateset-network
+
+  # StateSet API (main commerce API)
+  stateset-api:
+    image: stateset/stateset-api:latest
+    container_name: stateset-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      - APP__DATABASE_URL=postgres://stateset:stateset@postgres:5432/stateset
+      - APP__REDIS_URL=redis://redis:6379
+      - APP__HOST=0.0.0.0
+      - APP__PORT=8080
+      - APP__GRPC_PORT=8081
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - stateset-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: stateset-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=stateset
+      - POSTGRES_PASSWORD=stateset
+      - POSTGRES_DB=stateset
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - stateset-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: stateset-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - stateset-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  stateset-network:
+    driver: bridge
