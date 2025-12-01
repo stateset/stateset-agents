@@ -470,6 +470,21 @@ python examples/finetune_qwen3_gspo.py \
 # See docs/QWEN3_FINETUNING_GUIDE.md for complete guide
 ```
 
+### Fine-tune Gemma 3 with GSPO
+
+GSPO also works excellently with Google's Gemma 3 (Gemma 2) models:
+
+```bash
+# Fine-tune Gemma 2-9B-it for customer service
+python examples/finetune_gemma3_gspo.py \
+    --model google/gemma-2-9b-it \
+    --task customer_service \
+    --use-lora \
+    --use-4bit
+
+# See docs/GEMMA3_FINETUNING_GUIDE.md for complete guide
+```
+
 ---
 
 ## 📊 Framework Capabilities
@@ -569,6 +584,7 @@ python scripts/benchmark.py
 | 🚀 **Quick Start Guide** | Get up and running in 15 minutes | [Quick Start](USAGE_GUIDE.md) |
 | 🎯 **GSPO Guide** | Group Sequence Policy Optimization | [GSPO Guide](docs/GSPO_GUIDE.md) |
 | 🤖 **Qwen3 Fine-tuning** | Fine-tune Qwen3 models with GSPO | [Qwen3 Guide](docs/QWEN3_FINETUNING_GUIDE.md) |
+| 🔷 **Gemma 3 Fine-tuning** | Fine-tune Gemma 3 models with GSPO | [Gemma 3 Guide](docs/GEMMA3_FINETUNING_GUIDE.md) |
 | 📊 **Training Guide** | Advanced training techniques | [TRL Training](TRL_GRPO_TRAINING_GUIDE.md) |
 | 💡 **Examples** | Production-ready code samples | [examples/](examples/) |
 | 🔧 **API Reference** | Generated API docs | [docs/api/](docs/api/) |
