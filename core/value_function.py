@@ -239,12 +239,15 @@ class ValueFunction:
             advantages[t] = delta + self.gamma * self.gae_lambda * (1 - dones_tensor[t]) * last_advantage
             last_advantage = advantages[t]
 
-        # Compute returns: R_t = A_t + V(s_t)
-        returns = advantages + values
+        # Store unnormalized advantages for returns calculation
+        unnormalized_advantages = advantages.clone()
 
-        # Normalize advantages
+        # Normalize advantages if requested
         if self.normalize_advantages and len(advantages) > 1:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+        # Compute returns using unnormalized advantages: R_t = A_t + V(s_t)
+        returns = unnormalized_advantages + values
 
         return advantages, returns
 

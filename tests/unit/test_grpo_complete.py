@@ -98,7 +98,8 @@ class TestValueFunction:
         mock_model.config.hidden_size = 768
         mock_model.device = torch.device('cpu')
 
-        value_fn = ValueFunction(mock_model, gamma=0.99, gae_lambda=0.95)
+        # Disable normalization to test raw GAE math
+        value_fn = ValueFunction(mock_model, gamma=0.99, gae_lambda=0.95, normalize_advantages=False)
 
         # Create test data
         rewards = [1.0, 0.5, 0.8, 0.3]
@@ -110,7 +111,7 @@ class TestValueFunction:
         assert len(advantages) == len(rewards)
         assert len(returns) == len(rewards)
 
-        # Check that returns = advantages + values
+        # Check that returns = advantages + values (only holds when not normalized)
         assert torch.allclose(returns, advantages + values, atol=1e-5)
 
     def test_create_value_function_convenience(self):

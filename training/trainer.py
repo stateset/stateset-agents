@@ -689,7 +689,7 @@ class MultiTurnGRPOTrainer:
                     + getattr(self.config, "max_completion_length", 512),
                     padding=True,
                 )
-                inputs = {k: v.to(device) for k, v in inputs.items()}
+                inputs = {k: v.to(device) if hasattr(v, 'to') else v for k, v in inputs.items()}
 
                 # Forward pass to get log probabilities
                 with torch.set_grad_enabled(True):
@@ -776,8 +776,11 @@ class MultiTurnGRPOTrainer:
                     padding=True,
                 )
 
-                # Move to device
-                inputs = {k: v.to(self.agent.model.device) for k, v in inputs.items()}
+                # Move tensors to device (skip non-tensor values like strings)
+                inputs = {
+                    k: v.to(self.agent.model.device) if hasattr(v, 'to') else v
+                    for k, v in inputs.items()
+                }
 
                 # Forward pass
                 use_amp = getattr(self.config, "bf16", False) or getattr(

@@ -67,6 +67,13 @@ class StubTokenizer:
         return "\n".join(parts)
 
 
+class StubModelConfig:
+    """Configuration for StubModel to match PyTorch model interface."""
+    def __init__(self):
+        self.hidden_size = 768
+        self.vocab_size = 50257
+
+
 class StubModel:
     """Minimal text responder for offline/dev usage."""
 
@@ -79,6 +86,8 @@ class StubModel:
                 "This is a lightweight response from the stub backend.",
             ]
         self._index = 0
+        self.config = StubModelConfig()
+        self._training = False
 
     def generate(
         self,
@@ -94,6 +103,53 @@ class StubModel:
     @property
     def device(self) -> str:
         return "cpu"
+
+    def named_parameters(self):
+        """Return empty iterator to match PyTorch interface."""
+        return iter([])
+
+    def parameters(self):
+        """Return empty iterator to match PyTorch interface."""
+        return iter([])
+
+    def train(self, mode: bool = True):
+        """Set training mode to match PyTorch interface."""
+        self._training = mode
+        return self
+
+    def eval(self):
+        """Set evaluation mode to match PyTorch interface."""
+        self._training = False
+        return self
+
+    def to(self, device):
+        """No-op to match PyTorch interface."""
+        return self
+
+    def save_pretrained(self, path: str):
+        """No-op save to match HuggingFace interface."""
+        pass
+
+    def __call__(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
+        """Make model callable to match PyTorch interface."""
+        # Create mock output that looks like transformer model output
+        class MockOutput:
+            def __init__(self):
+                # For stub mode, return dummy loss and logits
+                batch_size = 1
+                seq_len = 10
+                vocab_size = 50257
+
+                # Import torch if available, otherwise create simple objects
+                try:
+                    import torch
+                    self.loss = torch.tensor(0.5, requires_grad=True)
+                    self.logits = torch.randn(batch_size, seq_len, vocab_size, requires_grad=True)
+                except ImportError:
+                    self.loss = 0.5
+                    self.logits = [[0.0] * vocab_size for _ in range(seq_len)]
+
+        return MockOutput()
 
 
 @dataclass

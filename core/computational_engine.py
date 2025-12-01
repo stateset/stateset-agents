@@ -298,7 +298,15 @@ class ComputationalGRPOEngine:
             return float(-np.mean(advantages))
 
         model.train()
-        device = next(model.parameters()).device
+
+        # Get device - try from model attribute first, then from parameters
+        if hasattr(model, 'device'):
+            device = model.device if isinstance(model.device, torch.device) else torch.device(model.device)
+        else:
+            try:
+                device = next(model.parameters()).device
+            except StopIteration:
+                device = torch.device('cpu')
 
         total_loss = 0.0
         num_updates = 0
@@ -315,7 +323,7 @@ class ComputationalGRPOEngine:
                     max_length=512,
                     padding=True,
                 )
-                inputs = {k: v.to(device) for k, v in inputs.items()}
+                inputs = {k: v.to(device) if hasattr(v, 'to') else v for k, v in inputs.items()}
 
                 # Forward pass
                 outputs = model(**inputs, labels=inputs["input_ids"])
