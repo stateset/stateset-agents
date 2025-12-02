@@ -16,7 +16,41 @@ warnings.warn(
 )
 
 # Agent components
-from .agent import Agent, MultiTurnAgent, ToolAgent
+from .agent import Agent, AgentConfig, ConfigValidationError, MultiTurnAgent, ToolAgent
+
+# Structured output support
+from .structured_output import (
+    StructuredOutputConfig,
+    StructuredOutputError,
+    StructuredOutputMixin,
+    create_structured_agent_class,
+    extract_json_from_response,
+    json_schema_from_type,
+    repair_json_string,
+)
+
+# OpenAI-compatible function calling
+from .function_calling import (
+    FunctionCallingMixin,
+    FunctionDefinition,
+    FunctionParameter,
+    ToolCall,
+    ToolChoiceMode,
+    ToolResult,
+    create_function_calling_agent_class,
+    tool,
+)
+
+# Input validation and security
+from .input_validation import (
+    RiskSeverity,
+    SecureInputValidator,
+    SecurityConfig,
+    SecurityRisk,
+    SecurityThreat,
+    ValidationResult,
+    create_secure_agent_wrapper,
+)
 from .async_pool import (
     AsyncResourcePool,
     AsyncTaskManager,
@@ -113,8 +147,35 @@ from .types import *
 __all__ = [
     # Core classes
     "Agent",
+    "AgentConfig",
+    "ConfigValidationError",
     "MultiTurnAgent",
     "ToolAgent",
+    # Structured output
+    "StructuredOutputConfig",
+    "StructuredOutputError",
+    "StructuredOutputMixin",
+    "create_structured_agent_class",
+    "json_schema_from_type",
+    "repair_json_string",
+    "extract_json_from_response",
+    # Function calling
+    "FunctionCallingMixin",
+    "FunctionDefinition",
+    "FunctionParameter",
+    "ToolCall",
+    "ToolChoiceMode",
+    "ToolResult",
+    "create_function_calling_agent_class",
+    "tool",
+    # Input validation
+    "SecureInputValidator",
+    "SecurityConfig",
+    "SecurityRisk",
+    "RiskSeverity",
+    "SecurityThreat",
+    "ValidationResult",
+    "create_secure_agent_wrapper",
     "Environment",
     "ConversationEnvironment",
     "TaskEnvironment",

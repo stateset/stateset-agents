@@ -53,9 +53,66 @@ from .trajectory import ConversationTurn, MultiTurnTrajectory
 logger = logging.getLogger(__name__)
 
 
+class ConfigValidationError(ValueError):
+    """Raised when agent configuration validation fails.
+
+    Attributes:
+        field: The configuration field that failed validation
+        value: The invalid value that was provided
+        message: Human-readable error message with suggestions
+    """
+    def __init__(self, field: str, value: Any, message: str, suggestions: Optional[List[str]] = None):
+        self.field = field
+        self.value = value
+        self.suggestions = suggestions or []
+        suggestion_text = f" Suggestions: {', '.join(self.suggestions)}" if self.suggestions else ""
+        super().__init__(f"Invalid {field}={value!r}: {message}{suggestion_text}")
+
+
 @dataclass
 class AgentConfig:
-    """Configuration for agent behavior - Compatible with HuggingFace patterns"""
+    """Configuration for agent behavior - Compatible with HuggingFace patterns.
+
+    This configuration class controls all aspects of agent behavior including
+    model loading, generation parameters, and optional features like PEFT/LoRA.
+
+    Attributes:
+        model_name: HuggingFace model identifier or path (e.g., "meta-llama/Llama-2-7b-chat-hf")
+        max_new_tokens: Maximum tokens to generate per response (1-8192)
+        temperature: Sampling temperature controlling randomness (0.0-2.0)
+        top_p: Nucleus sampling probability mass (0.0-1.0)
+        top_k: Top-k sampling parameter (1-1000)
+        do_sample: Whether to use sampling; if False, uses greedy decoding
+        repetition_penalty: Penalty for repeating tokens (1.0-2.0)
+        pad_token_id: Override for padding token ID
+        eos_token_id: Override for end-of-sequence token ID
+        system_prompt: Default system prompt prepended to conversations
+        use_chat_template: Whether to use the model's chat template
+        torch_dtype: Model precision ("float16", "bfloat16", "float32")
+        attn_implementation: Attention implementation ("flash_attention_2", "sdpa", "eager", None)
+        device_map: Device placement strategy ("auto", "cuda", "cpu", or specific device)
+        trust_remote_code: Whether to trust remote code from HuggingFace Hub
+        model_kwargs: Additional kwargs passed to model loading
+        tokenizer_kwargs: Additional kwargs passed to tokenizer loading
+        use_peft: Whether to apply PEFT/LoRA adapters
+        peft_config: PEFT configuration dict (requires use_peft=True)
+        use_stub_model: Use lightweight stub for offline development/testing
+        stub_responses: Custom responses for stub model
+        enable_reasoning: Enable chain-of-thought reasoning extraction
+        reasoning_tag: XML tag for reasoning blocks (default: "think")
+
+    Example:
+        >>> config = AgentConfig(
+        ...     model_name="meta-llama/Llama-2-7b-chat-hf",
+        ...     temperature=0.7,
+        ...     max_new_tokens=256,
+        ...     system_prompt="You are a helpful assistant."
+        ... )
+        >>> config.validate()  # Raises ConfigValidationError if invalid
+
+    Raises:
+        ConfigValidationError: If any configuration value is out of valid range
+    """
 
     model_name: str
     max_new_tokens: int = 512
@@ -80,10 +137,127 @@ class AgentConfig:
     peft_config: Optional[Dict[str, Any]] = None
     use_stub_model: bool = False
     stub_responses: Optional[List[str]] = None
-    
+
     # Reasoning Capabilities (DeepSeek-R1 style)
     enable_reasoning: bool = False
     reasoning_tag: str = "think"
+
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate all configuration parameters.
+
+        Raises:
+            ConfigValidationError: If any parameter is invalid, with helpful
+                error messages and suggestions for valid values.
+        """
+        # Validate model_name
+        if not self.model_name or not isinstance(self.model_name, str):
+            raise ConfigValidationError(
+                "model_name", self.model_name,
+                "must be a non-empty string",
+                ["meta-llama/Llama-2-7b-chat-hf", "gpt2", "stub://test"]
+            )
+
+        # Validate max_new_tokens
+        if not isinstance(self.max_new_tokens, int) or self.max_new_tokens < 1:
+            raise ConfigValidationError(
+                "max_new_tokens", self.max_new_tokens,
+                "must be a positive integer >= 1",
+                ["256", "512", "1024", "2048"]
+            )
+        if self.max_new_tokens > 8192:
+            raise ConfigValidationError(
+                "max_new_tokens", self.max_new_tokens,
+                "exceeds maximum of 8192 tokens",
+                ["1024", "2048", "4096"]
+            )
+
+        # Validate temperature
+        if not isinstance(self.temperature, (int, float)) or self.temperature < 0.0:
+            raise ConfigValidationError(
+                "temperature", self.temperature,
+                "must be a non-negative number",
+                ["0.0 (deterministic)", "0.7 (balanced)", "1.0 (creative)"]
+            )
+        if self.temperature > 2.0:
+            raise ConfigValidationError(
+                "temperature", self.temperature,
+                "exceeds maximum of 2.0 (produces incoherent output)",
+                ["0.7", "0.9", "1.0"]
+            )
+
+        # Validate top_p
+        if not isinstance(self.top_p, (int, float)) or not 0.0 <= self.top_p <= 1.0:
+            raise ConfigValidationError(
+                "top_p", self.top_p,
+                "must be between 0.0 and 1.0",
+                ["0.9 (recommended)", "0.95", "1.0 (disabled)"]
+            )
+
+        # Validate top_k
+        if not isinstance(self.top_k, int) or self.top_k < 1:
+            raise ConfigValidationError(
+                "top_k", self.top_k,
+                "must be a positive integer >= 1",
+                ["50 (recommended)", "40", "100"]
+            )
+        if self.top_k > 1000:
+            raise ConfigValidationError(
+                "top_k", self.top_k,
+                "exceeds reasonable maximum of 1000",
+                ["50", "100", "200"]
+            )
+
+        # Validate repetition_penalty
+        if not isinstance(self.repetition_penalty, (int, float)) or self.repetition_penalty < 1.0:
+            raise ConfigValidationError(
+                "repetition_penalty", self.repetition_penalty,
+                "must be >= 1.0 (1.0 = no penalty)",
+                ["1.0 (disabled)", "1.1 (light)", "1.2 (moderate)"]
+            )
+        if self.repetition_penalty > 2.0:
+            raise ConfigValidationError(
+                "repetition_penalty", self.repetition_penalty,
+                "exceeds reasonable maximum of 2.0",
+                ["1.1", "1.2", "1.5"]
+            )
+
+        # Validate torch_dtype
+        valid_dtypes = ["float16", "bfloat16", "float32"]
+        if self.torch_dtype not in valid_dtypes:
+            raise ConfigValidationError(
+                "torch_dtype", self.torch_dtype,
+                f"must be one of {valid_dtypes}",
+                valid_dtypes
+            )
+
+        # Validate attn_implementation
+        valid_attn = ["flash_attention_2", "sdpa", "eager", None]
+        if self.attn_implementation not in valid_attn:
+            raise ConfigValidationError(
+                "attn_implementation", self.attn_implementation,
+                f"must be one of {valid_attn}",
+                ["flash_attention_2 (fastest)", "sdpa (good)", "eager (compatible)"]
+            )
+
+        # Validate PEFT config consistency
+        if self.peft_config and not self.use_peft:
+            raise ConfigValidationError(
+                "peft_config", self.peft_config,
+                "peft_config provided but use_peft=False; set use_peft=True to enable LoRA",
+                ["Set use_peft=True"]
+            )
+
+        # Validate system_prompt length
+        if self.system_prompt and len(self.system_prompt) > 10000:
+            raise ConfigValidationError(
+                "system_prompt", f"<{len(self.system_prompt)} chars>",
+                "system prompt exceeds 10000 character limit",
+                ["Shorten the system prompt", "Move context to user messages"]
+            )
 
 
 class StopOnSpecialTokens(StoppingCriteria):
@@ -522,7 +696,14 @@ class MultiTurnAgent(Agent):
         return response
 
     def _clean_response(self, response: str) -> str:
-        """Clean up generated response"""
+        """Clean up generated response by removing artifacts and stop tokens.
+
+        Args:
+            response: Raw response string from the language model
+
+        Returns:
+            Cleaned response with artifacts removed
+        """
         # Remove common artifacts
         response = response.strip()
 
@@ -533,6 +714,144 @@ class MultiTurnAgent(Agent):
                 response = response.split(phrase)[0].strip()
 
         return response
+
+    async def generate_response_stream(
+        self,
+        messages: Union[str, List[Dict[str, str]]],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterator[str]:
+        """Generate response with streaming output.
+
+        Yields tokens as they are generated, enabling real-time display
+        of agent responses. This is particularly useful for long responses
+        or interactive applications.
+
+        Args:
+            messages: Either a string (single user message) or list of
+                message dicts with 'role' and 'content' keys
+            context: Optional context dict passed to generation
+
+        Yields:
+            str: Individual tokens or token chunks as they are generated
+
+        Example:
+            >>> async for token in agent.generate_response_stream("Hello!"):
+            ...     print(token, end="", flush=True)
+        """
+        messages = self._normalize_messages(messages)
+        recent_messages = self._apply_memory_window(messages)
+
+        if self.config.system_prompt and (
+            not recent_messages or recent_messages[0]["role"] != "system"
+        ):
+            recent_messages.insert(
+                0, {"role": "system", "content": self.config.system_prompt}
+            )
+
+        if (
+            self.config.use_chat_template
+            and hasattr(self.tokenizer, "apply_chat_template")
+            and self.tokenizer.chat_template is not None
+        ):
+            try:
+                prompt = self.tokenizer.apply_chat_template(
+                    recent_messages, tokenize=False, add_generation_prompt=True
+                )
+            except Exception:
+                prompt = self._format_conversation(recent_messages)
+        else:
+            prompt = self._format_conversation(recent_messages)
+
+        # For stub backend, yield the full response in chunks
+        if self._is_stub_backend:
+            assert isinstance(self.model, StubModel)
+            response = self.model.generate(prompt, context)
+            # Simulate streaming by yielding word by word
+            words = response.split()
+            for i, word in enumerate(words):
+                yield word + (" " if i < len(words) - 1 else "")
+                await asyncio.sleep(0.02)  # Small delay for realistic streaming
+            return
+
+        if self.model is None or self.tokenizer is None or self.generation_config is None:
+            raise RuntimeError(
+                "Agent must be initialized before streaming. Call `await initialize()` first."
+            )
+
+        # Tokenize input
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self.tokenizer.model_max_length - self.config.max_new_tokens,
+        )
+
+        model_device = None
+        if hasattr(self.model, "parameters"):
+            try:
+                first_param = next(self.model.parameters())
+                model_device = first_param.device
+            except StopIteration:
+                model_device = None
+        if model_device and hasattr(inputs, "to"):
+            inputs = inputs.to(model_device)
+
+        # Use TextIteratorStreamer if available
+        try:
+            from transformers import TextIteratorStreamer
+            import threading
+
+            streamer = TextIteratorStreamer(
+                self.tokenizer,
+                skip_prompt=True,
+                skip_special_tokens=True
+            )
+
+            generation_kwargs = {
+                **inputs,
+                "generation_config": self.generation_config,
+                "streamer": streamer,
+            }
+
+            # Run generation in separate thread
+            thread = threading.Thread(
+                target=lambda: self.model.generate(**generation_kwargs)
+            )
+            thread.start()
+
+            # Yield tokens as they arrive
+            accumulated = ""
+            for text in streamer:
+                # Check for stop phrases
+                accumulated += text
+                should_stop = False
+                for phrase in ["User:", "System:", "Human:", "AI:"]:
+                    if phrase in accumulated:
+                        # Yield up to the stop phrase
+                        idx = accumulated.index(phrase)
+                        if idx > len(accumulated) - len(text):
+                            remaining = accumulated[:idx]
+                            if remaining:
+                                yield remaining[len(accumulated) - len(text):]
+                        should_stop = True
+                        break
+                if should_stop:
+                    break
+                yield text
+
+            thread.join()
+
+        except ImportError:
+            # Fallback: generate full response and yield in chunks
+            response = await self._generate_with_model(prompt, context)
+            response = self._clean_response(response)
+            # Yield in small chunks for streaming feel
+            chunk_size = 4
+            for i in range(0, len(response), chunk_size):
+                yield response[i:i + chunk_size]
+                await asyncio.sleep(0.01)
+
+        self.turn_count += 1
 
     async def process_turn(
         self,
