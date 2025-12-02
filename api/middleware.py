@@ -7,7 +7,7 @@ Centralized middleware for security, observability, and request handling.
 import time
 import uuid
 import logging
-from typing import Callable, Optional, Dict, Any
+from typing import Callable, Optional, Dict, Any, Tuple
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -122,7 +122,7 @@ class SlidingWindowRateLimiter:
         self.window_seconds = window_seconds
         self.windows: Dict[str, deque] = defaultdict(deque)
 
-    def is_allowed(self, key: str, limit: int) -> tuple[bool, int]:
+    def is_allowed(self, key: str, limit: int) -> Tuple[bool, int]:
         """
         Check if request is allowed under rate limit.
 

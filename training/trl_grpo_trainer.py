@@ -23,10 +23,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import framework components
-from ..core.agent import Agent, AgentConfig, MultiTurnAgent
-from ..core.environment import ConversationEnvironment
-from ..core.trajectory import ConversationTurn, MultiTurnTrajectory
-from ..rewards.multi_objective_reward import MultiObjectiveReward
+from core.agent import Agent, AgentConfig, MultiTurnAgent
+from core.environment import ConversationEnvironment
+from core.trajectory import ConversationTurn, MultiTurnTrajectory
+from rewards.multi_objective_reward import MultiObjectiveReward
 from .config import TrainingConfig, get_config_for_task
 
 # Import additional dependencies

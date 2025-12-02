@@ -1,97 +1,105 @@
-#!/usr/bin/env python3
-"""
-StateSet Agents API Server
-
-Production-ready REST API for training and deploying AI agents.
-
-Usage:
-    python -m stateset_agents.api.main
-
-    # Or with uvicorn directly:
-    uvicorn stateset_agents.api.main:app --host 0.0.0.0 --port 8000
-
-Environment Variables:
-    See .env.example for all configuration options.
-"""
-
+from contextlib import asynccontextmanager
 import logging
-import sys
+from datetime import datetime
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer
 
-from .config import get_config, ConfigurationError
-from .observability import setup_observability
-from .v1.router import create_app
+from .config import get_config
+from .routers import agents, training, metrics
+from .middleware import setup_middleware
 
-# Set up logging first
 logger = logging.getLogger(__name__)
 
+# Load config
+config = get_config()
 
-def main():
-    """Main entry point for the API server."""
-    try:
-        # Load and validate configuration
-        config = get_config()
-        warnings = config.validate()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager."""
+    logger.info("Starting StateSet Agents API")
+    yield
+    logger.info("Shutting down StateSet Agents API")
 
-        # Set up observability (logging, tracing)
-        setup_observability()
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application."""
+    app = FastAPI(
+        title=config.title,
+        description="""
+        ## StateSet Agents API
+        
+        A comprehensive REST API for training and deploying AI agents using 
+        reinforcement learning techniques.
+        
+        ### Features
+        
+        - 🤖 **Agent Management**: Create and manage AI agents
+        - 💬 **Conversations**: Interactive conversations with agents
+        - 🎯 **Training**: Train agents using reinforcement learning
+        - 📊 **Monitoring**: Real-time metrics and monitoring
+        - 🔒 **Security**: Authentication and authorization
+        - 📈 **Analytics**: Performance analytics and insights
+        """,
+        version=config.api_version,
+        lifespan=lifespan,
+    )
 
-        # Log configuration warnings
-        for warning in warnings:
-            logger.warning(f"Configuration warning: {warning}")
+    # Middleware
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.cors.allowed_origins,
+        allow_credentials=config.cors.allow_credentials,
+        allow_methods=config.cors.allowed_methods,
+        allow_headers=config.cors.allowed_headers,
+        max_age=config.cors.max_age,
+    )
+    
+    # Advanced Middleware (Rate Limiting, Security Headers, etc.)
+    setup_middleware(app)
 
-        # Create application
-        app = create_app()
+    # Include routers
+    app.include_router(agents.router)
+    app.include_router(agents.conversation_router)
+    app.include_router(training.router)
+    app.include_router(metrics.router)
 
-        # Log startup info
-        logger.info(
-            "Starting StateSet Agents API",
-            extra={
-                "environment": config.environment.value,
-                "host": config.host,
-                "port": config.port,
-                "api_version": config.api_version,
-                "auth_required": config.security.require_auth,
-                "rate_limit_enabled": config.rate_limit.enabled,
-            }
-        )
-
-        # Run with uvicorn
-        import uvicorn
-        uvicorn.run(
-            app,
-            host=config.host,
-            port=config.port,
-            log_level=config.observability.log_level.lower(),
-            access_log=False,  # We handle logging ourselves
-        )
-
-    except ConfigurationError as e:
-        logger.error(f"Configuration error: {e}")
-        sys.exit(1)
-    except Exception as e:
-        logger.exception(f"Failed to start API server: {e}")
-        sys.exit(1)
-
-
-# Create app instance for uvicorn
-try:
-    config = get_config()
-    setup_observability()
-    app = create_app()
-except ConfigurationError as e:
-    logger.error(f"Configuration error: {e}")
-    # Create a minimal error app
-    from fastapi import FastAPI
-    app = FastAPI(title="StateSet Agents API - Configuration Error")
-
-    @app.get("/")
-    async def configuration_error():
+    # Root endpoint
+    @app.get("/", summary="API Root", description="Welcome endpoint with API information")
+    async def root():
+        """Get API information."""
         return {
-            "error": "Configuration error",
-            "message": str(e),
-            "hint": "Check your environment variables. See .env.example for required settings."
+            "message": "Welcome to StateSet Agents API",
+            "version": config.api_version,
+            "documentation": "/docs",
+            "health": "/health",
         }
 
+    # Exception Handlers
+    @app.exception_handler(Exception)
+    async def general_exception_handler(request: Request, exc: Exception):
+        logger.error(f"Unhandled exception: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "internal_server_error",
+                "message": "An internal error occurred",
+                "timestamp": datetime.utcnow().timestamp(),
+            },
+        )
+
+    return app
+
+app = create_app()
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    uvicorn.run(
+        "api.main:app",
+        host=config.host,
+        port=config.port,
+        reload=not config.is_production(),
+        log_level=config.observability.log_level.lower(),
+    )
