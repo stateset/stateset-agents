@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from collections import defaultdict, deque
@@ -37,6 +38,51 @@ try:
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
+    # Lightweight shims so the module can be imported without FastAPI installed
+    class HTTPException(Exception):
+        def __init__(self, status_code: int = 500, detail: Any = None):
+            self.status_code = status_code
+            self.detail = detail
+            super().__init__(detail)
+
+    class Request:
+        def __init__(self):
+            self.headers = {}
+            self.client = None
+            self.url = type("URL", (), {"path": "/"})()
+            self.state = type("state", (), {})()
+
+    class WebSocket:
+        pass
+
+    class WebSocketDisconnect(Exception):
+        pass
+
+    class BackgroundTasks:
+        def add_task(self, *_args, **_kwargs):
+            return None
+
+    def Depends(dependency):
+        return dependency
+
+    class BaseModel:
+        pass
+
+    def Field(default=None, default_factory=None):
+        return default if default_factory is None else default_factory()
+
+    def field_validator(*_args, **_kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+    def jsonable_encoder(obj):
+        return obj
+
+    class JSONResponse:
+        def __init__(self, status_code: int = 200, content: Any = None):
+            self.status_code = status_code
+            self.content = content
 
 import utils.monitoring
 
@@ -75,6 +121,7 @@ class APIConfig:
     max_prompt_length: int
     max_message_length: int
     max_iterations: int
+    allow_anonymous: bool
 
     @classmethod
     def from_env(cls) -> "APIConfig":
@@ -97,6 +144,8 @@ class APIConfig:
             max_prompt_length=_get_int_from_env("GRPO_MAX_PROMPT_CHARS", 4000),
             max_message_length=_get_int_from_env("GRPO_MAX_MESSAGE_CHARS", 4000),
             max_iterations=_get_int_from_env("GRPO_MAX_ITERATIONS", 50),
+            allow_anonymous=os.getenv("GRPO_ALLOW_ANONYMOUS", "false").lower()
+            in {"1", "true", "yes", "on"},
         )
 
 
@@ -247,23 +296,25 @@ class TTLDict(dict):
         self.ttl_seconds = ttl_seconds
         self.max_size = max_size
         self._timestamps: Dict[str, float] = {}
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
 
     def __setitem__(self, key, value):
-        # Enforce max size by removing oldest entries
-        if len(self) >= self.max_size:
-            self._evict_oldest(len(self) - self.max_size + 1)
-        super().__setitem__(key, value)
-        self._timestamps[key] = time.time()
+        with self._lock:
+            # Enforce max size by removing oldest entries
+            if len(self) >= self.max_size:
+                self._evict_oldest(len(self) - self.max_size + 1)
+            super().__setitem__(key, value)
+            self._timestamps[key] = time.time()
 
     def __getitem__(self, key):
-        # Check if expired
-        if key in self._timestamps:
-            if time.time() - self._timestamps[key] > self.ttl_seconds:
-                self.pop(key, None)
-                self._timestamps.pop(key, None)
-                raise KeyError(key)
-        return super().__getitem__(key)
+        with self._lock:
+            # Check if expired
+            if key in self._timestamps:
+                if time.time() - self._timestamps[key] > self.ttl_seconds:
+                    super().pop(key, None)
+                    self._timestamps.pop(key, None)
+                    raise KeyError(key)
+            return super().__getitem__(key)
 
     def get(self, key, default=None):
         try:
@@ -272,11 +323,12 @@ class TTLDict(dict):
             return default
 
     def setdefault(self, key, default=None):
-        if key not in self or key not in self._timestamps:
-            self[key] = default
-        elif time.time() - self._timestamps[key] > self.ttl_seconds:
-            self[key] = default
-        return self[key]
+        with self._lock:
+            if key not in self or key not in self._timestamps:
+                self[key] = default
+            elif time.time() - self._timestamps[key] > self.ttl_seconds:
+                self[key] = default
+            return super().__getitem__(key)
 
     def _evict_oldest(self, count: int = 1):
         """Remove the oldest entries."""
@@ -289,15 +341,16 @@ class TTLDict(dict):
 
     def cleanup_expired(self):
         """Remove all expired entries."""
-        now = time.time()
-        expired_keys = [
-            k for k, ts in self._timestamps.items()
-            if now - ts > self.ttl_seconds
-        ]
-        for key in expired_keys:
-            super().pop(key, None)
-            self._timestamps.pop(key, None)
-        return len(expired_keys)
+        with self._lock:
+            now = time.time()
+            expired_keys = [
+                k for k, ts in self._timestamps.items()
+                if now - ts > self.ttl_seconds
+            ]
+            for key in expired_keys:
+                super().pop(key, None)
+                self._timestamps.pop(key, None)
+            return len(expired_keys)
 
 
 # Global state with TTL for automatic cleanup
@@ -329,9 +382,14 @@ async def verify_request(request: Request) -> RequestContext:
             )
         roles = API_CONFIG.api_keys[api_key]
         user_id = request.headers.get("x-user-id", client_ip)
-    else:
+    elif API_CONFIG.allow_anonymous:
         roles = ["anonymous"]
         user_id = request.headers.get("x-user-id", client_ip)
+    else:
+        raise HTTPException(
+            status_code=401,
+            detail="API key required. Set GRPO_ALLOW_ANONYMOUS=true to enable unauthenticated access.",
+        )
 
     limit_key = api_key or client_ip
     if not RATE_LIMITER.allow(limit_key, API_CONFIG.rate_limit_per_minute):
@@ -641,616 +699,517 @@ else:
     app = None
 
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {
-        "title": "Ultimate GRPO Service",
-        "version": "2.0.0",
-        "description": "Comprehensive GRPO training and inference API",
-        "innovations": [
-            "🧠 Neural Reward Models",
-            "⚖️ RULER LLM Judges",
-            "💬 Multi-Turn Conversations",
-            "🔄 Distributed Training",
-            "⚡ Computational Engine",
-            "🎯 Multi-Objective Rewards",
-            "🚀 Auto-Scaling",
-        ],
-        "security": {
-            "auth_enabled": bool(API_CONFIG.api_keys),
-            "rate_limit_per_minute": API_CONFIG.rate_limit_per_minute,
-        },
-        "endpoints": {
-            "training": "/api/train",
-            "conversations": "/api/chat",
-            "scaling": "/api/scale",
-            "metrics": "/api/metrics",
-            "websocket": "/ws",
-        },
-    }
-
-
-@app.post("/api/train", response_model=TrainingResponse)
-async def train_agent(
-    request: TrainingRequest,
-    background_tasks: BackgroundTasks,
-    user_context: RequestContext = Depends(verify_request),
-):
-    """
-    Launch advanced GRPO training with all innovations
-    """
-    job_id = str(uuid.uuid4())
-
-    # Initialize job tracking
-    training_jobs[job_id] = {
-        "status": "starting",
-        "strategy": request.strategy,
-        "iterations_completed": 0,
-        "total_trajectories": 0,
-        "start_time": datetime.utcnow(),
-        "request_id": user_context.request_id,
-        "user_id": user_context.user_id,
-        "error": None,
-        "results": [],
-    }
-
-    # Launch training based on strategy
-    if request.strategy == "computational":
-        background_tasks.add_task(
-            run_computational_training,
-            job_id,
-            request.prompts,
-            request.num_iterations,
-            request.use_neural_rewards,
-            request.use_ruler_rewards,
-        )
-    elif request.strategy == "distributed":
-        background_tasks.add_task(
-            run_distributed_training,
-            job_id,
-            request.prompts,
-            request.num_iterations,
-            request.distributed_config or {},
-        )
-    else:
-        raise HTTPException(
-            status_code=400, detail=f"Unknown training strategy: {request.strategy}"
-        )
-
-    return TrainingResponse(
-        job_id=job_id,
-        status="started",
-        iterations_completed=0,
-        total_trajectories=0,
-        average_reward=0.0,
-        computation_used=0.0,
-        metrics={"strategy": request.strategy},
-        started_at=training_jobs[job_id]["start_time"],
-        completed_at=None,
-        request_id=user_context.request_id,
-    )
-
-
-@app.post("/api/chat", response_model=ConversationResponse)
-async def chat(
-    request: ConversationRequest,
-    user_context: RequestContext = Depends(verify_request),
-):
-    """
-    Advanced multi-turn conversational interface
-    """
-    multiturn_agent = services.get("multiturn_agent")
-    if not multiturn_agent:
-        raise HTTPException(status_code=500, detail="Multi-turn agent not initialized")
-
-    # Start or continue conversation
-    if request.conversation_id:
-        # Continue existing conversation
-        try:
-            turns = await multiturn_agent.continue_conversation(
-                request.conversation_id, request.message, strategy=request.strategy
-            )
-            response = turns[-1]["content"] if turns else "No response generated"
-
-            context = multiturn_agent.get_conversation_summary(request.conversation_id)
-            active_conversations.setdefault(
-                request.conversation_id,
-                {
-                    "user_id": request.user_id or user_context.user_id,
-                    "started_at": datetime.utcnow(),
-                    "strategy": request.strategy,
-                },
-            )
-
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
-    else:
-        # Start new conversation
-        conversation_context = await multiturn_agent.start_conversation(
-            user_id=request.user_id or user_context.user_id,
-            initial_context=request.context,
-        )
-
-        # Generate first response
-        response = await multiturn_agent.generate_multiturn_response(
-            conversation_context.conversation_id,
-            request.message,
-            strategy=request.strategy,
-        )
-
-        # Update conversation
-        conversation_context.add_turn({"role": "assistant", "content": response})
-
-        context = conversation_context.get_context_summary()
-        request.conversation_id = conversation_context.conversation_id
-        active_conversations[request.conversation_id] = {
-            "user_id": request.user_id or user_context.user_id,
-            "started_at": datetime.utcnow(),
-            "strategy": request.strategy,
+if FASTAPI_AVAILABLE:
+    @app.get("/")
+    async def root():
+        """Root endpoint"""
+        return {
+            "title": "Ultimate GRPO Service",
+            "version": "2.0.0",
+            "description": "Comprehensive GRPO training and inference API",
+            "innovations": [
+                "🧠 Neural Reward Models",
+                "⚖️ RULER LLM Judges",
+                "💬 Multi-Turn Conversations",
+                "🔄 Distributed Training",
+                "⚡ Computational Engine",
+                "🎯 Multi-Objective Rewards",
+                "🚀 Auto-Scaling",
+            ],
+            "security": {
+                "auth_enabled": bool(API_CONFIG.api_keys),
+                "allow_anonymous": API_CONFIG.allow_anonymous,
+                "rate_limit_per_minute": API_CONFIG.rate_limit_per_minute,
+            },
+            "endpoints": {
+                "training": "/api/train",
+                "conversations": "/api/chat",
+                "scaling": "/api/scale",
+                "metrics": "/api/metrics",
+                "websocket": "/ws",
+            },
         }
 
-    return ConversationResponse(
-        conversation_id=request.conversation_id,
-        response=response,
-        context=context,
-        metadata={
+
+    @app.post("/api/train", response_model=TrainingResponse)
+    async def train_agent(
+        request: TrainingRequest,
+        background_tasks: BackgroundTasks,
+        user_context: RequestContext = Depends(verify_request),
+    ):
+        """
+        Launch advanced GRPO training with all innovations
+        """
+        job_id = str(uuid.uuid4())
+
+        # Initialize job tracking
+        training_jobs[job_id] = {
+            "status": "starting",
             "strategy": request.strategy,
-            "timestamp": datetime.now().isoformat(),
-        },
-    )
+            "iterations_completed": 0,
+            "total_trajectories": 0,
+            "start_time": datetime.utcnow(),
+            "request_id": user_context.request_id,
+            "user_id": user_context.user_id,
+            "error": None,
+            "results": [],
+        }
+
+        # Launch training based on strategy
+        if request.strategy == "computational":
+            background_tasks.add_task(
+                run_computational_training,
+                job_id,
+                request.prompts,
+                request.num_iterations,
+                request.use_neural_rewards,
+                request.use_ruler_rewards,
+            )
+        elif request.strategy == "distributed":
+            background_tasks.add_task(
+                run_distributed_training,
+                job_id,
+                request.prompts,
+                request.num_iterations,
+                request.distributed_config or {},
+            )
+        else:
+            raise HTTPException(
+                status_code=400, detail=f"Unknown training strategy: {request.strategy}"
+            )
+
+        return TrainingResponse(
+            job_id=job_id,
+            status="started",
+            iterations_completed=0,
+            total_trajectories=0,
+            average_reward=0.0,
+            computation_used=0.0,
+            metrics={"strategy": request.strategy},
+            started_at=training_jobs[job_id]["start_time"],
+            completed_at=None,
+            request_id=user_context.request_id,
+        )
 
 
-@app.post("/api/scale")
-async def scale_computation(
-    request: ScaleRequest, user_context: RequestContext = Depends(verify_request)
-):
-    """
-    Scale computational resources across engines
-    """
-    results = {}
+    @app.post("/api/chat", response_model=ConversationResponse)
+    async def chat(
+        request: ConversationRequest,
+        user_context: RequestContext = Depends(verify_request),
+    ):
+        """
+        Advanced multi-turn conversational interface
+        """
+        multiturn_agent = services.get("multiturn_agent")
+        if not multiturn_agent:
+            raise HTTPException(status_code=500, detail="Multi-turn agent not initialized")
 
-    if request.apply_to_all:
-        # Scale all engines
-        for engine_id, engine in active_engines.items():
-            if hasattr(engine, "scale_computation"):
+        # Start or continue conversation
+        if request.conversation_id:
+            # Continue existing conversation
+            try:
+                turns = await multiturn_agent.continue_conversation(
+                    request.conversation_id, request.message, strategy=request.strategy
+                )
+                response = turns[-1]["content"] if turns else "No response generated"
+
+                context = multiturn_agent.get_conversation_summary(request.conversation_id)
+                active_conversations.setdefault(
+                    request.conversation_id,
+                    {
+                        "user_id": request.user_id or user_context.user_id,
+                        "started_at": datetime.utcnow(),
+                        "strategy": request.strategy,
+                    },
+                )
+
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+        else:
+            # Start new conversation
+            conversation_context = await multiturn_agent.start_conversation(
+                user_id=request.user_id or user_context.user_id,
+                initial_context=request.context,
+            )
+
+            # Generate first response
+            response = await multiturn_agent.generate_multiturn_response(
+                conversation_context.conversation_id,
+                request.message,
+                strategy=request.strategy,
+            )
+
+            # Update conversation
+            conversation_context.add_turn({"role": "assistant", "content": response})
+
+            context = conversation_context.get_context_summary()
+            request.conversation_id = conversation_context.conversation_id
+            active_conversations[request.conversation_id] = {
+                "user_id": request.user_id or user_context.user_id,
+                "started_at": datetime.utcnow(),
+                "strategy": request.strategy,
+            }
+
+        return ConversationResponse(
+            conversation_id=request.conversation_id,
+            response=response,
+            context=context,
+            metadata={
+                "strategy": request.strategy,
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
+
+
+    @app.post("/api/scale")
+    async def scale_computation(
+        request: ScaleRequest, user_context: RequestContext = Depends(verify_request)
+    ):
+        """
+        Scale computational resources across engines
+        """
+        results = {}
+
+        if request.apply_to_all:
+            # Scale all engines
+            for engine_id, engine in active_engines.items():
+                if hasattr(engine, "scale_computation"):
+                    try:
+                        result = engine.scale_computation(request.scale_factor)
+                        results[engine_id] = result
+                    except Exception as e:
+                        results[engine_id] = {"error": str(e)}
+
+            # Scale demo engine
+            if "demo_engine" in services:
                 try:
-                    result = engine.scale_computation(request.scale_factor)
-                    results[engine_id] = result
+                    result = services["demo_engine"].scale_computation(request.scale_factor)
+                    results["demo_engine"] = result
                 except Exception as e:
-                    results[engine_id] = {"error": str(e)}
+                    results["demo_engine"] = {"error": str(e)}
+        else:
+            # Scale demo engine only
+            if "demo_engine" in services:
+                try:
+                    result = services["demo_engine"].scale_computation(request.scale_factor)
+                    results["demo_engine"] = result
+                except Exception as e:
+                    results["demo_engine"] = {"error": str(e)}
 
-        # Scale demo engine
-        if "demo_engine" in services:
-            try:
-                result = services["demo_engine"].scale_computation(request.scale_factor)
-                results["demo_engine"] = result
-            except Exception as e:
-                results["demo_engine"] = {"error": str(e)}
-    else:
-        # Scale demo engine only
-        if "demo_engine" in services:
-            try:
-                result = services["demo_engine"].scale_computation(request.scale_factor)
-                results["demo_engine"] = result
-            except Exception as e:
-                results["demo_engine"] = {"error": str(e)}
-
-    return {
-        "message": "Computational resources scaled",
-        "scale_factor": request.scale_factor,
-        "results": results,
-        "philosophy": "Computation is the key to long-term improvement",
-    }
-
-
-@app.get("/api/metrics")
-async def get_metrics(user_context: RequestContext = Depends(verify_request)):
-    """Get comprehensive system metrics"""
-    metrics = {
-        "system": {
-            "active_engines": len(active_engines),
-            "active_conversations": len(active_conversations),
-            "training_jobs": len(training_jobs),
-            "services_initialized": len(services),
-        },
-        "training_jobs": {},
-        "engines": {},
-        "conversations": {},
-    }
-
-    # Training job metrics
-    for job_id, job in training_jobs.items():
-        metrics["training_jobs"][job_id] = {
-            "status": job["status"],
-            "strategy": job["strategy"],
-            "iterations_completed": job["iterations_completed"],
-            "total_trajectories": job["total_trajectories"],
+        return {
+            "message": "Computational resources scaled",
+            "scale_factor": request.scale_factor,
+            "results": results,
+            "philosophy": "Computation is the key to long-term improvement",
         }
 
-    # Engine metrics
-    for engine_id, engine in active_engines.items():
-        if hasattr(engine, "get_metrics"):
-            metrics["engines"][engine_id] = engine.get_metrics()
 
-    # Demo engine metrics
-    if "demo_engine" in services:
-        metrics["demo_engine"] = services["demo_engine"].get_metrics()
-
-    # Conversation metrics
-    if "multiturn_agent" in services:
-        agent = services["multiturn_agent"]
-        metrics["conversations"] = {
-            "active_count": len(agent.get_active_conversations()),
-            "strategies_available": list(agent.strategies.keys()),
-            "tools_registered": list(agent.tools.keys()),
+    @app.get("/api/metrics")
+    async def get_metrics(user_context: RequestContext = Depends(verify_request)):
+        """Get comprehensive system metrics"""
+        metrics = {
+            "system": {
+                "active_engines": len(active_engines),
+                "active_conversations": len(active_conversations),
+                "training_jobs": len(training_jobs),
+                "services_initialized": len(services),
+            },
+            "training_jobs": {},
+            "engines": {},
+            "conversations": {},
         }
 
-    metrics["api"] = API_METRICS.snapshot()
-    metrics["rate_limit"] = {
-        "requests_per_minute": API_CONFIG.rate_limit_per_minute,
-        "auth_enabled": bool(API_CONFIG.api_keys),
-    }
+        # Training job metrics
+        for job_id, job in training_jobs.items():
+            metrics["training_jobs"][job_id] = {
+                "status": job["status"],
+                "strategy": job["strategy"],
+                "iterations_completed": job["iterations_completed"],
+                "total_trajectories": job["total_trajectories"],
+            }
 
-    return metrics
+        # Engine metrics
+        for engine_id, engine in active_engines.items():
+            if hasattr(engine, "get_metrics"):
+                metrics["engines"][engine_id] = engine.get_metrics()
+
+        # Demo engine metrics
+        if "demo_engine" in services:
+            metrics["demo_engine"] = services["demo_engine"].get_metrics()
+
+        # Conversation metrics
+        if "multiturn_agent" in services:
+            agent = services["multiturn_agent"]
+            metrics["conversations"] = {
+                "active_count": len(agent.get_active_conversations()),
+                "strategies_available": list(agent.strategies.keys()),
+                "tools_registered": list(agent.tools.keys()),
+            }
+
+        metrics["api"] = API_METRICS.snapshot()
+        metrics["rate_limit"] = {
+            "requests_per_minute": API_CONFIG.rate_limit_per_minute,
+            "auth_enabled": bool(API_CONFIG.api_keys),
+            "allow_anonymous": API_CONFIG.allow_anonymous,
+        }
+
+        return metrics
 
 
-@app.get("/api/status/{job_id}", response_model=TrainingResponse)
-async def get_training_status(
-    job_id: str, user_context: RequestContext = Depends(verify_request)
-):
-    """Get training job status"""
-    if job_id not in training_jobs:
-        raise HTTPException(status_code=404, detail="Training job not found")
+    @app.get("/api/status/{job_id}", response_model=TrainingResponse)
+    async def get_training_status(
+        job_id: str, user_context: RequestContext = Depends(verify_request)
+    ):
+        """Get training job status"""
+        if job_id not in training_jobs:
+            raise HTTPException(status_code=404, detail="Training job not found")
 
-    job = training_jobs[job_id]
+        job = training_jobs[job_id]
 
-    # Calculate metrics
-    if job["results"]:
-        avg_reward = sum(r.get("average_reward", 0) for r in job["results"]) / len(
-            job["results"]
+        # Calculate metrics
+        if job["results"]:
+            avg_reward = sum(r.get("average_reward", 0) for r in job["results"]) / len(
+                job["results"]
+            )
+            total_computation = sum(
+                r.get("total_computation_used", 0) for r in job["results"]
+            )
+            latest_metrics = job["results"][-1] if job["results"] else {}
+        else:
+            avg_reward = 0.0
+            total_computation = 0.0
+            latest_metrics = {}
+
+        return TrainingResponse(
+            job_id=job_id,
+            status=job["status"],
+            iterations_completed=job["iterations_completed"],
+            total_trajectories=job["total_trajectories"],
+            average_reward=avg_reward,
+            computation_used=total_computation,
+            metrics=latest_metrics,
+            error=job.get("error"),
+            started_at=job.get("start_time"),
+            completed_at=job.get("completed_at"),
+            request_id=job.get("request_id"),
         )
-        total_computation = sum(
-            r.get("total_computation_used", 0) for r in job["results"]
-        )
-        latest_metrics = job["results"][-1] if job["results"] else {}
-    else:
-        avg_reward = 0.0
-        total_computation = 0.0
-        latest_metrics = {}
-
-    return TrainingResponse(
-        job_id=job_id,
-        status=job["status"],
-        iterations_completed=job["iterations_completed"],
-        total_trajectories=job["total_trajectories"],
-        average_reward=avg_reward,
-        computation_used=total_computation,
-        metrics=latest_metrics,
-        error=job.get("error"),
-        started_at=job.get("start_time"),
-        completed_at=job.get("completed_at"),
-        request_id=job.get("request_id"),
-    )
 
 
-@app.delete("/api/conversations/{conversation_id}")
-async def end_conversation(
-    conversation_id: str, user_context: RequestContext = Depends(verify_request)
-):
-    """End a conversation"""
-    multiturn_agent = services.get("multiturn_agent")
-    if not multiturn_agent:
-        raise HTTPException(status_code=500, detail="Multi-turn agent not initialized")
+    @app.delete("/api/conversations/{conversation_id}")
+    async def end_conversation(
+        conversation_id: str, user_context: RequestContext = Depends(verify_request)
+    ):
+        """End a conversation"""
+        multiturn_agent = services.get("multiturn_agent")
+        if not multiturn_agent:
+            raise HTTPException(status_code=500, detail="Multi-turn agent not initialized")
 
-    context = multiturn_agent.end_conversation(conversation_id)
-    if not context:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        context = multiturn_agent.end_conversation(conversation_id)
+        if not context:
+            raise HTTPException(status_code=404, detail="Conversation not found")
 
-    active_conversations.pop(conversation_id, None)
+        active_conversations.pop(conversation_id, None)
 
-    return {
-        "message": "Conversation ended",
-        "conversation_id": conversation_id,
-        "final_summary": context.get_context_summary(),
-    }
+        return {
+            "message": "Conversation ended",
+            "conversation_id": conversation_id,
+            "final_summary": context.get_context_summary(),
+        }
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time interactions"""
-    # Authenticate before accepting connection
-    if API_CONFIG.api_keys:
-        api_key = websocket.headers.get("x-api-key") or websocket.headers.get(
-            "authorization"
-        )
-        if api_key and api_key.lower().startswith("bearer "):
-            api_key = api_key.split(" ", 1)[1].strip()
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket):
+        """WebSocket endpoint for real-time interactions"""
+        # Authenticate before accepting connection
+        if API_CONFIG.api_keys:
+            api_key = websocket.headers.get("x-api-key") or websocket.headers.get(
+                "authorization"
+            )
+            if api_key and api_key.lower().startswith("bearer "):
+                api_key = api_key.split(" ", 1)[1].strip()
 
-        if not api_key or api_key not in API_CONFIG.api_keys:
-            await websocket.close(code=1008, reason="Unauthorized")
-            return
+            if not api_key or api_key not in API_CONFIG.api_keys:
+                await websocket.close(code=1008, reason="Unauthorized")
+                return
 
-        # Rate limit WebSocket connections
-        limit_key = f"ws:{api_key}"
-        if not RATE_LIMITER.allow(limit_key, API_CONFIG.rate_limit_per_minute):
-            await websocket.close(code=1008, reason="Rate limit exceeded")
-            return
+            # Rate limit WebSocket connections
+            limit_key = f"ws:{api_key}"
+            if not RATE_LIMITER.allow(limit_key, API_CONFIG.rate_limit_per_minute):
+                await websocket.close(code=1008, reason="Rate limit exceeded")
+                return
 
-    await websocket.accept()
+        await websocket.accept()
 
-    # Constants for WebSocket security
-    MAX_MESSAGE_SIZE = 65536  # 64KB max message size
-    MAX_MESSAGES_PER_SECOND = 10
-    message_timestamps = deque(maxlen=MAX_MESSAGES_PER_SECOND)
+        # Constants for WebSocket security
+        MAX_MESSAGE_SIZE = 65536  # 64KB max message size
+        MAX_MESSAGES_PER_SECOND = 10
+        message_timestamps = deque(maxlen=MAX_MESSAGES_PER_SECOND)
 
-    try:
-        while True:
-            # Receive message
-            data = await websocket.receive_text()
+        try:
+            while True:
+                # Receive message
+                data = await websocket.receive_text()
 
-            # Validate message size
-            if len(data) > MAX_MESSAGE_SIZE:
-                await websocket.send_json({
-                    "type": "error",
-                    "message": f"Message exceeds maximum size of {MAX_MESSAGE_SIZE} bytes"
-                })
-                continue
-
-            # Rate limit messages
-            now = time.monotonic()
-            message_timestamps.append(now)
-            if len(message_timestamps) >= MAX_MESSAGES_PER_SECOND:
-                oldest = message_timestamps[0]
-                if now - oldest < 1.0:  # More than MAX messages in 1 second
+                # Validate message size
+                if len(data) > MAX_MESSAGE_SIZE:
                     await websocket.send_json({
                         "type": "error",
-                        "message": "Message rate limit exceeded"
+                        "message": f"Message exceeds maximum size of {MAX_MESSAGE_SIZE} bytes"
                     })
                     continue
 
-            # Parse JSON with error handling
-            try:
-                message_data = json.loads(data)
-            except json.JSONDecodeError as e:
-                await websocket.send_json({
-                    "type": "error",
-                    "message": f"Invalid JSON: {str(e)[:100]}"
-                })
-                continue
-
-            # Validate message structure
-            if not isinstance(message_data, dict):
-                await websocket.send_json({
-                    "type": "error",
-                    "message": "Message must be a JSON object"
-                })
-                continue
-
-            # Handle different message types
-            if message_data.get("type") == "chat":
-                # Handle chat message
-                try:
-                    chat_data = message_data.get("data", {})
-                    if not isinstance(chat_data, dict):
+                # Rate limit messages
+                now = time.monotonic()
+                message_timestamps.append(now)
+                if len(message_timestamps) >= MAX_MESSAGES_PER_SECOND:
+                    oldest = message_timestamps[0]
+                    if now - oldest < 1.0:  # More than MAX messages in 1 second
                         await websocket.send_json({
                             "type": "error",
-                            "message": "chat data must be an object"
+                            "message": "Message rate limit exceeded"
                         })
                         continue
 
-                    request = ConversationRequest(**chat_data)
-                    multiturn_agent = services.get("multiturn_agent")
-                    if not multiturn_agent:
+                # Parse JSON with error handling
+                try:
+                    message_data = json.loads(data)
+                except json.JSONDecodeError as e:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Invalid JSON: {str(e)[:100]}"
+                    })
+                    continue
+
+                # Validate message structure
+                if not isinstance(message_data, dict):
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Message must be a JSON object"
+                    })
+                    continue
+
+                # Handle different message types
+                if message_data.get("type") == "chat":
+                    # Handle chat message
+                    try:
+                        chat_data = message_data.get("data", {})
+                        if not isinstance(chat_data, dict):
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "chat data must be an object"
+                            })
+                            continue
+
+                        request = ConversationRequest(**chat_data)
+                        multiturn_agent = services.get("multiturn_agent")
+                        if not multiturn_agent:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Multi-turn agent not initialized"
+                            })
+                            continue
+
+                        # Direct handling instead of calling endpoint that expects HTTP context
+                        conversation_id = request.conversation_id
+                        if conversation_id:
+                            turns = await multiturn_agent.continue_conversation(
+                                conversation_id, request.message, strategy=request.strategy
+                            )
+                            response_text = turns[-1]["content"] if turns else "No response"
+                            context = multiturn_agent.get_conversation_summary(conversation_id)
+                        else:
+                            ctx = await multiturn_agent.start_conversation(
+                                user_id=request.user_id or "ws_user",
+                                initial_context=request.context,
+                            )
+                            response_text = await multiturn_agent.generate_multiturn_response(
+                                ctx.conversation_id, request.message, strategy=request.strategy
+                            )
+                            ctx.add_turn({"role": "assistant", "content": response_text})
+                            context = ctx.get_context_summary()
+                            conversation_id = ctx.conversation_id
+
+                        await websocket.send_json({
+                            "type": "chat_response",
+                            "data": {
+                                "conversation_id": conversation_id,
+                                "response": response_text,
+                                "context": context,
+                                "metadata": {"strategy": request.strategy}
+                            }
+                        })
+
+                    except ValueError as e:
                         await websocket.send_json({
                             "type": "error",
-                            "message": "Multi-turn agent not initialized"
+                            "message": f"Invalid chat request: {str(e)[:200]}"
                         })
-                        continue
-
-                    # Direct handling instead of calling endpoint that expects HTTP context
-                    conversation_id = request.conversation_id
-                    if conversation_id:
-                        turns = await multiturn_agent.continue_conversation(
-                            conversation_id, request.message, strategy=request.strategy
-                        )
-                        response_text = turns[-1]["content"] if turns else "No response"
-                        context = multiturn_agent.get_conversation_summary(conversation_id)
-                    else:
-                        ctx = await multiturn_agent.start_conversation(
-                            user_id=request.user_id or "ws_user",
-                            initial_context=request.context,
-                        )
-                        response_text = await multiturn_agent.generate_multiturn_response(
-                            ctx.conversation_id, request.message, strategy=request.strategy
-                        )
-                        ctx.add_turn({"role": "assistant", "content": response_text})
-                        context = ctx.get_context_summary()
-                        conversation_id = ctx.conversation_id
-
-                    await websocket.send_json({
-                        "type": "chat_response",
-                        "data": {
-                            "conversation_id": conversation_id,
-                            "response": response_text,
-                            "context": context,
-                            "metadata": {"strategy": request.strategy}
-                        }
-                    })
-
-                except ValueError as e:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": f"Invalid chat request: {str(e)[:200]}"
-                    })
-                except Exception as e:
-                    logger.error(f"WebSocket chat error: {e}")
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Failed to process chat request"
-                    })
-
-            elif message_data.get("type") == "metrics":
-                # Send metrics (direct implementation instead of endpoint call)
-                try:
-                    metrics = {
-                        "system": {
-                            "active_engines": len(active_engines),
-                            "active_conversations": len(active_conversations),
-                            "training_jobs": len(training_jobs),
-                        },
-                        "api": API_METRICS.snapshot(),
-                    }
-                    if "demo_engine" in services:
-                        metrics["demo_engine"] = services["demo_engine"].get_metrics()
-                    await websocket.send_json({"type": "metrics_response", "data": metrics})
-                except Exception as e:
-                    logger.error(f"WebSocket metrics error: {e}")
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Failed to retrieve metrics"
-                    })
-
-            elif message_data.get("type") == "ping":
-                # Ping/pong
-                await websocket.send_text(
-                    json.dumps(
-                        {"type": "pong", "timestamp": datetime.now().isoformat()}
-                    )
-                )
-
-            else:
-                await websocket.send_text(
-                    json.dumps(
-                        {
+                    except Exception as e:
+                        logger.error(f"WebSocket chat error: {e}")
+                        await websocket.send_json({
                             "type": "error",
-                            "message": f"Unknown message type: {message_data.get('type')}",
+                            "message": "Failed to process chat request"
+                        })
+
+                elif message_data.get("type") == "metrics":
+                    # Send metrics (direct implementation instead of endpoint call)
+                    try:
+                        metrics = {
+                            "system": {
+                                "active_engines": len(active_engines),
+                                "active_conversations": len(active_conversations),
+                                "training_jobs": len(training_jobs),
+                            },
+                            "api": API_METRICS.snapshot(),
                         }
+                        if "demo_engine" in services:
+                            metrics["demo_engine"] = services["demo_engine"].get_metrics()
+                        await websocket.send_json({"type": "metrics_response", "data": metrics})
+                    except Exception as e:
+                        logger.error(f"WebSocket metrics error: {e}")
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Failed to retrieve metrics"
+                        })
+
+                elif message_data.get("type") == "ping":
+                    # Ping/pong
+                    await websocket.send_text(
+                        json.dumps(
+                            {"type": "pong", "timestamp": datetime.now().isoformat()}
+                        )
                     )
-                )
 
-    except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected")
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        await websocket.close()
+                else:
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "type": "error",
+                                "message": f"Unknown message type: {message_data.get('type')}",
+                            }
+                        )
+                    )
 
+        except WebSocketDisconnect:
+            logger.info("WebSocket client disconnected")
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
+            await websocket.close()
 
-# Background task functions
-async def run_computational_training(
-    job_id: str,
-    prompts: List[str],
-    num_iterations: int,
-    use_neural_rewards: bool,
-    use_ruler_rewards: bool,
-):
-    """Run computational training job"""
-    job = training_jobs[job_id]
-    job["status"] = "running"
-    job.setdefault("start_time", datetime.utcnow())
-
-    try:
-        # Get or create computational engine
-        engine = services.get("demo_engine")
-        if not engine:
-            raise RuntimeError("Demo engine not available")
-
-        # Run training iterations
-        for i in range(num_iterations):
-            try:
-                # Run training iteration
-                results = await engine.train_iteration(prompts)
-
-                # Update job status
-                job["iterations_completed"] += 1
-                job["total_trajectories"] += results["trajectories_generated"]
-                job["results"].append(results)
-
-                logger.info(f"Job {job_id}: Iteration {i+1}/{num_iterations} completed")
-
-            except Exception as e:
-                logger.error(f"Training iteration {i+1} failed: {e}")
-                job["status"] = "error"
-                job["error"] = str(e)
-                job["completed_at"] = datetime.utcnow()
-                return
-
-        job["status"] = "completed"
-        job["completed_at"] = datetime.utcnow()
-        logger.info(f"Job {job_id}: Training completed successfully")
-
-    except Exception as e:
-        logger.error(f"Job {job_id}: Training failed: {e}")
-        job["status"] = "failed"
-        job["error"] = str(e)
-        job["completed_at"] = datetime.utcnow()
-
-
-async def run_distributed_training(
-    job_id: str,
-    prompts: List[str],
-    num_iterations: int,
-    distributed_config: Dict[str, Any],
-):
-    """Run distributed training job"""
-    job = training_jobs[job_id]
-    job["status"] = "running"
-    job.setdefault("start_time", datetime.utcnow())
-
-    try:
-        # Note: This is a simplified implementation that avoids heavy imports.
-        config = distributed_config or {}
-        logger.info(
-            "Job %s: Starting distributed training (simulated) with config %s",
-            job_id,
-            config,
-        )
-
-        # Simulate distributed training
-        for i in range(num_iterations):
-            await asyncio.sleep(1)  # Simulate work
-
-            # Simulate results
-            results = {
-                "iteration": i + 1,
-                "trajectories_generated": len(prompts),
-                "average_reward": 0.5 + (i * 0.01),
-                "total_computation_used": (i + 1) * 10.0,
-            }
-
-            job["iterations_completed"] += 1
-            job["total_trajectories"] += results["trajectories_generated"]
-            job["results"].append(results)
-
-            logger.info(
-                f"Job {job_id}: Distributed iteration {i+1}/{num_iterations} completed"
-            )
-
-        job["status"] = "completed"
-        job["completed_at"] = datetime.utcnow()
-        logger.info(f"Job {job_id}: Distributed training completed successfully")
-
-    except Exception as e:
-        logger.error(f"Job {job_id}: Distributed training failed: {e}")
-        job["status"] = "failed"
-        job["error"] = str(e)
-        job["completed_at"] = datetime.utcnow()
-
-
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "services": {
-            "monitoring": "monitoring" in services,
-            "cache": "cache" in services,
-            "demo_engine": "demo_engine" in services,
-            "multiturn_agent": "multiturn_agent" in services,
-        },
-    }
+    # Health check endpoint
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint"""
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "services": {
+                "monitoring": "monitoring" in services,
+                "cache": "cache" in services,
+                "demo_engine": "demo_engine" in services,
+                "multiturn_agent": "multiturn_agent" in services,
+            },
+        }
 
 
 # Main entry point

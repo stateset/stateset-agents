@@ -41,6 +41,7 @@ def reset_api_state():
     service.API_CONFIG.max_prompt_length = original_config.max_prompt_length
     service.API_CONFIG.max_message_length = original_config.max_message_length
     service.API_CONFIG.max_iterations = original_config.max_iterations
+    service.API_CONFIG.allow_anonymous = original_config.allow_anonymous
 
     service.RATE_LIMITER.windows.clear()
     service.API_METRICS.request_counts.clear()
@@ -60,6 +61,16 @@ async def async_client():
             transport=transport, base_url="http://testserver"
         ) as client:
             yield client
+
+
+@pytest.mark.asyncio
+async def test_anonymous_requests_blocked_by_default(async_client):
+    """When no keys are configured and anonymous is disabled, reject requests."""
+    service.API_CONFIG.api_keys = {}
+    service.API_CONFIG.allow_anonymous = False
+
+    response = await async_client.get("/api/metrics")
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -83,6 +94,7 @@ async def test_auth_required_when_configured(async_client):
 async def test_rate_limit_blocks_repeated_requests(async_client):
     """Requests beyond the configured limit receive 429 responses."""
     service.API_CONFIG.api_keys = {}
+    service.API_CONFIG.allow_anonymous = True
     service.API_CONFIG.rate_limit_per_minute = 1
     service.RATE_LIMITER.windows.clear()
 
@@ -97,6 +109,8 @@ async def test_rate_limit_blocks_repeated_requests(async_client):
 @pytest.mark.asyncio
 async def test_validation_errors_use_consistent_envelope(async_client):
     """Request validation errors return the standardized error payload."""
+    service.API_CONFIG.allow_anonymous = True
+
     response = await async_client.post(
         "/api/train",
         json={"prompts": [], "strategy": "computational", "num_iterations": 0},
@@ -112,6 +126,8 @@ async def test_validation_errors_use_consistent_envelope(async_client):
 @pytest.mark.asyncio
 async def test_metrics_expose_api_snapshot(async_client):
     """API metrics include request, status, and latency snapshots."""
+    service.API_CONFIG.allow_anonymous = True
+
     await async_client.get("/")  # generate at least one request entry
     metrics_response = await async_client.get("/api/metrics")
 

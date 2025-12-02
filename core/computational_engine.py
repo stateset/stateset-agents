@@ -12,17 +12,14 @@ This module provides a computation-first GRPO training engine that:
 """
 
 import asyncio
-import hashlib
 import logging
-import multiprocessing as mp
 import os
 import time
 import uuid
 from collections import deque
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -77,7 +74,8 @@ class ComputationalGRPOEngine:
         self.agent = agent
         self.environment = environment
         self.reward_function = reward_function
-        self.num_workers = num_workers or mp.cpu_count()
+        self.num_workers = num_workers or (os.cpu_count() or 1)
+        self._semaphore = asyncio.Semaphore(self.num_workers)
         self.trajectory_batch_size = trajectory_batch_size
         self.use_learned_rewards = use_learned_rewards
 
@@ -93,18 +91,6 @@ class ComputationalGRPOEngine:
             "computation_efficiency": 0.0,
             "learning_progress": 0.0,
         }
-
-        # Initialize process pool for parallel computation
-        self.executor = None
-        try:
-            self.executor = ProcessPoolExecutor(max_workers=self.num_workers)
-        except Exception as e:
-            logger.warning("ProcessPoolExecutor unavailable, falling back to ThreadPoolExecutor: %s", e)
-            try:
-                self.executor = ThreadPoolExecutor(max_workers=self.num_workers)
-            except Exception as e2:
-                logger.warning("ThreadPoolExecutor also unavailable; continuing without executor: %s", e2)
-                self.executor = None
 
     async def generate_trajectory_batch(
         self, prompts: List[str]
@@ -132,46 +118,47 @@ class ComputationalGRPOEngine:
 
     async def _generate_single_trajectory(self, prompt: str) -> ComputationalTrajectory:
         """Generate a single trajectory asynchronously"""
-        # Generate response using agent
-        response = await self.agent.generate_response(prompt)
+        async with self._semaphore:
+            # Generate response using agent
+            response = await self.agent.generate_response(prompt)
 
-        # Get raw reward signal from environment
-        raw_reward = await self._get_environmental_reward(prompt, response)
+            # Get raw reward signal from environment
+            raw_reward = await self._get_environmental_reward(prompt, response)
 
-        # Get learned reward if enabled
-        learned_reward = raw_reward
-        if self.use_learned_rewards:
-            try:
-                # Use reward function to compute learned reward
-                reward_result = await self.reward_function.compute_reward(
-                    [
-                        {"role": "user", "content": prompt},
-                        {"role": "assistant", "content": response},
-                    ]
-                )
-                learned_reward = reward_result.score
-            except Exception as e:
-                logger.warning(f"Failed to compute learned reward: {e}")
-                learned_reward = raw_reward
+            # Get learned reward if enabled
+            learned_reward = raw_reward
+            if self.use_learned_rewards:
+                try:
+                    # Use reward function to compute learned reward
+                    reward_result = await self.reward_function.compute_reward(
+                        [
+                            {"role": "user", "content": prompt},
+                            {"role": "assistant", "content": response},
+                        ]
+                    )
+                    learned_reward = reward_result.score
+                except Exception as e:
+                    logger.warning(f"Failed to compute learned reward: {e}")
+                    learned_reward = raw_reward
 
-        # Track computational cost
-        computational_cost = len(prompt) + len(response)  # Simplified
+            # Track computational cost
+            computational_cost = len(prompt) + len(response)  # Simplified
 
-        trajectory = ComputationalTrajectory(
-            id=str(uuid.uuid4()),
-            prompt=prompt,
-            response=response,
-            raw_reward_signal=raw_reward,
-            learned_reward=learned_reward,
-            computational_cost=computational_cost,
-            timestamp=datetime.now(),
-            metadata={
-                "generation_method": "parallel",
-                "worker_id": f"worker_{asyncio.current_task().get_name() if asyncio.current_task() else 'main'}",
-            },
-        )
+            trajectory = ComputationalTrajectory(
+                id=str(uuid.uuid4()),
+                prompt=prompt,
+                response=response,
+                raw_reward_signal=raw_reward,
+                learned_reward=learned_reward,
+                computational_cost=computational_cost,
+                timestamp=datetime.now(),
+                metadata={
+                    "generation_method": "parallel",
+                    "worker_id": f"worker_{asyncio.current_task().get_name() if asyncio.current_task() else 'main'}",
+                },
+            )
 
-        return trajectory
+            return trajectory
 
     async def _get_environmental_reward(self, prompt: str, response: str) -> float:
         """Get reward signal from environment (not hand-crafted features)"""
@@ -353,28 +340,13 @@ class ComputationalGRPOEngine:
 
     def scale_computation(self, scale_factor: float):
         """Scale computational resources"""
-        new_workers = max(1, int(self.num_workers * scale_factor))
-        try:
-            if self.executor:
-                self.executor.shutdown(wait=True)
-            self.executor = ProcessPoolExecutor(max_workers=new_workers)
-        except Exception as e:
-            logger.warning(
-                "ProcessPoolExecutor unavailable during scaling, falling back to ThreadPoolExecutor: %s",
-                e,
-            )
-            try:
-                self.executor = ThreadPoolExecutor(max_workers=new_workers)
-            except Exception as e2:
-                logger.warning(
-                    "ThreadPoolExecutor also unavailable during scaling: %s",
-                    e2,
-                )
-                # Keep previous executor if any; otherwise set to None
+        previous_workers = self.num_workers
+        new_workers = max(1, int(previous_workers * scale_factor))
         self.num_workers = new_workers
+        self._semaphore = asyncio.Semaphore(new_workers)
 
         return {
-            "previous_workers": int(self.num_workers / scale_factor),
+            "previous_workers": previous_workers,
             "current_workers": self.num_workers,
             "scale_factor": scale_factor,
         }
@@ -401,11 +373,7 @@ class ComputationalGRPOEngine:
 
     def cleanup(self):
         """Cleanup resources safely"""
-        if self.executor is not None:
-            try:
-                self.executor.shutdown(wait=False)
-            except Exception as e:
-                logger.warning(f"Error during executor shutdown: {e}")
+        return None
 
 
 # Convenience functions
