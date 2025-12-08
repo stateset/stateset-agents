@@ -106,7 +106,7 @@ jobs:
         safety check --json > safety-report.json || true
     
     - name: Upload security reports
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v5
       with:
         name: security-reports
         path: |
@@ -135,7 +135,7 @@ jobs:
         sphinx-build docs docs/_build/html
     
     - name: Upload documentation
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v5
       with:
         name: documentation
         path: docs/_build/html/
