@@ -260,7 +260,19 @@ graph TB
 
 ## 🚀 Quick Start
 
-### Install & Run a Minimal Agent
+### 60-Second Hello World (No Downloads Required)
+
+```bash
+pip install stateset-agents
+python examples/hello_world.py
+```
+
+This runs instantly using stub mode - no model downloads, no GPU needed. You'll see:
+- Agent creation and conversation
+- Reward computation
+- Training loop overview
+
+### Install & Run with a Real Model
 
 ```bash
 # Install the framework

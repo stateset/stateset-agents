@@ -1,9 +1,26 @@
 """
 GRPO Agent Framework
 
-A comprehensive framework for training multi-turn AI agents using 
+A comprehensive framework for training multi-turn AI agents using
 Group Relative Policy Optimization (GRPO).
 """
+
+# Ensure repository root is on sys.path before any `core.*` imports.
+# This prevents conflicts with other packages that define a `core` module.
+import sys as _sys
+from pathlib import Path as _Path
+
+try:
+    _repo_root = _Path(__file__).resolve().parents[1]
+    _repo_root_str = str(_repo_root)
+    if _repo_root_str not in _sys.path:
+        _sys.path.insert(0, _repo_root_str)
+    elif _sys.path.index(_repo_root_str) != 0:
+        # Move to front if already present but not first
+        _sys.path.remove(_repo_root_str)
+        _sys.path.insert(0, _repo_root_str)
+except Exception:
+    pass
 
 __version__ = "0.5.0"
 __author__ = "StateSet Team"
