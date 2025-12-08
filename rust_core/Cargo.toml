@@ -3,17 +3,23 @@ name = "stateset-rl-core"
 version = "0.1.0"
 edition = "2021"
 authors = ["StateSet <engineering@stateset.io>"]
-description = "High-performance Rust core for StateSet RL Framework"
+description = "High-performance Rust core for reinforcement learning - GAE, advantage computation, reward normalization with optional Python bindings"
 license = "MIT"
+repository = "https://github.com/stateset/stateset-agents"
+homepage = "https://github.com/stateset/stateset-agents/tree/master/rust_core"
+documentation = "https://docs.rs/stateset-rl-core"
+readme = "README.md"
+keywords = ["reinforcement-learning", "rl", "gae", "ppo", "machine-learning"]
+categories = ["science", "algorithms", "mathematics"]
 
 [lib]
 name = "stateset_rl_core"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Python bindings
-pyo3 = { version = "0.21", features = ["extension-module"] }
-numpy = "0.21"
+pyo3 = { version = "0.22", features = ["extension-module"] }
+numpy = "0.22"
 
 # Performance
 rayon = "1.10"

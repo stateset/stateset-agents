@@ -10,7 +10,8 @@
 //! - Fast GAE computation
 
 use pyo3::prelude::*;
-use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, IntoPyArray};
+use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, ToPyArray as _};
+use ndarray::Array1;
 use rayon::prelude::*;
 use std::collections::HashMap;
 
@@ -19,10 +20,14 @@ mod gae;
 mod trajectory;
 mod rewards;
 
+// Re-export core functions for Rust usage
 pub use advantage::*;
 pub use gae::*;
 pub use trajectory::*;
-pub use rewards::*;
+pub use rewards::{
+    normalize_with_running_stats, batch_normalize, exponential_moving_average,
+    shape_rewards, auto_scale_rewards, clip_rewards, RewardStatistics,
+};
 
 /// Compute group-relative advantages for GRPO training
 ///
@@ -65,7 +70,7 @@ fn compute_group_advantages<'py>(
         all_advantages.extend(group);
     }
 
-    Ok(all_advantages.into_pyarray(py))
+    Ok(Array1::from_vec(all_advantages).to_pyarray_bound(py))
 }
 
 /// Compute Generalized Advantage Estimation (GAE) for a trajectory
@@ -94,7 +99,7 @@ fn compute_gae<'py>(
 
     let advantages = gae::compute_gae_internal(rewards, values, gamma, gae_lambda);
 
-    Ok(advantages.into_pyarray(py))
+    Ok(Array1::from_vec(advantages).to_pyarray_bound(py))
 }
 
 /// Batch compute GAE for multiple trajectories in parallel
@@ -137,7 +142,7 @@ fn batch_compute_gae<'py>(
 
     Ok(results
         .into_iter()
-        .map(|v| v.into_pyarray(py))
+        .map(|v| Array1::from_vec(v).to_pyarray_bound(py))
         .collect())
 }
 
@@ -169,12 +174,12 @@ fn normalize_rewards<'py>(
     let (normalized, new_mean, new_var, new_count) =
         rewards::normalize_with_running_stats(rewards, running_mean, running_var, count, epsilon);
 
-    Ok((normalized.into_pyarray(py), new_mean, new_var, new_count))
+    Ok((Array1::from_vec(normalized).to_pyarray_bound(py), new_mean, new_var, new_count))
 }
 
 /// Clip rewards to a specified range
 #[pyfunction]
-fn clip_rewards<'py>(
+fn clip_rewards_py<'py>(
     py: Python<'py>,
     rewards: PyReadonlyArray1<'py, f64>,
     min_val: f64,
@@ -187,7 +192,7 @@ fn clip_rewards<'py>(
         .map(|&r| r.clamp(min_val, max_val))
         .collect();
 
-    Ok(clipped.into_pyarray(py))
+    Ok(Array1::from_vec(clipped).to_pyarray_bound(py))
 }
 
 /// Compute GSPO sequence-level importance ratios
@@ -227,7 +232,7 @@ fn compute_gspo_importance_ratios<'py>(
         })
         .collect();
 
-    Ok(ratios.into_pyarray(py))
+    Ok(Array1::from_vec(ratios).to_pyarray_bound(py))
 }
 
 /// Apply GSPO clipping to importance ratios
@@ -267,7 +272,7 @@ fn apply_gspo_clipping<'py>(
         })
         .collect();
 
-    Ok(clipped.into_pyarray(py))
+    Ok(Array1::from_vec(clipped).to_pyarray_bound(py))
 }
 
 /// Compute PPO clipped surrogate objective
@@ -292,7 +297,7 @@ fn compute_ppo_surrogate<'py>(
         })
         .collect();
 
-    Ok(objectives.into_pyarray(py))
+    Ok(Array1::from_vec(objectives).to_pyarray_bound(py))
 }
 
 /// Compute reward statistics for a batch of trajectories
@@ -341,7 +346,7 @@ fn stateset_rl_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compute_gae, m)?)?;
     m.add_function(wrap_pyfunction!(batch_compute_gae, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_rewards, m)?)?;
-    m.add_function(wrap_pyfunction!(clip_rewards, m)?)?;
+    m.add_function(wrap_pyfunction!(clip_rewards_py, m)?)?;
     m.add_function(wrap_pyfunction!(compute_gspo_importance_ratios, m)?)?;
     m.add_function(wrap_pyfunction!(apply_gspo_clipping, m)?)?;
     m.add_function(wrap_pyfunction!(compute_ppo_surrogate, m)?)?;

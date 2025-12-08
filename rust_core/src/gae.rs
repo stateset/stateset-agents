@@ -162,8 +162,12 @@ mod tests {
         let advantages = compute_gae_with_dones(&rewards, &values, &dones, 0.99, 0.95);
 
         assert_eq!(advantages.len(), 3);
-        // Last advantage should be high due to terminal reward
-        assert!(advantages[2] > advantages[0]);
+        // Terminal advantage should be reward - value = 10.0 - 0.5 = 9.5
+        assert!((advantages[2] - 9.5).abs() < 1e-6);
+        // All advantages should be positive given positive rewards
+        assert!(advantages[0] > 0.0);
+        assert!(advantages[1] > 0.0);
+        assert!(advantages[2] > 0.0);
     }
 
     #[test]
