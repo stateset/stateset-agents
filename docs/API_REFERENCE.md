@@ -73,6 +73,36 @@ All errors follow a consistent format:
 | `RATE_LIMIT_EXCEEDED` | 429 | Too many requests |
 | `INTERNAL_ERROR` | 500 | Server error |
 
+## Security
+
+### Prompt Injection Protection
+
+The API includes automatic detection and blocking of prompt injection attempts. Requests containing potentially harmful patterns will be rejected with a `400 Bad Request` response.
+
+**Blocked patterns include:**
+- Instruction override attempts ("ignore previous instructions")
+- Role manipulation ("you are now in developer mode")
+- System prompt extraction attempts
+- Delimiter-based injection attacks
+- Jailbreak attempts
+
+### Security Headers
+
+All responses include the following security headers:
+
+| Header | Value |
+|--------|-------|
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `X-XSS-Protection` | `1; mode=block` |
+| `Content-Security-Policy` | `default-src 'self'...` |
+| `X-Permitted-Cross-Domain-Policies` | `none` |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` (production) |
+
+### Authentication Lockout
+
+After 5 failed authentication attempts, the client IP is temporarily locked out for 5 minutes.
+
 ---
 
 ## Endpoints
@@ -104,6 +134,131 @@ GET /api/v1/health
   "timestamp": "2024-01-15T10:30:00.000Z"
 }
 ```
+
+---
+
+### Agents
+
+#### Create Agent
+
+Create a new AI agent with custom configuration.
+
+```
+POST /api/v1/agents
+```
+
+**Request Body:**
+
+```json
+{
+  "model_name": "gpt2",
+  "max_new_tokens": 256,
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "top_k": 50,
+  "system_prompt": "You are a helpful assistant.",
+  "use_chat_template": true
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `model_name` | string | Yes | Model name or path |
+| `max_new_tokens` | integer | No | Maximum tokens to generate (1-4096, default: 512) |
+| `temperature` | float | No | Sampling temperature (0.0-2.0, default: 0.8) |
+| `top_p` | float | No | Top-p sampling (0.0-1.0, default: 0.9) |
+| `top_k` | integer | No | Top-k sampling (1-1000, default: 50) |
+| `system_prompt` | string | No | System prompt for the agent |
+| `use_chat_template` | boolean | No | Use chat template (default: true) |
+
+**Response (201 Created):**
+
+```json
+{
+  "agent_id": "agent_550e8400",
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "config": {
+    "model_name": "gpt2",
+    "max_new_tokens": 256,
+    "temperature": 0.7
+  },
+  "message": "Agent created successfully"
+}
+```
+
+#### List Agents
+
+Get a paginated list of all agents.
+
+```
+GET /api/v1/agents?page=1&page_size=20&status=active
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `page` | integer | Page number (default: 1) |
+| `page_size` | integer | Items per page (1-100, default: 20) |
+| `status` | string | Filter by status (active, inactive) |
+
+**Response:**
+
+```json
+{
+  "items": [
+    {
+      "agent_id": "agent_550e8400",
+      "model_name": "gpt2",
+      "created_at": "2024-01-15T10:30:00.000Z",
+      "conversation_count": 42,
+      "total_tokens_used": 15000,
+      "status": "active"
+    }
+  ],
+  "total": 5,
+  "page": 1,
+  "page_size": 20,
+  "has_next": false,
+  "has_prev": false
+}
+```
+
+#### Get Agent
+
+Get details of a specific agent.
+
+```
+GET /api/v1/agents/{agent_id}
+```
+
+**Response:**
+
+```json
+{
+  "agent_id": "agent_550e8400",
+  "model_name": "gpt2",
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "conversation_count": 42,
+  "total_tokens_used": 15000,
+  "config": {
+    "model_name": "gpt2",
+    "max_new_tokens": 256,
+    "temperature": 0.7
+  },
+  "status": "active"
+}
+```
+
+#### Delete Agent
+
+Delete an agent and all associated conversations.
+
+```
+DELETE /api/v1/agents/{agent_id}
+```
+
+**Response:** `204 No Content`
 
 ---
 

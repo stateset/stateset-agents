@@ -18,6 +18,21 @@ from starlette.responses import Response, JSONResponse
 from fastapi import FastAPI
 
 from .config import get_config, APIConfig
+from .constants import (
+    SECURITY_HEADERS,
+    HSTS_HEADER,
+    HEADER_REQUEST_ID,
+    HEADER_CORRELATION_ID,
+    HEADER_RESPONSE_TIME,
+    HEADER_RATE_LIMIT,
+    HEADER_RATE_LIMIT_REMAINING,
+    HEADER_RATE_LIMIT_RESET,
+    HEADER_RETRY_AFTER,
+    RATE_LIMIT_DEQUE_MAXLEN,
+    PERCENTILE_P50,
+    PERCENTILE_P95,
+    PERCENTILE_P99,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,29 +42,19 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Add security headers to all responses."""
-
-    SECURITY_HEADERS = {
-        "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "DENY",
-        "X-XSS-Protection": "1; mode=block",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-        "Pragma": "no-cache",
-    }
+    """Add comprehensive security headers to all responses."""
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         response = await call_next(request)
 
-        # Add security headers
-        for header, value in self.SECURITY_HEADERS.items():
+        # Add all security headers from constants
+        for header, value in SECURITY_HEADERS.items():
             response.headers[header] = value
 
         # Add HSTS in production
         config = get_config()
         if config.is_production():
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            response.headers["Strict-Transport-Security"] = HSTS_HEADER
 
         return response
 
@@ -82,8 +87,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Get or generate request ID
         request_id = (
-            request.headers.get("X-Request-ID") or
-            request.headers.get("X-Correlation-ID") or
+            request.headers.get(HEADER_REQUEST_ID) or
+            request.headers.get(HEADER_CORRELATION_ID) or
             str(uuid.uuid4())
         )
 
@@ -105,8 +110,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         # Add tracing headers to response
-        response.headers["X-Request-ID"] = request_id
-        response.headers["X-Response-Time-Ms"] = f"{context.elapsed_ms():.2f}"
+        response.headers[HEADER_REQUEST_ID] = request_id
+        response.headers[HEADER_RESPONSE_TIME] = f"{context.elapsed_ms():.2f}"
 
         return response
 
@@ -203,18 +208,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "retry_after_seconds": config.rate_limit.window_seconds,
                 },
                 headers={
-                    "Retry-After": str(config.rate_limit.window_seconds),
-                    "X-RateLimit-Limit": str(config.rate_limit.requests_per_minute),
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(int(time.time()) + config.rate_limit.window_seconds),
+                    HEADER_RETRY_AFTER: str(config.rate_limit.window_seconds),
+                    HEADER_RATE_LIMIT: str(config.rate_limit.requests_per_minute),
+                    HEADER_RATE_LIMIT_REMAINING: "0",
+                    HEADER_RATE_LIMIT_RESET: str(int(time.time()) + config.rate_limit.window_seconds),
                 }
             )
 
         # Add rate limit headers to response
         response = await call_next(request)
-        response.headers["X-RateLimit-Limit"] = str(config.rate_limit.requests_per_minute)
-        response.headers["X-RateLimit-Remaining"] = str(remaining)
-        response.headers["X-RateLimit-Reset"] = str(int(time.time()) + config.rate_limit.window_seconds)
+        response.headers[HEADER_RATE_LIMIT] = str(config.rate_limit.requests_per_minute)
+        response.headers[HEADER_RATE_LIMIT_REMAINING] = str(remaining)
+        response.headers[HEADER_RATE_LIMIT_RESET] = str(int(time.time()) + config.rate_limit.window_seconds)
 
         return response
 
@@ -239,7 +244,7 @@ class APIMetrics:
     """API metrics collector."""
     request_counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
     status_counts: Dict[int, int] = field(default_factory=lambda: defaultdict(int))
-    latencies: deque = field(default_factory=lambda: deque(maxlen=10000))
+    latencies: deque = field(default_factory=lambda: deque(maxlen=RATE_LIMIT_DEQUE_MAXLEN))
     error_counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
     rate_limit_hits: int = 0
 
@@ -264,9 +269,9 @@ class APIMetrics:
         if latencies_list:
             avg_latency = sum(latencies_list) / len(latencies_list)
             sorted_latencies = sorted(latencies_list)
-            p50_index = int(0.50 * (len(sorted_latencies) - 1))
-            p95_index = int(0.95 * (len(sorted_latencies) - 1))
-            p99_index = int(0.99 * (len(sorted_latencies) - 1))
+            p50_index = int(PERCENTILE_P50 * (len(sorted_latencies) - 1))
+            p95_index = int(PERCENTILE_P95 * (len(sorted_latencies) - 1))
+            p99_index = int(PERCENTILE_P99 * (len(sorted_latencies) - 1))
         else:
             avg_latency = 0
             sorted_latencies = []

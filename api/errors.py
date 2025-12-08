@@ -209,6 +209,96 @@ class AgentError(APIError):
 
 
 # ============================================================================
+# Domain-Specific Exceptions
+# ============================================================================
+
+class AgentNotFoundError(NotFoundError):
+    """Agent with given ID not found."""
+    def __init__(self, agent_id: str):
+        super().__init__("Agent", agent_id)
+        self.agent_id = agent_id
+
+
+class InvalidAgentConfigError(BadRequestError):
+    """Agent configuration is invalid."""
+    def __init__(self, details: str, validation_errors: Optional[List[ErrorDetail]] = None):
+        super().__init__(f"Invalid agent configuration: {details}", validation_errors)
+
+
+class ConversationNotFoundError(NotFoundError):
+    """Conversation not found."""
+    def __init__(self, conversation_id: str):
+        super().__init__("Conversation", conversation_id)
+        self.conversation_id = conversation_id
+
+
+class TrainingJobNotFoundError(NotFoundError):
+    """Training job not found."""
+    def __init__(self, job_id: str):
+        super().__init__("Training job", job_id)
+        self.job_id = job_id
+
+
+class TrainingConfigError(BadRequestError):
+    """Training configuration is invalid."""
+    def __init__(self, details: str, validation_errors: Optional[List[ErrorDetail]] = None):
+        super().__init__(f"Invalid training configuration: {details}", validation_errors)
+
+
+class TokenizationError(InternalError):
+    """Failed to tokenize text."""
+    def __init__(self, message: str = "Failed to calculate token count"):
+        super().__init__(message)
+
+
+class ModelLoadError(InternalError):
+    """Failed to load model."""
+    def __init__(self, model_name: str, reason: Optional[str] = None):
+        message = f"Failed to load model '{model_name}'"
+        if reason:
+            message += f": {reason}"
+        super().__init__(message)
+        self.model_name = model_name
+
+
+class PromptInjectionError(BadRequestError):
+    """Potential prompt injection detected."""
+    def __init__(self, field: str = "input"):
+        super().__init__(
+            f"Request rejected: potentially harmful content detected in {field}",
+            details=[ErrorDetail(
+                field=field,
+                message="Content appears to contain prompt injection attempt",
+                code="prompt_injection"
+            )]
+        )
+
+
+class ResourceExhaustedError(APIError):
+    """Resource limit exceeded."""
+    def __init__(self, resource: str, limit: int):
+        super().__init__(
+            ErrorCode.RESOURCE_EXHAUSTED,
+            f"Resource limit exceeded for {resource}. Maximum allowed: {limit}",
+            429
+        )
+        self.resource = resource
+        self.limit = limit
+
+
+class AuthLockoutError(APIError):
+    """Account temporarily locked due to too many failed attempts."""
+    def __init__(self, retry_after_seconds: int):
+        super().__init__(
+            ErrorCode.FORBIDDEN,
+            f"Account temporarily locked due to too many failed authentication attempts. "
+            f"Please try again in {retry_after_seconds} seconds.",
+            403
+        )
+        self.retry_after_seconds = retry_after_seconds
+
+
+# ============================================================================
 # Error Response Builder
 # ============================================================================
 
