@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 from core.agent import Agent, AgentConfig, MultiTurnAgent
 from core.environment import ConversationEnvironment
 from core.trajectory import ConversationTurn, MultiTurnTrajectory
-from rewards.multi_objective_reward import MultiObjectiveRewardFunctionFunction
+from rewards.multi_objective_reward import MultiObjectiveRewardFunction
 from .config import TrainingConfig, get_config_for_task
 
 # Import additional dependencies
@@ -90,6 +90,9 @@ except ImportError:
 class TRLGRPOConfig(TrainingConfig):
     """Extended configuration for TRL GRPO training"""
 
+    # Model identification
+    model_name: str = "gpt2"
+
     # TRL GRPO specific parameters
     beta: float = 0.0  # KL penalty coefficient
     num_generations: int = 4  # Number of generations per prompt
@@ -117,7 +120,7 @@ class TRLGRPOConfig(TrainingConfig):
     gradient_checkpointing: bool = True
     use_8bit: bool = False
     use_4bit: bool = False
-    
+
     # Backend
     use_vllm: bool = False  # Enable vLLM for generation
 

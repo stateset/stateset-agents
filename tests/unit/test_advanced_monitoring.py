@@ -172,9 +172,7 @@ class TestMetricsCollector:
         """Create a MetricsCollector for testing."""
         with patch("core.advanced_monitoring.PROMETHEUS_AVAILABLE", False):
             collector = MetricsCollector(retention_period=3600)
-            # Cancel cleanup task
-            if hasattr(collector, '_cleanup_task'):
-                collector._cleanup_task.cancel()
+            # Cleanup task is now lazily initialized, so no need to cancel
             return collector
 
     def test_collector_creation(self, collector):
@@ -249,8 +247,7 @@ class TestMetricsCollectorWithPrometheus:
              patch("core.advanced_monitoring.Histogram"), \
              patch("core.advanced_monitoring.Summary"):
             collector = MetricsCollector()
-            if hasattr(collector, '_cleanup_task'):
-                collector._cleanup_task.cancel()
+            # Cleanup task is now lazily initialized, so no need to cancel
             return collector
 
     def test_prometheus_metrics_setup(self, collector_with_prometheus):
@@ -474,8 +471,7 @@ class TestMetricAggregation:
         """Create a collector with sample data."""
         with patch("core.advanced_monitoring.PROMETHEUS_AVAILABLE", False):
             collector = MetricsCollector()
-            if hasattr(collector, '_cleanup_task'):
-                collector._cleanup_task.cancel()
+            # Cleanup task is now lazily initialized, so no need to cancel
 
             # Add sample metrics
             for i in range(10):
@@ -510,8 +506,7 @@ class TestMetricRetention:
         """Create a collector with short retention."""
         with patch("core.advanced_monitoring.PROMETHEUS_AVAILABLE", False):
             collector = MetricsCollector(retention_period=1)  # 1 second
-            if hasattr(collector, '_cleanup_task'):
-                collector._cleanup_task.cancel()
+            # Cleanup task is now lazily initialized, so no need to cancel
             return collector
 
     def test_retention_period_set(self, collector_short_retention):

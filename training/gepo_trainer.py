@@ -216,6 +216,9 @@ class GEPOTrainer:
         reward_fn: Callable[[str, str], float],
         ref_model: Optional[Any] = None,
     ):
+        # Ensure transformers is loaded for scheduler
+        _load_transformers_gepo()
+
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
@@ -234,11 +237,18 @@ class GEPOTrainer:
         # Scheduler
         total_steps = config.num_episodes * config.num_epochs
         warmup_steps = int(total_steps * config.warmup_ratio)
-        self.scheduler = get_cosine_schedule_with_warmup(
-            self.optimizer,
-            num_warmup_steps=warmup_steps,
-            num_training_steps=total_steps,
-        )
+
+        if get_cosine_schedule_with_warmup is not None:
+            self.scheduler = get_cosine_schedule_with_warmup(
+                self.optimizer,
+                num_warmup_steps=warmup_steps,
+                num_training_steps=total_steps,
+            )
+        else:
+            # Fallback to constant learning rate if scheduler unavailable
+            self.scheduler = torch.optim.lr_scheduler.ConstantLR(
+                self.optimizer, factor=1.0, total_iters=total_steps
+            )
 
         # Metrics tracking
         self.metrics_history = {

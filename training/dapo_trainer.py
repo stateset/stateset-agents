@@ -380,6 +380,9 @@ class DAPOTrainer:
         reward_fn: Callable[[str, str], float],
         verifier_fn: Optional[Callable[[str, str], bool]] = None,
     ):
+        # Ensure transformers is loaded for scheduler
+        _load_transformers_dapo()
+
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
@@ -418,7 +421,13 @@ class DAPOTrainer:
         )
 
         # Constant scheduler (DAPO uses constant LR)
-        self.scheduler = get_constant_schedule(self.optimizer)
+        if get_constant_schedule is not None:
+            self.scheduler = get_constant_schedule(self.optimizer)
+        else:
+            # Fallback to constant learning rate if scheduler unavailable
+            self.scheduler = torch.optim.lr_scheduler.ConstantLR(
+                self.optimizer, factor=1.0, total_iters=config.num_episodes * config.num_epochs
+            )
 
         # Metrics
         self.metrics_history = {

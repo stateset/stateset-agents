@@ -397,6 +397,9 @@ class VAPOTrainer:
         reward_fn: Callable[[str, str], float],
         verifier_fn: Optional[Callable[[str, str], bool]] = None,
     ):
+        # Ensure transformers is loaded for scheduler
+        _load_transformers_vapo()
+
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
@@ -443,17 +446,26 @@ class VAPOTrainer:
         total_steps = config.num_episodes * config.num_epochs
         warmup_steps = int(total_steps * config.warmup_ratio)
 
-        self.actor_scheduler = get_cosine_schedule_with_warmup(
-            self.actor_optimizer,
-            num_warmup_steps=warmup_steps,
-            num_training_steps=total_steps,
-        )
+        if get_cosine_schedule_with_warmup is not None:
+            self.actor_scheduler = get_cosine_schedule_with_warmup(
+                self.actor_optimizer,
+                num_warmup_steps=warmup_steps,
+                num_training_steps=total_steps,
+            )
 
-        self.critic_scheduler = get_cosine_schedule_with_warmup(
-            self.critic_optimizer,
-            num_warmup_steps=warmup_steps,
-            num_training_steps=total_steps,
-        )
+            self.critic_scheduler = get_cosine_schedule_with_warmup(
+                self.critic_optimizer,
+                num_warmup_steps=warmup_steps,
+                num_training_steps=total_steps,
+            )
+        else:
+            # Fallback to constant learning rate if scheduler unavailable
+            self.actor_scheduler = torch.optim.lr_scheduler.ConstantLR(
+                self.actor_optimizer, factor=1.0, total_iters=total_steps
+            )
+            self.critic_scheduler = torch.optim.lr_scheduler.ConstantLR(
+                self.critic_optimizer, factor=1.0, total_iters=total_steps
+            )
 
         # Metrics
         self.metrics_history = {

@@ -174,3 +174,100 @@ if VAPO_AVAILABLE:
             "train_with_vapo",
         ]
     )
+
+# PPO trainer (baseline algorithm)
+try:
+    from .ppo_trainer import (
+        PPOConfig,
+        PPOTrainer,
+        PPOValueHead,
+        AdaptiveKLController,
+        compute_gae,
+        train_ppo,
+    )
+
+    PPO_AVAILABLE = True
+    __all__.extend(
+        [
+            "PPOConfig",
+            "PPOTrainer",
+            "PPOValueHead",
+            "AdaptiveKLController",
+            "compute_gae",
+            "train_ppo",
+        ]
+    )
+except ImportError:
+    PPO_AVAILABLE = False
+
+# KL Controllers
+try:
+    from .kl_controllers import (
+        KLController,
+        FixedKLController,
+        AdaptiveKLController as KLAdaptiveController,
+        LinearKLScheduler,
+        CosineKLScheduler,
+        WarmupKLScheduler,
+        HybridKLController,
+        NoKLController,
+        create_kl_controller,
+    )
+
+    KL_CONTROLLERS_AVAILABLE = True
+    __all__.extend(
+        [
+            "KLController",
+            "FixedKLController",
+            "LinearKLScheduler",
+            "CosineKLScheduler",
+            "WarmupKLScheduler",
+            "HybridKLController",
+            "NoKLController",
+            "create_kl_controller",
+        ]
+    )
+except ImportError:
+    KL_CONTROLLERS_AVAILABLE = False
+
+# EMA Model Support
+try:
+    from .ema import (
+        EMAModel,
+        EMACallback,
+        MultiEMA,
+        create_ema_model,
+    )
+
+    EMA_AVAILABLE = True
+    __all__.extend(
+        [
+            "EMAModel",
+            "EMACallback",
+            "MultiEMA",
+            "create_ema_model",
+        ]
+    )
+except ImportError:
+    EMA_AVAILABLE = False
+
+# RLAIF Trainer
+try:
+    from .rlaif_trainer import (
+        RLAIFConfig,
+        RLAIFTrainer,
+        ConstitutionalAI,
+        train_rlaif,
+    )
+
+    RLAIF_AVAILABLE = True
+    __all__.extend(
+        [
+            "RLAIFConfig",
+            "RLAIFTrainer",
+            "ConstitutionalAI",
+            "train_rlaif",
+        ]
+    )
+except ImportError:
+    RLAIF_AVAILABLE = False

@@ -203,20 +203,17 @@ class TestResourceManager:
     @pytest.fixture
     def resource_manager(self):
         """Create a ResourceManager for testing."""
-        with patch("training.advanced_training_orchestrator.psutil") as mock_psutil:
-            mock_psutil.cpu_count.return_value = 8
-            mock_psutil.virtual_memory.return_value = MagicMock(total=16 * (1024**3))
-            mock_psutil.disk_usage.return_value = MagicMock(free=100 * (1024**3))
-            manager = ResourceManager()
-            # Manually set resources for testing
-            manager.available_resources = {
-                ResourceType.CPU: 8.0,
-                ResourceType.GPU: 2.0,
-                ResourceType.MEMORY: 16.0,
-                ResourceType.STORAGE: 100.0,
-                ResourceType.NETWORK: 1000.0,
-            }
-            return manager
+        # Create ResourceManager directly - it detects resources automatically
+        manager = ResourceManager()
+        # Override with test values
+        manager.available_resources = {
+            ResourceType.CPU: 8.0,
+            ResourceType.GPU: 2.0,
+            ResourceType.MEMORY: 16.0,
+            ResourceType.STORAGE: 100.0,
+            ResourceType.NETWORK: 1000.0,
+        }
+        return manager
 
     @pytest.mark.asyncio
     async def test_can_allocate_sufficient_resources(self, resource_manager):

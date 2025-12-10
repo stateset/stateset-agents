@@ -125,8 +125,22 @@ class MetricsCollector:
             self.prometheus_registry = CollectorRegistry()
             self._setup_prometheus_metrics()
 
-        # Start cleanup task
-        self._cleanup_task = asyncio.create_task(self._cleanup_old_metrics())
+        # Cleanup task (lazily initialized)
+        self._cleanup_task: Optional[asyncio.Task] = None
+
+    def _ensure_cleanup_task(self):
+        """Ensure cleanup task is running (lazy initialization)"""
+        if self._cleanup_task is None or self._cleanup_task.done():
+            try:
+                loop = asyncio.get_running_loop()
+                self._cleanup_task = loop.create_task(self._cleanup_old_metrics())
+            except RuntimeError:
+                # No running event loop, will be started later
+                pass
+
+    async def start(self):
+        """Start the metrics collector background tasks"""
+        self._ensure_cleanup_task()
 
     def _setup_prometheus_metrics(self):
         """Setup Prometheus metrics"""
@@ -385,8 +399,22 @@ class AlertManager:
         self.alert_history: List[Dict[str, Any]] = []
         self.notification_handlers: List[Callable] = []
 
-        # Start alert checking task
-        self._alert_task = asyncio.create_task(self._check_alerts())
+        # Alert checking task (lazily initialized)
+        self._alert_task: Optional[asyncio.Task] = None
+
+    def _ensure_alert_task(self):
+        """Ensure alert checking task is running (lazy initialization)"""
+        if self._alert_task is None or self._alert_task.done():
+            try:
+                loop = asyncio.get_running_loop()
+                self._alert_task = loop.create_task(self._check_alerts())
+            except RuntimeError:
+                # No running event loop, will be started later
+                pass
+
+    async def start(self):
+        """Start the alert manager background tasks"""
+        self._ensure_alert_task()
 
     def add_alert(self, alert: Alert):
         """Add an alert definition"""
@@ -648,12 +676,30 @@ class AdvancedMonitoringService:
         )
         self.tracer = DistributedTracer() if enable_tracing else None
 
-        self._monitoring_task = None
+        self._monitoring_task: Optional[asyncio.Task] = None
         self._start_time = time.time()
 
         if self.metrics_collector:
-            self._monitoring_task = asyncio.create_task(self._monitoring_loop())
             self._setup_default_alerts()
+            # Note: monitoring loop is started lazily via start() method
+
+    def _ensure_monitoring_task(self):
+        """Ensure monitoring task is running (lazy initialization)"""
+        if self._monitoring_task is None or self._monitoring_task.done():
+            try:
+                loop = asyncio.get_running_loop()
+                self._monitoring_task = loop.create_task(self._monitoring_loop())
+            except RuntimeError:
+                # No running event loop, will be started later
+                pass
+
+    async def start(self):
+        """Start all monitoring background tasks"""
+        if self.metrics_collector:
+            await self.metrics_collector.start()
+            self._ensure_monitoring_task()
+        if self.alert_manager:
+            await self.alert_manager.start()
 
     def _setup_default_alerts(self):
         """Setup default alerts"""
