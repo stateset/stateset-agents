@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 from core.agent import Agent, AgentConfig, MultiTurnAgent
 from core.environment import ConversationEnvironment
 from core.trajectory import ConversationTurn, MultiTurnTrajectory
-from rewards.multi_objective_reward import MultiObjectiveReward
+from rewards.multi_objective_reward import MultiObjectiveRewardFunctionFunction
 from .config import TrainingConfig, get_config_for_task
 
 # Import additional dependencies
@@ -390,7 +390,7 @@ class TRLGRPORewardFunction:
 
     def __init__(
         self,
-        reward_model: MultiObjectiveReward,
+        reward_model: MultiObjectiveRewardFunction,
         agent: Agent,
         environment: ConversationEnvironment,
     ):
@@ -517,7 +517,7 @@ async def train_with_trl_grpo(
     config: TRLGRPOConfig,
     agent: Agent,
     environment: ConversationEnvironment,
-    reward_model: MultiObjectiveReward,
+    reward_model: MultiObjectiveRewardFunction,
     train_data: Optional[List[Dict[str, Any]]] = None,
     eval_data: Optional[List[Dict[str, Any]]] = None,
 ) -> Agent:
@@ -663,7 +663,7 @@ async def train_iterative_grpo(
     config: TRLGRPOConfig,
     agent: Agent,
     environment: ConversationEnvironment,
-    reward_model: MultiObjectiveReward,
+    reward_model: MultiObjectiveRewardFunction,
 ) -> Agent:
     """
     Run iterative (online) GRPO training.

@@ -7,7 +7,7 @@ for learning from fixed datasets without online interaction.
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 

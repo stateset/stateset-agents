@@ -8,10 +8,12 @@ Optuna is a state-of-the-art HPO framework with:
 - Rich visualization capabilities
 """
 
+from __future__ import annotations
+
 import asyncio
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 import logging
 
 from .base import (
@@ -37,6 +39,9 @@ try:
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
+    optuna = None  # type: ignore
+    if TYPE_CHECKING:
+        import optuna
 
 
 logger = logging.getLogger(__name__)

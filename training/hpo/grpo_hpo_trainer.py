@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 import json
 
-from ..config import TrainingConfig
-from ..trainer import MultiTurnGRPOTrainer
-from ...core.agent import MultiTurnAgent, AgentConfig
-from ...core.environment import Environment
-from ...core.reward import RewardFunction
+from training.config import TrainingConfig
+from training.trainer import MultiTurnGRPOTrainer
+from core.agent import MultiTurnAgent, AgentConfig
+from core.environment import Environment
+from core.reward import RewardFunction
 
 from .base import HPOBackend, HPOCallback, HPOResult, HPOSummary, SearchSpace
 from .config import HPOConfig
