@@ -37,10 +37,22 @@ else:  # pragma: no cover
     GradScaler = None  # type: ignore[assignment]
     autocast = None  # type: ignore[assignment]
 
-try:  # pragma: no cover - optional dependency
-    from transformers import PreTrainedModel  # type: ignore
-except ImportError:  # pragma: no cover
-    PreTrainedModel = Any  # type: ignore[assignment]
+# Lazy import for transformers to avoid torch/torchvision compatibility issues
+PreTrainedModel = Any  # type: ignore[assignment]
+_transformers_perf_loaded = False
+
+def _load_pretrained_model() -> bool:
+    """Lazily load PreTrainedModel to avoid import-time errors."""
+    global _transformers_perf_loaded, PreTrainedModel
+    if _transformers_perf_loaded:
+        return True
+    try:
+        from transformers import PreTrainedModel as _PreTrainedModel  # type: ignore
+        PreTrainedModel = _PreTrainedModel
+        _transformers_perf_loaded = True
+        return True
+    except (ImportError, RuntimeError):  # pragma: no cover
+        return False
 
 if TYPE_CHECKING:
     from torch import Tensor

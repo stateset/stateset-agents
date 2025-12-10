@@ -40,30 +40,71 @@ try:
     import wandb
     from datasets import Dataset
     from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        get_cosine_schedule_with_warmup,
-        get_constant_schedule,
-    )
 except ImportError as e:
     logger.error(f"Missing required dependency: {e}")
-    logger.error("Please install: pip install transformers peft datasets")
+    logger.error("Please install: pip install peft datasets wandb")
     raise
 
-# Import vLLM backend for fast generation
-try:
-    from .vllm_backend import (
-        VLLMConfig,
-        VLLMGenerator,
-        GenerationResult,
-        VLLM_AVAILABLE as VLLM_BACKEND_AVAILABLE,
-    )
-except ImportError:
-    VLLM_BACKEND_AVAILABLE = False
-    VLLMConfig = None
-    VLLMGenerator = None
-    GenerationResult = None
+# Lazy import transformers to avoid torch/torchvision compatibility issues
+_transformers_dapo_loaded = False
+AutoModelForCausalLM = None
+AutoTokenizer = None
+get_cosine_schedule_with_warmup = None
+get_constant_schedule = None
+
+def _load_transformers_dapo():
+    """Lazily load transformers to avoid import-time errors."""
+    global _transformers_dapo_loaded, AutoModelForCausalLM, AutoTokenizer
+    global get_cosine_schedule_with_warmup, get_constant_schedule
+    if _transformers_dapo_loaded:
+        return True
+    try:
+        from transformers import (
+            AutoModelForCausalLM as _AutoModelForCausalLM,
+            AutoTokenizer as _AutoTokenizer,
+            get_cosine_schedule_with_warmup as _get_cosine,
+            get_constant_schedule as _get_constant,
+        )
+        AutoModelForCausalLM = _AutoModelForCausalLM
+        AutoTokenizer = _AutoTokenizer
+        get_cosine_schedule_with_warmup = _get_cosine
+        get_constant_schedule = _get_constant
+        _transformers_dapo_loaded = True
+        return True
+    except (ImportError, RuntimeError) as e:
+        logger.warning(f"Failed to load transformers: {e}")
+        return False
+
+# Lazy import vLLM backend to avoid torch/torchvision compatibility issues
+# vllm imports transformers which imports torchvision at module level
+VLLMConfig = None
+VLLMGenerator = None
+GenerationResult = None
+VLLM_BACKEND_AVAILABLE = False
+_vllm_backend_loaded = False
+
+def _load_vllm_backend():
+    """Lazily load vLLM backend to avoid import-time errors."""
+    global _vllm_backend_loaded, VLLMConfig, VLLMGenerator, GenerationResult, VLLM_BACKEND_AVAILABLE
+    if _vllm_backend_loaded:
+        return VLLM_BACKEND_AVAILABLE
+    try:
+        from .vllm_backend import (
+            VLLMConfig as _VLLMConfig,
+            VLLMGenerator as _VLLMGenerator,
+            GenerationResult as _GenerationResult,
+            VLLM_AVAILABLE as _VLLM_BACKEND_AVAILABLE,
+        )
+        VLLMConfig = _VLLMConfig
+        VLLMGenerator = _VLLMGenerator
+        GenerationResult = _GenerationResult
+        VLLM_BACKEND_AVAILABLE = _VLLM_BACKEND_AVAILABLE
+        _vllm_backend_loaded = True
+        return True
+    except (ImportError, RuntimeError) as e:
+        logger.warning(f"Failed to load vLLM backend: {e}")
+        _vllm_backend_loaded = True
+        return False
 
 
 @dataclass
@@ -393,6 +434,11 @@ class DAPOTrainer:
     def _setup_vllm(self):
         """Setup vLLM generator"""
         logger.info("Setting up vLLM for fast DAPO generation...")
+
+        # Load vLLM backend lazily
+        if not _load_vllm_backend():
+            logger.warning("vLLM backend failed to load, will use HuggingFace fallback")
+            return
 
         vllm_config = VLLMConfig(
             model_name=self.config.model_name,

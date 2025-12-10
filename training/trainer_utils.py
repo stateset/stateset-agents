@@ -34,20 +34,31 @@ try:
 except ImportError:  # pragma: no cover - handled via helper functions
     pass
 
-try:
-    from transformers import (  # type: ignore[import-not-found]
-        DataCollatorForLanguageModeling as _DataCollatorForLanguageModeling,
-        TrainingArguments as _TrainingArguments,
-        get_cosine_schedule_with_warmup as _get_cosine_schedule_with_warmup,
-        get_linear_schedule_with_warmup as _get_linear_schedule_with_warmup,
-    )
+# Transformers imports are lazy to avoid torch/torchvision compatibility issues
+_transformers_loaded = False
 
-    DataCollatorForLanguageModeling = _DataCollatorForLanguageModeling
-    TrainingArguments = _TrainingArguments
-    get_cosine_schedule_with_warmup = _get_cosine_schedule_with_warmup
-    get_linear_schedule_with_warmup = _get_linear_schedule_with_warmup
-except ImportError:  # pragma: no cover
-    pass
+def _load_transformers_utils() -> bool:
+    """Lazily load transformers utilities to avoid import-time errors."""
+    global _transformers_loaded, DataCollatorForLanguageModeling, TrainingArguments
+    global get_cosine_schedule_with_warmup, get_linear_schedule_with_warmup
+    if _transformers_loaded:
+        return True
+    try:
+        from transformers import (  # type: ignore[import-not-found]
+            DataCollatorForLanguageModeling as _DataCollatorForLanguageModeling,
+            TrainingArguments as _TrainingArguments,
+            get_cosine_schedule_with_warmup as _get_cosine_schedule_with_warmup,
+            get_linear_schedule_with_warmup as _get_linear_schedule_with_warmup,
+        )
+        DataCollatorForLanguageModeling = _DataCollatorForLanguageModeling
+        TrainingArguments = _TrainingArguments
+        get_cosine_schedule_with_warmup = _get_cosine_schedule_with_warmup
+        get_linear_schedule_with_warmup = _get_linear_schedule_with_warmup
+        _transformers_loaded = True
+        return True
+    except (ImportError, RuntimeError) as e:  # pragma: no cover
+        logger.warning(f"Failed to load transformers: {e}")
+        return False
 
 
 def require_torch() -> Any:

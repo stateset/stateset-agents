@@ -4,6 +4,8 @@
 
 [![PyPI version](https://badge.fury.io/py/stateset-agents.svg)](https://pypi.org/project/stateset-agents/)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://img.shields.io/badge/tests-945%20passed-brightgreen.svg)](https://github.com/stateset/stateset-agents/actions)
+[![Coverage](https://img.shields.io/badge/coverage-85%25-brightgreen.svg)](https://github.com/stateset/stateset-agents)
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-green.svg)](https://github.com/stateset/stateset-agents/blob/main/LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-available-brightgreen.svg)](https://stateset-agents.readthedocs.io/)
 [![Discord](https://img.shields.io/discord/1234567890?color=blue&label=Discord)](https://discord.gg/stateset)

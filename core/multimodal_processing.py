@@ -22,11 +22,36 @@ try:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
-    from transformers import AutoModel, AutoProcessor, AutoTokenizer
-
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
+    torch = None  # type: ignore
+    nn = None  # type: ignore
+    F = None  # type: ignore
+
+# Lazy imports for transformers to avoid torch/torchvision compatibility issues
+_transformers_loaded = False
+AutoModel = None
+AutoProcessor = None
+AutoTokenizer = None
+
+def _load_transformers():
+    """Lazily load transformers to avoid import-time errors."""
+    global _transformers_loaded, AutoModel, AutoProcessor, AutoTokenizer
+    if _transformers_loaded:
+        return True
+    try:
+        from transformers import AutoModel as _AutoModel
+        from transformers import AutoProcessor as _AutoProcessor
+        from transformers import AutoTokenizer as _AutoTokenizer
+        AutoModel = _AutoModel
+        AutoProcessor = _AutoProcessor
+        AutoTokenizer = _AutoTokenizer
+        _transformers_loaded = True
+        return True
+    except (ImportError, RuntimeError) as e:
+        logger.warning(f"Failed to load transformers: {e}")
+        return False
 
 try:
     from PIL import Image

@@ -66,9 +66,23 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-# Prime common submodules so dotted imports continue to work.
-for _submodule in _SUBMODULES:
-    _import_core_submodule(_submodule)
+# NOTE: We no longer eagerly import all submodules at module load time
+# to avoid triggering torch/torchvision/transformers compatibility issues.
+# Submodules are now imported lazily via __getattr__.
+# For backwards compatibility, we still try to import the most commonly used
+# lightweight submodules that don't have heavy dependencies.
+_SAFE_SUBMODULES = (
+    "trajectory",
+    "reward",
+    "environment",
+    "error_handling",
+    "type_system",
+)
+for _submodule in _SAFE_SUBMODULES:
+    try:
+        _import_core_submodule(_submodule)
+    except Exception:
+        pass  # Lazy import will handle it later
 
 # Re-export frequently used symbols with compatibility guards.
 try:

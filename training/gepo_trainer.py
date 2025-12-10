@@ -48,15 +48,37 @@ try:
     import wandb
     from datasets import Dataset
     from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        get_cosine_schedule_with_warmup,
-    )
 except ImportError as e:
     logger.error(f"Missing required dependency: {e}")
-    logger.error("Please install: pip install transformers peft datasets")
+    logger.error("Please install: pip install peft datasets wandb")
     raise
+
+# Lazy import transformers to avoid torch/torchvision compatibility issues
+_transformers_gepo_loaded = False
+AutoModelForCausalLM = None
+AutoTokenizer = None
+get_cosine_schedule_with_warmup = None
+
+def _load_transformers_gepo():
+    """Lazily load transformers to avoid import-time errors."""
+    global _transformers_gepo_loaded, AutoModelForCausalLM, AutoTokenizer
+    global get_cosine_schedule_with_warmup
+    if _transformers_gepo_loaded:
+        return True
+    try:
+        from transformers import (
+            AutoModelForCausalLM as _AutoModelForCausalLM,
+            AutoTokenizer as _AutoTokenizer,
+            get_cosine_schedule_with_warmup as _get_cosine,
+        )
+        AutoModelForCausalLM = _AutoModelForCausalLM
+        AutoTokenizer = _AutoTokenizer
+        get_cosine_schedule_with_warmup = _get_cosine
+        _transformers_gepo_loaded = True
+        return True
+    except (ImportError, RuntimeError) as e:
+        logger.warning(f"Failed to load transformers: {e}")
+        return False
 
 
 @dataclass

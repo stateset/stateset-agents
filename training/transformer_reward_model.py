@@ -20,17 +20,45 @@ try:
     import torch.nn.functional as F
     import torch.optim as optim
     from torch.utils.data import DataLoader, Dataset
-    from transformers import (
-        AutoModel,
-        AutoTokenizer,
-        get_linear_schedule_with_warmup,
-    )
-
     TORCH_AVAILABLE = True
-    TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    TRANSFORMERS_AVAILABLE = False
+    torch = None  # type: ignore
+    nn = None  # type: ignore
+    F = None  # type: ignore
+    optim = None  # type: ignore
+    DataLoader = None  # type: ignore
+    Dataset = None  # type: ignore
+
+# Lazy import transformers to avoid torch/torchvision compatibility issues
+_transformers_reward_loaded = False
+AutoModel = None
+AutoTokenizer = None
+get_linear_schedule_with_warmup = None
+TRANSFORMERS_AVAILABLE = False
+
+def _load_transformers_reward():
+    """Lazily load transformers to avoid import-time errors."""
+    global _transformers_reward_loaded, AutoModel, AutoTokenizer
+    global get_linear_schedule_with_warmup, TRANSFORMERS_AVAILABLE
+    if _transformers_reward_loaded:
+        return TRANSFORMERS_AVAILABLE
+    try:
+        from transformers import (
+            AutoModel as _AutoModel,
+            AutoTokenizer as _AutoTokenizer,
+            get_linear_schedule_with_warmup as _get_linear,
+        )
+        AutoModel = _AutoModel
+        AutoTokenizer = _AutoTokenizer
+        get_linear_schedule_with_warmup = _get_linear
+        TRANSFORMERS_AVAILABLE = True
+        _transformers_reward_loaded = True
+        return True
+    except (ImportError, RuntimeError) as e:
+        logger.warning(f"Failed to load transformers: {e}")
+        _transformers_reward_loaded = True  # Mark as attempted
+        return False
 
 from stateset_agents.core.reward import RewardFunction, RewardResult
 from stateset_agents.core.trajectory import ConversationTurn

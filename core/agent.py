@@ -17,28 +17,49 @@ try:
     import torch
 except ImportError:  # pragma: no cover - allow stub mode without PyTorch
     torch = None  # type: ignore
-try:
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        GenerationConfig,
-        StoppingCriteria,
-        StoppingCriteriaList,
-    )
-except ImportError:  # pragma: no cover - allow stub mode without transformers
-    AutoModelForCausalLM = None  # type: ignore
-    AutoTokenizer = None  # type: ignore
+# Lazy imports for transformers to avoid torch/torchvision compatibility issues
+AutoModelForCausalLM = None
+AutoTokenizer = None
+_transformers_agent_loaded = False
 
-    class GenerationConfig:  # type: ignore[override]
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
+class GenerationConfig:  # type: ignore[override]
+    """Fallback GenerationConfig when transformers not available."""
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
 
-    class StoppingCriteria:  # type: ignore[override]
-        def __call__(self, *args, **kwargs):  # pragma: no cover - placeholder
-            return False
+class StoppingCriteria:  # type: ignore[override]
+    """Fallback StoppingCriteria when transformers not available."""
+    def __call__(self, *args, **kwargs):  # pragma: no cover - placeholder
+        return False
 
-    class StoppingCriteriaList(list):  # type: ignore[override]
-        pass
+class StoppingCriteriaList(list):  # type: ignore[override]
+    """Fallback StoppingCriteriaList when transformers not available."""
+    pass
+
+def _load_transformers_agent() -> bool:
+    """Lazily load transformers to avoid import-time errors."""
+    global _transformers_agent_loaded, AutoModelForCausalLM, AutoTokenizer
+    global GenerationConfig, StoppingCriteria, StoppingCriteriaList
+    if _transformers_agent_loaded:
+        return True
+    try:
+        from transformers import (
+            AutoModelForCausalLM as _AutoModelForCausalLM,
+            AutoTokenizer as _AutoTokenizer,
+            GenerationConfig as _GenerationConfig,
+            StoppingCriteria as _StoppingCriteria,
+            StoppingCriteriaList as _StoppingCriteriaList,
+        )
+        AutoModelForCausalLM = _AutoModelForCausalLM
+        AutoTokenizer = _AutoTokenizer
+        GenerationConfig = _GenerationConfig
+        StoppingCriteria = _StoppingCriteria
+        StoppingCriteriaList = _StoppingCriteriaList
+        _transformers_agent_loaded = True
+        return True
+    except (ImportError, RuntimeError) as e:  # pragma: no cover
+        logging.warning(f"Failed to load transformers: {e}")
+        return False
 
 try:
     from peft import LoraConfig, get_peft_model

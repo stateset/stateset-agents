@@ -16,23 +16,19 @@ Generation backends:
 from .config import TrainingConfig, TrainingProfile, get_config_for_task
 from .trainer import GRPOTrainer, MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
 
-# vLLM backend for fast generation
-try:
-    from .vllm_backend import (
-        VLLM_AVAILABLE,
-        VLLMConfig,
-        VLLMGenerator,
-        HuggingFaceGeneratorFallback,
-        GenerationResult,
-        BatchGenerationResult,
-        create_generator,
-        quick_generate,
-    )
+# vLLM backend for fast generation - use lazy import to avoid torchvision issues
+# Don't import at module level, let users import when needed
+VLLM_BACKEND_AVAILABLE = False
+VLLM_AVAILABLE = False
 
-    VLLM_BACKEND_AVAILABLE = True
-except ImportError:
-    VLLM_BACKEND_AVAILABLE = False
-    VLLM_AVAILABLE = False
+try:
+    # Just check if vllm_backend module exists without importing it
+    import importlib.util
+    spec = importlib.util.find_spec(".vllm_backend", package="training")
+    if spec is not None:
+        VLLM_BACKEND_AVAILABLE = True
+except (ImportError, ValueError):
+    pass
 
 # TRL-based GRPO training
 try:
@@ -116,20 +112,9 @@ __all__ = [
     "VLLM_BACKEND_AVAILABLE",
 ]
 
-# Add vLLM exports if available
-if VLLM_BACKEND_AVAILABLE:
-    __all__.extend(
-        [
-            "VLLM_AVAILABLE",
-            "VLLMConfig",
-            "VLLMGenerator",
-            "HuggingFaceGeneratorFallback",
-            "GenerationResult",
-            "BatchGenerationResult",
-            "create_generator",
-            "quick_generate",
-        ]
-    )
+# vLLM exports are not added to __all__ to avoid module-level import
+# Users should import directly from training.vllm_backend when needed:
+# from training.vllm_backend import VLLMConfig, VLLMGenerator, etc.
 
 # Add TRL exports if available
 if TRL_AVAILABLE:

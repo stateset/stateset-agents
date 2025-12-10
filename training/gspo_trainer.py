@@ -40,16 +40,40 @@ try:
         get_peft_model,
         prepare_model_for_kbit_training,
     )
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        TrainingArguments,
-        get_cosine_schedule_with_warmup,
-    )
 except ImportError as e:
     logger.error(f"Missing required dependency: {e}")
-    logger.error("Please install: pip install transformers peft datasets")
+    logger.error("Please install: pip install peft datasets")
     raise
+
+# Lazy import transformers to avoid torch/torchvision compatibility issues
+_transformers_loaded = False
+AutoModelForCausalLM = None
+AutoTokenizer = None
+TrainingArguments = None
+get_cosine_schedule_with_warmup = None
+
+def _load_transformers():
+    """Lazily load transformers to avoid import-time errors."""
+    global _transformers_loaded, AutoModelForCausalLM, AutoTokenizer
+    global TrainingArguments, get_cosine_schedule_with_warmup
+    if _transformers_loaded:
+        return True
+    try:
+        from transformers import (
+            AutoModelForCausalLM as _AutoModelForCausalLM,
+            AutoTokenizer as _AutoTokenizer,
+            TrainingArguments as _TrainingArguments,
+            get_cosine_schedule_with_warmup as _get_cosine,
+        )
+        AutoModelForCausalLM = _AutoModelForCausalLM
+        AutoTokenizer = _AutoTokenizer
+        TrainingArguments = _TrainingArguments
+        get_cosine_schedule_with_warmup = _get_cosine
+        _transformers_loaded = True
+        return True
+    except (ImportError, RuntimeError) as e:
+        logger.warning(f"Failed to load transformers: {e}")
+        return False
 
 try:
     from vllm import LLM, SamplingParams
@@ -60,19 +84,41 @@ except ImportError:
     SamplingParams = None
     logger.warning("vLLM not installed. Install with `pip install vllm` for faster generation.")
 
-# Import vLLM backend
-try:
-    from .vllm_backend import (
-        VLLMConfig,
-        VLLMGenerator,
-        HuggingFaceGeneratorFallback,
-        GenerationResult,
-        create_generator,
-    )
-    VLLM_BACKEND_AVAILABLE = True
-except ImportError:
-    VLLM_BACKEND_AVAILABLE = False
-    logger.warning("vLLM backend module not available")
+# Lazy import vLLM backend to avoid torch/torchvision compatibility issues
+VLLMConfig = None
+VLLMGenerator = None
+HuggingFaceGeneratorFallback = None
+GenerationResult = None
+create_generator = None
+VLLM_BACKEND_AVAILABLE = False
+_vllm_backend_loaded = False
+
+def _load_vllm_backend():
+    """Lazily load vLLM backend to avoid import-time errors."""
+    global _vllm_backend_loaded, VLLMConfig, VLLMGenerator, HuggingFaceGeneratorFallback
+    global GenerationResult, create_generator, VLLM_BACKEND_AVAILABLE
+    if _vllm_backend_loaded:
+        return VLLM_BACKEND_AVAILABLE
+    try:
+        from .vllm_backend import (
+            VLLMConfig as _VLLMConfig,
+            VLLMGenerator as _VLLMGenerator,
+            HuggingFaceGeneratorFallback as _HFGen,
+            GenerationResult as _GenerationResult,
+            create_generator as _create_generator,
+        )
+        VLLMConfig = _VLLMConfig
+        VLLMGenerator = _VLLMGenerator
+        HuggingFaceGeneratorFallback = _HFGen
+        GenerationResult = _GenerationResult
+        create_generator = _create_generator
+        VLLM_BACKEND_AVAILABLE = True
+        _vllm_backend_loaded = True
+        return True
+    except (ImportError, RuntimeError) as e:
+        logger.warning(f"Failed to load vLLM backend: {e}")
+        _vllm_backend_loaded = True
+        return False
 
 
 @dataclass
@@ -141,6 +187,10 @@ class GSPOModelManager:
     def load_model_and_tokenizer(self) -> Tuple[Any, Any]:
         """Load model and tokenizer with LoRA if specified"""
         logger.info(f"Loading model: {self.config.model_name}")
+
+        # Load transformers lazily
+        if not _load_transformers():
+            raise ImportError("transformers is required but failed to load")
 
         try:
             # Load tokenizer
@@ -249,6 +299,11 @@ class GSPOTrajectoryGenerator:
     def _setup_vllm_generator(self):
         """Setup vLLM generator with config parameters"""
         logger.info("Setting up vLLM generator for fast generation...")
+
+        # Load vLLM backend lazily
+        if not _load_vllm_backend():
+            logger.warning("vLLM backend failed to load, will use HuggingFace fallback")
+            return
 
         vllm_config = VLLMConfig(
             model_name=self.config.model_name,

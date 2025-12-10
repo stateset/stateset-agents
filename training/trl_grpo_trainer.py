@@ -40,19 +40,43 @@ try:
         get_peft_model,
         prepare_model_for_kbit_training,
     )
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        TrainingArguments,
-        get_cosine_schedule_with_warmup,
-    )
     from trl import GRPOConfig
     from trl import GRPOTrainer as TRLGRPOTrainer
     from trl.core import LengthSampler
 except ImportError as e:
     logger.error(f"Missing required dependency: {e}")
-    logger.error("Please install: pip install transformers peft datasets trl")
+    logger.error("Please install: pip install peft datasets trl")
     raise
+
+# Lazy import transformers to avoid torch/torchvision compatibility issues
+_transformers_loaded = False
+AutoModelForCausalLM = None
+AutoTokenizer = None
+TrainingArguments = None
+get_cosine_schedule_with_warmup = None
+
+def _load_transformers():
+    """Lazily load transformers to avoid import-time errors."""
+    global _transformers_loaded, AutoModelForCausalLM, AutoTokenizer
+    global TrainingArguments, get_cosine_schedule_with_warmup
+    if _transformers_loaded:
+        return True
+    try:
+        from transformers import (
+            AutoModelForCausalLM as _AutoModelForCausalLM,
+            AutoTokenizer as _AutoTokenizer,
+            TrainingArguments as _TrainingArguments,
+            get_cosine_schedule_with_warmup as _get_cosine,
+        )
+        AutoModelForCausalLM = _AutoModelForCausalLM
+        AutoTokenizer = _AutoTokenizer
+        TrainingArguments = _TrainingArguments
+        get_cosine_schedule_with_warmup = _get_cosine
+        _transformers_loaded = True
+        return True
+    except (ImportError, RuntimeError) as e:
+        logger.warning(f"Failed to load transformers: {e}")
+        return False
 
 try:
     from vllm import LLM, SamplingParams
@@ -218,6 +242,10 @@ class ModelManager:
     def load_model_and_tokenizer(self) -> Tuple[Any, Any]:
         """Load model and tokenizer with LoRA if specified"""
         logger.info(f"Loading model: {self.config.model_name}")
+
+        # Load transformers lazily
+        if not _load_transformers():
+            raise ImportError("transformers is required but failed to load")
 
         try:
             # Load tokenizer

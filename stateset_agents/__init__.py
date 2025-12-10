@@ -134,12 +134,18 @@ except Exception:  # pragma: no cover - optional aiohttp
     managed_async_resources = None  # type: ignore
 
 # Data processing exports
-from .core.data_processing import (
-    ConversationExample,
-    DataLoader,
-    DataProcessor,
-    load_and_prepare_data,
-)
+try:
+    from core.data_processing import (
+        ConversationExample,
+        DataLoader,
+        DataProcessor,
+        load_and_prepare_data,
+    )
+except Exception:  # pragma: no cover
+    ConversationExample = None  # type: ignore
+    DataLoader = None  # type: ignore
+    DataProcessor = None  # type: ignore
+    load_and_prepare_data = None  # type: ignore
 
 # Training exports (optional to avoid import issues)
 try:
