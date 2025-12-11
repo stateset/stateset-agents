@@ -600,6 +600,7 @@ python scripts/benchmark.py
 | 🤖 **Qwen3 Fine-tuning** | Fine-tune Qwen3 models with GSPO | [Qwen3 Guide](docs/QWEN3_FINETUNING_GUIDE.md) |
 | 🔷 **Gemma 3 Fine-tuning** | Fine-tune Gemma 3 models with GSPO | [Gemma 3 Guide](docs/GEMMA3_FINETUNING_GUIDE.md) |
 | 📊 **Training Guide** | Advanced training techniques | [TRL Training](TRL_GRPO_TRAINING_GUIDE.md) |
+| 🆚 **Framework Comparisons** | StateSet vs TRL, RLlib, SB3, LLM runtimes | [Comparisons](docs/COMPARISONS.md) |
 | 💡 **Examples** | Production-ready code samples | [examples/](examples/) |
 | 🔧 **API Reference** | Generated API docs | [docs/api/](docs/api/) |
 
