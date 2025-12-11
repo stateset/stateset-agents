@@ -325,6 +325,16 @@ Key docs:
 
 ---
 
+## Related Projects
+
+- [stateset-nsr](https://github.com/stateset/stateset-nsr) - Neuro‑symbolic reasoning engine for explainable tools.
+- [stateset-api](https://github.com/stateset/stateset-api) - Commerce/operations API that agents can drive.
+- [stateset-sync-server](https://github.com/stateset/stateset-sync-server) - Multi‑tenant orchestration and integrations.
+- [core](https://github.com/stateset/core) - Cosmos SDK blockchain for on‑chain commerce.
+- Public API docs: https://docs.stateset.com
+
+---
+
 ## Contributing
 
 See `CONTRIBUTING.md`. Please run `pytest -q` and format with `black`/`isort` before opening a PR.
@@ -334,4 +344,3 @@ See `CONTRIBUTING.md`. Please run `pytest -q` and format with `black`/`isort` be
 ## License
 
 Business Source License 1.1. Non‑production use permitted until **2029‑09‑03**, then transitions to Apache 2.0. See `LICENSE`.
-

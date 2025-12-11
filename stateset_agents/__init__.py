@@ -157,10 +157,14 @@ except Exception:  # pragma: no cover - allow import without training deps
     MultiTurnGRPOTrainer = None
 
 try:
-    from .training.config import TrainingConfig, TrainingProfile, get_config_for_task
+    from .training.config import (
+        TrainingConfig as TrainerTrainingConfig,
+        TrainingProfile,
+        get_config_for_task,
+    )
     from .training.train import AutoTrainer, train
+    TrainingConfig = TrainerTrainingConfig
 except Exception:
-    TrainingConfig = None
     TrainingProfile = None
     get_config_for_task = None
     train = None

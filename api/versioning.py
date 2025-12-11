@@ -25,7 +25,7 @@ import warnings
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Type, Union
+from typing import Any, Callable, Deque, Dict, List, Optional, Set, Tuple, Type, Union
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
@@ -557,9 +557,44 @@ class RequestMigrator:
         key = (from_version, to_version)
         if key in self.steps:
             return [self.steps[key]]
+        # Multi-hop search using BFS over available steps
+        from collections import deque
 
-        # TODO: Implement multi-hop migration for more versions
-        return []
+        adjacency: Dict[APIVersion, List[Tuple[APIVersion, MigrationStep]]] = {}
+        for (src, dst), step in self.steps.items():
+            adjacency.setdefault(src, []).append((dst, step))
+
+        queue: Deque[APIVersion] = deque([from_version])
+        # Map version -> (previous_version, step_used_to_reach)
+        prev: Dict[APIVersion, Tuple[Optional[APIVersion], Optional[MigrationStep]]] = {
+            from_version: (None, None)
+        }
+
+        while queue:
+            current = queue.popleft()
+            for nxt, step in adjacency.get(current, []):
+                if nxt in prev:
+                    continue
+                prev[nxt] = (current, step)
+                if nxt == to_version:
+                    queue.clear()
+                    break
+                queue.append(nxt)
+
+        if to_version not in prev:
+            return []
+
+        # Reconstruct path
+        path: List[MigrationStep] = []
+        cur: APIVersion = to_version
+        while True:
+            parent, step = prev[cur]
+            if parent is None or step is None:
+                break
+            path.append(step)
+            cur = parent
+        path.reverse()
+        return path
 
     def _apply_step(
         self, data: Dict[str, Any], step: MigrationStep
