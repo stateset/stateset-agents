@@ -835,6 +835,7 @@ async def train_with_gspo(
     # Update agent with loaded model
     agent.model = model
     agent.tokenizer = tokenizer
+    agent.generation_config = agent._build_generation_config()
 
     # Generate training queries if not provided
     if not train_queries:

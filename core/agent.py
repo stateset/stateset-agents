@@ -367,6 +367,17 @@ class Agent(ABC):
             self._initialize_stub_backend()
             return
 
+        if not _load_transformers_agent():
+            raise ImportError(
+                "transformers is required to initialize non-stub agents. "
+                "Install with `pip install stateset-agents[training]`."
+            )
+        if torch is None:
+            raise ImportError(
+                "PyTorch is required to initialize non-stub agents. "
+                "Install with `pip install stateset-agents[training]`."
+            )
+
         # Load tokenizer
         if self.tokenizer is None:
             if self._tokenizer_loader:
@@ -437,21 +448,7 @@ class Agent(ABC):
 
         # Setup generation config
         if self.generation_config is None:
-            if self._generation_config_factory:
-                self.generation_config = self._generation_config_factory(
-                    self.config, self.tokenizer, self.model
-                )
-            else:
-                self.generation_config = GenerationConfig(
-                    max_new_tokens=self.config.max_new_tokens,
-                    temperature=self.config.temperature,
-                    top_p=self.config.top_p,
-                    top_k=self.config.top_k,
-                    do_sample=self.config.do_sample,
-                    repetition_penalty=self.config.repetition_penalty,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                )
+            self.generation_config = self._build_generation_config()
         logger.info("Agent initialized successfully")
 
     def _initialize_stub_backend(self) -> None:
@@ -513,6 +510,30 @@ class Agent(ABC):
     def get_history(self) -> List[ConversationTurn]:
         """Get current conversation history"""
         return self.conversation_history.copy()
+
+    def _build_generation_config(self) -> GenerationConfig:
+        """Create a generation config using current tokenizer/model."""
+        if self.tokenizer is None:
+            raise RuntimeError("Tokenizer must be available to build generation config")
+        if not _load_transformers_agent():
+            raise ImportError(
+                "transformers is required to build generation config. "
+                "Install with `pip install stateset-agents[training]`."
+            )
+
+        if self._generation_config_factory:
+            return self._generation_config_factory(self.config, self.tokenizer, self.model)
+
+        return GenerationConfig(
+            max_new_tokens=self.config.max_new_tokens,
+            temperature=self.config.temperature,
+            top_p=self.config.top_p,
+            top_k=self.config.top_k,
+            do_sample=self.config.do_sample,
+            repetition_penalty=self.config.repetition_penalty,
+            pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=self.tokenizer.eos_token_id,
+        )
 
 
 class MultiTurnAgent(Agent):
@@ -677,7 +698,7 @@ class MultiTurnAgent(Agent):
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=self.tokenizer.model_max_length - self.config.max_new_tokens,
+            max_length=self._effective_max_input_length(),
         )
 
         # Move inputs to model device when available
@@ -735,6 +756,23 @@ class MultiTurnAgent(Agent):
                 response = response.split(phrase)[0].strip()
 
         return response
+
+    def _effective_max_input_length(self) -> int:
+        """Compute a safe max_length for tokenization to avoid negative lengths."""
+        model_max_length = getattr(self.tokenizer, "model_max_length", None)
+        if isinstance(model_max_length, int):
+            max_len = model_max_length - self.config.max_new_tokens
+            if max_len < 1:
+                logger.warning(
+                    "max_new_tokens (%s) exceeds or equals tokenizer.model_max_length (%s); "
+                    "clamping max_length to 1 to avoid generation failure. "
+                    "Consider reducing max_new_tokens.",
+                    self.config.max_new_tokens,
+                    model_max_length,
+                )
+                return 1
+            return max_len
+        return 1024  # conservative fallback when tokenizer does not expose a limit
 
     async def generate_response_stream(
         self,
@@ -804,7 +842,7 @@ class MultiTurnAgent(Agent):
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=self.tokenizer.model_max_length - self.config.max_new_tokens,
+            max_length=self._effective_max_input_length(),
         )
 
         model_device = None
