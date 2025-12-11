@@ -15,6 +15,7 @@ Generation backends:
 
 from .config import TrainingConfig, TrainingProfile, get_config_for_task
 from .trainer import GRPOTrainer, MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
+from .train import train, TrainingMode
 
 # vLLM backend for fast generation - use lazy import to avoid torchvision issues
 # Don't import at module level, let users import when needed
@@ -104,6 +105,9 @@ __all__ = [
     "GRPOTrainer",
     "MultiTurnGRPOTrainer",
     "SingleTurnGRPOTrainer",
+    # High-level training interface
+    "train",
+    "TrainingMode",
     # Config
     "TrainingConfig",
     "TrainingProfile",

@@ -5,16 +5,24 @@ These tests verify the REST API functionality.
 """
 
 import asyncio
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
+# Ensure environment is set for API
+os.environ.setdefault("API_ENVIRONMENT", "development")
+os.environ.setdefault("API_JWT_SECRET", "test-secret-key-for-testing-purposes-only-minimum-32-chars")
+os.environ.setdefault("API_CORS_ORIGINS", "*")
+os.environ.setdefault("API_REQUIRE_AUTH", "false")
+os.environ.setdefault("API_RATE_LIMIT_ENABLED", "false")
+
 # Import API components (these may not exist yet, but we'll create mocks)
 try:
-    from stateset_agents.api.ultimate_grpo_service import app
-
+    from api.main import create_app
+    app = create_app()
     API_AVAILABLE = True
 except ImportError:
     API_AVAILABLE = False

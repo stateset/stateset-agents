@@ -7,9 +7,9 @@ import logging
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from ..core.agent import Agent, MultiTurnAgent
-from ..core.environment import Environment
-from ..core.reward import RewardFunction
+from core.agent import Agent, MultiTurnAgent
+from core.environment import Environment
+from core.reward import RewardFunction
 from .config import TrainingConfig, TrainingProfile
 from .diagnostics import DiagnosticsMonitor
 from .trainer import MultiTurnGRPOTrainer

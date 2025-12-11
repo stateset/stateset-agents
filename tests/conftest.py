@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import shutil
 import sys
 import tempfile
@@ -11,6 +12,14 @@ from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+# Set up API environment variables BEFORE any imports that might use them
+# This ensures API tests can run without manual environment setup
+os.environ.setdefault("API_ENVIRONMENT", "development")
+os.environ.setdefault("API_JWT_SECRET", "test-secret-key-for-testing-purposes-only-minimum-32-chars")
+os.environ.setdefault("API_CORS_ORIGINS", "*")
+os.environ.setdefault("API_REQUIRE_AUTH", "false")
+os.environ.setdefault("API_RATE_LIMIT_ENABLED", "false")
 
 try:
     import torch
@@ -173,3 +182,49 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "integration: Integration tests (slower, may need external resources)",
     )
+    config.addinivalue_line("markers", "api: API endpoint tests")
+    config.addinivalue_line("markers", "e2e: End-to-end scenario tests")
+    config.addinivalue_line("markers", "slow: Slow running tests")
+    config.addinivalue_line("markers", "gpu: Tests requiring GPU")
+
+
+# API Testing Support
+@pytest.fixture(scope="session")
+def api_test_env():
+    """Ensure API environment is configured for testing."""
+    original_env = {}
+    test_vars = {
+        "API_ENVIRONMENT": "development",
+        "API_JWT_SECRET": "test-secret-key-for-testing-purposes-only-minimum-32-chars",
+        "API_CORS_ORIGINS": "*",
+        "API_REQUIRE_AUTH": "false",
+        "API_RATE_LIMIT_ENABLED": "false",
+    }
+
+    # Store original values and set test values
+    for key, value in test_vars.items():
+        original_env[key] = os.environ.get(key)
+        os.environ[key] = value
+
+    yield test_vars
+
+    # Restore original values
+    for key, original in original_env.items():
+        if original is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = original
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: List[pytest.Item]) -> None:
+    """Automatically add markers based on test location."""
+    for item in items:
+        # Add markers based on path
+        if "/api/" in str(item.fspath):
+            item.add_marker(pytest.mark.api)
+        elif "/e2e/" in str(item.fspath):
+            item.add_marker(pytest.mark.e2e)
+        elif "/unit/" in str(item.fspath):
+            item.add_marker(pytest.mark.unit)
+        elif "/integration/" in str(item.fspath):
+            item.add_marker(pytest.mark.integration)

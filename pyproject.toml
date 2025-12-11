@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateset-agents"
-version = "0.5.0"
-description = "A comprehensive framework for training multi-turn AI agents using Group Relative Policy Optimization (GRPO)"
+version = "0.6.0"
+description = "Production-ready RL framework for training multi-turn conversational AI agents using GRPO and GSPO"
 readme = "README.md"
 license = {text = "Business Source License 1.1"}
 requires-python = ">=3.8"
@@ -13,7 +13,7 @@ authors = [
     {name = "StateSet Team", email = "team@stateset.ai"},
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: Other/Proprietary License",
@@ -24,6 +24,9 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Machine Learning",
+    "Framework :: FastAPI",
+    "Environment :: GPU :: NVIDIA CUDA",
 ]
 dependencies = [
     "numpy>=1.21.0,<2.0.0",

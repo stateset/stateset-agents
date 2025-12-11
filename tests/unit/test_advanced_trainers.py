@@ -16,24 +16,43 @@ import torch
 import torch.nn as nn
 
 # Skip tests if training modules not available
-pytest.importorskip("training.gepo_trainer")
-pytest.importorskip("training.dapo_trainer")
-pytest.importorskip("training.vapo_trainer")
+try:
+    from training.gepo_trainer import GEPOConfig, GEPOTrainer, train_with_gepo
+    from training.dapo_trainer import (
+        DAPOConfig,
+        DAPOTrainer,
+        DAPORewardShaper,
+        DynamicSamplingBuffer,
+        train_with_dapo,
+    )
+    from training.vapo_trainer import (
+        VAPOConfig,
+        VAPOTrainer,
+        ValueHead,
+        LengthAdaptiveGAE,
+        train_with_vapo,
+    )
+    TRAINERS_AVAILABLE = True
+except (ImportError, RuntimeError) as e:
+    TRAINERS_AVAILABLE = False
+    # Create dummy classes for type hints
+    GEPOConfig = None
+    GEPOTrainer = None
+    train_with_gepo = None
+    DAPOConfig = None
+    DAPOTrainer = None
+    DAPORewardShaper = None
+    DynamicSamplingBuffer = None
+    train_with_dapo = None
+    VAPOConfig = None
+    VAPOTrainer = None
+    ValueHead = None
+    LengthAdaptiveGAE = None
+    train_with_vapo = None
 
-from training.gepo_trainer import GEPOConfig, GEPOTrainer, train_with_gepo
-from training.dapo_trainer import (
-    DAPOConfig,
-    DAPOTrainer,
-    DAPORewardShaper,
-    DynamicSamplingBuffer,
-    train_with_dapo,
-)
-from training.vapo_trainer import (
-    VAPOConfig,
-    VAPOTrainer,
-    ValueHead,
-    LengthAdaptiveGAE,
-    train_with_vapo,
+pytestmark = pytest.mark.skipif(
+    not TRAINERS_AVAILABLE,
+    reason="Advanced trainers not available (check transformers/torchvision compatibility)"
 )
 
 

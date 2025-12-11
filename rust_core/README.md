@@ -117,4 +117,4 @@ Typical speedups over pure Python/NumPy: **10-100x** for batch operations.
 
 ## License
 
-MIT
+BUSL-1.1

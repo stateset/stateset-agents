@@ -30,6 +30,11 @@ from rewards.multi_objective_reward import MultiObjectiveRewardFunction
 from .config import TrainingConfig, get_config_for_task
 
 # Import additional dependencies
+TRL_GRPO_AVAILABLE = False
+GRPOConfig = None
+TRLGRPOTrainer = None
+LengthSampler = None
+
 try:
     import numpy as np
     import wandb
@@ -40,13 +45,22 @@ try:
         get_peft_model,
         prepare_model_for_kbit_training,
     )
-    from trl import GRPOConfig
-    from trl import GRPOTrainer as TRLGRPOTrainer
-    from trl.core import LengthSampler
+    # TRL >= 0.10 renamed/removed GRPOConfig, handle gracefully
+    try:
+        from trl import GRPOConfig
+        from trl import GRPOTrainer as TRLGRPOTrainer
+        try:
+            from trl.core import LengthSampler
+        except ImportError:
+            # LengthSampler moved or removed in newer TRL versions
+            LengthSampler = None
+        TRL_GRPO_AVAILABLE = True
+    except ImportError as e:
+        logger.warning(f"TRL GRPO components not available: {e}")
+        logger.warning("TRL-based GRPO training disabled. Install trl>=0.7,<0.10 for this feature.")
 except ImportError as e:
-    logger.error(f"Missing required dependency: {e}")
-    logger.error("Please install: pip install peft datasets trl")
-    raise
+    logger.warning(f"Optional TRL dependencies not available: {e}")
+    logger.warning("Install with: pip install peft datasets trl wandb")
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_loaded = False

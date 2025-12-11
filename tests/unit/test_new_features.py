@@ -8,6 +8,9 @@ Comprehensive tests for all new 10/10 features:
 import pytest
 import numpy as np
 
+# Track availability
+FEATURES_AVAILABLE = True
+
 # Test Offline RL imports
 try:
     import torch
@@ -21,8 +24,9 @@ try:
     )
 
     TORCH_AVAILABLE = True
-except ImportError:
+except (ImportError, RuntimeError):
     TORCH_AVAILABLE = False
+    FEATURES_AVAILABLE = False
 
 # Test Bayesian Reward imports
 try:
@@ -33,16 +37,24 @@ try:
     )
     from stateset_agents.core.reward import RewardResult
     from stateset_agents.core.trajectory import ConversationTurn
-except ImportError:
-    pass
+except (ImportError, RuntimeError):
+    FEATURES_AVAILABLE = False
 
 # Test Few-Shot Adaptation imports
-from core.few_shot_adaptation import (
-    FewShotExample,
-    DomainProfile,
-    PromptBasedAdaptation,
-    FewShotAdaptationManager,
-    DomainDetector,
+try:
+    from core.few_shot_adaptation import (
+        FewShotExample,
+        DomainProfile,
+        PromptBasedAdaptation,
+        FewShotAdaptationManager,
+        DomainDetector,
+    )
+except (ImportError, RuntimeError):
+    FEATURES_AVAILABLE = False
+
+pytestmark = pytest.mark.skipif(
+    not FEATURES_AVAILABLE,
+    reason="New feature modules not available (check dependencies)"
 )
 
 
