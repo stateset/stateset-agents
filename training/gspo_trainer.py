@@ -121,6 +121,19 @@ def _load_vllm_backend():
         return False
 
 
+def _get_model_device(model: Any) -> Optional[torch.device]:
+    """Best-effort helper to locate a model's device without assuming attributes."""
+    if model is None:
+        return None
+    try:
+        first_param = next(model.parameters())
+        return first_param.device
+    except StopIteration:
+        return getattr(model, "device", None)
+    except Exception:
+        return getattr(model, "device", None)
+
+
 @dataclass
 class GSPOConfig(TrainingConfig):
     """Configuration for GSPO training"""
@@ -450,7 +463,21 @@ class GSPOTrajectoryGenerator:
             return_tensors="pt",
             truncation=True,
             max_length=self.config.max_prompt_length + self.config.max_completion_length,
-        ).to(self.agent.model.device)
+            add_special_tokens=False,
+        )
+
+        prompt_tokens = self.agent.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self.config.max_prompt_length,
+            add_special_tokens=False,
+        )
+        prompt_length = prompt_tokens["input_ids"].shape[1]
+
+        model_device = _get_model_device(self.agent.model)
+        if model_device and hasattr(inputs, "to"):
+            inputs = inputs.to(model_device)
 
         # Get logits from model
         with torch.no_grad():
@@ -470,8 +497,13 @@ class GSPOTrajectoryGenerator:
             dim=-1, index=shift_labels.unsqueeze(-1)
         ).squeeze(-1)
 
-        # Sum log probs to get sequence log prob
-        sequence_log_prob = token_log_probs.sum().item()
+        # Only keep log probs for generated tokens (exclude prompt tokens)
+        response_start = max(prompt_length - 1, 0)
+        if response_start >= token_log_probs.shape[-1]:
+            return token_log_probs.sum().item()
+
+        response_log_probs = token_log_probs[..., response_start:]
+        sequence_log_prob = response_log_probs.sum().item()
 
         return sequence_log_prob
 
@@ -609,6 +641,7 @@ class GSPOTrainer:
         total_samples = 0
         all_rewards = []
         all_importance_ratios = []
+        model_device = _get_model_device(self.model)
 
         for query in queries[:num_groups]:
             # Generate group of responses for this query
@@ -621,7 +654,9 @@ class GSPOTrainer:
             old_log_probs = torch.tensor(
                 [log_prob for _, log_prob in group_responses],
                 dtype=torch.float32,
-            ).to(self.model.device)
+            )
+            if model_device is not None:
+                old_log_probs = old_log_probs.to(model_device)
 
             # Compute rewards for each response
             rewards = []
@@ -636,9 +671,9 @@ class GSPOTrainer:
                 )
                 rewards.append(reward_info.total_reward)
 
-            rewards_tensor = torch.tensor(rewards, dtype=torch.float32).to(
-                self.model.device
-            )
+            rewards_tensor = torch.tensor(rewards, dtype=torch.float32)
+            if model_device is not None:
+                rewards_tensor = rewards_tensor.to(model_device)
             all_rewards.extend(rewards)
 
             # Compute group advantages
@@ -659,10 +694,13 @@ class GSPOTrainer:
 
             current_log_probs = torch.tensor(
                 current_log_probs, dtype=torch.float32
-            ).to(self.model.device)
+            )
             sequence_lengths = torch.tensor(
                 sequence_lengths, dtype=torch.float32
-            ).to(self.model.device)
+            )
+            if model_device is not None:
+                current_log_probs = current_log_probs.to(model_device)
+                sequence_lengths = sequence_lengths.to(model_device)
 
             # Compute sequence importance ratios
             importance_ratios = self.compute_sequence_importance_ratio(
@@ -702,9 +740,9 @@ class GSPOTrainer:
                     ref_log_prob = await self._compute_ref_log_prob(query, response)
                     ref_log_probs.append(ref_log_prob)
 
-                ref_log_probs = torch.tensor(ref_log_probs, dtype=torch.float32).to(
-                    self.model.device
-                )
+                ref_log_probs = torch.tensor(ref_log_probs, dtype=torch.float32)
+                if model_device is not None:
+                    ref_log_probs = ref_log_probs.to(model_device)
 
                 # KL = log(π_θ/π_ref) = log π_θ - log π_ref
                 kl_div = (current_log_probs - ref_log_probs) / sequence_lengths
@@ -758,7 +796,21 @@ class GSPOTrainer:
             return_tensors="pt",
             truncation=True,
             max_length=self.config.max_prompt_length + self.config.max_completion_length,
-        ).to(self.ref_model.device)
+            add_special_tokens=False,
+        )
+
+        prompt_tokens = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self.config.max_prompt_length,
+            add_special_tokens=False,
+        )
+        prompt_length = prompt_tokens["input_ids"].shape[1]
+
+        model_device = _get_model_device(self.ref_model)
+        if model_device and hasattr(inputs, "to"):
+            inputs = inputs.to(model_device)
 
         with torch.no_grad():
             outputs = self.ref_model(**inputs)
@@ -772,7 +824,12 @@ class GSPOTrainer:
             dim=-1, index=shift_labels.unsqueeze(-1)
         ).squeeze(-1)
 
-        sequence_log_prob = token_log_probs.sum().item()
+        response_start = max(prompt_length - 1, 0)
+        if response_start >= token_log_probs.shape[-1]:
+            return token_log_probs.sum().item()
+
+        response_log_probs = token_log_probs[..., response_start:]
+        sequence_log_prob = response_log_probs.sum().item()
 
         return sequence_log_prob
 
