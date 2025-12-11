@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 from ..core.agent import Agent, AgentConfig, MultiTurnAgent
 from ..core.environment import ConversationEnvironment
 from ..core.trajectory import ConversationTurn, MultiTurnTrajectory
-from ..rewards.multi_objective_reward import MultiObjectiveReward
+from ..rewards.multi_objective_reward import (
+    MultiObjectiveRewardFunction as MultiObjectiveReward,
+)
 from .config import TrainingConfig, get_config_for_task
 
 # Optional training dependencies

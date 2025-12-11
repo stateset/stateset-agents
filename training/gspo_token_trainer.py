@@ -17,7 +17,9 @@ import numpy as np
 from ..core.agent import Agent
 from ..core.environment import ConversationEnvironment
 from ..core.trajectory import ConversationTurn
-from ..rewards.multi_objective_reward import MultiObjectiveReward
+from ..rewards.multi_objective_reward import (
+    MultiObjectiveRewardFunction as MultiObjectiveReward,
+)
 from .gspo_trainer import GSPOConfig, GSPOTrainer, GSPOTrajectoryGenerator
 
 logger = logging.getLogger(__name__)
