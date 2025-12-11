@@ -26,15 +26,11 @@ import asyncio
 import hashlib
 import logging
 import os
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Add parent to path for local imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

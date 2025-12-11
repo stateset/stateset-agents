@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 import logging
@@ -45,6 +46,19 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_async_value(value: Any) -> Any:
+    """Resolve possibly-async objective values to a concrete result."""
+    if not asyncio.iscoroutine(value):
+        return value
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(value)
+    # If we're already inside an event loop, run the coroutine in a worker thread.
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(asyncio.run, value).result()
 
 
 def _require_optuna():
@@ -116,7 +130,6 @@ class OptunaBackend(HPOBackend):
             pruning_interval: How often to check for pruning
             load_if_exists: Load existing study if it exists
         """
-        _require_optuna()
         super().__init__(search_space, objective_metric, direction, callbacks)
 
         self.study_name = study_name or f"hpo_{int(time.time())}"
@@ -128,9 +141,14 @@ class OptunaBackend(HPOBackend):
         self.pruning_interval = pruning_interval
         self.load_if_exists = load_if_exists
 
-        # Create Optuna components
-        self.sampler = self._create_sampler()
-        self.pruner = self._create_pruner()
+        # Create Optuna components only if Optuna is installed.
+        # This keeps the backend importable/constructible in lightweight environments,
+        # and raises a clear error only when optimization is invoked.
+        self.sampler = None
+        self.pruner = None
+        if OPTUNA_AVAILABLE:
+            self.sampler = self._create_sampler()
+            self.pruner = self._create_pruner()
         self.study: Optional[optuna.Study] = None
 
     def _create_sampler(self) -> optuna.samplers.BaseSampler:
@@ -174,6 +192,7 @@ class OptunaBackend(HPOBackend):
 
     def _create_study(self) -> optuna.Study:
         """Create or load an Optuna study."""
+        _require_optuna()
         direction = "maximize" if self.direction == "maximize" else "minimize"
 
         return optuna.create_study(
@@ -265,7 +284,7 @@ class OptunaBackend(HPOBackend):
 
         try:
             # Run objective function
-            metric_value = objective_fn(params)
+            metric_value = _resolve_async_value(objective_fn(params))
             training_time = time.time() - start_time
 
             # Create result
@@ -345,6 +364,7 @@ class OptunaBackend(HPOBackend):
             >>>
             >>> summary = await backend.optimize(objective, n_trials=50)
         """
+        _require_optuna()
         self.study = self._create_study()
         self.results = []
 

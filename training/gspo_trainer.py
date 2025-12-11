@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -29,21 +30,42 @@ from ..core.trajectory import ConversationTurn, MultiTurnTrajectory
 from ..rewards.multi_objective_reward import MultiObjectiveReward
 from .config import TrainingConfig, get_config_for_task
 
-# Import additional dependencies
+# Optional training dependencies
 try:
-    import numpy as np
-    import wandb
-    from datasets import Dataset
+    import wandb  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    wandb = None  # type: ignore
+
+try:
     from peft import (
         LoraConfig,
         TaskType,
         get_peft_model,
         prepare_model_for_kbit_training,
     )
-except ImportError as e:
-    logger.error(f"Missing required dependency: {e}")
-    logger.error("Please install: pip install peft datasets")
-    raise
+except ImportError:  # pragma: no cover - optional dependency
+    LoraConfig = None  # type: ignore
+    TaskType = None  # type: ignore
+    get_peft_model = None  # type: ignore
+    prepare_model_for_kbit_training = None  # type: ignore
+
+
+def _require_peft() -> None:
+    """Ensure PEFT is available before using LoRA/quantization features."""
+    if get_peft_model is None or LoraConfig is None or TaskType is None:
+        raise ImportError(
+            "PEFT is required for GSPO LoRA/quantized training. "
+            "Install with `pip install stateset-agents[training]` or `pip install peft`."
+        )
+
+
+def _require_wandb() -> None:
+    """Ensure Weights & Biases is available before logging."""
+    if wandb is None:
+        raise ImportError(
+            "wandb is required for GSPO logging. "
+            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
+        )
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_loaded = False
@@ -223,6 +245,10 @@ class GSPOModelManager:
                 "device_map": "auto" if torch.cuda.is_available() else None,
                 "trust_remote_code": True,
             }
+
+            # PEFT is required for LoRA or k-bit training features
+            if self.config.use_lora or self.config.use_8bit or self.config.use_4bit:
+                _require_peft()
 
             # Add quantization if specified
             if self.config.use_8bit:
@@ -876,14 +902,22 @@ async def train_with_gspo(
     os.makedirs(config.output_dir, exist_ok=True)
 
     # Initialize wandb if configured
-    if config.report_to == "wandb" and config.wandb_project:
-        wandb.init(
-            project=config.wandb_project,
-            name=config.run_name
-            or f"gspo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["gspo"] + (config.wandb_tags or []),
-        )
+    use_wandb = config.report_to == "wandb"
+    if use_wandb:
+        _require_wandb()
+        if config.wandb_project:
+            wandb.init(
+                project=config.wandb_project,
+                name=config.run_name
+                or f"gspo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                config=config.to_dict(),
+                tags=["gspo"] + (config.wandb_tags or []),
+            )
+        else:
+            logger.warning(
+                "report_to='wandb' but no wandb_project set; disabling wandb logging."
+            )
+            use_wandb = False
 
     # Initialize model manager
     model_manager = GSPOModelManager(config)
@@ -936,7 +970,7 @@ async def train_with_gspo(
         # Log metrics
         logger.info(f"Metrics: {json.dumps(metrics, indent=2)}")
 
-        if config.report_to == "wandb":
+        if use_wandb:
             wandb.log(metrics, step=iteration)
 
         # Save checkpoint
@@ -951,7 +985,7 @@ async def train_with_gspo(
     trainer.save_model(final_model_path)
 
     # Finish wandb run
-    if config.report_to == "wandb":
+    if use_wandb:
         wandb.finish()
 
     logger.info("✨ GSPO training completed successfully!")

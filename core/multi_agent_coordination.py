@@ -8,6 +8,7 @@ task execution.
 
 import asyncio
 import logging
+import time
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -64,7 +65,7 @@ class AgentMessage:
     message_type: str = "info"  # info, request, response, command
     priority: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
-    timestamp: float = field(default_factory=lambda: asyncio.get_event_loop().time())
+    timestamp: float = field(default_factory=lambda: time.time())
 
     def is_broadcast(self) -> bool:
         return self.receiver_id is None
@@ -290,7 +291,10 @@ class MultiAgentCoordinator:
         if communication_protocol == CommunicationProtocol.BLACKBOARD:
             self.comm_channel: CommunicationChannel = BlackboardChannel()
         else:
-            raise NotImplementedError(f"Protocol {communication_protocol} not yet implemented")
+            raise ValueError(
+                f"Unsupported communication_protocol={communication_protocol}. "
+                f"Only {CommunicationProtocol.BLACKBOARD.value!r} is currently implemented."
+            )
 
         # Initialize team state
         self.team_state = TeamState(team_id=str(uuid.uuid4()), agents=self.agent_states)
@@ -324,7 +328,15 @@ class MultiAgentCoordinator:
         elif self.coordination_strategy == CoordinationStrategy.CONSENSUS:
             result = await self._execute_consensus(task, trajectory, max_iterations)
         else:
-            raise NotImplementedError(f"Strategy {self.coordination_strategy} not implemented")
+            supported = [
+                CoordinationStrategy.SEQUENTIAL.value,
+                CoordinationStrategy.PARALLEL.value,
+                CoordinationStrategy.CONSENSUS.value,
+            ]
+            raise ValueError(
+                f"Unsupported coordination_strategy={self.coordination_strategy}. "
+                f"Supported strategies: {supported}."
+            )
 
         self.team_state.completed_tasks.append(task_id)
         return trajectory, result

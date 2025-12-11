@@ -70,6 +70,13 @@ def train(
         raise typer.Exit(code=2)
 
     train_fn = None
+    if dry_run and not config and not stub:
+        _echo("Dry-run: environment looks OK. To run a full example:")
+        _echo("  python examples/quick_start.py")
+        _echo("Or use TRL GRPO (if installed):")
+        _echo("  python examples/train_with_trl_grpo.py")
+        return
+
     if not stub:
         try:
             from stateset_agents.training.train import train as train_fn  # type: ignore
@@ -77,13 +84,6 @@ def train(
             _echo("Training components unavailable. Falling back to stub mode.")
             _echo(f"Details: {e}")
             stub = True
-
-    if dry_run and not config and not stub:
-        _echo("Dry-run: environment looks OK. To run a full example:")
-        _echo("  python examples/quick_start.py")
-        _echo("Or use TRL GRPO (if installed):")
-        _echo("  python examples/train_with_trl_grpo.py")
-        return
 
     # Load config if provided
     cfg: t.Dict[str, t.Any] = {}

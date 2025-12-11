@@ -13,6 +13,7 @@ real-world implementations, including:
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -39,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 async def create_enhanced_customer_service_agent(
-    model_name: str = "openai/gpt-oss-120b", use_lora: bool = True
+    model_name: str = "gpt2", use_lora: bool = True
 ) -> MultiTurnAgent:
     """Create an enhanced customer service agent with LoRA optimization"""
 
@@ -143,7 +144,7 @@ async def main():
 
     # Configuration
     DATA_PATH = "customer_service_conversations.jsonl"  # Your data file
-    MODEL_NAME = "openai/gpt-oss-120b"  # Using the openai/gpt-oss-120b model
+    MODEL_NAME = os.getenv("MODEL_NAME", "gpt2")  # Override with env var for larger models
     OUTPUT_DIR = "./outputs/enhanced_customer_service"
 
     # Training configuration with enhanced settings

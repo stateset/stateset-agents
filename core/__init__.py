@@ -6,14 +6,18 @@ from ``core`` continues to work for backwards compatibility but will be removed
 in a future release.
 """
 
+import os
 import warnings
 
-warnings.warn(
-    "Importing from the top-level 'core' package is deprecated; use "
-    "'stateset_agents.core' instead.",
-    DeprecationWarning,
-    stacklevel=2,
-)
+# Optional deprecation warning for legacy imports.
+# Set STATESET_AGENTS_ENABLE_CORE_DEPRECATION=1 to re-enable.
+if os.getenv("STATESET_AGENTS_ENABLE_CORE_DEPRECATION") == "1":
+    warnings.warn(
+        "Importing from the top-level 'core' package is deprecated; use "
+        "'stateset_agents.core' instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
 # Agent components
 from .agent import Agent, AgentConfig, ConfigValidationError, MultiTurnAgent, ToolAgent

@@ -21,6 +21,8 @@ from .base import HPOBackend, HPOCallback, HPOResult, HPOSummary, SearchSpace
 from .config import HPOConfig
 from .search_spaces import get_search_space
 from .optuna_backend import OptunaBackend
+from .ray_tune_backend import RayTuneBackend
+from .wandb_backend import WandBSweepsBackend
 
 logger = logging.getLogger(__name__)
 
@@ -123,11 +125,32 @@ class GRPOHPOTrainer:
                 **backend_config
             )
         elif self.hpo_config.backend == "ray_tune":
-            # Import Ray Tune backend (to be implemented)
-            raise NotImplementedError("Ray Tune backend coming soon")
+            return RayTuneBackend(
+                search_space=self.search_space,
+                objective_metric=self.hpo_config.objective_metric,
+                direction=self.hpo_config.direction,
+                callbacks=self.callbacks,
+                output_dir=self.hpo_config.output_dir,
+                study_name=self.hpo_config.study_name,
+                scheduler=backend_config.get("scheduler", "asha"),
+                search_alg=backend_config.get("search_alg", "bayesopt"),
+                max_concurrent=backend_config.get("max_concurrent", self.hpo_config.n_parallel_trials),
+                cpu_per_trial=self.hpo_config.cpu_per_trial,
+                gpu_per_trial=self.hpo_config.gpu_per_trial,
+                ray_init_kwargs=backend_config.get("ray_init_kwargs"),
+            )
         elif self.hpo_config.backend == "wandb":
-            # Import W&B backend (to be implemented)
-            raise NotImplementedError("W&B Sweeps backend coming soon")
+            return WandBSweepsBackend(
+                search_space=self.search_space,
+                objective_metric=self.hpo_config.objective_metric,
+                direction=self.hpo_config.direction,
+                callbacks=self.callbacks,
+                output_dir=self.hpo_config.output_dir,
+                method=backend_config.get("method", "bayes"),
+                project=backend_config.get("project", "stateset-hpo"),
+                entity=backend_config.get("entity"),
+                sweep_name=self.hpo_config.study_name,
+            )
         else:
             raise ValueError(f"Unknown backend: {self.hpo_config.backend}")
 

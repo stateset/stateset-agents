@@ -8,6 +8,7 @@ for customer service using the GRPO Agent Framework.
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 
 # Framework imports
@@ -91,7 +92,7 @@ class CustomerServiceAgent(MultiTurnAgent):
     Specialized customer service agent with domain-specific behaviors
     """
 
-    def __init__(self, model_name: str = "openai/gpt-oss-120b"):
+    def __init__(self, model_name: str = "gpt2"):
         config = AgentConfig(
             model_name=model_name,
             system_prompt="""You are a professional customer service representative. Your goals are to:
@@ -109,9 +110,8 @@ Guidelines:
 - Thank customers for their patience""",
             temperature=0.7,
             max_new_tokens=256,
-            memory_window=8,  # Remember last 8 turns
         )
-        super().__init__(config)
+        super().__init__(config, memory_window=8)  # Remember last 8 turns
 
         # Customer service specific state
         self.customer_issue_type = None
@@ -341,9 +341,8 @@ async def main():
 
     # Create agent
     logger.info("Creating customer service agent...")
-    agent = CustomerServiceAgent(
-        model_name="openai/gpt-oss-120b"
-    )  # Use the openai/gpt-oss-120b model
+    model_name = os.getenv("MODEL_NAME", "gpt2")
+    agent = CustomerServiceAgent(model_name=model_name)
     await agent.initialize()
 
     # Create environment
@@ -370,7 +369,7 @@ async def main():
     auto_trainer = AutoTrainer(auto_adjust=True, early_stopping=True)
 
     # Create fresh agent for auto training
-    agent_auto = CustomerServiceAgent(model_name="openai/gpt-oss-120b")
+    agent_auto = CustomerServiceAgent(model_name=model_name)
     await agent_auto.initialize()
 
     trained_agent_auto = await auto_trainer.train(

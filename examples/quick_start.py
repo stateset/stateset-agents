@@ -32,7 +32,7 @@ async def basic_example():
     logger.info("Step 1: Creating agent...")
 
     config = AgentConfig(
-        model_name="openai/gpt-oss-120b",  # Use the openai/gpt-oss-120b model
+        model_name="gpt2",  # Small default model; override for your setup
         system_prompt="You are a helpful AI assistant. Be friendly and informative.",
         temperature=0.8,
         max_new_tokens=256,
@@ -137,7 +137,7 @@ async def auto_training_example():
 
     # Create agent and environment (same as before)
     config = AgentConfig(
-        model_name="openai/gpt-oss-120b",
+        model_name="gpt2",
         system_prompt="You are a helpful AI assistant.",
         temperature=0.8,
     )
@@ -220,7 +220,7 @@ async def custom_reward_example():
 
     # Create agent with politeness emphasis
     config = AgentConfig(
-        model_name="openai/gpt-oss-120b",
+        model_name="gpt2",
         system_prompt="You are a very polite and courteous AI assistant. Always use please, thank you, and other polite expressions.",
         temperature=0.7,
     )

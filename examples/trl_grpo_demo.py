@@ -1,8 +1,10 @@
 """
-Simple Demo: TRL GRPO Training with openai/gpt-oss-120b
+Simple Demo: TRL GRPO Training
 
 This script demonstrates the simplest way to use TRL GRPO training
-with the GRPO Agent Framework.
+with the StateSet Agents framework.
+
+Set `MODEL_NAME` to override the default small demo model.
 """
 
 import asyncio
@@ -70,8 +72,9 @@ async def main():
     logger.info("Training agent with sample data...")
 
     try:
+        model_name = os.getenv("MODEL_NAME", "gpt2")
         agent = await train_customer_service_with_trl(
-            model_name="openai/gpt-oss-120b",
+            model_name=model_name,
             train_data=sample_data,
             num_episodes=10,  # Very small for demo
             output_dir="./outputs/demo_agent",

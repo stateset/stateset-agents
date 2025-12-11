@@ -41,7 +41,39 @@ def _load_transformers_agent() -> bool:
     global _transformers_agent_loaded, AutoModelForCausalLM, AutoTokenizer
     global GenerationConfig, StoppingCriteria, StoppingCriteriaList
     if _transformers_agent_loaded:
+        # If tests inject new mocks via the shim, refresh globals.
+        try:
+            import sys as _sys
+
+            shim = _sys.modules.get("stateset_agents.core.agent")
+            if shim is not None:
+                shim_model = getattr(shim, "AutoModelForCausalLM", None)
+                shim_tokenizer = getattr(shim, "AutoTokenizer", None)
+                if shim_model is not None and shim_tokenizer is not None:
+                    AutoModelForCausalLM = shim_model
+                    AutoTokenizer = shim_tokenizer
+        except Exception:
+            pass
         return True
+    # If tests or callers have already injected mocks, respect them.
+    if AutoModelForCausalLM is not None and AutoTokenizer is not None:
+        _transformers_agent_loaded = True
+        return True
+    # Also respect mocks injected via the `stateset_agents.core.agent` shim.
+    try:
+        import sys as _sys
+
+        shim = _sys.modules.get("stateset_agents.core.agent")
+        if shim is not None:
+            shim_model = getattr(shim, "AutoModelForCausalLM", None)
+            shim_tokenizer = getattr(shim, "AutoTokenizer", None)
+            if shim_model is not None and shim_tokenizer is not None:
+                AutoModelForCausalLM = shim_model
+                AutoTokenizer = shim_tokenizer
+                _transformers_agent_loaded = True
+                return True
+    except Exception:
+        pass
     try:
         from transformers import (
             AutoModelForCausalLM as _AutoModelForCausalLM,

@@ -85,6 +85,8 @@ class TrainingConfig:
     patience: int = 50
 
     # GRPO specific parameters
+    gamma: float = 0.99  # Discount factor for cumulative returns
+    gae_lambda: float = 0.95  # GAE lambda for advantage estimation
     reward_clip: float = 10.0
     advantage_normalization: bool = True
     baseline_type: str = "group_mean"  # "group_mean", "global_mean"

@@ -92,9 +92,17 @@ try:
 except ImportError:
     __optuna_available__ = False
 
-# Ray Tune and W&B backends (to be implemented)
-__ray_tune_available__ = False
-__wandb_available__ = False
+try:
+    from .ray_tune_backend import RayTuneBackend, RAY_AVAILABLE as __ray_tune_available__
+except ImportError:  # pragma: no cover
+    __ray_tune_available__ = False
+    RayTuneBackend = None  # type: ignore
+
+try:
+    from .wandb_backend import WandBSweepsBackend, WANDB_AVAILABLE as __wandb_available__
+except ImportError:  # pragma: no cover
+    __wandb_available__ = False
+    WandBSweepsBackend = None  # type: ignore
 
 
 __all__ = [
@@ -135,6 +143,8 @@ __all__ = [
 
     # Backends (conditionally)
     "OptunaBackend" if __optuna_available__ else None,
+    "RayTuneBackend" if __ray_tune_available__ else None,
+    "WandBSweepsBackend" if __wandb_available__ else None,
 
     # Availability flags
     "__optuna_available__",

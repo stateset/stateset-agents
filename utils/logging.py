@@ -5,6 +5,7 @@ This module provides advanced logging capabilities with structured logging,
 metrics collection, and integration with monitoring systems.
 """
 
+import csv
 import json
 import logging
 import os
@@ -507,8 +508,12 @@ class GRPOLogger:
             with open(filepath, "w") as f:
                 json.dump(export_data, f, indent=2)
         else:
-            # CSV export would require pandas, implement if needed
-            raise NotImplementedError("CSV export not implemented yet")
+            # Lightweight CSV export without extra dependencies.
+            with open(filepath, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["key", "value"])
+                for key, value in export_data.items():
+                    writer.writerow([key, json.dumps(value, default=str)])
 
         return filepath
 

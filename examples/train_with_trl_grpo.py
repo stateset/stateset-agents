@@ -1,20 +1,18 @@
 """
-Example: Training the openai/gpt-oss-120b model using TRL GRPO
+Example: Training a model using TRL GRPO
 
-This script demonstrates how to use the TRL GRPO trainer with the GRPO Agent Framework
-to fine-tune the openai/gpt-oss-120b model for customer service tasks.
+This script demonstrates how to use the TRL GRPO trainer with the StateSet Agents
+framework to fine-tune a conversational model for customer service tasks.
+
+Set `MODEL_NAME` to override the default small demo model.
 """
 
 import asyncio
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-# Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import framework components
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
@@ -130,8 +128,9 @@ async def main():
     """Main training function"""
 
     # Configuration from environment variables or defaults
+    model_name = os.getenv("MODEL_NAME", "gpt2")
     config_dict = {
-        "model_name": os.getenv("MODEL_NAME", "openai/gpt-oss-120b"),
+        "model_name": model_name,
         "output_dir": os.getenv("OUTPUT_DIR", "./outputs/trl_grpo_training"),
         "num_episodes": int(os.getenv("NUM_EPISODES", "1000")),
         "per_device_train_batch_size": int(os.getenv("BATCH_SIZE", "1")),
@@ -191,7 +190,7 @@ async def quick_training_demo():
 
     # Use the convenience function with minimal settings
     agent = await train_customer_service_with_trl(
-        model_name="openai/gpt-oss-120b",
+        model_name=os.getenv("MODEL_NAME", "gpt2"),
         train_data=get_sample_data(),
         num_episodes=10,  # Very small for demo
         output_dir="./outputs/quick_demo",
