@@ -15,14 +15,14 @@ import asyncio
 import numpy as np
 from typing import List
 
-from core.agent import Agent, AgentConfig
-from core.trajectory import ConversationTurn, MultiTurnTrajectory
+from stateset_agents.core.agent import Agent, AgentConfig
+from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
 
 # ============================================================================
 # Feature 1: Curriculum Learning
 # ============================================================================
 
-from core.curriculum_learning import (
+from stateset_agents.core.curriculum_learning import (
     CurriculumLearning,
     CurriculumStage,
     PerformanceBasedScheduler,
@@ -103,11 +103,11 @@ async def demo_curriculum_learning():
 # Feature 2: Multi-Agent Coordination
 # ============================================================================
 
-from core.multi_agent_coordination import (
-    MultiAgentCoordinator,
+from stateset_agents.core.multi_agent_coordination import (
     AgentRole,
     CoordinationStrategy,
     CooperativeRewardShaping,
+    MultiAgentCoordinator,
 )
 
 
@@ -367,12 +367,12 @@ async def demo_bayesian_uncertainty():
 # Feature 5: Few-Shot Adaptation
 # ============================================================================
 
-from core.few_shot_adaptation import (
+from stateset_agents.core.few_shot_adaptation import (
+    DomainDetector,
+    DomainProfile,
     FewShotAdaptationManager,
     FewShotExample,
-    DomainProfile,
     PromptBasedAdaptation,
-    DomainDetector,
 )
 
 

@@ -1,51 +1,12 @@
 """
-Reward functions for the GRPO Agent Framework
+Deprecated shim for backwards compatibility.
 
-This module provides various reward computation strategies:
-- Rule-based rewards (RulerRewardFunction)
-- Multi-objective rewards (MultiObjectiveRewardFunction)
-- LLM-as-Judge rewards (LLMJudge) for RLAIF
-- Domain-specific reward templates
+The canonical package is ``stateset_agents.rewards``.
 """
 
-from .llm_reward import RewardResult
-from .multi_objective_reward import (
-    MultiObjectiveRewardFunction,
-    create_customer_service_reward,
-)
-from .ruler_reward import RulerRewardFunction
-from .ruler_reward import RulerRewardFunction as LLMRewardFunction
-from .ruler_reward import create_customer_service_ruler, create_general_ruler
+from importlib import import_module
+import sys
 
-# LLM-as-Judge for RLAIF
-try:
-    from .llm_judge import (
-        LLMJudge,
-        JudgeConfig,
-        JudgeProvider,
-        EvaluationCriteria,
-        create_llm_judge_reward,
-    )
-    LLM_JUDGE_AVAILABLE = True
-except ImportError:
-    LLM_JUDGE_AVAILABLE = False
-
-__all__ = [
-    "LLMRewardFunction",
-    "RewardResult",
-    "MultiObjectiveRewardFunction",
-    "create_customer_service_reward",
-    "RulerRewardFunction",
-    "create_customer_service_ruler",
-    "create_general_ruler",
-]
-
-# Add LLM Judge exports if available
-if LLM_JUDGE_AVAILABLE:
-    __all__.extend([
-        "LLMJudge",
-        "JudgeConfig",
-        "JudgeProvider",
-        "EvaluationCriteria",
-        "create_llm_judge_reward",
-    ])
+_canonical = import_module("stateset_agents.rewards")
+globals().update(_canonical.__dict__)
+sys.modules[__name__] = _canonical

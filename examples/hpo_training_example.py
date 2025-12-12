@@ -16,9 +16,14 @@ Requirements:
 import asyncio
 from pathlib import Path
 
-from core.agent import MultiTurnAgent, AgentConfig
-from core.environment import ConversationEnvironment
-from core.reward import CompositeReward, HelpfulnessReward, SafetyReward, EngagementReward
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.reward import (
+    CompositeReward,
+    EngagementReward,
+    HelpfulnessReward,
+    SafetyReward,
+)
 from training.config import TrainingConfig
 from training.hpo import (
     GRPOHPOTrainer,

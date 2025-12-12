@@ -1,13 +1,4 @@
-from typing import Dict, Optional
-from utils.security import AuthService
-from ..config import get_config
+"""Deprecated shim for ``stateset_agents.api.services.auth_service``."""
 
-# Initialize with config
-config = get_config()
+from stateset_agents.api.services.auth_service import *  # noqa: F401, F403
 
-# Ensure secret is present (config validation handles this, but safe to default for type checkers)
-secret_key = config.security.jwt_secret or "temporary-secret-for-dev"
-auth_service = AuthService(secret_key)
-
-def get_auth_service() -> AuthService:
-    return auth_service

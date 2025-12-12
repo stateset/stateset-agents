@@ -56,9 +56,9 @@ pip install wandb
 
 ```python
 from training.hpo import quick_hpo
-from core.agent import MultiTurnAgent, AgentConfig
-from core.environment import ConversationEnvironment
-from core.reward import CompositeReward
+from stateset_agents.core.agent import MultiTurnAgent, AgentConfig
+from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.reward import CompositeReward
 from training.config import TrainingConfig
 
 # Setup components

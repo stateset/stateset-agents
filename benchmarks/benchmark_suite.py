@@ -342,7 +342,7 @@ async def async_benchmark(
 
 async def benchmark_agent_latency(iterations: int = 50) -> BenchmarkResult:
     """Benchmark agent response latency."""
-    from core.agent import AgentConfig, MultiTurnAgent
+    from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 
     config = AgentConfig(model_name="stub://benchmark", use_stub_model=True)
     agent = MultiTurnAgent(config)
@@ -356,7 +356,7 @@ async def benchmark_agent_latency(iterations: int = 50) -> BenchmarkResult:
 
 async def benchmark_agent_streaming(iterations: int = 30) -> BenchmarkResult:
     """Benchmark agent streaming."""
-    from core.agent import AgentConfig, MultiTurnAgent
+    from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 
     config = AgentConfig(model_name="stub://benchmark", use_stub_model=True)
     agent = MultiTurnAgent(config)
@@ -372,7 +372,7 @@ async def benchmark_agent_streaming(iterations: int = 30) -> BenchmarkResult:
 
 async def benchmark_input_validation(iterations: int = 500) -> BenchmarkResult:
     """Benchmark input validation."""
-    from core.input_validation import SecureInputValidator
+    from stateset_agents.core.input_validation import SecureInputValidator
 
     validator = SecureInputValidator()
     test_inputs = [
@@ -395,7 +395,7 @@ async def benchmark_input_validation(iterations: int = 500) -> BenchmarkResult:
 
 async def benchmark_structured_output(iterations: int = 100) -> BenchmarkResult:
     """Benchmark structured output utilities."""
-    from core.structured_output import (
+    from stateset_agents.core.structured_output import (
         extract_json_from_response,
         repair_json_string,
         json_schema_from_type,
@@ -424,7 +424,7 @@ async def benchmark_structured_output(iterations: int = 100) -> BenchmarkResult:
 
 async def benchmark_function_calling(iterations: int = 100) -> BenchmarkResult:
     """Benchmark function calling utilities."""
-    from core.function_calling import tool, FunctionDefinition, ToolCall
+    from stateset_agents.core.function_calling import tool, FunctionDefinition, ToolCall
 
     @tool(description="Add numbers")
     def add(a: int, b: int) -> int:
@@ -451,7 +451,7 @@ async def benchmark_function_calling(iterations: int = 100) -> BenchmarkResult:
 
 async def benchmark_memory_system(iterations: int = 100) -> BenchmarkResult:
     """Benchmark memory management."""
-    from core.memory import ConversationMemory, MemoryConfig
+    from stateset_agents.core.memory import ConversationMemory, MemoryConfig
 
     config = MemoryConfig(
         enable_entity_extraction=True,
@@ -479,7 +479,7 @@ async def benchmark_memory_system(iterations: int = 100) -> BenchmarkResult:
 
 async def benchmark_evaluation(iterations: int = 20) -> BenchmarkResult:
     """Benchmark evaluation framework."""
-    from core.evaluation import (
+    from stateset_agents.core.evaluation import (
         RelevanceMetric,
         CoherenceMetric,
         HelpfulnessMetric,
@@ -519,7 +519,7 @@ async def benchmark_batch_processing(iterations: int = 10) -> BenchmarkResult:
 
 async def benchmark_config_validation(iterations: int = 200) -> BenchmarkResult:
     """Benchmark config validation."""
-    from core.agent import AgentConfig
+    from stateset_agents.core.agent import AgentConfig
 
     def run():
         AgentConfig(

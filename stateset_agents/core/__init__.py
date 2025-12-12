@@ -1,344 +1,261 @@
 """
-Compatibility bridge exposing the top-level ``core`` package through the
-``stateset_agents.core`` namespace without mutating ``sys.path`` or aliasing
-the entire package.
+Core components for the StateSet RL Agent Framework.
 
-The goal is to keep backwards compatibility for ``stateset_agents.core.*``
-imports while gradually consolidating implementations under the
-``stateset_agents`` namespace.
+Note: the canonical import path is now ``stateset_agents.core``. Importing
+from ``core`` continues to work for backwards compatibility but will be removed
+in a future release.
 """
 
-from __future__ import annotations
+import os
+import warnings
 
-import importlib
-import sys
-from types import ModuleType
-from typing import Iterable, Optional
+# Optional deprecation warning for legacy imports.
+# Set STATESET_AGENTS_ENABLE_CORE_DEPRECATION=1 to re-enable.
+if os.getenv("STATESET_AGENTS_ENABLE_CORE_DEPRECATION") == "1":
+    warnings.warn(
+        "Importing from the top-level 'core' package is deprecated; use "
+        "'stateset_agents.core' instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
-_CORE_NAMESPACE = "core"
-_SUBMODULES: Iterable[str] = (
-    "agent",
-    "agent_backends",
-    "environment",
-    "trajectory",
-    "reward",
-    "value_function",
-    "async_pool",
-    "computational_engine",
-    "data_processing",
-    "error_handling",
-    "performance_optimizer",
-    "type_system",
-    "multiturn_agent",
-    "advanced_monitoring",
-    "enhanced_state_management",
-    "intelligent_orchestrator",
-    "multimodal_processing",
-    "adaptive_learning_controller",
-    "neural_architecture_search",
-    "enhanced",
-    "enhanced.enhanced_agent",
-    "enhanced.advanced_evaluation",
-    "enhanced.advanced_rl_algorithms",
-    # New 10/10 features
-    "curriculum_learning",
-    "multi_agent_coordination",
-    "few_shot_adaptation",
+# Agent components
+from .agent import Agent, AgentConfig, ConfigValidationError, MultiTurnAgent, ToolAgent
+
+# Structured output support
+from .structured_output import (
+    StructuredOutputConfig,
+    StructuredOutputError,
+    StructuredOutputMixin,
+    create_structured_agent_class,
+    extract_json_from_response,
+    json_schema_from_type,
+    repair_json_string,
 )
 
-
-def _import_core_submodule(name: str) -> Optional[ModuleType]:
-    """Attempt to import a submodule from the top-level ``core`` package."""
-    full_name = f"{_CORE_NAMESPACE}.{name}"
-    try:
-        module = importlib.import_module(full_name)
-    except Exception:
-        return None
-    sys.modules[f"{__name__}.{name}"] = module
-    return module
-
-
-def __getattr__(name: str):
-    """Lazy attribute access for direct ``core`` submodules."""
-    module = _import_core_submodule(name)
-    if module is not None:
-        return module
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-# NOTE: We no longer eagerly import all submodules at module load time
-# to avoid triggering torch/torchvision/transformers compatibility issues.
-# Submodules are now imported lazily via __getattr__.
-# For backwards compatibility, we still try to import the most commonly used
-# lightweight submodules that don't have heavy dependencies.
-_SAFE_SUBMODULES = (
-    "trajectory",
-    "reward",
-    "environment",
-    "error_handling",
-    "type_system",
+# OpenAI-compatible function calling
+from .function_calling import (
+    FunctionCallingMixin,
+    FunctionDefinition,
+    FunctionParameter,
+    ToolCall,
+    ToolChoiceMode,
+    ToolResult,
+    create_function_calling_agent_class,
+    tool,
 )
-for _submodule in _SAFE_SUBMODULES:
-    try:
-        _import_core_submodule(_submodule)
-    except Exception:
-        pass  # Lazy import will handle it later
 
-# Re-export frequently used symbols with compatibility guards.
-try:
-    from core.agent import Agent, MultiTurnAgent, ToolAgent
-except Exception:  # pragma: no cover - optional heavy deps
-    Agent = None  # type: ignore
-    MultiTurnAgent = None  # type: ignore
-    ToolAgent = None  # type: ignore
+# Input validation and security
+from .input_validation import (
+    RiskSeverity,
+    SecureInputValidator,
+    SecurityConfig,
+    SecurityRisk,
+    SecurityThreat,
+    ValidationResult,
+    create_secure_agent_wrapper,
+)
+from .async_pool import (
+    AsyncResourcePool,
+    AsyncTaskManager,
+    PooledResource,
+    get_http_pool,
+    get_task_manager,
+    managed_async_resources,
+)
 
-try:
-    from core.environment import ConversationEnvironment, Environment, TaskEnvironment
-except Exception:  # pragma: no cover
-    ConversationEnvironment = None  # type: ignore
-    Environment = None  # type: ignore
-    TaskEnvironment = None  # type: ignore
+# Data processing
+from .data_processing import (
+    ConversationExample,
+    DataLoader,
+    DataProcessor,
+    load_and_prepare_data,
+)
+from .environment import ConversationEnvironment, Environment, TaskEnvironment
 
-try:
-    from core.reward import CompositeReward, RewardFunction
-except Exception:  # pragma: no cover
-    CompositeReward = None  # type: ignore
-    RewardFunction = None  # type: ignore
+# Enhanced features
+from .error_handling import (
+    CircuitBreakerConfig,
+    DataException,
+    ErrorHandler,
+    GRPOException,
+    ModelException,
+    NetworkException,
+    ResourceException,
+    RetryConfig,
+    TrainingException,
+    ValidationException,
+    circuit_breaker,
+    get_error_summary,
+    handle_error,
+    retry_async,
+)
+from .performance_optimizer import (
+    BatchOptimizer,
+    ComputeConfig,
+    DataConfig,
+    MemoryConfig,
+    MemoryMonitor,
+    ModelOptimizer,
+    OptimizationLevel,
+    PerformanceMetrics,
+    PerformanceOptimizer,
+)
 
-try:
-    from core.value_function import ValueFunction, ValueHead, create_value_function
-except Exception:  # pragma: no cover
-    ValueFunction = None  # type: ignore
-    ValueHead = None  # type: ignore
-    create_value_function = None  # type: ignore
+# Reward system
+from .reward import (
+    CompositeReward,
+    ConcisenessReward,
+    CorrectnessReward,
+    CustomerServiceReward,
+    DomainSpecificReward,
+    EngagementReward,
+    HelpfulnessReward,
+    RewardFunction,
+    SafetyReward,
+    SalesAssistantReward,
+    SimilarityAwareReward,
+    TaskCompletionReward,
+    TechnicalSupportReward,
+    create_adaptive_reward,
+    create_domain_reward,
+)
 
-try:
-    from core.trajectory import ConversationTurn, MultiTurnTrajectory, Trajectory
-except Exception:  # pragma: no cover
-    ConversationTurn = None  # type: ignore
-    MultiTurnTrajectory = None  # type: ignore
-    Trajectory = None  # type: ignore
+# Value function for advantage estimation
+from .value_function import (
+    ValueFunction,
+    ValueHead,
+    create_value_function,
+)
+from .trajectory import ConversationTurn, MultiTurnTrajectory, Trajectory
+from .type_system import ConfigValidator
+from .type_system import ConversationTurn as TypedConversationTurn
+from .type_system import (
+    DeviceType,
+    ModelConfig,
+    ModelSize,
+    RewardMetrics,
+    TrainingConfig,
+    TrainingStage,
+    TrajectoryData,
+    TypeSafeSerializer,
+    TypeValidator,
+    create_typed_config,
+    ensure_async_type_safety,
+    ensure_type_safety,
+)
 
-try:
-    from core.error_handling import ErrorHandler, RetryConfig, retry_async
-except Exception:  # pragma: no cover
-    ErrorHandler = RetryConfig = retry_async = None  # type: ignore
-
-try:
-    from core.performance_optimizer import OptimizationLevel, PerformanceOptimizer
-except Exception:  # pragma: no cover
-    OptimizationLevel = PerformanceOptimizer = None  # type: ignore
-
-try:
-    from core.type_system import TypeValidator, create_typed_config
-except Exception:  # pragma: no cover
-    TypeValidator = create_typed_config = None  # type: ignore
-
-try:
-    from core.async_pool import AsyncResourcePool, managed_async_resources
-except Exception:  # pragma: no cover
-    AsyncResourcePool = managed_async_resources = None  # type: ignore
-
-try:
-    from core.advanced_monitoring import get_monitoring_service, monitor_async_function
-except Exception:  # pragma: no cover
-    get_monitoring_service = monitor_async_function = None  # type: ignore
-
-try:
-    from core.enhanced_state_management import get_state_service
-except Exception:  # pragma: no cover
-    get_state_service = None  # type: ignore
-
-try:
-    from core.adaptive_learning_controller import (
-        AdaptiveLearningController,
-        CurriculumStrategy,
-        ExplorationStrategy,
-        create_adaptive_learning_controller,
-    )
-except Exception:  # pragma: no cover
-    AdaptiveLearningController = None  # type: ignore
-    CurriculumStrategy = None  # type: ignore
-    ExplorationStrategy = None  # type: ignore
-    create_adaptive_learning_controller = None  # type: ignore
-
-try:
-    from core.neural_architecture_search import (
-        ArchitectureConfig,
-        NeuralArchitectureSearch,
-        SearchStrategy,
-        create_nas_controller,
-    )
-except Exception:  # pragma: no cover
-    ArchitectureConfig = NeuralArchitectureSearch = None  # type: ignore
-    SearchStrategy = create_nas_controller = None  # type: ignore
-
-try:
-    from core.multimodal_processing import (
-        FusionStrategy,
-        ModalityInput,
-        ModalityType,
-        MultimodalProcessor,
-        create_modality_input,
-        create_multimodal_processor,
-    )
-except Exception:  # pragma: no cover
-    FusionStrategy = ModalityInput = None  # type: ignore
-    ModalityType = MultimodalProcessor = None  # type: ignore
-    create_modality_input = create_multimodal_processor = None  # type: ignore
-
-try:
-    from core.intelligent_orchestrator import (
-        IntelligentOrchestrator,
-        OptimizationObjective,
-        OrchestrationConfig,
-        OrchestrationMode,
-        create_intelligent_orchestrator,
-    )
-except Exception:  # pragma: no cover
-    IntelligentOrchestrator = None  # type: ignore
-    OptimizationObjective = None  # type: ignore
-    OrchestrationConfig = None  # type: ignore
-    OrchestrationMode = None  # type: ignore
-    create_intelligent_orchestrator = None  # type: ignore
-
-# New 10/10 features
-try:
-    from core.curriculum_learning import (
-        CurriculumLearning,
-        CurriculumScheduler,
-        CurriculumStage,
-        CurriculumProgress,
-        DifficultyMetric,
-        ProgressionStrategy,
-        PerformanceBasedScheduler,
-        AdaptiveScheduler,
-        TaskDifficultyController,
-    )
-except Exception:  # pragma: no cover
-    CurriculumLearning = None  # type: ignore
-    CurriculumScheduler = CurriculumStage = CurriculumProgress = None  # type: ignore
-    DifficultyMetric = ProgressionStrategy = None  # type: ignore
-    PerformanceBasedScheduler = AdaptiveScheduler = None  # type: ignore
-    TaskDifficultyController = None  # type: ignore
-
-try:
-    from core.multi_agent_coordination import (
-        MultiAgentCoordinator,
-        AgentTeam,
-        AgentRole,
-        AgentMessage,
-        AgentState,
-        TeamState,
-        CommunicationProtocol,
-        CoordinationStrategy,
-    )
-except Exception:  # pragma: no cover
-    MultiAgentCoordinator = AgentTeam = None  # type: ignore
-    AgentRole = AgentMessage = AgentState = TeamState = None  # type: ignore
-    CommunicationProtocol = CoordinationStrategy = None  # type: ignore
-
-try:
-    from core.few_shot_adaptation import (
-        FewShotAdapter,
-        FewShotExample,
-        DomainProfile,
-        AdaptationStrategy,
-        PromptBasedAdaptation,
-        GradientBasedAdaptation,
-        MetaLearningAdaptation,
-    )
-except Exception:  # pragma: no cover
-    FewShotAdapter = FewShotExample = DomainProfile = None  # type: ignore
-    AdaptationStrategy = PromptBasedAdaptation = None  # type: ignore
-    GradientBasedAdaptation = MetaLearningAdaptation = None  # type: ignore
+# Types
+from .types import *
 
 __all__ = [
-    # Core agents
+    # Core classes
     "Agent",
+    "AgentConfig",
+    "ConfigValidationError",
     "MultiTurnAgent",
     "ToolAgent",
-    # Environments
+    # Structured output
+    "StructuredOutputConfig",
+    "StructuredOutputError",
+    "StructuredOutputMixin",
+    "create_structured_agent_class",
+    "json_schema_from_type",
+    "repair_json_string",
+    "extract_json_from_response",
+    # Function calling
+    "FunctionCallingMixin",
+    "FunctionDefinition",
+    "FunctionParameter",
+    "ToolCall",
+    "ToolChoiceMode",
+    "ToolResult",
+    "create_function_calling_agent_class",
+    "tool",
+    # Input validation
+    "SecureInputValidator",
+    "SecurityConfig",
+    "SecurityRisk",
+    "RiskSeverity",
+    "SecurityThreat",
+    "ValidationResult",
+    "create_secure_agent_wrapper",
     "Environment",
     "ConversationEnvironment",
     "TaskEnvironment",
-    # Trajectories
     "Trajectory",
     "MultiTurnTrajectory",
     "ConversationTurn",
-    # Rewards
+    # Reward system
     "RewardFunction",
     "CompositeReward",
-    # Value functions
+    "HelpfulnessReward",
+    "SafetyReward",
+    "CorrectnessReward",
+    "ConcisenessReward",
+    "EngagementReward",
+    "TaskCompletionReward",
+    "CustomerServiceReward",
+    "TechnicalSupportReward",
+    "SalesAssistantReward",
+    "DomainSpecificReward",
+    "SimilarityAwareReward",
+    "create_domain_reward",
+    "create_adaptive_reward",
+    # Value function
     "ValueFunction",
     "ValueHead",
     "create_value_function",
-    # Error handling
+    # Enhanced features
+    "GRPOException",
+    "TrainingException",
+    "ModelException",
+    "DataException",
+    "NetworkException",
+    "ResourceException",
+    "ValidationException",
     "ErrorHandler",
     "RetryConfig",
+    "CircuitBreakerConfig",
     "retry_async",
-    # Performance
+    "circuit_breaker",
+    "handle_error",
+    "get_error_summary",
+    # Performance optimization
     "PerformanceOptimizer",
+    "MemoryMonitor",
+    "ModelOptimizer",
+    "BatchOptimizer",
     "OptimizationLevel",
+    "MemoryConfig",
+    "ComputeConfig",
+    "DataConfig",
+    "PerformanceMetrics",
     # Type system
     "TypeValidator",
+    "ConfigValidator",
+    "TypeSafeSerializer",
     "create_typed_config",
-    # Async utilities
+    "ensure_type_safety",
+    "ensure_async_type_safety",
+    "ModelConfig",
+    "TrainingConfig",
+    "TypedConversationTurn",
+    "TrajectoryData",
+    "RewardMetrics",
+    "DeviceType",
+    "ModelSize",
+    "TrainingStage",
+    # Async resource management
     "AsyncResourcePool",
+    "AsyncTaskManager",
+    "PooledResource",
+    "get_http_pool",
+    "get_task_manager",
     "managed_async_resources",
-    # Monitoring
-    "get_monitoring_service",
-    "monitor_async_function",
-    # State management
-    "get_state_service",
-    # Adaptive learning
-    "AdaptiveLearningController",
-    "create_adaptive_learning_controller",
-    "CurriculumStrategy",
-    "ExplorationStrategy",
-    # Neural architecture search
-    "NeuralArchitectureSearch",
-    "create_nas_controller",
-    "ArchitectureConfig",
-    "SearchStrategy",
-    # Multimodal processing
-    "MultimodalProcessor",
-    "create_multimodal_processor",
-    "ModalityInput",
-    "ModalityType",
-    "create_modality_input",
-    "FusionStrategy",
-    # Orchestration
-    "IntelligentOrchestrator",
-    "create_intelligent_orchestrator",
-    "OrchestrationConfig",
-    "OrchestrationMode",
-    "OptimizationObjective",
-    # Curriculum learning (new)
-    "CurriculumLearning",
-    "CurriculumScheduler",
-    "CurriculumStage",
-    "CurriculumProgress",
-    "DifficultyMetric",
-    "ProgressionStrategy",
-    "PerformanceBasedScheduler",
-    "AdaptiveScheduler",
-    "TaskDifficultyController",
-    # Multi-agent coordination (new)
-    "MultiAgentCoordinator",
-    "AgentTeam",
-    "AgentRole",
-    "AgentMessage",
-    "AgentState",
-    "TeamState",
-    "CommunicationProtocol",
-    "CoordinationStrategy",
-    # Few-shot adaptation (new)
-    "FewShotAdapter",
-    "FewShotExample",
-    "DomainProfile",
-    "AdaptationStrategy",
-    "PromptBasedAdaptation",
-    "GradientBasedAdaptation",
-    "MetaLearningAdaptation",
+    # Data processing
+    "DataLoader",
+    "DataProcessor",
+    "ConversationExample",
+    "load_and_prepare_data",
 ]

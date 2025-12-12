@@ -58,7 +58,7 @@ async def evaluate_agent(
     Returns:
         Dict with evaluation metrics
     """
-    from core.trajectory import ConversationTurn
+    from stateset_agents.core.trajectory import ConversationTurn
 
     logger.info(f"\n🧪 Evaluating agent on {env_id}...")
     logger.info(f"  Episodes: {num_episodes}")
@@ -138,7 +138,7 @@ async def main():
     logger.info("=" * 60)
 
     # Import framework components
-    from core.gym import GymEnvironmentAdapter, create_gym_agent
+    from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
 
     try:
         import gymnasium as gym

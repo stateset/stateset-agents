@@ -36,10 +36,15 @@ except ImportError:
     HAS_PROMETHEUS = False
     logger.warning("Prometheus client not available. Metrics disabled.")
 
-from core.agent import AgentConfig, MultiTurnAgent
-from core.environment import ConversationEnvironment
-from core.reward import create_customer_service_reward, CompositeReward, HelpfulnessReward, SafetyReward
-from core.error_handling import RetryWithBackoff, CircuitBreaker
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.reward import (
+    CompositeReward,
+    HelpfulnessReward,
+    SafetyReward,
+    create_customer_service_reward,
+)
+from stateset_agents.core.error_handling import RetryWithBackoff, CircuitBreaker
 
 
 # Metrics

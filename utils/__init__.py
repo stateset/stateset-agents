@@ -1,36 +1,12 @@
 """
-Utilities for the GRPO Agent Framework
+Deprecated shim for backwards compatibility.
+
+The canonical package is ``stateset_agents.utils``.
 """
 
-from .alerts import AlertManager
-from .cache import CacheService, get_cache_service
-from .logging import get_logger
-from .monitoring import MonitoringService
-from .observability import ObservabilityManager
-from .performance_monitor import PerformanceMonitor
-from .profiler import PerformanceReport
-from .security import SecurityMonitor
+from importlib import import_module
+import sys
 
-__all__ = [
-    "CacheService",
-    "get_cache_service",
-    "get_logger",
-    "MonitoringService",
-    "ObservabilityManager",
-    "AlertManager",
-    "SecurityMonitor",
-    "PerformanceMonitor",
-    "PerformanceReport",
-]
-
-
-def __getattr__(name):
-    """Lazily import optional W&B dependencies."""
-    if name in {"WandBLogger", "init_wandb"}:
-        from .wandb_integration import WandBLogger, init_wandb
-
-        globals()["WandBLogger"] = WandBLogger
-        globals()["init_wandb"] = init_wandb
-        return globals()[name]
-
-    raise AttributeError(f"module 'utils' has no attribute '{name}'")
+_canonical = import_module("stateset_agents.utils")
+globals().update(_canonical.__dict__)
+sys.modules[__name__] = _canonical

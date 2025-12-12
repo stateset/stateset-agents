@@ -24,9 +24,9 @@ async def main():
 
     # Step 1: Import
     logger.info("Step 1: Import framework components")
-    from core.gym import GymEnvironmentAdapter, create_gym_agent
-    from training.config import TrainingConfig
-    from training.multi_turn_trainer import MultiTurnGRPOTrainer
+    from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
+    from stateset_agents.training.config import TrainingConfig
+    from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
     try:
         import gymnasium as gym

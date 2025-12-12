@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 def test_observation_processor(env_id: str, gym_env):
     """Test observation processor."""
-    from core.gym.processors import create_observation_processor
+    from stateset_agents.core.gym.processors import create_observation_processor
     import numpy as np
 
     logger.info("\n" + "=" * 60)
@@ -68,7 +68,7 @@ def test_observation_processor(env_id: str, gym_env):
 
 def test_action_mapper(env_id: str, gym_env):
     """Test action mapper."""
-    from core.gym.mappers import create_action_mapper
+    from stateset_agents.core.gym.mappers import create_action_mapper
 
     logger.info("\n" + "=" * 60)
     logger.info("Test 2: Action Mapper")
@@ -102,8 +102,8 @@ def test_action_mapper(env_id: str, gym_env):
 
 async def test_gym_adapter(env_id: str, gym_env, processor, mapper):
     """Test GymEnvironmentAdapter."""
-    from core.gym.adapter import GymEnvironmentAdapter
-    from core.trajectory import ConversationTurn
+    from stateset_agents.core.gym.adapter import GymEnvironmentAdapter
+    from stateset_agents.core.trajectory import ConversationTurn
 
     logger.info("\n" + "=" * 60)
     logger.info("Test 3: GymEnvironmentAdapter")
@@ -162,8 +162,8 @@ async def test_gym_adapter(env_id: str, gym_env, processor, mapper):
 
 async def test_with_agent(env_id: str, gym_env):
     """Test with actual agent."""
-    from core.gym import GymEnvironmentAdapter, create_gym_agent
-    from core.trajectory import ConversationTurn
+    from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
+    from stateset_agents.core.trajectory import ConversationTurn
 
     logger.info("\n" + "=" * 60)
     logger.info("Test 4: Full Integration with Agent")

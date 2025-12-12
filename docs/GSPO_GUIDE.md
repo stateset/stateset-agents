@@ -362,7 +362,7 @@ Based on the original GSPO paper (Qwen Team):
 ### Adding GSPO to RL Orchestrator
 
 ```python
-from core.enhanced.advanced_rl_algorithms import create_advanced_rl_orchestrator
+from stateset_agents.core.enhanced.advanced_rl_algorithms import create_advanced_rl_orchestrator
 
 # Create orchestrator with all algorithms including GSPO
 orchestrator = create_advanced_rl_orchestrator(agent)

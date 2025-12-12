@@ -35,10 +35,10 @@ logger = logging.getLogger(__name__)
 async def main():
     """Train GRPO agent on MountainCar-v0."""
 
-    from core.gym import GymEnvironmentAdapter, create_gym_agent
-    from core.agent import AgentConfig
-    from training.config import TrainingConfig
-    from training.multi_turn_trainer import MultiTurnGRPOTrainer
+    from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
+    from stateset_agents.core.agent import AgentConfig
+    from stateset_agents.training.config import TrainingConfig
+    from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
     logger.info("=" * 60)
     logger.info("MountainCar-v0 with GRPO - Building Momentum to Reach the Goal")

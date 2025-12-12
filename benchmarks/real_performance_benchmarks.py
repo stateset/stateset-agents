@@ -23,9 +23,9 @@ except ImportError:
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.agent import AgentConfig, MultiTurnAgent
-from core.environment import ConversationEnvironment
-from core.reward import create_customer_service_reward
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.reward import create_customer_service_reward
 
 
 class BenchmarkResult:

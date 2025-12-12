@@ -68,8 +68,8 @@ python examples/rl_environments/cartpole_grpo.py
 
 ```python
 import gymnasium as gym
-from core.gym import GymEnvironmentAdapter, create_gym_agent
-from training.multi_turn_trainer import MultiTurnGRPOTrainer
+from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
+from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
 # 1. Create gym environment
 env = gym.make("CartPole-v1")
@@ -102,7 +102,7 @@ adapter = GymEnvironmentAdapter(env, auto_create_processors=True)
 For specialized behavior, create custom processors:
 
 ```python
-from core.gym.processors import VectorObservationProcessor
+from stateset_agents.core.gym.processors import VectorObservationProcessor
 
 class MyObservationProcessor(VectorObservationProcessor):
     def process(self, observation, context=None):

@@ -257,7 +257,7 @@ adapter = GymEnvironmentAdapter(env, auto_create_processors=True)
 
 **2. If you want custom descriptions:**
 ```python
-from core.gym.processors import VectorObservationProcessor
+from stateset_agents.core.gym.processors import VectorObservationProcessor
 
 class MyProcessor(VectorObservationProcessor):
     def process(self, obs, context=None):

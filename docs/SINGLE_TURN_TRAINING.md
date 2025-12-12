@@ -158,7 +158,7 @@ training:
 ### Custom Rewards
 
 ```python
-from core.reward import RewardFunction, RewardResult
+from stateset_agents.core.reward import RewardFunction, RewardResult
 
 class CustomSingleTurnReward(RewardFunction):
     async def compute_reward(self, turns, context=None):

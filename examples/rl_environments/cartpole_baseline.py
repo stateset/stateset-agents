@@ -137,7 +137,7 @@ async def run_grpo_policy(num_episodes: int = 100) -> List[float]:
 
     Expected performance after training: 150-400 average reward.
     """
-    from core.gym import GymEnvironmentAdapter, create_gym_agent
+    from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
     from pathlib import Path
 
     logger.info("\n[3/3] Running GRPO Agent...")
@@ -189,7 +189,7 @@ async def run_grpo_policy(num_episodes: int = 100) -> List[float]:
             response = await agent.generate_response(messages)
 
             # Create action turn
-            from core.trajectory import ConversationTurn
+            from stateset_agents.core.trajectory import ConversationTurn
             action_turn = ConversationTurn(role="assistant", content=response)
 
             # Step environment

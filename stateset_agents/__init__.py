@@ -5,25 +5,6 @@ A comprehensive framework for training multi-turn AI agents using
 Group Relative Policy Optimization (GRPO).
 """
 
-# Ensure repository root is on sys.path in editable/dev checkouts only.
-# This avoids import collisions with other packages named `core` without
-# mutating sys.path for installed wheels/site-packages.
-import sys as _sys
-from pathlib import Path as _Path
-
-try:
-    _repo_root = _Path(__file__).resolve().parents[1]
-    if (_repo_root / "pyproject.toml").exists() or (_repo_root / ".git").exists():
-        _repo_root_str = str(_repo_root)
-        if _repo_root_str not in _sys.path:
-            _sys.path.insert(0, _repo_root_str)
-        elif _sys.path.index(_repo_root_str) != 0:
-            # Move to front if already present but not first
-            _sys.path.remove(_repo_root_str)
-            _sys.path.insert(0, _repo_root_str)
-except Exception:
-    pass
-
 __version__ = "0.6.0"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
