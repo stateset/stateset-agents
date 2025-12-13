@@ -7,6 +7,7 @@ and training components.
 
 import asyncio
 from dataclasses import dataclass
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -162,7 +163,9 @@ class TestGSPOModelManager:
         mock_model.gradient_checkpointing_enable = MagicMock()
         mock_model_class.from_pretrained.return_value = mock_model
 
-        with patch("training.gspo_trainer.prepare_model_for_kbit_training") as mock_kbit:
+        with patch("training.gspo_trainer._require_bitsandbytes"), patch(
+            "training.gspo_trainer.prepare_model_for_kbit_training"
+        ) as mock_kbit:
             mock_kbit.return_value = mock_model
             model, tokenizer = manager.load_model_and_tokenizer()
 
@@ -486,6 +489,114 @@ class TestGSPOTrainer:
         """Test trainer config is valid."""
         assert gspo_config.model_name == "gpt2"
         assert gspo_config.num_generations == 4
+
+
+class TestGSPOTrainerComputeGroupAdvantages:
+    """Tests for GSPOTrainer.compute_group_advantages edge cases."""
+
+    def test_constant_rewards_no_item_attribute_error(self):
+        """Constant rewards should not raise and should return zero advantages."""
+        from training.gspo_trainer import GSPOTrainer
+
+        rewards = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32)
+        advantages, stats = GSPOTrainer.compute_group_advantages(None, rewards)
+
+        assert torch.allclose(advantages, torch.zeros_like(rewards))
+        assert stats["mean_reward"] == 1.0
+        assert stats["std_reward"] == 0.0
+
+    def test_single_reward_no_nan(self):
+        """Single-element groups should not produce NaNs."""
+        from training.gspo_trainer import GSPOTrainer
+
+        rewards = torch.tensor([2.0], dtype=torch.float32)
+        advantages, stats = GSPOTrainer.compute_group_advantages(None, rewards)
+
+        assert not torch.isnan(advantages).any()
+        assert torch.allclose(advantages, torch.zeros_like(rewards))
+        assert stats["mean_reward"] == 2.0
+
+
+class TestGSPOTrainerSequenceLogProbs:
+    """Tests for GSPOTrainer._compute_group_sequence_log_probs."""
+
+    class _DummyTokenizer:
+        def __init__(self, vocab_size: int = 64):
+            self.vocab_size = vocab_size
+            self.pad_token_id = 0
+            self.padding_side = "right"
+
+        def __call__(
+            self,
+            texts,
+            return_tensors: str = "pt",
+            padding: bool = False,
+            truncation: bool = False,
+            max_length: int = 128,
+            add_special_tokens: bool = False,
+        ):
+            if isinstance(texts, str):
+                texts = [texts]
+
+            encoded = []
+            for text in texts:
+                ids = [((ord(ch) % (self.vocab_size - 1)) + 1) for ch in text]
+                if truncation and max_length is not None:
+                    ids = ids[:max_length]
+                encoded.append(torch.tensor(ids, dtype=torch.long))
+
+            if padding:
+                max_len = max((t.numel() for t in encoded), default=0)
+                input_ids = torch.full(
+                    (len(encoded), max_len), self.pad_token_id, dtype=torch.long
+                )
+                attention_mask = torch.zeros_like(input_ids)
+                for i, ids in enumerate(encoded):
+                    length = ids.numel()
+                    if length == 0:
+                        continue
+                    if self.padding_side == "right":
+                        input_ids[i, :length] = ids
+                        attention_mask[i, :length] = 1
+                    else:
+                        input_ids[i, -length:] = ids
+                        attention_mask[i, -length:] = 1
+            else:
+                input_ids = torch.stack(encoded, dim=0) if encoded else torch.empty(0)
+                attention_mask = torch.ones_like(input_ids)
+
+            return {"input_ids": input_ids, "attention_mask": attention_mask}
+
+    class _DummyCausalLM(nn.Module):
+        def __init__(self, vocab_size: int = 64, hidden_size: int = 16):
+            super().__init__()
+            self.embed = nn.Embedding(vocab_size, hidden_size)
+            self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False)
+
+        def forward(self, input_ids, attention_mask=None):
+            hidden = self.embed(input_ids)
+            logits = self.lm_head(hidden)
+            return SimpleNamespace(logits=logits)
+
+    def test_log_probs_require_grad(self):
+        """Sequence log probs should require grad for policy optimization."""
+        from training.gspo_trainer import GSPOTrainer, GSPOConfig
+
+        model = self._DummyCausalLM()
+        tokenizer = self._DummyTokenizer()
+        config = GSPOConfig(max_prompt_length=64, max_completion_length=64)
+
+        trainer = SimpleNamespace(model=model, tokenizer=tokenizer, config=config)
+        log_probs, lengths = GSPOTrainer._compute_group_sequence_log_probs(
+            trainer, "Hello", ["world", "there"]
+        )
+
+        assert log_probs.shape == (2,)
+        assert lengths.shape == (2,)
+        assert log_probs.requires_grad is True
+
+        log_probs.sum().backward()
+        assert any(p.grad is not None for p in model.parameters())
 
 
 class TestGSPOMetrics:

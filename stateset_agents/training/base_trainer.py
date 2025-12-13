@@ -12,6 +12,7 @@ Key abstractions:
 """
 
 import asyncio
+import importlib.util
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -70,6 +71,67 @@ def _load_peft():
     except ImportError:
         logger.warning("PEFT not available. LoRA will be disabled.")
         return None, None, None, None
+
+
+def _enable_input_require_grads(model: Any) -> None:
+    """
+    Ensure at least one checkpoint input requires gradients.
+
+    Some Transformer implementations use `torch.utils.checkpoint` internally for
+    `gradient_checkpointing`. With PEFT/LoRA, the base model weights are often
+    frozen, so hidden states may not require grad unless explicitly enabled.
+    """
+    if getattr(model, "_stateset_input_grads_enabled", False):
+        return
+
+    if hasattr(model, "enable_input_require_grads"):
+        try:
+            model.enable_input_require_grads()
+            setattr(model, "_stateset_input_grads_enabled", True)
+            return
+        except Exception as e:  # pragma: no cover
+            logger.debug("enable_input_require_grads failed: %s", e)
+
+    try:
+        if not hasattr(model, "get_input_embeddings"):
+            return
+        embeddings = model.get_input_embeddings()
+        if embeddings is None:
+            return
+
+        def _require_grads_hook(_module: Any, _inputs: Any, output: Any) -> Any:
+            if isinstance(output, torch.Tensor):
+                return output.requires_grad_(True)
+            return output
+
+        embeddings.register_forward_hook(_require_grads_hook)
+        setattr(model, "_stateset_input_grads_enabled", True)
+    except Exception as e:  # pragma: no cover
+        logger.debug("Failed to register input grad hook: %s", e)
+
+
+def _require_bitsandbytes() -> None:
+    """Ensure bitsandbytes is importable when k-bit loading is requested."""
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "4-bit/8-bit quantization requires CUDA. "
+            "Disable `use_4bit/use_8bit` or run on a CUDA-enabled machine."
+        )
+
+    if importlib.util.find_spec("bitsandbytes") is None:
+        raise ImportError(
+            "bitsandbytes is required for 4-bit/8-bit quantization. "
+            "Install with `pip install stateset-agents[trl]` or `pip install bitsandbytes`."
+        )
+
+    try:
+        import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
+    except Exception as exc:  # pragma: no cover
+        raise ImportError(
+            "bitsandbytes is installed but failed to import. "
+            "If you just installed it in a notebook, restart the runtime/kernel. "
+            "Otherwise, verify your CUDA/PyTorch/bitsandbytes compatibility."
+        ) from exc
 
 
 # vLLM backend lazy loading
@@ -224,7 +286,16 @@ class BaseModelManager:
 
         # Enable gradient checkpointing
         if self.config.gradient_checkpointing:
-            base_model.gradient_checkpointing_enable()
+            if hasattr(base_model, "config") and hasattr(base_model.config, "use_cache"):
+                base_model.config.use_cache = False
+            if hasattr(base_model, "gradient_checkpointing_enable"):
+                base_model.gradient_checkpointing_enable()
+            else:  # pragma: no cover
+                logger.warning(
+                    "gradient_checkpointing requested but model does not support it"
+                )
+            if self.config.use_lora and not (self.config.use_8bit or self.config.use_4bit):
+                _enable_input_require_grads(base_model)
 
         # Prepare for quantized training
         if self.config.use_8bit or self.config.use_4bit:
@@ -254,8 +325,10 @@ class BaseModelManager:
         }
 
         if self.config.use_8bit:
+            _require_bitsandbytes()
             kwargs["load_in_8bit"] = True
         elif self.config.use_4bit:
+            _require_bitsandbytes()
             kwargs["load_in_4bit"] = True
 
         return kwargs

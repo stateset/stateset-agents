@@ -9,6 +9,7 @@ Reference: https://arxiv.org/abs/2507.18071v2
 """
 
 import asyncio
+import importlib.util
 import json
 import logging
 import os
@@ -59,6 +60,30 @@ def _require_peft() -> None:
             "PEFT is required for GSPO LoRA/quantized training. "
             "Install with `pip install stateset-agents[training]` or `pip install peft`."
         )
+
+
+def _require_bitsandbytes() -> None:
+    """Ensure bitsandbytes is importable when k-bit loading is requested."""
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "4-bit/8-bit quantization requires CUDA. "
+            "Disable `use_4bit/use_8bit` or run on a CUDA-enabled machine."
+        )
+
+    if importlib.util.find_spec("bitsandbytes") is None:
+        raise ImportError(
+            "bitsandbytes is required for 4-bit/8-bit quantization. "
+            "Install with `pip install stateset-agents[trl]` or `pip install bitsandbytes`."
+        )
+
+    try:
+        import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
+    except Exception as exc:  # pragma: no cover
+        raise ImportError(
+            "bitsandbytes is installed but failed to import. "
+            "If you just installed it in a notebook, restart the runtime/kernel. "
+            "Otherwise, verify your CUDA/PyTorch/bitsandbytes compatibility."
+        ) from exc
 
 
 def _require_wandb() -> None:
@@ -163,6 +188,43 @@ def _get_model_device(model: Any) -> Optional[torch.device]:
         return getattr(model, "device", None)
 
 
+def _enable_input_require_grads(model: Any) -> None:
+    """
+    Ensure at least one checkpoint input requires gradients.
+
+    Some Transformer implementations use `torch.utils.checkpoint` internally for
+    `gradient_checkpointing`. With PEFT/LoRA, the base model weights are often
+    frozen, so hidden states may not require grad unless explicitly enabled.
+    """
+    if getattr(model, "_stateset_input_grads_enabled", False):
+        return
+
+    if hasattr(model, "enable_input_require_grads"):
+        try:
+            model.enable_input_require_grads()
+            setattr(model, "_stateset_input_grads_enabled", True)
+            return
+        except Exception as e:  # pragma: no cover
+            logger.debug("enable_input_require_grads failed: %s", e)
+
+    try:
+        if not hasattr(model, "get_input_embeddings"):
+            return
+        embeddings = model.get_input_embeddings()
+        if embeddings is None:
+            return
+
+        def _require_grads_hook(_module: Any, _inputs: Any, output: Any) -> Any:
+            if isinstance(output, torch.Tensor):
+                return output.requires_grad_(True)
+            return output
+
+        embeddings.register_forward_hook(_require_grads_hook)
+        setattr(model, "_stateset_input_grads_enabled", True)
+    except Exception as e:  # pragma: no cover
+        logger.debug("Failed to register input grad hook: %s", e)
+
+
 @dataclass
 class GSPOConfig(TrainingConfig):
     """Configuration for GSPO training"""
@@ -215,6 +277,49 @@ class GSPOConfig(TrainingConfig):
         config_dict.update(kwargs)
         return cls(**config_dict)
 
+    def validate(self) -> List[str]:
+        """Validate configuration and return warnings."""
+        warnings = super().validate()
+
+        if self.gradient_checkpointing and self.use_lora:
+            warnings.append(
+                "gradient_checkpointing with LoRA can require input gradients; "
+                "StateSet Agents disables `use_cache` and enables input grads automatically."
+            )
+
+        model_name_lower = self.model_name.lower()
+        if (
+            "qwen" in model_name_lower
+            and any(size in model_name_lower for size in ["3b", "7b"])
+            and not (self.use_4bit or self.use_8bit)
+        ):
+            warnings.append(
+                "Qwen 3B/7B models often require quantization on consumer GPUs; "
+                "consider setting `use_4bit=True` to reduce memory usage."
+            )
+
+        if self.use_4bit or self.use_8bit:
+            if not torch.cuda.is_available():
+                warnings.append(
+                    "4-bit/8-bit quantization requires CUDA; disable `use_4bit/use_8bit` "
+                    "or run on a CUDA-enabled machine."
+                )
+            elif importlib.util.find_spec("bitsandbytes") is None:
+                warnings.append(
+                    "bitsandbytes is required for 4-bit/8-bit quantization. "
+                    "Install with `pip install stateset-agents[trl]` or `pip install bitsandbytes`."
+                )
+            else:
+                try:
+                    import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
+                except Exception:
+                    warnings.append(
+                        "bitsandbytes is installed but failed to import. "
+                        "If you just installed it in a notebook, restart the runtime/kernel."
+                    )
+
+        return warnings
+
 
 class GSPOModelManager:
     """Manages model loading and LoRA configuration for GSPO training"""
@@ -229,6 +334,29 @@ class GSPOModelManager:
     def load_model_and_tokenizer(self) -> Tuple[Any, Any]:
         """Load model and tokenizer with LoRA if specified"""
         logger.info(f"Loading model: {self.config.model_name}")
+
+        model_name_lower = self.config.model_name.lower()
+        if (
+            torch.cuda.is_available()
+            and "qwen" in model_name_lower
+            and any(size in model_name_lower for size in ["3b", "7b"])
+            and not (self.config.use_4bit or self.config.use_8bit)
+        ):
+            try:
+                total_mem_gb = torch.cuda.get_device_properties(0).total_memory / (
+                    1024**3
+                )
+                if total_mem_gb < 24:
+                    logger.warning(
+                        "Model %s on %.1fGB GPU: consider `use_4bit=True` to reduce memory usage",
+                        self.config.model_name,
+                        total_mem_gb,
+                    )
+            except Exception:  # pragma: no cover
+                logger.warning(
+                    "Model %s: consider `use_4bit=True` to reduce memory usage",
+                    self.config.model_name,
+                )
 
         # Load transformers lazily
         if not _load_transformers():
@@ -259,8 +387,10 @@ class GSPOModelManager:
 
             # Add quantization if specified
             if self.config.use_8bit:
+                _require_bitsandbytes()
                 model_kwargs["load_in_8bit"] = True
             elif self.config.use_4bit:
+                _require_bitsandbytes()
                 model_kwargs["load_in_4bit"] = True
 
             # Load base model
@@ -270,7 +400,16 @@ class GSPOModelManager:
 
             # Enable gradient checkpointing if specified
             if self.config.gradient_checkpointing:
-                base_model.gradient_checkpointing_enable()
+                if hasattr(base_model, "config") and hasattr(base_model.config, "use_cache"):
+                    base_model.config.use_cache = False
+                if hasattr(base_model, "gradient_checkpointing_enable"):
+                    base_model.gradient_checkpointing_enable()
+                else:  # pragma: no cover
+                    logger.warning(
+                        "gradient_checkpointing requested but model does not support it"
+                    )
+                if self.config.use_lora and not (self.config.use_8bit or self.config.use_4bit):
+                    _enable_input_require_grads(base_model)
 
             # Prepare model for training if using quantization
             if self.config.use_8bit or self.config.use_4bit:
@@ -283,7 +422,7 @@ class GSPOModelManager:
                     target_modules = self.config.lora_target_modules
                 elif "gpt2" in self.config.model_name.lower():
                     target_modules = ["c_attn", "c_proj"]
-                elif "llama" in self.config.model_name.lower():
+                elif "llama" in self.config.model_name.lower() or "qwen" in self.config.model_name.lower():
                     target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
                 else:
                     target_modules = ["q_proj", "v_proj"]
@@ -624,7 +763,7 @@ class GSPOTrainer:
         return importance_ratio
 
     def compute_group_advantages(
-        self, rewards: torch.Tensor
+        self, rewards: Any
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
         """
         Compute group-relative advantages (normalized rewards).
@@ -632,29 +771,108 @@ class GSPOTrainer:
         Â_i = (r(x, y_i) - mean(rewards)) / std(rewards)
 
         Args:
-            rewards: Tensor of rewards for a group of responses [group_size]
+            rewards: Rewards for a group of responses [group_size]
 
         Returns:
             advantages: Normalized advantages
             stats: Statistics about rewards
         """
-        mean_reward = rewards.mean()
-        std_reward = rewards.std()
+        rewards_tensor = (
+            rewards
+            if isinstance(rewards, torch.Tensor)
+            else torch.as_tensor(rewards, dtype=torch.float32)
+        )
+        mean_reward = rewards_tensor.mean()
+        std_reward = rewards_tensor.std(unbiased=False)
 
-        # Avoid division by zero
-        if std_reward < 1e-8:
-            std_reward = 1.0
+        # Avoid division by zero / NaNs (e.g., group_size == 1)
+        if torch.isnan(std_reward) or std_reward < 1e-8:
+            std_reward_safe = std_reward.new_tensor(1.0)
+        else:
+            std_reward_safe = std_reward
 
-        advantages = (rewards - mean_reward) / std_reward
+        advantages = (rewards_tensor - mean_reward) / std_reward_safe
 
         stats = {
-            "mean_reward": mean_reward.item(),
-            "std_reward": std_reward.item(),
-            "max_reward": rewards.max().item(),
-            "min_reward": rewards.min().item(),
+            "mean_reward": float(mean_reward.item()),
+            "std_reward": float(std_reward.item()),
+            "max_reward": float(rewards_tensor.max().item()),
+            "min_reward": float(rewards_tensor.min().item()),
         }
 
         return advantages, stats
+
+    def _compute_group_sequence_log_probs(
+        self, prompt: str, responses: List[str]
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Compute per-sequence log probabilities for response tokens (with gradients).
+
+        Returns:
+            sequence_log_probs: Sum of response token log probs [group_size]
+            response_lengths: Number of response tokens used for normalization [group_size]
+        """
+        full_texts = [f"{prompt} {response}" for response in responses]
+
+        # Use right-padding for stable response_start_idx across the batch.
+        original_padding_side = getattr(self.tokenizer, "padding_side", "right")
+        if hasattr(self.tokenizer, "padding_side"):
+            self.tokenizer.padding_side = "right"
+
+        try:
+            inputs = self.tokenizer(
+                full_texts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=self.config.max_prompt_length
+                + self.config.max_completion_length,
+                add_special_tokens=False,
+            )
+        finally:
+            if hasattr(self.tokenizer, "padding_side"):
+                self.tokenizer.padding_side = original_padding_side
+
+        prompt_tokens = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self.config.max_prompt_length,
+            add_special_tokens=False,
+        )
+        prompt_length = int(prompt_tokens["input_ids"].shape[1])
+        response_start_idx = max(prompt_length - 1, 0)
+
+        model_device = _get_model_device(self.model)
+        if model_device is not None:
+            if hasattr(inputs, "to"):
+                inputs = inputs.to(model_device)
+            else:
+                inputs = {
+                    k: v.to(model_device) if hasattr(v, "to") else v
+                    for k, v in inputs.items()
+                }
+
+        outputs = self.model(**inputs)
+        logits = outputs.logits
+
+        shift_logits = logits[:, :-1, :].contiguous()
+        shift_labels = inputs["input_ids"][:, 1:].contiguous()
+        shift_mask = inputs["attention_mask"][:, 1:].contiguous()
+
+        log_probs = F.log_softmax(shift_logits, dim=-1)
+        token_log_probs = log_probs.gather(
+            dim=-1, index=shift_labels.unsqueeze(-1)
+        ).squeeze(-1)
+
+        response_mask = torch.zeros_like(shift_mask)
+        if response_start_idx < response_mask.shape[1]:
+            response_mask[:, response_start_idx:] = shift_mask[:, response_start_idx:]
+
+        sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
+        response_lengths = response_mask.sum(dim=-1).to(dtype=torch.float32).clamp(min=1.0)
+
+        return sequence_log_probs, response_lengths
 
     async def train_step(
         self, queries: List[str], num_groups: int = 1
@@ -714,34 +932,17 @@ class GSPOTrainer:
             # Compute group advantages
             advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
 
-            # Compute current log probs for each response
-            current_log_probs = []
-            sequence_lengths = []
-
-            for response in responses:
-                log_prob = await self.generator._compute_sequence_log_prob(query, response)
-                current_log_probs.append(log_prob)
-
-                # Compute sequence length
-                tokens = self.tokenizer(response, return_tensors="pt")
-                seq_len = tokens["input_ids"].shape[1]
-                sequence_lengths.append(seq_len)
-
-            current_log_probs = torch.tensor(
-                current_log_probs, dtype=torch.float32
+            # Compute current log probs (with gradients) for each response
+            current_log_probs, sequence_lengths = self._compute_group_sequence_log_probs(
+                query, responses
             )
-            sequence_lengths = torch.tensor(
-                sequence_lengths, dtype=torch.float32
-            )
-            if model_device is not None:
-                current_log_probs = current_log_probs.to(model_device)
-                sequence_lengths = sequence_lengths.to(model_device)
+            old_log_probs = old_log_probs.to(current_log_probs.device)
 
             # Compute sequence importance ratios
             importance_ratios = self.compute_sequence_importance_ratio(
                 current_log_probs, old_log_probs, sequence_lengths
             )
-            all_importance_ratios.extend(importance_ratios.tolist())
+            all_importance_ratios.extend(importance_ratios.detach().cpu().tolist())
 
             # Apply clipping to importance ratios
             clipped_ratios = torch.clamp(
@@ -1049,12 +1250,17 @@ async def train_customer_service_with_gspo(
     )
 
 
+# Backwards-compatible alias (some users expect snake_case-like class names).
+GSPO_Trainer = GSPOTrainer
+
+
 # Export main components
 __all__ = [
     "GSPOConfig",
     "GSPOModelManager",
     "GSPOTrajectoryGenerator",
     "GSPOTrainer",
+    "GSPO_Trainer",
     "train_with_gspo",
     "train_customer_service_with_gspo",
 ]

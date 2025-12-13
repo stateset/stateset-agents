@@ -6,6 +6,7 @@ the openai/gpt-oss-120b model using LoRA adapters.
 """
 
 import asyncio
+import importlib.util
 import json
 import logging
 import os
@@ -92,6 +93,67 @@ def _load_transformers():
         logger.warning(f"Failed to load transformers: {e}")
         return False
 
+
+def _enable_input_require_grads(model: Any) -> None:
+    """
+    Ensure at least one checkpoint input requires gradients.
+
+    Some Transformer implementations use `torch.utils.checkpoint` internally for
+    `gradient_checkpointing`. With PEFT/LoRA, the base model weights are often
+    frozen, so hidden states may not require grad unless explicitly enabled.
+    """
+    if getattr(model, "_stateset_input_grads_enabled", False):
+        return
+
+    if hasattr(model, "enable_input_require_grads"):
+        try:
+            model.enable_input_require_grads()
+            setattr(model, "_stateset_input_grads_enabled", True)
+            return
+        except Exception as e:  # pragma: no cover
+            logger.debug("enable_input_require_grads failed: %s", e)
+
+    try:
+        if not hasattr(model, "get_input_embeddings"):
+            return
+        embeddings = model.get_input_embeddings()
+        if embeddings is None:
+            return
+
+        def _require_grads_hook(_module: Any, _inputs: Any, output: Any) -> Any:
+            if isinstance(output, torch.Tensor):
+                return output.requires_grad_(True)
+            return output
+
+        embeddings.register_forward_hook(_require_grads_hook)
+        setattr(model, "_stateset_input_grads_enabled", True)
+    except Exception as e:  # pragma: no cover
+        logger.debug("Failed to register input grad hook: %s", e)
+
+
+def _require_bitsandbytes() -> None:
+    """Ensure bitsandbytes is importable when k-bit loading is requested."""
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "4-bit/8-bit quantization requires CUDA. "
+            "Disable `use_4bit/use_8bit` or run on a CUDA-enabled machine."
+        )
+
+    if importlib.util.find_spec("bitsandbytes") is None:
+        raise ImportError(
+            "bitsandbytes is required for 4-bit/8-bit quantization. "
+            "Install with `pip install stateset-agents[trl]` or `pip install bitsandbytes`."
+        )
+
+    try:
+        import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
+    except Exception as exc:  # pragma: no cover
+        raise ImportError(
+            "bitsandbytes is installed but failed to import. "
+            "If you just installed it in a notebook, restart the runtime/kernel. "
+            "Otherwise, verify your CUDA/PyTorch/bitsandbytes compatibility."
+        ) from exc
+
 try:
     from vllm import LLM, SamplingParams
     VLLM_AVAILABLE = True
@@ -144,6 +206,49 @@ class TRLGRPOConfig(TrainingConfig):
         config_dict = config.to_dict()
         config_dict.update(kwargs)
         return cls(**config_dict)
+
+    def validate(self) -> List[str]:
+        """Validate configuration and return warnings."""
+        warnings = super().validate()
+
+        if self.gradient_checkpointing and self.use_lora:
+            warnings.append(
+                "gradient_checkpointing with LoRA can require input gradients; "
+                "StateSet Agents disables `use_cache` and enables input grads automatically."
+            )
+
+        model_name_lower = self.model_name.lower()
+        if (
+            "qwen" in model_name_lower
+            and any(size in model_name_lower for size in ["3b", "7b"])
+            and not (self.use_4bit or self.use_8bit)
+        ):
+            warnings.append(
+                "Qwen 3B/7B models often require quantization on consumer GPUs; "
+                "consider setting `use_4bit=True` to reduce memory usage."
+            )
+
+        if self.use_4bit or self.use_8bit:
+            if not torch.cuda.is_available():
+                warnings.append(
+                    "4-bit/8-bit quantization requires CUDA; disable `use_4bit/use_8bit` "
+                    "or run on a CUDA-enabled machine."
+                )
+            elif importlib.util.find_spec("bitsandbytes") is None:
+                warnings.append(
+                    "bitsandbytes is required for 4-bit/8-bit quantization. "
+                    "Install with `pip install stateset-agents[trl]` or `pip install bitsandbytes`."
+                )
+            else:
+                try:
+                    import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
+                except Exception:
+                    warnings.append(
+                        "bitsandbytes is installed but failed to import. "
+                        "If you just installed it in a notebook, restart the runtime/kernel."
+                    )
+
+        return warnings
 
 
 class TrajectoryGenerator:
@@ -260,6 +365,29 @@ class ModelManager:
         """Load model and tokenizer with LoRA if specified"""
         logger.info(f"Loading model: {self.config.model_name}")
 
+        model_name_lower = self.config.model_name.lower()
+        if (
+            torch.cuda.is_available()
+            and "qwen" in model_name_lower
+            and any(size in model_name_lower for size in ["3b", "7b"])
+            and not (self.config.use_4bit or self.config.use_8bit)
+        ):
+            try:
+                total_mem_gb = torch.cuda.get_device_properties(0).total_memory / (
+                    1024**3
+                )
+                if total_mem_gb < 24:
+                    logger.warning(
+                        "Model %s on %.1fGB GPU: consider `use_4bit=True` to reduce memory usage",
+                        self.config.model_name,
+                        total_mem_gb,
+                    )
+            except Exception:  # pragma: no cover
+                logger.warning(
+                    "Model %s: consider `use_4bit=True` to reduce memory usage",
+                    self.config.model_name,
+                )
+
         # Load transformers lazily
         if not _load_transformers():
             raise ImportError("transformers is required but failed to load")
@@ -285,8 +413,10 @@ class ModelManager:
 
             # Add quantization if specified
             if self.config.use_8bit:
+                _require_bitsandbytes()
                 model_kwargs["load_in_8bit"] = True
             elif self.config.use_4bit:
+                _require_bitsandbytes()
                 model_kwargs["load_in_4bit"] = True
 
             # Load base model
@@ -296,7 +426,16 @@ class ModelManager:
 
             # Enable gradient checkpointing if specified
             if self.config.gradient_checkpointing:
-                base_model.gradient_checkpointing_enable()
+                if hasattr(base_model, "config") and hasattr(base_model.config, "use_cache"):
+                    base_model.config.use_cache = False
+                if hasattr(base_model, "gradient_checkpointing_enable"):
+                    base_model.gradient_checkpointing_enable()
+                else:  # pragma: no cover
+                    logger.warning(
+                        "gradient_checkpointing requested but model does not support it"
+                    )
+                if self.config.use_lora and not (self.config.use_8bit or self.config.use_4bit):
+                    _enable_input_require_grads(base_model)
 
             # Prepare model for training if using quantization
             if self.config.use_8bit or self.config.use_4bit:
@@ -312,7 +451,7 @@ class ModelManager:
                     target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "dense"]
                 elif "gpt2" in self.config.model_name.lower():
                     target_modules = ["c_attn", "c_proj"]
-                elif "llama" in self.config.model_name.lower():
+                elif "llama" in self.config.model_name.lower() or "qwen" in self.config.model_name.lower():
                     target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
                 else:
                     # Default modules

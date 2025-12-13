@@ -80,6 +80,7 @@ _OPTIONAL_EXPORTS: Dict[str, Tuple[str, str]] = {
     # GSPO / GEPO / DAPO / VAPO
     "GSPOConfig": (f"{__name__}.gspo_trainer", "GSPOConfig"),
     "GSPOTrainer": (f"{__name__}.gspo_trainer", "GSPOTrainer"),
+    "GSPO_Trainer": (f"{__name__}.gspo_trainer", "GSPO_Trainer"),
     "train_with_gspo": (f"{__name__}.gspo_trainer", "train_with_gspo"),
     "GEPOConfig": (f"{__name__}.gepo_trainer", "GEPOConfig"),
     "GEPOTrainer": (f"{__name__}.gepo_trainer", "GEPOTrainer"),
