@@ -1,4 +1,4 @@
-# StateSet Agents v0.7.0
+# StateSet Agents v0.7.1
 
 A training-infrastructure release that makes it easier to build “real RL” workflows:
 consistent callbacks, safer concurrent evaluation, and a shared evaluation harness.
@@ -23,7 +23,7 @@ consistent callbacks, safer concurrent evaluation, and a shared evaluation harne
 
 ## Upgrade Notes
 ```bash
-pip install -U stateset-agents==0.7.0
+pip install -U stateset-agents==0.7.1
 ```
 
 If you evaluate with concurrency (`rollout_concurrency > 1`) on a custom environment,
@@ -35,8 +35,8 @@ implement `Environment.clone()` or keep concurrency at 1.
 - `stateset-agents train --stub`
 
 ## Artifacts
-- `dist/stateset_agents-0.7.0-py3-none-any.whl`
-- `dist/stateset_agents-0.7.0.tar.gz`
+- `dist/stateset_agents-0.7.1-py3-none-any.whl`
+- `dist/stateset_agents-0.7.1.tar.gz`
 
 ---
 

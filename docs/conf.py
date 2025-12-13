@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.abspath(".."))
 project = "StateSet Agents"
 copyright = "2024, StateSet Team"
 author = "StateSet Team"
-release = "0.3.0"
-version = "0.3.0"
+version = "0.7.1"
+release = "0.7.1"
 
 # -- General configuration ---------------------------------------------------
 extensions = [
