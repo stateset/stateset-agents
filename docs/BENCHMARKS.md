@@ -627,9 +627,10 @@ async def my_benchmark():
 
 ## Updates and Versioning
 
-**Current Version:** 0.6.0 (December 2025)
+**Current Version:** 0.7.0 (December 2025)
 
 **Benchmark Version History:**
+- v0.7.0 (Dec 2025): Added Evals / Callbacks
 - v0.6.0 (Dec 2025): Added VAPO, DAPO, GEPO comparisons
 - v0.5.0 (Nov 2025): Added GSPO vs GRPO comparison, MoE benchmarks
 - v0.4.0 (Oct 2025): Added framework comparisons, scaling efficiency
@@ -672,7 +673,7 @@ If you use these benchmarks in your research, please cite:
   author = {StateSet Team},
   year = {2025},
   url = {https://github.com/stateset/stateset-agents},
-  version = {0.6.0}
+  version = {0.7.0}
 }
 ```
 

@@ -1,41 +1,45 @@
-# StateSet Agents v0.5.0
+# StateSet Agents v0.7.0
 
-A maintainability-focused release that extracts the stub backend, hardens optional
-dependency handling, and locks down mission-critical smoke tests.
+A training-infrastructure release that makes it easier to build “real RL” workflows:
+consistent callbacks, safer concurrent evaluation, and a shared evaluation harness.
 
 ## Highlights
-- **Modular Stub Backend**
-  - New `core.agent_backends` module encapsulates tokenizer/model scaffolding so
-    `core.agent` stays readable and easier to extend.
-  - Persona hinting hooks now live in a focused helper, keeping runtime tweaks controllable.
-- **Resilient Optional Dependencies**
-  - Performance optimizers and batch utilities now raise actionable guidance when
-    Torch or psutil are missing instead of crashing at import time.
-  - Monitoring health checks use the active asyncio loop and seamlessly support
-    synchronous or asynchronous check functions.
-- **Confidence via Tests**
-  - Added unit coverage for CLI stub mode, backend factories, and health-check flows.
-  - Test fixtures were modernised and now skip cleanly when Torch is unavailable.
+- **Unified Training Callback Dispatch**
+  - New `stateset_agents.training.callbacks` dispatch layer supports both callable callbacks
+    (`callback(event, data)`) and method callbacks (`on_episode_end`, etc.).
+  - GRPO trainers now emit consistent lifecycle events: training start/end, episode end,
+    evaluation end, and checkpoint saved.
+- **Safe Concurrent Rollouts (via Env Cloning)**
+  - New `Environment.clone()` contract (implemented for `ConversationEnvironment` and
+    `TaskEnvironment`) enables parallel evaluation/rollouts without shared mutable env state.
+- **Reusable Evaluation Harness**
+  - New `stateset_agents.training.evaluation.evaluate_agent()` + `EvaluationConfig` for
+    consistent evaluation metrics across agents/environments.
+  - Multi-turn GRPO evaluation now uses this harness and supports configurable concurrency
+    and multiple generations per scenario.
+- **Config Knobs for Rollouts/Eval**
+  - `TrainingConfig.rollout_concurrency` and `TrainingConfig.eval_num_generations` added for
+    controlling evaluation behavior.
 
 ## Upgrade Notes
 ```bash
-pip install -U stateset-agents==0.5.0
+pip install -U stateset-agents==0.7.0
 ```
 
-No breaking APIs. If you previously relied on internal stub helpers inside
-`core.agent`, import from `core.agent_backends` instead.
+If you evaluate with concurrency (`rollout_concurrency > 1`) on a custom environment,
+implement `Environment.clone()` or keep concurrency at 1.
 
 ## Verification
 - `pytest -q`
+- `stateset-agents version`
 - `stateset-agents train --stub`
-- `python -m build`
 
 ## Artifacts
-- `dist/stateset_agents-0.5.0-py3-none-any.whl`
-- `dist/stateset_agents-0.5.0.tar.gz`
+- `dist/stateset_agents-0.7.0-py3-none-any.whl`
+- `dist/stateset_agents-0.7.0.tar.gz`
 
 ---
 
-## Previous Release: v0.4.0
+## Previous Release: v0.6.0
 
-See prior notes for the canonical import migration and end-to-end stub polish.
+See `CHANGELOG.md` and the GitHub tag `v0.6.0`.

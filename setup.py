@@ -9,7 +9,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="stateset-agents",
-    version="0.6.0",
+    version="0.7.0",
     author="StateSet Team",
     author_email="team@stateset.ai",
     description="A comprehensive framework for training multi-turn AI agents using Group Relative Policy Optimization (GRPO)",

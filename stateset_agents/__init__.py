@@ -5,7 +5,7 @@ A comprehensive framework for training multi-turn AI agents using
 Group Relative Policy Optimization (GRPO).
 """
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
 
