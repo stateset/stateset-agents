@@ -121,6 +121,21 @@ class Environment(ABC):
         """Get initial prompt/context (override in subclasses)"""
         return ""
 
+    def clone(self) -> "Environment":
+        """Return a new environment instance with the same configuration.
+
+        This is primarily used by rollout/evaluation utilities that need to run
+        multiple episodes concurrently without shared mutable environment state.
+
+        Subclasses that maintain per-episode state (most do) should override this
+        method to return a fresh instance. The default implementation raises to
+        avoid unsafe accidental reuse.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement clone(); run sequentially or "
+            "provide an environment factory that returns fresh instances."
+        )
+
     async def get_reward(self, trajectory: Any) -> float:
         """Compute reward for a trajectory.
 
@@ -430,6 +445,16 @@ class ConversationEnvironment(Environment):
             phrase in (agent_turn.content or "").lower() for phrase in goodbye_phrases
         )
 
+    def clone(self) -> "ConversationEnvironment":
+        """Create a new ConversationEnvironment with the same configuration."""
+        return ConversationEnvironment(
+            scenarios=list(self.scenarios),
+            max_turns=self.max_turns,
+            reward_fn=self.reward_fn,
+            persona=self.persona,
+            timeout_seconds=self.timeout_seconds,
+        )
+
 
 class TaskEnvironment(Environment):
     """
@@ -582,6 +607,16 @@ class TaskEnvironment(Environment):
     async def _check_task_completion(self, state: EnvironmentState) -> bool:
         """Check if task is completed"""
         return state.context.get("task_progress", 0.0) >= 1.0
+
+    def clone(self) -> "TaskEnvironment":
+        """Create a new TaskEnvironment with the same configuration."""
+        return TaskEnvironment(
+            tasks=list(self.tasks),
+            success_criteria=self.success_criteria,
+            max_turns=self.max_turns,
+            reward_fn=self.reward_fn,
+            timeout_seconds=self.timeout_seconds,
+        )
 
 
 # Utility function for creating environments

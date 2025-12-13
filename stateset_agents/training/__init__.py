@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 from .config import TrainingConfig, TrainingProfile, get_config_for_task
 from .trainer import GRPOTrainer, MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
 from .train import train, TrainingMode
+from .evaluation import EvaluationConfig, evaluate_agent
 
 # vLLM backend for fast generation - use lazy import to avoid torchvision issues
 # Don't import at module level, let users import when needed
@@ -145,6 +146,8 @@ __all__ = [
     "TrainingConfig",
     "TrainingProfile",
     "get_config_for_task",
+    "EvaluationConfig",
+    "evaluate_agent",
     "VLLM_BACKEND_AVAILABLE",
     "TRL_AVAILABLE",
     "GSPO_AVAILABLE",

@@ -48,6 +48,10 @@ class TrainingConfig:
     gradient_accumulation_steps: int = 4
     num_generations: int = 16  # GRPO: trajectories per scenario
     generation_batch_size: int = 4
+    # Rollout/evaluation parallelism (requires environments that support clone()).
+    rollout_concurrency: int = 1
+    # Evaluation settings
+    eval_num_generations: int = 4
 
     # Length constraints
     max_prompt_length: int = 512

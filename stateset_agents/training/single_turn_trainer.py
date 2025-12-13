@@ -30,6 +30,12 @@ from .trainer_utils import (
     require_torch,
     require_transformers,
 )
+from .callbacks import (
+    notify_checkpoint_saved,
+    notify_episode_end,
+    notify_training_end,
+    notify_training_start,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +297,8 @@ class SingleTurnGRPOTrainer:
         torch = self._get_torch_module()
         amp = get_amp()
 
+        await notify_training_start(self.callbacks, trainer=self, config=self.config)
+
         num_episodes = getattr(self.config, "num_episodes", 10)
         max_steps = getattr(self.config, "max_steps_per_episode", 1) or 1
         num_generations = getattr(self.config, "num_generations", 8)
@@ -427,18 +435,21 @@ class SingleTurnGRPOTrainer:
                     }
                 )
 
-            for callback in self.callbacks:
-                try:
-                    maybe_async = getattr(callback, "on_episode_end", None)
-                    if maybe_async is not None:
-                        if asyncio.iscoroutinefunction(maybe_async):
-                            await maybe_async(episode, {"avg_reward": avg_reward})
-                        else:
-                            maybe_async(episode, {"avg_reward": avg_reward})
-                except Exception:
-                    continue
+            await notify_episode_end(
+                self.callbacks,
+                episode=episode,
+                metrics={
+                    "avg_reward": avg_reward,
+                    "total_reward": avg_reward,
+                    "global_step": int(self.global_step),
+                },
+            )
 
         logger.info("Single-turn GRPO training completed")
+        await notify_training_end(
+            self.callbacks,
+            metrics={"final_step": int(self.global_step)},
+        )
         return self.agent
 
     async def save_checkpoint(self, path: Union[str, Path]):
@@ -454,6 +465,12 @@ class SingleTurnGRPOTrainer:
                 self.agent.tokenizer.save_pretrained(model_path)
 
         logger.info(f"Checkpoint saved to {path}")
+        await notify_checkpoint_saved(
+            self.callbacks,
+            path=str(path),
+            step=int(self.global_step),
+            is_best=False,
+        )
 
     def add_callback(self, callback: Any):
         """Add training callback"""

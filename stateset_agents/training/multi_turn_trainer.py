@@ -30,6 +30,14 @@ from .trainer_utils import (
     require_torch,
     require_transformers,
 )
+from .evaluation import EvaluationConfig, evaluate_agent
+from .callbacks import (
+    notify_checkpoint_saved,
+    notify_episode_end,
+    notify_evaluation_end,
+    notify_training_end,
+    notify_training_start,
+)
 
 MultiTurnTrajectory = core_trajectory.MultiTurnTrajectory
 TrajectoryGroup = core_trajectory.TrajectoryGroup
@@ -462,30 +470,22 @@ class MultiTurnGRPOTrainer:
         """Evaluate the agent"""
         self.agent.model.eval()
 
-        # Generate evaluation trajectories
-        eval_trajectory_groups = await self.generate_trajectories(
-            eval_scenarios[:num_eval_episodes],
-            num_generations=4,  # Fewer generations for evaluation
+        concurrency = int(getattr(self.config, "rollout_concurrency", 1) or 1)
+        num_generations = int(getattr(self.config, "eval_num_generations", 4) or 4)
+
+        eval_metrics = await evaluate_agent(
+            agent=self.agent,
+            environment=self.environment,
+            scenarios=eval_scenarios[:num_eval_episodes],
+            reward_fn=self.reward_fn,
+            config=EvaluationConfig(
+                num_episodes=min(num_eval_episodes, len(eval_scenarios)),
+                num_generations=num_generations,
+                max_turns=getattr(self.config, "max_steps_per_episode", None),
+                seed=getattr(self.config, "seed", None),
+                concurrency=concurrency,
+            ),
         )
-
-        # Compute evaluation metrics
-        all_rewards = []
-        episode_lengths = []
-
-        for group in eval_trajectory_groups:
-            for trajectory in group.trajectories:
-                all_rewards.append(trajectory.total_reward)
-                episode_lengths.append(trajectory.episode_length)
-
-        if not all_rewards:
-            return {"eval_reward": 0.0, "eval_episode_length": 0.0}
-
-        eval_metrics = {
-            "eval_reward": np.mean(all_rewards),
-            "eval_reward_std": np.std(all_rewards),
-            "eval_episode_length": np.mean(episode_lengths),
-            "eval_success_rate": np.mean([r > 0.5 for r in all_rewards]),
-        }
 
         # Check for best model
         current_metric = eval_metrics["eval_reward"]
@@ -518,6 +518,8 @@ class MultiTurnGRPOTrainer:
         training_scenarios = self._get_training_scenarios()
         eval_scenarios = self._get_eval_scenarios()
 
+        await notify_training_start(self.callbacks, trainer=self, config=self.config)
+
         try:
             for episode in range(num_episodes):
                 # Generate trajectory groups
@@ -534,6 +536,23 @@ class MultiTurnGRPOTrainer:
                 # Training step
                 metrics = await self.training_step(trajectory_groups)
 
+                # Callback: episode end (include reward signal for generic monitors)
+                episode_rewards = [
+                    float(getattr(traj, "total_reward", 0.0))
+                    for group in trajectory_groups
+                    for traj in group.trajectories
+                ]
+                avg_episode_reward = float(np.mean(episode_rewards)) if episode_rewards else 0.0
+                await notify_episode_end(
+                    self.callbacks,
+                    episode=episode,
+                    metrics={
+                        **metrics,
+                        "total_reward": avg_episode_reward,
+                        "episode_reward": avg_episode_reward,
+                    },
+                )
+
                 # Log training metrics
                 logging_steps = getattr(self.config, "logging_steps", 10)
                 if self.global_step % logging_steps == 0:
@@ -544,6 +563,7 @@ class MultiTurnGRPOTrainer:
                 if self.global_step % eval_steps == 0:
                     eval_metrics = await self.evaluate(eval_scenarios)
                     await self._log_eval_metrics(eval_metrics)
+                    await notify_evaluation_end(self.callbacks, metrics=dict(eval_metrics))
 
                     logger.info(
                         f"Step {self.global_step}: "
@@ -573,6 +593,14 @@ class MultiTurnGRPOTrainer:
         finally:
             # Final checkpoint
             await self.save_checkpoint()
+
+            await notify_training_end(
+                self.callbacks,
+                metrics={
+                    "final_step": self.global_step,
+                    "best_eval_metric": self.best_eval_metric,
+                },
+            )
 
             # Finish W&B run
             if self.wandb_logger:
@@ -790,6 +818,13 @@ class MultiTurnGRPOTrainer:
             self.wandb_logger.log_model_checkpoint(
                 str(checkpoint_path), self.global_step, is_best=is_best
             )
+
+        await notify_checkpoint_saved(
+            self.callbacks,
+            path=str(checkpoint_path),
+            step=int(self.global_step),
+            is_best=bool(is_best),
+        )
 
     def add_callback(self, callback):
         """Add training callback"""
