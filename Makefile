@@ -70,7 +70,7 @@ docs-serve: ## Build and serve documentation locally
 
 # Packaging
 build: ## Build distribution packages
-	python -m build
+	python -m build --no-isolation || python setup.py sdist bdist_wheel
 
 test-package: ## Install built wheel and smoke test
 	pip install dist/*.whl && python -c "import stateset_agents; print(stateset_agents.__version__)"
