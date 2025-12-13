@@ -573,10 +573,12 @@ class GSPOTrainer:
         )
 
         # Scheduler
+        total_steps = max(1, int(config.num_outer_iterations) * int(config.num_iterations))
+        warmup_steps = int(total_steps * float(config.warmup_ratio))
         self.scheduler = get_cosine_schedule_with_warmup(
             self.optimizer,
-            num_warmup_steps=config.warmup_steps,
-            num_training_steps=config.num_episodes * config.num_iterations,
+            num_warmup_steps=warmup_steps,
+            num_training_steps=total_steps,
         )
 
         # Trajectory generator

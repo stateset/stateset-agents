@@ -157,9 +157,9 @@ def create_domain_reward(
 
     if domain_lower in ["customer_service", "support", "cs"]:
         return CustomerServiceReward(weight, expected_responses)
-    elif domain_lower in ["technical", "tech_support", "it"]:
+    elif domain_lower in ["technical", "tech_support", "technical_support", "it", "it_support"]:
         return TechnicalSupportReward(weight)
-    elif domain_lower in ["sales", "marketing", "product"]:
+    elif domain_lower in ["sales", "marketing", "product", "sales_assistant"]:
         return SalesAssistantReward(weight)
     else:
         # Default to a general helpful agent reward

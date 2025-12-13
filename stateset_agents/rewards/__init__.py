@@ -12,6 +12,9 @@ from .llm_reward import RewardResult
 from .multi_objective_reward import (
     MultiObjectiveRewardFunction,
     create_customer_service_reward,
+    create_domain_reward,
+    create_sales_reward,
+    create_technical_support_reward,
 )
 from .ruler_reward import RulerRewardFunction
 from .ruler_reward import RulerRewardFunction as LLMRewardFunction
@@ -35,6 +38,9 @@ __all__ = [
     "RewardResult",
     "MultiObjectiveRewardFunction",
     "create_customer_service_reward",
+    "create_domain_reward",
+    "create_sales_reward",
+    "create_technical_support_reward",
     "RulerRewardFunction",
     "create_customer_service_ruler",
     "create_general_ruler",

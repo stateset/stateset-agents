@@ -613,6 +613,48 @@ CONVERSATION_CONFIGS = {
         "persona": "You are a professional customer service representative.",
         "max_turns": 15,
     },
+    "technical_support": {
+        "scenarios": [
+            {
+                "topic": "app_crash",
+                "user_goal": "Fix an application crashing on launch",
+                "context": "User reports the app crashes immediately after opening.",
+            },
+            {
+                "topic": "network_issue",
+                "user_goal": "Restore connectivity",
+                "context": "User cannot connect to Wi-Fi after a recent update.",
+            },
+            {
+                "topic": "performance",
+                "user_goal": "Improve slow system performance",
+                "context": "User notices the computer is slow and wants troubleshooting steps.",
+            },
+        ],
+        "persona": "You are a user seeking technical support. Provide symptoms and answer questions.",
+        "max_turns": 15,
+    },
+    "sales": {
+        "scenarios": [
+            {
+                "topic": "plan_selection",
+                "user_goal": "Choose the right plan",
+                "context": "User is comparing tiers and wants a recommendation.",
+            },
+            {
+                "topic": "pricing",
+                "user_goal": "Understand pricing and discounts",
+                "context": "User asks about pricing, billing, and whether there are promotions.",
+            },
+            {
+                "topic": "objection_handling",
+                "user_goal": "Address concerns and decide",
+                "context": "User is interested but worried about cost and onboarding effort.",
+            },
+        ],
+        "persona": "You are a potential customer exploring products. Ask questions and raise objections.",
+        "max_turns": 15,
+    },
     "tutoring": {
         "scenarios": [
             {

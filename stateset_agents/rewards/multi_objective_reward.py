@@ -630,19 +630,54 @@ class MultiObjectiveRewardFunction(RewardFunction):
             for comp in self.components:
                 comp.weight = comp.weight / total_weight
 
-    async def compute_reward(
-        self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
+    async def compute_reward(  # type: ignore[override]
+        self,
+        turns: Optional[List[Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
+        trajectory: Optional[Any] = None,
+        turn: Optional[Any] = None,
+        **_: Any,
     ) -> RewardResult:
         """
         Compute multi-objective reward.
 
         Args:
-            turns: List of conversation turns
+            turns: List of conversation turns (dicts or ConversationTurn objects).
             context: Optional context information
 
         Returns:
             RewardResult with combined score and component breakdown
         """
+        # Support trainer-style calls: compute_reward(trajectory=?, turn=?, context=?)
+        if turns is None and turn is not None:
+            normalized: List[Dict[str, Any]] = []
+            if context and isinstance(context, dict):
+                user_query = context.get("user_query") or context.get("prompt")
+                if user_query:
+                    normalized.append({"role": "user", "content": str(user_query)})
+            normalized.append(
+                {
+                    "role": getattr(turn, "role", "assistant"),
+                    "content": getattr(turn, "content", str(turn)),
+                }
+            )
+            turns = normalized
+
+        # Normalize ConversationTurn objects into dicts for component evaluation.
+        turns = turns or []
+        normalized_turns: List[Dict[str, Any]] = []
+        for item in turns:
+            if isinstance(item, dict):
+                normalized_turns.append(item)
+                continue
+
+            role = getattr(item, "role", None)
+            content = getattr(item, "content", None)
+            if role is not None and content is not None:
+                normalized_turns.append({"role": str(role), "content": str(content)})
+            else:
+                normalized_turns.append({"role": "assistant", "content": str(item)})
+
         if not self.components:
             return RewardResult(
                 score=0.0, breakdown={"error": "No components configured"}
@@ -654,7 +689,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
         for component in self.components:
             try:
-                score = await component.compute_score(turns, context)
+                score = await component.compute_score(normalized_turns, context)
                 component_scores[component.name] = score
                 weighted_scores.append(score * component.weight)
 
@@ -704,7 +739,10 @@ class MultiObjectiveRewardFunction(RewardFunction):
                 tags={"method": self.normalization_method},
             )
 
-        return RewardResult(score=final_score, breakdown=breakdown, metadata={})
+        result = RewardResult(score=final_score, breakdown=breakdown, metadata={})
+        # Some trainers expect `total_reward`; keep it as an alias for score.
+        setattr(result, "total_reward", float(final_score))
+        return result
 
     def get_component_statistics(self) -> Dict[str, Dict[str, float]]:
         """Get statistics for each component"""
@@ -747,6 +785,59 @@ def create_customer_service_reward(
     ]
 
     return MultiObjectiveRewardFunction(components=components, weight=weight, **kwargs)
+
+
+def create_domain_reward(
+    domain: str,
+    expected_responses: Optional[List[str]] = None,
+    weight: float = 1.0,
+    **kwargs,
+) -> MultiObjectiveRewardFunction:
+    """Create a multi-objective reward function for a given domain.
+
+    This is a small convenience wrapper used by many examples. It maps common
+    domain names (e.g., ``"technical_support"``) to the corresponding
+    multi-objective reward template.
+    """
+
+    domain_lower = domain.strip().lower()
+
+    if domain_lower in {"customer_service", "customer", "cs", "support"}:
+        return create_customer_service_reward(
+            expected_responses=expected_responses, weight=weight, **kwargs
+        )
+
+    if domain_lower in {
+        "technical_support",
+        "tech_support",
+        "technical",
+        "it",
+        "it_support",
+        "helpdesk",
+    }:
+        return create_technical_support_reward(
+            expected_responses=expected_responses, weight=weight, **kwargs
+        )
+
+    if domain_lower in {"sales", "marketing", "product", "sales_assistant"}:
+        return create_sales_reward(
+            expected_responses=expected_responses, weight=weight, **kwargs
+        )
+
+    if domain_lower in {"education", "educational", "tutoring", "tutor"}:
+        return create_educational_reward(
+            expected_responses=expected_responses, weight=weight, **kwargs
+        )
+
+    if domain_lower in {"creative", "creative_writing", "writing"}:
+        return create_creative_reward(
+            expected_responses=expected_responses, weight=weight, **kwargs
+        )
+
+    # Default to customer service heuristics for conversational alignment.
+    return create_customer_service_reward(
+        expected_responses=expected_responses, weight=weight, **kwargs
+    )
 
 
 def create_technical_support_reward(
