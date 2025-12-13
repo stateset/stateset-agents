@@ -10,13 +10,14 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from api.routers.agents import router as agents_router, conversation_router
 from api.routers.training import router as training_router
 from api.routers.metrics import router as metrics_router
 from api.errors import setup_exception_handlers
 from api.dependencies import AuthenticatedUser
+
+from tests.api.asgi_client import SyncASGIClient
 
 
 # ============================================================================
@@ -67,7 +68,8 @@ def app(mock_auth):
 @pytest.fixture
 def client(app):
     """Create test client."""
-    return TestClient(app)
+    with SyncASGIClient(app) as client:
+        yield client
 
 
 # ============================================================================
@@ -411,8 +413,8 @@ class TestAuthentication:
         app.include_router(agents_router)
         setup_exception_handlers(app)
 
-        client = TestClient(app)
-        response = client.get("/agents")
+        with SyncASGIClient(app) as client:
+            response = client.get("/agents")
 
         assert response.status_code == 401
 

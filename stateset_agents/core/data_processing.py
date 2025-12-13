@@ -6,13 +6,16 @@ conversational data for GRPO training, inspired by real-world implementations.
 """
 
 import json
+import importlib.util
 import logging
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from sklearn.model_selection import train_test_split
+_SKLEARN_LAZY = object()
+train_test_split = _SKLEARN_LAZY  # type: ignore[assignment]
+_SKLEARN_AVAILABLE = importlib.util.find_spec("sklearn") is not None
 
 from .trajectory import ConversationTurn, MultiTurnTrajectory
 
@@ -215,11 +218,23 @@ class DataLoader:
         if eval_size <= 0 or len(examples) < 10:
             return examples, []
 
+        splitter = _get_train_test_split()
+        if splitter is None:
+            train_examples, eval_examples = self._split_train_eval_fallback(
+                examples=examples, eval_size=eval_size, stratify=stratify
+            )
+            logger.info(
+                "Split data (fallback): %s train, %s eval",
+                len(train_examples),
+                len(eval_examples),
+            )
+            return train_examples, eval_examples
+
         if stratify and self.stratify_by == "task_type":
             # Stratify by task type
             task_types = [e.task_type for e in examples]
             if len(set(task_types)) > 1:
-                train_examples, eval_examples = train_test_split(
+                train_examples, eval_examples = splitter(
                     examples,
                     test_size=eval_size,
                     random_state=self.random_seed,
@@ -227,12 +242,12 @@ class DataLoader:
                 )
             else:
                 # No stratification possible
-                train_examples, eval_examples = train_test_split(
+                train_examples, eval_examples = splitter(
                     examples, test_size=eval_size, random_state=self.random_seed
                 )
         else:
             # Simple random split
-            train_examples, eval_examples = train_test_split(
+            train_examples, eval_examples = splitter(
                 examples, test_size=eval_size, random_state=self.random_seed
             )
 
@@ -240,6 +255,45 @@ class DataLoader:
             f"Split data: {len(train_examples)} train, {len(eval_examples)} eval"
         )
         return train_examples, eval_examples
+
+    def _split_train_eval_fallback(
+        self,
+        examples: List[ConversationExample],
+        eval_size: float,
+        stratify: bool,
+    ) -> Tuple[List[ConversationExample], List[ConversationExample]]:
+        """Split examples without sklearn.
+
+        Uses a deterministic shuffle based on `random_seed` and optionally performs
+        simple stratification by `task_type`.
+        """
+        rng = random.Random(self.random_seed)
+
+        def split_bucket(items: List[ConversationExample]) -> Tuple[List[ConversationExample], List[ConversationExample]]:
+            bucket = items.copy()
+            rng.shuffle(bucket)
+            split_idx = int(round(len(bucket) * (1.0 - float(eval_size))))
+            split_idx = max(0, min(len(bucket), split_idx))
+            return bucket[:split_idx], bucket[split_idx:]
+
+        if stratify and self.stratify_by == "task_type":
+            buckets: Dict[str, List[ConversationExample]] = {}
+            for ex in examples:
+                key = ex.task_type or "unknown"
+                buckets.setdefault(key, []).append(ex)
+
+            train_examples: List[ConversationExample] = []
+            eval_examples: List[ConversationExample] = []
+            for bucket_examples in buckets.values():
+                train_bucket, eval_bucket = split_bucket(bucket_examples)
+                train_examples.extend(train_bucket)
+                eval_examples.extend(eval_bucket)
+
+            rng.shuffle(train_examples)
+            rng.shuffle(eval_examples)
+            return train_examples, eval_examples
+
+        return split_bucket(examples)
 
     def _get_fallback_data(self) -> List[Dict[str, Any]]:
         """Return fallback sample data for testing"""
@@ -275,6 +329,31 @@ class DataLoader:
                 ]
             },
         ]
+
+
+def _get_train_test_split():
+    """Return sklearn's train_test_split if available, otherwise None.
+
+    This avoids importing sklearn/scipy at module import time (expensive) and
+    preserves the ability for tests to monkeypatch `train_test_split` to None.
+    """
+    global train_test_split
+
+    if train_test_split is None:
+        return None
+
+    if train_test_split is _SKLEARN_LAZY:
+        if not _SKLEARN_AVAILABLE:
+            train_test_split = None  # type: ignore[assignment]
+            return None
+        try:
+            from sklearn.model_selection import train_test_split as _tts  # type: ignore[import-not-found]
+
+            train_test_split = _tts  # type: ignore[assignment]
+        except Exception:  # pragma: no cover - optional dependency
+            train_test_split = None  # type: ignore[assignment]
+
+    return train_test_split  # type: ignore[return-value]
 
 
 class DataProcessor:

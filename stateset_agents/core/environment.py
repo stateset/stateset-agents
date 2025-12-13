@@ -39,6 +39,11 @@ class EnvironmentState:
     context: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def is_done(self) -> bool:
+        """Compatibility helper used by some tests."""
+        return self.status != EpisodeStatus.ONGOING
+
     def copy(self) -> "EnvironmentState":
         return EnvironmentState(
             episode_id=self.episode_id,
@@ -52,17 +57,25 @@ class EnvironmentState:
     def as_dict(self) -> Dict[str, Any]:
         return {
             "episode_id": self.episode_id,
+            "turn_count": self.turn_count,
             "step": self.turn_count,
             "status": self.status.value,
             "context": self.context,
             "metadata": self.metadata,
+            # Convenience access used by some tests
+            "scenario": self.context.get("scenario"),
         }
 
     def __contains__(self, key: str) -> bool:  # type: ignore[override]
-        return key in self.as_dict()
+        return key in self.as_dict() or key in self.context
 
     def __getitem__(self, key: str) -> Any:
-        return self.as_dict()[key]
+        data = self.as_dict()
+        if key in data:
+            return data[key]
+        if key in self.context:
+            return self.context[key]
+        raise KeyError(key)
 
 
 class Environment(ABC):
@@ -72,12 +85,21 @@ class Environment(ABC):
         self,
         max_turns: int = 10,
         reward_fn: Optional[RewardFunction] = None,
+        reward_function: Optional[RewardFunction] = None,
         timeout_seconds: Optional[float] = None,
     ):
         self.max_turns = max_turns
-        self.reward_fn = reward_fn
+        self.reward_fn = reward_fn if reward_fn is not None else reward_function
         self.timeout_seconds = timeout_seconds
         self.active_episodes: Dict[str, EnvironmentState] = {}
+
+    @property
+    def reward_function(self) -> Optional[RewardFunction]:
+        return self.reward_fn
+
+    @reward_function.setter
+    def reward_function(self, value: Optional[RewardFunction]) -> None:
+        self.reward_fn = value
 
     @abstractmethod
     async def reset(self, scenario: Optional[Dict[str, Any]] = None) -> EnvironmentState:
@@ -87,8 +109,12 @@ class Environment(ABC):
     @abstractmethod
     async def step(
         self, state: EnvironmentState, action: ConversationTurn
-    ) -> Tuple[EnvironmentState, ConversationTurn, float, bool]:
-        """Execute one step in the environment"""
+    ) -> Tuple[EnvironmentState, float, bool, Dict[str, Any]]:
+        """Execute one step in the environment.
+
+        Returns:
+            (next_state, reward, done, info)
+        """
         pass
 
     async def get_initial_prompt(self, scenario: Optional[Dict[str, Any]] = None) -> str:
@@ -168,10 +194,22 @@ class Environment(ABC):
             )
             turns.append(agent_turn)
 
-            new_state, env_response, step_reward, done = await self.step(state, agent_turn)
-            total_reward += step_reward
-            turn_rewards.append(step_reward)
-            if env_response:
+            step_result = await self.step(state, agent_turn)
+            if (
+                isinstance(step_result, tuple)
+                and len(step_result) == 4
+                and isinstance(step_result[1], ConversationTurn)
+            ):
+                # Legacy (next_state, env_response, reward, done)
+                new_state, env_response, step_reward, done = step_result  # type: ignore[misc]
+                info: Dict[str, Any] = {}
+            else:
+                new_state, step_reward, done, info = step_result  # type: ignore[misc]
+                env_response = info.get("env_response")
+
+            total_reward += float(step_reward)
+            turn_rewards.append(float(step_reward))
+            if isinstance(env_response, ConversationTurn):
                 turns.append(env_response)
             state = new_state
             if done or state.status != EpisodeStatus.ONGOING:
@@ -218,9 +256,22 @@ class ConversationEnvironment(Environment):
         self.current_scenario: Optional[Dict[str, Any]] = None
         self._last_state: Optional[EnvironmentState] = None
 
-    async def reset(self, scenario: Optional[Dict[str, Any]] = None) -> EnvironmentState:
+    async def reset(
+        self,
+        scenario: Optional[Dict[str, Any]] = None,
+        scenario_id: Optional[str] = None,
+    ) -> EnvironmentState:
+        """Start a new episode and return initial state."""
+        if scenario is None and scenario_id is not None:
+            scenario = next(
+                (s for s in self.scenarios if s.get("id") == scenario_id),
+                None,
+            )
+            if scenario is None:
+                raise ValueError(f"Unknown scenario_id: {scenario_id}")
+
         if scenario is None:
-            scenario = random.choice(self.scenarios)
+            scenario = random.choice(self.scenarios) if self.scenarios else {}
         self.current_scenario = scenario
         episode_id = str(uuid.uuid4())
         state = EnvironmentState(
@@ -232,6 +283,7 @@ class ConversationEnvironment(Environment):
                 "persona": self.persona,
                 "conversation_topic": scenario.get("topic"),
                 "user_goal": scenario.get("user_goal"),
+                "history": [],
             },
         )
         self.active_episodes[episode_id] = state
@@ -239,40 +291,81 @@ class ConversationEnvironment(Environment):
         return state
 
     async def step(
-        self, *args, **kwargs
-    ) -> Union[Tuple[EnvironmentState, ConversationTurn, float, bool], Dict[str, Any]]:
-        if len(args) == 1 and not kwargs:
-            action_input = args[0]
-            state = self._last_state or await self.reset()
-            agent_turn = (
-                action_input
-                if isinstance(action_input, ConversationTurn)
-                else ConversationTurn(role="assistant", content=str(action_input))
-            )
-            new_state = state.copy()
-            new_state.turn_count += 1
-            _ = await self._generate_user_response(agent_turn, state)
-            step_reward = await self._calculate_step_reward(agent_turn, state)
-            done = (
-                new_state.turn_count >= self.max_turns
-                or await self._should_end_conversation(agent_turn, state)
-            )
-            if done:
-                new_state.status = EpisodeStatus.COMPLETED
-            self._last_state = new_state
-            return {"step": new_state.turn_count, "reward": step_reward, "done": done}
+        self,
+        state: Union[EnvironmentState, str, ConversationTurn],
+        action: Optional[Union[str, ConversationTurn]] = None,
+    ) -> Union[Tuple[EnvironmentState, float, bool, Dict[str, Any]], Dict[str, Any]]:
+        """Advance the environment by one turn.
 
-        # Standard form
-        state, action = args[0], args[1]
+        Supports two calling conventions:
+        - `await env.step(state, action)` returns `(next_state, reward, done, info)`
+        - `await env.step(action)` uses the most recent state from `reset()` and
+          returns a dict with common keys (`step`, `reward`, `done`, `state`, `info`).
+        """
+
+        if action is None:
+            if self._last_state is None:
+                raise ValueError("Call reset() before step() without explicit state")
+            new_state, reward, done, info = await self._step_impl(self._last_state, state)
+            payload = new_state.as_dict()
+            payload.update(
+                {
+                    "state": new_state,
+                    "reward": reward,
+                    "done": done,
+                    "info": info,
+                }
+            )
+            return payload
+
+        if not isinstance(state, EnvironmentState):
+            raise TypeError("step(state, action) requires an EnvironmentState as the first argument")
+
+        return await self._step_impl(state, action)
+
+    async def _step_impl(
+        self,
+        state: EnvironmentState,
+        action: Union[str, ConversationTurn],
+    ) -> Tuple[EnvironmentState, float, bool, Dict[str, Any]]:
         agent_turn = (
             action
             if isinstance(action, ConversationTurn)
             else ConversationTurn(role="assistant", content=str(action))
         )
+
+        if state.status != EpisodeStatus.ONGOING:
+            return state.copy(), 0.0, True, {"error": "Episode already completed"}
+
         new_state = state.copy()
         new_state.turn_count += 1
+
+        history = list(new_state.context.get("history", []))
+        history.append({"role": "assistant", "content": agent_turn.content})
+
         user_response = await self._generate_user_response(agent_turn, state)
-        step_reward = await self._calculate_step_reward(agent_turn, state)
+        history.append({"role": "user", "content": user_response.content})
+        new_state.context["history"] = history
+
+        step_reward = 0.0
+        if self.reward_fn is not None:
+            try:
+                reward_result = await self.reward_fn.compute_reward(  # type: ignore[arg-type]
+                    [agent_turn, user_response],
+                    new_state.context,
+                )
+                if hasattr(reward_result, "score"):
+                    step_reward = float(reward_result.score)
+                elif isinstance(reward_result, dict) and "score" in reward_result:
+                    step_reward = float(reward_result["score"])
+                elif isinstance(reward_result, (int, float)):
+                    step_reward = float(reward_result)
+            except Exception as reward_err:
+                logger.debug("Reward computation failed: %s", reward_err)
+                step_reward = 0.0
+        else:
+            step_reward = float(await self._calculate_step_reward(agent_turn, state))
+
         done = (
             new_state.turn_count >= self.max_turns
             or await self._should_end_conversation(agent_turn, state)
@@ -280,7 +373,13 @@ class ConversationEnvironment(Environment):
         if done:
             new_state.status = EpisodeStatus.COMPLETED
         self._last_state = new_state
-        return new_state, user_response, step_reward, done
+
+        info: Dict[str, Any] = {
+            "env_response": user_response,
+            "assistant_turn": agent_turn,
+            "scenario": new_state.context.get("scenario"),
+        }
+        return new_state, step_reward, bool(done), info
 
     async def get_initial_prompt(self, scenario: Optional[Dict[str, Any]] = None) -> str:
         scenario = scenario or self.current_scenario

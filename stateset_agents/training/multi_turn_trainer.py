@@ -16,7 +16,11 @@ import numpy as np
 
 from stateset_agents.core import trajectory as core_trajectory
 
-from .loss_computation import compute_enhanced_grpo_loss, compute_grpo_loss
+from .loss_computation import (
+    _compute_group_policy_loss,
+    compute_enhanced_grpo_loss,
+    compute_grpo_loss,
+)
 from .trainer_utils import (
     get_amp,
     get_cosine_schedule_with_warmup,
@@ -313,6 +317,15 @@ class MultiTurnGRPOTrainer:
             global_reward_mean=self._global_reward_mean,
             global_reward_count=self._global_reward_count,
             update_global_stats=self._update_global_stats,
+        )
+
+    def _compute_group_policy_loss(self, group: TrajectoryGroup, advantages: Any) -> Any:
+        """Compute per-group policy loss (compatibility shim for tests)."""
+        return _compute_group_policy_loss(
+            group=group,
+            advantages=advantages,
+            config=self.config,
+            agent=self.agent,
         )
 
     def compute_enhanced_grpo_loss(

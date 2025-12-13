@@ -6,10 +6,12 @@ embeddings for accurate reward prediction in conversational AI.
 """
 
 import asyncio
+import hashlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -65,6 +67,124 @@ from stateset_agents.core.trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_STUB_VOCAB_SIZE = 30522
+DEFAULT_STUB_HIDDEN_SIZE = 384
+
+
+class _ModelOutput:
+    """Minimal transformers-like model output."""
+
+    def __init__(self, last_hidden_state: "torch.Tensor"):
+        self.last_hidden_state = last_hidden_state
+
+
+class _TinyEmbeddings(nn.Module):
+    """Minimal embeddings module with BERT-like attribute names."""
+
+    def __init__(self, vocab_size: int, hidden_size: int):
+        super().__init__()
+        self.word_embeddings = nn.Embedding(vocab_size, hidden_size)
+
+
+class _TinyEncoder(nn.Module):
+    """Lightweight encoder used when HF models aren't available locally."""
+
+    def __init__(self, vocab_size: int, hidden_size: int):
+        super().__init__()
+        self.embeddings = _TinyEmbeddings(vocab_size=vocab_size, hidden_size=hidden_size)
+        self.config = SimpleNamespace(hidden_size=hidden_size, vocab_size=vocab_size)
+
+    def forward(
+        self,
+        input_ids: "torch.Tensor",
+        attention_mask: Optional["torch.Tensor"] = None,
+    ) -> _ModelOutput:
+        token_embeddings = self.embeddings.word_embeddings(input_ids)
+        if attention_mask is not None:
+            token_embeddings = token_embeddings * attention_mask.unsqueeze(-1).to(
+                token_embeddings.dtype
+            )
+        return _ModelOutput(last_hidden_state=token_embeddings)
+
+
+class _BatchEncoding(dict):
+    """Minimal replacement for transformers.BatchEncoding."""
+
+    def to(self, device: "torch.device") -> "_BatchEncoding":
+        for key, value in list(self.items()):
+            if isinstance(value, torch.Tensor):
+                self[key] = value.to(device)
+        return self
+
+
+class _SimpleTokenizer:
+    """Deterministic, lightweight tokenizer fallback."""
+
+    def __init__(self, vocab_size: int = DEFAULT_STUB_VOCAB_SIZE):
+        self.vocab_size = vocab_size
+
+    @staticmethod
+    def _stable_token_id(token: str, vocab_size: int) -> int:
+        try:
+            digest = hashlib.md5(
+                token.encode("utf-8"), usedforsecurity=False
+            ).digest()
+        except TypeError:
+            digest = hashlib.md5(token.encode("utf-8")).digest()
+        value = int.from_bytes(digest[:4], byteorder="big", signed=False)
+        # Reserve 0 for PAD and 1 for UNK.
+        return (value % (vocab_size - 2)) + 2
+
+    def __call__(
+        self,
+        text: str,
+        max_length: int = 512,
+        padding: str = "max_length",
+        truncation: bool = True,
+        return_tensors: str = "pt",
+        **kwargs: Any,
+    ) -> _BatchEncoding:
+        if return_tensors != "pt":
+            raise ValueError("Only return_tensors='pt' is supported by _SimpleTokenizer")
+
+        tokens = text.split()
+        token_ids = [self._stable_token_id(t, self.vocab_size) for t in tokens]
+        if truncation:
+            token_ids = token_ids[:max_length]
+
+        attention = [1] * len(token_ids)
+        if padding == "max_length":
+            pad_len = max_length - len(token_ids)
+            if pad_len > 0:
+                token_ids.extend([0] * pad_len)
+                attention.extend([0] * pad_len)
+
+        input_ids = torch.tensor([token_ids], dtype=torch.long)
+        attention_mask = torch.tensor([attention], dtype=torch.long)
+        return _BatchEncoding({"input_ids": input_ids, "attention_mask": attention_mask})
+
+
+class _NullScheduler:
+    """No-op LR scheduler for environments without transformers."""
+
+    def __init__(self, optimizer: "torch.optim.Optimizer"):
+        self.optimizer = optimizer
+
+    def step(self):
+        return None
+
+    def state_dict(self) -> Dict[str, Any]:
+        return {}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        return None
+
+
+def _safe_from_pretrained(
+    loader: Any, model_name: str, local_files_only: bool = True
+) -> Any:
+    return loader.from_pretrained(model_name, local_files_only=local_files_only)
+
 
 @dataclass
 class RewardTrainingConfig:
@@ -96,6 +216,7 @@ class RewardTrainingConfig:
 
     # Device configuration
     device: str = "auto"  # auto, cuda, cpu
+    local_files_only: bool = True
 
     def __post_init__(self):
         if self.device == "auto":
@@ -193,18 +314,38 @@ class TransformerRewardModel(nn.Module):
         hidden_dim: int = 768,
         num_layers: int = 2,
         dropout: float = 0.1,
+        local_files_only: bool = True,
     ):
         super().__init__()
 
-        if not TRANSFORMERS_AVAILABLE:
-            raise ImportError(
-                "transformers is required for TransformerRewardModel. "
-                "Install with: pip install transformers"
-            )
+        transformers_available = _load_transformers_reward()
 
-        # Load pre-trained transformer
-        self.prompt_encoder = AutoModel.from_pretrained(base_model_name)
-        self.response_encoder = AutoModel.from_pretrained(base_model_name)
+        self.using_transformers = False
+
+        # Load transformer encoders if available; fall back to tiny encoders
+        if transformers_available:
+            try:
+                self.prompt_encoder = _safe_from_pretrained(
+                    AutoModel, base_model_name, local_files_only=local_files_only
+                )
+                self.response_encoder = _safe_from_pretrained(
+                    AutoModel, base_model_name, local_files_only=local_files_only
+                )
+                self.using_transformers = True
+            except Exception as e:
+                logger.warning(
+                    "Falling back to lightweight encoders (failed to load %s): %s",
+                    base_model_name,
+                    e,
+                )
+
+        if not self.using_transformers:
+            self.prompt_encoder = _TinyEncoder(
+                vocab_size=DEFAULT_STUB_VOCAB_SIZE, hidden_size=DEFAULT_STUB_HIDDEN_SIZE
+            )
+            self.response_encoder = _TinyEncoder(
+                vocab_size=DEFAULT_STUB_VOCAB_SIZE, hidden_size=DEFAULT_STUB_HIDDEN_SIZE
+            )
 
         # Get embedding dimension from model
         embedding_dim = self.prompt_encoder.config.hidden_size
@@ -314,12 +455,13 @@ class TransformerRewardTrainer:
         config: Optional[RewardTrainingConfig] = None,
         model: Optional[TransformerRewardModel] = None,
     ):
-        if not TORCH_AVAILABLE or not TRANSFORMERS_AVAILABLE:
+        if not TORCH_AVAILABLE:
             raise ImportError(
-                "PyTorch and transformers are required. "
-                "Install with: pip install torch transformers"
+                "PyTorch is required for TransformerRewardTrainer. "
+                "Install with: pip install torch"
             )
 
+        _load_transformers_reward()
         self.config = config or RewardTrainingConfig()
         self.device = torch.device(self.config.device)
 
@@ -330,6 +472,7 @@ class TransformerRewardTrainer:
                 hidden_dim=self.config.hidden_dim,
                 num_layers=self.config.num_layers,
                 dropout=self.config.dropout,
+                local_files_only=self.config.local_files_only,
             )
         else:
             self.model = model
@@ -337,7 +480,28 @@ class TransformerRewardTrainer:
         self.model.to(self.device)
 
         # Initialize tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(self.config.base_model)
+        self.tokenizer = None
+        if TRANSFORMERS_AVAILABLE:
+            try:
+                self.tokenizer = _safe_from_pretrained(
+                    AutoTokenizer,
+                    self.config.base_model,
+                    local_files_only=self.config.local_files_only,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Falling back to simple tokenizer (failed to load %s): %s",
+                    self.config.base_model,
+                    e,
+                )
+
+        if self.tokenizer is None:
+            vocab_size = getattr(
+                getattr(self.model.prompt_encoder, "config", None),
+                "vocab_size",
+                DEFAULT_STUB_VOCAB_SIZE,
+            )
+            self.tokenizer = _SimpleTokenizer(vocab_size=vocab_size)
 
         # Training state
         self.optimizer = None
@@ -407,11 +571,14 @@ class TransformerRewardTrainer:
 
         # Initialize scheduler
         total_steps = len(train_loader) * self.config.num_epochs
-        self.scheduler = get_linear_schedule_with_warmup(
-            self.optimizer,
-            num_warmup_steps=self.config.warmup_steps,
-            num_training_steps=total_steps,
-        )
+        if get_linear_schedule_with_warmup is None:
+            self.scheduler = _NullScheduler(self.optimizer)
+        else:
+            self.scheduler = get_linear_schedule_with_warmup(
+                self.optimizer,
+                num_warmup_steps=self.config.warmup_steps,
+                num_training_steps=total_steps,
+            )
 
         # Training loop
         for epoch in range(self.config.num_epochs):
@@ -469,7 +636,7 @@ class TransformerRewardTrainer:
                 prompt_attention_mask=prompt_attention_mask,
                 response_input_ids=response_input_ids,
                 response_attention_mask=response_attention_mask,
-            ).squeeze()
+            ).squeeze(-1)
 
             # Compute loss
             loss = F.mse_loss(predicted_rewards, rewards)
@@ -512,7 +679,7 @@ class TransformerRewardTrainer:
                     prompt_attention_mask=prompt_attention_mask,
                     response_input_ids=response_input_ids,
                     response_attention_mask=response_attention_mask,
-                ).squeeze()
+                ).squeeze(-1)
 
                 # Compute loss
                 loss = F.mse_loss(predicted_rewards, rewards)
@@ -557,6 +724,12 @@ class TransformerRewardTrainer:
         path_obj = Path(path)
         path_obj.parent.mkdir(parents=True, exist_ok=True)
 
+        config_payload: Any
+        try:
+            config_payload = asdict(self.config)
+        except Exception:
+            config_payload = dict(getattr(self.config, "__dict__", {}))
+
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
@@ -569,7 +742,7 @@ class TransformerRewardTrainer:
                 "train_losses": self.train_losses,
                 "val_losses": self.val_losses,
                 "best_val_loss": self.best_val_loss,
-                "config": self.config,
+                "config": config_payload,
             },
             path,
         )
@@ -578,7 +751,18 @@ class TransformerRewardTrainer:
 
     def load_checkpoint(self, path: str):
         """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)
+        try:
+            checkpoint = torch.load(path, map_location=self.device)
+        except Exception as e:
+            if "weights_only" in str(e):
+                try:
+                    checkpoint = torch.load(
+                        path, map_location=self.device, weights_only=False
+                    )
+                except TypeError:
+                    checkpoint = torch.load(path, map_location=self.device)
+            else:
+                raise
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
@@ -591,6 +775,13 @@ class TransformerRewardTrainer:
         self.train_losses = checkpoint.get("train_losses", [])
         self.val_losses = checkpoint.get("val_losses", [])
         self.best_val_loss = checkpoint.get("best_val_loss", float("inf"))
+
+        config_payload = checkpoint.get("config")
+        if isinstance(config_payload, dict):
+            try:
+                self.config = RewardTrainingConfig(**config_payload)
+            except Exception as e:
+                logger.warning("Failed to restore config from checkpoint: %s", e)
 
         logger.info(f"Checkpoint loaded from {path}")
 

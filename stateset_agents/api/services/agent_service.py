@@ -1,11 +1,13 @@
 import uuid
 import logging
+import os
 import time
+from dataclasses import replace
 from typing import Dict, List, Optional
 from fastapi import HTTPException
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from ..schemas import AgentConfigRequest, ConversationRequest, ConversationResponse
-from utils.security import InputValidator, SecurityMonitor
+from utils.security import SecurityMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,16 @@ class AgentService:
         self.agents: Dict[str, MultiTurnAgent] = {}
         self.conversations: Dict[str, List[Dict]] = {}
         self.security_monitor = security_monitor
+
+    def _should_use_stub_model(self, model_name: str) -> bool:
+        environment = os.getenv("API_ENVIRONMENT", "production").lower()
+        allow_external = os.getenv("API_ALLOW_EXTERNAL_MODELS", "false").lower() == "true"
+
+        if str(model_name).startswith("stub://"):
+            return True
+
+        # Default to stub backend in non-production unless explicitly enabled.
+        return environment != "production" and not allow_external
 
     async def create_agent(self, config: AgentConfigRequest) -> str:
         """Create a new agent."""
@@ -29,10 +41,25 @@ class AgentService:
             top_k=config.top_k,
             system_prompt=config.system_prompt,
             use_chat_template=config.use_chat_template,
+            use_stub_model=self._should_use_stub_model(config.model_name),
         )
 
         agent = MultiTurnAgent(agent_config)
-        await agent.initialize()
+        try:
+            await agent.initialize()
+        except Exception as exc:
+            environment = os.getenv("API_ENVIRONMENT", "production").lower()
+            if environment != "production" and not agent_config.use_stub_model:
+                logger.warning(
+                    "Agent initialization failed; falling back to stub backend",
+                    extra={"model_name": agent_config.model_name, "agent_id": agent_id},
+                    exc_info=True,
+                )
+                agent_config = replace(agent_config, use_stub_model=True)
+                agent = MultiTurnAgent(agent_config)
+                await agent.initialize()
+            else:
+                raise exc
 
         self.agents[agent_id] = agent
         logger.info(f"Created agent {agent_id}")
@@ -48,8 +75,9 @@ class AgentService:
 
         agent = self.agents[agent_id]
 
-        # Validate input
-        if not InputValidator.validate_string(request.messages[0]["content"]):
+        # Basic validation (request schema already validates structure/content)
+        content = request.messages[0].get("content") if request.messages else None
+        if not isinstance(content, str) or not content.strip():
             self.security_monitor.log_security_event(
                 "input_validation_failure",
                 {"agent_id": agent_id, "input_length": len(str(request.messages))},

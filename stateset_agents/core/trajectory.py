@@ -183,6 +183,8 @@ class MultiTurnTrajectory:
     trajectory_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     turns: List[ConversationTurn] = field(default_factory=list)
     total_reward: float = 0.0
+    # Backwards-compat: some tests/configs use `rewards=` instead of `turn_rewards=`.
+    rewards: Optional[List[float]] = None
     turn_rewards: Optional[List[float]] = None  # Reward for each turn
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -198,11 +200,18 @@ class MultiTurnTrajectory:
 
     def __post_init__(self):
         self.episode_length = len(self.turns)
+        if self.turn_rewards is None and self.rewards is not None:
+            self.turn_rewards = list(self.rewards)
+
         if self.turn_rewards is None:
             # Distribute total reward evenly if no per-turn rewards
             self.turn_rewards = [
                 self.total_reward / max(1, self.episode_length)
             ] * self.episode_length
+
+        # Keep aliases in sync (tests access `traj.rewards`).
+        self.turn_rewards = [float(r) for r in (self.turn_rewards or [])]
+        self.rewards = self.turn_rewards
 
     @property
     def conversation_history(self) -> List[Dict[str, str]]:
@@ -236,6 +245,7 @@ class MultiTurnTrajectory:
         if self.turn_rewards is None:
             self.turn_rewards = []
         self.turn_rewards.append(float(reward))
+        self.rewards = self.turn_rewards
         from decimal import Decimal
 
         self.total_reward = round(
@@ -273,6 +283,7 @@ class MultiTurnTrajectory:
         return {
             "turns": [turn.to_dict() for turn in self.turns],
             "total_reward": self.total_reward,
+            "rewards": self.rewards,
             "turn_rewards": self.turn_rewards,
             "metadata": self.metadata,
             "trajectory_id": self.trajectory_id,
@@ -283,6 +294,13 @@ class MultiTurnTrajectory:
             "conversation_quality_score": self.conversation_quality_score,
             "task_completion_score": self.task_completion_score,
         }
+
+    def to_messages(self) -> List[Dict[str, str]]:
+        """Return turns in `{role, content}` message format."""
+        return [
+            {"role": (turn.role or ""), "content": (turn.content or "")}
+            for turn in self.turns
+        ]
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MultiTurnTrajectory":
@@ -311,8 +329,8 @@ class TrajectoryGroup:
     Group of trajectories for the same scenario (for GRPO training)
     """
 
-    scenario_id: str
-    trajectories: List[Union[Trajectory, MultiTurnTrajectory]]
+    scenario_id: str = ""
+    trajectories: List[Union[Trajectory, MultiTurnTrajectory]] = field(default_factory=list)
     scenario_metadata: Dict[str, Any] = field(default_factory=dict)
     group_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
@@ -323,6 +341,10 @@ class TrajectoryGroup:
             traj.total_reward if hasattr(traj, "total_reward") else traj.reward
             for traj in self.trajectories
         ]
+
+    def add_trajectory(self, trajectory: Union[Trajectory, MultiTurnTrajectory]) -> None:
+        """Append a trajectory to the group (compatibility helper)."""
+        self.trajectories.append(trajectory)
 
     @property
     def reward_diversity(self) -> float:

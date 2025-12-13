@@ -369,14 +369,14 @@ class Agent(ABC):
 
     def __init__(
         self,
-        config: AgentConfig,
+        config: Optional[AgentConfig] = None,
         model_loader: Optional[Callable[[AgentConfig], Any]] = None,
         tokenizer_loader: Optional[Callable[[AgentConfig], Any]] = None,
         generation_config_factory: Optional[
             Callable[[AgentConfig, Any, Any], GenerationConfig]
         ] = None,
     ):
-        self.config = config
+        self.config = config or AgentConfig(model_name="stub://test", use_stub_model=True)
         self.model = None
         self.tokenizer = None
         self.generation_config = None

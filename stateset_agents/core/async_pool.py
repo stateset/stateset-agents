@@ -5,6 +5,8 @@ This module provides high-performance async connection pooling, resource managem
 and concurrency optimization for the GRPO Agent Framework.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import threading
@@ -29,11 +31,24 @@ from typing import (
     Union,
 )
 
-import aiohttp
+try:  # pragma: no cover - optional dependency
+    import aiohttp  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover
+    aiohttp = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+def _require_aiohttp() -> Any:
+    """Ensure aiohttp is available before using HTTP pooling utilities."""
+    if aiohttp is None:
+        raise ImportError(
+            "aiohttp is required for async HTTP pooling. "
+            "Install with `pip install stateset-agents[training]` or `pip install aiohttp`."
+        )
+    return aiohttp
 
 
 class PoolState(Enum):
@@ -169,25 +184,43 @@ class AsyncResourceFactory(Generic[T]):
                 logger.warning(f"Error closing resource: {e}")
 
 
-class HTTPSessionFactory(AsyncResourceFactory[aiohttp.ClientSession]):
-    """Factory for HTTP client sessions"""
+if aiohttp is not None:
+    class HTTPSessionFactory(AsyncResourceFactory[aiohttp.ClientSession]):  # type: ignore[name-defined]
+        """Factory for HTTP client sessions."""
 
-    def __init__(self, **session_kwargs):
-        self.session_kwargs = session_kwargs
+        def __init__(self, **session_kwargs):
+            self.session_kwargs = session_kwargs
 
-    async def create_resource(self, **kwargs) -> aiohttp.ClientSession:
-        """Create new HTTP session"""
-        merged_kwargs = {**self.session_kwargs, **kwargs}
-        return aiohttp.ClientSession(**merged_kwargs)
+        async def create_resource(self, **kwargs) -> aiohttp.ClientSession:  # type: ignore[name-defined]
+            """Create new HTTP session."""
+            aiohttp_mod = _require_aiohttp()
+            merged_kwargs = {**self.session_kwargs, **kwargs}
+            return aiohttp_mod.ClientSession(**merged_kwargs)
 
-    async def validate_resource(self, session: aiohttp.ClientSession) -> bool:
-        """Validate HTTP session"""
-        return not session.closed
+        async def validate_resource(self, session: aiohttp.ClientSession) -> bool:  # type: ignore[name-defined]
+            """Validate HTTP session."""
+            return not session.closed
 
-    async def cleanup_resource(self, session: aiohttp.ClientSession) -> None:
-        """Close HTTP session"""
-        if not session.closed:
-            await session.close()
+        async def cleanup_resource(self, session: aiohttp.ClientSession) -> None:  # type: ignore[name-defined]
+            """Close HTTP session."""
+            if not session.closed:
+                await session.close()
+else:
+    class HTTPSessionFactory(AsyncResourceFactory[Any]):
+        """Placeholder factory when aiohttp is not installed."""
+
+        def __init__(self, **session_kwargs):
+            self.session_kwargs = session_kwargs
+
+        async def create_resource(self, **kwargs) -> Any:
+            _require_aiohttp()
+            raise AssertionError("unreachable")
+
+        async def validate_resource(self, session: Any) -> bool:
+            return False
+
+        async def cleanup_resource(self, session: Any) -> None:
+            return None
 
 
 class AsyncResourcePool(Generic[T]):
@@ -226,25 +259,38 @@ class AsyncResourcePool(Generic[T]):
         """Initialize the pool"""
         logger.info(f"Initializing pool {self.name} with min_size={self.min_size}")
 
-        async with self._lock:
-            self._state = PoolState.READY
-
-            # Create minimum number of resources
-            for _ in range(self.min_size):
-                resource = await self._create_resource()
-                if resource:
+        created: List[PooledResource[T]] = []
+        try:
+            async with self._lock:
+                # Create minimum number of resources
+                for _ in range(self.min_size):
+                    resource = await self._create_resource(raise_on_fail=True)
+                    created.append(resource)
                     self._pool.append(resource)
                     await self._available.put(resource)
 
-            self._stats.total_connections = len(self._pool)
-            self._stats.idle_connections = len(self._pool)
+                self._state = PoolState.READY
+                self._stats.total_connections = len(self._pool)
+                self._stats.idle_connections = len(self._pool)
+        except Exception:
+            # Ensure partially created pools don't leak resources.
+            for resource in created:
+                try:
+                    await self.factory.cleanup_resource(resource.resource)
+                except Exception:
+                    pass
+            self._state = PoolState.CLOSED
+            raise
 
         # Start health check task
-        self._health_check_task = asyncio.create_task(self._health_check_loop())
+        if self.health_check_interval > 0:
+            self._health_check_task = asyncio.create_task(self._health_check_loop())
 
         logger.info(f"Pool {self.name} initialized with {len(self._pool)} resources")
 
-    async def _create_resource(self) -> Optional[PooledResource[T]]:
+    async def _create_resource(
+        self, raise_on_fail: bool = False
+    ) -> Optional[PooledResource[T]]:
         """Create a new pooled resource"""
         try:
             self._resource_counter += 1
@@ -259,6 +305,8 @@ class AsyncResourcePool(Generic[T]):
         except Exception as e:
             logger.error(f"Failed to create resource: {e}")
             self._stats.failed_connections += 1
+            if raise_on_fail:
+                raise
             return None
 
     @asynccontextmanager
@@ -664,10 +712,11 @@ async def get_http_pool() -> AsyncResourcePool[aiohttp.ClientSession]:
     """Get global HTTP session pool"""
     global _http_pool
 
+    aiohttp_mod = _require_aiohttp()
     if _http_pool is None:
         factory = HTTPSessionFactory(
-            timeout=aiohttp.ClientTimeout(total=30),
-            connector=aiohttp.TCPConnector(limit=100),
+            timeout=aiohttp_mod.ClientTimeout(total=30),
+            connector=aiohttp_mod.TCPConnector(limit=100),
         )
         _http_pool = AsyncResourcePool(
             factory=factory, min_size=2, max_size=20, name="HTTPPool"

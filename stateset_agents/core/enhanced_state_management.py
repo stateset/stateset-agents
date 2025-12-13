@@ -392,12 +392,12 @@ class StateManager:
 
     def __init__(
         self,
-        cache_backend: CacheBackend,
+        cache_backend: Optional[CacheBackend] = None,
         consistency_level: ConsistencyLevel = ConsistencyLevel.EVENTUAL,
         enable_versioning: bool = True,
         max_snapshots: int = 100,
     ):
-        self.cache_backend = cache_backend
+        self.cache_backend = cache_backend or InMemoryCacheBackend(max_size=10000)
         self.consistency_level = consistency_level
         self.enable_versioning = enable_versioning
         self.max_snapshots = max_snapshots
@@ -764,6 +764,10 @@ class ConversationStateManager:
         return cleaned_count
 
 
+class ConversationManager(ConversationStateManager):
+    """Compatibility alias for ``ConversationStateManager``."""
+
+
 class DistributedStateService:
     """Complete distributed state management service"""
 
@@ -804,13 +808,16 @@ class DistributedStateService:
 
     def _start_background_tasks(self):
         """Start background maintenance tasks"""
-        # Sync task
-        sync_task = asyncio.create_task(self._periodic_sync())
-        self._background_tasks.append(sync_task)
+        if self._background_tasks:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # pragma: no cover
+            # Constructed outside an event loop (tests/import-time); start later.
+            return
 
-        # Cleanup task
-        cleanup_task = asyncio.create_task(self._periodic_cleanup())
-        self._background_tasks.append(cleanup_task)
+        self._background_tasks.append(loop.create_task(self._periodic_sync()))
+        self._background_tasks.append(loop.create_task(self._periodic_cleanup()))
 
     async def _periodic_sync(self):
         """Periodically sync state with cache"""
@@ -903,7 +910,15 @@ async def managed_state_context():
         yield state_service
     finally:
         # Ensure state is synced
-        await state_service.state_manager.sync_with_cache()
+        sync_with_cache = getattr(state_service.state_manager, "sync_with_cache", None)
+        if callable(sync_with_cache):
+            try:
+                maybe_awaitable = sync_with_cache()
+                if asyncio.iscoroutine(maybe_awaitable):
+                    await maybe_awaitable
+            except TypeError:
+                # Non-awaitable mock or sync implementation.
+                pass
 
 
 if __name__ == "__main__":

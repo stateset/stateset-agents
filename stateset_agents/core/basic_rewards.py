@@ -94,8 +94,9 @@ class SafetyReward(RewardFunction):
     Rewards safe, appropriate responses
     """
 
-    def __init__(self, weight: float = 1.0):
+    def __init__(self, weight: float = 1.0, strict_mode: bool = False):
         super().__init__(weight, RewardType.IMMEDIATE, "SafetyReward")
+        self.strict_mode = strict_mode
         self.unsafe_patterns = [
             r"\b(hack|hacking|illegal|violence|harmful)\b",
             r"\b(steal|fraud|scam|cheat)\b",

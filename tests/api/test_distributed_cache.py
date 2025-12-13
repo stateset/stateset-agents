@@ -163,14 +163,14 @@ class TestMemoryCache:
     @pytest.mark.asyncio
     async def test_set_with_ttl(self, cache):
         """Test setting with custom TTL."""
-        await cache.set("expiring", "value", ttl=1)
+        await cache.set("expiring", "value", ttl=0.05)
 
         # Should exist immediately
         result = await cache.get("expiring")
         assert result == "value"
 
         # Should expire after TTL
-        await asyncio.sleep(1.1)
+        await asyncio.sleep(0.06)
         result = await cache.get("expiring")
         assert result is None
 
@@ -202,9 +202,9 @@ class TestMemoryCache:
     @pytest.mark.asyncio
     async def test_exists_expired(self, cache):
         """Test exists returns False for expired keys."""
-        await cache.set("expiring", "value", ttl=0.1)
+        await cache.set("expiring", "value", ttl=0.02)
 
-        await asyncio.sleep(0.15)
+        await asyncio.sleep(0.03)
         assert await cache.exists("expiring") is False
 
     @pytest.mark.asyncio

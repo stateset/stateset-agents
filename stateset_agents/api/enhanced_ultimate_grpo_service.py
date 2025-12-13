@@ -28,25 +28,25 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.middleware.gzip import GZipMiddleware
     from fastapi.responses import StreamingResponse
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, ConfigDict, Field
 
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
 
-from ..core.advanced_monitoring import (
+from stateset_agents.core.advanced_monitoring import (
     AdvancedMonitoringService,
     get_monitoring_service,
     monitor_async_function,
 )
-from ..core.enhanced_state_management import (
+from stateset_agents.core.enhanced_state_management import (
     DistributedStateService,
     get_state_service,
     managed_state_context,
 )
-from ..core.error_handling import ErrorHandler, GRPOException
-from ..core.performance_optimizer import OptimizationLevel, PerformanceOptimizer
-from ..training.advanced_training_orchestrator import (
+from stateset_agents.core.error_handling import ErrorHandler, GRPOException
+from stateset_agents.core.performance_optimizer import OptimizationLevel, PerformanceOptimizer
+from stateset_agents.training.advanced_training_orchestrator import (
     AdvancedTrainingOrchestrator,
     ResourceRequirement,
     ResourceType,
@@ -55,7 +55,7 @@ from ..training.advanced_training_orchestrator import (
 )
 
 # Import our enhanced components
-from .enhanced_grpo_gateway import (
+from stateset_agents.api.enhanced_grpo_gateway import (
     EnhancedGRPOGateway,
     LoadBalancingStrategy,
     RouteConfig,
@@ -70,9 +70,11 @@ logger = logging.getLogger(__name__)
 class EnhancedTrainingRequest(BaseModel):
     """Enhanced training request with comprehensive configuration"""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     experiment_name: str
     agent_type: str = "MultiTurnAgent"
-    model_config: Dict[str, Any]
+    model_configuration: Dict[str, Any] = Field(..., alias="model_config")
     training_data: Union[str, List[str]]
 
     # Training parameters
@@ -352,8 +354,15 @@ class ServiceManager:
         return status
 
 
-# Global service manager
-service_manager = ServiceManager()
+_service_manager: Optional[ServiceManager] = None
+
+
+def get_service_manager() -> ServiceManager:
+    """Return a lazily-initialized global ServiceManager."""
+    global _service_manager
+    if _service_manager is None:
+        _service_manager = ServiceManager()
+    return _service_manager
 
 
 @asynccontextmanager
@@ -361,13 +370,13 @@ async def lifespan(app: FastAPI):
     """FastAPI lifespan manager"""
     # Startup
     logger.info("🚀 Starting Enhanced Ultimate GRPO Service")
-    await service_manager.initialize()
+    await get_service_manager().initialize()
 
     yield
 
     # Shutdown
     logger.info("🛑 Shutting down Enhanced Ultimate GRPO Service")
-    await service_manager.shutdown()
+    await get_service_manager().shutdown()
 
 
 # Create FastAPI app
@@ -434,6 +443,7 @@ if FASTAPI_AVAILABLE:
         user_context=Depends(verify_request),
     ):
         """Submit enhanced training job with comprehensive configuration"""
+        service_manager = get_service_manager()
 
         async with managed_state_context() as state_service:
             try:
@@ -441,7 +451,7 @@ if FASTAPI_AVAILABLE:
                 training_config = TrainingConfig(
                     experiment_name=request.experiment_name,
                     agent_type=request.agent_type,
-                    model_config=request.model_config,
+                    model_config=request.model_configuration,
                     training_data=request.training_data,
                     num_epochs=request.num_epochs,
                     batch_size=request.batch_size,
@@ -514,6 +524,7 @@ if FASTAPI_AVAILABLE:
         request: EnhancedConversationRequest, user_context=Depends(verify_request)
     ):
         """Enhanced conversational interface with streaming support"""
+        service_manager = get_service_manager()
 
         async with managed_state_context() as state_service:
             try:
@@ -591,6 +602,7 @@ if FASTAPI_AVAILABLE:
     @monitor_async_function("enhanced_grpo_service.get_job_status")
     async def get_job_status(job_id: str, user_context=Depends(verify_request)):
         """Get detailed training job status"""
+        service_manager = get_service_manager()
 
         try:
             status = await service_manager.orchestrator.get_job_status(job_id)
@@ -613,6 +625,7 @@ if FASTAPI_AVAILABLE:
     @monitor_async_function("enhanced_grpo_service.cancel_job")
     async def cancel_job(job_id: str, user_context=Depends(verify_request)):
         """Cancel a training job"""
+        service_manager = get_service_manager()
 
         try:
             success = await service_manager.orchestrator.cancel_job(job_id)
@@ -634,6 +647,7 @@ if FASTAPI_AVAILABLE:
     @monitor_async_function("enhanced_grpo_service.health_check")
     async def health_check():
         """Comprehensive system health check"""
+        service_manager = get_service_manager()
 
         try:
             health_status = await service_manager.get_health_status()
@@ -665,6 +679,7 @@ if FASTAPI_AVAILABLE:
     @monitor_async_function("enhanced_grpo_service.get_metrics")
     async def get_metrics(user_context=Depends(verify_request)):
         """Get comprehensive system metrics"""
+        service_manager = get_service_manager()
 
         try:
             current_time = time.time()
@@ -721,6 +736,7 @@ if FASTAPI_AVAILABLE:
     @app.get("/api/v2/system/status")
     async def get_system_status(user_context=Depends(verify_request)):
         """Get detailed system status"""
+        service_manager = get_service_manager()
 
         try:
             return {
@@ -745,6 +761,7 @@ if FASTAPI_AVAILABLE:
     @app.websocket("/ws/v2")
     async def websocket_endpoint(websocket: WebSocket):
         """Enhanced WebSocket endpoint with real-time updates"""
+        service_manager = get_service_manager()
         await websocket.accept()
 
         try:

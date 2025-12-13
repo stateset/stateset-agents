@@ -15,8 +15,12 @@ from ..config import get_config
 _auth_service: Optional[AuthService] = None
 
 
-def get_auth_service() -> AuthService:
-    """Return a cached AuthService instance."""
+async def get_auth_service() -> AuthService:
+    """Return a cached AuthService instance.
+
+    This dependency is async to avoid FastAPI running it in a threadpool, which
+    can deadlock under certain middleware/test transports.
+    """
     global _auth_service
     if _auth_service is None:
         config = get_config()

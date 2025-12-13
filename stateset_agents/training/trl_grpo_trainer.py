@@ -493,7 +493,7 @@ class TRLGRPOTrainerWrapper:
             learning_rate=self.config.learning_rate,
             num_train_epochs=self.config.num_epochs,
             max_grad_norm=self.config.max_grad_norm,
-            warmup_steps=self.config.warmup_steps,
+            warmup_steps=self.config.get_warmup_steps(),
             fp16=self.config.fp16,
             bf16=self.config.bf16,
             logging_steps=self.config.logging_steps,

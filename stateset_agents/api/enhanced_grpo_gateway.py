@@ -43,16 +43,16 @@ except ImportError:
 
 import utils.cache
 
-from ..core.async_pool import AsyncResourcePool, managed_async_resources
-from ..core.error_handling import (
+from stateset_agents.core.async_pool import AsyncResourcePool, managed_async_resources
+from stateset_agents.core.error_handling import (
     CircuitBreaker,
     ErrorCategory,
     ErrorHandler,
     GRPOException,
 )
-from ..core.performance_optimizer import OptimizationLevel, PerformanceOptimizer
-from ..core.type_system import DeviceType, TypeValidator
-from ..utils.monitoring import MonitoringService
+from stateset_agents.core.performance_optimizer import OptimizationLevel, PerformanceOptimizer
+from stateset_agents.core.type_system import DeviceType, TypeValidator
+from stateset_agents.utils.monitoring import MonitoringService
 
 CacheService = utils.cache.CacheService
 
@@ -616,8 +616,11 @@ class EnhancedGRPOGateway:
         }
 
 
-# FastAPI integration
-if FASTAPI_AVAILABLE:
+def create_enhanced_gateway_app() -> FastAPI:
+    """Create FastAPI app with enhanced gateway"""
+    if not FASTAPI_AVAILABLE:
+        raise RuntimeError("FastAPI is required for gateway functionality")
+
     gateway = EnhancedGRPOGateway()
 
     # Initialize default service instances (for demo)
@@ -654,12 +657,6 @@ if FASTAPI_AVAILABLE:
             path="/health", methods=["GET"], timeout=5.0, cache_ttl=60, rate_limit=1000
         )
     )
-
-
-def create_enhanced_gateway_app() -> FastAPI:
-    """Create FastAPI app with enhanced gateway"""
-    if not FASTAPI_AVAILABLE:
-        raise RuntimeError("FastAPI is required for gateway functionality")
 
     app = FastAPI(
         title="Enhanced GRPO Gateway",

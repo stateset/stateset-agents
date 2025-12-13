@@ -8,9 +8,9 @@ including the base class, result types, and composite reward implementation.
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -28,14 +28,53 @@ class RewardType(Enum):
     DENSE = "dense"  # Reward at every step
 
 
-@dataclass
+@dataclass(init=False)
 class RewardResult:
     """Result of reward computation"""
 
     score: float
-    breakdown: Dict[str, float]
-    metadata: Dict[str, Any]
+    breakdown: Dict[str, float] = field(default_factory=dict)
+    components: Dict[str, float] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
     explanation: Optional[str] = None
+
+    def __init__(
+        self,
+        score: float,
+        components: Optional[Dict[str, float]] = None,
+        breakdown: Optional[Dict[str, float]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        explanation: Optional[str] = None,
+    ):
+        self.score = float(score)
+        if breakdown is None and components is not None:
+            breakdown = components
+        if components is None and breakdown is not None:
+            components = breakdown
+
+        self.breakdown = dict(breakdown or {})
+        self.components = dict(components or {})
+        self.metadata = dict(metadata or {})
+        self.explanation = explanation
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "score": self.score,
+            "breakdown": self.breakdown,
+            "components": self.components,
+            "metadata": self.metadata,
+            "explanation": self.explanation,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RewardResult":
+        return cls(
+            score=float(data.get("score", 0.0)),
+            breakdown=data.get("breakdown") or data.get("components") or {},
+            components=data.get("components") or data.get("breakdown") or {},
+            metadata=data.get("metadata") or {},
+            explanation=data.get("explanation"),
+        )
 
 
 class RewardFunction(ABC):
@@ -103,10 +142,12 @@ class CompositeReward(RewardFunction):
         self,
         reward_functions: List[RewardFunction],
         combination_method: str = "weighted_sum",
+        normalize_weights: bool = False,
     ):
         super().__init__(name="CompositeReward")
         self.reward_functions = reward_functions
         self.combination_method = combination_method
+        self.normalize_weights = normalize_weights
 
     async def compute_reward(
         self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
@@ -122,11 +163,11 @@ class CompositeReward(RewardFunction):
                 metadata={"error": "No reward functions configured"},
             )
 
-        results = []
+        results: List[Tuple[RewardFunction, RewardResult]] = []
         for reward_fn in self.reward_functions:
             try:
                 result = await reward_fn.compute_reward(turns, context)
-                results.append(result)
+                results.append((reward_fn, result))
             except Exception as e:
                 logger.warning(f"Reward function {reward_fn.name} failed: {e}")
                 # Continue with other reward functions
@@ -137,41 +178,47 @@ class CompositeReward(RewardFunction):
             logger.error("All reward functions failed to compute")
             return RewardResult(
                 score=0.0,
-                breakdown={},
+                components={},
                 metadata={"error": "All reward functions failed"},
             )
 
         # Combine rewards with safe defaults for empty results
+        component_weights = [float(rf.weight) for rf, _ in results]
+        if self.normalize_weights and sum(component_weights) > 0:
+            weight_sum = float(sum(component_weights))
+            component_weights = [w / weight_sum for w in component_weights]
+
         if self.combination_method == "weighted_sum":
             total_score = sum(
-                r.score * rf.weight for r, rf in zip(results, self.reward_functions[:len(results)])
+                rr.score * w for (rf, rr), w in zip(results, component_weights)
             )
         elif self.combination_method == "average":
-            total_score = float(np.mean([r.score for r in results])) if results else 0.0
+            total_score = float(np.mean([r.score for _, r in results])) if results else 0.0
         elif self.combination_method == "min":
-            total_score = min((r.score for r in results), default=0.0)
+            total_score = min((r.score for _, r in results), default=0.0)
         elif self.combination_method == "max":
-            total_score = max((r.score for r in results), default=0.0)
+            total_score = max((r.score for _, r in results), default=0.0)
         else:
             logger.warning(f"Unknown combination method '{self.combination_method}', defaulting to weighted_sum")
             total_score = sum(
-                r.score * rf.weight for r, rf in zip(results, self.reward_functions[:len(results)])
+                rr.score * w for (rf, rr), w in zip(results, component_weights)
             )
 
-        # Combine breakdowns
-        combined_breakdown = {}
-        for result, reward_fn in zip(results, self.reward_functions):
-            for key, value in result.breakdown.items():
-                combined_key = f"{reward_fn.name}_{key}"
-                combined_breakdown[combined_key] = value
+        components: Dict[str, float] = {}
+        for reward_fn, result in results:
+            name = (reward_fn.name or reward_fn.__class__.__name__).lower()
+            if name.endswith("reward"):
+                name = name[: -len("reward")]
+            components[name] = float(result.score)
 
         return RewardResult(
             score=total_score,
-            breakdown=combined_breakdown,
+            components=components,
             metadata={
-                "component_scores": [r.score for r in results],
-                "component_names": [rf.name for rf in self.reward_functions],
+                "component_scores": [r.score for _, r in results],
+                "component_names": [rf.name for rf, _ in results],
                 "combination_method": self.combination_method,
+                "normalize_weights": self.normalize_weights,
             },
         )
 

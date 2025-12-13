@@ -88,9 +88,7 @@ class ValueHead(nn.Module):
         hidden_states = self.dropout(hidden_states)
 
         # Compute value
-        values = self.value_head(hidden_states)
-
-        return values
+        return self.value_head(hidden_states)
 
 
 class ValueFunction:
@@ -148,11 +146,39 @@ class ValueFunction:
 
     def _get_hidden_size(self) -> int:
         """Get hidden size from the model"""
-        if hasattr(self.model, 'config'):
-            if hasattr(self.model.config, 'hidden_size'):
-                return self.model.config.hidden_size
-            elif hasattr(self.model.config, 'd_model'):
-                return self.model.config.d_model
+        config = None
+
+        model_dict = getattr(self.model, "__dict__", {})
+        if isinstance(model_dict, dict) and "config" in model_dict:
+            config = model_dict.get("config")
+        else:
+            try:
+                config = getattr(self.model, "config")
+            except Exception:
+                config = None
+
+        candidates: List[Any] = []
+        if config is not None:
+            config_dict = getattr(config, "__dict__", {})
+            if isinstance(config_dict, dict):
+                if "hidden_size" in config_dict:
+                    candidates.append(config_dict.get("hidden_size"))
+                if "d_model" in config_dict:
+                    candidates.append(config_dict.get("d_model"))
+            else:
+                for attr in ("hidden_size", "d_model"):
+                    try:
+                        candidates.append(getattr(config, attr))
+                    except Exception:
+                        continue
+
+        for candidate in candidates:
+            try:
+                hidden_size = int(candidate)
+            except (TypeError, ValueError):
+                continue
+            if hidden_size > 0:
+                return hidden_size
 
         # Default fallback
         return 768

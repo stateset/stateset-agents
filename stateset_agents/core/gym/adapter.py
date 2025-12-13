@@ -61,8 +61,10 @@ class GymEnvironmentAdapter(Environment):
         # Determine max steps
         if max_steps is None:
             # Try to get from gym env spec
-            if hasattr(gym_env, 'spec') and hasattr(gym_env.spec, 'max_episode_steps'):
-                max_steps = gym_env.spec.max_episode_steps
+            spec = getattr(gym_env, "spec", None)
+            raw_max_steps = getattr(spec, "max_episode_steps", None)
+            if isinstance(raw_max_steps, int) and raw_max_steps > 0:
+                max_steps = raw_max_steps
             else:
                 max_steps = 500  # Reasonable default
 

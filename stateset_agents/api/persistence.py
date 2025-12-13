@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import os
+import sqlite3
 import uuid
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
@@ -282,79 +283,159 @@ class SQLiteRepository(Repository[T]):
         self._entity_class = entity_class
         self._db_path = db_path
         self._table_name = entity_class.__name__.lower() + "s"
-        self._connection = None
+        self._initialized: bool = False
+        self._init_lock = asyncio.Lock()
 
     async def connect(self) -> None:
-        """Connect to SQLite database."""
+        """Connect to SQLite database.
+
+        SQLiteRepository intentionally avoids threadpool-based database I/O in
+        order to stay compatible with constrained/embedded runtimes where
+        cross-thread loop wakeups can be unreliable. Each operation opens a new
+        short-lived connection and performs work synchronously.
+        """
+        if self._initialized:
+            return
+
+        async with self._init_lock:
+            if self._initialized:
+                return
+            self._init_sync()
+            self._initialized = True
+            logger.info("Initialized SQLite database: %s", self._db_path)
+
+    def _init_sync(self) -> None:
+        connection = sqlite3.connect(self._db_path, timeout=30)
         try:
-            import aiosqlite
-
-            self._connection = await aiosqlite.connect(self._db_path)
-            await self._create_table()
-            logger.info(f"Connected to SQLite database: {self._db_path}")
-        except ImportError:
-            logger.error("aiosqlite package not installed. Install with: pip install aiosqlite")
-            raise
-
-    async def _create_table(self) -> None:
-        """Create table if not exists."""
-        await self._connection.execute(f"""
-            CREATE TABLE IF NOT EXISTS {self._table_name} (
-                id TEXT PRIMARY KEY,
-                data TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+            connection.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {self._table_name} (
+                    id TEXT PRIMARY KEY,
+                    data TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
             )
-        """)
-        await self._connection.execute(f"""
-            CREATE INDEX IF NOT EXISTS idx_{self._table_name}_created
-            ON {self._table_name}(created_at)
-        """)
-        await self._connection.commit()
+            connection.execute(
+                f"""
+                CREATE INDEX IF NOT EXISTS idx_{self._table_name}_created
+                ON {self._table_name}(created_at)
+                """
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def _require_initialized(self) -> None:
+        if not self._initialized:
+            raise RuntimeError("SQLiteRepository is not connected. Call connect() first.")
+
+    def _create_sync(self, entity_id: str, data_json: str, created_at: str, updated_at: str) -> None:
+        self._require_initialized()
+        connection = sqlite3.connect(self._db_path, timeout=30)
+        try:
+            connection.execute(
+                f"INSERT INTO {self._table_name} (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (entity_id, data_json, created_at, updated_at),
+            )
+            connection.commit()
+        finally:
+            connection.close()
 
     async def create(self, entity: T) -> T:
         """Create a new entity."""
+        await self.connect()
         entity.created_at = datetime.utcnow()
         entity.updated_at = datetime.utcnow()
-
-        await self._connection.execute(
-            f"INSERT INTO {self._table_name} (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)",
-            (entity.id, json.dumps(entity.to_dict()), entity.created_at.isoformat(), entity.updated_at.isoformat())
+        self._create_sync(
+            entity.id,
+            json.dumps(entity.to_dict()),
+            entity.created_at.isoformat(),
+            entity.updated_at.isoformat(),
         )
-        await self._connection.commit()
         return entity
+
+    def _get_data_sync(self, id: str) -> Optional[str]:
+        self._require_initialized()
+        connection = sqlite3.connect(self._db_path, timeout=30)
+        cursor = connection.execute(
+            f"SELECT data FROM {self._table_name} WHERE id = ?",
+            (id,),
+        )
+        try:
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+            connection.close()
+        if row:
+            return row[0]
+        return None
 
     async def get(self, id: str) -> Optional[T]:
         """Get entity by ID."""
-        cursor = await self._connection.execute(
-            f"SELECT data FROM {self._table_name} WHERE id = ?",
-            (id,)
-        )
-        row = await cursor.fetchone()
+        await self.connect()
+        data_json = self._get_data_sync(id)
+        if data_json is None:
+            return None
+        return self._entity_class.from_dict(json.loads(data_json))
 
-        if row:
-            return self._entity_class.from_dict(json.loads(row[0]))
-        return None
+    def _update_sync(self, entity_id: str, data_json: str, updated_at: str) -> None:
+        self._require_initialized()
+        connection = sqlite3.connect(self._db_path, timeout=30)
+        try:
+            connection.execute(
+                f"UPDATE {self._table_name} SET data = ?, updated_at = ? WHERE id = ?",
+                (data_json, updated_at, entity_id),
+            )
+            connection.commit()
+        finally:
+            connection.close()
 
     async def update(self, entity: T) -> T:
         """Update an existing entity."""
+        await self.connect()
         entity.updated_at = datetime.utcnow()
-
-        await self._connection.execute(
-            f"UPDATE {self._table_name} SET data = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(entity.to_dict()), entity.updated_at.isoformat(), entity.id)
+        self._update_sync(
+            entity.id,
+            json.dumps(entity.to_dict()),
+            entity.updated_at.isoformat(),
         )
-        await self._connection.commit()
         return entity
+
+    def _delete_sync(self, id: str) -> bool:
+        self._require_initialized()
+        connection = sqlite3.connect(self._db_path, timeout=30)
+        cursor = connection.execute(
+            f"DELETE FROM {self._table_name} WHERE id = ?",
+            (id,),
+        )
+        try:
+            connection.commit()
+            return cursor.rowcount > 0
+        finally:
+            cursor.close()
+            connection.close()
 
     async def delete(self, id: str) -> bool:
         """Delete entity by ID."""
-        cursor = await self._connection.execute(
-            f"DELETE FROM {self._table_name} WHERE id = ?",
-            (id,)
+        await self.connect()
+        return self._delete_sync(id)
+
+    def _list_data_sync(self, limit: int, offset: int) -> List[str]:
+        self._require_initialized()
+        connection = sqlite3.connect(self._db_path, timeout=30)
+        cursor = connection.execute(
+            f"SELECT data FROM {self._table_name} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
         )
-        await self._connection.commit()
-        return cursor.rowcount > 0
+        try:
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+            connection.close()
+
+        return [row[0] for row in rows]
 
     async def list(
         self,
@@ -363,13 +444,9 @@ class SQLiteRepository(Repository[T]):
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[T]:
         """List entities with pagination."""
-        cursor = await self._connection.execute(
-            f"SELECT data FROM {self._table_name} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset)
-        )
-        rows = await cursor.fetchall()
-
-        items = [self._entity_class.from_dict(json.loads(row[0])) for row in rows]
+        await self.connect()
+        data_rows = self._list_data_sync(limit, offset)
+        items = [self._entity_class.from_dict(json.loads(row)) for row in data_rows]
 
         # Apply filters in memory (for simplicity)
         if filters:
@@ -378,18 +455,31 @@ class SQLiteRepository(Repository[T]):
 
         return items
 
+    def _count_sync(self) -> int:
+        self._require_initialized()
+        connection = sqlite3.connect(self._db_path, timeout=30)
+        cursor = connection.execute(f"SELECT COUNT(*) FROM {self._table_name}")
+        try:
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+            connection.close()
+        return int(row[0]) if row else 0
+
     async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
         """Count entities."""
-        cursor = await self._connection.execute(
-            f"SELECT COUNT(*) FROM {self._table_name}"
-        )
-        row = await cursor.fetchone()
-        return row[0] if row else 0
+        # SQLite doesn't apply filters at query time in this simple implementation.
+        # For filtered counts, re-use list() then count in memory.
+        await self.connect()
+        if filters:
+            items = await self.list(limit=10_000_000, offset=0, filters=filters)
+            return len(items)
+        return self._count_sync()
 
     async def close(self) -> None:
         """Close database connection."""
-        if self._connection:
-            await self._connection.close()
+        # No persistent connections to close in this implementation.
+        return
 
 
 # ============================================================================

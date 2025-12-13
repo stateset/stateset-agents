@@ -24,7 +24,8 @@ class TestTTLDict:
     def ttl_dict(self):
         """Create a TTLDict for testing."""
         from api.ultimate_grpo_service import TTLDict
-        return TTLDict(ttl_seconds=1, max_size=5)
+        # Keep TTL-based tests fast while still validating expiry.
+        return TTLDict(ttl_seconds=0.05, max_size=5)
 
     def test_basic_operations(self, ttl_dict):
         """Test basic dict operations."""
@@ -47,7 +48,7 @@ class TestTTLDict:
         assert ttl_dict.get("expiring") == "value"
 
         # Wait for TTL to expire
-        time.sleep(1.5)
+        time.sleep(0.06)
 
         # Entry should be expired
         assert ttl_dict.get("expiring") is None
@@ -66,7 +67,7 @@ class TestTTLDict:
         ttl_dict["key1"] = "value1"
         ttl_dict["key2"] = "value2"
 
-        time.sleep(1.5)
+        time.sleep(0.06)
 
         count = ttl_dict.cleanup_expired()
         assert count == 2

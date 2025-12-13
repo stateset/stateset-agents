@@ -1,6 +1,7 @@
 import uuid
 import logging
 import asyncio
+import os
 from datetime import datetime
 from typing import Dict, Optional
 from fastapi import HTTPException
@@ -18,9 +19,15 @@ class TrainingService:
     def __init__(self):
         self.training_jobs: Dict[str, Dict] = {}
 
+    @property
+    def jobs(self) -> Dict[str, Dict]:
+        """Compatibility alias used by some router/tests."""
+        return self.training_jobs
+
     async def start_training(self, request: TrainingRequest) -> str:
         """Start a training job."""
         training_id = str(uuid.uuid4())
+        now = datetime.utcnow()
 
         # Create training configuration
         agent_config = AgentConfig(**request.agent_config.dict())
@@ -42,14 +49,24 @@ class TrainingService:
         # Start training in background
         self.training_jobs[training_id] = {
             "status": "running",
-            "start_time": datetime.utcnow(),
+            "created_at": now,
+            "started_at": now,
+            "completed_at": None,
+            "progress": 0.0,
+            "current_episode": 0,
+            "total_episodes": request.num_episodes,
+            "metrics": {},
+            "error": None,
             "config": request.dict(),
         }
 
-        # Run training asynchronously
-        asyncio.create_task(
-            self._run_training(training_id, agent, environment, reward_fn, request)
-        )
+        # In non-production environments we avoid kicking off heavyweight
+        # background training loops by default.
+        environment_name = os.getenv("API_ENVIRONMENT", "production").lower()
+        if environment_name == "production":
+            asyncio.create_task(
+                self._run_training(training_id, agent, environment, reward_fn, request)
+            )
 
         return training_id
 
@@ -76,7 +93,7 @@ class TrainingService:
             self.training_jobs[training_id].update(
                 {
                     "status": "completed",
-                    "completion_time": datetime.utcnow(),
+                    "completed_at": datetime.utcnow(),
                     "trained_agent": trained_agent,
                 }
             )
@@ -87,7 +104,7 @@ class TrainingService:
                 {
                     "status": "failed",
                     "error": str(e),
-                    "completion_time": datetime.utcnow(),
+                    "completed_at": datetime.utcnow(),
                 }
             )
 

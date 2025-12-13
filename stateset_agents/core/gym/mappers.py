@@ -283,43 +283,67 @@ def create_action_mapper(gym_env: Any, **kwargs) -> ActionMapper:
         >>> mapper = create_action_mapper(env)
         >>> mapper = create_action_mapper(env, action_names=["LEFT", "RIGHT"])
     """
+    gym = None
     try:
-        import gymnasium as gym
-    except ImportError:
-        import gym
+        import gymnasium as gym  # type: ignore[assignment]
+    except Exception:
+        try:
+            import gym  # type: ignore[assignment]
+        except Exception:
+            gym = None
 
-    action_space = gym_env.action_space
+    action_space = getattr(gym_env, "action_space", None)
+    if action_space is None:
+        raise ValueError("gym_env.action_space is required to create an action mapper")
 
-    # Discrete action space
-    if isinstance(action_space, gym.spaces.Discrete):
-        return DiscreteActionMapper(
-            n_actions=action_space.n,
-            **kwargs
-        )
+    # If gym/gymnasium is installed, prefer the canonical type checks.
+    if gym is not None:
+        if isinstance(action_space, gym.spaces.Discrete):
+            return DiscreteActionMapper(n_actions=action_space.n, **kwargs)
 
-    # Continuous action space (Box)
-    elif isinstance(action_space, gym.spaces.Box):
-        action_dim = action_space.shape[0] if len(action_space.shape) > 0 else 1
-        return ContinuousActionMapper(
-            action_dim=action_dim,
-            action_low=action_space.low,
-            action_high=action_space.high,
-            **kwargs
-        )
+        if isinstance(action_space, gym.spaces.Box):
+            action_dim = action_space.shape[0] if len(action_space.shape) > 0 else 1
+            return ContinuousActionMapper(
+                action_dim=action_dim,
+                action_low=action_space.low,
+                action_high=action_space.high,
+                **kwargs,
+            )
 
-    # MultiDiscrete action space
-    elif isinstance(action_space, gym.spaces.MultiDiscrete):
-        # For now, treat as single discrete with product of dimensions
-        # This is a simplification - proper support would require multiple mappers
-        n_actions = int(np.prod(action_space.nvec))
-        logger.warning(
-            f"MultiDiscrete space with {action_space.nvec} dims. "
-            f"Treating as single discrete with {n_actions} actions."
-        )
-        return DiscreteActionMapper(n_actions=n_actions, **kwargs)
+        if isinstance(action_space, gym.spaces.MultiDiscrete):
+            n_actions = int(np.prod(action_space.nvec))
+            logger.warning(
+                "MultiDiscrete space with %s dims. Treating as single discrete with %s actions.",
+                action_space.nvec,
+                n_actions,
+            )
+            return DiscreteActionMapper(n_actions=n_actions, **kwargs)
 
-    else:
         raise ValueError(
             f"Unsupported action space type: {type(action_space)}. "
-            f"Supported types: Discrete, Box, MultiDiscrete"
+            "Supported types: Discrete, Box, MultiDiscrete"
         )
+
+    # Fallback when gym isn't installed (unit tests / optional dependency).
+    n_actions = getattr(action_space, "n", None)
+    if isinstance(n_actions, int) and n_actions > 0:
+        return DiscreteActionMapper(n_actions=n_actions, **kwargs)
+
+    nvec = getattr(action_space, "nvec", None)
+    if nvec is not None:
+        n_actions = int(np.prod(nvec))
+        return DiscreteActionMapper(n_actions=n_actions, **kwargs)
+
+    shape = getattr(action_space, "shape", None)
+    if shape is not None:
+        action_dim = int(shape[0]) if hasattr(shape, "__len__") and len(shape) > 0 else 1
+        return ContinuousActionMapper(
+            action_dim=action_dim,
+            action_low=getattr(action_space, "low", None),
+            action_high=getattr(action_space, "high", None),
+            **kwargs,
+        )
+
+    raise ValueError(
+        f"Unsupported action space type: {type(action_space)} and gym is not installed."
+    )

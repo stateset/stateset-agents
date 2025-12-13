@@ -155,16 +155,18 @@ class SlidingWindowRateLimiter:
         self.windows.pop(key, None)
 
 
-# Global rate limiter instance
-_rate_limiter = SlidingWindowRateLimiter()
-
-
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiting middleware with sliding window algorithm."""
 
     def __init__(self, app: FastAPI, limiter: Optional[SlidingWindowRateLimiter] = None):
         super().__init__(app)
-        self.limiter = limiter or _rate_limiter
+        if limiter is not None:
+            self.limiter = limiter
+        else:
+            config = get_config()
+            self.limiter = SlidingWindowRateLimiter(
+                window_seconds=config.rate_limit.window_seconds
+            )
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         config = get_config()

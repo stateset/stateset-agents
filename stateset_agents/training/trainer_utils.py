@@ -123,3 +123,9 @@ def get_functional():
 def get_amp():
     """Get torch.amp module (may be None if not imported)."""
     return amp
+
+
+# Best-effort pre-load of lightweight Transformers utilities.
+# This keeps common scheduler helpers available for tests and simple consumers,
+# while still guarding failures on environments with incompatible deps.
+_load_transformers_utils()

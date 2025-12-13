@@ -178,24 +178,32 @@ class SingleTurnGRPOTrainer:
     def _setup_scheduler(self, num_training_steps: int) -> None:
         """Set up learning rate scheduler."""
         # require_transformers already called in initialize
+        if self.optimizer is None:
+            self.lr_scheduler = None
+            return
+
         num_warmup_steps = int(
             num_training_steps * getattr(self.config, "warmup_ratio", 0.1)
         )
         lr_scheduler_type = getattr(self.config, "lr_scheduler_type", "cosine")
 
-        if lr_scheduler_type == "cosine" and get_cosine_schedule_with_warmup:
-            self.lr_scheduler = get_cosine_schedule_with_warmup(
-                self.optimizer,
-                num_warmup_steps=num_warmup_steps,
-                num_training_steps=num_training_steps,
-            )
-        elif lr_scheduler_type == "linear" and get_linear_schedule_with_warmup:
-            self.lr_scheduler = get_linear_schedule_with_warmup(
-                self.optimizer,
-                num_warmup_steps=num_warmup_steps,
-                num_training_steps=num_training_steps,
-            )
-        else:
+        try:
+            if lr_scheduler_type == "cosine" and get_cosine_schedule_with_warmup:
+                self.lr_scheduler = get_cosine_schedule_with_warmup(
+                    self.optimizer,
+                    num_warmup_steps=num_warmup_steps,
+                    num_training_steps=num_training_steps,
+                )
+            elif lr_scheduler_type == "linear" and get_linear_schedule_with_warmup:
+                self.lr_scheduler = get_linear_schedule_with_warmup(
+                    self.optimizer,
+                    num_warmup_steps=num_warmup_steps,
+                    num_training_steps=num_training_steps,
+                )
+            else:
+                self.lr_scheduler = None
+        except Exception as sched_err:
+            logger.debug("Scheduler initialization skipped: %s", sched_err)
             self.lr_scheduler = None
 
     def _update_global_stats(self, batch_mean: float, batch_size: int) -> None:

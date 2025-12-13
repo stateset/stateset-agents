@@ -96,11 +96,13 @@ PROMPT_INJECTION_PATTERNS: FrozenSet[str] = frozenset({
     r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
     r"disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
     r"forget\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
+    r"forget\s+(all\s+)?(your|these)\s+(instructions?|prompts?|rules?)",
     r"do\s+not\s+follow\s+(the\s+)?(previous|prior|above|system)\s+(instructions?|prompts?|rules?)",
     r"override\s+(all\s+)?(previous|prior|above|system)\s+(instructions?|prompts?|rules?)",
 
     # Role manipulation attempts
     r"you\s+are\s+now\s+(?:a|an|in)\s+(?:different|new|unrestricted|jailbreak)",
+    r"you\s+are\s+now\s+(?:a|an|in)\s+(?:developer|admin|sudo|debug|god)\s+mode",
     r"(?:pretend|act|behave)\s+(?:like|as\s+if)\s+you\s+(?:are|have)\s+no\s+(?:rules|restrictions|limitations)",
     r"enter\s+(?:developer|admin|sudo|debug|god)\s+mode",
     r"switch\s+to\s+(?:developer|admin|sudo|debug|unrestricted)\s+mode",

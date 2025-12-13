@@ -813,6 +813,7 @@ class AdvancedTrainingOrchestrator:
         max_concurrent_jobs: int = 4,
         scheduling_strategy: SchedulingStrategy = SchedulingStrategy.RESOURCE_AWARE,
         enable_experiment_tracking: bool = True,
+        start_background_tasks: bool = True,
     ):
         self.max_concurrent_jobs = max_concurrent_jobs
         self.resource_manager = ResourceManager()
@@ -820,6 +821,7 @@ class AdvancedTrainingOrchestrator:
         self.experiment_tracker = (
             ExperimentTracker() if enable_experiment_tracking else None
         )
+        self._background_tasks_enabled = start_background_tasks
 
         # Worker management
         self.workers: Dict[str, TrainingWorker] = {}
@@ -837,6 +839,8 @@ class AdvancedTrainingOrchestrator:
 
     def _start_background_tasks(self):
         """Start background orchestration tasks"""
+        if not self._background_tasks_enabled:
+            return
         if self._orchestration_task or self._monitoring_task:
             return
         try:

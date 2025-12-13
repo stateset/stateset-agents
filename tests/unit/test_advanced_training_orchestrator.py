@@ -553,12 +553,8 @@ class TestAdvancedTrainingOrchestrator:
             max_concurrent_jobs=2,
             scheduling_strategy=SchedulingStrategy.FIFO,
             enable_experiment_tracking=False,
+            start_background_tasks=False,
         )
-        # Cancel background tasks for testing
-        if orch._orchestration_task:
-            orch._orchestration_task.cancel()
-        if orch._monitoring_task:
-            orch._monitoring_task.cancel()
         return orch
 
     def test_orchestrator_creation(self, orchestrator):

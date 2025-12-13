@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import logging
+import time
 from datetime import datetime
 from typing import Dict, Any
 
@@ -10,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
 from .config import get_config
-from .routers import agents, training, metrics
+from .routers import agents, training, metrics, v1
 from .middleware import setup_middleware
 from .errors import setup_exception_handlers
 from .openapi import setup_openapi, add_documentation_routes
@@ -18,16 +19,13 @@ from .resilience import HealthChecker, HealthStatus, get_all_circuit_stats
 
 logger = logging.getLogger(__name__)
 
-# Load config
-config = get_config()
-
-# Global health checker
-health_checker = HealthChecker()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager with resource initialization."""
+    config = getattr(app.state, "config", get_config())
+    health_checker = getattr(app.state, "health_checker", HealthChecker())
+    app.state.health_checker = health_checker
+
     logger.info("Starting StateSet Agents API v%s", config.api_version)
 
     # Initialize distributed cache (optional)
@@ -68,8 +66,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    config = get_config()
+    health_checker = HealthChecker()
     app = FastAPI(
         title=config.title,
         description="""
@@ -90,6 +91,9 @@ def create_app() -> FastAPI:
         version=config.api_version,
         lifespan=lifespan,
     )
+    app.state.config = config
+    app.state.health_checker = health_checker
+    app.state.started_at = time.time()
 
     # Middleware
     app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -110,6 +114,16 @@ def create_app() -> FastAPI:
     app.include_router(agents.conversation_router)
     app.include_router(training.router)
     app.include_router(metrics.router)
+    app.include_router(v1.router)
+
+    # Compatibility aliases for legacy tests/clients
+    app.add_api_route(
+        "/conversation",
+        v1.chat_v1,
+        methods=["POST"],
+        response_model=v1.ConversationResponseV1,
+        include_in_schema=False,
+    )
 
     # Setup OpenAPI documentation
     setup_openapi(app)
@@ -138,36 +152,6 @@ def create_app() -> FastAPI:
                 "conversations": "/conversations",
                 "training": "/training",
                 "metrics": "/metrics",
-            },
-        }
-
-    # Health endpoint
-    @app.get(
-        "/health",
-        summary="Health Check",
-        description="Check the health status of the API and its dependencies.",
-        tags=["health"],
-    )
-    async def health_check() -> Dict[str, Any]:
-        """
-        Comprehensive health check endpoint.
-
-        Returns the health status of the API and all registered dependencies.
-        """
-        results = await health_checker.check_all()
-        overall_status = health_checker.overall_status
-
-        return {
-            "status": overall_status.value,
-            "version": config.api_version,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "checks": {
-                name: {
-                    "status": result.status.value,
-                    "latency_ms": round(result.latency_ms, 2),
-                    "message": result.message,
-                }
-                for name, result in results.items()
             },
         }
 

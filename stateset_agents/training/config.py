@@ -71,6 +71,8 @@ class TrainingConfig:
     # Output configuration
     output_dir: str = "./outputs"
     run_name: Optional[str] = None
+    # Backwards-compat alias (some tests/configs use this name).
+    wandb_run_name: Optional[str] = None
     overwrite_output_dir: bool = True
 
     # Weights & Biases integration
@@ -141,6 +143,8 @@ class TrainingConfig:
         # Map compatibility aliases
         if self.batch_size is not None and self.batch_size > 0:
             self.per_device_train_batch_size = int(self.batch_size)
+        if self.wandb_run_name is not None and self.run_name is None:
+            self.run_name = self.wandb_run_name
 
     @classmethod
     def from_profile(cls, profile: TrainingProfile, **overrides) -> "TrainingConfig":

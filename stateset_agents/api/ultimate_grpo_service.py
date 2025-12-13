@@ -324,11 +324,17 @@ class TTLDict(dict):
 
     def setdefault(self, key, default=None):
         with self._lock:
-            if key not in self or key not in self._timestamps:
-                self[key] = default
-            elif time.time() - self._timestamps[key] > self.ttl_seconds:
-                self[key] = default
-            return super().__getitem__(key)
+            now = time.time()
+            timestamp = self._timestamps.get(key)
+            if timestamp is not None and now - timestamp <= self.ttl_seconds:
+                return super().__getitem__(key)
+
+            # Insert/replace without calling __setitem__ (avoid deadlock).
+            if key not in self and len(self) >= self.max_size:
+                self._evict_oldest(len(self) - self.max_size + 1)
+            super().__setitem__(key, default)
+            self._timestamps[key] = now
+            return default
 
     def _evict_oldest(self, count: int = 1):
         """Remove the oldest entries."""

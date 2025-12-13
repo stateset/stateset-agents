@@ -656,13 +656,18 @@ class IntelligentOrchestrator:
             )
 
     def _calculate_recent_performance(self) -> float:
-        """Calculate recent performance average"""
+        """Calculate recent performance summary (robust to outliers)."""
         if not self.global_performance_history:
             return 0.5  # Default
 
         recent_window = min(50, len(self.global_performance_history))
         recent_scores = self.global_performance_history[-recent_window:]
-        return sum(recent_scores) / len(recent_scores)
+        # Use median to reduce sensitivity to outliers/spikes.
+        sorted_scores = sorted(recent_scores)
+        mid = len(sorted_scores) // 2
+        if len(sorted_scores) % 2 == 1:
+            return float(sorted_scores[mid])
+        return float(sorted_scores[mid - 1] + sorted_scores[mid]) / 2.0
 
     def _calculate_performance_trend(self) -> float:
         """Calculate performance trend (positive = improving)"""

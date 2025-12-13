@@ -187,6 +187,10 @@ def require_any_role(*roles: str):
 # Service Dependencies
 # ============================================================================
 
-def get_security_monitor() -> SecurityMonitor:
-    """Get the security monitor instance."""
+async def get_security_monitor() -> SecurityMonitor:
+    """Get the security monitor instance.
+
+    This dependency is async to avoid FastAPI running it in a threadpool, which
+    can deadlock under certain middleware/test transports.
+    """
     return security_monitor

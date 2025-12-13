@@ -180,11 +180,28 @@ class CircuitBreakerState(Enum):
 class CircuitBreaker:
     """Circuit breaker for fault tolerance"""
 
-    def __init__(self, config: CircuitBreakerConfig):
-        self.config = config
+    def __init__(
+        self,
+        config: Optional[CircuitBreakerConfig] = None,
+        *,
+        failure_threshold: int = 5,
+        recovery_timeout: float = 60.0,
+        expected_exception: Type[Exception] = Exception,
+    ):
+        # Backward/interop support: allow constructing directly from thresholds.
+        self.config = config or CircuitBreakerConfig(
+            failure_threshold=failure_threshold,
+            recovery_timeout=recovery_timeout,
+            expected_exception=expected_exception,
+        )
         self.state = CircuitBreakerState.CLOSED
         self.failure_count = 0
         self.last_failure_time = 0
+
+    @property
+    def is_open(self) -> bool:
+        """Return True when the breaker is OPEN."""
+        return self.state == CircuitBreakerState.OPEN
 
     def call(self, func: Callable, *args, **kwargs):
         """Execute function with circuit breaker protection"""

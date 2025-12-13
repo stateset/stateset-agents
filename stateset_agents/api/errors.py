@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -397,12 +398,46 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     code = status_to_code.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
     message = str(exc.detail) if exc.detail else "An error occurred"
 
-    return build_error_response(
+    response = build_error_response(
         request=request,
         status_code=exc.status_code,
         code=code,
         message=message,
     )
+    if exc.headers:
+        response.headers.update(exc.headers)
+    return response
+
+
+async def starlette_http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
+    """Handle Starlette HTTPException (e.g. 404/405 for missing routes)."""
+    status_to_code = {
+        400: ErrorCode.BAD_REQUEST,
+        401: ErrorCode.UNAUTHORIZED,
+        403: ErrorCode.FORBIDDEN,
+        404: ErrorCode.NOT_FOUND,
+        405: ErrorCode.METHOD_NOT_ALLOWED,
+        409: ErrorCode.CONFLICT,
+        422: ErrorCode.VALIDATION_ERROR,
+        429: ErrorCode.RATE_LIMIT_EXCEEDED,
+        500: ErrorCode.INTERNAL_ERROR,
+        503: ErrorCode.SERVICE_UNAVAILABLE,
+    }
+
+    code = status_to_code.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
+    message = str(exc.detail) if exc.detail else "An error occurred"
+
+    response = build_error_response(
+        request=request,
+        status_code=exc.status_code,
+        code=code,
+        message=message,
+    )
+    if exc.headers:
+        response.headers.update(exc.headers)
+    return response
 
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -469,6 +504,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
     """Register all exception handlers."""
     app.add_exception_handler(APIError, api_error_handler)
     app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, starlette_http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
 

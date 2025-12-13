@@ -273,8 +273,9 @@ class ConservativeQLearning:
         self,
         states: torch.Tensor,
         actions: torch.Tensor,
-        q_values: torch.Tensor,
-    ) -> torch.Tensor:
+        q1_values: torch.Tensor,
+        q2_values: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Compute CQL regularization loss.
 
@@ -307,12 +308,10 @@ class ConservativeQLearning:
 
         # CQL loss: penalize high Q-values for random actions
         # and encourage correct Q-values for dataset actions
-        cql_loss_1 = (q1_logsumexp - q_values).mean()
-        cql_loss_2 = (q2_logsumexp - q_values).mean()
+        cql_loss_1 = (q1_logsumexp - q1_values).mean()
+        cql_loss_2 = (q2_logsumexp - q2_values).mean()
 
-        cql_loss = cql_loss_1 + cql_loss_2
-
-        return cql_loss
+        return cql_loss_1, cql_loss_2
 
     def train_step(
         self,
@@ -354,34 +353,34 @@ class ConservativeQLearning:
         bellman_loss_2 = F.mse_loss(current_q2, target_q)
 
         # CQL regularization
-        cql_loss = self._compute_cql_loss(states, actions, current_q1)
+        cql_loss_1, cql_loss_2 = self._compute_cql_loss(
+            states, actions, current_q1, current_q2
+        )
+        cql_loss = cql_loss_1 + cql_loss_2
 
         # Total loss
         if self.config.with_lagrange:
-            alpha = torch.exp(self.log_alpha)
-            cql_loss = alpha * (cql_loss - self.config.lagrange_threshold)
-
-            # Update alpha
+            alpha_tensor = torch.exp(self.log_alpha)
+            alpha_loss = -alpha_tensor * (cql_loss.detach() - self.config.lagrange_threshold)
             self.alpha_optimizer.zero_grad()
-            alpha_loss = -cql_loss
-            alpha_loss.backward(retain_graph=True)
+            alpha_loss.backward()
             self.alpha_optimizer.step()
+            alpha = float(alpha_tensor.detach().item())
         else:
-            alpha = self.config.cql_alpha
+            alpha = float(self.config.cql_alpha)
 
-        total_loss_1 = bellman_loss_1 + alpha * cql_loss
-        total_loss_2 = bellman_loss_2 + alpha * cql_loss
+        total_loss_1 = bellman_loss_1 + alpha * cql_loss_1
+        total_loss_2 = bellman_loss_2 + alpha * cql_loss_2
+        total_loss = total_loss_1 + total_loss_2
 
-        # Optimize Q1
+        # Optimize both Q networks from a single backward pass to avoid
+        # in-place optimizer updates invalidating the autograd graph.
         self.q1_optimizer.zero_grad()
-        total_loss_1.backward(retain_graph=True)
+        self.q2_optimizer.zero_grad()
+        total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.q2.parameters(), self.config.max_grad_norm)
         torch.nn.utils.clip_grad_norm_(self.q1.parameters(), self.config.max_grad_norm)
         self.q1_optimizer.step()
-
-        # Optimize Q2
-        self.q2_optimizer.zero_grad()
-        total_loss_2.backward()
-        torch.nn.utils.clip_grad_norm_(self.q2.parameters(), self.config.max_grad_norm)
         self.q2_optimizer.step()
 
         # Update target networks
@@ -393,7 +392,7 @@ class ConservativeQLearning:
         return {
             "bellman_loss": (bellman_loss_1 + bellman_loss_2).item() / 2,
             "cql_loss": cql_loss.item(),
-            "total_loss": (total_loss_1 + total_loss_2).item() / 2,
+            "total_loss": total_loss.item() / 2,
             "q1_mean": current_q1.mean().item(),
             "q2_mean": current_q2.mean().item(),
         }

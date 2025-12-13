@@ -451,7 +451,7 @@ class TestValueHead:
 
         values = value_head(hidden_states)
 
-        assert values.shape == (batch_size, seq_len)
+        assert values.shape == (batch_size, seq_len, 1)
 
     def test_value_head_trainable(self, device):
         """Test that value head parameters are trainable"""

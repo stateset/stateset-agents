@@ -13,8 +13,10 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 from httpx import AsyncClient
+import httpx
+
+from tests.api.asgi_client import SyncASGIClient
 
 # Environment is set by conftest.py, but ensure it's set for standalone runs
 os.environ.setdefault("API_ENVIRONMENT", "development")
@@ -26,7 +28,7 @@ os.environ.setdefault("API_RATE_LIMIT_ENABLED", "false")
 # Try to import API components - skip tests if not available
 try:
     from api.main import create_app
-    from api.config import get_config, APIConfig
+    from api.config import get_config, APIConfig, reload_config
     from api.auth import generate_token, generate_api_key
     from api.errors import ErrorCode
     API_AVAILABLE = True
@@ -35,6 +37,7 @@ except ImportError as e:
     create_app = None
     get_config = None
     APIConfig = None
+    reload_config = None
     generate_token = None
     generate_api_key = None
     ErrorCode = None
@@ -57,13 +60,15 @@ def app():
 @pytest.fixture
 def client(app):
     """Create test client."""
-    return TestClient(app)
+    with SyncASGIClient(app) as client:
+        yield client
 
 
 @pytest.fixture
 async def async_client(app):
     """Create async test client."""
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
 
@@ -609,8 +614,8 @@ class TestRateLimiting:
         os.environ["API_RATE_LIMIT_PER_MIN"] = "5"  # Low limit for testing
         reload_config()
 
-        client = TestClient(create_app())
-        yield client
+        with SyncASGIClient(create_app()) as client:
+            yield client
 
         # Reset
         os.environ["API_RATE_LIMIT_ENABLED"] = "false"
@@ -663,8 +668,8 @@ class TestAuthentication:
         os.environ["API_KEYS"] = "test-api-key-that-is-long-enough-32ch:admin|user"
         reload_config()
 
-        client = TestClient(create_app())
-        yield client
+        with SyncASGIClient(create_app()) as client:
+            yield client
 
         # Reset
         os.environ["API_REQUIRE_AUTH"] = "false"
@@ -839,7 +844,8 @@ class TestConcurrency:
     @pytest.mark.asyncio
     async def test_concurrent_requests(self, app):
         """Should handle concurrent requests."""
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        transport = httpx.ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Make 10 concurrent requests
             tasks = [
                 client.post("/api/v1/conversations", json={"message": f"Message {i}"})
@@ -858,7 +864,8 @@ class TestConcurrency:
     @pytest.mark.asyncio
     async def test_concurrent_training_jobs(self, app):
         """Should handle concurrent training job creation."""
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        transport = httpx.ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             tasks = [
                 client.post(
                     "/api/v1/training",
@@ -905,7 +912,7 @@ class TestIntegration:
 
         # 3. Wait for completion (with timeout)
         for _ in range(20):
-            time.sleep(0.5)
+            time.sleep(0.05)
             status_response = client.get(f"/api/v1/training/{job_id}")
             if status_response.json()["status"] in ("completed", "failed"):
                 break

@@ -48,6 +48,19 @@ class DetailedHealthResponse(BaseModel):
     checks: Dict[str, bool] = Field(default_factory=dict, description="Health check results")
 
 
+class RouterHealthResponse(BaseModel):
+    """Health response used by the public `/health` router endpoint."""
+
+    status: str = Field(..., description="Overall service status")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Response timestamp")
+    version: str = Field(..., description="API version")
+    uptime: float = Field(..., description="Service uptime in seconds")
+    components: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Component statuses keyed by component name",
+    )
+
+
 class DetailedMetricsResponse(BaseModel):
     """Detailed metrics response."""
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Metrics timestamp")
@@ -64,7 +77,7 @@ class DetailedMetricsResponse(BaseModel):
 
 @router.get(
     "/health",
-    response_model=DetailedHealthResponse,
+    response_model=RouterHealthResponse,
     summary="Health Check",
     description="Check the health status of the API service and its components.",
     responses={
@@ -72,7 +85,7 @@ class DetailedMetricsResponse(BaseModel):
         503: {"description": "Service is unhealthy"},
     },
 )
-async def health_check() -> DetailedHealthResponse:
+async def health_check() -> RouterHealthResponse:
     """
     Get comprehensive service health status.
 
@@ -91,59 +104,29 @@ async def health_check() -> DetailedHealthResponse:
     cached_response = cache.get(cache_key)
     if cached_response is not None:
         # Update timestamp for cached response
-        cached_response["timestamp"] = datetime.utcnow().isoformat()
-        return DetailedHealthResponse(**cached_response)
+        cached_response["timestamp"] = datetime.utcnow()
+        return RouterHealthResponse(**cached_response)
 
     # Calculate uptime
-    uptime = time.monotonic() - _service_start_time
+    uptime = round(time.monotonic() - _service_start_time, 2)
 
-    # Check components
-    components = []
-
-    # Agent service check
-    agent_start = time.monotonic()
-    agent_healthy = True  # Would check actual service
-    agent_latency = (time.monotonic() - agent_start) * 1000
-    components.append(ComponentHealthDetail(
-        name="agent_service",
-        status="healthy" if agent_healthy else "unhealthy",
-        latency_ms=round(agent_latency, 2),
-    ))
-
-    # Training service check
-    training_start = time.monotonic()
-    training_healthy = True  # Would check actual service
-    training_latency = (time.monotonic() - training_start) * 1000
-    components.append(ComponentHealthDetail(
-        name="training_service",
-        status="healthy" if training_healthy else "unhealthy",
-        latency_ms=round(training_latency, 2),
-    ))
-
-    # Security monitor check
-    security_start = time.monotonic()
-    security_healthy = True  # Would check actual service
-    security_latency = (time.monotonic() - security_start) * 1000
-    components.append(ComponentHealthDetail(
-        name="security_monitor",
-        status="healthy" if security_healthy else "unhealthy",
-        latency_ms=round(security_latency, 2),
-    ))
+    # Lightweight component checks (placeholders)
+    components = {
+        "agent_service": "healthy",
+        "training_service": "healthy",
+        "security_monitor": "healthy",
+    }
 
     # Determine overall status
-    all_healthy = all(c.status == "healthy" for c in components)
+    all_healthy = all(status == "healthy" for status in components.values())
     overall_status = "healthy" if all_healthy else "degraded"
 
-    response = DetailedHealthResponse(
+    response = RouterHealthResponse(
         status=overall_status,
         timestamp=datetime.utcnow(),
         version=API_VERSION,
-        uptime_seconds=round(uptime, 2),
+        uptime=uptime,
         components=components,
-        checks={
-            "api_responding": True,
-            "components_healthy": all_healthy,
-        },
     )
 
     # Cache the response

@@ -8,6 +8,7 @@ and analysis capabilities for GRPO training with rich metrics and insights.
 import asyncio
 import base64
 import io
+import importlib.util
 import json
 import logging
 import os
@@ -19,15 +20,58 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 
-try:
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    import wandb
+plt = None  # type: ignore[assignment]
+sns = None  # type: ignore[assignment]
+wandb = None
 
-    WANDB_AVAILABLE = True
-except ImportError:
-    WANDB_AVAILABLE = False
-    wandb = None
+WANDB_INSTALLED = importlib.util.find_spec("wandb") is not None
+MATPLOTLIB_INSTALLED = importlib.util.find_spec("matplotlib") is not None
+SEABORN_INSTALLED = importlib.util.find_spec("seaborn") is not None
+
+# Backwards-compat flag; indicates whether wandb can be imported.
+WANDB_AVAILABLE = WANDB_INSTALLED
+
+
+def _load_wandb() -> bool:
+    """Import wandb on-demand to avoid slow import at module load time."""
+    global WANDB_AVAILABLE, wandb
+    if wandb is not None:
+        return True
+    try:
+        import wandb as _wandb  # type: ignore
+
+        wandb = _wandb
+        WANDB_AVAILABLE = True
+        return True
+    except Exception as exc:  # pragma: no cover - environment dependent
+        wandb = None
+        WANDB_AVAILABLE = False
+        logging.getLogger(__name__).warning("Failed to import wandb: %s", exc)
+        return False
+
+
+def _load_plotting() -> bool:
+    """Import matplotlib/seaborn on-demand."""
+    global plt, sns
+    if plt is not None and sns is not None:
+        return True
+    try:
+        if plt is None:
+            import matplotlib.pyplot as _plt  # type: ignore
+
+            plt = _plt
+        if sns is None:
+            import seaborn as _sns  # type: ignore
+
+            sns = _sns
+        return True
+    except Exception as exc:  # pragma: no cover - environment dependent
+        plt = None  # type: ignore[assignment]
+        sns = None  # type: ignore[assignment]
+        logging.getLogger(__name__).warning(
+            "Failed to import matplotlib/seaborn: %s", exc
+        )
+        return False
 
 try:
     import torch
@@ -130,7 +174,11 @@ class WandBIntegration:
         training_config: Optional[TrainingConfig] = None,
         monitoring_service: Optional[MonitoringService] = None,
     ):
-        if not WANDB_AVAILABLE:
+        if not (WANDB_INSTALLED and MATPLOTLIB_INSTALLED and SEABORN_INSTALLED):
+            raise ImportError(
+                "wandb and matplotlib are required. Install with: pip install wandb matplotlib seaborn"
+            )
+        if not (_load_wandb() and _load_plotting()):
             raise ImportError(
                 "wandb and matplotlib are required. Install with: pip install wandb matplotlib seaborn"
             )
@@ -838,9 +886,19 @@ class WandBLogger:
     ):
         self.project = project
         self.entity = entity
-        self.enabled = enabled and WANDB_AVAILABLE
+        self.enabled = bool(enabled)
         self.run = None
         self.start_time = None
+
+        if self.enabled:
+            if not WANDB_INSTALLED:
+                logger.warning(
+                    "wandb package not available. Install with: pip install wandb"
+                )
+                self.enabled = False
+            elif not _load_wandb():
+                logger.warning("wandb import failed. W&B logging will be disabled.")
+                self.enabled = False
 
         # Handle API key
         if api_key:
@@ -849,12 +907,6 @@ class WandBLogger:
         # Check if W&B is properly configured
         if self.enabled and not os.getenv("WANDB_API_KEY"):
             logger.warning("WANDB_API_KEY not found. W&B logging will be disabled.")
-            self.enabled = False
-
-        if not WANDB_AVAILABLE and enabled:
-            logger.warning(
-                "wandb package not available. Install with: pip install wandb"
-            )
             self.enabled = False
 
         logger.info(f"W&B Logger initialized (enabled: {self.enabled})")

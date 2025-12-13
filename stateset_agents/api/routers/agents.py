@@ -5,6 +5,7 @@ API endpoints for agent management and conversations.
 """
 
 from datetime import datetime
+from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel, Field
@@ -35,6 +36,14 @@ conversation_router = APIRouter(prefix="/conversations", tags=["conversations"])
 # Singleton for now, could be dependency injected per request if needed
 security_monitor = SecurityMonitor()
 agent_service = AgentService(security_monitor)
+
+
+def _agent_config_to_dict(config: Any) -> Dict[str, Any]:
+    if isinstance(config, dict):
+        return config
+    if is_dataclass(config):
+        return asdict(config)
+    return {}
 
 
 # ============================================================================
@@ -118,14 +127,17 @@ async def create_agent(
     try:
         # Validate system prompt for injection if provided
         if config.system_prompt:
-            _, security_event = InputValidator.validate_string(
-                config.system_prompt,
-                max_length=10000,
-                field_name="system_prompt",
-                check_injection=True,
-            )
-            if security_event and security_event.blocked:
-                raise PromptInjectionError("system_prompt")
+            try:
+                InputValidator.validate_string(
+                    config.system_prompt,
+                    max_length=10000,
+                    field_name="system_prompt",
+                    check_injection=True,
+                )
+            except ValueError as e:
+                if "potentially harmful content" in str(e).lower():
+                    raise PromptInjectionError("system_prompt")
+                raise InvalidAgentConfigError(str(e))
 
         agent_id = await agent_service.create_agent(config)
 
@@ -193,7 +205,7 @@ async def list_agents(
             created_at=getattr(agent, "created_at", datetime.utcnow()),
             conversation_count=len(agent_service.conversations.get(agent_id, [])),
             total_tokens_used=getattr(agent, "total_tokens", 0),
-            config=getattr(agent, "config", {}),
+            config=_agent_config_to_dict(getattr(agent, "config", {})),
             status=getattr(agent, "status", "active"),
         )
         for agent_id, agent in page_agents
@@ -248,7 +260,7 @@ async def get_agent(
         created_at=getattr(agent, "created_at", datetime.utcnow()),
         conversation_count=len(agent_service.conversations.get(agent_id, [])),
         total_tokens_used=getattr(agent, "total_tokens", 0),
-        config=getattr(agent, "config", {}),
+        config=_agent_config_to_dict(getattr(agent, "config", {})),
         status=getattr(agent, "status", "active"),
     )
 
@@ -335,24 +347,28 @@ async def converse_with_agent(
 
         for i, msg in enumerate(request.messages):
             content = msg.get("content", "")
-            _, security_event = InputValidator.validate_string(
-                content,
-                max_length=MAX_MESSAGE_LENGTH,
-                field_name=f"messages[{i}].content",
-                check_injection=True,
-            )
-            if security_event:
-                if security_event.blocked:
+            try:
+                _, security_event = InputValidator.validate_string(
+                    content,
+                    max_length=MAX_MESSAGE_LENGTH,
+                    field_name=f"messages[{i}].content",
+                    check_injection=True,
+                )
+            except ValueError as e:
+                if "potentially harmful content" in str(e).lower():
+                    _, _, patterns = InputValidator.detect_prompt_injection(content)
                     api_security.log_prompt_injection_attempt(
                         client_ip="unknown",
                         path="/conversations",
                         content_preview=content[:100],
-                        patterns=security_event.details.get("matched_patterns", []),
+                        patterns=patterns,
                         user_id=user.user_id if user else None,
                     )
                     raise PromptInjectionError(f"messages[{i}].content")
-                else:
-                    api_security.log_event(security_event)
+                raise HTTPException(status_code=400, detail=str(e))
+
+            if security_event:
+                api_security.log_event(security_event)
 
         # Use a default agent for demo purposes
         agent_id = getattr(request, "agent_id", "default")
@@ -365,8 +381,11 @@ async def converse_with_agent(
         response = await agent_service.get_conversation_response(agent_id, request)
 
         # Log the conversation for analytics
+        async def _log_conversation_event(event_type: str, details: Dict[str, Any]) -> None:
+            monitor.log_security_event(event_type, details)
+
         background_tasks.add_task(
-            monitor.log_security_event,
+            _log_conversation_event,
             "conversation",
             {
                 "agent_id": agent_id,

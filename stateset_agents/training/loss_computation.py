@@ -8,8 +8,9 @@ including standard GRPO loss and enhanced GRPO loss with KL penalty.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -142,25 +143,11 @@ def _compute_group_policy_loss(
         zip(group.trajectories, advantages)
     ):
         try:
-            # Format trajectory for model
-            conversation_text = _format_trajectory_for_model(trajectory, agent)
-
-            # Tokenize
-            inputs = agent.tokenizer(
-                conversation_text,
-                return_tensors="pt",
-                truncation=True,
-                max_length=getattr(config, "max_prompt_length", 512)
-                + getattr(config, "max_completion_length", 512),
-                padding=True,
-            )
-            inputs = {
-                k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()
-            }
+            inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
 
             # Forward pass to get log probabilities
             with torch.set_grad_enabled(True):
-                outputs = agent.model(**inputs, labels=inputs["input_ids"])
+                outputs = agent.model(**inputs, labels=labels)
 
                 # Get the negative log likelihood (this is the loss from the model)
                 nll = outputs.loss
@@ -255,24 +242,7 @@ def compute_enhanced_grpo_loss(
         for traj_idx, (trajectory, advantage) in enumerate(
             zip(group.trajectories, advantages)
         ):
-            # Prepare inputs for model
-            conversation_text = _format_trajectory_for_model(trajectory, agent)
-
-            # Tokenize
-            inputs = agent.tokenizer(
-                conversation_text,
-                return_tensors="pt",
-                truncation=True,
-                max_length=getattr(config, "max_prompt_length", 512)
-                + getattr(config, "max_completion_length", 512),
-                padding=True,
-            )
-
-            # Move tensors to device
-            inputs = {
-                k: v.to(agent.model.device) if hasattr(v, "to") else v
-                for k, v in inputs.items()
-            }
+            inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
 
             # Forward pass
             use_amp = getattr(config, "bf16", False) or getattr(config, "fp16", False)
@@ -285,13 +255,13 @@ def compute_enhanced_grpo_loss(
                 autocast_ctx = contextlib.nullcontext()
 
             with autocast_ctx:
-                outputs = agent.model(**inputs, labels=inputs["input_ids"])
+                outputs = agent.model(**inputs, labels=labels)
 
                 # Get log probabilities
                 log_probs = outputs.logits.log_softmax(dim=-1)
 
                 # Compute policy loss with advantage weighting
-                policy_loss = -advantage * outputs.loss
+                policy_loss = advantage * outputs.loss
                 all_losses.append(policy_loss)
 
                 # KL divergence penalty (if beta > 0)
@@ -300,9 +270,20 @@ def compute_enhanced_grpo_loss(
                         ref_outputs = reference_model(**inputs)
                         ref_log_probs = ref_outputs.logits.log_softmax(dim=-1)
 
-                    kl_div = F.kl_div(
-                        log_probs, ref_log_probs, reduction="batchmean"
+                    # Token-wise KL(p || p_ref) = sum_v p(v) * (log p(v) - log p_ref(v))
+                    kl_per_token = (log_probs.exp() * (log_probs - ref_log_probs)).sum(
+                        dim=-1
                     )
+
+                    # Prefer masking to the same tokens contributing to the LM loss.
+                    if torch.is_tensor(labels):
+                        loss_mask = labels.ne(-100)
+                        if loss_mask.any():
+                            kl_div = (kl_per_token * loss_mask).sum() / loss_mask.sum()
+                        else:
+                            kl_div = kl_per_token.mean()
+                    else:  # pragma: no cover - non-tensor labels (stub tokenizer)
+                        kl_div = kl_per_token.mean()
                     all_kl_divs.append(kl_div)
 
     # Aggregate losses
@@ -315,13 +296,13 @@ def compute_enhanced_grpo_loss(
             total_loss = policy_loss + beta * kl_penalty
         else:
             total_loss = policy_loss
-            kl_penalty = torch.tensor(0.0)
+            kl_penalty = torch.tensor(0.0, device=agent.model.device)
     else:
         total_loss = torch.tensor(
             0.0, requires_grad=True, device=agent.model.device
         )
         policy_loss = total_loss
-        kl_penalty = torch.tensor(0.0)
+        kl_penalty = torch.tensor(0.0, device=agent.model.device)
 
     return {
         "total_loss": total_loss,
@@ -335,30 +316,126 @@ def compute_enhanced_grpo_loss(
 
 def _format_trajectory_for_model(trajectory: Any, agent: Any) -> str:
     """Format trajectory into text for model input."""
-    def _as_message(turn: Any) -> Dict[str, str]:
-        if isinstance(turn, dict):
-            role = str(turn.get("role", "user"))
-            content = str(turn.get("content", ""))
-            return {"role": role, "content": content}
-        role = getattr(turn, "role", None) or "user"
-        content = getattr(turn, "content", None) or ""
-        return {"role": str(role), "content": str(content)}
+    messages = _trajectory_to_messages(trajectory)
 
     if hasattr(agent.tokenizer, "apply_chat_template"):
         # Use tokenizer's chat template
-        messages = [_as_message(turn) for turn in trajectory.turns]
-
         return agent.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=False
         )
     else:
         # Simple formatting
         parts = []
-        for turn in trajectory.turns:
-            msg = _as_message(turn)
+        for msg in messages:
             if msg["role"] == "user":
                 parts.append(f"User: {msg['content']}")
             elif msg["role"] == "assistant":
                 parts.append(f"Assistant: {msg['content']}")
 
         return "\n".join(parts)
+
+
+def _trajectory_to_messages(trajectory: Any) -> List[Dict[str, str]]:
+    """Convert trajectory turns into normalized chat messages."""
+    messages: List[Dict[str, str]] = []
+    for turn in getattr(trajectory, "turns", []):
+        if isinstance(turn, dict):
+            role = str(turn.get("role", "user"))
+            content = str(turn.get("content", ""))
+        else:
+            role = str(getattr(turn, "role", None) or "user")
+            content = str(getattr(turn, "content", None) or "")
+        messages.append({"role": role, "content": content})
+    return messages
+
+
+def _prepare_inputs_and_labels(
+    trajectory: Any, agent: Any, config: Any
+) -> Tuple[Dict[str, Any], Any]:
+    """Prepare model inputs and loss labels, masking to assistant tokens when possible."""
+    torch = get_torch() or require_torch()
+    max_length = int(getattr(config, "max_prompt_length", 512)) + int(
+        getattr(config, "max_completion_length", 512)
+    )
+
+    tokenizer = agent.tokenizer
+    device = agent.model.device
+
+    # Best-effort: use chat-template assistant token masking when supported.
+    if hasattr(tokenizer, "apply_chat_template"):
+        try:
+            params = inspect.signature(tokenizer.apply_chat_template).parameters
+            supports_mask = (
+                "return_dict" in params and "return_assistant_tokens_mask" in params
+            )
+        except (TypeError, ValueError):
+            supports_mask = False
+
+        if supports_mask:
+            messages = _trajectory_to_messages(trajectory)
+            try:
+                out = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=True,
+                    add_generation_prompt=False,
+                    return_tensors="pt",
+                    return_dict=True,
+                    return_assistant_tokens_mask=True,
+                    truncation=True,
+                    max_length=max_length,
+                    padding=True,
+                )
+                if isinstance(out, dict) and "input_ids" in out:
+                    input_ids = out["input_ids"]
+                    attention_mask = out.get("attention_mask")
+                    assistant_mask = out.get("assistant_tokens_mask")
+
+                    labels = (
+                        input_ids.clone()
+                        if hasattr(input_ids, "clone")
+                        else input_ids
+                    )
+                    if assistant_mask is not None and hasattr(labels, "masked_fill"):
+                        mask = assistant_mask
+                        if hasattr(mask, "dim") and mask.dim() == 1:
+                            mask = mask.unsqueeze(0)
+                        labels = labels.masked_fill(~mask.bool(), -100)
+                    if attention_mask is not None and hasattr(labels, "masked_fill"):
+                        labels = labels.masked_fill(attention_mask.eq(0), -100)
+
+                    inputs: Dict[str, Any] = {"input_ids": input_ids}
+                    if attention_mask is not None:
+                        inputs["attention_mask"] = attention_mask
+
+                    inputs = {
+                        k: v.to(device) if hasattr(v, "to") else v
+                        for k, v in inputs.items()
+                    }
+                    if hasattr(labels, "to"):
+                        labels = labels.to(device)
+                    return inputs, labels
+            except TypeError:
+                # Tokenizer does not accept one of the requested kwargs.
+                pass
+            except Exception:
+                # Any other failure: fall back to plain tokenization.
+                pass
+
+    # Fallback: compute loss over the full token stream.
+    conversation_text = _format_trajectory_for_model(trajectory, agent)
+    inputs = tokenizer(
+        conversation_text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=max_length,
+        padding=True,
+    )
+    input_ids = inputs.get("input_ids")
+    labels = input_ids.clone() if hasattr(input_ids, "clone") else input_ids
+    if "attention_mask" in inputs and torch.is_tensor(labels):
+        labels = labels.masked_fill(inputs["attention_mask"].eq(0), -100)
+
+    inputs = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
+    if hasattr(labels, "to"):
+        labels = labels.to(device)
+    return inputs, labels

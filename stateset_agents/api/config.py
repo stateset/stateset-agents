@@ -223,7 +223,7 @@ class ValidationConfig:
     max_prompts: int = 8
     max_prompt_length: int = 4000
     max_message_length: int = 4000
-    max_iterations: int = 50
+    max_iterations: int = 1000
     max_request_size_mb: int = 10
 
     @classmethod
@@ -233,7 +233,7 @@ class ValidationConfig:
             max_prompts=_get_int("API_MAX_PROMPTS", 8, min_val=1, max_val=100),
             max_prompt_length=_get_int("API_MAX_PROMPT_LENGTH", 4000, min_val=100, max_val=100000),
             max_message_length=_get_int("API_MAX_MESSAGE_LENGTH", 4000, min_val=100, max_val=100000),
-            max_iterations=_get_int("API_MAX_ITERATIONS", 50, min_val=1, max_val=1000),
+            max_iterations=_get_int("API_MAX_ITERATIONS", 1000, min_val=1, max_val=1000),
             max_request_size_mb=_get_int("API_MAX_REQUEST_SIZE_MB", 10, min_val=1, max_val=100),
         )
 

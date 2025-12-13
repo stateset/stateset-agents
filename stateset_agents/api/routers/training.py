@@ -7,7 +7,7 @@ API endpoints for training job management.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ..schemas import TrainingRequest, TrainingResponse, ErrorResponse
@@ -99,7 +99,10 @@ async def start_training(
             raise TrainingConfigError("num_episodes must be at least 1")
 
         if not request.environment_scenarios:
-            raise TrainingConfigError("At least one environment scenario is required")
+            raise HTTPException(
+                status_code=422,
+                detail="environment_scenarios must contain at least one scenario",
+            )
 
         training_id = await training_service.start_training(request)
 
@@ -111,6 +114,8 @@ async def start_training(
         )
 
     except TrainingConfigError:
+        raise
+    except HTTPException:
         raise
     except ValueError as e:
         raise TrainingConfigError(str(e))

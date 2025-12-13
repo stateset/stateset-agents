@@ -20,8 +20,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI, Request
-from fastapi.testclient import TestClient
 from starlette.responses import Response
+
+from tests.api.asgi_client import SyncASGIClient
 
 # Set test environment
 os.environ["API_ENVIRONMENT"] = "development"
@@ -208,13 +209,13 @@ class TestDistributedCache:
         """Test memory cache TTL expiration."""
         from api.distributed_cache import MemoryCache, CacheConfig
 
-        config = CacheConfig(default_ttl_seconds=1)
+        config = CacheConfig(default_ttl_seconds=0.05)
         cache = MemoryCache(config)
 
-        await cache.set("expiring", "value", ttl=1)
+        await cache.set("expiring", "value", ttl=0.05)
         assert await cache.get("expiring") == "value"
 
-        await asyncio.sleep(1.1)
+        await asyncio.sleep(0.06)
         assert await cache.get("expiring") is None
 
     @pytest.mark.asyncio
@@ -316,9 +317,8 @@ class TestSecurityHeadersMiddleware:
             return {"status": "ok"}
 
         app.add_middleware(SecurityHeadersMiddleware)
-        client = TestClient(app)
-
-        response = client.get("/test")
+        with SyncASGIClient(app) as client:
+            response = client.get("/test")
 
         for header in SECURITY_HEADERS:
             assert header in response.headers
@@ -338,9 +338,8 @@ class TestRequestContextMiddleware:
             return {"status": "ok"}
 
         app.add_middleware(RequestContextMiddleware)
-        client = TestClient(app)
-
-        response = client.get("/test")
+        with SyncASGIClient(app) as client:
+            response = client.get("/test")
         assert "X-Request-ID" in response.headers
 
     def test_request_id_passed_through(self):
@@ -354,10 +353,9 @@ class TestRequestContextMiddleware:
             return {"status": "ok"}
 
         app.add_middleware(RequestContextMiddleware)
-        client = TestClient(app)
-
-        custom_id = "my-custom-request-id"
-        response = client.get("/test", headers={"X-Request-ID": custom_id})
+        with SyncASGIClient(app) as client:
+            custom_id = "my-custom-request-id"
+            response = client.get("/test", headers={"X-Request-ID": custom_id})
         assert response.headers.get("X-Request-ID") == custom_id
 
     def test_response_time_header(self):
@@ -371,9 +369,8 @@ class TestRequestContextMiddleware:
             return {"status": "ok"}
 
         app.add_middleware(RequestContextMiddleware)
-        client = TestClient(app)
-
-        response = client.get("/test")
+        with SyncASGIClient(app) as client:
+            response = client.get("/test")
         assert "X-Response-Time-Ms" in response.headers
 
 
@@ -821,7 +818,8 @@ class TestAPIIntegration:
     @pytest.fixture
     def client(self, app):
         """Create test client."""
-        return TestClient(app)
+        with SyncASGIClient(app) as client:
+            yield client
 
     def test_health_endpoint(self, client):
         """Test health endpoint returns healthy status."""
