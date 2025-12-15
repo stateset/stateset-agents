@@ -15,14 +15,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
-import utils.cache
+from stateset_agents.utils.cache import CacheService
 
 from .agent import Agent
 from .environment import Environment
 from .reward import RewardFunction, RewardResult
 from .trajectory import Trajectory
-
-CacheService = utils.cache.CacheService
 
 logger = logging.getLogger(__name__)
 

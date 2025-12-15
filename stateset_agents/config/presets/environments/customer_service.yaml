@@ -1,0 +1,37 @@
+# Customer Service Environment Preset
+# Environment configuration for customer service training scenarios
+
+max_turns: 15
+persona: >
+  You are a professional customer service representative.
+
+scenarios:
+  - id: product_inquiry
+    topic: product_inquiry
+    user_goal: Learn about product features
+    context: User is interested in purchasing a product
+    user_responses:
+      - "What features does it have?"
+      - "How much does it cost?"
+      - "Is there a warranty?"
+      - "Can you tell me more?"
+
+  - id: technical_support
+    topic: technical_support
+    user_goal: Resolve technical issue
+    context: User is experiencing a problem with their device
+    user_responses:
+      - "It's still not working"
+      - "I tried that already"
+      - "What else can I try?"
+      - "Can you explain that more simply?"
+
+  - id: billing_inquiry
+    topic: billing
+    user_goal: Understand billing charges
+    context: User has questions about their recent bill
+    user_responses:
+      - "Why was I charged this amount?"
+      - "Can you explain the breakdown?"
+      - "Is there a way to reduce my bill?"
+      - "When is my next payment due?"

@@ -84,7 +84,8 @@ except ImportError:
             self.status_code = status_code
             self.content = content
 
-import utils.monitoring
+from stateset_agents.utils.monitoring import MonitoringService
+from stateset_agents.utils.cache import CacheService
 
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.computational_engine import (
@@ -93,11 +94,6 @@ from stateset_agents.core.computational_engine import (
 )
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.multiturn_agent import DialogueDatabase, MultiTurnAgent
-
-MonitoringService = utils.monitoring.MonitoringService
-import utils.cache
-
-CacheService = utils.cache.CacheService
 
 logger = logging.getLogger(__name__)
 
@@ -224,51 +220,8 @@ RATE_LIMITER = SlidingWindowRateLimiter()
 API_METRICS = APIMetrics()
 
 
-class LightweightDemoEngine:
-    """Lightweight demo engine to keep the API responsive in constrained envs."""
-
-    def __init__(self) -> None:
-        self.scale_factor = 1.0
-        self.total_trajectories = 0
-        self.total_reward = 0.0
-
-    async def train_iteration(self, prompts: List[str]) -> Dict[str, Any]:
-        """Simulate a training iteration without heavy compute."""
-        trajectories = len(prompts)
-        average_reward = 0.5
-        computation_used = trajectories * self.scale_factor
-
-        self.total_trajectories += trajectories
-        self.total_reward += average_reward * trajectories
-
-        return {
-            "trajectories_generated": trajectories,
-            "average_reward": average_reward,
-            "total_computation_used": computation_used,
-            "scale_factor": self.scale_factor,
-        }
-
-    def get_metrics(self) -> Dict[str, Any]:
-        """Return simple engine metrics."""
-        average_reward = (
-            self.total_reward / self.total_trajectories
-            if self.total_trajectories
-            else 0.0
-        )
-        return {
-            "total_trajectories": self.total_trajectories,
-            "average_reward": average_reward,
-            "scale_factor": self.scale_factor,
-        }
-
-    def scale_computation(self, scale_factor: float) -> Dict[str, Any]:
-        """Adjust the simulated computation scale."""
-        self.scale_factor = scale_factor
-        return {"scale_factor": scale_factor}
-
-    def cleanup(self) -> None:
-        """Cleanup hook for parity with real engines."""
-        return None
+# LightweightDemoEngine moved to stateset_agents/api/services/demo_engine.py
+from stateset_agents.api.services.demo_engine import LightweightDemoEngine
 
 
 def _build_error_response(
@@ -287,83 +240,41 @@ def _build_error_response(
 
     return JSONResponse(status_code=status_code, content=payload)
 
-# TTL-enabled dictionary for bounded state storage
-class TTLDict(dict):
-    """Dictionary with automatic cleanup of expired entries."""
+# TTL-enabled dictionary using cachetools for robust caching
+try:
+    from cachetools import TTLCache
+    _CACHETOOLS_AVAILABLE = True
+except ImportError:
+    _CACHETOOLS_AVAILABLE = False
+    TTLCache = None  # type: ignore
 
-    def __init__(self, ttl_seconds: int = 3600, max_size: int = 10000):
-        super().__init__()
-        self.ttl_seconds = ttl_seconds
-        self.max_size = max_size
-        self._timestamps: Dict[str, float] = {}
-        self._lock = threading.Lock()
 
-    def __setitem__(self, key, value):
-        with self._lock:
-            # Enforce max size by removing oldest entries
-            if len(self) >= self.max_size:
-                self._evict_oldest(len(self) - self.max_size + 1)
-            super().__setitem__(key, value)
-            self._timestamps[key] = time.time()
+def create_ttl_cache(maxsize: int = 10000, ttl: int = 3600) -> Dict[str, Any]:
+    """Create a TTL-enabled cache using cachetools if available.
 
-    def __getitem__(self, key):
-        with self._lock:
-            # Check if expired
-            if key in self._timestamps:
-                if time.time() - self._timestamps[key] > self.ttl_seconds:
-                    super().pop(key, None)
-                    self._timestamps.pop(key, None)
-                    raise KeyError(key)
-            return super().__getitem__(key)
+    Args:
+        maxsize: Maximum number of entries
+        ttl: Time-to-live in seconds
 
-    def get(self, key, default=None):
-        try:
-            return self[key]
-        except KeyError:
-            return default
-
-    def setdefault(self, key, default=None):
-        with self._lock:
-            now = time.time()
-            timestamp = self._timestamps.get(key)
-            if timestamp is not None and now - timestamp <= self.ttl_seconds:
-                return super().__getitem__(key)
-
-            # Insert/replace without calling __setitem__ (avoid deadlock).
-            if key not in self and len(self) >= self.max_size:
-                self._evict_oldest(len(self) - self.max_size + 1)
-            super().__setitem__(key, default)
-            self._timestamps[key] = now
-            return default
-
-    def _evict_oldest(self, count: int = 1):
-        """Remove the oldest entries."""
-        if not self._timestamps:
-            return
-        sorted_keys = sorted(self._timestamps.keys(), key=lambda k: self._timestamps[k])
-        for key in sorted_keys[:count]:
-            super().pop(key, None)
-            self._timestamps.pop(key, None)
-
-    def cleanup_expired(self):
-        """Remove all expired entries."""
-        with self._lock:
-            now = time.time()
-            expired_keys = [
-                k for k, ts in self._timestamps.items()
-                if now - ts > self.ttl_seconds
-            ]
-            for key in expired_keys:
-                super().pop(key, None)
-                self._timestamps.pop(key, None)
-            return len(expired_keys)
+    Returns:
+        A dict-like object with TTL support
+    """
+    if _CACHETOOLS_AVAILABLE:
+        return TTLCache(maxsize=maxsize, ttl=ttl)  # type: ignore
+    else:
+        # Fallback to regular dict with a warning
+        logger.warning(
+            "cachetools not available, using regular dict without TTL support. "
+            "Install with: pip install cachetools"
+        )
+        return {}
 
 
 # Global state with TTL for automatic cleanup
-services = {}
-active_engines = {}
-active_conversations = TTLDict(ttl_seconds=3600, max_size=10000)  # 1 hour TTL, max 10K
-training_jobs = TTLDict(ttl_seconds=86400, max_size=1000)  # 24 hour TTL, max 1K
+services: Dict[str, Any] = {}
+active_engines: Dict[str, Any] = {}
+active_conversations: Dict[str, Any] = create_ttl_cache(maxsize=10000, ttl=3600)  # 1 hour TTL
+training_jobs: Dict[str, Any] = create_ttl_cache(maxsize=1000, ttl=86400)  # 24 hour TTL
 
 
 def _extract_api_key(request: Request) -> Optional[str]:

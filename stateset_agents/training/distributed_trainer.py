@@ -37,7 +37,7 @@ except ImportError:
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
-from utils.monitoring import MonitoringService
+from stateset_agents.utils.monitoring import MonitoringService
 
 from .config import TrainingConfig
 from .trainer import GRPOTrainer

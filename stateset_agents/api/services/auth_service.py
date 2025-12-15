@@ -24,6 +24,9 @@ async def get_auth_service() -> AuthService:
     global _auth_service
     if _auth_service is None:
         config = get_config()
+        # SECURITY: Fallback secret is for development/testing ONLY.
+        # In production, API_JWT_SECRET environment variable MUST be set.
+        # The config.security validation enforces this in production mode.
         secret_key = config.security.jwt_secret or "temporary-secret-for-dev"
         _auth_service = AuthService(secret_key)
     return _auth_service

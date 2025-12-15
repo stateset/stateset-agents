@@ -473,16 +473,143 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Handle unexpected exceptions."""
-    request_id = getattr(request.state, "request_id", "unknown")
+    """Handle unexpected exceptions with specific mapping for known types."""
+    import asyncio
 
-    # Log the full traceback
+    request_id = getattr(request.state, "request_id", "unknown")
+    exc_type = type(exc).__name__
+
+    # Map specific exception types to appropriate error responses
+    # These are common Python exceptions that should have meaningful HTTP mappings
+
+    # Timeout errors -> 408 Request Timeout / 504 Gateway Timeout
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        logger.warning(
+            f"Timeout error: {exc}",
+            extra={"request_id": request_id, "path": request.url.path},
+        )
+        return build_error_response(
+            request=request,
+            status_code=408,
+            code=ErrorCode.TIMEOUT,
+            message="Request timed out. Please try again.",
+        )
+
+    # Value errors -> 400 Bad Request
+    if isinstance(exc, ValueError):
+        logger.warning(
+            f"ValueError: {exc}",
+            extra={"request_id": request_id, "path": request.url.path},
+        )
+        return build_error_response(
+            request=request,
+            status_code=400,
+            code=ErrorCode.BAD_REQUEST,
+            message=f"Invalid value: {str(exc)[:200]}",
+        )
+
+    # Type errors -> 400 Bad Request
+    if isinstance(exc, TypeError):
+        logger.warning(
+            f"TypeError: {exc}",
+            extra={"request_id": request_id, "path": request.url.path},
+        )
+        return build_error_response(
+            request=request,
+            status_code=400,
+            code=ErrorCode.BAD_REQUEST,
+            message="Invalid request data type",
+        )
+
+    # Key errors (missing data) -> 400 Bad Request or 404 Not Found
+    if isinstance(exc, KeyError):
+        logger.warning(
+            f"KeyError: {exc}",
+            extra={"request_id": request_id, "path": request.url.path},
+        )
+        return build_error_response(
+            request=request,
+            status_code=400,
+            code=ErrorCode.BAD_REQUEST,
+            message=f"Missing required field: {str(exc)[:100]}",
+        )
+
+    # Permission/OS errors -> 500 with specific message
+    if isinstance(exc, PermissionError):
+        logger.error(
+            f"PermissionError: {exc}",
+            extra={"request_id": request_id, "path": request.url.path},
+            exc_info=True,
+        )
+        return build_error_response(
+            request=request,
+            status_code=500,
+            code=ErrorCode.INTERNAL_ERROR,
+            message="Server configuration error. Please contact support.",
+        )
+
+    # Connection errors -> 503 Service Unavailable
+    if isinstance(exc, (ConnectionError, ConnectionRefusedError, ConnectionResetError)):
+        logger.error(
+            f"Connection error: {exc}",
+            extra={"request_id": request_id, "path": request.url.path},
+            exc_info=True,
+        )
+        return build_error_response(
+            request=request,
+            status_code=503,
+            code=ErrorCode.SERVICE_UNAVAILABLE,
+            message="Unable to connect to required service. Please try again later.",
+        )
+
+    # Memory errors -> 503 Service Unavailable
+    if isinstance(exc, MemoryError):
+        logger.critical(
+            f"MemoryError: {exc}",
+            extra={"request_id": request_id, "path": request.url.path},
+            exc_info=True,
+        )
+        return build_error_response(
+            request=request,
+            status_code=503,
+            code=ErrorCode.SERVICE_UNAVAILABLE,
+            message="Server is experiencing high load. Please try again later.",
+        )
+
+    # FileNotFoundError -> 404 or 500 depending on context
+    if isinstance(exc, FileNotFoundError):
+        logger.error(
+            f"FileNotFoundError: {exc}",
+            extra={"request_id": request_id, "path": request.url.path},
+        )
+        return build_error_response(
+            request=request,
+            status_code=500,
+            code=ErrorCode.INTERNAL_ERROR,
+            message="Required resource not found on server.",
+        )
+
+    # RuntimeError -> 500 with generic message
+    if isinstance(exc, RuntimeError):
+        logger.error(
+            f"RuntimeError: {exc}",
+            extra={"request_id": request_id, "path": request.url.path},
+            exc_info=True,
+        )
+        return build_error_response(
+            request=request,
+            status_code=500,
+            code=ErrorCode.INTERNAL_ERROR,
+            message="An unexpected runtime error occurred. Please try again.",
+        )
+
+    # Log the full traceback for truly unexpected exceptions
     logger.error(
-        f"Unhandled exception: {type(exc).__name__}: {exc}",
+        f"Unhandled exception: {exc_type}: {exc}",
         extra={
             "request_id": request_id,
             "path": request.url.path,
-            "exception_type": type(exc).__name__,
+            "exception_type": exc_type,
         },
         exc_info=True,
     )

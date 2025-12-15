@@ -79,7 +79,7 @@ class TrainingService:
         request: TrainingRequest,
     ):
         """Run training job."""
-        from training.train import train
+        from stateset_agents.training.train import train
 
         try:
             trained_agent = await train(

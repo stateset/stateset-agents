@@ -15,8 +15,8 @@ from ..schemas import MetricsResponse, HealthResponse, ErrorResponse
 from ..dependencies import require_role, get_security_monitor, AuthenticatedUser
 from ..cache import get_cache, HEALTH_CACHE_TTL_SECONDS, METRICS_CACHE_TTL_SECONDS
 from ..constants import API_VERSION
-from utils.performance_monitor import get_global_monitor
-from utils.security import SecurityMonitor
+from stateset_agents.utils.performance_monitor import get_global_monitor
+from stateset_agents.utils.security import SecurityMonitor
 
 router = APIRouter(tags=["observability"])
 

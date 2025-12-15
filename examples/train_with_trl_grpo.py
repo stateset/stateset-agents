@@ -17,8 +17,8 @@ from typing import Any, Dict, List, Optional
 # Import framework components
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
-from rewards.multi_objective_reward import create_customer_service_reward
-from training.trl_grpo_trainer import (
+from stateset_agents.rewards.multi_objective_reward import create_customer_service_reward
+from stateset_agents.training.trl_grpo_trainer import (
     TRLGRPOConfig,
     train_customer_service_with_trl,
     train_with_trl_grpo,

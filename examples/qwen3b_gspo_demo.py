@@ -16,8 +16,8 @@ from stateset_agents import MultiTurnAgent
 from stateset_agents.core.agent import AgentConfig
 from stateset_agents.core.environment import CONVERSATION_CONFIGS, ConversationEnvironment
 from stateset_agents.rewards.multi_objective_reward import create_domain_reward
-from training.config import get_config_for_task
-from training.gspo_trainer import GSPOConfig, train_with_gspo
+from stateset_agents.training.config import get_config_for_task
+from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
 
 logging.basicConfig(
     level=logging.INFO,

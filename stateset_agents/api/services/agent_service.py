@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from fastapi import HTTPException
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from ..schemas import AgentConfigRequest, ConversationRequest, ConversationResponse
-from utils.security import SecurityMonitor
+from stateset_agents.utils.security import SecurityMonitor
 
 logger = logging.getLogger(__name__)
 

@@ -12,7 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .services.auth_service import get_auth_service, AuthService
 from .security import get_api_security_monitor
-from utils.security import SecurityMonitor
+from stateset_agents.utils.security import SecurityMonitor
 
 
 # ============================================================================

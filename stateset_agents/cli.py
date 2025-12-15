@@ -203,25 +203,6 @@ def train(
 
 
 @app.command()
-def evaluate(
-    dataset: t.Optional[str] = typer.Option(
-        None, help="Evaluation dataset path (optional)."
-    ),
-    dry_run: bool = typer.Option(True, help="Validate environment only."),
-) -> None:
-    """Evaluate a trained agent (scaffold)."""
-    try:
-        import stateset_agents.training as _  # noqa: F401
-    except Exception as e:
-        _echo("Evaluation components unavailable. Install dev/extras and try again.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2)
-
-    _echo("Evaluation CLI not fully wired. See examples and docs.")
-    raise typer.Exit(code=0)
-
-
-@app.command()
 def serve(
     host: str = typer.Option("0.0.0.0", help="Bind host"),
     port: int = typer.Option(8001, help="Bind port"),
@@ -296,9 +277,6 @@ def doctor() -> None:
 
 
 @app.command()
-
-
-@app.command()
 def evaluate(
     checkpoint: str = typer.Option(..., help="Path to a saved checkpoint directory"),
     message: str = typer.Option("Hello", help="Message to evaluate"),
@@ -323,6 +301,9 @@ def evaluate(
     except Exception as e:
         _echo(f"Evaluation failed: {e}")
         raise typer.Exit(code=2)
+
+
+@app.command()
 def init(
     path: str = typer.Option(
         "./stateset_agents.yaml", help="Path for a starter config"

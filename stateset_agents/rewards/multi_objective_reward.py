@@ -27,12 +27,8 @@ from stateset_agents.core import reward as core_reward
 
 RewardFunction = core_reward.RewardFunction
 RewardResult = core_reward.RewardResult
-import utils.cache
-
-CacheService = utils.cache.CacheService
-import utils.monitoring
-
-MonitoringService = utils.monitoring.MonitoringService
+from stateset_agents.utils.cache import CacheService
+from stateset_agents.utils.monitoring import MonitoringService
 
 logger = logging.getLogger(__name__)
 

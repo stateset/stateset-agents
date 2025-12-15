@@ -34,6 +34,7 @@ dependencies = [
     "typer>=0.9.0",
     "typing-extensions>=4.0.0",
     "tqdm>=4.65.0",
+    "cachetools>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -128,13 +129,6 @@ stateset-agents = "stateset_agents.cli:run"
 [tool.setuptools.packages.find]
 include = [
     "stateset_agents*",
-    "core*",
-    "training*",
-    "utils*",
-    "rewards*",
-    "api*",
-    "grpo_agent_framework*",
-    "environments*",
 ]
 exclude = [
     "tests*",
@@ -143,6 +137,14 @@ exclude = [
     "scripts*",
     "htmlcov*",
     "dist*",
+    # Deprecated shim directories (use stateset_agents.* instead)
+    "core*",
+    "training*",
+    "utils*",
+    "rewards*",
+    "api*",
+    "grpo_agent_framework*",
+    "environments*",
 ]
 
 # Black configuration

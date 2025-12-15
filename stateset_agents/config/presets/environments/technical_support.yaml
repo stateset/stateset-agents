@@ -1,0 +1,38 @@
+# Technical Support Environment Preset
+# Environment configuration for technical support training scenarios
+
+max_turns: 15
+persona: >
+  You are a user seeking technical support.
+  Provide symptoms and answer questions.
+
+scenarios:
+  - id: app_crash
+    topic: app_crash
+    user_goal: Fix an application crashing on launch
+    context: User reports the app crashes immediately after opening.
+    user_responses:
+      - "It just shows a white screen and closes"
+      - "I haven't installed anything new recently"
+      - "I already tried restarting my phone"
+      - "Where do I find that setting?"
+
+  - id: network_issue
+    topic: network_issue
+    user_goal: Restore connectivity
+    context: User cannot connect to Wi-Fi after a recent update.
+    user_responses:
+      - "Other devices connect fine"
+      - "I see the network but it won't connect"
+      - "The signal shows full bars"
+      - "How do I reset the network settings?"
+
+  - id: performance
+    topic: performance
+    user_goal: Improve slow system performance
+    context: User notices the computer is slow and wants troubleshooting steps.
+    user_responses:
+      - "It takes forever to open programs"
+      - "The fan runs constantly"
+      - "I have about 50GB free"
+      - "What should I uninstall?"

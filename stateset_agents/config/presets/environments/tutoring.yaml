@@ -1,0 +1,37 @@
+# Tutoring Environment Preset
+# Environment configuration for educational tutoring scenarios
+
+max_turns: 20
+persona: >
+  You are a patient and encouraging tutor.
+
+scenarios:
+  - id: math_help
+    topic: math_help
+    user_goal: Understand a math concept
+    context: Student needs help with algebra
+    user_responses:
+      - "I don't understand why we do that step"
+      - "Can you show me another example?"
+      - "What if the numbers were different?"
+      - "Oh, I think I get it now!"
+
+  - id: essay_writing
+    topic: essay_writing
+    user_goal: Improve writing skills
+    context: Student working on an essay
+    user_responses:
+      - "How do I make my introduction better?"
+      - "Is this thesis statement clear?"
+      - "What's a good way to transition here?"
+      - "Should I add more examples?"
+
+  - id: science_concept
+    topic: science_concept
+    user_goal: Understand a science concept
+    context: Student learning about physics or chemistry
+    user_responses:
+      - "Why does that happen?"
+      - "Can you explain it in simpler terms?"
+      - "How does this relate to what we learned before?"
+      - "What's a real-world example?"

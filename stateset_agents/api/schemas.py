@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 class AgentConfigRequest(BaseModel):
     """Configuration for creating an agent."""
@@ -17,7 +17,7 @@ class AgentConfigRequest(BaseModel):
     use_chat_template: bool = Field(True, description="Whether to use chat template")
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "model_name": "gpt2",
                 "max_new_tokens": 256,
@@ -43,8 +43,9 @@ class ConversationRequest(BaseModel):
     stream: bool = Field(False, description="Whether to stream the response")
     context: Optional[Dict[str, Any]] = Field(None, description="Additional context")
 
-    @validator("messages")
-    def validate_messages(cls, v):
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, v: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """Validate conversation messages."""
         if not v:
             raise ValueError("Messages cannot be empty")
@@ -62,7 +63,7 @@ class ConversationRequest(BaseModel):
         return v
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "messages": [
                     {"role": "system", "content": "You are a helpful assistant."},
@@ -91,7 +92,7 @@ class TrainingRequest(BaseModel):
     profile: str = Field("balanced", description="Training profile")
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "agent_config": {
                     "model_name": "gpt2",

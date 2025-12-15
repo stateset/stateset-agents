@@ -21,8 +21,8 @@ from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import create_customer_service_reward
 from stateset_agents.core.value_function import create_value_function
-from training.trainer import MultiTurnGRPOTrainer
-from training.config import TrainingConfig, TrainingProfile
+from stateset_agents.training.trainer import MultiTurnGRPOTrainer
+from stateset_agents.training.config import TrainingConfig, TrainingProfile
 
 logging.basicConfig(
     level=logging.INFO,

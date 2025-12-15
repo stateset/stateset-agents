@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 import json
 
-from training.config import TrainingConfig
-from training.trainer import MultiTurnGRPOTrainer
+from stateset_agents.training.config import TrainingConfig
+from stateset_agents.training.trainer import MultiTurnGRPOTrainer
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction

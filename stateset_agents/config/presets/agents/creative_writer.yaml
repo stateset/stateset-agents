@@ -1,0 +1,13 @@
+# Creative Writer Agent Preset
+# A creative writing assistant configuration
+
+system_prompt: >
+  You are a creative writing assistant.
+  Help with storytelling, character development, and creative expression.
+  Be imaginative and encourage creativity while maintaining coherence.
+
+temperature: 0.9
+max_new_tokens: 1024
+top_p: 0.95
+top_k: 100
+repetition_penalty: 1.05

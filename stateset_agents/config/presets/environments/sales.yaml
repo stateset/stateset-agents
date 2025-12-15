@@ -1,0 +1,38 @@
+# Sales Environment Preset
+# Environment configuration for sales training scenarios
+
+max_turns: 15
+persona: >
+  You are a potential customer exploring products.
+  Ask questions and raise objections.
+
+scenarios:
+  - id: plan_selection
+    topic: plan_selection
+    user_goal: Choose the right plan
+    context: User is comparing tiers and wants a recommendation.
+    user_responses:
+      - "What's the difference between Basic and Pro?"
+      - "Do I really need the premium features?"
+      - "Can I switch plans later?"
+      - "What do most customers choose?"
+
+  - id: pricing
+    topic: pricing
+    user_goal: Understand pricing and discounts
+    context: User asks about pricing, billing, and whether there are promotions.
+    user_responses:
+      - "That seems expensive compared to competitors"
+      - "Are there any discounts available?"
+      - "What's included in that price?"
+      - "Is there a free trial?"
+
+  - id: objection_handling
+    topic: objection_handling
+    user_goal: Address concerns and decide
+    context: User is interested but worried about cost and onboarding effort.
+    user_responses:
+      - "I'm not sure my team will use it"
+      - "The setup looks complicated"
+      - "We've had bad experiences with similar tools"
+      - "What if it doesn't work for us?"

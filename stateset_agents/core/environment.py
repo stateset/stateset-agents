@@ -307,36 +307,49 @@ class ConversationEnvironment(Environment):
 
     async def step(
         self,
-        state: Union[EnvironmentState, str, ConversationTurn],
-        action: Optional[Union[str, ConversationTurn]] = None,
-    ) -> Union[Tuple[EnvironmentState, float, bool, Dict[str, Any]], Dict[str, Any]]:
-        """Advance the environment by one turn.
+        state: EnvironmentState,
+        action: Union[str, ConversationTurn],
+    ) -> Tuple[EnvironmentState, float, bool, Dict[str, Any]]:
+        """Advance the environment by one turn (stateless API).
 
-        Supports two calling conventions:
-        - `await env.step(state, action)` returns `(next_state, reward, done, info)`
-        - `await env.step(action)` uses the most recent state from `reset()` and
-          returns a dict with common keys (`step`, `reward`, `done`, `state`, `info`).
+        Args:
+            state: The current environment state from reset() or a previous step()
+            action: The agent's action (response text or ConversationTurn)
+
+        Returns:
+            Tuple of (next_state, reward, done, info)
         """
-
-        if action is None:
-            if self._last_state is None:
-                raise ValueError("Call reset() before step() without explicit state")
-            new_state, reward, done, info = await self._step_impl(self._last_state, state)
-            payload = new_state.as_dict()
-            payload.update(
-                {
-                    "state": new_state,
-                    "reward": reward,
-                    "done": done,
-                    "info": info,
-                }
-            )
-            return payload
-
-        if not isinstance(state, EnvironmentState):
-            raise TypeError("step(state, action) requires an EnvironmentState as the first argument")
-
         return await self._step_impl(state, action)
+
+    async def step_stateful(
+        self,
+        action: Union[str, ConversationTurn],
+    ) -> Dict[str, Any]:
+        """Advance the environment using internal state tracking (convenience API).
+
+        This method maintains internal state and is useful for simple interactive
+        use cases. For training and parallel rollouts, prefer the stateless
+        step(state, action) method.
+
+        Args:
+            action: The agent's action (response text or ConversationTurn)
+
+        Returns:
+            Dict with keys: step, reward, done, state, info, and state fields
+        """
+        if self._last_state is None:
+            raise ValueError("Call reset() before step_stateful()")
+        new_state, reward, done, info = await self._step_impl(self._last_state, action)
+        payload = new_state.as_dict()
+        payload.update(
+            {
+                "state": new_state,
+                "reward": reward,
+                "done": done,
+                "info": info,
+            }
+        )
+        return payload
 
     async def _step_impl(
         self,
@@ -630,83 +643,110 @@ def create_environment(env_type: str, config: Dict[str, Any]) -> Environment:
         raise ValueError(f"Unknown environment type: {env_type}")
 
 
-# Pre-defined environment configurations
-CONVERSATION_CONFIGS = {
-    "customer_service": {
-        "scenarios": [
-            {
-                "topic": "product_inquiry",
-                "user_goal": "Learn about product features",
-                "context": "User is interested in purchasing a product",
-            },
-            {
-                "topic": "technical_support",
-                "user_goal": "Resolve technical issue",
-                "context": "User is experiencing a problem with their device",
-            },
-        ],
-        "persona": "You are a professional customer service representative.",
-        "max_turns": 15,
-    },
-    "technical_support": {
-        "scenarios": [
-            {
-                "topic": "app_crash",
-                "user_goal": "Fix an application crashing on launch",
-                "context": "User reports the app crashes immediately after opening.",
-            },
-            {
-                "topic": "network_issue",
-                "user_goal": "Restore connectivity",
-                "context": "User cannot connect to Wi-Fi after a recent update.",
-            },
-            {
-                "topic": "performance",
-                "user_goal": "Improve slow system performance",
-                "context": "User notices the computer is slow and wants troubleshooting steps.",
-            },
-        ],
-        "persona": "You are a user seeking technical support. Provide symptoms and answer questions.",
-        "max_turns": 15,
-    },
-    "sales": {
-        "scenarios": [
-            {
-                "topic": "plan_selection",
-                "user_goal": "Choose the right plan",
-                "context": "User is comparing tiers and wants a recommendation.",
-            },
-            {
-                "topic": "pricing",
-                "user_goal": "Understand pricing and discounts",
-                "context": "User asks about pricing, billing, and whether there are promotions.",
-            },
-            {
-                "topic": "objection_handling",
-                "user_goal": "Address concerns and decide",
-                "context": "User is interested but worried about cost and onboarding effort.",
-            },
-        ],
-        "persona": "You are a potential customer exploring products. Ask questions and raise objections.",
-        "max_turns": 15,
-    },
-    "tutoring": {
-        "scenarios": [
-            {
-                "topic": "math_help",
-                "user_goal": "Understand a math concept",
-                "context": "Student needs help with algebra",
-            },
-            {
-                "topic": "essay_writing",
-                "user_goal": "Improve writing skills",
-                "context": "Student working on an essay",
-            },
-        ],
-        "persona": "You are a patient and encouraging tutor.",
-        "max_turns": 20,
-    },
-}
+# Pre-defined environment configurations (loaded from YAML presets when available)
+def _load_conversation_configs() -> Dict[str, Any]:
+    """Load environment configurations from YAML presets, with hardcoded fallbacks."""
+    configs: Dict[str, Any] = {}
+
+    # Try to load from YAML presets
+    try:
+        from stateset_agents.config import list_environment_presets, get_environment_preset
+
+        for preset_name in list_environment_presets():
+            try:
+                configs[preset_name] = get_environment_preset(preset_name)
+            except Exception:
+                pass
+    except ImportError:
+        pass
+
+    # Hardcoded fallbacks for when YAML files aren't available
+    fallback_configs = {
+        "customer_service": {
+            "scenarios": [
+                {
+                    "topic": "product_inquiry",
+                    "user_goal": "Learn about product features",
+                    "context": "User is interested in purchasing a product",
+                },
+                {
+                    "topic": "technical_support",
+                    "user_goal": "Resolve technical issue",
+                    "context": "User is experiencing a problem with their device",
+                },
+            ],
+            "persona": "You are a professional customer service representative.",
+            "max_turns": 15,
+        },
+        "technical_support": {
+            "scenarios": [
+                {
+                    "topic": "app_crash",
+                    "user_goal": "Fix an application crashing on launch",
+                    "context": "User reports the app crashes immediately after opening.",
+                },
+                {
+                    "topic": "network_issue",
+                    "user_goal": "Restore connectivity",
+                    "context": "User cannot connect to Wi-Fi after a recent update.",
+                },
+                {
+                    "topic": "performance",
+                    "user_goal": "Improve slow system performance",
+                    "context": "User notices the computer is slow and wants troubleshooting steps.",
+                },
+            ],
+            "persona": "You are a user seeking technical support. Provide symptoms and answer questions.",
+            "max_turns": 15,
+        },
+        "sales": {
+            "scenarios": [
+                {
+                    "topic": "plan_selection",
+                    "user_goal": "Choose the right plan",
+                    "context": "User is comparing tiers and wants a recommendation.",
+                },
+                {
+                    "topic": "pricing",
+                    "user_goal": "Understand pricing and discounts",
+                    "context": "User asks about pricing, billing, and whether there are promotions.",
+                },
+                {
+                    "topic": "objection_handling",
+                    "user_goal": "Address concerns and decide",
+                    "context": "User is interested but worried about cost and onboarding effort.",
+                },
+            ],
+            "persona": "You are a potential customer exploring products. Ask questions and raise objections.",
+            "max_turns": 15,
+        },
+        "tutoring": {
+            "scenarios": [
+                {
+                    "topic": "math_help",
+                    "user_goal": "Understand a math concept",
+                    "context": "Student needs help with algebra",
+                },
+                {
+                    "topic": "essay_writing",
+                    "user_goal": "Improve writing skills",
+                    "context": "Student working on an essay",
+                },
+            ],
+            "persona": "You are a patient and encouraging tutor.",
+            "max_turns": 20,
+        },
+    }
+
+    # Merge: YAML presets take precedence, fallbacks fill gaps
+    for name, config in fallback_configs.items():
+        if name not in configs:
+            configs[name] = config
+
+    return configs
+
+
+CONVERSATION_CONFIGS = _load_conversation_configs()
 
 TASK_CONFIGS = {
     "data_analysis": {

@@ -100,7 +100,7 @@ except ImportError:
     get_peft_model = None
     logging.warning("PEFT not available. Install with: pip install peft")
 
-from .agent_backends import StubModel, create_stub_backend
+from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .trajectory import ConversationTurn, MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
@@ -365,6 +365,19 @@ def _apply_persona_keyword_hints(
 class Agent(ABC):
     """
     Abstract base class for all agents
+
+    Supports dependency injection via the `backend` parameter for easier testing.
+
+    Example:
+        >>> # For production with transformers
+        >>> agent = Agent(config)
+        >>> await agent.initialize()
+        >>>
+        >>> # For testing with a mock backend
+        >>> from stateset_agents.core.agent_backends import StubBackend, create_stub_backend
+        >>> backend = create_stub_backend(...)
+        >>> agent = Agent(config, backend=backend)
+        >>> await agent.initialize()  # Uses injected backend
     """
 
     def __init__(
@@ -375,16 +388,28 @@ class Agent(ABC):
         generation_config_factory: Optional[
             Callable[[AgentConfig, Any, Any], GenerationConfig]
         ] = None,
+        backend: Optional[ModelBackend] = None,
     ):
+        """Initialize the agent.
+
+        Args:
+            config: Agent configuration. Defaults to stub model config.
+            model_loader: Optional custom model loader function.
+            tokenizer_loader: Optional custom tokenizer loader function.
+            generation_config_factory: Optional custom generation config factory.
+            backend: Optional pre-configured ModelBackend for dependency injection.
+                    If provided, bypasses model/tokenizer loading during initialize().
+        """
         self.config = config or AgentConfig(model_name="stub://test", use_stub_model=True)
         self.model = None
         self.tokenizer = None
         self.generation_config = None
-        self.conversation_history = []
+        self.conversation_history: List[Any] = []
         self._is_stub_backend = False
         self._model_loader = model_loader
         self._tokenizer_loader = tokenizer_loader
         self._generation_config_factory = generation_config_factory
+        self._injected_backend = backend
 
     async def initialize(self):
         """Initialize the agent (load models, etc.).
@@ -392,8 +417,20 @@ class Agent(ABC):
         Loads a tokenizer/model using the provided `AgentConfig`. Subclasses
         may override this to customize behavior, but the base implementation
         covers common defaults to keep the base class usable in tests.
+
+        If a backend was injected via the constructor, uses that instead
+        of loading from transformers.
         """
         logger.info(f"Initializing Agent with model: {self.config.model_name}")
+
+        # Use injected backend if provided (dependency injection for testing)
+        if self._injected_backend is not None:
+            self.tokenizer = self._injected_backend.tokenizer
+            self.model = self._injected_backend.model
+            self.generation_config = self._injected_backend.generation_config
+            self._is_stub_backend = isinstance(self.model, StubModel)
+            logger.info("Agent initialized with injected backend")
+            return
 
         if self.config.use_stub_model or str(self.config.model_name).startswith("stub://"):
             self._initialize_stub_backend()
@@ -439,13 +476,13 @@ class Agent(ABC):
         if self.config.pad_token_id is not None:
             try:
                 self.tokenizer.pad_token_id = self.config.pad_token_id
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Could not set pad_token_id: %s", e)
         if self.config.eos_token_id is not None:
             try:
                 self.tokenizer.eos_token_id = self.config.eos_token_id
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Could not set eos_token_id: %s", e)
 
         # Build model kwargs
         if self.model is None:
@@ -583,12 +620,14 @@ class MultiTurnAgent(Agent):
         generation_config_factory: Optional[
             Callable[[AgentConfig, Any, Any], GenerationConfig]
         ] = None,
+        backend: Optional[ModelBackend] = None,
     ):
         super().__init__(
             config,
             model_loader=model_loader,
             tokenizer_loader=tokenizer_loader,
             generation_config_factory=generation_config_factory,
+            backend=backend,
         )
         self.memory_window = memory_window
         self.context_compression = context_compression
@@ -645,8 +684,9 @@ class MultiTurnAgent(Agent):
                 prompt = self.tokenizer.apply_chat_template(
                     recent_messages, tokenize=False, add_generation_prompt=True
                 )
-            except Exception:
+            except Exception as e:
                 # Fallback to manual formatting if chat template fails
+                logger.debug("Chat template failed, using manual formatting: %s", e)
                 prompt = self._format_conversation(recent_messages)
         else:
             prompt = self._format_conversation(recent_messages)
@@ -1153,29 +1193,56 @@ class ToolAgent(MultiTurnAgent):
 # Factory functions (modern implementations are defined below)
 
 
-# Pre-defined agent configurations
-AGENT_CONFIGS = {
-    "helpful_assistant": {
-        "system_prompt": "You are a helpful, harmless, and honest AI assistant. Provide clear, accurate, and helpful responses.",
-        "temperature": 0.7,
-        "max_new_tokens": 512,
-    },
-    "customer_service": {
-        "system_prompt": "You are a professional customer service representative. Be polite, helpful, and solution-oriented.",
-        "temperature": 0.6,
-        "max_new_tokens": 256,
-    },
-    "tutor": {
-        "system_prompt": "You are a patient and encouraging tutor. Break down complex topics and guide students step-by-step.",
-        "temperature": 0.8,
-        "max_new_tokens": 512,
-    },
-    "creative_writer": {
-        "system_prompt": "You are a creative writing assistant. Help with storytelling, character development, and creative expression.",
-        "temperature": 0.9,
-        "max_new_tokens": 1024,
-    },
-}
+# Pre-defined agent configurations (loaded from YAML presets when available)
+def _load_agent_configs() -> Dict[str, Any]:
+    """Load agent configurations from YAML presets, with hardcoded fallbacks."""
+    configs = {}
+
+    # Try to load from YAML presets
+    try:
+        from stateset_agents.config import list_agent_presets, get_agent_preset
+
+        for preset_name in list_agent_presets():
+            try:
+                configs[preset_name] = get_agent_preset(preset_name)
+            except Exception:
+                pass
+    except ImportError:
+        pass
+
+    # Hardcoded fallbacks for when YAML files aren't available
+    fallback_configs = {
+        "helpful_assistant": {
+            "system_prompt": "You are a helpful, harmless, and honest AI assistant. Provide clear, accurate, and helpful responses.",
+            "temperature": 0.7,
+            "max_new_tokens": 512,
+        },
+        "customer_service": {
+            "system_prompt": "You are a professional customer service representative. Be polite, helpful, and solution-oriented.",
+            "temperature": 0.6,
+            "max_new_tokens": 256,
+        },
+        "tutor": {
+            "system_prompt": "You are a patient and encouraging tutor. Break down complex topics and guide students step-by-step.",
+            "temperature": 0.8,
+            "max_new_tokens": 512,
+        },
+        "creative_writer": {
+            "system_prompt": "You are a creative writing assistant. Help with storytelling, character development, and creative expression.",
+            "temperature": 0.9,
+            "max_new_tokens": 1024,
+        },
+    }
+
+    # Merge: YAML presets take precedence, fallbacks fill gaps
+    for name, config in fallback_configs.items():
+        if name not in configs:
+            configs[name] = config
+
+    return configs
+
+
+AGENT_CONFIGS = _load_agent_configs()
 
 
 # Helper functions for agent creation

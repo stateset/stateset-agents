@@ -41,7 +41,8 @@ try:
 except ImportError:
     FASTAPI_AVAILABLE = False
 
-import utils.cache
+from stateset_agents.utils.cache import CacheService
+from stateset_agents.utils.monitoring import MonitoringService
 
 from stateset_agents.core.async_pool import AsyncResourcePool, managed_async_resources
 from stateset_agents.core.error_handling import (
@@ -52,9 +53,6 @@ from stateset_agents.core.error_handling import (
 )
 from stateset_agents.core.performance_optimizer import OptimizationLevel, PerformanceOptimizer
 from stateset_agents.core.type_system import DeviceType, TypeValidator
-from stateset_agents.utils.monitoring import MonitoringService
-
-CacheService = utils.cache.CacheService
 
 logger = logging.getLogger(__name__)
 

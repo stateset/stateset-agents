@@ -28,7 +28,7 @@ from ..errors import (
 )
 from ..security import InputValidator, get_api_security_monitor
 from ..constants import MAX_MESSAGE_LENGTH
-from utils.security import SecurityMonitor
+from stateset_agents.utils.security import SecurityMonitor
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 conversation_router = APIRouter(prefix="/conversations", tags=["conversations"])

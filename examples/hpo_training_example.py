@@ -24,8 +24,8 @@ from stateset_agents.core.reward import (
     HelpfulnessReward,
     SafetyReward,
 )
-from training.config import TrainingConfig
-from training.hpo import (
+from stateset_agents.training.config import TrainingConfig
+from stateset_agents.training.hpo import (
     GRPOHPOTrainer,
     HPOConfig,
     quick_hpo,

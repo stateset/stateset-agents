@@ -34,10 +34,10 @@ from stateset_agents.core.reward import RewardFunction, RewardResult
 from stateset_agents.core.trajectory import Trajectory
 
 try:
-    from utils.cache import CacheService  # optional utility
+    from stateset_agents.utils.cache import CacheService  # optional utility
 except Exception:  # pragma: no cover
     CacheService = None  # type: ignore
-from utils.monitoring import MonitoringService
+from stateset_agents.utils.monitoring import MonitoringService
 
 logger = logging.getLogger(__name__)
 

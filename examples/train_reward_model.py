@@ -12,7 +12,7 @@ from typing import List
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import CompositeReward, create_customer_service_reward
-from training.transformer_reward_model import (
+from stateset_agents.training.transformer_reward_model import (
     LearnedRewardFunction,
     RewardExample,
     RewardTrainingConfig,
