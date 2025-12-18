@@ -8,6 +8,18 @@ Includes state-of-the-art RL algorithms:
 - DAPO: Decoupled Clip and Dynamic Sampling Policy Optimization (best for reasoning)
 - VAPO: Value-Augmented Policy Optimization (SOTA: 60.4 on AIME 2024)
 
+Offline RL algorithms:
+- CQL: Conservative Q-Learning
+- IQL: Implicit Q-Learning
+- BCQ: Batch-Constrained Q-Learning
+- BEAR: Bootstrapping Error Accumulation Reduction
+- Decision Transformer: Sequence modeling approach
+
+Sim-to-Real Transfer:
+- Domain Randomization: Persona, topic, and style randomization
+- System Identification: Learn user behavior models
+- Progressive Transfer: Gradual sim-to-real transition
+
 Generation backends:
 - vLLM: 5-20x faster generation with automatic log probability extraction
 - HuggingFace: Standard generation fallback
@@ -63,6 +75,13 @@ PPO_AVAILABLE = _TORCH_AVAILABLE
 KL_CONTROLLERS_AVAILABLE = _TORCH_AVAILABLE
 EMA_AVAILABLE = _TORCH_AVAILABLE
 RLAIF_AVAILABLE = _TORCH_AVAILABLE
+
+# Offline RL and Sim-to-Real availability
+OFFLINE_RL_AVAILABLE = _TORCH_AVAILABLE
+BCQ_AVAILABLE = _TORCH_AVAILABLE
+BEAR_AVAILABLE = _TORCH_AVAILABLE
+DECISION_TRANSFORMER_AVAILABLE = _TORCH_AVAILABLE
+SIM_TO_REAL_AVAILABLE = _TORCH_AVAILABLE
 
 
 _OPTIONAL_EXPORTS: Dict[str, Tuple[str, str]] = {
@@ -125,6 +144,42 @@ _OPTIONAL_EXPORTS: Dict[str, Tuple[str, str]] = {
     "RLAIFTrainer": (f"{__name__}.rlaif_trainer", "RLAIFTrainer"),
     "ConstitutionalAI": (f"{__name__}.rlaif_trainer", "ConstitutionalAI"),
     "train_rlaif": (f"{__name__}.rlaif_trainer", "train_rlaif"),
+    # Offline RL - CQL/IQL
+    "CQLConfig": (f"{__name__}.offline_rl_algorithms", "CQLConfig"),
+    "IQLConfig": (f"{__name__}.offline_rl_algorithms", "IQLConfig"),
+    "ConservativeQLearning": (f"{__name__}.offline_rl_algorithms", "ConservativeQLearning"),
+    "ImplicitQLearning": (f"{__name__}.offline_rl_algorithms", "ImplicitQLearning"),
+    "OfflineRLTrainer": (f"{__name__}.offline_rl_algorithms", "OfflineRLTrainer"),
+    # Offline RL - BCQ
+    "BCQConfig": (f"{__name__}.offline_rl_bcq", "BCQConfig"),
+    "BatchConstrainedQLearning": (f"{__name__}.offline_rl_bcq", "BatchConstrainedQLearning"),
+    "ConversationalVAE": (f"{__name__}.offline_rl_bcq", "ConversationalVAE"),
+    "BCQTrainer": (f"{__name__}.offline_rl_bcq", "BCQTrainer"),
+    # Offline RL - BEAR
+    "BEARConfig": (f"{__name__}.offline_rl_bear", "BEARConfig"),
+    "ConversationalBEAR": (f"{__name__}.offline_rl_bear", "ConversationalBEAR"),
+    "MMDKernel": (f"{__name__}.offline_rl_bear", "MMDKernel"),
+    "BEARTrainer": (f"{__name__}.offline_rl_bear", "BEARTrainer"),
+    # Decision Transformer
+    "DecisionTransformerConfig": (f"{__name__}.decision_transformer", "DecisionTransformerConfig"),
+    "DecisionTransformer": (f"{__name__}.decision_transformer", "DecisionTransformer"),
+    "DecisionTransformerTrainer": (f"{__name__}.decision_transformer", "DecisionTransformerTrainer"),
+    "ConversationEmbedder": (f"{__name__}.decision_transformer", "ConversationEmbedder"),
+    # Offline GRPO
+    "OfflineGRPOConfig": (f"{__name__}.offline_grpo_trainer", "OfflineGRPOConfig"),
+    "OfflineGRPOTrainer": (f"{__name__}.offline_grpo_trainer", "OfflineGRPOTrainer"),
+    "OfflineRLAlgorithm": (f"{__name__}.offline_grpo_trainer", "OfflineRLAlgorithm"),
+    # Domain Randomization
+    "DomainRandomizationConfig": (f"{__name__}.domain_randomization", "DomainRandomizationConfig"),
+    "DomainRandomizer": (f"{__name__}.domain_randomization", "DomainRandomizer"),
+    "PersonaGenerator": (f"{__name__}.domain_randomization", "PersonaGenerator"),
+    "ScenarioGenerator": (f"{__name__}.domain_randomization", "ScenarioGenerator"),
+    "UserPersona": (f"{__name__}.domain_randomization", "UserPersona"),
+    # Sim-to-Real Transfer
+    "SimToRealConfig": (f"{__name__}.sim_to_real", "SimToRealConfig"),
+    "SimToRealTransfer": (f"{__name__}.sim_to_real", "SimToRealTransfer"),
+    "UserBehaviorModel": (f"{__name__}.sim_to_real", "UserBehaviorModel"),
+    "DomainAdaptationModule": (f"{__name__}.sim_to_real", "DomainAdaptationModule"),
 }
 
 
@@ -159,4 +214,10 @@ __all__ = [
     "KL_CONTROLLERS_AVAILABLE",
     "EMA_AVAILABLE",
     "RLAIF_AVAILABLE",
+    # Offline RL and Sim-to-Real
+    "OFFLINE_RL_AVAILABLE",
+    "BCQ_AVAILABLE",
+    "BEAR_AVAILABLE",
+    "DECISION_TRANSFORMER_AVAILABLE",
+    "SIM_TO_REAL_AVAILABLE",
 ]

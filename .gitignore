@@ -162,3 +162,6 @@ secrets/
 # Cache directories
 .cache/
 .parquet_cache/
+
+# Training outputs
+outputs/

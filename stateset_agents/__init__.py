@@ -158,6 +158,40 @@ except Exception:
     WandBLogger = None
     init_wandb = None
 
+# Offline RL Data utilities
+try:
+    from .data import (
+        ConversationDataset,
+        ConversationDatasetConfig,
+        ConversationReplayBuffer,
+        EmbeddingCache,
+    )
+except Exception:  # pragma: no cover
+    ConversationDataset = None  # type: ignore
+    ConversationDatasetConfig = None  # type: ignore
+    ConversationReplayBuffer = None  # type: ignore
+    EmbeddingCache = None  # type: ignore
+
+# Sim-to-Real evaluation
+try:
+    from .evaluation import (
+        SimToRealMetrics,
+        SimToRealEvaluator,
+    )
+except Exception:  # pragma: no cover
+    SimToRealMetrics = None  # type: ignore
+    SimToRealEvaluator = None  # type: ignore
+
+# Conversation Simulator
+try:
+    from .environments import (
+        ConversationSimulator,
+        ConversationSimulatorConfig,
+    )
+except Exception:  # pragma: no cover
+    ConversationSimulator = None  # type: ignore
+    ConversationSimulatorConfig = None  # type: ignore
+
 __all__ = [
     # Core classes
     "Agent",
@@ -247,4 +281,14 @@ __all__ = [
     # Utilities
     "WandBLogger",
     "init_wandb",
+    # Offline RL Data
+    "ConversationDataset",
+    "ConversationDatasetConfig",
+    "ConversationReplayBuffer",
+    "EmbeddingCache",
+    # Sim-to-Real
+    "SimToRealMetrics",
+    "SimToRealEvaluator",
+    "ConversationSimulator",
+    "ConversationSimulatorConfig",
 ]

@@ -12,7 +12,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Union, overload
 
 from .reward import RewardFunction
 from .trajectory import ConversationTurn, MultiTurnTrajectory, TrajectoryGroup
@@ -305,20 +305,41 @@ class ConversationEnvironment(Environment):
         self._last_state = state
         return state
 
+    @overload
     async def step(
         self,
         state: EnvironmentState,
         action: Union[str, ConversationTurn],
-    ) -> Tuple[EnvironmentState, float, bool, Dict[str, Any]]:
-        """Advance the environment by one turn (stateless API).
+    ) -> Tuple[EnvironmentState, float, bool, Dict[str, Any]]: ...
 
-        Args:
-            state: The current environment state from reset() or a previous step()
-            action: The agent's action (response text or ConversationTurn)
+    @overload
+    async def step(self, action: Union[str, ConversationTurn]) -> Dict[str, Any]: ...
 
-        Returns:
-            Tuple of (next_state, reward, done, info)
+    async def step(
+        self,
+        state: Union[EnvironmentState, str, ConversationTurn],
+        action: Optional[Union[str, ConversationTurn]] = None,
+    ) -> Union[Tuple[EnvironmentState, float, bool, Dict[str, Any]], Dict[str, Any]]:
+        """Advance the environment by one turn.
+
+        This method supports two calling conventions for backwards
+        compatibility:
+
+        - Stateless API: ``step(state, action) -> (next_state, reward, done, info)``
+        - Stateful convenience API: ``step(action) -> dict`` (requires ``reset()``)
         """
+        if action is None:
+            if isinstance(state, EnvironmentState):
+                raise TypeError(
+                    "ConversationEnvironment.step() missing required argument: 'action'"
+                )
+            return await self.step_stateful(state)
+
+        if not isinstance(state, EnvironmentState):
+            raise TypeError(
+                "ConversationEnvironment.step(state, action) requires state to be an EnvironmentState"
+            )
+
         return await self._step_impl(state, action)
 
     async def step_stateful(
