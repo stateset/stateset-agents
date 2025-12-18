@@ -27,6 +27,8 @@ StateSet Agents is a production-ready RL framework designed specifically for tra
 
 - **Multi-turn conversation support** - Train agents for extended dialogues
 - **Multiple RL algorithms** - GRPO, GSPO, PPO, DPO, A2C, TRPO
+- **Offline RL** - Learn from historical logs with BCQ, BEAR, CQL, IQL, Decision Transformer
+- **Sim-to-Real transfer** - Domain randomization, conversation simulation, progressive transfer
 - **10+ pre-built reward functions** - Helpfulness, safety, correctness, and more
 - **Async-first design** - Full async/await support for scalability
 - **Production-ready** - Circuit breakers, health monitoring, type safety
@@ -999,6 +1001,8 @@ os.environ["STATESET_DEBUG"] = "1"
 
 - [Framework Overview](./FRAMEWORK_OVERVIEW.md)
 - [GSPO Algorithm Guide](./GSPO_GUIDE.md)
+- [Advanced RL Algorithms](./ADVANCED_RL_ALGORITHMS.md) - GEPO, DAPO, VAPO
+- [Offline RL and Sim-to-Real](./OFFLINE_RL_SIM_TO_REAL_GUIDE.md) - BCQ, BEAR, Decision Transformer
 - [TRL Integration Guide](./TRL_GRPO_TRAINING_GUIDE.md)
 - [HPO Guide](./HPO_GUIDE.md)
 - [Performance Tuning](./PERFORMANCE_TUNING_GUIDE.md)

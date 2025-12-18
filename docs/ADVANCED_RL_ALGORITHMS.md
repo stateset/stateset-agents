@@ -401,6 +401,48 @@ if __name__ == "__main__":
 
 ---
 
+---
+
+## Offline RL Algorithms
+
+StateSet Agents also includes offline RL algorithms for learning from logged conversations without online interaction. These are covered in detail in [OFFLINE_RL_SIM_TO_REAL_GUIDE.md](./OFFLINE_RL_SIM_TO_REAL_GUIDE.md).
+
+### Quick Overview
+
+| Algorithm | Best For | Key Innovation |
+|-----------|----------|----------------|
+| **BCQ** | Conservative learning | VAE-constrained action space |
+| **BEAR** | Distribution matching | MMD kernel regularization |
+| **CQL** | Pessimistic Q-values | Conservative Q-function penalty |
+| **IQL** | Expectile regression | Implicit value learning |
+| **Decision Transformer** | Sequence modeling | Return-conditioned generation |
+
+### When to Use Offline RL
+
+- You have historical conversation logs (customer service transcripts, chat logs)
+- Online training is expensive or risky (safety-critical domains)
+- You want to bootstrap an agent before online fine-tuning
+- Regulatory constraints prevent collecting new user data
+
+### Quick Start
+
+```python
+from stateset_agents.data import ConversationDataset
+from stateset_agents.training import BCQTrainer, BCQConfig
+
+# Load historical data
+dataset = ConversationDataset.from_jsonl("conversations.jsonl")
+
+# Train with BCQ
+config = BCQConfig(hidden_dim=256, latent_dim=64)
+trainer = BCQTrainer(config)
+await trainer.train(dataset)
+```
+
+See the [Offline RL and Sim-to-Real Guide](./OFFLINE_RL_SIM_TO_REAL_GUIDE.md) for complete documentation.
+
+---
+
 ## References
 
 1. GEPO: [arxiv.org/abs/2508.17850](https://arxiv.org/abs/2508.17850)
@@ -408,3 +450,8 @@ if __name__ == "__main__":
 3. VAPO: [arxiv.org/abs/2504.05118](https://arxiv.org/abs/2504.05118)
 4. GRPO: [arxiv.org/abs/2402.03300](https://arxiv.org/abs/2402.03300)
 5. GSPO: [arxiv.org/abs/2507.18071](https://arxiv.org/abs/2507.18071)
+6. BCQ: Fujimoto et al., "Off-Policy Deep Reinforcement Learning without Exploration" (2019)
+7. BEAR: Kumar et al., "Stabilizing Off-Policy Q-Learning via Bootstrapping Error Reduction" (2019)
+8. CQL: Kumar et al., "Conservative Q-Learning for Offline Reinforcement Learning" (2020)
+9. IQL: Kostrikov et al., "Offline Reinforcement Learning with Implicit Q-Learning" (2021)
+10. Decision Transformer: Chen et al., "Decision Transformer: Reinforcement Learning via Sequence Modeling" (2021)

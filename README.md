@@ -17,6 +17,8 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - **Trajectories** and value/advantage utilities tailored to dialogue.
 - Composable **reward functions** (heuristic, domain, multi‑objective, neural).
 - A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF.
+- **Offline RL algorithms** for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
+- **Sim‑to‑Real transfer** for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
 - Optional **performance layers** (vLLM generation, Rust acceleration, distributed training, HPO, FastAPI service).
 
 If you want a framework that treats conversations as first‑class RL episodes (rather than single turns), this is it.
@@ -212,6 +214,126 @@ See `docs/GSPO_GUIDE.md`, `docs/ADVANCED_RL_ALGORITHMS.md`, and `examples/train_
 
 ---
 
+## Offline RL: Learn from logged conversations
+
+Train agents from historical conversation logs without online interaction. Useful when:
+- You have existing customer service transcripts
+- Online training is expensive or risky
+- You want to bootstrap before online fine‑tuning
+
+### Available Algorithms
+
+| Algorithm | Best For | Key Innovation |
+|-----------|----------|----------------|
+| **BCQ** | Conservative learning | VAE‑constrained action space |
+| **BEAR** | Distribution matching | MMD kernel regularization |
+| **CQL** | Pessimistic Q‑values | Conservative Q‑function penalty |
+| **IQL** | Expectile regression | Implicit value learning |
+| **Decision Transformer** | Sequence modeling | Return‑conditioned generation |
+
+### Quick Start
+
+```python
+from stateset_agents.data import ConversationDataset, ConversationDatasetConfig
+from stateset_agents.training import BCQTrainer, BCQConfig
+
+# Load historical conversations
+config = ConversationDatasetConfig(quality_threshold=0.7)
+dataset = ConversationDataset.from_jsonl("conversations.jsonl", config)
+
+# Train with BCQ
+bcq_config = BCQConfig(
+    hidden_dim=256,
+    latent_dim=64,
+    num_epochs=100,
+)
+trainer = BCQTrainer(bcq_config)
+await trainer.train(dataset)
+```
+
+### Hybrid Offline + Online Training
+
+Combine offline pretraining with online GRPO fine‑tuning:
+
+```python
+from stateset_agents.training import OfflineGRPOTrainer, OfflineGRPOConfig
+
+config = OfflineGRPOConfig(
+    offline_algorithm="cql",
+    offline_pretrain_steps=1000,
+    online_ratio=0.3,  # 30% online, 70% offline
+)
+trainer = OfflineGRPOTrainer(config)
+trained = await trainer.train(agent, env, reward_fn, offline_dataset=dataset)
+```
+
+See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
+
+---
+
+## Sim‑to‑Real Transfer
+
+Train in simulation, deploy to real users. The framework provides:
+
+### Domain Randomization
+
+Generate diverse training scenarios with randomized user personas:
+
+```python
+from stateset_agents.training import DomainRandomizer, DomainRandomizationConfig
+
+config = DomainRandomizationConfig(
+    persona_variation=0.3,
+    topic_variation=0.2,
+    style_variation=0.2,
+)
+randomizer = DomainRandomizer(config)
+
+# Randomize during training
+persona = randomizer.sample_persona()
+scenario = randomizer.sample_scenario(topic="returns")
+```
+
+### Conversation Simulator
+
+Calibratable simulator with adjustable realism:
+
+```python
+from stateset_agents.environments import ConversationSimulator, ConversationSimulatorConfig
+
+simulator = ConversationSimulator(ConversationSimulatorConfig(
+    base_model="gpt2",
+    realism_level=0.8,
+))
+
+# Calibrate to real data
+await simulator.calibrate(real_conversations)
+
+# Measure sim‑to‑real gap
+gap = simulator.compute_sim_real_gap(real_data, sim_data)
+```
+
+### Progressive Transfer
+
+Gradually transition from simulation to real interactions:
+
+```python
+from stateset_agents.training import SimToRealTransfer, SimToRealConfig
+
+transfer = SimToRealTransfer(SimToRealConfig(
+    transfer_schedule="cosine",  # linear, exponential, step
+    warmup_steps=100,
+    total_steps=1000,
+))
+
+# Get current sim/real mixing ratio
+sim_ratio = transfer.get_sim_ratio(current_step)
+```
+
+See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
+
+---
+
 ## Hyperparameter optimization (HPO)
 
 Install with `stateset-agents[hpo]`, then:
@@ -319,6 +441,7 @@ Key docs:
 - `docs/USAGE_GUIDE.md`
 - `docs/RL_FRAMEWORK_GUIDE.md`
 - `docs/GSPO_GUIDE.md`
+- `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md`
 - `docs/HPO_GUIDE.md`
 - `docs/CLI_REFERENCE.md`
 - `docs/ARCHITECTURE.md`
