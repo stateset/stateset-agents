@@ -8,6 +8,7 @@ domain-specific optimizations.
 
 import asyncio
 import logging
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -150,6 +151,11 @@ class EmpathyRewardComponent(BaseRewardComponent):
             "definitely",
             "of course",
         ]
+        # Compile regex pattern for efficient matching
+        escaped = [re.escape(kw) for kw in self.empathy_keywords]
+        self._keyword_pattern = re.compile(
+            r"(?:" + "|".join(escaped) + r")", re.IGNORECASE
+        )
 
     async def compute_score(
         self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
@@ -163,18 +169,14 @@ class EmpathyRewardComponent(BaseRewardComponent):
         if not assistant_responses:
             return 0.0
 
-        # Check for empathy keywords
+        # Check for empathy keywords using compiled regex
         total_matches = 0
         total_words = 0
 
         for response in assistant_responses:
-            content = response.get("content", "").lower()
-            words = content.split()
-            total_words += len(words)
-
-            for keyword in self.empathy_keywords:
-                if keyword in content:
-                    total_matches += 1
+            content = response.get("content", "")
+            total_words += len(content.split())
+            total_matches += len(self._keyword_pattern.findall(content))
 
         # Normalize by response length
         if total_words == 0:
@@ -216,6 +218,11 @@ class ActionOrientedRewardComponent(BaseRewardComponent):
             "approach",
             "way",
         ]
+        # Compile regex pattern for efficient matching
+        escaped = [re.escape(kw) for kw in self.action_keywords]
+        self._keyword_pattern = re.compile(
+            r"(?:" + "|".join(escaped) + r")", re.IGNORECASE
+        )
 
     async def compute_score(
         self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
@@ -229,15 +236,11 @@ class ActionOrientedRewardComponent(BaseRewardComponent):
         if not assistant_responses:
             return 0.0
 
-        # Check for action keywords
+        # Check for action keywords using compiled regex
         total_matches = 0
-
         for response in assistant_responses:
-            content = response.get("content", "").lower()
-
-            for keyword in self.action_keywords:
-                if keyword in content:
-                    total_matches += 1
+            content = response.get("content", "")
+            total_matches += len(self._keyword_pattern.findall(content))
 
         # Normalize by number of responses
         action_density = total_matches / max(1, len(assistant_responses))
@@ -342,6 +345,15 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
             "frustrated",
             "angry",
         ]
+        # Compile regex patterns for efficient matching
+        prof_escaped = [re.escape(kw) for kw in self.professional_indicators]
+        self._professional_pattern = re.compile(
+            r"(?:" + "|".join(prof_escaped) + r")", re.IGNORECASE
+        )
+        unprof_escaped = [re.escape(kw) for kw in self.unprofessional_indicators]
+        self._unprofessional_pattern = re.compile(
+            r"(?:" + "|".join(unprof_escaped) + r")", re.IGNORECASE
+        )
 
     async def compute_score(
         self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
@@ -359,15 +371,9 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
         unprofessional_count = 0
 
         for response in assistant_responses:
-            content = response.get("content", "").lower()
-
-            for indicator in self.professional_indicators:
-                if indicator in content:
-                    professional_count += 1
-
-            for indicator in self.unprofessional_indicators:
-                if indicator in content:
-                    unprofessional_count += 1
+            content = response.get("content", "")
+            professional_count += len(self._professional_pattern.findall(content))
+            unprofessional_count += len(self._unprofessional_pattern.findall(content))
 
         # Calculate professionalism score
         total_responses = len(assistant_responses)

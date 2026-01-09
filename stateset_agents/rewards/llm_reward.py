@@ -6,6 +6,7 @@ to evaluate trajectory quality based on customizable rubrics.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
@@ -197,6 +198,17 @@ class RulerRewardFunction(RewardFunction):
         self.cache_hits = 0
         self.fallback_uses = 0
 
+    def _hash_trajectory(
+        self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]]
+    ) -> str:
+        """Generate a hash key for trajectory content for caching."""
+        content = json.dumps(
+            {"turns": turns, "context": context, "model": self.model, "rubric": self.rubric_type},
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
+
     async def compute_reward(
         self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
     ) -> RewardResult:
@@ -210,6 +222,20 @@ class RulerRewardFunction(RewardFunction):
         Returns:
             RewardResult with score and breakdown
         """
+        # Check cache first for efficiency
+        trajectory_hash = self._hash_trajectory(turns, context)
+        if self.cache is not None:
+            try:
+                cached = await self.cache.get(f"reward:{trajectory_hash}")
+                if cached is not None:
+                    self.cache_hits += 1
+                    return RewardResult(
+                        score=cached["score"],
+                        breakdown={**cached["breakdown"], "cache_hit": True},
+                    )
+            except Exception as cache_err:
+                logger.debug(f"Cache lookup failed: {cache_err}")
+
         # Convert turns to messages
         messages = self._turns_to_messages(turns)
 
@@ -225,15 +251,28 @@ class RulerRewardFunction(RewardFunction):
             # Return first score (primary trajectory)
             score = scores[0] if scores else 0.0
 
-            return RewardResult(
+            result = RewardResult(
                 score=score,
                 breakdown={
                     "ruler_score": score,
                     "model": self.model,
                     "rubric_type": self.rubric_type,
-                    "cache_hit": False,  # Will be updated by cache check
+                    "cache_hit": False,
                 },
             )
+
+            # Cache the result for future calls
+            if self.cache is not None:
+                try:
+                    await self.cache.set(
+                        f"reward:{trajectory_hash}",
+                        {"score": result.score, "breakdown": result.breakdown},
+                        ttl=self.cache_ttl,
+                    )
+                except Exception as cache_err:
+                    logger.debug(f"Cache save failed: {cache_err}")
+
+            return result
 
         except Exception as e:
             logger.error(f"RULER reward computation failed: {e}")

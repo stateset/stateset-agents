@@ -907,26 +907,26 @@ class GSPOTrainer:
             old_log_probs = torch.tensor(
                 [log_prob for _, log_prob in group_responses],
                 dtype=torch.float32,
+                device=model_device,
             )
-            if model_device is not None:
-                old_log_probs = old_log_probs.to(model_device)
 
-            # Compute rewards for each response
-            rewards = []
-            for response in responses:
+            # Compute rewards for each response in parallel
+            async def _compute_reward_for_response(resp: str) -> float:
                 turn = ConversationTurn(
-                    role="assistant", content=response, metadata={"generated": True}
+                    role="assistant", content=resp, metadata={"generated": True}
                 )
                 reward_info = await self.reward_model.compute_reward(
                     trajectory=None,
                     turn=turn,
                     context={"user_query": query},
                 )
-                rewards.append(reward_info.total_reward)
+                return reward_info.total_reward
 
-            rewards_tensor = torch.tensor(rewards, dtype=torch.float32)
-            if model_device is not None:
-                rewards_tensor = rewards_tensor.to(model_device)
+            rewards = list(await asyncio.gather(
+                *[_compute_reward_for_response(r) for r in responses]
+            ))
+
+            rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=model_device)
             all_rewards.extend(rewards)
 
             # Compute group advantages
@@ -970,13 +970,8 @@ class GSPOTrainer:
 
             # Add KL penalty if specified
             if self.config.beta > 0 and self.ref_model is not None:
-                # Compute KL divergence with reference model
-                ref_log_probs = []
-                for response in responses:
-                    ref_log_prob = await self._compute_ref_log_prob(query, response)
-                    ref_log_probs.append(ref_log_prob)
-
-                ref_log_probs = torch.tensor(ref_log_probs, dtype=torch.float32)
+                # Compute KL divergence with reference model (batched for efficiency)
+                ref_log_probs = self._compute_batch_ref_log_probs(query, responses)
                 if model_device is not None:
                     ref_log_probs = ref_log_probs.to(model_device)
 
@@ -1068,6 +1063,65 @@ class GSPOTrainer:
         sequence_log_prob = response_log_probs.sum().item()
 
         return sequence_log_prob
+
+    def _compute_batch_ref_log_probs(
+        self, prompt: str, responses: List[str]
+    ) -> torch.Tensor:
+        """Compute log probabilities under reference model for a batch of responses."""
+        full_texts = [f"{prompt} {response}" for response in responses]
+
+        # Batch tokenize with padding
+        original_padding_side = getattr(self.tokenizer, "padding_side", "right")
+        if hasattr(self.tokenizer, "padding_side"):
+            self.tokenizer.padding_side = "right"
+
+        try:
+            inputs = self.tokenizer(
+                full_texts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=self.config.max_prompt_length + self.config.max_completion_length,
+                add_special_tokens=False,
+            )
+        finally:
+            if hasattr(self.tokenizer, "padding_side"):
+                self.tokenizer.padding_side = original_padding_side
+
+        prompt_tokens = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self.config.max_prompt_length,
+            add_special_tokens=False,
+        )
+        prompt_length = int(prompt_tokens["input_ids"].shape[1])
+        response_start_idx = max(prompt_length - 1, 0)
+
+        model_device = _get_model_device(self.ref_model)
+        if model_device is not None:
+            inputs = {k: v.to(model_device) if hasattr(v, "to") else v for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = self.ref_model(**inputs)
+            logits = outputs.logits
+
+        shift_logits = logits[:, :-1, :].contiguous()
+        shift_labels = inputs["input_ids"][:, 1:].contiguous()
+        shift_mask = inputs["attention_mask"][:, 1:].contiguous()
+
+        log_probs = F.log_softmax(shift_logits, dim=-1)
+        token_log_probs = log_probs.gather(
+            dim=-1, index=shift_labels.unsqueeze(-1)
+        ).squeeze(-1)
+
+        # Mask for response tokens only (exclude prompt and padding)
+        response_mask = torch.zeros_like(shift_mask)
+        if response_start_idx < response_mask.shape[1]:
+            response_mask[:, response_start_idx:] = shift_mask[:, response_start_idx:]
+
+        sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
+        return sequence_log_probs
 
     def save_model(self, output_dir: str):
         """Save the trained model"""

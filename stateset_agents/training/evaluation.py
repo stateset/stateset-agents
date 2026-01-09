@@ -30,7 +30,7 @@ class EvaluationConfig:
     num_generations: int = 1
     max_turns: Optional[int] = None
     seed: Optional[int] = 42
-    concurrency: int = 1
+    concurrency: int = 4  # Default to parallel evaluation for better performance
 
 
 async def _compute_reward(
