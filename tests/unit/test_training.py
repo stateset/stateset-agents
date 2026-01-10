@@ -9,6 +9,7 @@ import pytest
 
 from training.config import TrainingConfig, TrainingProfile, get_config_for_task
 from training.trainer import SingleTurnGRPOTrainer
+from stateset_agents.core.environment import Environment, EnvironmentState, EpisodeStatus
 
 
 # ===========================
@@ -238,6 +239,42 @@ class TestSingleTurnGRPOTrainer:
         # Verify training completed
         assert result == mock_agent
         assert trainer.global_step > 0
+
+    @pytest.mark.asyncio
+    @patch('training.trainer.torch')
+    async def test_single_turn_trainer_accepts_environment_state(
+        self, mock_torch, mock_agent, training_config
+    ):
+        """Ensure EnvironmentState-compatible environments work in the train loop."""
+        mock_torch.cuda.is_available.return_value = False
+        mock_torch.optim.AdamW = MagicMock()
+
+        class StateEnv(Environment):
+            async def reset(self, scenario=None):
+                return EnvironmentState(
+                    episode_id="ep1",
+                    turn_count=0,
+                    status=EpisodeStatus.ONGOING,
+                    context={"prompt": "Hello"},
+                )
+
+            async def step(self, state, action):
+                new_state = state.copy()
+                new_state.status = EpisodeStatus.COMPLETED
+                return new_state, 0.0, True, {}
+
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=StateEnv(max_turns=1),
+            config=training_config,
+        )
+
+        with patch("stateset_agents.training.single_turn_trainer.compute_grpo_loss") as mock_loss:
+            mock_loss.return_value = {"policy_loss": None, "mean_advantage": 0.0}
+            await trainer.initialize()
+            result = await trainer.train()
+
+        assert result == mock_agent
 
     def test_single_turn_trainer_setup_optimizer(
         self, mock_agent, mock_environment, training_config

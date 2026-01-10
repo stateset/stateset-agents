@@ -17,6 +17,8 @@ import numpy as np
 from .trainer_utils import get_amp, get_functional, get_torch, require_torch
 
 logger = logging.getLogger(__name__)
+_warned_missing_log_probs = False
+_warned_missing_assistant_mask = False
 
 
 def compute_grpo_loss(
@@ -134,8 +136,8 @@ def _compute_group_policy_loss(
     total_loss = torch.tensor(0.0, device=device, requires_grad=True)
     num_trajectories = 0
 
-    # PPO clipping ratio
-    clip_epsilon = getattr(
+    # PPO-style clipping ratio (falls back to advantage clipping when old log probs are absent).
+    clip_ratio = getattr(
         config, "clip_ratio", getattr(config, "clip_epsilon", 0.2)
     )
 
@@ -154,21 +156,48 @@ def _compute_group_policy_loss(
 
                 # GRPO policy gradient: -advantage * log_prob
                 # Since outputs.loss is already negative log likelihood,
-                # For GRPO, we want to maximize reward-weighted log prob
-                # policy loss = -advantage * log_prob = advantage * nll (since nll = -log_prob)
+                # policy loss = advantage * nll (nll = -log_prob).
                 policy_loss = advantage * nll
 
-                # Optional: PPO-style clipping for stability
-                # Note: In PPO, we use min() not max() to be conservative
-                # and clip the advantage (surrogate objective) for stability
-                if clip_epsilon > 0:
-                    # Clamp the advantage to prevent extremely large updates
-                    clamped_advantage = advantage.clamp(-clip_epsilon, clip_epsilon)
-                    clipped_loss = clamped_advantage * nll
-                    # Use min for conservative updates (take the more pessimistic estimate)
-                    # When advantage > 0: min ensures we don't over-incentivize
-                    # When advantage < 0: min ensures we don't over-penalize
-                    policy_loss = torch.min(policy_loss, clipped_loss)
+                old_log_prob = None
+                log_probs = getattr(trajectory, "log_probs", None)
+                if log_probs is None and hasattr(trajectory, "metadata"):
+                    log_probs = trajectory.metadata.get("log_probs")
+                if log_probs is not None:
+                    if torch.is_tensor(log_probs):
+                        old_log_prob = log_probs.sum().detach()
+                    elif isinstance(log_probs, (list, tuple)):
+                        old_log_prob = torch.tensor(
+                            float(sum(log_probs)), device=device
+                        )
+                    elif isinstance(log_probs, (int, float)):
+                        old_log_prob = torch.tensor(float(log_probs), device=device)
+
+                new_log_prob = None
+                if torch.is_tensor(labels):
+                    loss_mask = labels.ne(-100)
+                    token_count = int(loss_mask.sum().item())
+                    if token_count > 0:
+                        new_log_prob = -(outputs.loss * token_count)
+
+                # Optional: PPO-style clipping when old log probs are available.
+                if clip_ratio > 0 and old_log_prob is not None and new_log_prob is not None:
+                    ratio = torch.exp(new_log_prob - old_log_prob)
+                    surrogate = ratio * advantage
+                    clipped = torch.clamp(
+                        ratio, 1.0 - clip_ratio, 1.0 + clip_ratio
+                    ) * advantage
+                    policy_loss = -torch.min(surrogate, clipped)
+                elif clip_ratio > 0:
+                    global _warned_missing_log_probs
+                    if not _warned_missing_log_probs:
+                        logger.warning(
+                            "clip_ratio set but trajectories lack log_probs; "
+                            "falling back to advantage clipping."
+                        )
+                        _warned_missing_log_probs = True
+                    clamped_advantage = advantage.clamp(-clip_ratio, clip_ratio)
+                    policy_loss = clamped_advantage * nll
 
                 total_loss = total_loss + policy_loss
                 num_trajectories += 1
@@ -349,6 +378,36 @@ def _trajectory_to_messages(trajectory: Any) -> List[Dict[str, str]]:
     return messages
 
 
+def _format_trajectory_with_spans(
+    trajectory: Any,
+) -> Tuple[str, List[Tuple[int, int]]]:
+    """Format trajectory text and track assistant spans for masking."""
+    messages = _trajectory_to_messages(trajectory)
+    parts: List[str] = []
+    assistant_spans: List[Tuple[int, int]] = []
+    cursor = 0
+
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role == "assistant":
+            prefix = "Assistant: "
+        elif role == "system":
+            prefix = "System: "
+        elif role == "tool":
+            prefix = "Tool: "
+        else:
+            prefix = "User: "
+
+        segment = f"{prefix}{content}\n"
+        if role == "assistant":
+            assistant_spans.append((cursor, cursor + len(segment)))
+        parts.append(segment)
+        cursor += len(segment)
+
+    return "".join(parts), assistant_spans
+
+
 def _prepare_inputs_and_labels(
     trajectory: Any, agent: Any, config: Any
 ) -> Tuple[Dict[str, Any], Any]:
@@ -362,7 +421,8 @@ def _prepare_inputs_and_labels(
     device = agent.model.device
 
     # Best-effort: use chat-template assistant token masking when supported.
-    if hasattr(tokenizer, "apply_chat_template"):
+    use_chat_template = hasattr(tokenizer, "apply_chat_template")
+    if use_chat_template:
         try:
             params = inspect.signature(tokenizer.apply_chat_template).parameters
             supports_mask = (
@@ -420,9 +480,79 @@ def _prepare_inputs_and_labels(
             except Exception:
                 # Any other failure: fall back to plain tokenization.
                 pass
+        else:
+            global _warned_missing_assistant_mask
+            if not _warned_missing_assistant_mask:
+                logger.warning(
+                    "Tokenizer chat template does not expose assistant token masks; "
+                    "loss will include non-assistant tokens."
+                )
+                _warned_missing_assistant_mask = True
+
+    if not use_chat_template:
+        # Try assistant-only masking with offsets for non-chat-template tokenizers.
+        conversation_text, assistant_spans = _format_trajectory_with_spans(trajectory)
+        if assistant_spans:
+            try:
+                inputs = tokenizer(
+                    conversation_text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=max_length,
+                    padding=True,
+                    return_offsets_mapping=True,
+                )
+                offsets = inputs.pop("offset_mapping", None)
+                input_ids = inputs.get("input_ids")
+                if offsets is not None and input_ids is not None:
+                    if torch.is_tensor(offsets):
+                        offsets_list = offsets[0].tolist()
+                    elif isinstance(offsets, (list, tuple)):
+                        offsets_list = offsets[0] if offsets else []
+                    else:
+                        offsets_list = []
+
+                    if offsets_list and len(offsets_list) == input_ids.shape[1]:
+                        assistant_mask = torch.zeros_like(
+                            input_ids, dtype=torch.bool
+                        )
+                        for idx, (start, end) in enumerate(offsets_list):
+                            if start == end:
+                                continue
+                            if any(
+                                start < span_end and end > span_start
+                                for span_start, span_end in assistant_spans
+                            ):
+                                assistant_mask[0, idx] = True
+
+                        labels = (
+                            input_ids.clone()
+                            if hasattr(input_ids, "clone")
+                            else input_ids
+                        )
+                        labels = labels.masked_fill(~assistant_mask, -100)
+                        if "attention_mask" in inputs and torch.is_tensor(labels):
+                            labels = labels.masked_fill(
+                                inputs["attention_mask"].eq(0), -100
+                            )
+
+                        inputs = {
+                            k: v.to(device) if hasattr(v, "to") else v
+                            for k, v in inputs.items()
+                        }
+                        if hasattr(labels, "to"):
+                            labels = labels.to(device)
+                        return inputs, labels
+            except TypeError:
+                pass
+            except Exception:
+                pass
 
     # Fallback: compute loss over the full token stream.
-    conversation_text = _format_trajectory_for_model(trajectory, agent)
+    if use_chat_template:
+        conversation_text = _format_trajectory_for_model(trajectory, agent)
+    else:
+        conversation_text, _assistant_spans = _format_trajectory_with_spans(trajectory)
     inputs = tokenizer(
         conversation_text,
         return_tensors="pt",

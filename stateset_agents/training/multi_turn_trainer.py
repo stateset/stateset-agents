@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -75,6 +76,7 @@ class MultiTurnGRPOTrainer:
         self.current_epoch = 0
         self.best_eval_metric = float("-inf")
         self.steps_without_improvement = 0
+        self._grad_accum_step = 0
 
         # HuggingFace components
         self.optimizer = None
@@ -230,6 +232,33 @@ class MultiTurnGRPOTrainer:
             logger.info(
                 f"Scheduler initialized: {lr_scheduler_type} with {num_warmup_steps} warmup steps"
             )
+
+    def _get_grad_accum_steps(self) -> int:
+        steps = int(getattr(self.config, "gradient_accumulation_steps", 1) or 1)
+        return max(1, steps)
+
+    def _apply_optimizer_step(self, torch) -> None:
+        if self.optimizer is None:
+            return
+
+        max_grad_norm = getattr(self.config, "max_grad_norm", 1.0)
+        if self.scaler:
+            self.scaler.unscale_(self.optimizer)
+        torch.nn.utils.clip_grad_norm_(
+            self.agent.model.parameters(),
+            max_grad_norm,
+        )
+        if self.scaler:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            self.optimizer.step()
+
+        if self.lr_scheduler:
+            self.lr_scheduler.step()
+
+        self.optimizer.zero_grad()
+        self.global_step += 1
 
     async def _init_wandb(self):
         """Initialize Weights & Biases tracking"""
@@ -420,37 +449,21 @@ class MultiTurnGRPOTrainer:
                 loss_dict = self.compute_grpo_loss(trajectory_groups)
             loss = loss_dict["total_loss"]
 
+        grad_accum_steps = self._get_grad_accum_steps()
+        scaled_loss = loss / grad_accum_steps
+
         # Backward pass with gradient scaling
         if self.scaler:
-            self.scaler.scale(loss).backward()
+            self.scaler.scale(scaled_loss).backward()
 
-            # Gradient clipping
-            self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(
-                self.agent.model.parameters(),
-                getattr(self.config, "max_grad_norm", 1.0),
-            )
-
-            # Optimizer step
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
         else:
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                self.agent.model.parameters(),
-                getattr(self.config, "max_grad_norm", 1.0),
-            )
-            self.optimizer.step()
+            scaled_loss.backward()
 
-        # Learning rate schedule step
-        if self.lr_scheduler:
-            self.lr_scheduler.step()
-
-        # Clear gradients
-        self.optimizer.zero_grad()
-
-        # Update global step
-        self.global_step += 1
+        self._grad_accum_step += 1
+        optimizer_step = False
+        if self._grad_accum_step % grad_accum_steps == 0:
+            self._apply_optimizer_step(torch)
+            optimizer_step = True
 
         # Prepare metrics
         metrics = {
@@ -458,8 +471,12 @@ class MultiTurnGRPOTrainer:
                 k: v.item() if torch.is_tensor(v) else v
                 for k, v in loss_dict.items()
             },
-            "learning_rate": self.optimizer.param_groups[0]["lr"],
+            "learning_rate": self.optimizer.param_groups[0]["lr"]
+            if self.optimizer
+            else 0.0,
             "global_step": self.global_step,
+            "optimizer_step": optimizer_step,
+            "grad_accum_step": self._grad_accum_step,
         }
 
         return metrics
@@ -506,10 +523,8 @@ class MultiTurnGRPOTrainer:
 
         # Calculate total training steps
         num_episodes = getattr(self.config, "num_episodes", 100)
-        gradient_accumulation_steps = getattr(
-            self.config, "gradient_accumulation_steps", 4
-        )
-        total_steps = num_episodes // gradient_accumulation_steps
+        grad_accum_steps = self._get_grad_accum_steps()
+        total_steps = math.ceil(num_episodes / grad_accum_steps)
 
         # Setup learning rate scheduler
         self._setup_scheduler(total_steps)
@@ -520,6 +535,7 @@ class MultiTurnGRPOTrainer:
 
         await notify_training_start(self.callbacks, trainer=self, config=self.config)
 
+        errored = False
         try:
             for episode in range(num_episodes):
                 # Generate trajectory groups
@@ -588,9 +604,17 @@ class MultiTurnGRPOTrainer:
 
         except Exception as e:
             logger.error(f"Training failed: {e}")
+            errored = True
             raise
 
         finally:
+            if (
+                not errored
+                and self._grad_accum_step % grad_accum_steps != 0
+            ):
+                torch = require_torch()
+                self._apply_optimizer_step(torch)
+
             # Final checkpoint
             await self.save_checkpoint()
 

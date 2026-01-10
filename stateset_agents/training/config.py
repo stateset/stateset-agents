@@ -6,6 +6,7 @@ and integrate seamlessly with HuggingFace and Weights & Biases.
 """
 
 import json
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -101,7 +102,7 @@ class TrainingConfig:
     # Enhanced GRPO parameters from real-world implementation
     beta: float = 0.0  # KL penalty coefficient
     use_reference_model: bool = False  # Whether to use reference model for KL
-    clip_ratio: float = 0.2  # PPO-style clipping ratio
+    clip_ratio: float = 0.2  # PPO ratio clipping when old log probs are available; else advantage clamp
     value_clip: float = 0.2  # Value function clipping
     entropy_coef: float = 0.01  # Entropy bonus coefficient
 
@@ -290,7 +291,8 @@ class TrainingConfig:
     def get_total_steps(self, num_episodes: Optional[int] = None) -> int:
         """Calculate total training steps"""
         episodes = num_episodes or self.num_episodes
-        return episodes // self.gradient_accumulation_steps
+        grad_steps = max(1, int(self.gradient_accumulation_steps or 1))
+        return math.ceil(episodes / grad_steps)
 
     def get_warmup_steps(self, total_steps: Optional[int] = None) -> int:
         """Calculate warmup steps"""

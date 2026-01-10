@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
@@ -86,6 +86,16 @@ async def evaluate_agent(
             "eval_num_episodes": 0.0,
         }
 
+    if cfg.concurrency < 1:
+        cfg = replace(cfg, concurrency=1)
+
+    shared_env_lock = asyncio.Lock()
+    if cfg.concurrency > 1 and type(environment).clone is Environment.clone:
+        logger.warning(
+            "Environment clone() is not implemented; forcing sequential evaluation."
+        )
+        cfg = replace(cfg, concurrency=1)
+
     if cfg.seed is not None:
         random.seed(cfg.seed)
         np.random.seed(cfg.seed)
@@ -98,12 +108,18 @@ async def evaluate_agent(
             scenario = scenario_list[episode_idx % len(scenario_list)]
 
         env = environment
+        uses_shared_env = False
         if cfg.concurrency > 1:
             try:
                 env = environment.clone()
             except NotImplementedError:
                 # Fall back to sequential evaluation when clone is unavailable.
                 env = environment
+                uses_shared_env = True
+            except Exception as exc:  # pragma: no cover - defensive for custom envs
+                logger.warning("Environment clone() failed; using shared instance: %s", exc)
+                env = environment
+                uses_shared_env = True
 
         async def agent_fn(history: Any, context: Any) -> Any:
             generate = getattr(agent, "generate_response", None)
@@ -114,11 +130,19 @@ async def evaluate_agent(
         samples: List[Dict[str, Any]] = []
         for _ in range(max(1, cfg.num_generations)):
             try:
-                trajectory = await env.run_episode(
-                    agent_fn,
-                    scenario=scenario,
-                    max_turns=cfg.max_turns,
-                )
+                if uses_shared_env:
+                    async with shared_env_lock:
+                        trajectory = await env.run_episode(
+                            agent_fn,
+                            scenario=scenario,
+                            max_turns=cfg.max_turns,
+                        )
+                else:
+                    trajectory = await env.run_episode(
+                        agent_fn,
+                        scenario=scenario,
+                        max_turns=cfg.max_turns,
+                    )
             except Exception as exc:
                 logger.debug("Evaluation episode %s failed: %s", episode_idx, exc)
                 continue

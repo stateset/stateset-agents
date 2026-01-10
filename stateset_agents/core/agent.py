@@ -893,6 +893,8 @@ class MultiTurnAgent(Agent):
         else:
             prompt = self._format_conversation(recent_messages)
 
+        response_text = ""
+
         # For stub backend, yield the full response in chunks
         if self._is_stub_backend:
             assert isinstance(self.model, StubModel)
@@ -902,86 +904,94 @@ class MultiTurnAgent(Agent):
             for i, word in enumerate(words):
                 yield word + (" " if i < len(words) - 1 else "")
                 await asyncio.sleep(0.02)  # Small delay for realistic streaming
-            return
+            response_text = response
+        else:
+            if self.model is None or self.tokenizer is None or self.generation_config is None:
+                raise RuntimeError(
+                    "Agent must be initialized before streaming. Call `await initialize()` first."
+                )
 
-        if self.model is None or self.tokenizer is None or self.generation_config is None:
-            raise RuntimeError(
-                "Agent must be initialized before streaming. Call `await initialize()` first."
+            # Tokenize input
+            inputs = self.tokenizer(
+                prompt,
+                return_tensors="pt",
+                truncation=True,
+                max_length=self._effective_max_input_length(),
             )
 
-        # Tokenize input
-        inputs = self.tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self._effective_max_input_length(),
-        )
+            model_device = None
+            if hasattr(self.model, "parameters"):
+                try:
+                    first_param = next(self.model.parameters())
+                    model_device = first_param.device
+                except StopIteration:
+                    model_device = None
+            if model_device and hasattr(inputs, "to"):
+                inputs = inputs.to(model_device)
 
-        model_device = None
-        if hasattr(self.model, "parameters"):
+            # Use TextIteratorStreamer if available
             try:
-                first_param = next(self.model.parameters())
-                model_device = first_param.device
-            except StopIteration:
-                model_device = None
-        if model_device and hasattr(inputs, "to"):
-            inputs = inputs.to(model_device)
+                from transformers import TextIteratorStreamer
+                import threading
 
-        # Use TextIteratorStreamer if available
-        try:
-            from transformers import TextIteratorStreamer
-            import threading
+                streamer = TextIteratorStreamer(
+                    self.tokenizer,
+                    skip_prompt=True,
+                    skip_special_tokens=True
+                )
 
-            streamer = TextIteratorStreamer(
-                self.tokenizer,
-                skip_prompt=True,
-                skip_special_tokens=True
-            )
+                generation_kwargs = {
+                    **inputs,
+                    "generation_config": self.generation_config,
+                    "streamer": streamer,
+                }
 
-            generation_kwargs = {
-                **inputs,
-                "generation_config": self.generation_config,
-                "streamer": streamer,
-            }
+                # Run generation in separate thread
+                thread = threading.Thread(
+                    target=lambda: self.model.generate(**generation_kwargs)
+                )
+                thread.start()
 
-            # Run generation in separate thread
-            thread = threading.Thread(
-                target=lambda: self.model.generate(**generation_kwargs)
-            )
-            thread.start()
-
-            # Yield tokens as they arrive
-            accumulated = ""
-            for text in streamer:
-                # Check for stop phrases
-                accumulated += text
-                should_stop = False
-                for phrase in ["User:", "System:", "Human:", "AI:"]:
-                    if phrase in accumulated:
-                        # Yield up to the stop phrase
-                        idx = accumulated.index(phrase)
-                        if idx > len(accumulated) - len(text):
-                            remaining = accumulated[:idx]
-                            if remaining:
-                                yield remaining[len(accumulated) - len(text):]
-                        should_stop = True
+                # Yield tokens as they arrive
+                accumulated = ""
+                response_chunks = []
+                for text in streamer:
+                    # Check for stop phrases
+                    accumulated += text
+                    should_stop = False
+                    for phrase in ["User:", "System:", "Human:", "AI:"]:
+                        if phrase in accumulated:
+                            # Yield up to the stop phrase
+                            idx = accumulated.index(phrase)
+                            if idx > len(accumulated) - len(text):
+                                remaining = accumulated[:idx]
+                                if remaining:
+                                    chunk = remaining[len(accumulated) - len(text):]
+                                    response_chunks.append(chunk)
+                                    yield chunk
+                            should_stop = True
+                            break
+                    if should_stop:
                         break
-                if should_stop:
-                    break
-                yield text
+                    response_chunks.append(text)
+                    yield text
 
-            thread.join()
+                thread.join()
+                response_text = "".join(response_chunks)
 
-        except ImportError:
-            # Fallback: generate full response and yield in chunks
-            response = await self._generate_with_model(prompt, context)
-            response = self._clean_response(response)
-            # Yield in small chunks for streaming feel
-            chunk_size = 4
-            for i in range(0, len(response), chunk_size):
-                yield response[i:i + chunk_size]
-                await asyncio.sleep(0.01)
+            except ImportError:
+                # Fallback: generate full response and yield in chunks
+                response = await self._generate_with_model(prompt, context)
+                response = self._clean_response(response)
+                # Yield in small chunks for streaming feel
+                chunk_size = 4
+                for i in range(0, len(response), chunk_size):
+                    yield response[i:i + chunk_size]
+                    await asyncio.sleep(0.01)
+                response_text = response
 
+        response_text = self._clean_response(response_text)
+        self.conversation_history.append({"role": "assistant", "content": response_text})
         self.turn_count += 1
 
     async def process_turn(

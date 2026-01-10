@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -21,6 +22,7 @@ from stateset_agents.core.trajectory import (
     MultiTurnTrajectory,
     TrajectoryGroup,
 )
+from stateset_agents.core.environment import EnvironmentState
 
 from .loss_computation import compute_enhanced_grpo_loss, compute_grpo_loss
 from .trainer_utils import (
@@ -70,6 +72,7 @@ class SingleTurnGRPOTrainer:
         self.current_epoch = 0
         self.best_eval_metric = float("-inf")
         self.steps_without_improvement = 0
+        self._grad_accum_step = 0
 
         # HuggingFace components
         self.optimizer = None
@@ -181,6 +184,30 @@ class SingleTurnGRPOTrainer:
         self.optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=learning_rate)
         logger.info(f"Optimizer initialized with lr={learning_rate}")
 
+    def _get_grad_accum_steps(self) -> int:
+        steps = int(getattr(self.config, "gradient_accumulation_steps", 1) or 1)
+        return max(1, steps)
+
+    def _apply_optimizer_step(self, torch, use_amp: bool, max_grad_norm: float) -> None:
+        if self.optimizer is None:
+            return
+        if self.scaler is not None and use_amp:
+            self.scaler.unscale_(self.optimizer)
+        torch.nn.utils.clip_grad_norm_(
+            self.agent.model.parameters(), max_grad_norm
+        )
+        if self.scaler is not None and use_amp:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            self.optimizer.step()
+
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+
+        self.optimizer.zero_grad(set_to_none=True)
+        self.global_step += 1
+
     def _setup_scheduler(self, num_training_steps: int) -> None:
         """Set up learning rate scheduler."""
         # require_transformers already called in initialize
@@ -290,12 +317,48 @@ class SingleTurnGRPOTrainer:
         )
         return group, best_response
 
+    def _extract_context(self, state: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(state, EnvironmentState):
+            return state.context
+        if isinstance(state, dict):
+            return state
+        return None
+
+    def _extract_prompt(
+        self, state: Any, context: Optional[Dict[str, Any]]
+    ) -> str:
+        if isinstance(state, dict):
+            if "prompt" in state:
+                return str(state["prompt"])
+            nested_state = state.get("state")
+            if isinstance(nested_state, dict) and "prompt" in nested_state:
+                return str(nested_state["prompt"])
+
+        if context:
+            prompt = context.get("prompt")
+            if prompt:
+                return str(prompt)
+            scenario = context.get("scenario")
+            if isinstance(scenario, dict):
+                if scenario.get("prompt"):
+                    return str(scenario["prompt"])
+                if scenario.get("context"):
+                    return str(scenario["context"])
+            task = context.get("task")
+            if isinstance(task, dict) and task.get("description"):
+                return str(task["description"])
+
+        return "Hello"
+
     async def train(self) -> Any:
         """Run single-turn GRPO training loop with group-relative updates."""
         logger.info("Starting single-turn GRPO training...")
 
         torch = self._get_torch_module()
         amp = get_amp()
+        use_amp = bool(
+            getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
+        )
 
         await notify_training_start(self.callbacks, trainer=self, config=self.config)
 
@@ -304,8 +367,10 @@ class SingleTurnGRPOTrainer:
         num_generations = getattr(self.config, "num_generations", 8)
         max_grad_norm = getattr(self.config, "max_grad_norm", 1.0)
 
+        grad_accum_steps = self._get_grad_accum_steps()
         total_steps = num_episodes * max_steps
-        self._setup_scheduler(total_steps)
+        total_updates = math.ceil(total_steps / grad_accum_steps)
+        self._setup_scheduler(total_updates)
 
         for episode in range(num_episodes):
             self.current_epoch = episode
@@ -313,8 +378,8 @@ class SingleTurnGRPOTrainer:
             episode_rewards: List[float] = []
 
             for _ in range(max_steps):
-                prompt = state.get("prompt", "Hello")
-                context = state if isinstance(state, dict) else None
+                context = self._extract_context(state)
+                prompt = self._extract_prompt(state, context)
 
                 group, best_response = await self._generate_trajectory_group(
                     prompt=str(prompt),
@@ -323,10 +388,6 @@ class SingleTurnGRPOTrainer:
                 )
 
                 # Compute GRPO loss
-                use_amp = bool(
-                    getattr(self.config, "bf16", False)
-                    or getattr(self.config, "fp16", False)
-                )
                 device_type = "cuda" if torch.cuda.is_available() else "cpu"
                 use_enhanced = bool(
                     getattr(self.config, "beta", 0.0) > 0.0
@@ -375,37 +436,43 @@ class SingleTurnGRPOTrainer:
 
                 # Backprop/update
                 if self.optimizer is not None and policy_loss is not None:
-                    self.optimizer.zero_grad(set_to_none=True)
+                    scaled_loss = policy_loss / grad_accum_steps
                     if self.scaler is not None and use_amp:
-                        self.scaler.scale(policy_loss).backward()  # type: ignore[arg-type]
-                        self.scaler.unscale_(self.optimizer)
-                        torch.nn.utils.clip_grad_norm_(
-                            self.agent.model.parameters(), max_grad_norm
-                        )
-                        self.scaler.step(self.optimizer)
-                        self.scaler.update()
+                        self.scaler.scale(scaled_loss).backward()  # type: ignore[arg-type]
                     else:
-                        policy_loss.backward()  # type: ignore[union-attr]
-                        torch.nn.utils.clip_grad_norm_(
-                            self.agent.model.parameters(), max_grad_norm
-                        )
-                        self.optimizer.step()
+                        scaled_loss.backward()  # type: ignore[union-attr]
 
-                    if self.lr_scheduler is not None:
-                        self.lr_scheduler.step()
-
-                self.global_step += 1
+                    self._grad_accum_step += 1
+                    if self._grad_accum_step % grad_accum_steps == 0:
+                        self._apply_optimizer_step(torch, use_amp, max_grad_norm)
 
                 # Progress environment once using best response
-                next_state: Any = {}
+                action_turn = ConversationTurn(
+                    role="assistant",
+                    content=str(best_response),
+                )
+                done = False
                 try:
-                    next_state = await self.environment.step(best_response)
-                    if isinstance(next_state, dict):
-                        state = next_state.get("state", state)
-                        step_reward = next_state.get(
+                    try:
+                        step_result = await self.environment.step(state, action_turn)
+                    except TypeError:
+                        step_result = await self.environment.step(best_response)
+
+                    step_reward = float(np.mean(group.rewards)) if group.rewards else 0.0
+
+                    if isinstance(step_result, tuple) and len(step_result) == 4:
+                        if isinstance(step_result[1], ConversationTurn):
+                            next_state, _, step_reward, done = step_result
+                        else:
+                            next_state, step_reward, done, _info = step_result
+                        state = next_state
+                    elif isinstance(step_result, dict):
+                        state = step_result.get("state", state)
+                        step_reward = step_result.get(
                             "reward",
                             float(loss_dict.get("mean_advantage", 0.0)),
                         )
+                        done = bool(step_result.get("done", False))
                     else:
                         step_reward = float(np.mean(group.rewards)) if group.rewards else 0.0
                 except Exception:
@@ -413,7 +480,7 @@ class SingleTurnGRPOTrainer:
 
                 episode_rewards.append(float(step_reward))
 
-                if isinstance(next_state, dict) and next_state.get("done", False):
+                if done:
                     break
 
             avg_reward = float(np.mean(episode_rewards)) if episode_rewards else 0.0
@@ -446,6 +513,12 @@ class SingleTurnGRPOTrainer:
             )
 
         logger.info("Single-turn GRPO training completed")
+        if (
+            self.optimizer is not None
+            and self._grad_accum_step % grad_accum_steps != 0
+        ):
+            self._apply_optimizer_step(torch, use_amp, max_grad_norm)
+
         await notify_training_end(
             self.callbacks,
             metrics={"final_step": int(self.global_step)},

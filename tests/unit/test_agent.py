@@ -200,6 +200,23 @@ class TestMultiTurnAgent:
         assert isinstance(response, str)
         assert agent.conversation_history[0]["role"] == "assistant"
 
+    @pytest.mark.asyncio
+    async def test_streaming_updates_history(self):
+        config = AgentConfig(
+            model_name="stub://stream",
+            use_stub_model=True,
+        )
+        agent = MultiTurnAgent(config)
+        await agent.initialize()
+
+        tokens = []
+        async for token in agent.generate_response_stream("Hello"):
+            tokens.append(token)
+
+        assert len(agent.conversation_history) == 1
+        assert agent.conversation_history[0]["role"] == "assistant"
+        assert agent.turn_count == 1
+
 
 class TestConversationTurn:
     """Test ConversationTurn functionality."""

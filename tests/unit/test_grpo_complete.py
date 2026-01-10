@@ -343,6 +343,7 @@ class TestGRPOTrainer:
         train_config = TrainingConfig(
             learning_rate=1e-5,
             clip_ratio=0.2,
+            gradient_accumulation_steps=1,
         )
         trainer = MultiTurnGRPOTrainer(agent, env, reward_fn, train_config)
         await trainer.initialize()
@@ -461,6 +462,7 @@ class TestIntegration:
             logging_steps=1,
             eval_steps=2,
             save_steps=10,
+            gradient_accumulation_steps=1,
         )
 
         # Create trainer
