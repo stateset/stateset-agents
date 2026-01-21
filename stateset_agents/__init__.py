@@ -24,6 +24,21 @@ except Exception:  # pragma: no cover
     Environment = None  # type: ignore
     TaskEnvironment = None  # type: ignore
 
+try:
+    from .core.long_term_planning import (
+        PlanningConfig,
+        PlanningManager,
+        Plan,
+        PlanStep,
+        PlanStatus,
+    )
+except Exception:  # pragma: no cover
+    PlanningConfig = None  # type: ignore
+    PlanningManager = None  # type: ignore
+    Plan = None  # type: ignore
+    PlanStep = None  # type: ignore
+    PlanStatus = None  # type: ignore
+
 # New enhanced features
 from .core.error_handling import (
     CircuitBreakerConfig,
@@ -200,6 +215,11 @@ __all__ = [
     "Environment",
     "ConversationEnvironment",
     "TaskEnvironment",
+    "PlanningConfig",
+    "PlanningManager",
+    "Plan",
+    "PlanStep",
+    "PlanStatus",
     "Trajectory",
     "MultiTurnTrajectory",
     "ConversationTurn",

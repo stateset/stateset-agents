@@ -314,6 +314,7 @@ class ConversationHandler:
                 conversation_id,
                 request.message,
                 strategy=request.strategy,
+                context_update=request.context,
             )
             response_text = turns[-1]["content"] if turns else "No response generated"
             context = multiturn_agent.get_conversation_summary(conversation_id)
@@ -332,7 +333,12 @@ class ConversationHandler:
             )
 
             conversation_context.add_turn({"role": "assistant", "content": response_text})
-            context = conversation_context.get_context_summary()
+            context = (
+                multiturn_agent.get_conversation_summary(
+                    conversation_context.conversation_id
+                )
+                or conversation_context.get_context_summary()
+            )
             conversation_id = conversation_context.conversation_id
 
             # Track in state manager

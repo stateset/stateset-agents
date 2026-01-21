@@ -728,7 +728,10 @@ if FASTAPI_AVAILABLE:
             # Continue existing conversation
             try:
                 turns = await multiturn_agent.continue_conversation(
-                    request.conversation_id, request.message, strategy=request.strategy
+                    request.conversation_id,
+                    request.message,
+                    strategy=request.strategy,
+                    context_update=request.context,
                 )
                 response = turns[-1]["content"] if turns else "No response generated"
 
@@ -761,7 +764,12 @@ if FASTAPI_AVAILABLE:
             # Update conversation
             conversation_context.add_turn({"role": "assistant", "content": response})
 
-            context = conversation_context.get_context_summary()
+            context = (
+                multiturn_agent.get_conversation_summary(
+                    conversation_context.conversation_id
+                )
+                or conversation_context.get_context_summary()
+            )
             request.conversation_id = conversation_context.conversation_id
             active_conversations[request.conversation_id] = {
                 "user_id": request.user_id or user_context.user_id,
@@ -1032,7 +1040,10 @@ if FASTAPI_AVAILABLE:
                         conversation_id = request.conversation_id
                         if conversation_id:
                             turns = await multiturn_agent.continue_conversation(
-                                conversation_id, request.message, strategy=request.strategy
+                                conversation_id,
+                                request.message,
+                                strategy=request.strategy,
+                                context_update=request.context,
                             )
                             response_text = turns[-1]["content"] if turns else "No response"
                             context = multiturn_agent.get_conversation_summary(conversation_id)
@@ -1045,7 +1056,10 @@ if FASTAPI_AVAILABLE:
                                 ctx.conversation_id, request.message, strategy=request.strategy
                             )
                             ctx.add_turn({"role": "assistant", "content": response_text})
-                            context = ctx.get_context_summary()
+                            context = (
+                                multiturn_agent.get_conversation_summary(ctx.conversation_id)
+                                or ctx.get_context_summary()
+                            )
                             conversation_id = ctx.conversation_id
 
                         await websocket.send_json({

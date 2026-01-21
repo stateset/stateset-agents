@@ -325,12 +325,17 @@ class TestMultiTurnAgent:
         """Test complete conversation lifecycle"""
         # Start conversation
         context = await multiturn_agent.start_conversation(
-            user_id="test_user", initial_context={"topic": "customer_service"}
+            user_id="test_user",
+            initial_context={
+                "topic": "customer_service",
+                "goal": "Resolve an order issue",
+            },
         )
 
         assert isinstance(context, ConversationContext)
         assert context.user_id == "test_user"
         assert context.topic == "customer_service"
+        assert context.metadata.get("goal") == "Resolve an order issue"
         assert context.conversation_id in multiturn_agent.active_conversations
 
         # Continue conversation
@@ -365,6 +370,39 @@ class TestMultiTurnAgent:
 
             assert isinstance(response, str)
             assert len(response) > 0
+
+    @pytest.mark.asyncio
+    async def test_multiturn_planning_injected_prompt(self):
+        """Ensure planning summaries are injected into advanced prompts."""
+        agent = MultiTurnAgent(
+            model_config={"model_type": "test", "enable_planning": True}
+        )
+        context = await agent.start_conversation(
+            initial_context={"goal": "Ship a release"}
+        )
+
+        captured: Dict[str, Any] = {}
+
+        async def _capture_prompt(prompt, context=None):
+            captured["prompt"] = prompt
+            return "ok"
+
+        agent.generate_response = AsyncMock(side_effect=_capture_prompt)
+
+        await agent.generate_multiturn_response(
+            context.conversation_id,
+            "What should we do next?",
+            strategy="default",
+        )
+
+        prompt = str(captured.get("prompt", ""))
+        assert "Long-term plan" in prompt
+        assert "Ship a release" in prompt
+
+        summary = agent.get_conversation_summary(context.conversation_id)
+        assert summary is not None
+        assert "plan" in summary
+        assert summary["plan"]["goal"] == "Ship a release"
 
     def test_dialogue_database_search(self, dialogue_database):
         """Test dialogue database search functionality"""

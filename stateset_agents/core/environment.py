@@ -289,11 +289,20 @@ class ConversationEnvironment(Environment):
             scenario = random.choice(self.scenarios) if self.scenarios else {}
         self.current_scenario = scenario
         episode_id = str(uuid.uuid4())
+        scenario_conv_id = None
+        if isinstance(scenario, dict):
+            scenario_conv_id = scenario.get("conversation_id")
+        conversation_id = (
+            str(scenario_conv_id)
+            if scenario_conv_id is not None and str(scenario_conv_id)
+            else episode_id
+        )
         state = EnvironmentState(
             episode_id=episode_id,
             turn_count=0,
             status=EpisodeStatus.ONGOING,
             context={
+                "conversation_id": conversation_id,
                 "scenario": scenario,
                 "persona": self.persona,
                 "conversation_topic": scenario.get("topic"),
@@ -301,6 +310,11 @@ class ConversationEnvironment(Environment):
                 "history": [],
             },
         )
+        if isinstance(scenario, dict):
+            if scenario.get("id") is not None:
+                state.context["scenario_id"] = scenario.get("id")
+            if scenario.get("task_id") is not None:
+                state.context["task_id"] = scenario.get("task_id")
         self.active_episodes[episode_id] = state
         self._last_state = state
         return state
@@ -517,12 +531,21 @@ class TaskEnvironment(Environment):
 
         self.current_task = scenario
         episode_id = str(uuid.uuid4())
+        scenario_conv_id = None
+        if isinstance(scenario, dict):
+            scenario_conv_id = scenario.get("conversation_id")
+        conversation_id = (
+            str(scenario_conv_id)
+            if scenario_conv_id is not None and str(scenario_conv_id)
+            else episode_id
+        )
 
         state = EnvironmentState(
             episode_id=episode_id,
             turn_count=0,
             status=EpisodeStatus.ONGOING,
             context={
+                "conversation_id": conversation_id,
                 "task": scenario,
                 "task_goal": scenario.get("goal"),
                 "task_type": scenario.get("type"),
@@ -531,6 +554,10 @@ class TaskEnvironment(Environment):
                 "task_progress": 0.0,
             },
         )
+        if isinstance(scenario, dict):
+            task_id = scenario.get("task_id", scenario.get("id"))
+            if task_id is not None:
+                state.context["task_id"] = task_id
 
         self.active_episodes[episode_id] = state
         self._last_state = state

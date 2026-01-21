@@ -30,6 +30,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 from .config import TrainingConfig, TrainingProfile, get_config_for_task
+from .continual_learning import (
+    ContinualLearningConfig,
+    ContinualLearningManager,
+    TrajectoryReplayBuffer,
+)
 from .trainer import GRPOTrainer, MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
 from .train import train, TrainingMode
 from .evaluation import EvaluationConfig, evaluate_agent
@@ -202,6 +207,9 @@ __all__ = [
     "TrainingConfig",
     "TrainingProfile",
     "get_config_for_task",
+    "ContinualLearningConfig",
+    "ContinualLearningManager",
+    "TrajectoryReplayBuffer",
     "EvaluationConfig",
     "evaluate_agent",
     "VLLM_BACKEND_AVAILABLE",

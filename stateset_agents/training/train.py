@@ -34,6 +34,7 @@ async def train(
     training_mode: str = "auto",
     config_overrides: Optional[Dict[str, Any]] = None,
     save_path: Optional[str] = None,
+    resume_from_checkpoint: Optional[str] = None,
     **kwargs,
 ) -> Agent:
     """
@@ -48,6 +49,7 @@ async def train(
         training_mode: Training mode ("single_turn", "multi_turn", "auto")
         config_overrides: Custom configuration overrides
         save_path: Path to save trained agent
+        resume_from_checkpoint: Optional checkpoint path to resume training
         **kwargs: Additional arguments
 
     Returns:
@@ -63,10 +65,14 @@ async def train(
         )
 
     # Create training configuration
+    merged_overrides = dict(config_overrides or {})
+    if resume_from_checkpoint is not None:
+        merged_overrides["resume_from_checkpoint"] = resume_from_checkpoint
+
     config = TrainingConfig.from_profile(
         profile=TrainingProfile(profile),
         num_episodes=num_episodes,
-        **(config_overrides or {}),
+        **merged_overrides,
     )
 
     # Set up reward function

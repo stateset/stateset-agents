@@ -15,6 +15,21 @@ class AgentConfigRequest(BaseModel):
         None, description="System prompt for the agent"
     )
     use_chat_template: bool = Field(True, description="Whether to use chat template")
+    enable_planning: bool = Field(False, description="Enable long-term planning")
+    planning_config: Optional[Dict[str, Any]] = Field(
+        None, description="Planning configuration overrides"
+    )
+
+    @field_validator("planning_config")
+    @classmethod
+    def validate_planning_config(
+        cls, v: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        if v is None:
+            return v
+        if not isinstance(v, dict):
+            raise ValueError("planning_config must be a dictionary")
+        return v
 
     class Config:
         json_schema_extra = {
@@ -24,6 +39,8 @@ class AgentConfigRequest(BaseModel):
                 "temperature": 0.7,
                 "top_p": 0.9,
                 "system_prompt": "You are a helpful AI assistant.",
+                "enable_planning": True,
+                "planning_config": {"max_steps": 4},
             }
         }
 
@@ -32,7 +49,10 @@ class ConversationRequest(BaseModel):
     """Request for agent conversation."""
 
     messages: List[Dict[str, str]] = Field(
-        ..., description="List of conversation messages"
+        ...,
+        description=(
+            "List of conversation messages (append-only when conversation_id is set)"
+        ),
     )
     conversation_id: Optional[str] = Field(None, description="Conversation identifier")
     user_id: Optional[str] = Field(None, description="User identifier")
@@ -69,9 +89,15 @@ class ConversationRequest(BaseModel):
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": "Hello! How can you help me?"},
                 ],
+                "conversation_id": "demo-trip",
                 "max_tokens": 256,
                 "temperature": 0.7,
                 "stream": False,
+                "context": {
+                    "goal": "Plan a 4-day trip to Kyoto",
+                    "plan_update": {"action": "advance"},
+                    "plan_goal": "Plan a 4-day trip to Osaka",
+                },
             }
         }
 
@@ -90,6 +116,24 @@ class TrainingRequest(BaseModel):
         100, description="Number of training episodes", ge=1, le=10000
     )
     profile: str = Field("balanced", description="Training profile")
+    resume_from_checkpoint: Optional[str] = Field(
+        None, description="Checkpoint path to resume training from"
+    )
+    training_config_overrides: Optional[Dict[str, Any]] = Field(
+        None, description="Optional training configuration overrides"
+    )
+
+    @field_validator("resume_from_checkpoint")
+    @classmethod
+    def validate_resume_from_checkpoint(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            raise ValueError("resume_from_checkpoint must be a string path")
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("resume_from_checkpoint cannot be empty")
+        return cleaned
 
     class Config:
         json_schema_extra = {
@@ -98,6 +142,7 @@ class TrainingRequest(BaseModel):
                     "model_name": "gpt2",
                     "max_new_tokens": 256,
                     "temperature": 0.7,
+                    "enable_planning": False,
                 },
                 "environment_scenarios": [
                     {
@@ -109,6 +154,11 @@ class TrainingRequest(BaseModel):
                 "reward_config": {"helpfulness_weight": 0.7, "safety_weight": 0.3},
                 "num_episodes": 50,
                 "profile": "balanced",
+                "resume_from_checkpoint": "./outputs/checkpoint-100",
+                "training_config_overrides": {
+                    "continual_strategy": "replay_lwf",
+                    "replay_ratio": 0.3,
+                },
             }
         }
 

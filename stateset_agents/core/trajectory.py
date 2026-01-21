@@ -308,6 +308,7 @@ class MultiTurnTrajectory:
         data = data.copy()
         if "turns" in data:
             data["turns"] = [ConversationTurn.from_dict(turn) for turn in data["turns"]]
+        data.pop("episode_length", None)
         return cls(**data)
 
     def save(self, filepath: str):
@@ -378,6 +379,24 @@ class TrajectoryGroup:
             "scenario_metadata": self.scenario_metadata,
             "group_id": self.group_id,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TrajectoryGroup":
+        """Create from dictionary."""
+        data = data.copy()
+        trajectories: List[Union[Trajectory, MultiTurnTrajectory]] = []
+        for item in data.get("trajectories", []) or []:
+            if isinstance(item, (Trajectory, MultiTurnTrajectory)):
+                trajectories.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            if "prompt" in item or "response" in item:
+                trajectories.append(Trajectory.from_dict(item))
+            else:
+                trajectories.append(MultiTurnTrajectory.from_dict(item))
+        data["trajectories"] = trajectories
+        return cls(**data)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TrajectoryGroup":

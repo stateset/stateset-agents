@@ -103,6 +103,41 @@ class TestMultiTurnGRPOTrainer:
 
             mock_agent.initialize.assert_called_once()
 
+    def test_trainer_load_checkpoint(self, trainer, tmp_path):
+        """Test loading checkpoint training state."""
+        trainer.optimizer = MagicMock()
+        trainer.lr_scheduler = MagicMock()
+
+        checkpoint_path = tmp_path / "checkpoint"
+        checkpoint_path.mkdir()
+        (checkpoint_path / "training_state.pt").write_text("placeholder")
+
+        state = {
+            "global_step": 7,
+            "current_epoch": 3,
+            "best_eval_metric": 0.2,
+            "steps_without_improvement": 2,
+            "grad_accum_step": 4,
+            "optimizer_state_dict": {"opt": 1},
+            "scheduler_state_dict": {"sched": 2},
+        }
+
+        with patch(
+            "stateset_agents.training.multi_turn_trainer.require_torch"
+        ) as mock_torch:
+            mock_torch.return_value = MagicMock(load=MagicMock(return_value=state))
+            loaded = trainer.load_checkpoint(checkpoint_path)
+
+        assert loaded is True
+        assert trainer.global_step == 7
+        assert trainer.current_epoch == 3
+        trainer.optimizer.load_state_dict.assert_called_once_with(
+            state["optimizer_state_dict"]
+        )
+        trainer.lr_scheduler.load_state_dict.assert_called_once_with(
+            state["scheduler_state_dict"]
+        )
+
 
 class TestTrainerOptimizer:
     """Test trainer optimizer setup."""
@@ -171,6 +206,72 @@ class TestTrajectoryHandling:
         trajectory.add_turn(ConversationTurn("msg3", "resp3", 0.9))
 
         assert trajectory.average_reward == pytest.approx(0.7, rel=0.01)
+
+
+def test_multi_turn_trainer_uses_environment_scenarios():
+    """Trainer should prefer environment scenarios when available."""
+    from types import SimpleNamespace
+    from training.multi_turn_trainer import MultiTurnGRPOTrainer
+
+    env = MagicMock()
+    env.scenarios = [
+        {"id": "s1", "context": "alpha"},
+        {"id": "s2", "context": "beta"},
+    ]
+    config = SimpleNamespace(
+        num_episodes=3,
+        task_schedule=None,
+        task_switch_steps=0,
+        task_id_key="task_id",
+        eval_split_size=0.0,
+        max_examples=None,
+    )
+
+    trainer = MultiTurnGRPOTrainer(
+        agent=MagicMock(),
+        environment=env,
+        config=config,
+    )
+
+    scenarios = trainer._get_training_scenarios()
+
+    assert len(scenarios) == 3
+    assert scenarios[0]["context"] == "alpha"
+    assert scenarios[1]["context"] == "beta"
+
+
+def test_multi_turn_trainer_stratifies_eval_by_task():
+    """Eval split should include each task when stratify_by_task is enabled."""
+    from types import SimpleNamespace
+    from training.multi_turn_trainer import MultiTurnGRPOTrainer
+
+    env = MagicMock()
+    env.scenarios = [
+        {"id": "a1", "task_id": "A"},
+        {"id": "a2", "task_id": "A"},
+        {"id": "b1", "task_id": "B"},
+        {"id": "b2", "task_id": "B"},
+    ]
+    config = SimpleNamespace(
+        num_episodes=4,
+        task_schedule=None,
+        task_switch_steps=0,
+        task_id_key="task_id",
+        eval_split_size=0.5,
+        max_examples=None,
+        stratify_by_task=True,
+    )
+
+    trainer = MultiTurnGRPOTrainer(
+        agent=MagicMock(),
+        environment=env,
+        config=config,
+    )
+
+    eval_scenarios = trainer._get_eval_scenarios()
+    tasks = {scenario.get("task_id") for scenario in eval_scenarios}
+
+    assert tasks == {"A", "B"}
 
 
 class TestTrajectoryGroup:
@@ -417,3 +518,27 @@ class TestSchedulerSetup:
 
         assert get_cosine_schedule_with_warmup is not None
         assert get_linear_schedule_with_warmup is not None
+
+
+class TestTaskSchedule:
+    """Test task scheduling in training scenarios."""
+
+    def test_task_schedule_assignment(self):
+        from training.multi_turn_trainer import MultiTurnGRPOTrainer
+
+        config = MagicMock()
+        config.num_episodes = 5
+        config.task_schedule = ["task_a", "task_b"]
+        config.task_switch_steps = 2
+        config.task_id_key = "task_id"
+
+        trainer = MultiTurnGRPOTrainer(
+            agent=MagicMock(),
+            environment=MagicMock(),
+            config=config,
+        )
+
+        scenarios = trainer._get_training_scenarios()
+        assert scenarios[0]["task_id"] == "task_a"
+        assert scenarios[1]["task_id"] == "task_a"
+        assert scenarios[2]["task_id"] == "task_b"

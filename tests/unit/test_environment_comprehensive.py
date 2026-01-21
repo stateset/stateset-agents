@@ -271,6 +271,23 @@ class TestEnvironmentStateManagement:
         assert state["turn_count"] == 3
 
     @pytest.mark.asyncio
+    async def test_state_includes_conversation_and_task_ids(self):
+        """Test that scenario metadata is surfaced in state context."""
+        scenario = {
+            "id": "scenario_1",
+            "task_id": "task_alpha",
+            "conversation_id": "conv_alpha",
+            "topic": "test",
+        }
+        env = ConversationEnvironment(scenarios=[scenario], max_turns=3)
+
+        state = await env.reset(scenario=scenario)
+
+        assert state.context.get("conversation_id") == "conv_alpha"
+        assert state.context.get("scenario_id") == "scenario_1"
+        assert state.context.get("task_id") == "task_alpha"
+
+    @pytest.mark.asyncio
     async def test_state_immutability(self):
         """Test that original state is not modified by step"""
         scenarios = [{"topic": "test"}]

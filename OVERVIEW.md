@@ -8,7 +8,8 @@ The `stateset-agents` project is a cutting-edge, production-grade framework desi
 2.  **Group Relative Policy Optimization (GRPO) & Group Sequence Policy Optimization (GSPO)**: At its heart, the framework implements these advanced RL algorithms, specifically tailored for the complexities of language generation and conversational flows. This approach provides enhanced stability and efficiency compared to traditional methods like PPO.
 3.  **Rust Acceleration (`stateset-rl-core`)**: Performance-critical computations, such as Generalized Advantage Estimation (GAE) and group advantage calculations, are offloaded to a highly optimized Rust backend. This significantly boosts training speed and memory efficiency, enabling the scaling of complex RL tasks.
 4.  **Custom Reward Functions**: The framework offers unparalleled flexibility in defining arbitrary, domain-specific reward functions. This allows developers to "steer" agent behavior towards specific objectives (e.g., politeness, conciseness, factual accuracy, sales conversion) beyond simple next-token prediction.
-5.  **Seamless Integration**: Designed for the modern AI ecosystem, it integrates smoothly with HuggingFace Transformers, PyTorch, and Weights & Biases for model management, training, and experiment tracking.
+5.  **Continual Learning & Planning**: Built-in replay/LwF/EWC support for continual improvement and optional long-term planning context injection for goal-oriented conversations.
+6.  **Seamless Integration**: Designed for the modern AI ecosystem, it integrates smoothly with HuggingFace Transformers, PyTorch, and Weights & Biases for model management, training, and experiment tracking.
 
 ## Why is This Important? The AI Alignment Problem
 

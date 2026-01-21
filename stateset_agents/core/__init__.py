@@ -128,6 +128,15 @@ from .value_function import (
     create_value_function,
 )
 from .trajectory import ConversationTurn, MultiTurnTrajectory, Trajectory
+from .long_term_planning import (
+    HeuristicPlanner,
+    Plan,
+    PlanStatus,
+    PlanStep,
+    Planner,
+    PlanningConfig,
+    PlanningManager,
+)
 from .type_system import ConfigValidator
 from .type_system import ConversationTurn as TypedConversationTurn
 from .type_system import (
@@ -186,6 +195,13 @@ __all__ = [
     "Trajectory",
     "MultiTurnTrajectory",
     "ConversationTurn",
+    "PlanningConfig",
+    "PlanningManager",
+    "Planner",
+    "Plan",
+    "PlanStep",
+    "PlanStatus",
+    "HeuristicPlanner",
     # Reward system
     "RewardFunction",
     "CompositeReward",

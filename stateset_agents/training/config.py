@@ -106,6 +106,19 @@ class TrainingConfig:
     value_clip: float = 0.2  # Value function clipping
     entropy_coef: float = 0.01  # Entropy bonus coefficient
 
+    # Continual learning (replay + LwF + EWC)
+    continual_strategy: str = "none"  # "none", "replay", "lwf", "ewc", combos
+    replay_buffer_size: int = 2000
+    replay_ratio: float = 0.5
+    replay_min_size: int = 100
+    replay_sampling: str = "uniform"  # "uniform", "recent", "reward", "balanced"
+    replay_storage: str = "reservoir"  # "reservoir", "fifo"
+    continual_kl_beta: float = 0.0  # KL penalty for LwF reference model
+    ewc_lambda: float = 0.0
+    ewc_num_samples: int = 64
+    ewc_decay: float = 0.9
+    task_id_key: str = "task_id"
+
     # Data processing
     max_examples: Optional[int] = None
     eval_split_size: float = 0.1
@@ -143,6 +156,11 @@ class TrainingConfig:
     seed: int = 42
     remove_unused_columns: bool = False
     disable_tqdm: bool = False
+
+    # Continual learning task schedule (optional)
+    task_schedule: Optional[List[str]] = None
+    task_switch_steps: int = 0
+    resume_from_checkpoint: Optional[str] = None
 
     def __post_init__(self):
         # Map compatibility aliases
@@ -281,6 +299,56 @@ class TrainingConfig:
         # W&B checks
         if self.report_to == "wandb" and not self.wandb_project:
             warnings.append("W&B reporting enabled but no project specified")
+
+        # Continual learning checks
+        valid_strategies = {
+            "none",
+            "replay",
+            "lwf",
+            "ewc",
+            "replay_lwf",
+            "replay_ewc",
+            "replay_lwf_ewc",
+        }
+        if self.continual_strategy not in valid_strategies:
+            warnings.append(
+                f"continual_strategy '{self.continual_strategy}' not recognized"
+            )
+        if self.replay_sampling not in {"uniform", "recent", "reward", "balanced"}:
+            warnings.append(
+                f"replay_sampling '{self.replay_sampling}' not recognized"
+            )
+        if self.replay_ratio < 0:
+            warnings.append("replay_ratio must be non-negative")
+        if self.replay_ratio > 1.0:
+            warnings.append("replay_ratio > 1.0 may overweight replay data")
+        if self.replay_buffer_size < 0:
+            warnings.append("replay_buffer_size must be non-negative")
+        if self.replay_min_size > self.replay_buffer_size:
+            warnings.append("replay_min_size exceeds replay_buffer_size")
+        if self.ewc_lambda > 0 and self.ewc_num_samples <= 0:
+            warnings.append("ewc_num_samples must be > 0 when ewc_lambda > 0")
+        if self.ewc_decay < 0.0 or self.ewc_decay > 1.0:
+            warnings.append("ewc_decay should be between 0 and 1 for stable updates")
+        if self.continual_kl_beta > 0 and "lwf" not in self.continual_strategy:
+            warnings.append(
+                "continual_kl_beta set but continual_strategy does not include lwf"
+            )
+        if self.task_schedule and self.task_switch_steps <= 0:
+            warnings.append(
+                "task_schedule set but task_switch_steps is <= 0; tasks will not advance"
+            )
+        if self.eval_split_size < 0.0 or self.eval_split_size > 1.0:
+            warnings.append("eval_split_size should be between 0 and 1")
+
+        if self.resume_from_checkpoint:
+            try:
+                if not Path(self.resume_from_checkpoint).exists():
+                    warnings.append(
+                        f"resume_from_checkpoint '{self.resume_from_checkpoint}' does not exist"
+                    )
+            except Exception:
+                warnings.append("resume_from_checkpoint path could not be validated")
 
         return warnings
 

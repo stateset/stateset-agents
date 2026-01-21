@@ -9,9 +9,10 @@ Get up and running with StateSet Agents in 15 minutes.
 1. [Installation](#installation)
 2. [First Agent](#first-agent)
 3. [Training Your First Agent](#training-your-first-agent)
-4. [Using Pre-built Rewards](#using-pre-built-rewards)
-5. [Stub Mode for Development](#stub-mode-for-development)
-6. [Next Steps](#next-steps)
+4. [Optional: Continual Learning + Planning](#optional-continual-learning--planning)
+5. [Using Pre-built Rewards](#using-pre-built-rewards)
+6. [Stub Mode for Development](#stub-mode-for-development)
+7. [Next Steps](#next-steps)
 
 ---
 
@@ -188,6 +189,48 @@ python train_simple.py
 - Reward metrics per episode
 - Final checkpoint saved
 - Test response from trained agent
+
+---
+
+## Optional: Continual Learning + Planning
+
+Enable planning context and continual learning in training:
+
+```python
+agent = MultiTurnAgent(AgentConfig(
+    model_name="gpt2",
+    enable_planning=True,
+    planning_config={"max_steps": 4},
+))
+
+trained_agent = await train(
+    agent=agent,
+    environment=environment,
+    reward_fn=reward_fn,
+    num_episodes=50,
+    # resume_from_checkpoint="./outputs/checkpoint-100",
+    config_overrides={
+        "continual_strategy": "replay_lwf",
+        "replay_ratio": 0.3,
+        "replay_sampling": "balanced",
+        "task_id_key": "task_id",
+    },
+)
+
+context = {"conversation_id": "demo-trip", "goal": "Plan a weekend in Austin"}
+first = await trained_agent.generate_response(
+    [{"role": "user", "content": "Can you outline a plan?"}],
+    context=context,
+)
+
+second = await trained_agent.generate_response(
+    [{"role": "user", "content": "Nice. What's next?"}],
+    context={"conversation_id": "demo-trip", "plan_update": {"action": "advance"}},
+)
+
+# To update the plan goal explicitly:
+# context={"conversation_id": "demo-trip", "plan_goal": "Plan a weekend in Dallas"}
+```
 
 ---
 

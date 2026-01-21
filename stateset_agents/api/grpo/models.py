@@ -244,6 +244,21 @@ class GRPOConversationRequest(BaseModel):
 
         return cleaned
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Can you outline the next steps?",
+                "conversation_id": "conv_123",
+                "context": {
+                    "goal": "Ship release v2",
+                    "plan_update": {"action": "advance"},
+                    "plan_goal": "Ship release v2.1",
+                },
+                "max_tokens": 256,
+                "temperature": 0.7,
+            }
+        }
+
     @field_validator("conversation_id")
     @classmethod
     def validate_conversation_id(cls, conv_id: Optional[str]) -> Optional[str]:

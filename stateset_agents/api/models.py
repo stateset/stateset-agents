@@ -118,6 +118,10 @@ class AgentConfig(BaseModel):
     top_k: int = Field(50, ge=1, le=1000, description="Top-k sampling")
     system_prompt: Optional[str] = Field(None, description="System prompt for the agent")
     use_chat_template: bool = Field(True, description="Whether to use chat template")
+    enable_planning: bool = Field(False, description="Enable long-term planning")
+    planning_config: Optional[Dict[str, Any]] = Field(
+        None, description="Planning configuration overrides"
+    )
 
     @field_validator("model_name")
     @classmethod
@@ -140,6 +144,16 @@ class AgentConfig(BaseModel):
                 raise ValueError("System prompt cannot exceed 10,000 characters")
         return v
 
+    @field_validator("planning_config")
+    @classmethod
+    def validate_planning_config(cls, v: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Validate planning configuration overrides."""
+        if v is None:
+            return v
+        if not isinstance(v, dict):
+            raise ValueError("planning_config must be a dictionary")
+        return v
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -147,7 +161,9 @@ class AgentConfig(BaseModel):
                 "max_new_tokens": 256,
                 "temperature": 0.7,
                 "top_p": 0.9,
-                "system_prompt": "You are a helpful AI assistant."
+                "system_prompt": "You are a helpful AI assistant.",
+                "enable_planning": True,
+                "planning_config": {"max_steps": 4}
             }
         }
 
@@ -328,8 +344,14 @@ class ConversationRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "message": "Hello, how can you help me?",
+                "conversation_id": "conv_550e8400",
                 "max_tokens": 256,
-                "temperature": 0.7
+                "temperature": 0.7,
+                "context": {
+                    "goal": "Plan a weekend in Austin",
+                    "plan_update": {"action": "advance"},
+                    "plan_goal": "Plan a weekend in Dallas",
+                },
             }
         }
 

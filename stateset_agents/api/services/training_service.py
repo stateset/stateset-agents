@@ -88,6 +88,8 @@ class TrainingService:
                 reward_fn=reward_fn,
                 num_episodes=request.num_episodes,
                 profile=request.profile,
+                config_overrides=request.training_config_overrides,
+                resume_from_checkpoint=request.resume_from_checkpoint,
             )
 
             self.training_jobs[training_id].update(

@@ -196,6 +196,25 @@ class TestSingleTurnGRPOTrainer:
         assert len(trainer.callbacks) == 1
         assert trainer.callbacks[0] == callback
 
+    def test_single_turn_trainer_uses_environment_scenarios(
+        self, mock_agent, training_config
+    ):
+        """Trainer should prefer environment scenarios when available."""
+        env = MagicMock()
+        env.scenarios = [{"prompt": "Hello"}, {"prompt": "Hi"}]
+
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=env,
+            config=training_config,
+        )
+
+        scenario0 = trainer._get_episode_scenario(0)
+        scenario1 = trainer._get_episode_scenario(1)
+
+        assert scenario0["prompt"] == "Hello"
+        assert scenario1["prompt"] == "Hi"
+
     @pytest.mark.asyncio
     @patch('training.trainer.torch')
     async def test_single_turn_trainer_initialize(
@@ -239,6 +258,55 @@ class TestSingleTurnGRPOTrainer:
         # Verify training completed
         assert result == mock_agent
         assert trainer.global_step > 0
+
+    @pytest.mark.asyncio
+    @patch('training.trainer.torch')
+    async def test_single_turn_trainer_emits_replay_metrics(
+        self, mock_torch, mock_agent, mock_environment
+    ):
+        """Ensure replay metrics are emitted when continual learning is enabled."""
+        mock_torch.cuda.is_available.return_value = False
+        mock_torch.optim.AdamW = MagicMock()
+
+        config = TrainingConfig(
+            num_episodes=1,
+            max_steps_per_episode=2,
+            num_generations=1,
+            learning_rate=1e-5,
+            seed=123,
+            bf16=False,
+            continual_strategy="replay",
+            replay_ratio=1.0,
+            replay_min_size=0,
+            replay_buffer_size=10,
+        )
+
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=mock_environment,
+            config=config,
+        )
+
+        with patch(
+            "training.single_turn_trainer.compute_grpo_loss"
+        ) as mock_loss, patch(
+            "training.single_turn_trainer.notify_episode_end",
+            new=AsyncMock(),
+        ) as mock_notify:
+            mock_loss.return_value = {
+                "policy_loss": None,
+                "total_loss": None,
+                "mean_advantage": 0.0,
+            }
+
+            await trainer.initialize()
+            await trainer.train()
+
+        assert mock_notify.await_count >= 1
+        metrics = mock_notify.call_args.kwargs.get("metrics", {})
+        assert "replay_group_count" in metrics
+        assert "replay_buffer_size" in metrics
+        assert metrics["replay_buffer_size"] >= 1
 
     @pytest.mark.asyncio
     @patch('training.trainer.torch')
@@ -310,6 +378,49 @@ class TestSingleTurnGRPOTrainer:
 
         # Verify checkpoint directory was created
         assert checkpoint_path.exists()
+
+    def test_single_turn_trainer_load_checkpoint(
+        self, mock_agent, mock_environment, training_config, tmp_path
+    ):
+        """Test loading checkpoint training state."""
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=mock_environment,
+            config=training_config,
+        )
+
+        trainer.optimizer = MagicMock()
+        trainer.lr_scheduler = MagicMock()
+
+        checkpoint_path = tmp_path / "checkpoint"
+        checkpoint_path.mkdir()
+        (checkpoint_path / "training_state.pt").write_text("placeholder")
+
+        state = {
+            "global_step": 5,
+            "current_epoch": 2,
+            "best_eval_metric": 0.4,
+            "steps_without_improvement": 1,
+            "grad_accum_step": 3,
+            "optimizer_state_dict": {"opt": 1},
+            "scheduler_state_dict": {"sched": 2},
+        }
+
+        with patch(
+            "stateset_agents.training.single_turn_trainer.require_torch"
+        ) as mock_torch:
+            mock_torch.return_value = MagicMock(load=MagicMock(return_value=state))
+            loaded = trainer.load_checkpoint(checkpoint_path)
+
+        assert loaded is True
+        assert trainer.global_step == 5
+        assert trainer.current_epoch == 2
+        trainer.optimizer.load_state_dict.assert_called_once_with(
+            state["optimizer_state_dict"]
+        )
+        trainer.lr_scheduler.load_state_dict.assert_called_once_with(
+            state["scheduler_state_dict"]
+        )
 
 
 # ===========================

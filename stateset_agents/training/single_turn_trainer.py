@@ -25,10 +25,12 @@ from stateset_agents.core.trajectory import (
 from stateset_agents.core.environment import EnvironmentState
 
 from .loss_computation import compute_enhanced_grpo_loss, compute_grpo_loss
+from .continual_learning import ContinualLearningManager
 from .trainer_utils import (
     get_amp,
     get_cosine_schedule_with_warmup,
     get_linear_schedule_with_warmup,
+    get_torch,
     require_torch,
     require_transformers,
 )
@@ -83,6 +85,8 @@ class SingleTurnGRPOTrainer:
         self._global_reward_mean: float = 0.0
         self._global_reward_count: int = 0
         self.reference_model = None
+        self.continual_manager: Optional[ContinualLearningManager] = None
+        self._current_task_id: Optional[str] = None
 
         logger.info(f"Single-Turn GRPO Trainer initialized with {type(agent).__name__}")
 
@@ -136,6 +140,8 @@ class SingleTurnGRPOTrainer:
             logger.warning(f"Could not initialize reference model: {ref_err}")
             self.reference_model = None
 
+        self._init_continual_learning()
+
         logger.info("Single-Turn GRPO trainer initialized successfully")
 
     def _get_torch_module(self) -> Any:
@@ -183,6 +189,93 @@ class SingleTurnGRPOTrainer:
 
         self.optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=learning_rate)
         logger.info(f"Optimizer initialized with lr={learning_rate}")
+
+    def _init_continual_learning(self) -> None:
+        if self.config is None:
+            return
+
+        manager = ContinualLearningManager.from_training_config(self.config)
+        if manager.enabled:
+            self.continual_manager = manager
+            logger.info(
+                "Continual learning enabled: strategy=%s, replay_buffer=%s",
+                manager.config.strategy,
+                manager.config.replay_buffer_size,
+            )
+
+    def _get_environment_scenarios(self) -> List[Dict[str, Any]]:
+        scenarios = getattr(self.environment, "scenarios", None)
+        if not isinstance(scenarios, list):
+            return []
+        cleaned: List[Dict[str, Any]] = []
+        for idx, scenario in enumerate(scenarios):
+            if scenario is None:
+                continue
+            if isinstance(scenario, dict):
+                cleaned.append(dict(scenario))
+            else:
+                cleaned.append({"id": f"scenario_{idx}", "context": str(scenario)})
+        max_examples = getattr(self.config, "max_examples", None)
+        if isinstance(max_examples, int) and max_examples > 0:
+            cleaned = cleaned[:max_examples]
+        return cleaned
+
+    def _apply_task_schedule(self, scenario: Dict[str, Any], episode: int) -> None:
+        if self.config is None:
+            return
+        task_schedule = getattr(self.config, "task_schedule", None)
+        task_switch_steps = int(getattr(self.config, "task_switch_steps", 0) or 0)
+        task_key = getattr(self.config, "task_id_key", "task_id")
+        if not task_schedule or task_switch_steps <= 0:
+            return
+        if task_key in scenario:
+            return
+        task_idx = min(episode // task_switch_steps, len(task_schedule) - 1)
+        scenario[task_key] = task_schedule[task_idx]
+
+    def _get_episode_scenario(self, episode: int) -> Optional[Dict[str, Any]]:
+        scenarios = self._get_environment_scenarios()
+        scenario: Optional[Dict[str, Any]] = None
+        if scenarios:
+            scenario = dict(scenarios[episode % len(scenarios)])
+        else:
+            task_schedule = getattr(self.config, "task_schedule", None)
+            task_switch_steps = int(getattr(self.config, "task_switch_steps", 0) or 0)
+            task_key = getattr(self.config, "task_id_key", "task_id")
+            if task_schedule and task_switch_steps > 0:
+                task_idx = min(episode // task_switch_steps, len(task_schedule) - 1)
+                scenario = {task_key: task_schedule[task_idx]}
+
+        if scenario is not None:
+            self._apply_task_schedule(scenario, episode)
+        return scenario
+
+    def _resolve_task_id(self, context: Optional[Dict[str, Any]]) -> Optional[str]:
+        if context is None or self.config is None:
+            return None
+        task_key = getattr(self.config, "task_id_key", "task_id")
+        if task_key and task_key in context:
+            value = context.get(task_key)
+            return str(value) if value is not None else None
+        scenario = context.get("scenario")
+        if isinstance(scenario, dict) and task_key in scenario:
+            value = scenario.get(task_key)
+            return str(value) if value is not None else None
+        return None
+
+    def _maybe_handle_task_switch(self, task_id: Optional[str]) -> None:
+        if self.continual_manager is None or task_id is None:
+            return
+        if self._current_task_id is None:
+            self._current_task_id = task_id
+            return
+        if task_id != self._current_task_id:
+            self.continual_manager.on_task_end(
+                agent=self.agent, task_id=self._current_task_id
+            )
+            if self.continual_manager.reference_model is not None:
+                self.reference_model = self.continual_manager.reference_model
+            self._current_task_id = task_id
 
     def _get_grad_accum_steps(self) -> int:
         steps = int(getattr(self.config, "gradient_accumulation_steps", 1) or 1)
@@ -372,14 +465,38 @@ class SingleTurnGRPOTrainer:
         total_updates = math.ceil(total_steps / grad_accum_steps)
         self._setup_scheduler(total_updates)
 
-        for episode in range(num_episodes):
+        resume_from = getattr(self.config, "resume_from_checkpoint", None)
+        resumed = False
+        if resume_from:
+            resumed = self.load_checkpoint(resume_from)
+
+        start_episode = 0
+        if resumed:
+            start_episode = min(num_episodes, max(0, int(self.current_epoch) + 1))
+
+        for episode in range(start_episode, num_episodes):
             self.current_epoch = episode
-            state = await self.environment.reset()
+            scenario = self._get_episode_scenario(episode)
+            task_key = getattr(self.config, "task_id_key", "task_id")
+
+            try:
+                state = await self.environment.reset(scenario)
+            except TypeError:
+                state = await self.environment.reset()
+            if scenario:
+                if isinstance(state, EnvironmentState):
+                    state.context.setdefault(task_key, scenario.get(task_key))
+                    state.context.setdefault("scenario", scenario)
+                elif isinstance(state, dict):
+                    state.setdefault(task_key, scenario.get(task_key))
             episode_rewards: List[float] = []
+            replay_group_count = 0
 
             for _ in range(max_steps):
                 context = self._extract_context(state)
                 prompt = self._extract_prompt(state, context)
+                task_id = self._resolve_task_id(context)
+                self._maybe_handle_task_switch(task_id)
 
                 group, best_response = await self._generate_trajectory_group(
                     prompt=str(prompt),
@@ -387,11 +504,31 @@ class SingleTurnGRPOTrainer:
                     context=context,
                 )
 
+                training_groups = [group]
+                replay_groups: List[TrajectoryGroup] = []
+                if self.continual_manager is not None:
+                    replay_groups = self.continual_manager.sample_replay_groups(
+                        len(training_groups)
+                    )
+                    self.continual_manager.add_trajectory_groups(
+                        training_groups, task_id=task_id
+                    )
+                    if replay_groups:
+                        replay_group_count += len(replay_groups)
+                        training_groups = training_groups + replay_groups
+
                 # Compute GRPO loss
                 device_type = "cuda" if torch.cuda.is_available() else "cpu"
+                base_beta = float(getattr(self.config, "beta", 0.0))
+                if self.continual_manager is not None:
+                    if self.continual_manager.reference_model is not None:
+                        self.reference_model = self.continual_manager.reference_model
+                    base_beta = self.continual_manager.get_effective_beta(base_beta)
+
                 use_enhanced = bool(
-                    getattr(self.config, "beta", 0.0) > 0.0
+                    base_beta > 0.0
                     or getattr(self.config, "use_reference_model", False)
+                    or self.reference_model is not None
                 )
 
                 autocast_ctx = (
@@ -404,21 +541,33 @@ class SingleTurnGRPOTrainer:
                     with autocast_ctx:
                         if use_enhanced:
                             loss_dict = compute_enhanced_grpo_loss(
-                                trajectory_groups=[group],
-                                beta=float(getattr(self.config, "beta", 0.0)),
+                                trajectory_groups=training_groups,
+                                beta=base_beta,
                                 config=self.config,
                                 agent=self.agent,
                                 reference_model=self.reference_model,
                             )
                         else:
                             loss_dict = compute_grpo_loss(
-                                trajectory_groups=[group],
+                                trajectory_groups=training_groups,
                                 config=self.config,
                                 agent=self.agent,
                                 global_reward_mean=self._global_reward_mean,
                                 global_reward_count=self._global_reward_count,
                                 update_global_stats=self._update_global_stats,
                             )
+
+                        ewc_penalty = None
+                        if self.continual_manager is not None:
+                            ewc_penalty = self.continual_manager.compute_ewc_penalty(
+                                self.agent
+                            )
+                        if ewc_penalty is not None:
+                            loss_dict["ewc_penalty"] = ewc_penalty
+                            if loss_dict.get("total_loss") is not None:
+                                loss_dict["total_loss"] = (
+                                    loss_dict["total_loss"] + ewc_penalty
+                                )
                 except Exception as loss_err:
                     logger.warning(
                         "Falling back to heuristic single-turn update: %s",
@@ -432,7 +581,7 @@ class SingleTurnGRPOTrainer:
                         else 0.0,
                     }
 
-                policy_loss = loss_dict.get("policy_loss")
+                policy_loss = loss_dict.get("total_loss") or loss_dict.get("policy_loss")
 
                 # Backprop/update
                 if self.optimizer is not None and policy_loss is not None:
@@ -509,6 +658,14 @@ class SingleTurnGRPOTrainer:
                     "avg_reward": avg_reward,
                     "total_reward": avg_reward,
                     "global_step": int(self.global_step),
+                    **(
+                        {
+                            "replay_group_count": replay_group_count,
+                            "replay_buffer_size": self.continual_manager.buffer.size,
+                        }
+                        if self.continual_manager is not None
+                        else {}
+                    ),
                 },
             )
 
@@ -518,6 +675,13 @@ class SingleTurnGRPOTrainer:
             and self._grad_accum_step % grad_accum_steps != 0
         ):
             self._apply_optimizer_step(torch, use_amp, max_grad_norm)
+
+        if self.continual_manager is not None and self._current_task_id is not None:
+            self.continual_manager.on_task_end(
+                agent=self.agent, task_id=self._current_task_id
+            )
+            if self.continual_manager.reference_model is not None:
+                self.reference_model = self.continual_manager.reference_model
 
         await notify_training_end(
             self.callbacks,
@@ -537,6 +701,30 @@ class SingleTurnGRPOTrainer:
             if hasattr(self.agent, "tokenizer") and self.agent.tokenizer is not None:
                 self.agent.tokenizer.save_pretrained(model_path)
 
+        training_state = {
+            "global_step": int(self.global_step),
+            "current_epoch": int(self.current_epoch),
+            "best_eval_metric": float(self.best_eval_metric),
+            "steps_without_improvement": int(self.steps_without_improvement),
+            "grad_accum_step": int(self._grad_accum_step),
+        }
+        if self.optimizer is not None:
+            training_state["optimizer_state_dict"] = self.optimizer.state_dict()
+        if self.lr_scheduler is not None:
+            training_state["scheduler_state_dict"] = self.lr_scheduler.state_dict()
+        if self.config is not None and hasattr(self.config, "__dict__"):
+            training_state["config"] = self.config.__dict__
+        if self.continual_manager is not None:
+            training_state["continual_state"] = self.continual_manager.state_dict()
+            training_state["current_task_id"] = self._current_task_id
+
+        torch = get_torch()
+        if torch is not None:
+            try:
+                torch.save(training_state, path / "training_state.pt")
+            except Exception as exc:  # pragma: no cover - best effort persistence
+                logger.debug("Skipping training state save: %s", exc)
+
         logger.info(f"Checkpoint saved to {path}")
         await notify_checkpoint_saved(
             self.callbacks,
@@ -548,3 +736,98 @@ class SingleTurnGRPOTrainer:
     def add_callback(self, callback: Any):
         """Add training callback"""
         self.callbacks.append(callback)
+
+    def load_checkpoint(self, checkpoint_path: Union[str, Path]) -> bool:
+        """Load model and training state from a checkpoint directory."""
+        torch = None
+        try:
+            torch = require_torch()
+        except ImportError:
+            logger.warning("Cannot load checkpoint without PyTorch.")
+            return False
+
+        path = Path(checkpoint_path)
+        if not path.exists():
+            logger.warning("Checkpoint path not found: %s", path)
+            return False
+
+        model_dir = path / "model" if (path / "model").is_dir() else path
+
+        weights_loaded = False
+        model_file = model_dir / "pytorch_model.bin"
+        safetensors_file = model_dir / "model.safetensors"
+        if getattr(self.agent, "model", None) is not None and hasattr(
+            self.agent.model, "load_state_dict"
+        ):
+            try:
+                if model_file.is_file():
+                    state_dict = torch.load(model_file, map_location="cpu")
+                    if isinstance(state_dict, dict) and "state_dict" in state_dict:
+                        state_dict = state_dict["state_dict"]
+                    self.agent.model.load_state_dict(state_dict, strict=False)
+                    weights_loaded = True
+                elif safetensors_file.is_file():
+                    try:
+                        from safetensors.torch import load_file  # type: ignore[import-not-found]
+
+                        state_dict = load_file(str(safetensors_file))
+                        self.agent.model.load_state_dict(state_dict, strict=False)
+                        weights_loaded = True
+                    except Exception as exc:
+                        logger.debug("Failed to load safetensors: %s", exc)
+            except Exception as exc:
+                logger.warning("Failed to load model weights: %s", exc)
+
+        if getattr(self.agent, "tokenizer", None) is not None:
+            loader = getattr(self.agent.tokenizer, "from_pretrained", None)
+            if callable(loader):
+                try:
+                    self.agent.tokenizer = loader(model_dir)
+                except Exception as exc:
+                    logger.warning("Failed to load tokenizer: %s", exc)
+
+        state_path = path / "training_state.pt"
+        if not state_path.exists():
+            if not weights_loaded:
+                logger.warning("No training_state.pt found in %s", path)
+            return False
+
+        try:
+            state = torch.load(state_path, map_location="cpu")
+        except Exception as exc:
+            logger.warning("Failed to load training state: %s", exc)
+            return False
+
+        if not isinstance(state, dict):
+            logger.warning("Unexpected training state format in %s", state_path)
+            return False
+
+        self.global_step = int(state.get("global_step", self.global_step))
+        self.current_epoch = int(state.get("current_epoch", self.current_epoch))
+        self.best_eval_metric = float(
+            state.get("best_eval_metric", self.best_eval_metric)
+        )
+        self.steps_without_improvement = int(
+            state.get("steps_without_improvement", self.steps_without_improvement)
+        )
+        self._grad_accum_step = int(
+            state.get("grad_accum_step", self._grad_accum_step)
+        )
+
+        if self.optimizer is not None and state.get("optimizer_state_dict"):
+            try:
+                self.optimizer.load_state_dict(state["optimizer_state_dict"])
+            except Exception as exc:
+                logger.warning("Failed to load optimizer state: %s", exc)
+        if self.lr_scheduler is not None and state.get("scheduler_state_dict"):
+            try:
+                self.lr_scheduler.load_state_dict(state["scheduler_state_dict"])
+            except Exception as exc:
+                logger.warning("Failed to load scheduler state: %s", exc)
+
+        if self.continual_manager is not None and state.get("continual_state"):
+            self.continual_manager.load_state_dict(state["continual_state"])
+        self._current_task_id = state.get("current_task_id", self._current_task_id)
+
+        logger.info("Loaded checkpoint from %s", path)
+        return True

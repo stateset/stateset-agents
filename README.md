@@ -19,6 +19,7 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF.
 - **Offline RL algorithms** for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
 - **Sim‑to‑Real transfer** for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
+- **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).
 - Optional **performance layers** (vLLM generation, Rust acceleration, distributed training, HPO, FastAPI service).
 
 If you want a framework that treats conversations as first‑class RL episodes (rather than single turns), this is it.
@@ -179,6 +180,54 @@ asyncio.run(main())
 ```
 
 More end‑to‑end scripts live in `examples/complete_grpo_training.py` and `examples/production_ready_customer_service.py`.
+
+---
+
+## Continual learning + long‑term planning (optional)
+
+Enable planning context and replay/LwF in the trainer with config overrides:
+
+```python
+agent = MultiTurnAgent(
+    AgentConfig(
+        model_name="gpt2",
+        enable_planning=True,
+        planning_config={"max_steps": 4},
+    )
+)
+
+trained_agent = await train(
+    agent=agent,
+    environment=env,
+    reward_fn=reward_fn,
+    num_episodes=50,
+    # resume_from_checkpoint="./outputs/checkpoint-100",
+    config_overrides={
+        "continual_strategy": "replay_lwf",
+        "continual_kl_beta": 0.1,
+        "replay_buffer_size": 500,
+        "replay_ratio": 0.3,
+        "replay_sampling": "balanced",
+        "task_id_key": "task_id",
+        "task_schedule": ["task_a", "task_b"],
+        "task_switch_steps": 25,
+    },
+)
+
+context = {"conversation_id": "demo-trip", "goal": "Plan a 4-day trip to Kyoto"}
+resp = await trained_agent.generate_response(
+    [{"role": "user", "content": "Can you draft a plan?"}],
+    context=context,
+)
+
+followup = await trained_agent.generate_response(
+    [{"role": "user", "content": "Great. What should we do next?"}],
+    context={"conversation_id": "demo-trip", "plan_update": {"action": "advance"}},
+)
+
+# To update the plan goal explicitly:
+# context={"conversation_id": "demo-trip", "plan_goal": "Plan a 4-day trip to Osaka"}
+```
 
 ---
 

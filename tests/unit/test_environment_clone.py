@@ -39,3 +39,22 @@ async def test_task_environment_clone_preserves_configuration() -> None:
     assert clone.tasks == env.tasks
     assert clone.success_criteria is env.success_criteria
 
+
+async def test_task_environment_reset_includes_conversation_id() -> None:
+    tasks: List[Dict[str, Any]] = [
+        {
+            "id": "t1",
+            "goal": "done",
+            "description": "Demo task",
+            "conversation_id": "conv_task",
+        }
+    ]
+
+    def _success_criteria(turns: Any, context: Dict[str, Any]) -> bool:
+        return True
+
+    env = TaskEnvironment(tasks=tasks, success_criteria=_success_criteria, max_turns=3)
+    state = await env.reset(scenario=tasks[0])
+
+    assert state.context.get("conversation_id") == "conv_task"
+    assert state.context.get("task_id") == "t1"

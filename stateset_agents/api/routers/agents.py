@@ -293,9 +293,9 @@ async def delete_agent(
     if agent_id not in agent_service.agents:
         raise AgentNotFoundError(agent_id)
 
-    # Remove agent and associated data
-    del agent_service.agents[agent_id]
-    agent_service.conversations.pop(agent_id, None)
+    deleted = agent_service.delete_agent(agent_id)
+    if not deleted:
+        raise AgentNotFoundError(agent_id)
 
 
 # ============================================================================
@@ -540,11 +540,6 @@ async def delete_conversation(
     Raises:
         ConversationNotFoundError: If the conversation doesn't exist.
     """
-    # Search and delete conversation
-    for aid, conv_list in agent_service.conversations.items():
-        for i, conv in enumerate(conv_list):
-            if conv.get("id") == conversation_id:
-                conv_list.pop(i)
-                return
-
-    raise ConversationNotFoundError(conversation_id)
+    deleted = agent_service.delete_conversation(conversation_id)
+    if not deleted:
+        raise ConversationNotFoundError(conversation_id)

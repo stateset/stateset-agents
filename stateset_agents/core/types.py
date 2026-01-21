@@ -42,6 +42,7 @@ class ModelConfig:
     """Configuration for language models."""
 
     model_name: str
+    model_type: Optional[str] = None
     max_new_tokens: int = 512
     temperature: float = 0.8
     top_p: float = 0.9
@@ -57,6 +58,8 @@ class ModelConfig:
     device_map: Optional[str] = "auto"
     use_peft: bool = False
     peft_config: Optional[ConfigDict] = None
+    enable_planning: bool = False
+    planning_config: Optional[ConfigDict] = None
 
 
 @dataclass
@@ -78,6 +81,24 @@ class TrainingConfig:
     use_wandb: bool = False
     wandb_project: str = "stateset-agents"
     seed: int = 42
+    max_examples: Optional[int] = None
+    eval_split_size: float = 0.1
+    stratify_by_task: bool = True
+    data_format: str = "jsonl"
+    continual_strategy: str = "none"
+    replay_buffer_size: int = 2000
+    replay_ratio: float = 0.5
+    replay_min_size: int = 100
+    replay_sampling: str = "uniform"
+    replay_storage: str = "reservoir"
+    continual_kl_beta: float = 0.0
+    ewc_lambda: float = 0.0
+    ewc_num_samples: int = 64
+    ewc_decay: float = 0.9
+    task_id_key: str = "task_id"
+    task_schedule: Optional[List[str]] = None
+    task_switch_steps: int = 0
+    resume_from_checkpoint: Optional[str] = None
 
 
 @dataclass

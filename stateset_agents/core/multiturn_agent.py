@@ -18,6 +18,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 from stateset_agents.utils.cache import CacheService
 
 from .agent import Agent
+from .long_term_planning import PlanningConfig, PlanningManager
 from .environment import Environment
 from .reward import RewardFunction, RewardResult
 from .trajectory import Trajectory
@@ -125,6 +126,7 @@ class MultiTurnAgent(Agent):
         context_compression_threshold: float = 0.8,
         dialogue_database: Optional[DialogueDatabase] = None,
         cache_service: Optional[CacheService] = None,
+        planning_manager: Optional[PlanningManager] = None,
         **kwargs,
     ):
         super().__init__(model_config, **kwargs)
@@ -134,6 +136,19 @@ class MultiTurnAgent(Agent):
         self.context_compression_threshold = context_compression_threshold
         self.dialogue_database = dialogue_database
         self.cache = cache_service
+        if planning_manager is None:
+            enable_planning = bool(model_config.get("enable_planning", False))
+            if enable_planning:
+                planning_kwargs = model_config.get("planning_config", {}) or {}
+                try:
+                    if isinstance(planning_kwargs, dict):
+                        planning_kwargs = dict(planning_kwargs)
+                        planning_kwargs.pop("enabled", None)
+                    planning_cfg = PlanningConfig(enabled=True, **planning_kwargs)
+                    planning_manager = PlanningManager(planning_cfg)
+                except Exception as exc:
+                    logger.warning("Failed to init PlanningManager: %s", exc)
+        self.planning_manager = planning_manager
 
         # Active conversations
         self.active_conversations: Dict[str, ConversationContext] = {}
@@ -163,7 +178,9 @@ class MultiTurnAgent(Agent):
         self.tools[name] = tool_func
 
     async def generate_response(
-        self, messages_or_prompt: Union[str, List[Dict[str, Any]]]
+        self,
+        messages_or_prompt: Union[str, List[Dict[str, Any]]],
+        context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate a response using pluggable backends.
 
@@ -172,10 +189,28 @@ class MultiTurnAgent(Agent):
         2) HF backend (lazy-initialized) if `use_hf_backend=True`
         3) Lightweight heuristic response (fast default for tests)
         """
+        messages_for_backend = messages_or_prompt
+        if (
+            self.planning_manager is not None
+            and isinstance(messages_or_prompt, list)
+        ):
+            plan_message = self.planning_manager.build_plan_message(
+                messages_or_prompt, context=context or {}
+            )
+            if plan_message is not None:
+                messages_for_backend = list(messages_or_prompt)
+                insert_at = 0
+                while (
+                    insert_at < len(messages_for_backend)
+                    and messages_for_backend[insert_at].get("role") == "system"
+                ):
+                    insert_at += 1
+                messages_for_backend.insert(insert_at, plan_message)
+
         # 1) Custom response backend
         if self.response_backend is not None:
             try:
-                maybe = self.response_backend(messages_or_prompt)
+                maybe = self.response_backend(messages_for_backend)
                 if asyncio.iscoroutine(maybe):
                     return await maybe  # type: ignore[return-value]
                 return str(maybe)
@@ -185,14 +220,14 @@ class MultiTurnAgent(Agent):
         # 2) HF backend
         if self._use_hf_backend:
             try:
-                hf_resp = await self._generate_with_hf_backend(messages_or_prompt)
+                hf_resp = await self._generate_with_hf_backend(messages_for_backend)
                 if isinstance(hf_resp, str) and hf_resp:
                     return hf_resp
             except Exception as e:  # pragma: no cover - safety fallback
                 logger.warning("HF backend failed, falling back to heuristic: %s", e)
 
         # 3) Heuristic fallback
-        return self._generate_heuristic(messages_or_prompt)
+        return self._generate_heuristic(messages_for_backend)
 
     def register_response_backend(
         self,
@@ -265,8 +300,10 @@ class MultiTurnAgent(Agent):
         conversation_id = str(uuid.uuid4())
 
         context = ConversationContext(
-            conversation_id=conversation_id, user_id=user_id, **(initial_context or {})
+            conversation_id=conversation_id,
+            user_id=user_id,
         )
+        self._apply_context_update(context, initial_context)
 
         self.active_conversations[conversation_id] = context
 
@@ -274,18 +311,64 @@ class MultiTurnAgent(Agent):
 
         return context
 
+    def _apply_context_update(
+        self,
+        context: ConversationContext,
+        update: Optional[Dict[str, Any]],
+    ) -> None:
+        """Merge context updates into the active conversation context."""
+        if not update:
+            return
+
+        update_dict = dict(update)
+        if "user_id" in update_dict and update_dict["user_id"]:
+            context.user_id = update_dict["user_id"]
+        if "topic" in update_dict and update_dict["topic"]:
+            context.topic = update_dict["topic"]
+        if "intent" in update_dict and update_dict["intent"]:
+            context.intent = update_dict["intent"]
+
+        entities = update_dict.get("entities")
+        if isinstance(entities, dict):
+            context.entities.update(entities)
+
+        history = update_dict.get("history")
+        if isinstance(history, list):
+            context.history.extend(history)
+
+        metadata = update_dict.get("metadata")
+        if isinstance(metadata, dict):
+            context.metadata.update(metadata)
+
+        skip_keys = {
+            "conversation_id",
+            "started_at",
+            "user_id",
+            "topic",
+            "intent",
+            "entities",
+            "history",
+            "metadata",
+        }
+        for key, value in update_dict.items():
+            if key in skip_keys:
+                continue
+            context.metadata[key] = value
+
     async def continue_conversation(
         self,
         conversation_id: str,
         user_message: str,
         strategy: str = "default",
         max_turns: int = 5,
+        context_update: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        """Continue an existing conversation"""
+        """Continue an existing conversation, applying any context updates."""
         if conversation_id not in self.active_conversations:
             raise ValueError(f"Conversation {conversation_id} not found")
 
         context = self.active_conversations[conversation_id]
+        self._apply_context_update(context, context_update)
 
         # Add user message to context
         context.add_turn({"role": "user", "content": user_message})
@@ -306,12 +389,14 @@ class MultiTurnAgent(Agent):
         user_message: str,
         strategy: str = "default",
         use_tools: bool = True,
+        context_update: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Generate a single response in a multi-turn conversation"""
+        """Generate a single response in a multi-turn conversation."""
         if conversation_id not in self.active_conversations:
             raise ValueError(f"Conversation {conversation_id} not found")
 
         context = self.active_conversations[conversation_id]
+        self._apply_context_update(context, context_update)
 
         # Check if context needs compression
         if len(context.history) > self.max_conversation_turns:
@@ -415,6 +500,44 @@ class MultiTurnAgent(Agent):
 
         return response
 
+    def _build_planning_context(self, context: ConversationContext) -> Dict[str, Any]:
+        plan_context = dict(context.metadata) if context.metadata else {}
+        plan_update = plan_context.pop("plan_update", None)
+        if plan_update is not None:
+            context.metadata.pop("plan_update", None)
+            plan_context["plan_update"] = plan_update
+        plan_goal = plan_context.pop("plan_goal", None)
+        if plan_goal is not None:
+            context.metadata.pop("plan_goal", None)
+            plan_context["plan_goal"] = plan_goal
+
+        plan_context["conversation_id"] = context.conversation_id
+        if context.user_id:
+            plan_context["user_id"] = context.user_id
+        if context.topic:
+            plan_context["topic"] = context.topic
+        if context.intent:
+            plan_context["intent"] = context.intent
+        if context.entities:
+            plan_context["entities"] = context.entities
+
+        return plan_context
+
+    def _get_plan_summary(
+        self,
+        history: List[Dict[str, Any]],
+        context: ConversationContext,
+    ) -> Optional[str]:
+        if self.planning_manager is None:
+            return None
+
+        plan_message = self.planning_manager.build_plan_message(
+            history, context=self._build_planning_context(context)
+        )
+        if plan_message and plan_message.get("content"):
+            return str(plan_message["content"])
+        return None
+
     def _build_prompt(
         self, history: List[Dict[str, Any]], context: ConversationContext
     ) -> str:
@@ -427,6 +550,11 @@ class MultiTurnAgent(Agent):
 
         if context.intent:
             prompt_parts.append(f"Intent: {context.intent}")
+
+        plan_summary = self._get_plan_summary(history, context)
+        if plan_summary:
+            prompt_parts.append(plan_summary)
+            prompt_parts.append("")
 
         # Add conversation history
         for turn in history:
@@ -455,8 +583,13 @@ class MultiTurnAgent(Agent):
                 prompt_parts.append(f"- {example.get('content', '')[:100]}...")
             prompt_parts.append("")
 
-        # Add conversation history
         history = context.get_recent_history(5)
+        plan_summary = self._get_plan_summary(history, context)
+        if plan_summary:
+            prompt_parts.append(plan_summary)
+            prompt_parts.append("")
+
+        # Add conversation history
         for turn in history:
             role = turn.get("role", "user")
             content = turn.get("content", "")
@@ -483,8 +616,13 @@ class MultiTurnAgent(Agent):
             )
             prompt_parts.append("")
 
-        # Add conversation history
         history = context.get_recent_history(5)
+        plan_summary = self._get_plan_summary(history, context)
+        if plan_summary:
+            prompt_parts.append(plan_summary)
+            prompt_parts.append("")
+
+        # Add conversation history
         for turn in history:
             role = turn.get("role", "user")
             content = turn.get("content", "")
@@ -505,8 +643,13 @@ class MultiTurnAgent(Agent):
             "",
         ]
 
-        # Add conversation history
         history = context.get_recent_history(5)
+        plan_summary = self._get_plan_summary(history, context)
+        if plan_summary:
+            prompt_parts.append(plan_summary)
+            prompt_parts.append("")
+
+        # Add conversation history
         for turn in history:
             role = turn.get("role", "user")
             content = turn.get("content", "")
@@ -525,8 +668,13 @@ class MultiTurnAgent(Agent):
             "",
         ]
 
-        # Add conversation history
         history = context.get_recent_history(5)
+        plan_summary = self._get_plan_summary(history, context)
+        if plan_summary:
+            prompt_parts.append(plan_summary)
+            prompt_parts.append("")
+
+        # Add conversation history
         for turn in history:
             role = turn.get("role", "user")
             content = turn.get("content", "")
@@ -805,6 +953,8 @@ class MultiTurnAgent(Agent):
         """End a conversation and return its context"""
         if conversation_id in self.active_conversations:
             context = self.active_conversations.pop(conversation_id)
+            if self.planning_manager is not None:
+                self.planning_manager.clear_conversation(conversation_id)
             logger.info(f"Ended conversation {conversation_id}")
             return context
         return None
@@ -818,5 +968,18 @@ class MultiTurnAgent(Agent):
     ) -> Optional[Dict[str, Any]]:
         """Get summary of a conversation"""
         if conversation_id in self.active_conversations:
-            return self.active_conversations[conversation_id].get_context_summary()
+            context = self.active_conversations[conversation_id]
+            summary = context.get_context_summary()
+            if self.planning_manager is not None:
+                plan = self.planning_manager.get_plan(conversation_id)
+                if plan is not None:
+                    summary["plan"] = {
+                        "goal": plan.goal,
+                        "progress": plan.progress(),
+                        "summary": plan.summarize(
+                            max_steps=self.planning_manager.config.max_steps,
+                            keep_completed=self.planning_manager.config.keep_completed,
+                        ),
+                    }
+            return summary
         return None

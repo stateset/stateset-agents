@@ -33,9 +33,18 @@ class DiagnosticsMonitor:
                 avg_reward = sum(self.total_rewards[-10:]) / min(
                     10, len(self.total_rewards)
                 )
+                replay_size = None
+                replay_groups = None
+                if data:
+                    replay_size = data.get("replay_buffer_size")
+                    replay_groups = data.get("replay_group_count")
                 logger.info(
-                    f"Episode {self.episode_count}: Avg reward (last 10) = {avg_reward:.3f}, "
-                    f"Elapsed: {elapsed:.1f}s"
+                    "Episode %s: Avg reward (last 10)=%.3f Elapsed=%.1fs Replay=%s Groups=%s",
+                    self.episode_count,
+                    avg_reward,
+                    elapsed,
+                    replay_size if replay_size is not None else "-",
+                    replay_groups if replay_groups is not None else "-",
                 )
 
         elif event == "training_end":

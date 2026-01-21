@@ -115,6 +115,42 @@ agent = MultiTurnAgent(
 )
 ```
 
+#### Long-Term Planning (Optional)
+
+Enable planning to inject a concise plan summary into prompts and update it
+over time:
+
+```python
+agent = MultiTurnAgent(
+    model_config={
+        "model_type": "advanced_customer_service",
+        "enable_planning": True,
+        "planning_config": {"max_steps": 4},
+    }
+)
+
+context = await agent.start_conversation(
+    user_id="demo_user",
+    initial_context={"goal": "Resolve a billing dispute"},
+)
+
+first = await agent.generate_multiturn_response(
+    context.conversation_id,
+    "Can you help me with my billing issue?",
+    strategy="customer_service",
+)
+
+second = await agent.generate_multiturn_response(
+    context.conversation_id,
+    "What should we do next?",
+    strategy="customer_service",
+    context_update={"plan_update": {"action": "advance"}},
+)
+
+# To update the plan goal explicitly:
+# context_update={"plan_goal": "Resolve a chargeback dispute"}
+```
+
 ### 2. Computational Engine
 
 The computational engine enables massive parallel trajectory generation:

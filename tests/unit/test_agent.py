@@ -12,7 +12,12 @@ import numpy as np
 import pytest
 import torch
 
-from stateset_agents.core.agent import Agent, AgentConfig, MultiTurnAgent
+from stateset_agents.core.agent import (
+    Agent,
+    AgentConfig,
+    ConfigValidationError,
+    MultiTurnAgent,
+)
 from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
 
 
@@ -41,6 +46,11 @@ class TestAgentConfig:
         assert config.max_new_tokens == 256
         assert config.temperature == 0.5
         assert config.system_prompt == "You are a helpful assistant."
+
+    def test_agent_config_planning_validation(self):
+        """Test planning config validation."""
+        with pytest.raises(ConfigValidationError):
+            AgentConfig(model_name="gpt2", enable_planning=True, planning_config="nope")
 
 
 class TestAgent:
@@ -190,6 +200,17 @@ class TestMultiTurnAgent:
         response = await agent.generate_response(messages)
 
         assert response.startswith("Stub backend active")
+
+    @pytest.mark.asyncio
+    async def test_multiturn_agent_planning_manager_init(self, multiturn_agent_config):
+        multiturn_agent_config.use_stub_model = True
+        multiturn_agent_config.model_name = "stub://planning"
+        multiturn_agent_config.enable_planning = True
+
+        agent = MultiTurnAgent(multiturn_agent_config)
+        await agent.initialize()
+
+        assert agent.planning_manager is not None
 
     @pytest.mark.asyncio
     async def test_multiturn_agent_accepts_string_prompt(self, multiturn_agent_config):

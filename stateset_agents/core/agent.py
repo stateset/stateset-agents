@@ -102,6 +102,7 @@ except ImportError:
 
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .trajectory import ConversationTurn, MultiTurnTrajectory
+from .long_term_planning import PlanningConfig, PlanningManager
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +154,10 @@ class AgentConfig:
         stub_responses: Custom responses for stub model
         enable_reasoning: Enable chain-of-thought reasoning extraction
         reasoning_tag: XML tag for reasoning blocks (default: "think")
+        enable_planning: Enable long-term planning context injection
+        planning_config: Optional planning configuration overrides
+        enable_planning: Enable long-term planning context
+        planning_config: Optional planning configuration dictionary
 
     Example:
         >>> config = AgentConfig(
@@ -194,6 +199,10 @@ class AgentConfig:
     # Reasoning Capabilities (DeepSeek-R1 style)
     enable_reasoning: bool = False
     reasoning_tag: str = "think"
+
+    # Long-term planning
+    enable_planning: bool = False
+    planning_config: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -310,6 +319,15 @@ class AgentConfig:
                 "system_prompt", f"<{len(self.system_prompt)} chars>",
                 "system prompt exceeds 10000 character limit",
                 ["Shorten the system prompt", "Move context to user messages"]
+            )
+
+        # Validate planning config
+        if self.planning_config is not None and not isinstance(self.planning_config, dict):
+            raise ConfigValidationError(
+                "planning_config",
+                self.planning_config,
+                "must be a dict of planning configuration overrides",
+                ["Use a dict or set enable_planning=False"],
             )
 
 
@@ -621,6 +639,7 @@ class MultiTurnAgent(Agent):
             Callable[[AgentConfig, Any, Any], GenerationConfig]
         ] = None,
         backend: Optional[ModelBackend] = None,
+        planning_manager: Optional[PlanningManager] = None,
     ):
         super().__init__(
             config,
@@ -632,6 +651,17 @@ class MultiTurnAgent(Agent):
         self.memory_window = memory_window
         self.context_compression = context_compression
         self.turn_count = 0
+        if planning_manager is None and getattr(config, "enable_planning", False):
+            planning_kwargs = getattr(config, "planning_config", None) or {}
+            try:
+                if isinstance(planning_kwargs, dict):
+                    planning_kwargs = dict(planning_kwargs)
+                    planning_kwargs.pop("enabled", None)
+                planning_cfg = PlanningConfig(enabled=True, **planning_kwargs)
+                planning_manager = PlanningManager(planning_cfg)
+            except Exception as exc:
+                logger.warning("Failed to init PlanningManager: %s", exc)
+        self.planning_manager = planning_manager
 
     async def initialize(self):
         """Initialize the multi-turn agent"""
@@ -673,6 +703,9 @@ class MultiTurnAgent(Agent):
             recent_messages.insert(
                 0, {"role": "system", "content": self.config.system_prompt}
             )
+
+        # Inject long-term plan context if enabled
+        recent_messages = self._inject_planning_context(recent_messages, context)
 
         # Apply chat template if available
         if (
@@ -730,6 +763,32 @@ class MultiTurnAgent(Agent):
         recent_messages = other_messages[-self.memory_window :]
 
         return system_messages + recent_messages
+
+    def _inject_planning_context(
+        self,
+        messages: List[Dict[str, str]],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, str]]:
+        """Insert long-term plan context as a system message when enabled."""
+        if self.planning_manager is None:
+            return messages
+
+        plan_message = self.planning_manager.build_plan_message(
+            messages, context=context
+        )
+        if plan_message is None:
+            return messages
+
+        prefix = getattr(self.planning_manager.config, "plan_prefix", "Long-term plan")
+        for msg in messages:
+            if msg.get("role") == "system" and str(msg.get("content", "")).startswith(prefix):
+                return messages
+
+        insert_at = 0
+        while insert_at < len(messages) and messages[insert_at].get("role") == "system":
+            insert_at += 1
+        messages.insert(insert_at, plan_message)
+        return messages
 
     def _format_conversation(self, messages: List[Dict[str, str]]) -> str:
         """Format conversation for models without chat template"""
@@ -878,6 +937,8 @@ class MultiTurnAgent(Agent):
             recent_messages.insert(
                 0, {"role": "system", "content": self.config.system_prompt}
             )
+
+        recent_messages = self._inject_planning_context(recent_messages, context)
 
         if (
             self.config.use_chat_template

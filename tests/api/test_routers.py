@@ -108,6 +108,19 @@ class TestAgentEndpoints:
 
         assert response.status_code == 201
 
+    def test_create_agent_invalid_planning_config(self, client):
+        """Test invalid planning config is rejected."""
+        response = client.post(
+            "/agents",
+            json={
+                "model_name": "gpt2",
+                "enable_planning": True,
+                "planning_config": "not-a-dict",
+            },
+        )
+
+        assert response.status_code == 422
+
     def test_create_agent_injection_in_system_prompt(self, client):
         """Test that injection in system prompt is blocked."""
         response = client.post(
@@ -261,6 +274,27 @@ class TestTrainingEndpoints:
         data = response.json()
         assert "training_id" in data
         assert data["status"] == "running"
+
+    def test_start_training_with_overrides(self, client):
+        """Test training start with configuration overrides."""
+        response = client.post(
+            "/training",
+            json={
+                "agent_config": {"model_name": "gpt2"},
+                "environment_scenarios": [
+                    {"id": "test", "topic": "test"}
+                ],
+                "reward_config": {"weight": 1.0},
+                "num_episodes": 10,
+                "resume_from_checkpoint": "./outputs/checkpoint-10",
+                "training_config_overrides": {
+                    "continual_strategy": "replay_lwf",
+                    "replay_ratio": 0.2,
+                },
+            },
+        )
+
+        assert response.status_code == 202
 
     def test_start_training_no_scenarios(self, client):
         """Test training without scenarios fails."""
