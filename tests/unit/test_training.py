@@ -367,16 +367,19 @@ class TestSingleTurnGRPOTrainer:
         self, mock_agent, mock_environment, training_config, tmp_path
     ):
         """Test checkpoint saving"""
+        # Set output_dir in config to tmp_path
+        training_config.output_dir = str(tmp_path)
+
         trainer = SingleTurnGRPOTrainer(
             agent=mock_agent,
             environment=mock_environment,
             config=training_config
         )
 
-        checkpoint_path = tmp_path / "checkpoint"
-        await trainer.save_checkpoint(checkpoint_path)
+        await trainer.save_checkpoint(checkpoint_name="checkpoint")
 
-        # Verify checkpoint directory was created
+        # Verify checkpoint directory was created under output_dir
+        checkpoint_path = tmp_path / "checkpoint"
         assert checkpoint_path.exists()
 
     def test_single_turn_trainer_load_checkpoint(
