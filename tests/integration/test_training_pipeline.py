@@ -265,3 +265,31 @@ class TestTrainingPipelineIntegration:
         assert agent.model is not None
         assert agent.tokenizer is not None
         assert len(agent.conversation_history) == 2
+
+    def test_single_turn_import_uses_correct_path(self):
+        """Test that SingleTurnGRPOTrainer import in train.py uses stateset_agents path."""
+        # Read the train.py source and check the import statement
+        train_path = (
+            "/home/dom/stateset-agents/stateset_agents/training/train.py"
+        )
+        with open(train_path, "r") as f:
+            source = f.read()
+
+        # Check that the import uses the full stateset_agents path
+        assert "from stateset_agents.training.trainer import SingleTurnGRPOTrainer" in source
+        # Ensure old incorrect import is not present
+        assert "from training.trainer import SingleTurnGRPOTrainer" not in source
+
+    def test_train_function_passes_checkpoint_name_correctly(self):
+        """Test that train() calls save_checkpoint with checkpoint_name kwarg."""
+        # Read the train.py source and check the save_checkpoint call
+        train_path = (
+            "/home/dom/stateset-agents/stateset_agents/training/train.py"
+        )
+        with open(train_path, "r") as f:
+            source = f.read()
+
+        # Verify save_checkpoint is called with checkpoint_name=save_path
+        assert "await trainer.save_checkpoint(checkpoint_name=save_path)" in source
+        # Ensure old incorrect call is not present
+        assert "await trainer.save_checkpoint(save_path)" not in source

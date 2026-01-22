@@ -749,14 +749,15 @@ class MultiTurnGRPOTrainer:
                     },
                 )
 
-                # Log training metrics
+                # Log training metrics (only after first optimizer step to avoid
+                # triggering every episode at global_step=0 during gradient accumulation)
                 logging_steps = getattr(self.config, "logging_steps", 10)
-                if self.global_step % logging_steps == 0:
+                if self.global_step > 0 and self.global_step % logging_steps == 0:
                     await self._log_training_metrics(metrics, training_groups)
 
-                # Evaluation
+                # Evaluation (only after first optimizer step)
                 eval_steps = getattr(self.config, "eval_steps", 50)
-                if self.global_step % eval_steps == 0:
+                if self.global_step > 0 and self.global_step % eval_steps == 0:
                     eval_metrics = await self.evaluate(eval_scenarios)
                     await self._log_eval_metrics(eval_metrics)
                     await notify_evaluation_end(self.callbacks, metrics=dict(eval_metrics))
@@ -767,9 +768,9 @@ class MultiTurnGRPOTrainer:
                         f"Eval Reward = {eval_metrics['eval_reward']:.4f}"
                     )
 
-                # Save checkpoint
+                # Save checkpoint (only after first optimizer step)
                 save_steps = getattr(self.config, "save_steps", 100)
-                if self.global_step % save_steps == 0:
+                if self.global_step > 0 and self.global_step % save_steps == 0:
                     await self.save_checkpoint()
 
                 # Early stopping check

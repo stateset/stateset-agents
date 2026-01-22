@@ -552,6 +552,7 @@ class TaskEnvironment(Environment):
                 "required_actions": scenario.get("required_actions", []),
                 "completed_actions": [],
                 "task_progress": 0.0,
+                "turns": [],
             },
         )
         if isinstance(scenario, dict):
@@ -570,11 +571,17 @@ class TaskEnvironment(Environment):
         new_state = state.copy()
         new_state.turn_count += 1
 
+        # Track turns for success_criteria
+        turns = list(new_state.context.get("turns", []))
+        turns.append(action)
+
         # Update task progress based on action
         await self._update_task_progress(action, new_state)
 
         # Generate environment response
         env_response = await self._generate_task_response(action, new_state)
+        turns.append(env_response)
+        new_state.context["turns"] = turns
 
         # Calculate reward
         step_reward = await self._calculate_task_reward(action, new_state)
@@ -666,8 +673,9 @@ class TaskEnvironment(Environment):
         return reward
 
     async def _check_task_completion(self, state: EnvironmentState) -> bool:
-        """Check if task is completed"""
-        return state.context.get("task_progress", 0.0) >= 1.0
+        """Check if task is completed using success_criteria"""
+        turns = state.context.get("turns", [])
+        return self.success_criteria(turns, state.context)
 
     def clone(self) -> "TaskEnvironment":
         """Create a new TaskEnvironment with the same configuration."""

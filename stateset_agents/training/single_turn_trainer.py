@@ -689,17 +689,29 @@ class SingleTurnGRPOTrainer:
         )
         return self.agent
 
-    async def save_checkpoint(self, path: Union[str, Path]):
-        """Save training checkpoint"""
-        path = Path(path)
-        path.mkdir(parents=True, exist_ok=True)
+    async def save_checkpoint(
+        self, is_best: bool = False, checkpoint_name: Optional[str] = None
+    ):
+        """Save training checkpoint with HuggingFace format
+
+        Args:
+            is_best: Whether this is the best checkpoint so far
+            checkpoint_name: Custom checkpoint name/path. If None, uses global_step.
+        """
+        if checkpoint_name is None:
+            checkpoint_name = f"checkpoint-{self.global_step}"
+            if is_best:
+                checkpoint_name = "best-checkpoint"
+
+        output_dir = getattr(self.config, "output_dir", "./outputs")
+        checkpoint_path = Path(output_dir) / checkpoint_name
+        checkpoint_path.mkdir(parents=True, exist_ok=True)
 
         # Save agent model
         if hasattr(self.agent, "model") and self.agent.model is not None:
-            model_path = path / "model"
-            self.agent.model.save_pretrained(model_path)
+            self.agent.model.save_pretrained(checkpoint_path)
             if hasattr(self.agent, "tokenizer") and self.agent.tokenizer is not None:
-                self.agent.tokenizer.save_pretrained(model_path)
+                self.agent.tokenizer.save_pretrained(checkpoint_path)
 
         training_state = {
             "global_step": int(self.global_step),
@@ -721,16 +733,16 @@ class SingleTurnGRPOTrainer:
         torch = get_torch()
         if torch is not None:
             try:
-                torch.save(training_state, path / "training_state.pt")
+                torch.save(training_state, checkpoint_path / "training_state.pt")
             except Exception as exc:  # pragma: no cover - best effort persistence
                 logger.debug("Skipping training state save: %s", exc)
 
-        logger.info(f"Checkpoint saved to {path}")
+        logger.info(f"Checkpoint saved to {checkpoint_path}")
         await notify_checkpoint_saved(
             self.callbacks,
-            path=str(path),
+            path=str(checkpoint_path),
             step=int(self.global_step),
-            is_best=False,
+            is_best=bool(is_best),
         )
 
     def add_callback(self, callback: Any):

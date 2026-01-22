@@ -435,5 +435,105 @@ class TestEnvironmentContextPreservation:
             assert state["scenario"]["context"] == initial_context
 
 
+class TestTaskEnvironmentSuccessCriteria:
+    """Test TaskEnvironment success_criteria handling"""
+
+    @pytest.mark.asyncio
+    async def test_success_criteria_is_called(self):
+        """Test that success_criteria callback is actually called"""
+        from stateset_agents.core.environment import TaskEnvironment
+
+        criteria_called = {"count": 0, "last_turns": None, "last_context": None}
+
+        def custom_success_criteria(turns, context):
+            criteria_called["count"] += 1
+            criteria_called["last_turns"] = turns
+            criteria_called["last_context"] = context
+            return context.get("task_progress", 0.0) >= 1.0
+
+        tasks = [{"description": "Test task", "required_actions": []}]
+        env = TaskEnvironment(
+            tasks=tasks,
+            success_criteria=custom_success_criteria,
+            max_turns=5
+        )
+
+        state = await env.reset()
+
+        # Execute a step
+        action = ConversationTurn(role="assistant", content="Working on the task")
+        await env.step(state, action)
+
+        # success_criteria should have been called
+        assert criteria_called["count"] >= 1
+        assert criteria_called["last_turns"] is not None
+        assert criteria_called["last_context"] is not None
+
+    @pytest.mark.asyncio
+    async def test_custom_success_criteria_determines_completion(self):
+        """Test that custom success_criteria determines task completion"""
+        from stateset_agents.core.environment import TaskEnvironment
+
+        # Custom criteria: complete when "done" appears in any turn
+        def custom_success_criteria(turns, context):
+            for turn in turns:
+                if "done" in turn.content.lower():
+                    return True
+            return False
+
+        tasks = [{"description": "Test task", "required_actions": []}]
+        env = TaskEnvironment(
+            tasks=tasks,
+            success_criteria=custom_success_criteria,
+            max_turns=5
+        )
+
+        state = await env.reset()
+
+        # First step without "done" - should not complete
+        # TaskEnvironment.step returns (state, env_response, reward, done)
+        action1 = ConversationTurn(role="assistant", content="Working on task")
+        state, _, _, done1 = await env.step(state, action1)
+        assert not done1
+
+        # Second step with "done" - should complete
+        action2 = ConversationTurn(role="assistant", content="Task is done!")
+        _, _, _, done2 = await env.step(state, action2)
+        assert done2
+
+    @pytest.mark.asyncio
+    async def test_success_criteria_receives_turns(self):
+        """Test that success_criteria receives accumulated turns"""
+        from stateset_agents.core.environment import TaskEnvironment
+
+        received_turns_count = {"value": 0}
+
+        def custom_success_criteria(turns, context):
+            received_turns_count["value"] = len(turns)
+            return False  # Never complete
+
+        tasks = [{"description": "Test task", "required_actions": []}]
+        env = TaskEnvironment(
+            tasks=tasks,
+            success_criteria=custom_success_criteria,
+            max_turns=5
+        )
+
+        state = await env.reset()
+
+        # First step
+        action1 = ConversationTurn(role="assistant", content="Step 1")
+        state, _, _, _ = await env.step(state, action1)
+        turns_after_step1 = received_turns_count["value"]
+
+        # Second step
+        action2 = ConversationTurn(role="assistant", content="Step 2")
+        await env.step(state, action2)
+        turns_after_step2 = received_turns_count["value"]
+
+        # Each step adds action + env_response, so turns should accumulate
+        assert turns_after_step2 > turns_after_step1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

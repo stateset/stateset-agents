@@ -85,7 +85,7 @@ async def train(
             agent=agent, environment=environment, reward_fn=reward_fn, config=config
         )
     else:
-        from training.trainer import SingleTurnGRPOTrainer
+        from stateset_agents.training.trainer import SingleTurnGRPOTrainer
         trainer = SingleTurnGRPOTrainer(
             agent=agent, environment=environment, reward_fn=reward_fn, config=config
         )
@@ -100,7 +100,7 @@ async def train(
 
     # Save if requested
     if save_path:
-        await trainer.save_checkpoint(save_path)
+        await trainer.save_checkpoint(checkpoint_name=save_path)
         logger.info(f"Trained agent saved to {save_path}")
 
     return trained_agent
