@@ -17,6 +17,15 @@ import numpy as np
 from .trainer_utils import get_amp, get_functional, get_torch, require_torch
 
 logger = logging.getLogger(__name__)
+
+LOSS_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+)
 _warned_missing_log_probs = False
 _warned_missing_assistant_mask = False
 
@@ -202,7 +211,7 @@ def _compute_group_policy_loss(
                 total_loss = total_loss + policy_loss
                 num_trajectories += 1
 
-        except Exception as e:
+        except LOSS_EXCEPTIONS as e:
             logger.warning(
                 f"Failed to compute policy loss for trajectory {traj_idx}: {e}"
             )
@@ -477,7 +486,7 @@ def _prepare_inputs_and_labels(
             except TypeError:
                 # Tokenizer does not accept one of the requested kwargs.
                 pass
-            except Exception:
+            except LOSS_EXCEPTIONS:
                 # Any other failure: fall back to plain tokenization.
                 pass
         else:
@@ -545,7 +554,7 @@ def _prepare_inputs_and_labels(
                         return inputs, labels
             except TypeError:
                 pass
-            except Exception:
+            except LOSS_EXCEPTIONS:
                 pass
 
     # Fallback: compute loss over the full token stream.

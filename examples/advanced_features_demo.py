@@ -198,7 +198,7 @@ async def demo_multi_agent_coordination():
 try:
     import torch
 
-    from training.offline_rl_algorithms import (
+    from stateset_agents.training.offline_rl_algorithms import (
         OfflineRLTrainer,
         CQLConfig,
         IQLConfig,
@@ -293,7 +293,7 @@ async def demo_offline_rl():
 # ============================================================================
 
 try:
-    from rewards.bayesian_reward_model import (
+    from stateset_agents.rewards.bayesian_reward_model import (
         BayesianRewardFunction,
         BayesianRewardConfig,
         ActiveLearningSelector,

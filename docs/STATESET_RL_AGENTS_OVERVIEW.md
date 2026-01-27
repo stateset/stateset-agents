@@ -105,7 +105,7 @@ from stateset_agents import (
 )
 from stateset_agents.core.agent import AgentConfig
 # If running from source and you want direct imports:
-from training.train import train
+from stateset_agents.training.train import train
 
 async def run():
   agent = MultiTurnAgent(AgentConfig(model_name="gpt2", temperature=0.7))
@@ -126,7 +126,7 @@ asyncio.run(run())
 
 - Auto‑opt: use `AutoTrainer` to pick a profile and early‑stop
 ```python
-from training.train import AutoTrainer
+from stateset_agents.training.train import AutoTrainer
 trained = await AutoTrainer(auto_adjust=True, early_stopping=True, patience=50).train(agent, env)
 ```
 

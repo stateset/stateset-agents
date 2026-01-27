@@ -29,6 +29,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+HF_PARSE_EXCEPTIONS = (AttributeError, KeyError, TypeError, ValueError)
+
 
 def _require_torch():
     """Ensure torch is available"""
@@ -342,7 +344,7 @@ class ConversationDataset(TorchDataset):
                 turn_rewards=turn_rewards,
                 metadata={"source": "huggingface"},
             )
-        except Exception as e:
+        except HF_PARSE_EXCEPTIONS as e:
             logger.warning(f"Failed to parse HF item {idx}: {e}")
             return None
 

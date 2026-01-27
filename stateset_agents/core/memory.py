@@ -9,7 +9,7 @@ including:
 - Semantic memory (key facts and entities)
 
 Example:
-    >>> from core.memory import ConversationMemory, MemoryConfig
+    >>> from stateset_agents.core.memory import ConversationMemory, MemoryConfig
     >>>
     >>> memory = ConversationMemory(MemoryConfig(
     ...     max_short_term_turns=10,

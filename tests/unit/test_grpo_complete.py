@@ -22,8 +22,8 @@ from stateset_agents.core.reward import create_customer_service_reward
 from stateset_agents.core.trajectory import MultiTurnTrajectory, ConversationTurn, TrajectoryGroup
 from stateset_agents.core.value_function import ValueFunction, ValueHead, create_value_function
 from stateset_agents.core.computational_engine import ComputationalGRPOEngine, ComputationalTrajectory
-from training.trainer import MultiTurnGRPOTrainer
-from training.config import TrainingConfig
+from stateset_agents.training.trainer import MultiTurnGRPOTrainer
+from stateset_agents.training.config import TrainingConfig
 
 
 class TestValueFunction:

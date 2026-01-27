@@ -43,6 +43,15 @@ from .callbacks import (
 
 logger = logging.getLogger(__name__)
 
+SINGLE_TRAINER_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+)
+
 
 class SingleTurnGRPOTrainer:
     """
@@ -113,7 +122,7 @@ class SingleTurnGRPOTrainer:
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed_all(seed_value)
                 torch.manual_seed(seed_value)
-        except Exception as seed_err:
+        except SINGLE_TRAINER_EXCEPTIONS as seed_err:
             logger.warning(f"Failed to set seeds: {seed_err}")
 
         # Initialize optimizer
@@ -136,7 +145,7 @@ class SingleTurnGRPOTrainer:
                 for param in self.reference_model.parameters():
                     param.requires_grad = False
                 logger.info("Reference model initialized for KL regularization")
-        except Exception as ref_err:
+        except SINGLE_TRAINER_EXCEPTIONS as ref_err:
             logger.warning(f"Could not initialize reference model: {ref_err}")
             self.reference_model = None
 
@@ -153,7 +162,7 @@ class SingleTurnGRPOTrainer:
             patched_torch = getattr(trainer_mod, "torch", None)
             if patched_torch is not None:
                 return patched_torch
-        except Exception:
+        except SINGLE_TRAINER_EXCEPTIONS:
             pass
         return require_torch()
 
@@ -328,7 +337,7 @@ class SingleTurnGRPOTrainer:
                 )
             else:
                 self.lr_scheduler = None
-        except Exception as sched_err:
+        except SINGLE_TRAINER_EXCEPTIONS as sched_err:
             logger.debug("Scheduler initialization skipped: %s", sched_err)
             self.lr_scheduler = None
 
@@ -355,7 +364,7 @@ class SingleTurnGRPOTrainer:
                     return float(result["score"])
                 if isinstance(result, (int, float)):
                     return float(result)
-            except Exception as e:
+            except SINGLE_TRAINER_EXCEPTIONS as e:
                 logger.warning(f"Reward function failed: {e}")
 
         # Fallback to environment reward interface when available
@@ -365,7 +374,7 @@ class SingleTurnGRPOTrainer:
                 trajectory = MultiTurnTrajectory(turns=turns, total_reward=0.0)
                 env_reward = await get_reward(trajectory)  # type: ignore[misc]
                 return float(env_reward)
-            except Exception:
+            except SINGLE_TRAINER_EXCEPTIONS:
                 pass
 
         return 0.5
@@ -568,7 +577,7 @@ class SingleTurnGRPOTrainer:
                                 loss_dict["total_loss"] = (
                                     loss_dict["total_loss"] + ewc_penalty
                                 )
-                except Exception as loss_err:
+                except SINGLE_TRAINER_EXCEPTIONS as loss_err:
                     logger.warning(
                         "Falling back to heuristic single-turn update: %s",
                         loss_err,
@@ -624,7 +633,7 @@ class SingleTurnGRPOTrainer:
                         done = bool(step_result.get("done", False))
                     else:
                         step_reward = float(np.mean(group.rewards)) if group.rewards else 0.0
-                except Exception:
+                except SINGLE_TRAINER_EXCEPTIONS:
                     step_reward = float(np.mean(group.rewards)) if group.rewards else 0.0
 
                 episode_rewards.append(float(step_reward))
@@ -734,7 +743,7 @@ class SingleTurnGRPOTrainer:
         if torch is not None:
             try:
                 torch.save(training_state, checkpoint_path / "training_state.pt")
-            except Exception as exc:  # pragma: no cover - best effort persistence
+            except SINGLE_TRAINER_EXCEPTIONS as exc:  # pragma: no cover - best effort persistence
                 logger.debug("Skipping training state save: %s", exc)
 
         logger.info(f"Checkpoint saved to {checkpoint_path}")
@@ -785,9 +794,9 @@ class SingleTurnGRPOTrainer:
                         state_dict = load_file(str(safetensors_file))
                         self.agent.model.load_state_dict(state_dict, strict=False)
                         weights_loaded = True
-                    except Exception as exc:
+                    except SINGLE_TRAINER_EXCEPTIONS as exc:
                         logger.debug("Failed to load safetensors: %s", exc)
-            except Exception as exc:
+            except SINGLE_TRAINER_EXCEPTIONS as exc:
                 logger.warning("Failed to load model weights: %s", exc)
 
         if getattr(self.agent, "tokenizer", None) is not None:
@@ -795,7 +804,7 @@ class SingleTurnGRPOTrainer:
             if callable(loader):
                 try:
                     self.agent.tokenizer = loader(model_dir)
-                except Exception as exc:
+                except SINGLE_TRAINER_EXCEPTIONS as exc:
                     logger.warning("Failed to load tokenizer: %s", exc)
 
         state_path = path / "training_state.pt"
@@ -806,7 +815,7 @@ class SingleTurnGRPOTrainer:
 
         try:
             state = torch.load(state_path, map_location="cpu")
-        except Exception as exc:
+        except SINGLE_TRAINER_EXCEPTIONS as exc:
             logger.warning("Failed to load training state: %s", exc)
             return False
 
@@ -829,12 +838,12 @@ class SingleTurnGRPOTrainer:
         if self.optimizer is not None and state.get("optimizer_state_dict"):
             try:
                 self.optimizer.load_state_dict(state["optimizer_state_dict"])
-            except Exception as exc:
+            except SINGLE_TRAINER_EXCEPTIONS as exc:
                 logger.warning("Failed to load optimizer state: %s", exc)
         if self.lr_scheduler is not None and state.get("scheduler_state_dict"):
             try:
                 self.lr_scheduler.load_state_dict(state["scheduler_state_dict"])
-            except Exception as exc:
+            except SINGLE_TRAINER_EXCEPTIONS as exc:
                 logger.warning("Failed to load scheduler state: %s", exc)
 
         if self.continual_manager is not None and state.get("continual_state"):

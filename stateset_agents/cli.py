@@ -7,6 +7,10 @@ import typer
 
 app = typer.Typer(add_completion=False, help="StateSet Agents CLI")
 
+CLI_IMPORT_EXCEPTIONS = (AttributeError, ImportError, OSError, RuntimeError)
+CLI_CONFIG_EXCEPTIONS = (OSError, TypeError, ValueError)
+CLI_TRAIN_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 
 def _echo(s: str) -> None:
     typer.echo(s)
@@ -24,7 +28,7 @@ def version() -> None:
     """Show installed version and basic environment info."""
     try:
         from stateset_agents import __version__
-    except Exception:
+    except CLI_IMPORT_EXCEPTIONS:
         __version__ = "unknown"
 
     _echo(f"stateset-agents version: {__version__}")
@@ -64,7 +68,7 @@ def train(
             HelpfulnessReward,
             SafetyReward,
         )
-    except Exception as e:
+    except CLI_IMPORT_EXCEPTIONS as e:
         _echo("Core agent modules unavailable. Install the package with required extras.")
         _echo(f"Details: {e}")
         raise typer.Exit(code=2)
@@ -80,7 +84,7 @@ def train(
     if not stub:
         try:
             from stateset_agents.training.train import train as train_fn  # type: ignore
-        except Exception as e:
+        except CLI_IMPORT_EXCEPTIONS as e:
             _echo("Training components unavailable. Falling back to stub mode.")
             _echo(f"Details: {e}")
             stub = True
@@ -99,7 +103,7 @@ def train(
 
                 with open(config, "r") as f:
                     cfg = json.load(f)
-        except Exception as e:
+        except CLI_CONFIG_EXCEPTIONS as e:
             _echo(f"Failed to load config {config}: {e}")
             raise typer.Exit(code=2)
 
@@ -195,7 +199,7 @@ def train(
 
     try:
         asyncio.run(_run())
-    except Exception as e:
+    except CLI_TRAIN_EXCEPTIONS as e:
         _echo(f"Training failed: {e}")
         raise typer.Exit(code=2)
     _echo("Training complete.")
@@ -211,7 +215,7 @@ def serve(
     try:
         # Import via package namespace to resolve relative imports in module.
         svc = importlib.import_module("stateset_agents.api.ultimate_grpo_service")
-    except Exception as e:
+    except CLI_IMPORT_EXCEPTIONS as e:
         _echo("API service unavailable. Install 'api' extras (fastapi, uvicorn).")
         _echo(f"Details: {e}")
         raise typer.Exit(code=2)
@@ -224,7 +228,7 @@ def serve(
 
     try:
         import uvicorn  # type: ignore
-    except Exception:
+    except ImportError:
         _echo("uvicorn not installed. Try: pip install 'stateset-agents[api]'")
         raise typer.Exit(code=2)
 
@@ -245,7 +249,7 @@ def doctor() -> None:
         try:
             importlib.import_module(mod)
             _echo(f"✅ {mod} available")
-        except Exception as e:
+        except CLI_IMPORT_EXCEPTIONS as e:
             _echo(f"⚠️  {mod} missing: {e}")
 
     for mod in ["torch", "transformers", "datasets"]:
@@ -256,7 +260,7 @@ def doctor() -> None:
         try:
             importlib.import_module(mod)
             _echo(f"• optional: {mod} installed")
-        except Exception:
+        except CLI_IMPORT_EXCEPTIONS:
             pass
 
     # GPU info
@@ -270,7 +274,7 @@ def doctor() -> None:
             _echo(
                 f"GPU count: {torch.cuda.device_count()}; name: {torch.cuda.get_device_name(0)}"
             )
-    except Exception:
+    except CLI_IMPORT_EXCEPTIONS:
         pass
 
     _echo("Done.")
@@ -284,7 +288,7 @@ def evaluate(
     """Load a saved agent checkpoint and run a single evaluation message."""
     try:
         from stateset_agents.core.agent import load_agent_from_checkpoint
-    except Exception as e:
+    except CLI_IMPORT_EXCEPTIONS as e:
         _echo(f"Failed to import loader: {e}")
         raise typer.Exit(code=2)
 
@@ -298,7 +302,7 @@ def evaluate(
     try:
         resp = asyncio.run(_run())
         _echo(f"Response: {resp}")
-    except Exception as e:
+    except CLI_TRAIN_EXCEPTIONS as e:
         _echo(f"Evaluation failed: {e}")
         raise typer.Exit(code=2)
 
@@ -342,7 +346,7 @@ def init(
         with open(path, "w") as f:
             f.write(cfg)
         _echo(f"Wrote starter config to {path}")
-    except Exception as e:
+    except OSError as e:
         _echo(f"Failed to write config: {e}")
 
 

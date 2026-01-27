@@ -34,6 +34,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+REWARD_FN_EXCEPTIONS = (RuntimeError, TypeError, ValueError)
+
 # Import framework components
 from .config import TrainingConfig
 
@@ -712,7 +714,7 @@ class PPOTrainer:
                     else:
                         reward = self.reward_fn(p, c)
                     rewards.append(float(reward))
-                except Exception as e:
+                except REWARD_FN_EXCEPTIONS as e:
                     logger.warning(f"Reward computation failed: {e}")
                     rewards.append(0.0)
 

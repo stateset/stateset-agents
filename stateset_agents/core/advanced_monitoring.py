@@ -43,6 +43,17 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+ADV_MONITORING_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    KeyError,
+    AttributeError,
+    OSError,
+    psutil.Error,
+    asyncio.TimeoutError,
+)
+
 
 class MetricType(Enum):
     """Types of metrics"""
@@ -294,7 +305,7 @@ class MetricsCollector:
                 custom_metrics = collector()
                 for name, value in custom_metrics.items():
                     self.record_metric(f"custom.{name}", value)
-            except Exception as e:
+            except ADV_MONITORING_EXCEPTIONS as e:
                 logger.error(f"Custom collector failed: {e}")
 
     def get_metrics(
@@ -384,7 +395,7 @@ class MetricsCollector:
                         points.popleft()
 
                 await asyncio.sleep(3600)  # Clean up every hour
-            except Exception as e:
+            except ADV_MONITORING_EXCEPTIONS as e:
                 logger.error(f"Metrics cleanup failed: {e}")
                 await asyncio.sleep(60)
 
@@ -459,7 +470,7 @@ class AlertManager:
                                 for handler in self.notification_handlers:
                                     try:
                                         handler(alert, current_time)
-                                    except Exception as e:
+                                    except ADV_MONITORING_EXCEPTIONS as e:
                                         logger.error(
                                             f"Notification handler failed: {e}"
                                         )
@@ -468,11 +479,11 @@ class AlertManager:
                             if alert.id in self.active_alerts:
                                 del self.active_alerts[alert.id]
 
-                    except Exception as e:
+                    except ADV_MONITORING_EXCEPTIONS as e:
                         logger.error(f"Alert evaluation failed for {alert.id}: {e}")
 
                 await asyncio.sleep(10)  # Check every 10 seconds
-            except Exception as e:
+            except ADV_MONITORING_EXCEPTIONS as e:
                 logger.error(f"Alert checking loop failed: {e}")
                 await asyncio.sleep(60)
 
@@ -545,7 +556,7 @@ class DistributedTracer:
             trace.get_tracer_provider().add_span_processor(span_processor)
 
             self.tracer = trace.get_tracer(self.service_name)
-        except Exception as e:
+        except ADV_MONITORING_EXCEPTIONS as e:
             logger.warning(f"Failed to setup OpenTelemetry: {e}")
 
     @asynccontextmanager
@@ -559,7 +570,7 @@ class DistributedTracer:
         span = self.start_span(operation_name, parent_span_id, tags)
         try:
             yield span
-        except Exception as e:
+        except ADV_MONITORING_EXCEPTIONS as e:
             span.tags["error"] = True
             span.tags["error.message"] = str(e)
             span.logs.append(
@@ -603,7 +614,7 @@ class DistributedTracer:
                     for key, value in tags.items():
                         otel_span.set_attribute(key, value)
                 span.tags["otel_span_id"] = str(otel_span.get_span_context().span_id)
-            except Exception as e:
+            except ADV_MONITORING_EXCEPTIONS as e:
                 logger.error(f"OpenTelemetry span creation failed: {e}")
 
         return span
@@ -749,7 +760,7 @@ class AdvancedMonitoringService:
                 if self.metrics_collector:
                     await self.metrics_collector.collect_system_metrics()
                 await asyncio.sleep(30)  # Collect every 30 seconds
-            except Exception as e:
+            except ADV_MONITORING_EXCEPTIONS as e:
                 logger.error(f"Monitoring loop failed: {e}")
                 await asyncio.sleep(60)
 
@@ -900,7 +911,7 @@ def monitor_operation(operation_name: str, **tags):
 
     try:
         yield
-    except Exception as e:
+    except ADV_MONITORING_EXCEPTIONS as e:
         if monitoring.metrics_collector:
             monitoring.record_error("operation", type(e).__name__, e)
         raise
@@ -931,7 +942,7 @@ def monitor_async_function(operation_name: str = None):
                     try:
                         result = await func(*args, **kwargs)
                         return result
-                    except Exception as e:
+                    except ADV_MONITORING_EXCEPTIONS as e:
                         monitoring.record_error("function", type(e).__name__, e)
                         raise
                     finally:
@@ -947,7 +958,7 @@ def monitor_async_function(operation_name: str = None):
                 try:
                     result = await func(*args, **kwargs)
                     return result
-                except Exception as e:
+                except ADV_MONITORING_EXCEPTIONS as e:
                     monitoring.record_error("function", type(e).__name__, e)
                     raise
                 finally:
@@ -978,7 +989,7 @@ def monitor_function(operation_name: str = None):
             try:
                 result = func(*args, **kwargs)
                 return result
-            except Exception as e:
+            except ADV_MONITORING_EXCEPTIONS as e:
                 monitoring.record_error("function", type(e).__name__, e)
                 raise
             finally:

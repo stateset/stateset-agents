@@ -15,7 +15,7 @@ class TestBaseTrainerConfig:
 
     def test_default_values(self):
         """Test default configuration values."""
-        from training.base_trainer import BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseTrainerConfig
 
         config = BaseTrainerConfig()
 
@@ -27,7 +27,7 @@ class TestBaseTrainerConfig:
 
     def test_custom_values(self):
         """Test custom configuration values."""
-        from training.base_trainer import BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseTrainerConfig
 
         config = BaseTrainerConfig(
             model_name="meta-llama/Llama-2-7b",
@@ -44,7 +44,7 @@ class TestBaseTrainerConfig:
 
     def test_to_dict(self):
         """Test config to dictionary conversion."""
-        from training.base_trainer import BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseTrainerConfig
 
         config = BaseTrainerConfig(
             model_name="test-model",
@@ -59,7 +59,7 @@ class TestBaseTrainerConfig:
 
     def test_from_dict(self):
         """Test creating config from dictionary."""
-        from training.base_trainer import BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseTrainerConfig
 
         config_dict = {
             "model_name": "from-dict-model",
@@ -79,7 +79,7 @@ class TestNormalizeAdvantages:
 
     def test_basic_normalization(self):
         """Test basic advantage normalization."""
-        from training.base_trainer import normalize_advantages
+        from stateset_agents.training.base_trainer import normalize_advantages
 
         advantages = torch.tensor([1.0, 2.0, 3.0, 4.0])
         normalized = normalize_advantages(advantages)
@@ -92,7 +92,7 @@ class TestNormalizeAdvantages:
 
     def test_zero_std_handling(self):
         """Test normalization when all values are the same (std=0)."""
-        from training.base_trainer import normalize_advantages
+        from stateset_agents.training.base_trainer import normalize_advantages
 
         advantages = torch.tensor([5.0, 5.0, 5.0, 5.0])
         normalized = normalize_advantages(advantages)
@@ -102,7 +102,7 @@ class TestNormalizeAdvantages:
 
     def test_single_element(self):
         """Test normalization with single element."""
-        from training.base_trainer import normalize_advantages
+        from stateset_agents.training.base_trainer import normalize_advantages
 
         advantages = torch.tensor([3.0])
         normalized = normalize_advantages(advantages)
@@ -115,7 +115,7 @@ class TestComputeGroupAdvantages:
 
     def test_mean_baseline(self):
         """Test advantages with mean baseline."""
-        from training.base_trainer import compute_group_advantages
+        from stateset_agents.training.base_trainer import compute_group_advantages
 
         rewards = [0.2, 0.4, 0.6, 0.8]
         advantages = compute_group_advantages(rewards, baseline_type="mean")
@@ -128,7 +128,7 @@ class TestComputeGroupAdvantages:
 
     def test_median_baseline(self):
         """Test advantages with median baseline."""
-        from training.base_trainer import compute_group_advantages
+        from stateset_agents.training.base_trainer import compute_group_advantages
 
         rewards = [0.1, 0.3, 0.7, 0.9]
         advantages = compute_group_advantages(rewards, baseline_type="median")
@@ -141,14 +141,14 @@ class TestComputeGroupAdvantages:
 
     def test_invalid_baseline(self):
         """Test with invalid baseline type."""
-        from training.base_trainer import compute_group_advantages
+        from stateset_agents.training.base_trainer import compute_group_advantages
 
         with pytest.raises(ValueError):
             compute_group_advantages([0.5], baseline_type="invalid")
 
     def test_empty_rewards(self):
         """Test with empty rewards list."""
-        from training.base_trainer import compute_group_advantages
+        from stateset_agents.training.base_trainer import compute_group_advantages
 
         advantages = compute_group_advantages([], baseline_type="mean")
         assert advantages == []
@@ -159,7 +159,7 @@ class TestCreateResponseMask:
 
     def test_basic_mask(self):
         """Test basic response mask creation."""
-        from training.base_trainer import create_response_mask
+        from stateset_agents.training.base_trainer import create_response_mask
 
         input_ids = torch.zeros(2, 10, dtype=torch.long)
         prompt_lengths = [3, 5]
@@ -176,7 +176,7 @@ class TestCreateResponseMask:
 
     def test_full_prompt(self):
         """Test when entire sequence is prompt."""
-        from training.base_trainer import create_response_mask
+        from stateset_agents.training.base_trainer import create_response_mask
 
         input_ids = torch.zeros(1, 10, dtype=torch.long)
         prompt_lengths = [10]
@@ -191,7 +191,7 @@ class TestBaseModelManager:
 
     def test_get_dtype_fp16(self):
         """Test dtype selection for FP16."""
-        from training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
 
         config = BaseTrainerConfig(fp16=True, bf16=False)
         manager = BaseModelManager(config)
@@ -201,7 +201,7 @@ class TestBaseModelManager:
 
     def test_get_dtype_bf16(self):
         """Test dtype selection for BF16."""
-        from training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
 
         config = BaseTrainerConfig(fp16=False, bf16=True)
         manager = BaseModelManager(config)
@@ -211,7 +211,7 @@ class TestBaseModelManager:
 
     def test_get_dtype_fp32(self):
         """Test dtype selection for FP32."""
-        from training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
 
         config = BaseTrainerConfig(fp16=False, bf16=False)
         manager = BaseModelManager(config)
@@ -221,7 +221,7 @@ class TestBaseModelManager:
 
     def test_lora_target_modules_gpt2(self):
         """Test LoRA target modules for GPT-2."""
-        from training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
 
         config = BaseTrainerConfig(model_name="gpt2")
         manager = BaseModelManager(config)
@@ -232,7 +232,7 @@ class TestBaseModelManager:
 
     def test_lora_target_modules_llama(self):
         """Test LoRA target modules for LLaMA."""
-        from training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
 
         config = BaseTrainerConfig(model_name="meta-llama/Llama-2-7b")
         manager = BaseModelManager(config)
@@ -245,7 +245,7 @@ class TestBaseModelManager:
 
     def test_lora_target_modules_custom(self):
         """Test custom LoRA target modules."""
-        from training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
 
         config = BaseTrainerConfig(
             model_name="custom-model",
@@ -262,7 +262,7 @@ class TestBaseTrajectoryGenerator:
 
     def test_initialization_without_vllm(self):
         """Test initialization when vLLM is disabled."""
-        from training.base_trainer import BaseTrajectoryGenerator, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseTrajectoryGenerator, BaseTrainerConfig
 
         config = BaseTrainerConfig(use_vllm=False)
         generator = BaseTrajectoryGenerator(config)
@@ -272,7 +272,7 @@ class TestBaseTrajectoryGenerator:
 
     def test_using_vllm_property(self):
         """Test using_vllm property."""
-        from training.base_trainer import BaseTrajectoryGenerator, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import BaseTrajectoryGenerator, BaseTrainerConfig
 
         config = BaseTrainerConfig(use_vllm=False)
         generator = BaseTrajectoryGenerator(config)
@@ -363,7 +363,7 @@ class TestLazyImports:
 
     def test_load_transformers_guard(self):
         """Test transformers lazy loading guard."""
-        from training.base_trainer import _load_transformers
+        from stateset_agents.training.base_trainer import _load_transformers
 
         # Should return True if transformers available, False otherwise
         result = _load_transformers()
@@ -371,7 +371,7 @@ class TestLazyImports:
 
     def test_load_vllm_backend_guard(self):
         """Test vLLM backend lazy loading guard."""
-        from training.base_trainer import _load_vllm_backend
+        from stateset_agents.training.base_trainer import _load_vllm_backend
 
         result = _load_vllm_backend()
         assert isinstance(result, bool)

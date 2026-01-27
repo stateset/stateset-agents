@@ -99,6 +99,10 @@ from stateset_agents.core.multiturn_agent import DialogueDatabase, MultiTurnAgen
 
 logger = logging.getLogger(__name__)
 
+ULTIMATE_REQUEST_EXCEPTIONS = (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError)
+ULTIMATE_ENGINE_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+ULTIMATE_WS_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 
 def _get_int_from_env(env_var: str, default: int) -> int:
     """Parse an integer environment variable safely."""
@@ -578,7 +582,7 @@ if FASTAPI_AVAILABLE:
             response = _build_error_response(
                 request, exc.status_code, str(exc.detail)
             )
-        except Exception as exc:  # pragma: no cover - safety net
+        except ULTIMATE_REQUEST_EXCEPTIONS as exc:  # pragma: no cover - safety net
             logger.exception("Unhandled exception for request %s", request_id)
             response = _build_error_response(
                 request, 500, "Internal server error, please retry later."
@@ -804,7 +808,7 @@ if FASTAPI_AVAILABLE:
                     try:
                         result = engine.scale_computation(request.scale_factor)
                         results[engine_id] = result
-                    except Exception as e:
+                    except ULTIMATE_ENGINE_EXCEPTIONS as e:
                         results[engine_id] = {"error": str(e)}
 
             # Scale demo engine
@@ -812,7 +816,7 @@ if FASTAPI_AVAILABLE:
                 try:
                     result = services["demo_engine"].scale_computation(request.scale_factor)
                     results["demo_engine"] = result
-                except Exception as e:
+                except ULTIMATE_ENGINE_EXCEPTIONS as e:
                     results["demo_engine"] = {"error": str(e)}
         else:
             # Scale demo engine only
@@ -820,7 +824,7 @@ if FASTAPI_AVAILABLE:
                 try:
                     result = services["demo_engine"].scale_computation(request.scale_factor)
                     results["demo_engine"] = result
-                except Exception as e:
+                except ULTIMATE_ENGINE_EXCEPTIONS as e:
                     results["demo_engine"] = {"error": str(e)}
 
         return {
@@ -1077,7 +1081,7 @@ if FASTAPI_AVAILABLE:
                             "type": "error",
                             "message": f"Invalid chat request: {str(e)[:200]}"
                         })
-                    except Exception as e:
+                    except ULTIMATE_WS_EXCEPTIONS as e:
                         logger.error(f"WebSocket chat error: {e}")
                         await websocket.send_json({
                             "type": "error",
@@ -1098,7 +1102,7 @@ if FASTAPI_AVAILABLE:
                         if "demo_engine" in services:
                             metrics["demo_engine"] = services["demo_engine"].get_metrics()
                         await websocket.send_json({"type": "metrics_response", "data": metrics})
-                    except Exception as e:
+                    except ULTIMATE_WS_EXCEPTIONS as e:
                         logger.error(f"WebSocket metrics error: {e}")
                         await websocket.send_json({
                             "type": "error",
@@ -1125,7 +1129,7 @@ if FASTAPI_AVAILABLE:
 
         except WebSocketDisconnect:
             logger.info("WebSocket client disconnected")
-        except Exception as e:
+        except ULTIMATE_WS_EXCEPTIONS as e:
             logger.error(f"WebSocket error: {e}")
             await websocket.close()
 

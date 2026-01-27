@@ -48,6 +48,17 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+STATE_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    KeyError,
+    AttributeError,
+    OSError,
+    asyncio.TimeoutError,
+    pickle.PickleError,
+)
+
 T = TypeVar("T")
 
 
@@ -330,7 +341,7 @@ class RedisCacheBackend(CacheBackend):
                 return None
 
             return pickle.loads(data)
-        except Exception as e:
+        except STATE_EXCEPTIONS as e:
             logger.error(f"Redis get error: {e}")
             return None
 
@@ -347,7 +358,7 @@ class RedisCacheBackend(CacheBackend):
                 await self.client.set(self._make_key(key), data)
 
             return True
-        except Exception as e:
+        except STATE_EXCEPTIONS as e:
             logger.error(f"Redis set error: {e}")
             return False
 
@@ -358,7 +369,7 @@ class RedisCacheBackend(CacheBackend):
         try:
             result = await self.client.delete(self._make_key(key))
             return result > 0
-        except Exception as e:
+        except STATE_EXCEPTIONS as e:
             logger.error(f"Redis delete error: {e}")
             return False
 
@@ -369,7 +380,7 @@ class RedisCacheBackend(CacheBackend):
         try:
             result = await self.client.exists(self._make_key(key))
             return result > 0
-        except Exception as e:
+        except STATE_EXCEPTIONS as e:
             logger.error(f"Redis exists error: {e}")
             return False
 
@@ -382,7 +393,7 @@ class RedisCacheBackend(CacheBackend):
             if keys:
                 await self.client.delete(*keys)
             return True
-        except Exception as e:
+        except STATE_EXCEPTIONS as e:
             logger.error(f"Redis clear error: {e}")
             return False
 
@@ -513,7 +524,7 @@ class StateManager:
                 await self._notify_watchers(key, old_value, value)
 
             return True
-        except Exception as e:
+        except STATE_EXCEPTIONS as e:
             logger.error(f"Update failed: {e}")
             return False
 
@@ -534,7 +545,7 @@ class StateManager:
                     await callback(key, old_value, new_value)
                 else:
                     callback(key, old_value, new_value)
-            except Exception as e:
+            except STATE_EXCEPTIONS as e:
                 logger.error(f"Watcher callback failed: {e}")
 
     def _log_change(self, operation: str, key: str, old_value: Any, new_value: Any):
@@ -639,7 +650,7 @@ class StateManager:
                     results[key] = success
                     if success:
                         self.dirty_keys.discard(key)
-            except Exception as e:
+            except STATE_EXCEPTIONS as e:
                 logger.error(f"Sync failed for key {key}: {e}")
                 results[key] = False
 
@@ -825,7 +836,7 @@ class DistributedStateService:
             try:
                 await self.state_manager.sync_with_cache()
                 await asyncio.sleep(30)  # Sync every 30 seconds
-            except Exception as e:
+            except STATE_EXCEPTIONS as e:
                 logger.error(f"Periodic sync failed: {e}")
                 await asyncio.sleep(60)
 
@@ -841,7 +852,7 @@ class DistributedStateService:
                     logger.info(f"Cleaned up {cleaned} expired conversations")
 
                 await asyncio.sleep(3600)  # Cleanup every hour
-            except Exception as e:
+            except STATE_EXCEPTIONS as e:
                 logger.error(f"Periodic cleanup failed: {e}")
                 await asyncio.sleep(1800)  # Retry in 30 minutes
 
@@ -870,7 +881,7 @@ class DistributedStateService:
                 "consistency_level": self.consistency_level.value,
                 "cache_strategy": self.cache_strategy.value,
             }
-        except Exception as e:
+        except STATE_EXCEPTIONS as e:
             return {"status": "error", "error": str(e)}
 
     async def shutdown(self):
@@ -882,7 +893,7 @@ class DistributedStateService:
         # Final sync
         try:
             await self.state_manager.sync_with_cache()
-        except Exception as e:
+        except STATE_EXCEPTIONS as e:
             logger.error(f"Final sync failed: {e}")
 
         # Clear cache if needed

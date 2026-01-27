@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 # Optional imports for enhanced functionality
 try:
@@ -25,6 +25,7 @@ try:
 
     HAS_PSUTIL = True
 except ImportError:
+    psutil = None
     HAS_PSUTIL = False
 
 try:
@@ -40,6 +41,18 @@ try:
     HAS_NUMPY = True
 except ImportError:
     HAS_NUMPY = False
+
+PSUTIL_EXCEPTIONS: Tuple[Type[BaseException], ...] = ()
+if HAS_PSUTIL and psutil is not None:
+    PSUTIL_EXCEPTIONS = (psutil.Error,)
+
+MONITORING_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    OSError,
+    asyncio.TimeoutError,
+)
 
 
 class MetricType(Enum):
@@ -152,7 +165,7 @@ class HealthCheck:
                 "error": "Health check timed out",
             }
 
-        except Exception as e:
+        except MONITORING_EXCEPTIONS as e:
             return {
                 "name": self.name,
                 "status": "error",
@@ -285,7 +298,7 @@ class MetricsCollector:
                         self.prometheus_metrics["cpu_usage"].set(cpu_percent)
                         self.prometheus_metrics["memory_usage"].set(memory.used)
 
-                except Exception as e:
+                except (MONITORING_EXCEPTIONS + PSUTIL_EXCEPTIONS) as e:
                     monitoring_logger.warning(f"Error collecting system metrics: {e}")
 
                 time.sleep(30)  # Collect every 30 seconds
@@ -494,11 +507,11 @@ class AlertManager:
                     for handler in handlers_copy:
                         try:
                             handler(alert)
-                        except Exception as e:
+                        except MONITORING_EXCEPTIONS as e:
                             self._logger.warning(f"Notification handler error: {e}")
 
-            except Exception as e:
-                self._logger.warning(f"Error checking alert rule {rule['name']}: {e}")
+            except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
+                self._logger.warning(f"Error checking alert rule {rule.get('name')}: {e}")
 
     def get_active_alerts(self) -> List[Alert]:
         """Get all active (unresolved) alerts"""
@@ -595,7 +608,7 @@ class MonitoringService:
             try:
                 start_http_server(prometheus_port)
                 self._logger.info(f"Prometheus metrics server started on port {prometheus_port}")
-            except Exception as e:
+            except (OSError, ValueError, RuntimeError) as e:
                 self._logger.error(f"Failed to start Prometheus server: {e}")
 
         # Setup default health checks
@@ -704,7 +717,7 @@ class MonitoringService:
                     if self.alert_manager:
                         self.alert_manager.check_alerts(metrics)
 
-                except Exception as e:
+                except MONITORING_EXCEPTIONS as e:
                     self._logger.warning(f"Error in monitoring loop: {e}")
 
                 time.sleep(60)  # Check every minute
@@ -737,7 +750,7 @@ class MonitoringService:
             self.metrics_collector.app_metrics["requests_total"] += 1
             self.metrics_collector.app_metrics["response_times"].append(duration)
 
-        except Exception as e:
+        except MONITORING_EXCEPTIONS as e:
             # Record failed request
             duration = time.time() - start_time
             self.metrics_collector.increment_counter(

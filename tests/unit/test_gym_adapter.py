@@ -15,7 +15,7 @@ class TestObservationProcessors:
 
     def test_vector_processor_basic(self):
         """Test basic vector observation processing."""
-        from core.gym.processors import VectorObservationProcessor
+        from stateset_agents.core.gym.processors import VectorObservationProcessor
 
         processor = VectorObservationProcessor(precision=2)
         obs = np.array([0.5, -1.2, 3.14])
@@ -29,7 +29,7 @@ class TestObservationProcessors:
 
     def test_vector_processor_with_names(self):
         """Test vector processor with feature names."""
-        from core.gym.processors import VectorObservationProcessor
+        from stateset_agents.core.gym.processors import VectorObservationProcessor
 
         processor = VectorObservationProcessor(
             feature_names=["x", "y", "z"],
@@ -48,7 +48,7 @@ class TestObservationProcessors:
 
     def test_cartpole_processor(self):
         """Test CartPole-specific processor."""
-        from core.gym.processors import CartPoleObservationProcessor
+        from stateset_agents.core.gym.processors import CartPoleObservationProcessor
 
         processor = CartPoleObservationProcessor(precision=2)
         obs = np.array([0.1, 0.5, -0.05, 0.2])
@@ -63,7 +63,7 @@ class TestObservationProcessors:
 
     def test_cartpole_system_prompt(self):
         """Test CartPole system prompt generation."""
-        from core.gym.processors import CartPoleObservationProcessor
+        from stateset_agents.core.gym.processors import CartPoleObservationProcessor
 
         processor = CartPoleObservationProcessor()
         mock_env = Mock()
@@ -80,7 +80,7 @@ class TestObservationProcessors:
 
     def test_processor_factory(self):
         """Test observation processor factory function."""
-        from core.gym.processors import create_observation_processor
+        from stateset_agents.core.gym.processors import create_observation_processor
 
         # CartPole should return CartPoleObservationProcessor
         processor = create_observation_processor("CartPole-v1")
@@ -101,7 +101,7 @@ class TestActionMappers:
 
     def test_discrete_mapper_simple_int(self):
         """Test parsing simple integer actions."""
-        from core.gym.mappers import DiscreteActionMapper
+        from stateset_agents.core.gym.mappers import DiscreteActionMapper
 
         mapper = DiscreteActionMapper(n_actions=2)
 
@@ -110,7 +110,7 @@ class TestActionMappers:
 
     def test_discrete_mapper_with_text(self):
         """Test parsing actions from text responses."""
-        from core.gym.mappers import DiscreteActionMapper
+        from stateset_agents.core.gym.mappers import DiscreteActionMapper
 
         mapper = DiscreteActionMapper(n_actions=2)
 
@@ -120,7 +120,7 @@ class TestActionMappers:
 
     def test_discrete_mapper_with_names(self):
         """Test parsing named actions."""
-        from core.gym.mappers import DiscreteActionMapper
+        from stateset_agents.core.gym.mappers import DiscreteActionMapper
 
         mapper = DiscreteActionMapper(
             n_actions=2,
@@ -134,7 +134,7 @@ class TestActionMappers:
 
     def test_discrete_mapper_invalid_action(self):
         """Test handling of invalid actions."""
-        from core.gym.mappers import DiscreteActionMapper
+        from stateset_agents.core.gym.mappers import DiscreteActionMapper
 
         mapper = DiscreteActionMapper(n_actions=2)
 
@@ -148,7 +148,7 @@ class TestActionMappers:
 
     def test_discrete_mapper_default_action(self):
         """Test using default action on parse failure."""
-        from core.gym.mappers import DiscreteActionMapper
+        from stateset_agents.core.gym.mappers import DiscreteActionMapper
 
         mapper = DiscreteActionMapper(n_actions=3, default_action=1)
 
@@ -158,7 +158,7 @@ class TestActionMappers:
 
     def test_continuous_mapper_bracket_format(self):
         """Test parsing continuous actions in bracket format."""
-        from core.gym.mappers import ContinuousActionMapper
+        from stateset_agents.core.gym.mappers import ContinuousActionMapper
 
         mapper = ContinuousActionMapper(action_dim=2)
 
@@ -170,7 +170,7 @@ class TestActionMappers:
 
     def test_continuous_mapper_space_separated(self):
         """Test parsing space-separated continuous actions."""
-        from core.gym.mappers import ContinuousActionMapper
+        from stateset_agents.core.gym.mappers import ContinuousActionMapper
 
         mapper = ContinuousActionMapper(action_dim=3)
 
@@ -182,7 +182,7 @@ class TestActionMappers:
 
     def test_continuous_mapper_clipping(self):
         """Test that continuous actions are clipped to bounds."""
-        from core.gym.mappers import ContinuousActionMapper
+        from stateset_agents.core.gym.mappers import ContinuousActionMapper
 
         mapper = ContinuousActionMapper(
             action_dim=2,
@@ -205,7 +205,7 @@ class TestGymEnvironmentAdapter:
     @pytest.mark.asyncio
     async def test_adapter_creation(self):
         """Test creating adapter with auto processors."""
-        from core.gym.adapter import GymEnvironmentAdapter
+        from stateset_agents.core.gym.adapter import GymEnvironmentAdapter
 
         # Mock gym environment
         mock_env = Mock()
@@ -229,9 +229,9 @@ class TestGymEnvironmentAdapter:
     @pytest.mark.asyncio
     async def test_adapter_reset(self):
         """Test environment reset."""
-        from core.gym.adapter import GymEnvironmentAdapter
-        from core.gym.processors import CartPoleObservationProcessor
-        from core.gym.mappers import DiscreteActionMapper
+        from stateset_agents.core.gym.adapter import GymEnvironmentAdapter
+        from stateset_agents.core.gym.processors import CartPoleObservationProcessor
+        from stateset_agents.core.gym.mappers import DiscreteActionMapper
 
         # Mock gym environment
         mock_env = Mock()
@@ -255,11 +255,11 @@ class TestGymEnvironmentAdapter:
     @pytest.mark.asyncio
     async def test_adapter_step(self):
         """Test environment step execution."""
-        from core.gym.adapter import GymEnvironmentAdapter
-        from core.gym.processors import CartPoleObservationProcessor
-        from core.gym.mappers import DiscreteActionMapper
-        from core.trajectory import ConversationTurn
-        from core.environment import EnvironmentState, EpisodeStatus
+        from stateset_agents.core.gym.adapter import GymEnvironmentAdapter
+        from stateset_agents.core.gym.processors import CartPoleObservationProcessor
+        from stateset_agents.core.gym.mappers import DiscreteActionMapper
+        from stateset_agents.core.trajectory import ConversationTurn
+        from stateset_agents.core.environment import EnvironmentState, EpisodeStatus
 
         # Mock gym environment
         mock_env = Mock()
@@ -299,7 +299,7 @@ class TestGymAgent:
     @pytest.mark.asyncio
     async def test_gym_agent_creation(self):
         """Test creating a GymAgent."""
-        from core.gym.agents import create_gym_agent
+        from stateset_agents.core.gym.agents import create_gym_agent
 
         agent = create_gym_agent(
             model_name="gpt2",
@@ -313,8 +313,8 @@ class TestGymAgent:
     @pytest.mark.asyncio
     async def test_gym_agent_initialization(self):
         """Test GymAgent initialization."""
-        from core.gym.agents import GymAgent
-        from core.agent import AgentConfig
+        from stateset_agents.core.gym.agents import GymAgent
+        from stateset_agents.core.agent import AgentConfig
 
         config = AgentConfig(
             model_name="gpt2",

@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover
 if torch is not None:  # pragma: no cover - optional dependency
     try:
         from torch.cuda.amp import GradScaler, autocast  # type: ignore
-    except Exception:  # pragma: no cover
+    except (ImportError, AttributeError, RuntimeError):  # pragma: no cover
         GradScaler = None  # type: ignore[assignment]
         autocast = None  # type: ignore[assignment]
 else:  # pragma: no cover
@@ -274,7 +274,7 @@ class ModelOptimizer:
                 )
                 logger.info(f"Enabled fused {optimizer_class.__name__}")
                 return fused_optimizer
-            except Exception as e:
+            except (TypeError, ValueError, RuntimeError, AttributeError) as e:
                 logger.warning(f"Failed to enable fused optimizer: {e}")
 
         return optimizer

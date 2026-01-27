@@ -12,6 +12,9 @@ from stateset_agents.utils.security import SecurityMonitor
 
 logger = logging.getLogger(__name__)
 
+AGENT_SERVICE_EXCEPTIONS = (AttributeError, OSError, RuntimeError, TypeError, ValueError)
+TOKENIZE_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
+
 class AgentService:
     """Service for managing agents."""
 
@@ -100,7 +103,7 @@ class AgentService:
         agent = MultiTurnAgent(agent_config)
         try:
             await agent.initialize()
-        except Exception as exc:
+        except AGENT_SERVICE_EXCEPTIONS as exc:
             environment = os.getenv("API_ENVIRONMENT", "production").lower()
             if environment != "production" and not agent_config.use_stub_model:
                 logger.warning(
@@ -201,7 +204,7 @@ class AgentService:
                 try:
                     # accurate count using tokenizer
                     tokens_used = len(agent.tokenizer.encode(response_text))
-                except Exception:
+                except TOKENIZE_EXCEPTIONS:
                     # Fallback if tokenizer fails or encoding not possible
                     tokens_used = int(len(response_text.split()) * 1.3)
             else:
@@ -229,7 +232,7 @@ class AgentService:
                 },
             )
 
-        except Exception as e:
+        except AGENT_SERVICE_EXCEPTIONS as e:
             logger.error(f"Agent response failed: {e}")
             raise HTTPException(status_code=500, detail="Agent response failed")
 

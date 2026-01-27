@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from training.config import TrainingConfig, TrainingProfile, get_config_for_task
-from training.trainer import SingleTurnGRPOTrainer
+from stateset_agents.training.config import TrainingConfig, TrainingProfile, get_config_for_task
+from stateset_agents.training.trainer import SingleTurnGRPOTrainer
 from stateset_agents.core.environment import Environment, EnvironmentState, EpisodeStatus
 
 

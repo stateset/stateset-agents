@@ -16,6 +16,8 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+SHUTDOWN_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 
 class ShutdownPhase(Enum):
     """Shutdown phases in order of execution."""
@@ -201,7 +203,7 @@ class GracefulShutdownManager:
 
             logger.info("Graceful shutdown completed successfully")
 
-        except Exception as e:
+        except SHUTDOWN_EXCEPTIONS as e:
             logger.exception("Error during shutdown: %s", e)
             raise
 
@@ -258,7 +260,7 @@ class GracefulShutdownManager:
                 if task.critical:
                     raise RuntimeError(f"Critical shutdown task {task.name} timed out")
 
-            except Exception as e:
+            except SHUTDOWN_EXCEPTIONS as e:
                 logger.exception("Shutdown task %s failed: %s", task.name, e)
                 self.state.failed_tasks.append(task.name)
 

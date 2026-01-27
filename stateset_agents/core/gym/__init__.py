@@ -13,7 +13,7 @@ Main Components:
 
 Example:
     >>> import gymnasium as gym
-    >>> from core.gym import GymEnvironmentAdapter, create_gym_agent
+    >>> from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
     >>>
     >>> # Create gym environment
     >>> env = gym.make("CartPole-v1")

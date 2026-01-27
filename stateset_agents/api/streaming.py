@@ -35,6 +35,8 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+STREAM_EXCEPTIONS = (asyncio.TimeoutError, OSError, RuntimeError, TypeError, ValueError)
+
 
 class StreamEventType(str, Enum):
     """Types of streaming events."""
@@ -242,7 +244,7 @@ class StreamingService:
                 },
             )
 
-        except Exception as e:
+        except STREAM_EXCEPTIONS as e:
             logger.error(f"Streaming error: {e}")
             yield StreamEvent(
                 event_type=StreamEventType.ERROR,
@@ -289,7 +291,7 @@ class StreamingService:
                         response=response,
                         latency_ms=(time.time() - item_start) * 1000,
                     )
-                except Exception as e:
+                except STREAM_EXCEPTIONS as e:
                     return BatchItemResult(
                         id=item.id,
                         status="failed",
@@ -375,7 +377,7 @@ class StreamingService:
                 event_type=StreamEventType.DONE,
                 data=batch_result.model_dump(),
             )
-        except Exception as e:
+        except STREAM_EXCEPTIONS as e:
             yield StreamEvent(
                 event_type=StreamEventType.ERROR,
                 data={"error": str(e)},

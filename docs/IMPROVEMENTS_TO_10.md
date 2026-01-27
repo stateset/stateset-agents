@@ -432,7 +432,7 @@ The framework is now **production-ready for critical applications**:
 ### Training a Reward Model:
 
 ```python
-from training.transformer_reward_model import (
+from stateset_agents.training.transformer_reward_model import (
     RewardTrainingConfig,
     TransformerRewardTrainer,
     RewardExample
@@ -463,7 +463,7 @@ trainer.save_checkpoint("./models/reward_model.pt")
 ### Using Calibrated Rewards:
 
 ```python
-from training.reward_calibration import (
+from stateset_agents.training.reward_calibration import (
     CalibratedRewardFunction,
     MultiRewardCalibrator
 )
@@ -480,7 +480,7 @@ calibrated_rewards = calibrator.get_calibrated_functions()
 ### Advanced Monitoring:
 
 ```python
-from utils.advanced_dashboard import create_production_dashboard
+from stateset_agents.utils.advanced_dashboard import create_production_dashboard
 
 # Create dashboard
 dashboard = create_production_dashboard(enable_alerts=True)
@@ -537,7 +537,7 @@ Ready for deployment in critical, high-scale production environments.
 
 ```python
 # Shared config across all trainers
-from training.base_trainer import BaseTrainerConfig, BaseModelManager
+from stateset_agents.training.base_trainer import BaseTrainerConfig, BaseModelManager
 
 config = BaseTrainerConfig(
     model_name="Qwen/Qwen2.5-7B",

@@ -286,10 +286,10 @@ def create_action_mapper(gym_env: Any, **kwargs) -> ActionMapper:
     gym = None
     try:
         import gymnasium as gym  # type: ignore[assignment]
-    except Exception:
+    except ImportError:
         try:
             import gym  # type: ignore[assignment]
-        except Exception:
+        except ImportError:
             gym = None
 
     action_space = getattr(gym_env, "action_space", None)

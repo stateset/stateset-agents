@@ -59,8 +59,8 @@ def get_mistral_config(
     GSPO is especially effective for MoE models as it uses sequence-level
     importance ratios which are more stable than token-level ratios.
     """
-    from training.gspo_trainer import GSPOConfig
-    from training.config import get_config_for_task
+    from stateset_agents.training.gspo_trainer import GSPOConfig
+    from stateset_agents.training.config import get_config_for_task
 
     # Get base config for task
     base_config = get_config_for_task(task, model_name=model_name)
@@ -219,7 +219,7 @@ async def finetune_mistral(
     from stateset_agents.core.agent import AgentConfig
     from stateset_agents.core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
-    from training.gspo_trainer import train_with_gspo
+    from stateset_agents.training.gspo_trainer import train_with_gspo
 
     is_moe = "mixtral" in model_name.lower()
     model_type = "Mixtral MoE" if is_moe else "Mistral"

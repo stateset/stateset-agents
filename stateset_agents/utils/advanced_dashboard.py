@@ -9,7 +9,7 @@ import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 try:
     import prometheus_client as prom
@@ -20,6 +20,15 @@ except ImportError:
     PROMETHEUS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+DASHBOARD_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    OSError,
+    AttributeError,
+    asyncio.TimeoutError,
+)
 
 
 @dataclass
@@ -331,7 +340,7 @@ class AdvancedDashboard:
 
                 await asyncio.sleep(10)
 
-            except Exception as e:
+            except DASHBOARD_EXCEPTIONS as e:
                 logger.error(f"Error monitoring system metrics: {e}")
                 await asyncio.sleep(10)
 
@@ -351,7 +360,7 @@ class AdvancedDashboard:
 
                 await asyncio.sleep(60)  # Snapshot every minute
 
-            except Exception as e:
+            except DASHBOARD_EXCEPTIONS as e:
                 logger.error(f"Error taking snapshot: {e}")
                 await asyncio.sleep(60)
 

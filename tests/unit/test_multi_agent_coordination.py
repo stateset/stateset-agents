@@ -5,7 +5,7 @@ Tests for Multi-Agent Coordination System
 import pytest
 import asyncio
 
-from core.multi_agent_coordination import (
+from stateset_agents.core.multi_agent_coordination import (
     AgentRole,
     AgentMessage,
     AgentState,

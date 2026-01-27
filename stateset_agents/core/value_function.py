@@ -154,7 +154,7 @@ class ValueFunction:
         else:
             try:
                 config = getattr(self.model, "config")
-            except Exception:
+            except AttributeError:
                 config = None
 
         candidates: List[Any] = []
@@ -169,7 +169,7 @@ class ValueFunction:
                 for attr in ("hidden_size", "d_model"):
                     try:
                         candidates.append(getattr(config, attr))
-                    except Exception:
+                    except AttributeError:
                         continue
 
         for candidate in candidates:

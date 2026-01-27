@@ -16,7 +16,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 
@@ -31,6 +31,31 @@ SEABORN_INSTALLED = importlib.util.find_spec("seaborn") is not None
 # Backwards-compat flag; indicates whether wandb can be imported.
 WANDB_AVAILABLE = WANDB_INSTALLED
 
+WANDB_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    OSError,
+    KeyError,
+    AttributeError,
+)
+
+
+def _register_wandb_exceptions() -> None:
+    """Extend exception tuple with wandb-specific errors if available."""
+    global WANDB_EXCEPTIONS
+    if wandb is None:
+        return
+    errors_mod = getattr(wandb, "errors", None)
+    if errors_mod is None:
+        return
+    excs = list(WANDB_EXCEPTIONS)
+    for name in ("Error", "CommError", "UsageError"):
+        exc = getattr(errors_mod, name, None)
+        if isinstance(exc, type) and issubclass(exc, Exception):
+            excs.append(exc)
+    WANDB_EXCEPTIONS = tuple(dict.fromkeys(excs))
+
 
 def _load_wandb() -> bool:
     """Import wandb on-demand to avoid slow import at module load time."""
@@ -42,8 +67,9 @@ def _load_wandb() -> bool:
 
         wandb = _wandb
         WANDB_AVAILABLE = True
+        _register_wandb_exceptions()
         return True
-    except Exception as exc:  # pragma: no cover - environment dependent
+    except (ImportError, RuntimeError, OSError) as exc:  # pragma: no cover - env
         wandb = None
         WANDB_AVAILABLE = False
         logging.getLogger(__name__).warning("Failed to import wandb: %s", exc)
@@ -65,7 +91,7 @@ def _load_plotting() -> bool:
 
             sns = _sns
         return True
-    except Exception as exc:  # pragma: no cover - environment dependent
+    except (ImportError, RuntimeError, OSError) as exc:  # pragma: no cover - env
         plt = None  # type: ignore[assignment]
         sns = None  # type: ignore[assignment]
         logging.getLogger(__name__).warning(
@@ -547,7 +573,7 @@ class WandBIntegration:
                     (".py", ".yaml", ".yml", ".json")
                 ),
             )
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.warning(f"Failed to log code: {e}")
 
     def _create_trajectory_plots(self):
@@ -591,7 +617,7 @@ class WandBIntegration:
             wandb.log({"trajectories/analysis": wandb.Image(fig)})
             plt.close(fig)
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to create trajectory plots: {e}")
 
     def _create_reward_plots(self):
@@ -647,7 +673,7 @@ class WandBIntegration:
             wandb.log({"rewards/analysis": wandb.Image(fig)})
             plt.close(fig)
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to create reward plots: {e}")
 
     def _create_loss_plots(self):
@@ -702,7 +728,7 @@ class WandBIntegration:
             wandb.log({"training/analysis": wandb.Image(fig)})
             plt.close(fig)
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to create loss plots: {e}")
 
     def save_model_artifact(
@@ -733,7 +759,7 @@ class WandBIntegration:
 
                 logger.info(f"Saved model artifact: {name}")
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to save model artifact: {e}")
 
     def create_summary_report(self) -> Dict[str, Any]:
@@ -943,7 +969,7 @@ class WandBLogger:
             self.start_time = datetime.now()
             logger.info(f"W&B run initialized: {self.run.name}")
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to initialize W&B run: {e}")
             self.enabled = False
 
@@ -966,7 +992,7 @@ class WandBLogger:
                         clean_config[key] = str(value)
                 else:
                     clean_config[key] = value
-            except Exception:
+            except WANDB_EXCEPTIONS:
                 # Skip problematic values
                 continue
 
@@ -998,12 +1024,12 @@ class WandBLogger:
                     else:
                         # Log as string or handle special W&B objects
                         numeric_metrics[k] = v
-                except Exception:
+                except WANDB_EXCEPTIONS:
                     continue
 
             self.run.log(numeric_metrics, step=step)
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to log metrics: {e}")
 
     def log_agent_config(self, agent_config: AgentConfig):
@@ -1035,7 +1061,7 @@ class WandBLogger:
 
             self.log_metrics(config_dict)
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to log agent config: {e}")
 
     def log_training_step(
@@ -1064,7 +1090,7 @@ class WandBLogger:
 
             self.log_metrics(metrics, step=step)
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to log training step: {e}")
 
     def log_evaluation(
@@ -1090,7 +1116,7 @@ class WandBLogger:
 
             self.log_metrics(metrics, step=step)
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to log evaluation: {e}")
 
     def _compute_trajectory_metrics(
@@ -1197,7 +1223,7 @@ class WandBLogger:
 
             self.log_metrics(checkpoint_metrics, step=step)
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to log checkpoint: {e}")
 
     def log_conversation_examples(
@@ -1230,7 +1256,7 @@ class WandBLogger:
 
             self.log_metrics({f"examples/conversations_step_{step}": table}, step=step)
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to log conversation examples: {e}")
 
     def log_reward_distribution(
@@ -1249,7 +1275,7 @@ class WandBLogger:
                 },
                 step=step,
             )
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to log reward distribution: {e}")
 
     def finish_run(self, summary: Optional[Dict[str, Any]] = None):
@@ -1274,7 +1300,7 @@ class WandBLogger:
             self.run.finish()
             logger.info("W&B run finished")
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to finish W&B run: {e}")
 
     def log_system_metrics(self):
@@ -1301,7 +1327,7 @@ class WandBLogger:
 
             self.log_metrics(metrics)
 
-        except Exception as e:
+        except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to log system metrics: {e}")
 
 

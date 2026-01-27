@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 # Optional imports for enhanced functionality
 try:
@@ -43,6 +43,14 @@ try:
     HAS_STRUCTLOG = True
 except ImportError:
     HAS_STRUCTLOG = False
+
+TRACE_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    OSError,
+    asyncio.TimeoutError,
+)
 
 
 class SpanKind(Enum):
@@ -401,7 +409,7 @@ class ObservabilityTracer:
 
         try:
             yield span
-        except Exception as e:
+        except TRACE_EXCEPTIONS as e:
             self.finish_span(span, error=e)
             raise
         else:
@@ -419,7 +427,7 @@ class ObservabilityTracer:
 
         try:
             yield span
-        except Exception as e:
+        except TRACE_EXCEPTIONS as e:
             self.finish_span(span, error=e)
             raise
         else:

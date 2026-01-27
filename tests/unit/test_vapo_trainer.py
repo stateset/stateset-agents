@@ -19,7 +19,7 @@ class TestVAPOConfig:
 
     def test_vapo_config_defaults(self):
         """Test VAPO config with default values."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
 
@@ -31,7 +31,7 @@ class TestVAPOConfig:
 
     def test_vapo_config_lora_settings(self):
         """Test VAPO config LoRA settings."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
 
@@ -42,7 +42,7 @@ class TestVAPOConfig:
 
     def test_vapo_config_value_network_settings(self):
         """Test VAPO value network settings."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
 
@@ -52,7 +52,7 @@ class TestVAPOConfig:
 
     def test_vapo_config_decoupled_gae(self):
         """Test VAPO decoupled GAE settings."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
 
@@ -61,7 +61,7 @@ class TestVAPOConfig:
 
     def test_vapo_config_asymmetric_clipping(self):
         """Test VAPO asymmetric clipping settings."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
 
@@ -70,7 +70,7 @@ class TestVAPOConfig:
 
     def test_vapo_config_custom_values(self):
         """Test VAPO config with custom values."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig(
             model_name="llama-7b",
@@ -88,8 +88,8 @@ class TestVAPOConfig:
 
     def test_vapo_config_from_training_config(self):
         """Test creating VAPO config from training config."""
-        from training.config import TrainingConfig
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.config import TrainingConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         base_config = TrainingConfig(
             model_name="gpt2",
@@ -112,13 +112,13 @@ class TestVAPOModelManager:
     @pytest.fixture
     def vapo_config(self):
         """Create a VAPO config for testing."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
         return VAPOConfig(model_name="gpt2", use_lora=True)
 
     @pytest.fixture
     def model_manager(self, vapo_config):
         """Create a VAPOModelManager for testing."""
-        from training.vapo_trainer import VAPOModelManager
+        from stateset_agents.training.vapo_trainer import VAPOModelManager
         return VAPOModelManager(vapo_config)
 
     def test_model_manager_creation(self, model_manager):
@@ -157,7 +157,7 @@ class TestVAPOModelManager:
         """Test loading model without LoRA."""
         vapo_config.use_lora = False
 
-        from training.vapo_trainer import VAPOModelManager
+        from stateset_agents.training.vapo_trainer import VAPOModelManager
         manager = VAPOModelManager(vapo_config)
 
         mock_tokenizer = MagicMock()
@@ -179,7 +179,7 @@ class TestValueHead:
     @pytest.fixture
     def value_head(self):
         """Create a ValueHead for testing."""
-        from training.vapo_trainer import ValueHead
+        from stateset_agents.training.vapo_trainer import ValueHead
         return ValueHead(
             hidden_size=768,
             value_hidden_size=1024,
@@ -330,7 +330,7 @@ class TestVAPOPositiveLMLoss:
 
     def test_positive_lm_loss_weight(self):
         """Test positive LM loss weight parameter."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
 
@@ -362,7 +362,7 @@ class TestVAPOGroupSampling:
 
     def test_group_size_config(self):
         """Test group size configuration."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
 
@@ -391,7 +391,7 @@ class TestVAPOOptimizers:
 
     def test_separate_learning_rates(self):
         """Test separate learning rates for actor and critic."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
 
@@ -420,7 +420,7 @@ class TestVAPOValueWarmup:
 
     def test_warmup_steps_config(self):
         """Test warmup steps configuration."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
         assert config.value_warmup_steps == 50
@@ -447,7 +447,7 @@ class TestVAPOTrainer:
     @pytest.fixture
     def vapo_config(self):
         """Create a VAPO config for testing."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
         return VAPOConfig(
             model_name="gpt2",
             num_iterations=2,
@@ -466,14 +466,14 @@ class TestVAPOMetrics:
 
     def test_value_loss_coefficient(self):
         """Test value loss coefficient."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
         assert config.value_loss_coef == 0.5
 
     def test_entropy_coefficient(self):
         """Test entropy coefficient (usually 0 for reasoning)."""
-        from training.vapo_trainer import VAPOConfig
+        from stateset_agents.training.vapo_trainer import VAPOConfig
 
         config = VAPOConfig()
         assert config.entropy_coef == 0.0

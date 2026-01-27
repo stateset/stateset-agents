@@ -23,6 +23,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+BITSANDBYTES_IMPORT_EXCEPTIONS = (ImportError, OSError, RuntimeError)
+GPU_PROPERTIES_EXCEPTIONS = (AttributeError, OSError, RuntimeError)
+INPUT_GRADS_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
+MODEL_LOAD_EXCEPTIONS = (ImportError, OSError, RuntimeError, TypeError, ValueError)
+VLLM_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 # Import framework components
 from stateset_agents.core.agent import Agent, AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
@@ -110,7 +116,7 @@ def _enable_input_require_grads(model: Any) -> None:
             model.enable_input_require_grads()
             setattr(model, "_stateset_input_grads_enabled", True)
             return
-        except Exception as e:  # pragma: no cover
+        except INPUT_GRADS_EXCEPTIONS as e:  # pragma: no cover
             logger.debug("enable_input_require_grads failed: %s", e)
 
     try:
@@ -127,7 +133,7 @@ def _enable_input_require_grads(model: Any) -> None:
 
         embeddings.register_forward_hook(_require_grads_hook)
         setattr(model, "_stateset_input_grads_enabled", True)
-    except Exception as e:  # pragma: no cover
+    except INPUT_GRADS_EXCEPTIONS as e:  # pragma: no cover
         logger.debug("Failed to register input grad hook: %s", e)
 
 
@@ -147,7 +153,7 @@ def _require_bitsandbytes() -> None:
 
     try:
         import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
-    except Exception as exc:  # pragma: no cover
+    except BITSANDBYTES_IMPORT_EXCEPTIONS as exc:  # pragma: no cover
         raise ImportError(
             "bitsandbytes is installed but failed to import. "
             "If you just installed it in a notebook, restart the runtime/kernel. "
@@ -242,7 +248,7 @@ class TRLGRPOConfig(TrainingConfig):
             else:
                 try:
                     import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
-                except Exception:
+                except BITSANDBYTES_IMPORT_EXCEPTIONS:
                     warnings.append(
                         "bitsandbytes is installed but failed to import. "
                         "If you just installed it in a notebook, restart the runtime/kernel."
@@ -279,7 +285,7 @@ class TrajectoryGenerator:
                 max_tokens=self.config.max_completion_length,
             )
             logger.info("vLLM engine initialized")
-        except Exception as e:
+        except VLLM_EXCEPTIONS as e:
             logger.warning(f"Failed to initialize vLLM: {e}. Falling back to standard generation.")
             self.vllm_engine = None
 
@@ -382,7 +388,7 @@ class ModelManager:
                         self.config.model_name,
                         total_mem_gb,
                     )
-            except Exception:  # pragma: no cover
+            except GPU_PROPERTIES_EXCEPTIONS:  # pragma: no cover
                 logger.warning(
                     "Model %s: consider `use_4bit=True` to reduce memory usage",
                     self.config.model_name,
@@ -486,7 +492,7 @@ class ModelManager:
             logger.info(f"Model loaded successfully on {self.device}")
             return self.model, self.tokenizer
 
-        except Exception as e:
+        except MODEL_LOAD_EXCEPTIONS as e:
             logger.error(f"Failed to load model: {e}")
             raise
 

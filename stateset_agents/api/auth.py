@@ -21,6 +21,8 @@ from .errors import UnauthorizedError, ForbiddenError
 
 logger = logging.getLogger(__name__)
 
+JWT_EXCEPTIONS = (ValueError, TypeError)
+
 # Security scheme for OpenAPI docs
 security_scheme = HTTPBearer(auto_error=False)
 
@@ -118,7 +120,7 @@ class JWTHandler:
 
             return payload
 
-        except Exception as e:
+        except JWT_EXCEPTIONS as e:
             logger.warning(f"JWT decode error: {e}")
             return None
 

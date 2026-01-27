@@ -27,9 +27,13 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
+    Type,
     TypeVar,
     Union,
 )
+
+from .error_handling import ErrorCode, ResourceException
 
 try:  # pragma: no cover - optional dependency
     import aiohttp  # type: ignore[import-not-found]
@@ -39,6 +43,22 @@ except ImportError:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+POOL_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    ResourceException,
+    RuntimeError,
+    ValueError,
+    TypeError,
+    OSError,
+    asyncio.TimeoutError,
+)
+RESOURCE_CLEANUP_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    AttributeError,
+    RuntimeError,
+    ValueError,
+    TypeError,
+    OSError,
+)
 
 
 def _require_aiohttp() -> Any:
@@ -180,7 +200,7 @@ class AsyncResourceFactory(Generic[T]):
                     await resource.close()
                 else:
                     resource.close()
-            except Exception as e:
+            except RESOURCE_CLEANUP_EXCEPTIONS as e:
                 logger.warning(f"Error closing resource: {e}")
 
 
@@ -272,12 +292,12 @@ class AsyncResourcePool(Generic[T]):
                 self._state = PoolState.READY
                 self._stats.total_connections = len(self._pool)
                 self._stats.idle_connections = len(self._pool)
-        except Exception:
+        except POOL_EXCEPTIONS:
             # Ensure partially created pools don't leak resources.
             for resource in created:
                 try:
                     await self.factory.cleanup_resource(resource.resource)
-                except Exception:
+                except RESOURCE_CLEANUP_EXCEPTIONS:
                     pass
             self._state = PoolState.CLOSED
             raise
@@ -302,11 +322,15 @@ class AsyncResourcePool(Generic[T]):
             logger.debug(f"Created resource {resource_id}")
             return pooled_resource
 
-        except Exception as e:
+        except POOL_EXCEPTIONS as e:
             logger.error(f"Failed to create resource: {e}")
             self._stats.failed_connections += 1
             if raise_on_fail:
-                raise
+                raise ResourceException(
+                    "Failed to create pooled resource",
+                    error_code=ErrorCode.RESOURCE_FAILED,
+                    details={"pool": self.name},
+                ) from e
             return None
 
     @asynccontextmanager
@@ -379,7 +403,7 @@ class AsyncResourcePool(Generic[T]):
                             + response_time
                         ) / self._stats.successful_requests
 
-            except Exception as e:
+            except POOL_EXCEPTIONS as e:
                 # Mark resource as failed
                 await pooled_resource.mark_failed(e)
 
@@ -406,7 +430,7 @@ class AsyncResourcePool(Generic[T]):
                     # Remove failed resource
                     await self._remove_resource(pooled_resource)
 
-        except Exception as e:
+        except POOL_EXCEPTIONS as e:
             async with self._lock:
                 self._stats.failed_requests += 1
             raise
@@ -415,7 +439,7 @@ class AsyncResourcePool(Generic[T]):
         """Remove resource from pool"""
         try:
             await self.factory.cleanup_resource(pooled_resource.resource)
-        except Exception as e:
+        except RESOURCE_CLEANUP_EXCEPTIONS as e:
             logger.warning(f"Error cleaning up resource: {e}")
 
         async with self._lock:
@@ -438,7 +462,7 @@ class AsyncResourcePool(Generic[T]):
                 await self._perform_health_check()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except POOL_EXCEPTIONS as e:
                 logger.error(f"Health check error: {e}")
 
     async def _perform_health_check(self) -> None:
@@ -474,7 +498,7 @@ class AsyncResourcePool(Generic[T]):
                                 f"Resource {resource.info.resource_id} failed health check"
                             )
                             resources_to_remove.append(resource)
-                    except Exception as e:
+                    except POOL_EXCEPTIONS as e:
                         logger.error(
                             f"Health check error for {resource.info.resource_id}: {e}"
                         )
@@ -572,7 +596,7 @@ class AsyncResourcePool(Generic[T]):
                 resource = self._pool.pop()
                 try:
                     await self.factory.cleanup_resource(resource.resource)
-                except Exception as e:
+                except RESOURCE_CLEANUP_EXCEPTIONS as e:
                     logger.warning(f"Error cleaning up resource during close: {e}")
 
         logger.info(f"Pool {self.name} closed")
@@ -620,7 +644,7 @@ class AsyncTaskManager:
             except asyncio.TimeoutError:
                 logger.warning(f"Task timed out after {timeout}s")
                 raise
-            except Exception as e:
+            except POOL_EXCEPTIONS as e:
                 logger.error(f"Task failed: {e}")
                 raise
 
@@ -649,7 +673,7 @@ class AsyncTaskManager:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except POOL_EXCEPTIONS as e:
                 logger.error(f"Cleanup loop error: {e}")
 
     def get_status(self) -> Dict[str, int]:

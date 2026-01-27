@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.advanced_monitoring import (
+from stateset_agents.core.advanced_monitoring import (
     Alert,
     AlertSeverity,
     MetricPoint,
@@ -264,7 +264,7 @@ class TestAdvancedMonitoringService:
         """Create a mock monitoring service."""
         with patch("core.advanced_monitoring.PROMETHEUS_AVAILABLE", False), \
              patch("core.advanced_monitoring.OPENTELEMETRY_AVAILABLE", False):
-            from core.advanced_monitoring import AdvancedMonitoringService
+            from stateset_agents.core.advanced_monitoring import AdvancedMonitoringService
             service = AdvancedMonitoringService()
             return service
 
@@ -426,7 +426,7 @@ class TestMonitorAsyncFunction:
     @pytest.mark.asyncio
     async def test_decorator_basic(self):
         """Test basic decorator functionality."""
-        from core.advanced_monitoring import monitor_async_function
+        from stateset_agents.core.advanced_monitoring import monitor_async_function
 
         @monitor_async_function("test_operation")
         async def sample_function():
@@ -439,7 +439,7 @@ class TestMonitorAsyncFunction:
     @pytest.mark.asyncio
     async def test_decorator_with_exception(self):
         """Test decorator handles exceptions."""
-        from core.advanced_monitoring import monitor_async_function
+        from stateset_agents.core.advanced_monitoring import monitor_async_function
 
         @monitor_async_function("failing_operation")
         async def failing_function():
@@ -519,7 +519,7 @@ class TestGetMonitoringService:
 
     def test_get_monitoring_service(self):
         """Test getting the global monitoring service."""
-        from core.advanced_monitoring import get_monitoring_service
+        from stateset_agents.core.advanced_monitoring import get_monitoring_service
 
         service1 = get_monitoring_service()
         service2 = get_monitoring_service()

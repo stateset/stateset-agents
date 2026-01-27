@@ -13,7 +13,7 @@ Features:
 
 Example:
     >>> from pydantic import BaseModel
-    >>> from core.structured_output import StructuredOutputAgent
+    >>> from stateset_agents.core.structured_output import StructuredOutputAgent
     >>>
     >>> class MovieReview(BaseModel):
     ...     title: str
@@ -386,7 +386,7 @@ class StructuredOutputMixin:
                     ),
                 })
 
-            except Exception as e:
+            except (ValueError, TypeError, RuntimeError, AttributeError) as e:
                 last_error = e
                 logger.warning(
                     f"Structured output attempt {attempt + 1}/{config.max_retries} "

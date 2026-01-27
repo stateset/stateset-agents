@@ -47,6 +47,8 @@ class AuthenticatedUser:
 security = HTTPBearer(auto_error=False)  # Don't auto-error to allow custom handling
 security_monitor = SecurityMonitor()
 
+AUTH_EXCEPTIONS = (RuntimeError, TypeError, ValueError)
+
 
 # ============================================================================
 # Authentication Dependencies
@@ -107,7 +109,7 @@ async def get_current_user(
 
     except HTTPException:
         raise
-    except Exception as e:
+    except AUTH_EXCEPTIONS as e:
         security_monitor.log_security_event(
             "authentication_failure",
             {"error": str(e), "token_prefix": token[:10] if token else "None"},
@@ -135,7 +137,7 @@ async def get_optional_user(
         user_data = auth_service.authenticate_token(credentials.credentials)
         if user_data:
             return AuthenticatedUser.from_dict(user_data)
-    except Exception:
+    except AUTH_EXCEPTIONS:
         pass
 
     return None

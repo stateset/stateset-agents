@@ -35,11 +35,21 @@ from stateset_agents.core.trajectory import Trajectory
 
 try:
     from stateset_agents.utils.cache import CacheService  # optional utility
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     CacheService = None  # type: ignore
 from stateset_agents.utils.monitoring import MonitoringService
 
 logger = logging.getLogger(__name__)
+
+NEURAL_REWARD_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
 
 
 @dataclass
@@ -558,7 +568,7 @@ class NeuralRewardFunction(RewardFunction):
                 },
             )
 
-        except Exception as e:
+        except NEURAL_REWARD_EXCEPTIONS as e:
             logger.error(f"Neural reward computation failed: {e}")
             return RewardResult(
                 score=self.fallback_reward,
@@ -581,7 +591,7 @@ class NeuralRewardFunction(RewardFunction):
                 f"Neural reward model updated. Train loss: {results.get('final_train_loss', 'N/A')}"
             )
 
-        except Exception as e:
+        except NEURAL_REWARD_EXCEPTIONS as e:
             logger.error(f"Neural model update failed: {e}")
 
     def add_trajectory_feedback(

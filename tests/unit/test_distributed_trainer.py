@@ -18,7 +18,7 @@ class TestDistributedConfig:
 
     def test_distributed_config_defaults(self):
         """Test distributed config with default values."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig()
 
@@ -32,7 +32,7 @@ class TestDistributedConfig:
 
     def test_distributed_config_training_settings(self):
         """Test training-specific settings."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig()
 
@@ -42,7 +42,7 @@ class TestDistributedConfig:
 
     def test_distributed_config_fault_tolerance(self):
         """Test fault tolerance settings."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig()
 
@@ -51,7 +51,7 @@ class TestDistributedConfig:
 
     def test_distributed_config_memory_optimization(self):
         """Test memory optimization settings."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig()
 
@@ -61,7 +61,7 @@ class TestDistributedConfig:
 
     def test_distributed_config_custom_values(self):
         """Test distributed config with custom values."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig(
             backend="gloo",
@@ -79,7 +79,7 @@ class TestDistributedConfig:
 
     def test_distributed_config_to_dict(self):
         """Test config serialization to dictionary."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig()
         config_dict = config.to_dict()
@@ -126,7 +126,7 @@ class TestDistributedGRPOTrainer:
     @pytest.fixture
     def distributed_config(self):
         """Create a distributed config."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
         return DistributedConfig()
 
     @pytest.fixture
@@ -140,7 +140,7 @@ class TestDistributedGRPOTrainer:
         distributed_config,
     ):
         """Create a DistributedGRPOTrainer for testing."""
-        from training.distributed_trainer import DistributedGRPOTrainer
+        from stateset_agents.training.distributed_trainer import DistributedGRPOTrainer
 
         return DistributedGRPOTrainer(
             agent=mock_agent,
@@ -231,7 +231,7 @@ class TestGradientAccumulation:
 
     def test_gradient_accumulation_config(self):
         """Test gradient accumulation configuration."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig(gradient_accumulation_steps=4)
 
@@ -252,7 +252,7 @@ class TestMixedPrecisionDistributed:
 
     def test_mixed_precision_config(self):
         """Test mixed precision configuration."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig(mixed_precision=True)
 
@@ -273,7 +273,7 @@ class TestFaultTolerance:
 
     def test_max_restarts_config(self):
         """Test max restarts configuration."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig(max_restarts=5)
 
@@ -281,7 +281,7 @@ class TestFaultTolerance:
 
     def test_restart_interval_config(self):
         """Test restart interval configuration."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig(restart_interval=120)
 
@@ -311,7 +311,7 @@ class TestMemoryOptimization:
 
     def test_cpu_offload_config(self):
         """Test CPU offload configuration."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig(cpu_offload=True)
 
@@ -319,7 +319,7 @@ class TestMemoryOptimization:
 
     def test_activation_checkpointing_config(self):
         """Test activation checkpointing configuration."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig(activation_checkpointing=True)
 
@@ -359,7 +359,7 @@ class TestSyncBatchNorm:
 
     def test_sync_bn_config(self):
         """Test sync BN configuration."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig(sync_bn=True)
 
@@ -437,7 +437,7 @@ class TestBackendSelection:
 
     def test_nccl_for_gpu(self):
         """Test NCCL backend for GPU training."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig(backend="nccl")
 
@@ -445,7 +445,7 @@ class TestBackendSelection:
 
     def test_gloo_for_cpu(self):
         """Test Gloo backend for CPU training."""
-        from training.distributed_trainer import DistributedConfig
+        from stateset_agents.training.distributed_trainer import DistributedConfig
 
         config = DistributedConfig(backend="gloo")
 

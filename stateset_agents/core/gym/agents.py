@@ -32,8 +32,8 @@ class GymAgent(MultiTurnAgent):
         **kwargs: Additional arguments passed to MultiTurnAgent
 
     Example:
-        >>> from core.gym.agents import GymAgent
-        >>> from core.agent import AgentConfig
+        >>> from stateset_agents.core.gym.agents import GymAgent
+        >>> from stateset_agents.core.agent import AgentConfig
         >>>
         >>> config = AgentConfig(
         ...     model_name="gpt2",

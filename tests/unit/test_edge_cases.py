@@ -329,14 +329,14 @@ class TestTrainingEdgeCases:
 
     def test_zero_learning_rate(self):
         """Test training config with zero learning rate."""
-        from training.config import TrainingConfig
+        from stateset_agents.training.config import TrainingConfig
 
         config = TrainingConfig(learning_rate=0.0)
         assert config.learning_rate == 0.0
 
     def test_extreme_hyperparameters(self):
         """Test training config with extreme values."""
-        from training.config import TrainingConfig
+        from stateset_agents.training.config import TrainingConfig
 
         # Very small
         config_small = TrainingConfig(
@@ -357,7 +357,7 @@ class TestTrainingEdgeCases:
 
     def test_advantage_computation_all_same_rewards(self):
         """Test advantage computation when all rewards are identical."""
-        from training.base_trainer import compute_group_advantages
+        from stateset_agents.training.base_trainer import compute_group_advantages
 
         rewards = [0.5, 0.5, 0.5, 0.5]
         advantages = compute_group_advantages(rewards, baseline_type="mean")
@@ -367,7 +367,7 @@ class TestTrainingEdgeCases:
 
     def test_advantage_computation_single_sample(self):
         """Test advantage computation with single sample."""
-        from training.base_trainer import compute_group_advantages
+        from stateset_agents.training.base_trainer import compute_group_advantages
 
         rewards = [0.8]
         advantages = compute_group_advantages(rewards, baseline_type="mean")
@@ -377,7 +377,7 @@ class TestTrainingEdgeCases:
 
     def test_advantage_normalization_zero_std(self):
         """Test advantage normalization when std is zero."""
-        from training.base_trainer import normalize_advantages
+        from stateset_agents.training.base_trainer import normalize_advantages
 
         # All same values -> std = 0
         advantages = torch.tensor([1.0, 1.0, 1.0, 1.0])
@@ -466,7 +466,7 @@ class TestConfigEdgeCases:
 
     def test_config_with_none_values(self):
         """Test config handling of None values."""
-        from training.config import TrainingConfig
+        from stateset_agents.training.config import TrainingConfig
 
         config = TrainingConfig(
             model_name="gpt2",
@@ -477,7 +477,7 @@ class TestConfigEdgeCases:
 
     def test_config_to_dict_with_complex_types(self):
         """Test config serialization with complex nested types."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig(
             lora_target_modules=["q_proj", "v_proj", "k_proj"],
@@ -489,7 +489,7 @@ class TestConfigEdgeCases:
 
     def test_config_domain_presets(self):
         """Test all domain preset configurations are valid."""
-        from training.config import get_config_for_task
+        from stateset_agents.training.config import get_config_for_task
 
         domains = ["customer_service", "technical_support", "sales_assistant"]
 

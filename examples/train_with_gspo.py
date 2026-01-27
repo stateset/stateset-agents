@@ -49,9 +49,9 @@ async def train_gspo_demo(
         create_customer_service_reward,
         create_domain_reward,
     )
-    from training.config import get_config_for_task
-    from training.gspo_trainer import GSPOConfig, train_with_gspo
-    from training.gspo_token_trainer import train_with_gspo_token
+    from stateset_agents.training.config import get_config_for_task
+    from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
+    from stateset_agents.training.gspo_token_trainer import train_with_gspo_token
 
     logger.info(f"🚀 Starting GSPO Training Demo")
     logger.info(f"Task: {task}")

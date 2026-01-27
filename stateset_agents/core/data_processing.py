@@ -75,7 +75,7 @@ class DataLoader:
                     if self.max_examples and len(data) >= self.max_examples:
                         break
 
-        except Exception as e:
+        except (OSError, UnicodeDecodeError, ValueError) as e:
             logger.error(f"Error reading data file: {e}")
             return self._get_fallback_data()
 
@@ -350,7 +350,7 @@ def _get_train_test_split():
             from sklearn.model_selection import train_test_split as _tts  # type: ignore[import-not-found]
 
             train_test_split = _tts  # type: ignore[assignment]
-        except Exception:  # pragma: no cover - optional dependency
+        except ImportError:  # pragma: no cover - optional dependency
             train_test_split = None  # type: ignore[assignment]
 
     return train_test_split  # type: ignore[return-value]

@@ -16,13 +16,20 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+BITSANDBYTES_IMPORT_EXCEPTIONS = (ImportError, OSError, RuntimeError)
+GPU_PROPERTIES_EXCEPTIONS = (AttributeError, OSError, RuntimeError)
+MODEL_DEVICE_EXCEPTIONS = (AttributeError, RuntimeError, TypeError)
+INPUT_GRADS_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
+MODEL_LOAD_EXCEPTIONS = (ImportError, OSError, RuntimeError, TypeError, ValueError)
+VLLM_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
 
 # Import framework components (absolute imports so legacy `training.*` works)
 from stateset_agents.core.agent import Agent, AgentConfig, MultiTurnAgent
@@ -78,7 +85,7 @@ def _require_bitsandbytes() -> None:
 
     try:
         import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
-    except Exception as exc:  # pragma: no cover
+    except BITSANDBYTES_IMPORT_EXCEPTIONS as exc:  # pragma: no cover
         raise ImportError(
             "bitsandbytes is installed but failed to import. "
             "If you just installed it in a notebook, restart the runtime/kernel. "
@@ -184,7 +191,7 @@ def _get_model_device(model: Any) -> Optional[torch.device]:
         return first_param.device
     except StopIteration:
         return getattr(model, "device", None)
-    except Exception:
+    except MODEL_DEVICE_EXCEPTIONS:
         return getattr(model, "device", None)
 
 
@@ -204,7 +211,7 @@ def _enable_input_require_grads(model: Any) -> None:
             model.enable_input_require_grads()
             setattr(model, "_stateset_input_grads_enabled", True)
             return
-        except Exception as e:  # pragma: no cover
+        except INPUT_GRADS_EXCEPTIONS as e:  # pragma: no cover
             logger.debug("enable_input_require_grads failed: %s", e)
 
     try:
@@ -221,7 +228,7 @@ def _enable_input_require_grads(model: Any) -> None:
 
         embeddings.register_forward_hook(_require_grads_hook)
         setattr(model, "_stateset_input_grads_enabled", True)
-    except Exception as e:  # pragma: no cover
+    except INPUT_GRADS_EXCEPTIONS as e:  # pragma: no cover
         logger.debug("Failed to register input grad hook: %s", e)
 
 
@@ -312,7 +319,7 @@ class GSPOConfig(TrainingConfig):
             else:
                 try:
                     import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
-                except Exception:
+                except BITSANDBYTES_IMPORT_EXCEPTIONS:
                     warnings.append(
                         "bitsandbytes is installed but failed to import. "
                         "If you just installed it in a notebook, restart the runtime/kernel."
@@ -352,7 +359,7 @@ class GSPOModelManager:
                         self.config.model_name,
                         total_mem_gb,
                     )
-            except Exception:  # pragma: no cover
+            except GPU_PROPERTIES_EXCEPTIONS:  # pragma: no cover
                 logger.warning(
                     "Model %s: consider `use_4bit=True` to reduce memory usage",
                     self.config.model_name,
@@ -456,7 +463,7 @@ class GSPOModelManager:
             logger.info(f"Model loaded successfully on {self.device}")
             return self.model, self.tokenizer
 
-        except Exception as e:
+        except MODEL_LOAD_EXCEPTIONS as e:
             logger.error(f"Failed to load model: {e}")
             raise
 
@@ -520,7 +527,7 @@ class GSPOTrajectoryGenerator:
             if success:
                 logger.info("vLLM generator initialized - 5-20x faster generation enabled!")
             return success
-        except Exception as e:
+        except VLLM_EXCEPTIONS as e:
             logger.warning(f"Failed to initialize vLLM: {e}. Using HuggingFace fallback.")
             self._vllm_initialized = False
             return False
@@ -571,7 +578,7 @@ class GSPOTrajectoryGenerator:
             logger.debug(f"vLLM generated {len(responses)} responses for prompt")
             return responses
 
-        except Exception as e:
+        except VLLM_EXCEPTIONS as e:
             logger.warning(f"vLLM generation failed: {e}. Falling back to HuggingFace.")
             return await self._generate_with_hf(prompt, num_responses)
 
@@ -617,7 +624,7 @@ class GSPOTrajectoryGenerator:
                     prompt: [(r.response, r.cumulative_logprob) for r in results]
                     for prompt, results in grouped_results.items()
                 }
-            except Exception as e:
+            except VLLM_EXCEPTIONS as e:
                 logger.warning(f"Batch vLLM generation failed: {e}. Falling back to sequential.")
 
         # Sequential fallback
@@ -875,13 +882,13 @@ class GSPOTrainer:
         return sequence_log_probs, response_lengths
 
     async def train_step(
-        self, queries: List[str], num_groups: int = 1
+        self, queries: List[Union[str, Dict[str, Any]]], num_groups: int = 1
     ) -> Dict[str, float]:
         """
         Execute one GSPO training step.
 
         Args:
-            queries: List of prompts/queries
+            queries: List of prompts/queries (strings or dicts with prompt/context)
             num_groups: Number of query groups to process
 
         Returns:
@@ -897,9 +904,18 @@ class GSPOTrainer:
         model_device = _get_model_device(self.model)
 
         for query in queries[:num_groups]:
+            if isinstance(query, dict):
+                prompt = str(query.get("prompt", ""))
+                query_context = query.get("context")
+                if not isinstance(query_context, dict):
+                    query_context = {}
+            else:
+                prompt = str(query)
+                query_context = {}
+
             # Generate group of responses for this query
             group_responses = await self.generator.generate_group_responses(
-                query, self.config.num_generations
+                prompt, self.config.num_generations
             )
 
             # Extract responses and old log probs
@@ -915,10 +931,12 @@ class GSPOTrainer:
                 turn = ConversationTurn(
                     role="assistant", content=resp, metadata={"generated": True}
                 )
+                reward_context = {"user_query": prompt}
+                reward_context.update(query_context)
                 reward_info = await self.reward_model.compute_reward(
                     trajectory=None,
                     turn=turn,
-                    context={"user_query": query},
+                    context=reward_context,
                 )
                 return reward_info.total_reward
 
@@ -934,7 +952,7 @@ class GSPOTrainer:
 
             # Compute current log probs (with gradients) for each response
             current_log_probs, sequence_lengths = self._compute_group_sequence_log_probs(
-                query, responses
+                prompt, responses
             )
             old_log_probs = old_log_probs.to(current_log_probs.device)
 
@@ -1144,7 +1162,7 @@ async def train_with_gspo(
     agent: Agent,
     environment: ConversationEnvironment,
     reward_model: MultiObjectiveReward,
-    train_queries: Optional[List[str]] = None,
+    train_queries: Optional[List[Union[str, Dict[str, Any]]]] = None,
 ) -> Agent:
     """
     Main training function using GSPO
@@ -1154,7 +1172,7 @@ async def train_with_gspo(
         agent: Agent to train
         environment: Training environment
         reward_model: Reward function
-        train_queries: Optional list of training queries
+        train_queries: Optional list of training queries (strings or dicts with prompt/context)
 
     Returns:
         Trained agent
@@ -1197,8 +1215,19 @@ async def train_with_gspo(
         logger.info("Generating training queries from environment scenarios...")
         train_queries = []
         for scenario in environment.scenarios[:config.generations_per_iteration]:
-            query = scenario.get("context", "Hello")
-            train_queries.append(query)
+            if isinstance(scenario, dict):
+                query = scenario.get("context", "Hello")
+                query_context = None
+                if "task" in scenario:
+                    query_context = scenario.get("task")
+                elif "metadata" in scenario:
+                    query_context = scenario.get("metadata")
+                if query_context is not None:
+                    train_queries.append({"prompt": query, "context": query_context})
+                else:
+                    train_queries.append(query)
+            else:
+                train_queries.append(str(scenario))
 
     logger.info(f"Training with {len(train_queries)} queries")
 

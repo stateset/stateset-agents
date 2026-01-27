@@ -35,6 +35,16 @@ from .enhanced_agent import EnhancedMultiTurnAgent
 
 logger = logging.getLogger(__name__)
 
+ADV_EVAL_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 @dataclass
 class EvaluationMetrics:
@@ -254,7 +264,7 @@ class AutomatedTestSuite:
                 try:
                     result = await self._run_single_test(agent, test_case, environment)
                     test_results.append(result)
-                except Exception as e:
+                except ADV_EVAL_EXCEPTIONS as e:
                     logger.error(f"Test {test_case['name']} run {run} failed: {e}")
                     test_results.append({"error": str(e), "passed": False})
 
@@ -299,7 +309,7 @@ class AutomatedTestSuite:
                 "passed": evaluation.get("overall_score", 0) > 0.6,
             }
 
-        except Exception as e:
+        except ADV_EVAL_EXCEPTIONS as e:
             execution_time = time.time() - start_time
             return {"error": str(e), "execution_time": execution_time, "passed": False}
 
@@ -519,7 +529,7 @@ class ContinuousMonitor:
 
                 await asyncio.sleep(self.monitoring_interval)
 
-            except Exception as e:
+            except ADV_EVAL_EXCEPTIONS as e:
                 logger.error(f"Monitoring error: {e}")
                 await asyncio.sleep(self.monitoring_interval)
 
@@ -543,7 +553,7 @@ class ContinuousMonitor:
                 "error": False,
             }
 
-        except Exception as e:
+        except ADV_EVAL_EXCEPTIONS as e:
             execution_time = time.time() - start_time
             metrics = {
                 "response_time": execution_time,

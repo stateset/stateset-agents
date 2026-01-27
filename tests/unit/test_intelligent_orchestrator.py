@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.intelligent_orchestrator import (
+from stateset_agents.core.intelligent_orchestrator import (
     ComponentState,
     ComponentStatus,
     IntelligentOrchestrator,
@@ -323,7 +323,7 @@ class TestIntelligentOrchestrator:
 
     def test_get_optimization_level_performance(self, mock_dependencies):
         """Test optimization level for performance objective."""
-        from core.performance_optimizer import OptimizationLevel
+        from stateset_agents.core.performance_optimizer import OptimizationLevel
 
         config = OrchestrationConfig(
             optimization_objective=OptimizationObjective.PERFORMANCE
@@ -334,7 +334,7 @@ class TestIntelligentOrchestrator:
 
     def test_get_optimization_level_efficiency(self, mock_dependencies):
         """Test optimization level for efficiency objective."""
-        from core.performance_optimizer import OptimizationLevel
+        from stateset_agents.core.performance_optimizer import OptimizationLevel
 
         config = OrchestrationConfig(
             optimization_objective=OptimizationObjective.EFFICIENCY

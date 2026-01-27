@@ -18,6 +18,16 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
+MULTIMODAL_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    KeyError,
+    AttributeError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 try:
     import torch
     import torch.nn as nn
@@ -215,7 +225,7 @@ class TextProcessor(ModalityProcessor):
             self.model.to(self.device)
             self.model.eval()
             logger.info(f"Initialized text processor with {self.model_name}")
-        except Exception as e:
+        except MULTIMODAL_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "text_processor", "initialize")
             raise
 
@@ -266,7 +276,7 @@ class TextProcessor(ModalityProcessor):
                 confidence_score=1.0,
             )
 
-        except Exception as e:
+        except MULTIMODAL_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "text_processor", "process")
             # Return zero features on error
             return ProcessedFeatures(
@@ -306,7 +316,7 @@ class ImageProcessor(ModalityProcessor):
             self.model.to(self.device)
             self.model.eval()
             logger.info(f"Initialized image processor with {self.model_name}")
-        except Exception as e:
+        except MULTIMODAL_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "image_processor", "initialize")
             raise
 
@@ -363,7 +373,7 @@ class ImageProcessor(ModalityProcessor):
                 confidence_score=1.0,
             )
 
-        except Exception as e:
+        except MULTIMODAL_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "image_processor", "process")
             return ProcessedFeatures(
                 modality=ModalityType.IMAGE,
@@ -401,7 +411,7 @@ class AudioProcessor(ModalityProcessor):
             self.model.to(self.device)
             self.model.eval()
             logger.info(f"Initialized audio processor with {self.model_name}")
-        except Exception as e:
+        except MULTIMODAL_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "audio_processor", "initialize")
             raise
 
@@ -456,7 +466,7 @@ class AudioProcessor(ModalityProcessor):
                 confidence_score=1.0,
             )
 
-        except Exception as e:
+        except MULTIMODAL_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "audio_processor", "process")
             return ProcessedFeatures(
                 modality=ModalityType.AUDIO,
@@ -540,7 +550,7 @@ class StructuredDataProcessor(ModalityProcessor):
                 confidence_score=1.0,
             )
 
-        except Exception as e:
+        except MULTIMODAL_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "structured_processor", "process")
             return ProcessedFeatures(
                 modality=ModalityType.STRUCTURED,
@@ -711,7 +721,7 @@ class MultimodalProcessor:
                 self.processors[modality] = processor
                 logger.info(f"Initialized {modality.value} processor")
 
-            except Exception as e:
+            except MULTIMODAL_EXCEPTIONS as e:
                 self.error_handler.handle_error(
                     e, "multimodal_processor", f"initialize_{modality.value}"
                 )
@@ -772,7 +782,7 @@ class MultimodalProcessor:
 
             return fused_features, metadata
 
-        except Exception as e:
+        except MULTIMODAL_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "multimodal_processor", "process")
             # Return zero features on error
             return torch.zeros(1, 512, device=self.device), {"error": str(e)}
@@ -869,7 +879,7 @@ def validate_multimodal_input(inputs: List[ModalityInput]) -> List[str]:
         if inp.modality == ModalityType.IMAGE and inp.encoding == "base64":
             try:
                 base64.b64decode(inp.data)
-            except Exception:
+            except MULTIMODAL_EXCEPTIONS:
                 issues.append(f"Input {i}: Invalid base64 encoding for image")
 
     return issues

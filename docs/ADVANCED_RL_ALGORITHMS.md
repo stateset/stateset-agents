@@ -39,7 +39,7 @@ This exponentially reduces variance under high KL divergence, making training st
 ### Quick Start
 
 ```python
-from training import GEPOConfig, train_with_gepo
+from stateset_agents.training import GEPOConfig, train_with_gepo
 
 # Define reward function
 def reward_fn(prompt: str, response: str) -> float:
@@ -133,7 +133,7 @@ else:
 ### Quick Start
 
 ```python
-from training import DAPOConfig, train_with_dapo, train_reasoning_with_dapo
+from stateset_agents.training import DAPOConfig, train_with_dapo, train_reasoning_with_dapo
 
 # For math problems with verifiable answers
 math_problems = [
@@ -224,7 +224,7 @@ Long sequences get higher lambda (less bias, more variance).
 ### Quick Start
 
 ```python
-from training import VAPOConfig, train_with_vapo
+from stateset_agents.training import VAPOConfig, train_with_vapo
 
 config = VAPOConfig(
     model_name="Qwen/Qwen2.5-32B",
@@ -310,7 +310,7 @@ model, tokenizer, metrics = await train_with_vapo(
 
 ```python
 import asyncio
-from training import VAPOConfig, train_with_vapo
+from stateset_agents.training import VAPOConfig, train_with_vapo
 
 # Prepare math dataset
 math_problems = [

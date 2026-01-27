@@ -68,7 +68,7 @@ try:  # pragma: no cover
     import trl  # type: ignore[import-not-found]
 
     TRL_AVAILABLE = hasattr(trl, "GRPOConfig")
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     TRL_AVAILABLE = False
 
 _TORCH_AVAILABLE = _has_spec("torch")

@@ -59,7 +59,7 @@ class TestMultiTurnGRPOTrainer:
     @pytest.fixture
     def trainer(self, mock_agent, mock_environment, mock_reward_fn, mock_config):
         """Create a MultiTurnGRPOTrainer for testing."""
-        from training.multi_turn_trainer import MultiTurnGRPOTrainer
+        from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
         return MultiTurnGRPOTrainer(
             agent=mock_agent,
             environment=mock_environment,
@@ -145,7 +145,7 @@ class TestTrainerOptimizer:
     @pytest.fixture
     def trainer(self):
         """Create a trainer for testing."""
-        from training.multi_turn_trainer import MultiTurnGRPOTrainer
+        from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
         mock_agent = MagicMock()
         mock_agent.model = MagicMock()
@@ -211,7 +211,7 @@ class TestTrajectoryHandling:
 def test_multi_turn_trainer_uses_environment_scenarios():
     """Trainer should prefer environment scenarios when available."""
     from types import SimpleNamespace
-    from training.multi_turn_trainer import MultiTurnGRPOTrainer
+    from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
     env = MagicMock()
     env.scenarios = [
@@ -243,7 +243,7 @@ def test_multi_turn_trainer_uses_environment_scenarios():
 def test_multi_turn_trainer_stratifies_eval_by_task():
     """Eval split should include each task when stratify_by_task is enabled."""
     from types import SimpleNamespace
-    from training.multi_turn_trainer import MultiTurnGRPOTrainer
+    from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
     env = MagicMock()
     env.scenarios = [
@@ -316,7 +316,7 @@ class TestGRPOLossComputation:
 
     def test_grpo_loss_import(self):
         """Test GRPO loss functions can be imported."""
-        from training.loss_computation import compute_grpo_loss, compute_enhanced_grpo_loss
+        from stateset_agents.training.loss_computation import compute_grpo_loss, compute_enhanced_grpo_loss
 
         assert compute_grpo_loss is not None
         assert compute_enhanced_grpo_loss is not None
@@ -342,7 +342,7 @@ class TestCallbacks:
     @pytest.fixture
     def trainer_with_callbacks(self):
         """Create a trainer with callbacks."""
-        from training.multi_turn_trainer import MultiTurnGRPOTrainer
+        from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
         callbacks = [MagicMock(), MagicMock()]
 
@@ -363,7 +363,7 @@ class TestWandbIntegration:
     @pytest.fixture
     def trainer_with_wandb(self):
         """Create a trainer with W&B logger."""
-        from training.multi_turn_trainer import MultiTurnGRPOTrainer
+        from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
         config = MagicMock()
         config.report_to = "wandb"
@@ -387,7 +387,7 @@ class TestReferenceModel:
     @pytest.fixture
     def trainer(self):
         """Create a trainer for testing."""
-        from training.multi_turn_trainer import MultiTurnGRPOTrainer
+        from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
         config = MagicMock()
         config.use_reference_model = True
@@ -410,7 +410,7 @@ class TestMixedPrecision:
     @pytest.fixture
     def trainer_fp16(self):
         """Create a trainer with FP16."""
-        from training.multi_turn_trainer import MultiTurnGRPOTrainer
+        from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
         config = MagicMock()
         config.fp16 = True
@@ -434,7 +434,7 @@ class TestEarlyStopping:
     @pytest.fixture
     def trainer(self):
         """Create a trainer for testing."""
-        from training.multi_turn_trainer import MultiTurnGRPOTrainer
+        from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
         return MultiTurnGRPOTrainer(
             agent=MagicMock(),
@@ -471,7 +471,7 @@ class TestTrainingMetrics:
     @pytest.fixture
     def trainer(self):
         """Create a trainer for testing."""
-        from training.multi_turn_trainer import MultiTurnGRPOTrainer
+        from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
         return MultiTurnGRPOTrainer(
             agent=MagicMock(),
@@ -511,7 +511,7 @@ class TestSchedulerSetup:
 
     def test_scheduler_imports(self):
         """Test scheduler utilities can be imported."""
-        from training.trainer_utils import (
+        from stateset_agents.training.trainer_utils import (
             get_cosine_schedule_with_warmup,
             get_linear_schedule_with_warmup,
         )
@@ -524,7 +524,7 @@ class TestTaskSchedule:
     """Test task scheduling in training scenarios."""
 
     def test_task_schedule_assignment(self):
-        from training.multi_turn_trainer import MultiTurnGRPOTrainer
+        from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
         config = MagicMock()
         config.num_episodes = 5

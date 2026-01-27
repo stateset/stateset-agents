@@ -67,6 +67,16 @@ from stateset_agents.core.trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
 
+REWARD_MODEL_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 DEFAULT_STUB_VOCAB_SIZE = 30522
 DEFAULT_STUB_HIDDEN_SIZE = 384
 
@@ -332,7 +342,7 @@ class TransformerRewardModel(nn.Module):
                     AutoModel, base_model_name, local_files_only=local_files_only
                 )
                 self.using_transformers = True
-            except Exception as e:
+            except REWARD_MODEL_EXCEPTIONS as e:
                 logger.warning(
                     "Falling back to lightweight encoders (failed to load %s): %s",
                     base_model_name,
@@ -488,7 +498,7 @@ class TransformerRewardTrainer:
                     self.config.base_model,
                     local_files_only=self.config.local_files_only,
                 )
-            except Exception as e:
+            except REWARD_MODEL_EXCEPTIONS as e:
                 logger.warning(
                     "Falling back to simple tokenizer (failed to load %s): %s",
                     self.config.base_model,
@@ -727,7 +737,7 @@ class TransformerRewardTrainer:
         config_payload: Any
         try:
             config_payload = asdict(self.config)
-        except Exception:
+        except REWARD_MODEL_EXCEPTIONS:
             config_payload = dict(getattr(self.config, "__dict__", {}))
 
         torch.save(
@@ -753,7 +763,7 @@ class TransformerRewardTrainer:
         """Load model checkpoint"""
         try:
             checkpoint = torch.load(path, map_location=self.device)
-        except Exception as e:
+        except REWARD_MODEL_EXCEPTIONS as e:
             if "weights_only" in str(e):
                 try:
                     checkpoint = torch.load(
@@ -780,7 +790,7 @@ class TransformerRewardTrainer:
         if isinstance(config_payload, dict):
             try:
                 self.config = RewardTrainingConfig(**config_payload)
-            except Exception as e:
+            except REWARD_MODEL_EXCEPTIONS as e:
                 logger.warning("Failed to restore config from checkpoint: %s", e)
 
         logger.info(f"Checkpoint loaded from {path}")
@@ -841,7 +851,7 @@ class LearnedRewardFunction(RewardFunction):
                 },
             )
 
-        except Exception as e:
+        except REWARD_MODEL_EXCEPTIONS as e:
             logger.error(f"Learned reward computation failed: {e}")
             return RewardResult(
                 score=0.5,

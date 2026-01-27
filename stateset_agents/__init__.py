@@ -9,17 +9,25 @@ __version__ = "0.7.1"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
 
+OPTIONAL_IMPORT_EXCEPTIONS = (
+    AttributeError,
+    ImportError,
+    OSError,
+    RuntimeError,
+    ValueError,
+)
+
 # Core exports
 try:
     from .core.agent import Agent, MultiTurnAgent, ToolAgent
-except Exception:  # pragma: no cover - optional heavy dependencies
+except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover - optional heavy dependencies
     Agent = None  # type: ignore
     MultiTurnAgent = None  # type: ignore
     ToolAgent = None  # type: ignore
 
 try:
     from .core.environment import ConversationEnvironment, Environment, TaskEnvironment
-except Exception:  # pragma: no cover
+except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
     ConversationEnvironment = None  # type: ignore
     Environment = None  # type: ignore
     TaskEnvironment = None  # type: ignore
@@ -32,7 +40,7 @@ try:
         PlanStep,
         PlanStatus,
     )
-except Exception:  # pragma: no cover
+except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
     PlanningConfig = None  # type: ignore
     PlanningManager = None  # type: ignore
     Plan = None  # type: ignore
@@ -43,6 +51,7 @@ except Exception:  # pragma: no cover
 from .core.error_handling import (
     CircuitBreakerConfig,
     DataException,
+    ErrorCode,
     ErrorHandler,
     GRPOException,
     ModelException,
@@ -87,7 +96,7 @@ try:
         PerformanceMetrics,
         PerformanceOptimizer,
     )
-except Exception:  # pragma: no cover - optional heavy deps (torch/transformers)
+except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover - optional heavy deps (torch/transformers)
     PerformanceOptimizer = None  # type: ignore
     MemoryMonitor = None  # type: ignore
     ModelOptimizer = None  # type: ignore
@@ -123,7 +132,7 @@ try:
         get_task_manager,
         managed_async_resources,
     )
-except Exception:  # pragma: no cover - optional aiohttp
+except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover - optional aiohttp
     AsyncResourcePool = None  # type: ignore
     AsyncTaskManager = None  # type: ignore
     PooledResource = None  # type: ignore
@@ -139,7 +148,7 @@ try:
         DataProcessor,
         load_and_prepare_data,
     )
-except Exception:  # pragma: no cover
+except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
     ConversationExample = None  # type: ignore
     DataLoader = None  # type: ignore
     DataProcessor = None  # type: ignore
@@ -148,7 +157,7 @@ except Exception:  # pragma: no cover
 # Training exports (optional to avoid import issues)
 try:
     from .training.trainer import GRPOTrainer, MultiTurnGRPOTrainer
-except Exception:  # pragma: no cover - allow import without training deps
+except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover - allow import without training deps
     GRPOTrainer = None
     MultiTurnGRPOTrainer = None
 
@@ -160,7 +169,7 @@ try:
     )
     from .training.train import AutoTrainer, train
     TrainingConfig = TrainerTrainingConfig
-except Exception:
+except OPTIONAL_IMPORT_EXCEPTIONS:
     TrainingProfile = None
     get_config_for_task = None
     train = None
@@ -169,7 +178,7 @@ except Exception:
 # Utilities
 try:
     from .utils.wandb_integration import WandBLogger, init_wandb
-except Exception:
+except OPTIONAL_IMPORT_EXCEPTIONS:
     WandBLogger = None
     init_wandb = None
 
@@ -181,7 +190,7 @@ try:
         ConversationReplayBuffer,
         EmbeddingCache,
     )
-except Exception:  # pragma: no cover
+except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
     ConversationDataset = None  # type: ignore
     ConversationDatasetConfig = None  # type: ignore
     ConversationReplayBuffer = None  # type: ignore
@@ -193,7 +202,7 @@ try:
         SimToRealMetrics,
         SimToRealEvaluator,
     )
-except Exception:  # pragma: no cover
+except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
     SimToRealMetrics = None  # type: ignore
     SimToRealEvaluator = None  # type: ignore
 
@@ -203,7 +212,7 @@ try:
         ConversationSimulator,
         ConversationSimulatorConfig,
     )
-except Exception:  # pragma: no cover
+except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
     ConversationSimulator = None  # type: ignore
     ConversationSimulatorConfig = None  # type: ignore
 
@@ -247,6 +256,7 @@ __all__ = [
     "NetworkException",
     "ResourceException",
     "ValidationException",
+    "ErrorCode",
     "ErrorHandler",
     "RetryConfig",
     "CircuitBreakerConfig",

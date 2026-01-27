@@ -42,6 +42,7 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
+    "hypothesis>=6.0.0",
     "black>=23.0.0",
     "isort>=5.12.0",
     "flake8>=6.0.0",
@@ -146,6 +147,12 @@ exclude = [
     "grpo_agent_framework*",
     "environments*",
 ]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+stateset_agents = ["py.typed"]
 
 # Black configuration
 [tool.black]

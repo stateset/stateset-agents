@@ -46,6 +46,15 @@ TrajectoryGroup = core_trajectory.TrajectoryGroup
 
 logger = logging.getLogger(__name__)
 
+MULTI_TRAINER_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+)
+
 
 class MultiTurnGRPOTrainer:
     """
@@ -122,7 +131,7 @@ class MultiTurnGRPOTrainer:
                 torch.manual_seed(seed_value)
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
-        except Exception as seed_err:
+        except MULTI_TRAINER_EXCEPTIONS as seed_err:
             logger.warning(f"Failed to fully set deterministic seeds: {seed_err}")
 
         # Initialize optimizer with HuggingFace best practices
@@ -152,7 +161,7 @@ class MultiTurnGRPOTrainer:
                 for param in self.reference_model.parameters():
                     param.requires_grad = False
                 logger.info("Reference model initialized for KL regularization")
-        except Exception as ref_err:
+        except MULTI_TRAINER_EXCEPTIONS as ref_err:
             logger.warning(f"Could not initialize reference model: {ref_err}")
             self.reference_model = None
 
@@ -289,7 +298,7 @@ class MultiTurnGRPOTrainer:
 
             logger.info("W&B tracking initialized")
 
-        except Exception as e:
+        except MULTI_TRAINER_EXCEPTIONS as e:
             logger.error(f"Failed to initialize W&B: {e}")
 
     def _init_continual_learning(self) -> None:
@@ -346,7 +355,7 @@ class MultiTurnGRPOTrainer:
 
                     trajectories.append(trajectory)
 
-                except Exception as e:
+                except MULTI_TRAINER_EXCEPTIONS as e:
                     logger.warning(f"Failed to generate trajectory: {e}")
                     continue
 
@@ -783,7 +792,7 @@ class MultiTurnGRPOTrainer:
         except KeyboardInterrupt:
             logger.info("Training interrupted by user")
 
-        except Exception as e:
+        except MULTI_TRAINER_EXCEPTIONS as e:
             logger.error(f"Training failed: {e}")
             errored = True
             raise
@@ -902,7 +911,7 @@ class MultiTurnGRPOTrainer:
 
                     scenario_results["trajectories"].append(traj_info)
 
-                except Exception as e:
+                except MULTI_TRAINER_EXCEPTIONS as e:
                     logger.warning(f"Failed to evaluate trajectory: {e}")
                     continue
 
@@ -1107,9 +1116,9 @@ class MultiTurnGRPOTrainer:
                         state_dict = load_file(str(safetensors_file))
                         self.agent.model.load_state_dict(state_dict, strict=False)
                         weights_loaded = True
-                    except Exception as exc:
+                    except MULTI_TRAINER_EXCEPTIONS as exc:
                         logger.debug("Failed to load safetensors: %s", exc)
-            except Exception as exc:
+            except MULTI_TRAINER_EXCEPTIONS as exc:
                 logger.warning("Failed to load model weights: %s", exc)
 
         if getattr(self.agent, "tokenizer", None) is not None:
@@ -1117,7 +1126,7 @@ class MultiTurnGRPOTrainer:
             if callable(loader):
                 try:
                     self.agent.tokenizer = loader(model_dir)
-                except Exception as exc:
+                except MULTI_TRAINER_EXCEPTIONS as exc:
                     logger.warning("Failed to load tokenizer: %s", exc)
 
         state_path = path / "training_state.pt"
@@ -1128,7 +1137,7 @@ class MultiTurnGRPOTrainer:
 
         try:
             state = torch.load(state_path, map_location="cpu")
-        except Exception as exc:
+        except MULTI_TRAINER_EXCEPTIONS as exc:
             logger.warning("Failed to load training state: %s", exc)
             return False
 
@@ -1151,12 +1160,12 @@ class MultiTurnGRPOTrainer:
         if self.optimizer is not None and state.get("optimizer_state_dict"):
             try:
                 self.optimizer.load_state_dict(state["optimizer_state_dict"])
-            except Exception as exc:
+            except MULTI_TRAINER_EXCEPTIONS as exc:
                 logger.warning("Failed to load optimizer state: %s", exc)
         if self.lr_scheduler is not None and state.get("scheduler_state_dict"):
             try:
                 self.lr_scheduler.load_state_dict(state["scheduler_state_dict"])
-            except Exception as exc:
+            except MULTI_TRAINER_EXCEPTIONS as exc:
                 logger.warning("Failed to load scheduler state: %s", exc)
 
         if self.continual_manager is not None and state.get("continual_state"):

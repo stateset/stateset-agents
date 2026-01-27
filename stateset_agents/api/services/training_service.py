@@ -8,10 +8,12 @@ from fastapi import HTTPException
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
-# from training.train import train  <-- Moved inside method
+# from stateset_agents.training.train import train  <-- Moved inside method
 from ..schemas import TrainingRequest
 
 logger = logging.getLogger(__name__)
+
+TRAINING_SERVICE_EXCEPTIONS = (AttributeError, OSError, RuntimeError, TypeError, ValueError)
 
 class TrainingService:
     """Service for managing training jobs."""
@@ -100,7 +102,7 @@ class TrainingService:
                 }
             )
 
-        except Exception as e:
+        except TRAINING_SERVICE_EXCEPTIONS as e:
             logger.error(f"Training failed for job {training_id}: {e}")
             self.training_jobs[training_id].update(
                 {

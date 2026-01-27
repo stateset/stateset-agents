@@ -33,6 +33,16 @@ from stateset_agents.utils.monitoring import MonitoringService
 
 logger = logging.getLogger(__name__)
 
+MULTI_REWARD_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 @dataclass
 class RewardComponent:
@@ -458,7 +468,7 @@ class ModelBasedRewardComponent(BaseRewardComponent):
 
             return max(0.0, min(1.0, score))
 
-        except Exception as e:
+        except MULTI_REWARD_EXCEPTIONS as e:
             logger.error(f"Model judge failed: {e}")
             return 0.5 # Neutral fallback
 
@@ -483,7 +493,7 @@ class ModelBasedRewardComponent(BaseRewardComponent):
                     temperature=0.0
                 )
                 return response.choices[0].text
-        except Exception as e:
+        except MULTI_REWARD_EXCEPTIONS as e:
             logger.error(f"OpenAI API call failed: {e}")
             raise
 
@@ -497,7 +507,7 @@ class ModelBasedRewardComponent(BaseRewardComponent):
                 temperature=0.0
             )
             return response.content[0].text
-        except Exception as e:
+        except MULTI_REWARD_EXCEPTIONS as e:
             logger.error(f"Anthropic API call failed: {e}")
             raise
 
@@ -700,7 +710,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
                     self.component_scores[component.name] = []
                 self.component_scores[component.name].append(score)
 
-            except Exception as e:
+            except MULTI_REWARD_EXCEPTIONS as e:
                 logger.error(f"Component {component.name} failed: {e}")
                 component_scores[component.name] = 0.0
                 weighted_scores.append(0.0)

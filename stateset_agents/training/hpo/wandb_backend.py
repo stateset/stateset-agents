@@ -27,6 +27,16 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+WANDB_BACKEND_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 def _require_wandb() -> None:
     if not WANDB_AVAILABLE:
@@ -146,7 +156,7 @@ class WandBSweepsBackend(HPOBackend):
                 metric_value = float(_resolve_async_value(objective_fn(params)))
                 metrics[self.objective_metric] = metric_value
                 wandb.log(metrics)
-            except Exception as e:
+            except WANDB_BACKEND_EXCEPTIONS as e:
                 status = "failed"
                 logger.error(f"W&B trial {trial_id} failed: {e}")
                 wandb.log({self.objective_metric: float('-inf')})
@@ -213,4 +223,3 @@ class WandBSweepsBackend(HPOBackend):
 
 
 __all__ = ["WandBSweepsBackend", "WANDB_AVAILABLE"]
-

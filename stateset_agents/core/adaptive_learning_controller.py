@@ -29,6 +29,16 @@ from .performance_optimizer import PerformanceOptimizer
 
 logger = logging.getLogger(__name__)
 
+ALC_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 class CurriculumStrategy(Enum):
     """Curriculum learning strategies"""
@@ -519,7 +529,7 @@ class AdaptiveLearningController:
                 optimized_hyperparams,
             )
 
-        except Exception as e:
+        except ALC_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "adaptive_learning", "step")
             # Return safe defaults
             return 0.5, True, available_actions[0], current_hyperparams

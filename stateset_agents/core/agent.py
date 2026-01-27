@@ -11,7 +11,7 @@ import logging
 from abc import ABC
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Type, Union
 
 try:
     import torch
@@ -52,7 +52,7 @@ def _load_transformers_agent() -> bool:
                 if shim_model is not None and shim_tokenizer is not None:
                     AutoModelForCausalLM = shim_model
                     AutoTokenizer = shim_tokenizer
-        except Exception:
+        except AGENT_SHIM_EXCEPTIONS:
             pass
         return True
     # If tests or callers have already injected mocks, respect them.
@@ -72,7 +72,7 @@ def _load_transformers_agent() -> bool:
                 AutoTokenizer = shim_tokenizer
                 _transformers_agent_loaded = True
                 return True
-    except Exception:
+    except AGENT_SHIM_EXCEPTIONS:
         pass
     try:
         from transformers import (
@@ -105,6 +105,35 @@ from .trajectory import ConversationTurn, MultiTurnTrajectory
 from .long_term_planning import PlanningConfig, PlanningManager
 
 logger = logging.getLogger(__name__)
+
+AGENT_SHIM_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    AttributeError,
+    KeyError,
+    TypeError,
+)
+TOKENIZER_ATTR_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    AttributeError,
+    TypeError,
+    ValueError,
+)
+PLANNING_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    TypeError,
+    ValueError,
+    KeyError,
+    RuntimeError,
+)
+CHAT_TEMPLATE_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    AttributeError,
+    TypeError,
+    ValueError,
+)
+TOOL_EXEC_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    AttributeError,
+    TypeError,
+    ValueError,
+    RuntimeError,
+    OSError,
+)
 
 
 class ConfigValidationError(ValueError):
@@ -485,7 +514,7 @@ class Agent(ABC):
             if self.config.pad_token_id is not None:
                 try:
                     self.tokenizer.pad_token_id = self.config.pad_token_id
-                except Exception:
+                except TOKENIZER_ATTR_EXCEPTIONS:
                     pass
             else:
                 eos_token = getattr(self.tokenizer, "eos_token", None)
@@ -494,12 +523,12 @@ class Agent(ABC):
         if self.config.pad_token_id is not None:
             try:
                 self.tokenizer.pad_token_id = self.config.pad_token_id
-            except Exception as e:
+            except TOKENIZER_ATTR_EXCEPTIONS as e:
                 logger.debug("Could not set pad_token_id: %s", e)
         if self.config.eos_token_id is not None:
             try:
                 self.tokenizer.eos_token_id = self.config.eos_token_id
-            except Exception as e:
+            except TOKENIZER_ATTR_EXCEPTIONS as e:
                 logger.debug("Could not set eos_token_id: %s", e)
 
         # Build model kwargs
@@ -590,7 +619,7 @@ class Agent(ABC):
         """
         try:
             msg = {"role": turn.role, "content": turn.content}
-        except Exception:
+        except (AttributeError, TypeError):
             msg = turn  # type: ignore
         self.conversation_history.append(msg)
 
@@ -659,7 +688,7 @@ class MultiTurnAgent(Agent):
                     planning_kwargs.pop("enabled", None)
                 planning_cfg = PlanningConfig(enabled=True, **planning_kwargs)
                 planning_manager = PlanningManager(planning_cfg)
-            except Exception as exc:
+            except PLANNING_EXCEPTIONS as exc:
                 logger.warning("Failed to init PlanningManager: %s", exc)
         self.planning_manager = planning_manager
 
@@ -717,7 +746,7 @@ class MultiTurnAgent(Agent):
                 prompt = self.tokenizer.apply_chat_template(
                     recent_messages, tokenize=False, add_generation_prompt=True
                 )
-            except Exception as e:
+            except CHAT_TEMPLATE_EXCEPTIONS as e:
                 # Fallback to manual formatting if chat template fails
                 logger.debug("Chat template failed, using manual formatting: %s", e)
                 prompt = self._format_conversation(recent_messages)
@@ -949,7 +978,7 @@ class MultiTurnAgent(Agent):
                 prompt = self.tokenizer.apply_chat_template(
                     recent_messages, tokenize=False, add_generation_prompt=True
                 )
-            except Exception:
+            except CHAT_TEMPLATE_EXCEPTIONS:
                 prompt = self._format_conversation(recent_messages)
         else:
             prompt = self._format_conversation(recent_messages)
@@ -1252,7 +1281,7 @@ class ToolAgent(MultiTurnAgent):
                 return str(result)
             else:
                 return f"Tool {tool_name} executed (mock result)"
-        except Exception as e:
+        except TOOL_EXEC_EXCEPTIONS as e:
             return f"Error executing {tool_name}: {str(e)}"
 
     def add_tool(self, tool: Dict[str, Any]):
@@ -1276,7 +1305,7 @@ def _load_agent_configs() -> Dict[str, Any]:
         for preset_name in list_agent_presets():
             try:
                 configs[preset_name] = get_agent_preset(preset_name)
-            except Exception:
+            except (KeyError, ValueError, TypeError, RuntimeError):
                 pass
     except ImportError:
         pass

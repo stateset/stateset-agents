@@ -20,6 +20,14 @@ from .mappers import ActionMapper, create_action_mapper
 
 logger = logging.getLogger(__name__)
 
+GYM_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    OSError,
+)
+
 
 class GymEnvironmentAdapter(Environment):
     """
@@ -39,7 +47,7 @@ class GymEnvironmentAdapter(Environment):
 
     Example:
         >>> import gymnasium as gym
-        >>> from core.gym.adapter import GymEnvironmentAdapter
+        >>> from stateset_agents.core.gym.adapter import GymEnvironmentAdapter
         >>>
         >>> env = gym.make("CartPole-v1")
         >>> adapter = GymEnvironmentAdapter(env, auto_create_processors=True)
@@ -118,7 +126,7 @@ class GymEnvironmentAdapter(Environment):
             else:
                 obs = result
                 info = {}
-        except Exception as e:
+        except GYM_EXCEPTIONS as e:
             logger.error(f"Error resetting gym environment: {e}")
             raise
 
@@ -176,7 +184,7 @@ class GymEnvironmentAdapter(Environment):
                 action.content,
                 context={"state": state}
             )
-        except Exception as e:
+        except GYM_EXCEPTIONS as e:
             logger.error(f"Error parsing action from '{action.content}': {e}")
             # Use fallback action (random)
             gym_action = self.gym_env.action_space.sample()
@@ -214,7 +222,7 @@ class GymEnvironmentAdapter(Environment):
             else:
                 raise ValueError(f"Unexpected gym step result length: {len(result)}")
 
-        except Exception as e:
+        except GYM_EXCEPTIONS as e:
             logger.error(f"Error executing gym step with action {gym_action}: {e}")
             # Fallback: treat as failed episode
             obs = self._gym_states.get(episode_id)
@@ -291,7 +299,7 @@ class GymEnvironmentAdapter(Environment):
         """Cleanup on deletion."""
         try:
             self.close()
-        except Exception:
+        except GYM_EXCEPTIONS:
             pass
 
     def __repr__(self) -> str:

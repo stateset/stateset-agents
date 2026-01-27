@@ -23,7 +23,7 @@ if 'vllm' not in sys.modules:
 # Try imports - skip if not available
 HPO_AVAILABLE = True
 try:
-    from training.hpo import (
+    from stateset_agents.training.hpo import (
         SearchSpace,
         SearchDimension,
         SearchSpaceType,
@@ -38,10 +38,10 @@ try:
         list_available_search_spaces,
     )
 
-    from core.agent import MultiTurnAgent, AgentConfig
-    from core.environment import ConversationEnvironment
-    from core.reward import CompositeReward, HelpfulnessReward, SafetyReward
-    from training.config import TrainingConfig
+    from stateset_agents.core.agent import MultiTurnAgent, AgentConfig
+    from stateset_agents.core.environment import ConversationEnvironment
+    from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
+    from stateset_agents.training.config import TrainingConfig
 except (ImportError, RuntimeError) as e:
     HPO_AVAILABLE = False
 
@@ -324,7 +324,7 @@ class TestOptunaBackend:
 
     def test_optuna_backend_creation(self):
         """Test Optuna backend creation."""
-        from training.hpo.optuna_backend import OptunaBackend
+        from stateset_agents.training.hpo.optuna_backend import OptunaBackend
 
         search_space = create_grpo_search_space()
         backend = OptunaBackend(
@@ -340,7 +340,7 @@ class TestOptunaBackend:
     @pytest.mark.asyncio
     async def test_optuna_optimize_simple(self):
         """Test simple Optuna optimization."""
-        from training.hpo.optuna_backend import OptunaBackend
+        from stateset_agents.training.hpo.optuna_backend import OptunaBackend
 
         search_space = SearchSpace([
             SearchDimension("x", SearchSpaceType.FLOAT, -10.0, 10.0)

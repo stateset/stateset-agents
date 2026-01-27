@@ -42,6 +42,16 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+RAY_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 def _require_ray() -> None:
     if not RAY_AVAILABLE:
@@ -173,7 +183,7 @@ class RayTuneBackend(HPOBackend):
                 metrics[self.objective_metric] = metric_value
                 if tune:
                     tune.report(**metrics)
-            except Exception as e:
+            except RAY_EXCEPTIONS as e:
                 status = "failed"
                 logger.error(f"Ray Tune trial {trial_id} failed: {e}")
                 metrics = {}
@@ -240,4 +250,3 @@ class RayTuneBackend(HPOBackend):
 
 
 __all__ = ["RayTuneBackend", "RAY_AVAILABLE"]
-

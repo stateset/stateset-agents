@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from core.multimodal_processing import (
+from stateset_agents.core.multimodal_processing import (
     FusionStrategy,
     ModalityInput,
     ModalityType,
@@ -191,7 +191,7 @@ class TestModalityProcessor:
 
     def test_processor_interface(self):
         """Test that ModalityProcessor defines required interface."""
-        from core.multimodal_processing import ModalityProcessor
+        from stateset_agents.core.multimodal_processing import ModalityProcessor
 
         # ModalityProcessor is abstract, verify it has required methods
         assert hasattr(ModalityProcessor, "process")
@@ -208,7 +208,7 @@ class TestTextProcessor:
         with patch("core.multimodal_processing.TORCH_AVAILABLE", True), \
              patch("core.multimodal_processing.AutoTokenizer"), \
              patch("core.multimodal_processing.AutoModel"):
-            from core.multimodal_processing import TextProcessor
+            from stateset_agents.core.multimodal_processing import TextProcessor
             processor = TextProcessor(model_name="test-model", device="cpu")
             return processor
 
@@ -239,7 +239,7 @@ class TestImageProcessor:
         """Test ImageProcessor implements required methods."""
         with patch("core.multimodal_processing.TORCH_AVAILABLE", True), \
              patch("core.multimodal_processing.PIL_AVAILABLE", True):
-            from core.multimodal_processing import ImageProcessor
+            from stateset_agents.core.multimodal_processing import ImageProcessor
             processor = ImageProcessor()
 
             assert hasattr(processor, "process")
@@ -254,7 +254,7 @@ class TestAudioProcessor:
         """Test AudioProcessor implements required methods."""
         with patch("core.multimodal_processing.TORCH_AVAILABLE", True), \
              patch("core.multimodal_processing.AUDIO_AVAILABLE", True):
-            from core.multimodal_processing import AudioProcessor
+            from stateset_agents.core.multimodal_processing import AudioProcessor
             processor = AudioProcessor()
 
             assert hasattr(processor, "process")
@@ -272,7 +272,7 @@ class TestMultimodalProcessor:
              patch("core.multimodal_processing.get_monitoring_service") as mock_monitoring, \
              patch("core.multimodal_processing.ErrorHandler"):
             mock_monitoring.return_value = MagicMock()
-            from core.multimodal_processing import MultimodalProcessor
+            from stateset_agents.core.multimodal_processing import MultimodalProcessor
             processor = MultimodalProcessor()
             return processor
 
@@ -319,7 +319,7 @@ class TestCreateMultimodalProcessor:
         with patch("core.multimodal_processing.TORCH_AVAILABLE", True), \
              patch("core.multimodal_processing.get_monitoring_service") as mock_monitoring:
             mock_monitoring.return_value = MagicMock()
-            from core.multimodal_processing import create_multimodal_processor
+            from stateset_agents.core.multimodal_processing import create_multimodal_processor
 
             processor = create_multimodal_processor(["text", "image"])
             assert processor is not None

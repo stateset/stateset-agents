@@ -55,8 +55,8 @@ def get_qwen3_config(
     These configurations are based on the original GSPO paper
     and optimized for different model sizes.
     """
-    from training.gspo_trainer import GSPOConfig
-    from training.config import get_config_for_task
+    from stateset_agents.training.gspo_trainer import GSPOConfig
+    from stateset_agents.training.config import get_config_for_task
 
     # Get base config for task
     base_config = get_config_for_task(task, model_name=model_name)
@@ -205,7 +205,7 @@ async def finetune_qwen3(
     from stateset_agents.core.agent import AgentConfig
     from stateset_agents.core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
-    from training.gspo_trainer import train_with_gspo
+    from stateset_agents.training.gspo_trainer import train_with_gspo
 
     logger.info("=" * 80)
     logger.info("🚀 Fine-tuning Qwen3 with GSPO")

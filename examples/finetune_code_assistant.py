@@ -390,8 +390,8 @@ def get_code_model_config(
     output_dir: str = "./outputs/code_assistant",
 ):
     """Get optimized GSPO configuration for code models"""
-    from training.gspo_trainer import GSPOConfig
-    from training.config import TrainingConfig
+    from stateset_agents.training.gspo_trainer import GSPOConfig
+    from stateset_agents.training.config import TrainingConfig
 
     model_lower = model_name.lower()
 
@@ -595,7 +595,7 @@ async def finetune_code_assistant(
     from stateset_agents import MultiTurnAgent
     from stateset_agents.core.agent import AgentConfig
     from stateset_agents.core.environment import ConversationEnvironment
-    from training.gspo_trainer import train_with_gspo
+    from stateset_agents.training.gspo_trainer import train_with_gspo
 
     logger.info("=" * 80)
     logger.info("Fine-tuning Code Assistant with GSPO")

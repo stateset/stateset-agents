@@ -17,15 +17,15 @@ import torch.nn as nn
 
 # Skip tests if training modules not available
 try:
-    from training.gepo_trainer import GEPOConfig, GEPOTrainer, train_with_gepo
-    from training.dapo_trainer import (
+    from stateset_agents.training.gepo_trainer import GEPOConfig, GEPOTrainer, train_with_gepo
+    from stateset_agents.training.dapo_trainer import (
         DAPOConfig,
         DAPOTrainer,
         DAPORewardShaper,
         DynamicSamplingBuffer,
         train_with_dapo,
     )
-    from training.vapo_trainer import (
+    from stateset_agents.training.vapo_trainer import (
         VAPOConfig,
         VAPOTrainer,
         ValueHead,

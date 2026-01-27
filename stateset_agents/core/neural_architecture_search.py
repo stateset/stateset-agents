@@ -33,6 +33,16 @@ from .performance_optimizer import PerformanceOptimizer
 
 logger = logging.getLogger(__name__)
 
+NAS_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 class SearchStrategy(Enum):
     """Neural architecture search strategies"""
@@ -345,7 +355,7 @@ class ArchitectureEvaluator:
 
             return performance_score
 
-        except Exception as e:
+        except NAS_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "architecture_evaluator", "evaluate")
             return 0.0
 
@@ -706,7 +716,7 @@ class NeuralArchitectureSearch:
 
             return best_arch
 
-        except Exception as e:
+        except NAS_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "neural_architecture_search", "search")
             # Return a default architecture
             return self.search_space.sample_random_architecture(input_dim, output_dim)

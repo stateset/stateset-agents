@@ -13,7 +13,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Type, Union
 
 from stateset_agents.utils.cache import CacheService
 
@@ -24,6 +24,32 @@ from .reward import RewardFunction, RewardResult
 from .trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
+
+MULTITURN_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+BACKEND_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    OSError,
+    asyncio.TimeoutError,
+)
+TOOL_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    OSError,
+    asyncio.TimeoutError,
+)
 
 
 @dataclass
@@ -146,7 +172,7 @@ class MultiTurnAgent(Agent):
                         planning_kwargs.pop("enabled", None)
                     planning_cfg = PlanningConfig(enabled=True, **planning_kwargs)
                     planning_manager = PlanningManager(planning_cfg)
-                except Exception as exc:
+                except MULTITURN_EXCEPTIONS as exc:
                     logger.warning("Failed to init PlanningManager: %s", exc)
         self.planning_manager = planning_manager
 
@@ -214,7 +240,7 @@ class MultiTurnAgent(Agent):
                 if asyncio.iscoroutine(maybe):
                     return await maybe  # type: ignore[return-value]
                 return str(maybe)
-            except Exception as e:
+            except BACKEND_EXCEPTIONS as e:
                 logger.warning("Custom backend failed, falling back: %s", e)
 
         # 2) HF backend
@@ -223,7 +249,7 @@ class MultiTurnAgent(Agent):
                 hf_resp = await self._generate_with_hf_backend(messages_for_backend)
                 if isinstance(hf_resp, str) and hf_resp:
                     return hf_resp
-            except Exception as e:  # pragma: no cover - safety fallback
+            except BACKEND_EXCEPTIONS as e:  # pragma: no cover - safety fallback
                 logger.warning("HF backend failed, falling back to heuristic: %s", e)
 
         # 3) Heuristic fallback
@@ -772,7 +798,7 @@ class MultiTurnAgent(Agent):
             try:
                 search_results = await self.tools["search"](query)
                 response += f"\n\nSearch results: {search_results}"
-            except Exception as e:
+            except TOOL_EXCEPTIONS as e:
                 logger.error(f"Search tool failed: {e}")
 
         if "read" in response.lower() and "read" in self.tools:
@@ -782,7 +808,7 @@ class MultiTurnAgent(Agent):
                 try:
                     content = await self.tools["read"](doc_id)
                     response += f"\n\nDocument content: {content}"
-                except Exception as e:
+                except TOOL_EXCEPTIONS as e:
                     logger.error(f"Read tool failed: {e}")
 
         return response
@@ -873,7 +899,7 @@ class MultiTurnAgent(Agent):
                 )
                 total_reward += result.score * reward_func.weight
                 reward_breakdown[reward_func.__class__.__name__] = result.score
-            except Exception as e:
+            except MULTITURN_EXCEPTIONS as e:
                 logger.error(
                     f"Reward function {reward_func.__class__.__name__} failed: {e}"
                 )

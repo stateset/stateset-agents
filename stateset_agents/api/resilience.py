@@ -17,6 +17,9 @@ from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 
 logger = logging.getLogger(__name__)
 
+CIRCUIT_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+HEALTHCHECK_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 T = TypeVar("T")
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -137,7 +140,7 @@ class CircuitBreaker:
             await self._on_success()
             return result
 
-        except Exception as e:
+        except CIRCUIT_EXCEPTIONS as e:
             # Check if this exception should be counted
             if isinstance(e, self.config.excluded_exceptions):
                 raise
@@ -523,7 +526,7 @@ class HealthChecker:
                 latency_ms=latency,
             )
 
-        except Exception as e:
+        except HEALTHCHECK_EXCEPTIONS as e:
             latency = (time.monotonic() - start) * 1000
             check_result = HealthCheckResult(
                 name=name,

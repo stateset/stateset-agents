@@ -47,6 +47,16 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+OPTUNA_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 def _resolve_async_value(value: Any) -> Any:
     """Resolve possibly-async objective values to a concrete result."""
@@ -80,8 +90,8 @@ class OptunaBackend(HPOBackend):
     - Rich visualization and analysis tools
 
     Example:
-        >>> from training.hpo.optuna_backend import OptunaBackend
-        >>> from training.hpo.search_spaces import create_grpo_search_space
+        >>> from stateset_agents.training.hpo.optuna_backend import OptunaBackend
+        >>> from stateset_agents.training.hpo.search_spaces import create_grpo_search_space
         >>>
         >>> search_space = create_grpo_search_space()
         >>> backend = OptunaBackend(
@@ -324,7 +334,7 @@ class OptunaBackend(HPOBackend):
             self._notify_trial_end(result)
             raise
 
-        except Exception as e:
+        except OPTUNA_EXCEPTIONS as e:
             logger.error(f"Trial {trial_id} failed: {e}")
             training_time = time.time() - start_time
             result = HPOResult(

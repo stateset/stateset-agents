@@ -222,7 +222,7 @@ except ImportError:
 
 ### Use Lazy Imports
 ```python
-from training.trainer_utils import require_torch
+from stateset_agents.training.trainer_utils import require_torch
 
 def training_function():
     torch = require_torch()  # Raises helpful error if not installed

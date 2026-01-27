@@ -68,8 +68,8 @@ class AlgorithmBenchmark:
         from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
         from stateset_agents.core.environment import ConversationEnvironment
         from stateset_agents.core.reward import create_customer_service_reward
-        from training.trainer import MultiTurnGRPOTrainer
-        from training.config import TrainingConfig
+        from stateset_agents.training.trainer import MultiTurnGRPOTrainer
+        from stateset_agents.training.config import TrainingConfig
 
         # Create components
         agent_config = AgentConfig(
@@ -170,7 +170,7 @@ class AlgorithmBenchmark:
         from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
         from stateset_agents.core.environment import ConversationEnvironment
         from stateset_agents.core.reward import create_customer_service_reward
-        from training.gspo_trainer import GSPOConfig, train_with_gspo
+        from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
 
         # Create components
         agent_config = AgentConfig(

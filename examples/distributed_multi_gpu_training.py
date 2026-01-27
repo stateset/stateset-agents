@@ -60,9 +60,9 @@ from stateset_agents.core.reward import (
 )
 
 try:
-    from training.distributed_trainer import DistributedGRPOTrainer, DistributedConfig
-    from training.config import TrainingConfig
-    from utils.monitoring import MonitoringService
+    from stateset_agents.training.distributed_trainer import DistributedGRPOTrainer, DistributedConfig
+    from stateset_agents.training.config import TrainingConfig
+    from stateset_agents.utils.monitoring import MonitoringService
 except ImportError:
     print("Error: This example requires a full installation from source.")
     print("Please run: pip install -e .[dev]")

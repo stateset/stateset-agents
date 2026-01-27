@@ -38,6 +38,16 @@ from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
 logger = logging.getLogger(__name__)
 
+LLM_REWARD_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 class TrajectoryScore(BaseModel):
     """Score for a single trajectory"""
@@ -233,7 +243,7 @@ class RulerRewardFunction(RewardFunction):
                         score=cached["score"],
                         breakdown={**cached["breakdown"], "cache_hit": True},
                     )
-            except Exception as cache_err:
+            except LLM_REWARD_EXCEPTIONS as cache_err:
                 logger.debug(f"Cache lookup failed: {cache_err}")
 
         # Convert turns to messages
@@ -269,12 +279,12 @@ class RulerRewardFunction(RewardFunction):
                         {"score": result.score, "breakdown": result.breakdown},
                         ttl=self.cache_ttl,
                     )
-                except Exception as cache_err:
+                except LLM_REWARD_EXCEPTIONS as cache_err:
                     logger.debug(f"Cache save failed: {cache_err}")
 
             return result
 
-        except Exception as e:
+        except LLM_REWARD_EXCEPTIONS as e:
             logger.error(f"RULER reward computation failed: {e}")
 
             if self.fallback_enabled:
@@ -381,7 +391,7 @@ class RulerRewardFunction(RewardFunction):
                 self.total_calls += 1
                 return scores
 
-            except Exception as e:
+            except LLM_REWARD_EXCEPTIONS as e:
                 logger.warning(f"RULER attempt {attempt + 1} failed: {e}")
                 if attempt == self.max_retries - 1:
                     raise
@@ -465,7 +475,7 @@ class RulerRewardFunction(RewardFunction):
 
         try:
             parsed = RulerResponse.model_validate_json(content)
-        except Exception as e:
+        except LLM_REWARD_EXCEPTIONS as e:
             logger.error(f"Failed to parse RULER response: {e}")
             logger.error(f"Raw content: {content}")
             raise

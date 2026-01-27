@@ -6,7 +6,7 @@ of critical RL operations. Falls back to pure Python implementations when
 the Rust extension is not available.
 
 Usage:
-    from core.rust_accelerator import (
+    from stateset_agents.core.rust_accelerator import (
         compute_group_advantages,
         compute_gae,
         normalize_rewards,

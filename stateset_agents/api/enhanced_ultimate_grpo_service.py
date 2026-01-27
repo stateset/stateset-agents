@@ -65,6 +65,9 @@ from stateset_agents.api.enhanced_grpo_gateway import (
 
 logger = logging.getLogger(__name__)
 
+ENHANCED_SERVICE_EXCEPTIONS = (HTTPException, OSError, RuntimeError, TypeError, ValueError)
+ENHANCED_WS_EXCEPTIONS = (asyncio.TimeoutError, OSError, RuntimeError, TypeError, ValueError)
+
 
 # API Models
 class EnhancedTrainingRequest(BaseModel):
@@ -193,7 +196,7 @@ class ServiceManager:
             self.is_initialized = True
             logger.info("Enhanced GRPO Service Manager initialized successfully")
 
-        except Exception as e:
+        except ENHANCED_SERVICE_EXCEPTIONS as e:
             error_context = self.error_handler.handle_error(
                 e, "service_manager", "initialize"
             )
@@ -283,7 +286,7 @@ class ServiceManager:
 
             logger.info("Service Manager shutdown complete")
 
-        except Exception as e:
+        except ENHANCED_SERVICE_EXCEPTIONS as e:
             logger.error(f"Shutdown error: {e}")
 
     async def get_health_status(self) -> Dict[str, Any]:
@@ -347,7 +350,7 @@ class ServiceManager:
             elif any(s == "degraded" for s in component_statuses):
                 status["status"] = "degraded"
 
-        except Exception as e:
+        except ENHANCED_SERVICE_EXCEPTIONS as e:
             status["status"] = "error"
             status["error"] = str(e)
 
@@ -509,7 +512,7 @@ if FASTAPI_AVAILABLE:
                     },
                 }
 
-            except Exception as e:
+            except ENHANCED_SERVICE_EXCEPTIONS as e:
                 if service_manager.monitoring:
                     service_manager.monitoring.record_error(
                         "training", type(e).__name__, e
@@ -593,7 +596,7 @@ if FASTAPI_AVAILABLE:
                     },
                 }
 
-            except Exception as e:
+            except ENHANCED_SERVICE_EXCEPTIONS as e:
                 if service_manager.monitoring:
                     service_manager.monitoring.record_error("chat", type(e).__name__, e)
                 raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
@@ -618,7 +621,7 @@ if FASTAPI_AVAILABLE:
                 },
             }
 
-        except Exception as e:
+        except ENHANCED_SERVICE_EXCEPTIONS as e:
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.delete("/api/v2/jobs/{job_id}")
@@ -640,7 +643,7 @@ if FASTAPI_AVAILABLE:
                 "cancelled_at": time.time(),
             }
 
-        except Exception as e:
+        except ENHANCED_SERVICE_EXCEPTIONS as e:
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/v2/health", response_model=SystemHealthResponse)
@@ -663,7 +666,7 @@ if FASTAPI_AVAILABLE:
                 error_rate=health_status.get("api", {}).get("error_rate", 0.0),
             )
 
-        except Exception as e:
+        except ENHANCED_SERVICE_EXCEPTIONS as e:
             return SystemHealthResponse(
                 status="error",
                 timestamp=time.time(),
@@ -730,7 +733,7 @@ if FASTAPI_AVAILABLE:
                 alerts=dashboard.get("alerts", []),
             )
 
-        except Exception as e:
+        except ENHANCED_SERVICE_EXCEPTIONS as e:
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/v2/system/status")
@@ -755,7 +758,7 @@ if FASTAPI_AVAILABLE:
                 else None,
             }
 
-        except Exception as e:
+        except ENHANCED_SERVICE_EXCEPTIONS as e:
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.websocket("/ws/v2")
@@ -816,7 +819,7 @@ if FASTAPI_AVAILABLE:
 
         except WebSocketDisconnect:
             logger.info("WebSocket client disconnected")
-        except Exception as e:
+        except ENHANCED_WS_EXCEPTIONS as e:
             logger.error(f"WebSocket error: {e}")
             await websocket.close()
 

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.enhanced_state_management import (
+from stateset_agents.core.enhanced_state_management import (
     CacheEntry,
     CacheStrategy,
     ConsistencyLevel,
@@ -335,7 +335,7 @@ class TestDistributedStateService:
         """Create a mock DistributedStateService."""
         with patch("core.enhanced_state_management.REDIS_AVAILABLE", False), \
              patch("core.enhanced_state_management.MONGODB_AVAILABLE", False):
-            from core.enhanced_state_management import DistributedStateService
+            from stateset_agents.core.enhanced_state_management import DistributedStateService
             service = DistributedStateService()
             return service
 
@@ -360,7 +360,7 @@ class TestStateManager:
     def state_manager(self):
         """Create a mock StateManager."""
         with patch("core.enhanced_state_management.REDIS_AVAILABLE", False):
-            from core.enhanced_state_management import StateManager
+            from stateset_agents.core.enhanced_state_management import StateManager
             manager = StateManager()
             return manager
 
@@ -394,7 +394,7 @@ class TestConversationManager:
     @pytest.fixture
     def conversation_manager(self):
         """Create a mock ConversationManager."""
-        from core.enhanced_state_management import ConversationManager
+        from stateset_agents.core.enhanced_state_management import ConversationManager
         state_manager = MagicMock()
         state_manager.get = AsyncMock(return_value=None)
         state_manager.set = AsyncMock()
@@ -451,7 +451,7 @@ class TestManagedStateContext:
             mock_service = MagicMock()
             mock_get.return_value = mock_service
 
-            from core.enhanced_state_management import managed_state_context
+            from stateset_agents.core.enhanced_state_management import managed_state_context
 
             async with managed_state_context() as service:
                 assert service is mock_service
@@ -464,7 +464,7 @@ class TestGetStateService:
         """Test getting the global state service."""
         with patch("core.enhanced_state_management.REDIS_AVAILABLE", False), \
              patch("core.enhanced_state_management.MONGODB_AVAILABLE", False):
-            from core.enhanced_state_management import get_state_service
+            from stateset_agents.core.enhanced_state_management import get_state_service
 
             service1 = get_state_service()
             service2 = get_state_service()

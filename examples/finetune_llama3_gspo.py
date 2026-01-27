@@ -57,8 +57,8 @@ def get_llama3_config(
     These configurations are optimized for different Llama 3 model sizes
     based on the GSPO paper recommendations.
     """
-    from training.gspo_trainer import GSPOConfig
-    from training.config import get_config_for_task
+    from stateset_agents.training.gspo_trainer import GSPOConfig
+    from stateset_agents.training.config import get_config_for_task
 
     # Get base config for task
     base_config = get_config_for_task(task, model_name=model_name)
@@ -209,7 +209,7 @@ async def finetune_llama3(
     from stateset_agents.core.agent import AgentConfig
     from stateset_agents.core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
-    from training.gspo_trainer import train_with_gspo
+    from stateset_agents.training.gspo_trainer import train_with_gspo
 
     logger.info("=" * 80)
     logger.info("Fine-tuning Llama 3 with GSPO")

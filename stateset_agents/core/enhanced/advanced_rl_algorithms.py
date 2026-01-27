@@ -825,7 +825,7 @@ class GSPOTrainerStub:
 
         logger.info("GSPO trainer stub initialized")
         logger.info(
-            "For full GSPO training, use: from training.gspo_trainer import train_with_gspo"
+            "For full GSPO training, use: from stateset_agents.training.gspo_trainer import train_with_gspo"
         )
 
     async def train_step(self, environment: Environment, **kwargs):
@@ -841,7 +841,7 @@ def create_gspo_trainer(agent: EnhancedMultiTurnAgent, **kwargs) -> GSPOTrainerS
     Create GSPO trainer stub.
 
     For production GSPO training, use:
-        from training.gspo_trainer import train_with_gspo
+        from stateset_agents.training.gspo_trainer import train_with_gspo
         await train_with_gspo(config, agent, environment, reward_model)
     """
     config = GSPOConfig(**kwargs)

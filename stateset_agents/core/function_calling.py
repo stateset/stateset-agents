@@ -12,7 +12,7 @@ Features:
 - Type-safe function registration with decorators
 
 Example:
-    >>> from core.function_calling import FunctionCallingAgent, tool
+    >>> from stateset_agents.core.function_calling import FunctionCallingAgent, tool
     >>>
     >>> @tool(description="Get current weather for a location")
     >>> def get_weather(location: str, unit: str = "celsius") -> dict:
@@ -45,6 +45,15 @@ from typing import (
 )
 
 logger = logging.getLogger(__name__)
+
+FUNCTION_CALL_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+)
 
 
 class ToolChoiceMode(str, Enum):
@@ -515,7 +524,7 @@ If you don't need to use any tools, respond normally without the tool_calls wrap
 
             return ToolResult(tool_call_id=tool_call.id, content=content)
 
-        except Exception as e:
+        except FUNCTION_CALL_EXCEPTIONS as e:
             logger.exception(f"Error executing tool {tool_name}")
             return ToolResult(
                 tool_call_id=tool_call.id,

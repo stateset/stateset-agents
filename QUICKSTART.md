@@ -114,7 +114,7 @@ import asyncio
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import create_customer_service_reward
-from training.train import train
+from stateset_agents.training.train import train
 
 async def main():
     # 1. Create the agent
@@ -463,8 +463,8 @@ import asyncio
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import create_customer_service_reward
-from training.config import TrainingConfig, TrainingProfile
-from training.trainer import MultiTurnGRPOTrainer
+from stateset_agents.training.config import TrainingConfig, TrainingProfile
+from stateset_agents.training.trainer import MultiTurnGRPOTrainer
 
 async def main():
     # 1. Agent configuration
@@ -597,7 +597,7 @@ config = TrainingConfig(
 **Solution**: Use TRL integration for optimized training
 
 ```python
-from training.trl_grpo_trainer import train_with_trl_grpo
+from stateset_agents.training.trl_grpo_trainer import train_with_trl_grpo
 
 trained_agent = await train_with_trl_grpo(
     config=config,
@@ -703,12 +703,12 @@ from stateset_agents.core.reward import (
 )
 
 # Training
-from training.config import TrainingConfig, TrainingProfile
-from training.trainer import MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
-from training.train import train
+from stateset_agents.training.config import TrainingConfig, TrainingProfile
+from stateset_agents.training.trainer import MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
+from stateset_agents.training.train import train
 
 # TRL Integration
-from training.trl_grpo_trainer import train_with_trl_grpo
+from stateset_agents.training.trl_grpo_trainer import train_with_trl_grpo
 ```
 
 ### Key Functions

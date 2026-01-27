@@ -19,6 +19,8 @@ from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
 logger = logging.getLogger(__name__)
 
+CACHE_EXCEPTIONS = (ConnectionError, OSError, RuntimeError, TimeoutError, TypeError, ValueError)
+
 T = TypeVar("T")
 
 
@@ -239,7 +241,7 @@ class MemoryCache(CacheInterface):
                 self._stats.record_latency((time.monotonic() - start) * 1000)
 
                 return True
-        except Exception as e:
+        except CACHE_EXCEPTIONS as e:
             logger.error(f"Memory cache set error: {e}")
             self._stats.errors += 1
             return False
@@ -364,7 +366,7 @@ class RedisCache(CacheInterface):
         except ImportError:
             logger.error("redis package not installed. Install with: pip install redis")
             return False
-        except Exception as e:
+        except CACHE_EXCEPTIONS as e:
             logger.error(f"Failed to connect to Redis: {e}")
             self._connected = False
             return False
@@ -393,7 +395,7 @@ class RedisCache(CacheInterface):
 
             return value
 
-        except Exception as e:
+        except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis get error: {e}")
             self._stats.errors += 1
             return None
@@ -418,7 +420,7 @@ class RedisCache(CacheInterface):
 
             return True
 
-        except Exception as e:
+        except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis set error: {e}")
             self._stats.errors += 1
             return False
@@ -434,7 +436,7 @@ class RedisCache(CacheInterface):
             result = await self._client.delete(prefixed_key)
             self._stats.deletes += 1
             return result > 0
-        except Exception as e:
+        except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis delete error: {e}")
             self._stats.errors += 1
             return False
@@ -448,7 +450,7 @@ class RedisCache(CacheInterface):
 
         try:
             return await self._client.exists(prefixed_key) > 0
-        except Exception as e:
+        except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis exists error: {e}")
             return False
 
@@ -470,7 +472,7 @@ class RedisCache(CacheInterface):
                     break
 
             return deleted
-        except Exception as e:
+        except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis clear error: {e}")
             return 0
 
@@ -493,7 +495,7 @@ class RedisCache(CacheInterface):
             await self._client.ping()
             self._health_status = True
             return True
-        except Exception as e:
+        except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis health check failed: {e}")
             self._health_status = False
             self._connected = False

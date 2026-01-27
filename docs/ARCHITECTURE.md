@@ -709,7 +709,7 @@ class MultiTurnGRPOTrainer:
 ### Configuration System
 
 ```python
-from training.config import TrainingConfig, TrainingProfile
+from stateset_agents.training.config import TrainingConfig, TrainingProfile
 
 # Option 1: Pre-defined profile
 config = TrainingConfig.from_profile(TrainingProfile.BALANCED)

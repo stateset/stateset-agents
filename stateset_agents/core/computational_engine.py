@@ -30,6 +30,14 @@ from .trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
 
+ENGINE_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    KeyError,
+    AttributeError,
+)
+
 
 @dataclass
 class ComputationalTrajectory:
@@ -137,7 +145,7 @@ class ComputationalGRPOEngine:
                         ]
                     )
                     learned_reward = reward_result.score
-                except Exception as e:
+                except ENGINE_EXCEPTIONS as e:
                     logger.warning(f"Failed to compute learned reward: {e}")
                     learned_reward = raw_reward
 
@@ -178,7 +186,7 @@ class ComputationalGRPOEngine:
             # Get reward from environment
             reward = await self.environment.get_reward(trajectory)
             return reward
-        except Exception as e:
+        except ENGINE_EXCEPTIONS as e:
             logger.warning(f"Failed to get environmental reward: {e}")
             # Return a neutral reward instead of random noise
             # Random rewards would corrupt training and make results non-reproducible
@@ -324,7 +332,7 @@ class ComputationalGRPOEngine:
                 # Note: Gradients are accumulated but not applied here
                 # The actual backward pass happens in the training loop
 
-            except Exception as e:
+            except ENGINE_EXCEPTIONS as e:
                 logger.warning(f"Failed to compute policy loss for trajectory: {e}")
                 continue
 

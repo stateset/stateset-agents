@@ -13,7 +13,7 @@ Features:
 - Sanitization of special characters and control sequences
 
 Example:
-    >>> from core.input_validation import SecureInputValidator, SecurityConfig
+    >>> from stateset_agents.core.input_validation import SecureInputValidator, SecurityConfig
     >>>
     >>> validator = SecureInputValidator(SecurityConfig(
     ...     max_input_length=10000,
@@ -34,6 +34,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Pattern, Set, Tuple
+
+from .error_handling import ErrorCode, ValidationException
 
 logger = logging.getLogger(__name__)
 
@@ -615,8 +617,10 @@ def create_secure_agent_wrapper(validator: SecureInputValidator):
             result = validator.validate(text)
 
             if not result.is_valid:
-                raise ValueError(
-                    f"Input validation failed: {result.get_threat_summary()}"
+                raise ValidationException(
+                    f"Input validation failed: {result.get_threat_summary()}",
+                    error_code=ErrorCode.VALIDATION_FAILED,
+                    details={"threats": result.get_threat_summary()},
                 )
 
             # Call original function with sanitized input

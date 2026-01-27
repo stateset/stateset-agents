@@ -55,11 +55,11 @@ pip install wandb
 ### 1. Quick HPO (Simplest)
 
 ```python
-from training.hpo import quick_hpo
+from stateset_agents.training.hpo import quick_hpo
 from stateset_agents.core.agent import MultiTurnAgent, AgentConfig
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import CompositeReward
-from training.config import TrainingConfig
+from stateset_agents.training.config import TrainingConfig
 
 # Setup components
 agent = MultiTurnAgent(AgentConfig(...))
@@ -84,7 +84,7 @@ print(f"Best metric: {summary.best_metric}")
 ### 2. Full Workflow (HPO + Training)
 
 ```python
-from training.hpo import GRPOHPOTrainer, HPOConfig
+from stateset_agents.training.hpo import GRPOHPOTrainer, HPOConfig
 
 # Configure HPO
 hpo_config = HPOConfig(
@@ -127,7 +127,7 @@ StateSet Agents provides battle-tested search spaces for common scenarios:
 #### Algorithm-Specific
 
 ```python
-from training.hpo.search_spaces import (
+from stateset_agents.training.hpo.search_spaces import (
     create_grpo_search_space,
     create_optimizer_search_space,
     create_model_architecture_search_space,
@@ -161,7 +161,7 @@ full_space = create_full_search_space(
 #### Domain-Specific
 
 ```python
-from training.hpo.search_spaces import (
+from stateset_agents.training.hpo.search_spaces import (
     create_customer_service_search_space,
     create_technical_support_search_space,
     create_sales_assistant_search_space,
@@ -183,7 +183,7 @@ sales_space = create_sales_assistant_search_space()
 #### Training Profiles
 
 ```python
-from training.hpo.search_spaces import (
+from stateset_agents.training.hpo.search_spaces import (
     create_conservative_search_space,
     create_aggressive_search_space,
 )
@@ -202,7 +202,7 @@ aggressive = create_aggressive_search_space()
 ### Custom Search Spaces
 
 ```python
-from training.hpo import SearchSpace, SearchDimension, SearchSpaceType
+from stateset_agents.training.hpo import SearchSpace, SearchDimension, SearchSpaceType
 
 custom_space = SearchSpace([
     # Log-uniform (best for learning rates)
@@ -333,7 +333,7 @@ hpo_config = HPOConfig(
 ### HPOConfig Options
 
 ```python
-from training.hpo import HPOConfig
+from stateset_agents.training.hpo import HPOConfig
 
 config = HPOConfig(
     # Core settings
@@ -373,7 +373,7 @@ config = HPOConfig(
 ### Pre-defined Profiles
 
 ```python
-from training.hpo import get_hpo_config
+from stateset_agents.training.hpo import get_hpo_config
 
 # Conservative: safe, narrow ranges
 conservative_config = get_hpo_config("conservative")
@@ -395,7 +395,7 @@ distributed_config = get_hpo_config("distributed")
 ### Basic Integration
 
 ```python
-from training.hpo import GRPOHPOTrainer, HPOConfig
+from stateset_agents.training.hpo import GRPOHPOTrainer, HPOConfig
 
 # Your existing setup
 agent = MultiTurnAgent(...)
@@ -466,7 +466,7 @@ class MyHPOTrainer(GRPOHPOTrainer):
 ### Callbacks for Monitoring
 
 ```python
-from training.hpo import HPOCallback
+from stateset_agents.training.hpo import HPOCallback
 
 class MyCallback:
     def on_trial_start(self, trial_id: str, params: Dict[str, Any]):
@@ -617,8 +617,8 @@ distributed_config = HPOConfig(
 ### Example 1: Customer Service Agent
 
 ```python
-from training.hpo import GRPOHPOTrainer, HPOConfig
-from training.hpo.search_spaces import create_customer_service_search_space
+from stateset_agents.training.hpo import GRPOHPOTrainer, HPOConfig
+from stateset_agents.training.hpo.search_spaces import create_customer_service_search_space
 
 # Setup
 agent = MultiTurnAgent(...)
@@ -719,7 +719,7 @@ StateSet Agents HPO provides:
 **Start optimizing today:**
 
 ```python
-from training.hpo import quick_hpo
+from stateset_agents.training.hpo import quick_hpo
 
 summary = await quick_hpo(
     agent=agent,

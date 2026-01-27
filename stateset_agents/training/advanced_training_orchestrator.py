@@ -57,6 +57,18 @@ from stateset_agents.core.performance_optimizer import OptimizationLevel, Perfor
 
 logger = logging.getLogger(__name__)
 
+TRAINING_ORCH_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+    pickle.PickleError,
+    shutil.Error,
+)
+
 
 class TrainingStatus(Enum):
     """Training job status"""
@@ -400,14 +412,14 @@ class ExperimentTracker:
                     name=job.job_id,
                     config=job.config.__dict__,
                 )
-            except Exception as e:
+            except TRAINING_ORCH_EXCEPTIONS as e:
                 logger.error(f"Failed to initialize W&B: {e}")
 
         if self.enable_mlflow:
             try:
                 mlflow.start_run(run_name=job.job_id)
                 mlflow.log_params(job.config.__dict__)
-            except Exception as e:
+            except TRAINING_ORCH_EXCEPTIONS as e:
                 logger.error(f"Failed to initialize MLflow: {e}")
 
         return experiment_id
@@ -431,14 +443,14 @@ class ExperimentTracker:
         if self.enable_wandb:
             try:
                 wandb.log(metrics, step=step)
-            except Exception as e:
+            except TRAINING_ORCH_EXCEPTIONS as e:
                 logger.error(f"Failed to log to W&B: {e}")
 
         if self.enable_mlflow:
             try:
                 for metric_name, value in metrics.items():
                     mlflow.log_metric(metric_name, value, step=step)
-            except Exception as e:
+            except TRAINING_ORCH_EXCEPTIONS as e:
                 logger.error(f"Failed to log to MLflow: {e}")
 
     async def log_artifact(
@@ -457,13 +469,13 @@ class ExperimentTracker:
         if self.enable_wandb:
             try:
                 wandb.save(artifact_path)
-            except Exception as e:
+            except TRAINING_ORCH_EXCEPTIONS as e:
                 logger.error(f"Failed to log artifact to W&B: {e}")
 
         if self.enable_mlflow:
             try:
                 mlflow.log_artifact(artifact_path)
-            except Exception as e:
+            except TRAINING_ORCH_EXCEPTIONS as e:
                 logger.error(f"Failed to log artifact to MLflow: {e}")
 
     async def finish_experiment(
@@ -485,7 +497,7 @@ class ExperimentTracker:
                 if final_metrics:
                     wandb.log(final_metrics)
                 wandb.finish()
-            except Exception as e:
+            except TRAINING_ORCH_EXCEPTIONS as e:
                 logger.error(f"Failed to finish W&B: {e}")
 
         if self.enable_mlflow:
@@ -494,7 +506,7 @@ class ExperimentTracker:
                     for metric_name, value in final_metrics.items():
                         mlflow.log_metric(metric_name, value)
                 mlflow.end_run()
-            except Exception as e:
+            except TRAINING_ORCH_EXCEPTIONS as e:
                 logger.error(f"Failed to finish MLflow: {e}")
 
 
@@ -561,7 +573,7 @@ class TrainingWorker:
 
             return success
 
-        except Exception as e:
+        except TRAINING_ORCH_EXCEPTIONS as e:
             job.status = TrainingStatus.FAILED
             job.completed_at = time.time()
             job.last_error = str(e)
@@ -595,7 +607,7 @@ class TrainingWorker:
 
         try:
             return await _training_loop()
-        except Exception as e:
+        except TRAINING_ORCH_EXCEPTIONS as e:
             logger.error(f"Training failed after {job.config.max_retries} retries: {e}")
             return False
 
@@ -968,7 +980,7 @@ class AdvancedTrainingOrchestrator:
 
                 await asyncio.sleep(5)  # Check every 5 seconds
 
-            except Exception as e:
+            except TRAINING_ORCH_EXCEPTIONS as e:
                 logger.error(f"Orchestration loop error: {e}")
                 await asyncio.sleep(30)
 
@@ -1038,7 +1050,7 @@ class AdvancedTrainingOrchestrator:
 
                 await asyncio.sleep(30)  # Monitor every 30 seconds
 
-            except Exception as e:
+            except TRAINING_ORCH_EXCEPTIONS as e:
                 logger.error(f"Monitoring loop error: {e}")
                 await asyncio.sleep(60)
 

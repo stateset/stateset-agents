@@ -274,8 +274,8 @@ adapter = GymEnvironmentAdapter(
 StateSet-Agents supports 9 RL algorithms! Try them all:
 
 ```python
-from training.gspo_trainer import GSPOTrainer  # More stable than GRPO
-from training.distributed.trainer import DistributedTrainer  # Multi-GPU
+from stateset_agents.training.gspo_trainer import GSPOTrainer  # More stable than GRPO
+from stateset_agents.training.distributed.trainer import DistributedTrainer  # Multi-GPU
 
 # GSPO for sparse rewards
 trainer = GSPOTrainer(agent, env, config)

@@ -5,7 +5,7 @@ Tests for Curriculum Learning System
 import pytest
 import numpy as np
 
-from core.curriculum_learning import (
+from stateset_agents.core.curriculum_learning import (
     CurriculumLearning,
     CurriculumStage,
     CurriculumProgress,

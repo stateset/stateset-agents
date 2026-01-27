@@ -25,6 +25,9 @@ from .state import ConversationState, TrainingJob, get_state_manager
 
 logger = get_logger(__name__)
 
+GRPO_HANDLER_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+GRPO_WS_EXCEPTIONS = (asyncio.TimeoutError, OSError, RuntimeError, TypeError, ValueError)
+
 
 class TrainingHandler:
     """
@@ -161,7 +164,7 @@ class TrainingHandler:
                 average_reward,
             )
 
-        except Exception as e:
+        except GRPO_HANDLER_EXCEPTIONS as e:
             logger.exception("Training job %s failed", job_id)
             self.state.update_job(job_id, status="failed", error=str(e))
             self.metrics.record_training_failed()
@@ -195,7 +198,7 @@ class TrainingHandler:
                 use_ruler_rewards=False,
             )
 
-        except Exception as e:
+        except GRPO_HANDLER_EXCEPTIONS as e:
             logger.exception("Distributed training job %s failed", job_id)
             self.state.update_job(job_id, status="failed", error=str(e))
             self.metrics.record_training_failed()
@@ -488,7 +491,7 @@ class WebSocketHandler:
                 message_type = message_data.get("type")
                 await self._route_message(websocket, message_type, message_data)
 
-        except Exception as e:
+        except GRPO_WS_EXCEPTIONS as e:
             if "disconnect" not in str(e).lower():
                 logger.error("WebSocket error: %s", e)
 
@@ -543,7 +546,7 @@ class WebSocketHandler:
 
         except ValueError as e:
             await self._send_error(websocket, f"Invalid chat request: {str(e)[:200]}")
-        except Exception as e:
+        except GRPO_WS_EXCEPTIONS as e:
             logger.error("WebSocket chat error: %s", e)
             await self._send_error(websocket, "Failed to process chat request")
 
@@ -564,7 +567,7 @@ class WebSocketHandler:
                 "data": metrics,
             })
 
-        except Exception as e:
+        except GRPO_WS_EXCEPTIONS as e:
             logger.error("WebSocket metrics error: %s", e)
             await self._send_error(websocket, "Failed to retrieve metrics")
 

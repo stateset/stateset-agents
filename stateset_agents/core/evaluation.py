@@ -8,7 +8,7 @@ This module provides comprehensive evaluation capabilities including:
 - Automated evaluation pipelines
 
 Example:
-    >>> from core.evaluation import AgentEvaluator, EvaluationConfig
+    >>> from stateset_agents.core.evaluation import AgentEvaluator, EvaluationConfig
     >>>
     >>> evaluator = AgentEvaluator(EvaluationConfig(
     ...     metrics=["relevance", "coherence", "helpfulness"],
@@ -31,6 +31,15 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
+
+EVALUATION_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+)
 
 
 class MetricType(str, Enum):
@@ -665,7 +674,7 @@ class AgentEvaluator:
                         context,
                     )
                     metrics.append(result)
-                except Exception as e:
+                except EVALUATION_EXCEPTIONS as e:
                     logger.warning(f"Metric {metric.name} failed: {e}")
                     metrics.append(MetricResult(metric.name, 0.0, {"error": str(e)}))
 
@@ -688,7 +697,7 @@ class AgentEvaluator:
                 latency_ms=self.config.timeout_seconds * 1000,
                 error="Timeout",
             )
-        except Exception as e:
+        except EVALUATION_EXCEPTIONS as e:
             return SampleResult(
                 sample_id=sample.id,
                 input=sample.input,

@@ -16,6 +16,15 @@ from .trainer import MultiTurnGRPOTrainer
 
 logger = logging.getLogger(__name__)
 
+TRAIN_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 class TrainingMode(Enum):
     """Training modes"""
@@ -183,7 +192,7 @@ class AutoTrainer:
 
                     reward_diversities.append(np.std(trajectory.turn_rewards))
 
-            except Exception as e:
+            except TRAIN_EXCEPTIONS as e:
                 logger.warning(f"Baseline evaluation episode failed: {e}")
                 continue
 

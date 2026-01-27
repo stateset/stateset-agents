@@ -37,11 +37,36 @@ class ErrorCategory(Enum):
     SYSTEM = "system"
 
 
+class ErrorCode(Enum):
+    """Structured error codes for consistent tracking."""
+
+    UNKNOWN = "GRPO_E000"
+    VALIDATION_FAILED = "GRPO_E001"
+    TRAINING_FAILED = "GRPO_E100"
+    MODEL_FAILED = "GRPO_E200"
+    DATA_FAILED = "GRPO_E300"
+    NETWORK_FAILED = "GRPO_E400"
+    RESOURCE_FAILED = "GRPO_E500"
+    SYSTEM_FAILED = "GRPO_E900"
+
+
+DEFAULT_ERROR_CODES = {
+    ErrorCategory.TRAINING: ErrorCode.TRAINING_FAILED,
+    ErrorCategory.MODEL: ErrorCode.MODEL_FAILED,
+    ErrorCategory.DATA: ErrorCode.DATA_FAILED,
+    ErrorCategory.NETWORK: ErrorCode.NETWORK_FAILED,
+    ErrorCategory.RESOURCE: ErrorCode.RESOURCE_FAILED,
+    ErrorCategory.VALIDATION: ErrorCode.VALIDATION_FAILED,
+    ErrorCategory.SYSTEM: ErrorCode.SYSTEM_FAILED,
+}
+
+
 @dataclass
 class ErrorContext:
     """Rich error context for debugging"""
 
     error_id: str
+    error_code: ErrorCode
     category: ErrorCategory
     severity: ErrorSeverity
     timestamp: float
@@ -60,12 +85,16 @@ class GRPOException(Exception):
         message: str,
         category: ErrorCategory = ErrorCategory.SYSTEM,
         severity: ErrorSeverity = ErrorSeverity.MEDIUM,
+        error_code: Optional[ErrorCode] = None,
         details: Optional[Dict[str, Any]] = None,
         recovery_actions: Optional[List[str]] = None,
     ):
         super().__init__(message)
         self.category = category
         self.severity = severity
+        self.error_code = error_code or DEFAULT_ERROR_CODES.get(
+            category, ErrorCode.UNKNOWN
+        )
         self.details = details or {}
         self.recovery_actions = recovery_actions or []
         self.timestamp = time.time()
@@ -76,6 +105,7 @@ class GRPOException(Exception):
         """Convert to rich error context"""
         return ErrorContext(
             error_id=f"{self.category.value}_{int(self.timestamp)}",
+            error_code=self.error_code,
             category=self.category,
             severity=self.severity,
             timestamp=self.timestamp,
@@ -262,10 +292,13 @@ class ErrorHandler:
                 _msg = str(error).strip().lower().replace(" ", "_")
                 _msg = "".join(ch for ch in _msg if ch.isalnum() or ch in ("_", "-"))
                 _err_id = _msg if _msg else f"generic_{int(time.time())}"
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 _err_id = f"generic_{int(time.time())}"
             error_context = ErrorContext(
                 error_id=_err_id,
+                error_code=DEFAULT_ERROR_CODES.get(
+                    ErrorCategory.SYSTEM, ErrorCode.UNKNOWN
+                ),
                 category=ErrorCategory.SYSTEM,
                 severity=ErrorSeverity.MEDIUM,
                 timestamp=time.time(),
@@ -291,6 +324,7 @@ class ErrorHandler:
         """Log error with appropriate level"""
         log_data = {
             "error_id": error_context.error_id,
+            "error_code": error_context.error_code.value,
             "category": error_context.category.value,
             "severity": error_context.severity.value,
             "component": error_context.component,
@@ -325,18 +359,22 @@ class ErrorHandler:
 
         by_category = {}
         by_severity = {}
+        by_error_code = {}
 
         for error in recent_errors:
             category = error.category.value
             severity = error.severity.value
+            error_code = error.error_code.value
 
             by_category[category] = by_category.get(category, 0) + 1
             by_severity[severity] = by_severity.get(severity, 0) + 1
+            by_error_code[error_code] = by_error_code.get(error_code, 0) + 1
 
         return {
             "total_errors": len(recent_errors),
             "by_category": by_category,
             "by_severity": by_severity,
+            "by_error_code": by_error_code,
             "circuit_breakers": {
                 name: cb.state.value for name, cb in self.circuit_breakers.items()
             },
@@ -353,12 +391,8 @@ def retry_async(config: RetryConfig):
             for attempt in range(config.max_attempts):
                 try:
                     return await func(*args, **kwargs)
-                except Exception as e:
+                except tuple(config.retry_on) as e:
                     last_exception = e
-
-                    # Check if we should retry this exception
-                    if not any(isinstance(e, exc_type) for exc_type in config.retry_on):
-                        raise
 
                     # Don't wait after the last attempt
                     if attempt == config.max_attempts - 1:

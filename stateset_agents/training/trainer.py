@@ -21,12 +21,12 @@ from __future__ import annotations
 # Some unit tests and legacy integrations patch `training.trainer.torch/np`.
 try:  # pragma: no cover - optional dependency
     import torch  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     torch = None  # type: ignore[assignment]
 
 try:  # pragma: no cover - optional dependency
     import numpy as np  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     np = None  # type: ignore[assignment]
 
 # Re-export utility functions
@@ -65,7 +65,7 @@ RewardFunction = core_reward.RewardFunction
 CompositeReward = core_reward.CompositeReward
 
 try:
-    from utils.wandb_integration import WandBLogger as _WandBLogger
+    from stateset_agents.utils.wandb_integration import WandBLogger as _WandBLogger
 except ImportError:  # pragma: no cover - optional dependency
     _WandBLogger = None  # type: ignore[assignment]
 

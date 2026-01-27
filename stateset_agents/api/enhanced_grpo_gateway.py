@@ -56,6 +56,9 @@ from stateset_agents.core.type_system import DeviceType, TypeValidator
 
 logger = logging.getLogger(__name__)
 
+GATEWAY_CACHE_EXCEPTIONS = (ImportError, OSError, RuntimeError, TypeError, ValueError)
+GATEWAY_REQUEST_EXCEPTIONS = (HTTPException, OSError, RuntimeError, TypeError, ValueError)
+
 
 class ServiceStatus(Enum):
     """Service status enumeration"""
@@ -137,7 +140,7 @@ class IntelligentCache:
         if redis_url:
             try:
                 self.redis_client = redis.from_url(redis_url)
-            except Exception as e:
+            except GATEWAY_CACHE_EXCEPTIONS as e:
                 logger.warning(f"Failed to connect to Redis: {e}")
 
     async def get(self, key: str) -> Optional[Any]:
@@ -173,7 +176,7 @@ class IntelligentCache:
                     )  # 5 min local TTL
                     self.cache_stats["hits"] += 1
                     return value
-            except Exception as e:
+            except GATEWAY_CACHE_EXCEPTIONS as e:
                 logger.error(f"Redis cache get error: {e}")
 
         self.cache_stats["misses"] += 1
@@ -192,7 +195,7 @@ class IntelligentCache:
         if self.redis_client:
             try:
                 self.redis_client.setex(key, ttl, json.dumps(value))
-            except Exception as e:
+            except GATEWAY_CACHE_EXCEPTIONS as e:
                 logger.error(f"Redis cache set error: {e}")
 
     def invalidate(self, pattern: str = None):
@@ -477,7 +480,7 @@ class EnhancedGRPOGateway:
 
             return status, response_headers, response_body
 
-        except Exception as e:
+        except GATEWAY_REQUEST_EXCEPTIONS as e:
             self.stats["total_errors"] += 1
             if self.security_manager and client_ip:
                 self.security_manager.record_suspicious_activity(client_ip)

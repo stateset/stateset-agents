@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 # Optional imports for enhanced functionality
 try:
@@ -36,6 +36,13 @@ try:
     HAS_OPENTELEMETRY = True
 except ImportError:
     HAS_OPENTELEMETRY = False
+
+LOGGING_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    OSError,
+)
 
 
 class LogLevel(Enum):
@@ -364,7 +371,7 @@ class GRPOLogger:
                     }
                 )
 
-        except Exception as e:
+        except LOGGING_EXCEPTIONS as e:
             duration_ms = (time.time() - start_time) * 1000
 
             self.error(

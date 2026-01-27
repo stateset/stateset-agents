@@ -88,7 +88,7 @@ from stateset_agents.training.trainer import GRPOTrainer
 from stateset_agents.training.config import TrainingConfig
 
 # After (GSPO)
-from training.gspo_trainer import GSPOTrainer, GSPOConfig, train_with_gspo
+from stateset_agents.training.gspo_trainer import GSPOTrainer, GSPOConfig, train_with_gspo
 ```
 
 ### Step 2: Update Configuration
@@ -237,7 +237,7 @@ import asyncio
 from stateset_agents import MultiTurnAgent
 from stateset_agents.core.agent import AgentConfig
 from stateset_agents.core.environment import ConversationEnvironment
-from training.gspo_trainer import GSPOConfig, train_with_gspo
+from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
 
 async def train_gspo():
     agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
@@ -337,7 +337,7 @@ gspo_config = GSPOConfig(
 ```python
 def convert_grpo_to_gspo_config(grpo_config):
     """Convert GRPO TrainingConfig to GSPOConfig."""
-    from training.gspo_trainer import GSPOConfig
+    from stateset_agents.training.gspo_trainer import GSPOConfig
 
     return GSPOConfig(
         # Model settings (keep same)
@@ -439,7 +439,7 @@ If results are significantly worse:
 If you need finer control (like GRPO) but want GSPO stability:
 
 ```python
-from training.gspo_trainer import train_with_gspo_token
+from stateset_agents.training.gspo_trainer import train_with_gspo_token
 
 trained_agent = await train_with_gspo_token(
     config=gspo_config,

@@ -35,6 +35,14 @@ from typing_extensions import NotRequired, TypedDict
 
 logger = logging.getLogger(__name__)
 
+TYPE_SYSTEM_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+)
+
 # Type variables
 T = TypeVar("T")
 AgentType = TypeVar("AgentType", bound="Agent")
@@ -403,7 +411,7 @@ class TypeValidator:
                     return isinstance(value, origin)
             else:
                 return isinstance(value, expected_type)
-        except Exception:
+        except TYPE_SYSTEM_EXCEPTIONS:
             return False
 
     @staticmethod
@@ -458,7 +466,7 @@ class TypeValidator:
 
             # Compare return type
             return sig.return_annotation == expected_sig.return_annotation
-        except Exception:
+        except TYPE_SYSTEM_EXCEPTIONS:
             return False
 
 

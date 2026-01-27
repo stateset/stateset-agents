@@ -26,6 +26,16 @@ from .wandb_backend import WandBSweepsBackend
 
 logger = logging.getLogger(__name__)
 
+HPO_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 class GRPOHPOTrainer:
     """GRPO Trainer with automatic hyperparameter optimization.
@@ -38,8 +48,8 @@ class GRPOHPOTrainer:
     - Provide rich analysis and visualization
 
     Example:
-        >>> from training.hpo import GRPOHPOTrainer, HPOConfig
-        >>> from training.hpo.search_spaces import create_grpo_search_space
+        >>> from stateset_agents.training.hpo import GRPOHPOTrainer, HPOConfig
+        >>> from stateset_agents.training.hpo.search_spaces import create_grpo_search_space
         >>>
         >>> # Setup
         >>> agent = MultiTurnAgent(agent_config)
@@ -218,7 +228,7 @@ class GRPOHPOTrainer:
 
             return metric_value
 
-        except Exception as e:
+        except HPO_EXCEPTIONS as e:
             logger.error(f"Training failed: {e}")
             # Return worst possible value
             if self.hpo_config.direction == "maximize":
@@ -401,7 +411,7 @@ class GRPOHPOTrainer:
                     save_path=save_dir / "parallel_coordinate.png"
                 )
                 logger.info(f"Plots saved to {save_dir}")
-            except Exception as e:
+            except HPO_EXCEPTIONS as e:
                 logger.warning(f"Could not generate plots: {e}")
         else:
             logger.warning(f"Plotting not yet implemented for {self.hpo_config.backend}")

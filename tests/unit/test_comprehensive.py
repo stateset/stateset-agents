@@ -31,7 +31,7 @@ try:
     from stateset_agents.core.multiturn_agent import ConversationContext, DialogueDatabase, MultiTurnAgent
     from stateset_agents.core.reward import RewardFunction, RewardResult
     from stateset_agents.core.trajectory import Trajectory
-    from rewards.multi_objective_reward import (
+    from stateset_agents.rewards.multi_objective_reward import (
         ActionOrientedRewardComponent,
         EmpathyRewardComponent,
         MultiObjectiveRewardFunction,
@@ -39,16 +39,16 @@ try:
     )
 
     # Reward components
-    from rewards.ruler_reward import RulerRewardFunction
-    from training.config import TrainingConfig
-    from training.neural_reward_trainer import NeuralRewardFunction, NeuralRewardTrainer
+    from stateset_agents.rewards.ruler_reward import RulerRewardFunction
+    from stateset_agents.training.config import TrainingConfig
+    from stateset_agents.training.neural_reward_trainer import NeuralRewardFunction, NeuralRewardTrainer
 
     # Training components
-    from training.trainer import GRPOTrainer
+    from stateset_agents.training.trainer import GRPOTrainer
 
     # Utils
-    from utils.cache import CacheService
-    from utils.monitoring import MonitoringService
+    from stateset_agents.utils.cache import CacheService
+    from stateset_agents.utils.monitoring import MonitoringService
 except (ImportError, RuntimeError) as e:
     IMPORTS_AVAILABLE = False
 
@@ -503,7 +503,7 @@ class TestNeuralRewardTrainer:
     @pytest.fixture
     def sample_trajectory_data(self):
         """Create sample trajectory data"""
-        from training.neural_reward_trainer import TrajectoryData
+        from stateset_agents.training.neural_reward_trainer import TrajectoryData
 
         data = []
         for i in range(10):

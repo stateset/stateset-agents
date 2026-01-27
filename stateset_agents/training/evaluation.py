@@ -21,6 +21,20 @@ from stateset_agents.core.trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
 
+EVAL_ENV_EXCEPTIONS = (
+    AttributeError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
+EVAL_REWARD_EXCEPTIONS = (
+    KeyError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
+
 
 @dataclass(frozen=True)
 class EvaluationConfig:
@@ -116,7 +130,7 @@ async def evaluate_agent(
                 # Fall back to sequential evaluation when clone is unavailable.
                 env = environment
                 uses_shared_env = True
-            except Exception as exc:  # pragma: no cover - defensive for custom envs
+            except EVAL_ENV_EXCEPTIONS as exc:  # pragma: no cover - defensive for custom envs
                 logger.warning("Environment clone() failed; using shared instance: %s", exc)
                 env = environment
                 uses_shared_env = True
@@ -143,7 +157,7 @@ async def evaluate_agent(
                         scenario=scenario,
                         max_turns=cfg.max_turns,
                     )
-            except Exception as exc:
+            except EVAL_ENV_EXCEPTIONS as exc:
                 logger.debug("Evaluation episode %s failed: %s", episode_idx, exc)
                 continue
 
@@ -153,7 +167,7 @@ async def evaluate_agent(
                     reward = await _compute_reward(
                         reward_fn, list(getattr(trajectory, "turns", [])), scenario
                     )
-                except Exception as exc:
+                except EVAL_REWARD_EXCEPTIONS as exc:
                     logger.debug("Reward override failed: %s", exc)
 
             episode_length = float(getattr(trajectory, "episode_length", 0))

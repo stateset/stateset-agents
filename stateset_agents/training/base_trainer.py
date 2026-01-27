@@ -26,6 +26,15 @@ import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
+BASE_TRAINER_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 # Type variable for config classes
 ConfigT = TypeVar("ConfigT", bound="BaseTrainerConfig")
 
@@ -89,7 +98,7 @@ def _enable_input_require_grads(model: Any) -> None:
             model.enable_input_require_grads()
             setattr(model, "_stateset_input_grads_enabled", True)
             return
-        except Exception as e:  # pragma: no cover
+        except BASE_TRAINER_EXCEPTIONS as e:  # pragma: no cover
             logger.debug("enable_input_require_grads failed: %s", e)
 
     try:
@@ -106,7 +115,7 @@ def _enable_input_require_grads(model: Any) -> None:
 
         embeddings.register_forward_hook(_require_grads_hook)
         setattr(model, "_stateset_input_grads_enabled", True)
-    except Exception as e:  # pragma: no cover
+    except BASE_TRAINER_EXCEPTIONS as e:  # pragma: no cover
         logger.debug("Failed to register input grad hook: %s", e)
 
 
@@ -126,7 +135,7 @@ def _require_bitsandbytes() -> None:
 
     try:
         import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
-    except Exception as exc:  # pragma: no cover
+    except (ImportError, RuntimeError, OSError) as exc:  # pragma: no cover
         raise ImportError(
             "bitsandbytes is installed but failed to import. "
             "If you just installed it in a notebook, restart the runtime/kernel. "
@@ -442,7 +451,7 @@ class BaseTrajectoryGenerator:
             if success:
                 logger.info("vLLM initialized - 5-20x faster generation enabled!")
             return success
-        except Exception as e:
+        except BASE_TRAINER_EXCEPTIONS as e:
             logger.warning(f"Failed to initialize vLLM: {e}")
             return False
 

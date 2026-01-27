@@ -91,8 +91,8 @@ from stateset_agents import MultiTurnAgent
 from stateset_agents.core.agent import AgentConfig
 from stateset_agents.core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
 from stateset_agents.rewards.multi_objective_reward import create_customer_service_reward
-from training.gspo_trainer import GSPOConfig, train_with_gspo
-from training.config import get_config_for_task
+from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
+from stateset_agents.training.config import get_config_for_task
 
 async def train_with_gspo_example():
     # Create agent
@@ -155,7 +155,7 @@ python examples/train_with_gspo.py --compare
 For scenarios requiring finer-grained advantage adjustment (e.g., multi-turn RL where different turns have different importance):
 
 ```python
-from training.gspo_token_trainer import train_with_gspo_token
+from stateset_agents.training.gspo_token_trainer import train_with_gspo_token
 
 # Same setup as above, but call train_with_gspo_token instead
 trained_agent = await train_with_gspo_token(

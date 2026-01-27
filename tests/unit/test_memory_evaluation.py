@@ -31,7 +31,7 @@ class TestMemoryConfig:
 
     def test_memory_config_defaults(self):
         """Test default memory configuration."""
-        from core.memory import MemoryConfig
+        from stateset_agents.core.memory import MemoryConfig
 
         config = MemoryConfig()
         assert config.max_short_term_turns == 20
@@ -41,7 +41,7 @@ class TestMemoryConfig:
 
     def test_memory_config_custom(self):
         """Test custom memory configuration."""
-        from core.memory import MemoryConfig
+        from stateset_agents.core.memory import MemoryConfig
 
         config = MemoryConfig(
             max_short_term_turns=50,
@@ -58,7 +58,7 @@ class TestMemoryEntry:
 
     def test_memory_entry_creation(self):
         """Test creating a memory entry."""
-        from core.memory import MemoryEntry, MemoryType
+        from stateset_agents.core.memory import MemoryEntry, MemoryType
 
         entry = MemoryEntry(
             id="test_123",
@@ -73,7 +73,7 @@ class TestMemoryEntry:
 
     def test_memory_entry_decay(self):
         """Test importance decay."""
-        from core.memory import MemoryEntry, MemoryType
+        from stateset_agents.core.memory import MemoryEntry, MemoryType
 
         entry = MemoryEntry(
             id="test",
@@ -90,7 +90,7 @@ class TestMemoryEntry:
 
     def test_memory_entry_to_dict(self):
         """Test converting memory entry to dict."""
-        from core.memory import MemoryEntry, MemoryType
+        from stateset_agents.core.memory import MemoryEntry, MemoryType
 
         entry = MemoryEntry(
             id="test",
@@ -109,7 +109,7 @@ class TestEntity:
 
     def test_entity_creation(self):
         """Test creating an entity."""
-        from core.memory import Entity
+        from stateset_agents.core.memory import Entity
 
         entity = Entity(
             name="Alice",
@@ -122,7 +122,7 @@ class TestEntity:
 
     def test_entity_update(self):
         """Test updating entity with new mention."""
-        from core.memory import Entity
+        from stateset_agents.core.memory import Entity
 
         entity = Entity(name="Bob", entity_type="person")
         entity.update("Bob went to the store")
@@ -137,7 +137,7 @@ class TestEntityExtractor:
 
     def test_extract_email(self):
         """Test extracting email addresses."""
-        from core.memory import EntityExtractor
+        from stateset_agents.core.memory import EntityExtractor
 
         extractor = EntityExtractor()
         entities = extractor.extract("Contact me at test@example.com")
@@ -147,7 +147,7 @@ class TestEntityExtractor:
 
     def test_extract_phone(self):
         """Test extracting phone numbers."""
-        from core.memory import EntityExtractor
+        from stateset_agents.core.memory import EntityExtractor
 
         extractor = EntityExtractor()
         entities = extractor.extract("Call me at 555-123-4567")
@@ -157,7 +157,7 @@ class TestEntityExtractor:
 
     def test_extract_money(self):
         """Test extracting monetary amounts."""
-        from core.memory import EntityExtractor
+        from stateset_agents.core.memory import EntityExtractor
 
         extractor = EntityExtractor()
         entities = extractor.extract("The price is $99.99")
@@ -171,7 +171,7 @@ class TestContextWindow:
 
     def test_context_window_creation(self):
         """Test creating a context window."""
-        from core.memory import ContextWindow
+        from stateset_agents.core.memory import ContextWindow
 
         context = ContextWindow(
             messages=[
@@ -186,7 +186,7 @@ class TestContextWindow:
 
     def test_context_window_to_messages(self):
         """Test converting context to messages format."""
-        from core.memory import ContextWindow
+        from stateset_agents.core.memory import ContextWindow
 
         context = ContextWindow(
             messages=[{"role": "user", "content": "Hello"}],
@@ -207,7 +207,7 @@ class TestConversationMemory:
 
     def test_memory_initialization(self):
         """Test memory initializes correctly."""
-        from core.memory import ConversationMemory, MemoryConfig
+        from stateset_agents.core.memory import ConversationMemory, MemoryConfig
 
         config = MemoryConfig(max_short_term_turns=10)
         memory = ConversationMemory(config)
@@ -218,7 +218,7 @@ class TestConversationMemory:
 
     def test_add_turn_sync(self):
         """Test adding conversation turns."""
-        from core.memory import ConversationMemory, MemoryConfig
+        from stateset_agents.core.memory import ConversationMemory, MemoryConfig
 
         # Use a larger limit to avoid overflow handling
         config = MemoryConfig(max_short_term_turns=100)
@@ -234,7 +234,7 @@ class TestConversationMemory:
 
     def test_working_memory(self):
         """Test working memory for task context."""
-        from core.memory import ConversationMemory
+        from stateset_agents.core.memory import ConversationMemory
 
         memory = ConversationMemory()
 
@@ -248,7 +248,7 @@ class TestConversationMemory:
 
     def test_clear_working_memory(self):
         """Test clearing working memory."""
-        from core.memory import ConversationMemory
+        from stateset_agents.core.memory import ConversationMemory
 
         memory = ConversationMemory()
         memory.set_working_memory("key", "value")
@@ -267,7 +267,7 @@ class TestEvaluationConfig:
 
     def test_evaluation_config_defaults(self):
         """Test default evaluation configuration."""
-        from core.evaluation import EvaluationConfig
+        from stateset_agents.core.evaluation import EvaluationConfig
 
         config = EvaluationConfig()
         assert "relevance" in config.metrics
@@ -276,7 +276,7 @@ class TestEvaluationConfig:
 
     def test_evaluation_config_custom(self):
         """Test custom evaluation configuration."""
-        from core.evaluation import EvaluationConfig
+        from stateset_agents.core.evaluation import EvaluationConfig
 
         config = EvaluationConfig(
             metrics=["relevance", "helpfulness"],
@@ -292,7 +292,7 @@ class TestEvaluationSample:
 
     def test_sample_creation(self):
         """Test creating an evaluation sample."""
-        from core.evaluation import EvaluationSample
+        from stateset_agents.core.evaluation import EvaluationSample
 
         sample = EvaluationSample(
             id="test_001",
@@ -311,7 +311,7 @@ class TestEvaluationMetrics:
     @pytest.mark.asyncio
     async def test_relevance_metric(self):
         """Test relevance scoring."""
-        from core.evaluation import RelevanceMetric
+        from stateset_agents.core.evaluation import RelevanceMetric
 
         metric = RelevanceMetric()
         result = await metric.compute(
@@ -325,7 +325,7 @@ class TestEvaluationMetrics:
     @pytest.mark.asyncio
     async def test_coherence_metric(self):
         """Test coherence scoring."""
-        from core.evaluation import CoherenceMetric
+        from stateset_agents.core.evaluation import CoherenceMetric
 
         metric = CoherenceMetric()
 
@@ -346,7 +346,7 @@ class TestEvaluationMetrics:
     @pytest.mark.asyncio
     async def test_helpfulness_metric(self):
         """Test helpfulness scoring."""
-        from core.evaluation import HelpfulnessMetric
+        from stateset_agents.core.evaluation import HelpfulnessMetric
 
         metric = HelpfulnessMetric()
 
@@ -365,7 +365,7 @@ class TestEvaluationMetrics:
     @pytest.mark.asyncio
     async def test_latency_metric(self):
         """Test latency measurement."""
-        from core.evaluation import LatencyMetric
+        from stateset_agents.core.evaluation import LatencyMetric
 
         metric = LatencyMetric()
 
@@ -380,7 +380,7 @@ class TestEvaluationMetrics:
     @pytest.mark.asyncio
     async def test_safety_metric(self):
         """Test safety scoring."""
-        from core.evaluation import SafetyMetric
+        from stateset_agents.core.evaluation import SafetyMetric
 
         metric = SafetyMetric()
 
@@ -398,7 +398,7 @@ class TestMetricResult:
 
     def test_metric_result_creation(self):
         """Test creating a metric result."""
-        from core.evaluation import MetricResult
+        from stateset_agents.core.evaluation import MetricResult
 
         result = MetricResult(
             metric_name="test_metric",
@@ -417,7 +417,7 @@ class TestAgentEvaluator:
     @pytest.mark.asyncio
     async def test_evaluator_initialization(self):
         """Test evaluator initializes correctly."""
-        from core.evaluation import AgentEvaluator, EvaluationConfig
+        from stateset_agents.core.evaluation import AgentEvaluator, EvaluationConfig
 
         config = EvaluationConfig(metrics=["relevance"])
         evaluator = AgentEvaluator(config)
@@ -431,7 +431,7 @@ class TestABTestRunner:
 
     def test_ab_test_runner_creation(self):
         """Test creating A/B test runner."""
-        from core.evaluation import ABTestRunner, EvaluationConfig
+        from stateset_agents.core.evaluation import ABTestRunner, EvaluationConfig
 
         config = EvaluationConfig(metrics=["relevance", "helpfulness"])
         runner = ABTestRunner(config)
@@ -441,7 +441,7 @@ class TestABTestRunner:
 
     def test_ab_test_runner_default_config(self):
         """Test A/B test runner with default config."""
-        from core.evaluation import ABTestRunner
+        from stateset_agents.core.evaluation import ABTestRunner
 
         runner = ABTestRunner()
 

@@ -5,6 +5,7 @@ This module provides security-related utilities including input validation,
 authentication helpers, secure configuration management, and security monitoring.
 """
 
+import binascii
 import hashlib
 import hmac
 import json
@@ -15,6 +16,8 @@ import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
+
+from stateset_agents.core.error_handling import ErrorCode, ValidationException
 
 logger = logging.getLogger(__name__)
 
@@ -202,27 +205,39 @@ class SecureConfig:
             import base64
             try:
                 return base64.b64decode(value.encode()).decode()
-            except Exception:
+            except (binascii.Error, UnicodeDecodeError, ValueError):
                 return value
 
         try:
-            from cryptography.fernet import Fernet
+            from cryptography.fernet import Fernet, InvalidToken
             import base64
 
             # Derive the same Fernet key
             key_bytes = hashlib.sha256(key_str.encode()).digest()
             fernet_key = base64.urlsafe_b64encode(key_bytes)
             cipher = Fernet(fernet_key)
-            return cipher.decrypt(value.encode()).decode()
+            try:
+                return cipher.decrypt(value.encode()).decode()
+            except (InvalidToken, UnicodeDecodeError, ValueError) as e:
+                logger.error(f"Failed to decrypt secret: {e}")
+                raise ValidationException(
+                    "Failed to decrypt secret. Check CONFIG_ENCRYPTION_KEY.",
+                    error_code=ErrorCode.VALIDATION_FAILED,
+                    details={"source": "fernet_decrypt"},
+                ) from e
         except ImportError:
             import base64
             try:
                 return base64.b64decode(value.encode()).decode()
-            except Exception:
+            except (binascii.Error, UnicodeDecodeError, ValueError):
                 return value
-        except Exception as e:
+        except (binascii.Error, UnicodeDecodeError, ValueError) as e:
             logger.error(f"Failed to decrypt secret: {e}")
-            raise ValueError("Failed to decrypt secret. Check CONFIG_ENCRYPTION_KEY.")
+            raise ValidationException(
+                "Failed to decrypt secret. Check CONFIG_ENCRYPTION_KEY.",
+                error_code=ErrorCode.VALIDATION_FAILED,
+                details={"source": "decrypt_fallback"},
+            ) from e
 
     def save_config(self):
         """Save configuration to file."""

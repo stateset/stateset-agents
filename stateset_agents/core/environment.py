@@ -19,6 +19,16 @@ from .trajectory import ConversationTurn, MultiTurnTrajectory, TrajectoryGroup
 
 logger = logging.getLogger(__name__)
 
+ENVIRONMENT_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    KeyError,
+    AttributeError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 class EpisodeStatus(Enum):
     """Status of an episode"""
@@ -165,7 +175,7 @@ class Environment(ABC):
                 else:
                     logger.warning(f"Unexpected reward result type: {type(result)}")
                     return 0.5
-            except Exception as e:
+            except ENVIRONMENT_EXCEPTIONS as e:
                 logger.warning(f"Failed to compute reward from reward_fn: {e}")
                 return 0.5
 
@@ -188,7 +198,7 @@ class Environment(ABC):
         initial_prompt = ""
         try:
             initial_prompt = await self.get_initial_prompt(scenario)
-        except Exception:
+        except ENVIRONMENT_EXCEPTIONS:
             pass
         if initial_prompt:
             turns.append(
@@ -237,7 +247,7 @@ class Environment(ABC):
                     total_reward += final_reward.score
                 elif isinstance(final_reward, dict) and "score" in final_reward:
                     total_reward += float(final_reward["score"])  # type: ignore[arg-type]
-            except Exception:
+            except ENVIRONMENT_EXCEPTIONS:
                 pass
 
         return MultiTurnTrajectory(
@@ -423,7 +433,7 @@ class ConversationEnvironment(Environment):
                     step_reward = float(reward_result["score"])
                 elif isinstance(reward_result, (int, float)):
                     step_reward = float(reward_result)
-            except Exception as reward_err:
+            except ENVIRONMENT_EXCEPTIONS as reward_err:
                 logger.debug("Reward computation failed: %s", reward_err)
                 step_reward = 0.0
         else:
@@ -711,7 +721,7 @@ def _load_conversation_configs() -> Dict[str, Any]:
         for preset_name in list_environment_presets():
             try:
                 configs[preset_name] = get_environment_preset(preset_name)
-            except Exception:
+            except ENVIRONMENT_EXCEPTIONS:
                 pass
     except ImportError:
         pass

@@ -37,6 +37,8 @@ conversation_router = APIRouter(prefix="/conversations", tags=["conversations"])
 security_monitor = SecurityMonitor()
 agent_service = AgentService(security_monitor)
 
+AGENT_API_EXCEPTIONS = (AttributeError, KeyError, RuntimeError, TypeError, ValueError)
+
 
 def _agent_config_to_dict(config: Any) -> Dict[str, Any]:
     if isinstance(config, dict):
@@ -152,7 +154,7 @@ async def create_agent(
         raise
     except ValueError as e:
         raise InvalidAgentConfigError(str(e))
-    except Exception as e:
+    except AGENT_API_EXCEPTIONS as e:
         raise InternalError("Failed to create agent", internal_error=e)
 
 
@@ -402,7 +404,7 @@ async def converse_with_agent(
         raise
     except HTTPException:
         raise
-    except Exception as e:
+    except AGENT_API_EXCEPTIONS as e:
         raise InternalError("Conversation failed", internal_error=e)
 
 

@@ -18,6 +18,13 @@ from .trajectory import ConversationTurn, MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
 
+REWARD_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+)
+
 
 class RewardType(Enum):
     """Types of rewards"""
@@ -168,7 +175,7 @@ class CompositeReward(RewardFunction):
             try:
                 result = await reward_fn.compute_reward(turns, context)
                 results.append((reward_fn, result))
-            except Exception as e:
+            except REWARD_EXCEPTIONS as e:
                 logger.warning(f"Reward function {reward_fn.name} failed: {e}")
                 # Continue with other reward functions
                 continue

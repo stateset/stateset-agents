@@ -27,6 +27,8 @@ from ..training.domain_randomization import (
 
 logger = logging.getLogger(__name__)
 
+SIMULATOR_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 
 @dataclass
 class ConversationSimulatorConfig:
@@ -173,7 +175,7 @@ class UserSimulator:
 
         try:
             return await self._generate_llm_response(history, context)
-        except Exception as e:
+        except SIMULATOR_EXCEPTIONS as e:
             logger.warning(f"LLM generation failed: {e}, falling back to rule-based")
             return self._generate_rule_based(history, context)
 

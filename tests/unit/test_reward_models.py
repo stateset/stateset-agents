@@ -31,7 +31,7 @@ class TestTransformerRewardModel:
 
     def test_model_initialization(self):
         """Test model can be initialized"""
-        from training.transformer_reward_model import TransformerRewardModel
+        from stateset_agents.training.transformer_reward_model import TransformerRewardModel
 
         model = TransformerRewardModel(
             base_model_name="sentence-transformers/all-MiniLM-L6-v2",
@@ -47,7 +47,7 @@ class TestTransformerRewardModel:
 
     def test_model_forward_pass(self):
         """Test forward pass through model"""
-        from training.transformer_reward_model import TransformerRewardModel
+        from stateset_agents.training.transformer_reward_model import TransformerRewardModel
 
         model = TransformerRewardModel(hidden_dim=128, num_layers=1)
         model.eval()
@@ -74,7 +74,7 @@ class TestTransformerRewardModel:
 
     def test_freeze_unfreeze_encoders(self):
         """Test freezing and unfreezing encoder weights"""
-        from training.transformer_reward_model import TransformerRewardModel
+        from stateset_agents.training.transformer_reward_model import TransformerRewardModel
 
         model = TransformerRewardModel(hidden_dim=128)
 
@@ -101,7 +101,7 @@ class TestRewardExample:
 
     def test_from_conversation_turns(self):
         """Test creating RewardExample from conversation turns"""
-        from training.transformer_reward_model import RewardExample
+        from stateset_agents.training.transformer_reward_model import RewardExample
 
         turns = [
             ConversationTurn(role="user", content="Hello, I need help"),
@@ -127,7 +127,7 @@ class TestRewardDataset:
     def test_dataset_creation(self):
         """Test dataset can be created"""
         from transformers import AutoTokenizer
-        from training.transformer_reward_model import RewardDataset, RewardExample
+        from stateset_agents.training.transformer_reward_model import RewardDataset, RewardExample
 
         examples = [
             RewardExample(
@@ -160,7 +160,7 @@ class TestTransformerRewardTrainer:
 
     def test_trainer_initialization(self):
         """Test trainer initialization"""
-        from training.transformer_reward_model import (
+        from stateset_agents.training.transformer_reward_model import (
             RewardTrainingConfig,
             TransformerRewardTrainer,
         )
@@ -181,7 +181,7 @@ class TestTransformerRewardTrainer:
 
     def test_predict(self):
         """Test single prediction"""
-        from training.transformer_reward_model import (
+        from stateset_agents.training.transformer_reward_model import (
             RewardTrainingConfig,
             TransformerRewardTrainer,
         )
@@ -198,7 +198,7 @@ class TestTransformerRewardTrainer:
 
     def test_training_loop(self):
         """Test training loop runs without errors"""
-        from training.transformer_reward_model import (
+        from stateset_agents.training.transformer_reward_model import (
             RewardExample,
             RewardTrainingConfig,
             TransformerRewardTrainer,
@@ -241,7 +241,7 @@ class TestTransformerRewardTrainer:
 
     def test_checkpoint_save_load(self, tmp_path):
         """Test saving and loading checkpoints"""
-        from training.transformer_reward_model import (
+        from stateset_agents.training.transformer_reward_model import (
             RewardTrainingConfig,
             TransformerRewardTrainer,
         )
@@ -276,7 +276,7 @@ class TestLearnedRewardFunction:
     @pytest.mark.asyncio
     async def test_compute_reward(self):
         """Test computing reward using learned model"""
-        from training.transformer_reward_model import (
+        from stateset_agents.training.transformer_reward_model import (
             LearnedRewardFunction,
             RewardTrainingConfig,
             TransformerRewardTrainer,
@@ -303,7 +303,7 @@ class TestLearnedRewardFunction:
     @pytest.mark.asyncio
     async def test_reward_caching(self):
         """Test reward prediction caching"""
-        from training.transformer_reward_model import (
+        from stateset_agents.training.transformer_reward_model import (
             LearnedRewardFunction,
             RewardTrainingConfig,
             TransformerRewardTrainer,
@@ -335,7 +335,7 @@ class TestRewardCalibration:
 
     def test_reward_statistics_update(self):
         """Test updating reward statistics"""
-        from training.reward_calibration import RewardStatistics
+        from stateset_agents.training.reward_calibration import RewardStatistics
 
         stats = RewardStatistics()
         values = [0.1, 0.3, 0.5, 0.7, 0.9]
@@ -350,7 +350,7 @@ class TestRewardCalibration:
 
     def test_reward_normalizer_zscore(self):
         """Test z-score normalization"""
-        from training.reward_calibration import RewardNormalizer
+        from stateset_agents.training.reward_calibration import RewardNormalizer
 
         normalizer = RewardNormalizer(method="z_score", buffer_size=100)
 
@@ -368,7 +368,7 @@ class TestRewardCalibration:
 
     def test_reward_normalizer_minmax(self):
         """Test min-max normalization"""
-        from training.reward_calibration import RewardNormalizer
+        from stateset_agents.training.reward_calibration import RewardNormalizer
 
         normalizer = RewardNormalizer(method="min_max", buffer_size=100)
 
@@ -385,7 +385,7 @@ class TestRewardCalibration:
 
     def test_reward_normalizer_clipping(self):
         """Test reward clipping"""
-        from training.reward_calibration import RewardNormalizer
+        from stateset_agents.training.reward_calibration import RewardNormalizer
 
         normalizer = RewardNormalizer(
             method="z_score", clip_range=(-2.0, 2.0), buffer_size=100
@@ -404,7 +404,7 @@ class TestRewardCalibration:
     async def test_calibrated_reward_function(self):
         """Test CalibratedRewardFunction"""
         from stateset_agents.core.reward import HelpfulnessReward
-        from training.reward_calibration import (
+        from stateset_agents.training.reward_calibration import (
             CalibratedRewardFunction,
             RewardNormalizer,
         )
@@ -438,7 +438,7 @@ class TestRewardCalibration:
             HelpfulnessReward,
             SafetyReward,
         )
-        from training.reward_calibration import MultiRewardCalibrator
+        from stateset_agents.training.reward_calibration import MultiRewardCalibrator
 
         rewards = [HelpfulnessReward(weight=1.0), SafetyReward(weight=1.0)]
 
@@ -465,7 +465,7 @@ class TestRewardCalibration:
 
     def test_adaptive_reward_scaler(self):
         """Test AdaptiveRewardScaler"""
-        from training.reward_calibration import AdaptiveRewardScaler
+        from stateset_agents.training.reward_calibration import AdaptiveRewardScaler
 
         scaler = AdaptiveRewardScaler(
             initial_scale=1.0, min_scale=0.1, max_scale=10.0
@@ -500,8 +500,8 @@ class TestRewardModelIntegration:
     async def test_end_to_end_workflow(self, tmp_path):
         """Test complete workflow from training to deployment"""
         from stateset_agents.core.reward import HelpfulnessReward
-        from training.reward_calibration import CalibratedRewardFunction
-        from training.transformer_reward_model import (
+        from stateset_agents.training.reward_calibration import CalibratedRewardFunction
+        from stateset_agents.training.transformer_reward_model import (
             LearnedRewardFunction,
             RewardExample,
             RewardTrainingConfig,

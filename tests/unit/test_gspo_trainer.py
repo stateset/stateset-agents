@@ -20,7 +20,7 @@ class TestGSPOConfig:
 
     def test_gspo_config_defaults(self):
         """Test GSPO config with default values."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig()
 
@@ -31,7 +31,7 @@ class TestGSPOConfig:
 
     def test_gspo_config_generation_params(self):
         """Test GSPO generation parameters."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig()
 
@@ -42,7 +42,7 @@ class TestGSPOConfig:
 
     def test_gspo_config_lora_settings(self):
         """Test GSPO LoRA configuration."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig()
 
@@ -53,7 +53,7 @@ class TestGSPOConfig:
 
     def test_gspo_config_memory_optimization(self):
         """Test GSPO memory optimization settings."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig()
 
@@ -63,7 +63,7 @@ class TestGSPOConfig:
 
     def test_gspo_config_custom_values(self):
         """Test GSPO config with custom values."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig(
             num_generations=8,
@@ -80,8 +80,8 @@ class TestGSPOConfig:
 
     def test_gspo_config_from_training_config(self):
         """Test creating GSPO config from training config."""
-        from training.config import TrainingConfig
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.config import TrainingConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         base_config = TrainingConfig(
             model_name="gpt2",
@@ -104,13 +104,13 @@ class TestGSPOModelManager:
     @pytest.fixture
     def gspo_config(self):
         """Create a GSPO config for testing."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
         return GSPOConfig(model_name="gpt2", use_lora=True)
 
     @pytest.fixture
     def model_manager(self, gspo_config):
         """Create a GSPOModelManager for testing."""
-        from training.gspo_trainer import GSPOModelManager
+        from stateset_agents.training.gspo_trainer import GSPOModelManager
         return GSPOModelManager(gspo_config)
 
     def test_model_manager_creation(self, model_manager):
@@ -151,7 +151,7 @@ class TestGSPOModelManager:
         gspo_config.use_8bit = True
         gspo_config.use_lora = False
 
-        from training.gspo_trainer import GSPOModelManager
+        from stateset_agents.training.gspo_trainer import GSPOModelManager
         manager = GSPOModelManager(gspo_config)
 
         mock_tokenizer = MagicMock()
@@ -230,7 +230,7 @@ class TestGSPOGroupSampling:
 
     def test_group_size_config(self):
         """Test group size configuration."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig()
 
@@ -278,7 +278,7 @@ class TestGSPOKLPenalty:
 
     def test_beta_config(self):
         """Test KL penalty coefficient (beta) configuration."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig()
         # Default beta is 0 (no KL penalty in basic GSPO)
@@ -369,7 +369,7 @@ class TestGSPOGeneration:
 
     def test_generation_config(self):
         """Test generation configuration."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig()
 
@@ -398,7 +398,7 @@ class TestGSPOIterativeTraining:
 
     def test_outer_iterations_config(self):
         """Test outer iteration configuration."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig()
 
@@ -428,7 +428,7 @@ class TestGSPOvLLMIntegration:
 
     def test_vllm_config(self):
         """Test vLLM configuration."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig(use_vllm=True)
         assert config.use_vllm is True
@@ -450,7 +450,7 @@ class TestGSPOTokenVariant:
 
     def test_gspo_token_config(self):
         """Test GSPO-token variant configuration."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         config = GSPOConfig(use_gspo_token=True)
         assert config.use_gspo_token is True
@@ -478,7 +478,7 @@ class TestGSPOTrainer:
     @pytest.fixture
     def gspo_config(self):
         """Create a GSPO config for testing."""
-        from training.gspo_trainer import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig
         return GSPOConfig(
             model_name="gpt2",
             num_generations=4,
@@ -496,7 +496,7 @@ class TestGSPOTrainerComputeGroupAdvantages:
 
     def test_constant_rewards_no_item_attribute_error(self):
         """Constant rewards should not raise and should return zero advantages."""
-        from training.gspo_trainer import GSPOTrainer
+        from stateset_agents.training.gspo_trainer import GSPOTrainer
 
         rewards = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32)
         advantages, stats = GSPOTrainer.compute_group_advantages(None, rewards)
@@ -507,7 +507,7 @@ class TestGSPOTrainerComputeGroupAdvantages:
 
     def test_single_reward_no_nan(self):
         """Single-element groups should not produce NaNs."""
-        from training.gspo_trainer import GSPOTrainer
+        from stateset_agents.training.gspo_trainer import GSPOTrainer
 
         rewards = torch.tensor([2.0], dtype=torch.float32)
         advantages, stats = GSPOTrainer.compute_group_advantages(None, rewards)
@@ -580,7 +580,7 @@ class TestGSPOTrainerSequenceLogProbs:
 
     def test_log_probs_require_grad(self):
         """Sequence log probs should require grad for policy optimization."""
-        from training.gspo_trainer import GSPOTrainer, GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOTrainer, GSPOConfig
 
         model = self._DummyCausalLM()
         tokenizer = self._DummyTokenizer()

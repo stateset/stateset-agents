@@ -47,6 +47,16 @@ from .performance_optimizer import OptimizationLevel, PerformanceOptimizer
 
 logger = logging.getLogger(__name__)
 
+ORCHESTRATOR_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    KeyError,
+    AttributeError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 class OrchestrationMode(Enum):
     """Modes of orchestration"""
@@ -265,7 +275,7 @@ class IntelligentOrchestrator:
 
             logger.info("Intelligent Orchestrator initialization complete")
 
-        except Exception as e:
+        except ORCHESTRATOR_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "orchestrator", "initialize")
             raise
 
@@ -355,7 +365,7 @@ class IntelligentOrchestrator:
 
             return step_results, decision
 
-        except Exception as e:
+        except ORCHESTRATOR_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "orchestrator", "training_step")
 
             # Return safe defaults
@@ -412,7 +422,7 @@ class IntelligentOrchestrator:
 
             return optimal_architecture
 
-        except Exception as e:
+        except ORCHESTRATOR_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "orchestrator", "optimize_architecture")
             self._update_component_state("nas", ComponentStatus.ERROR)
             return None

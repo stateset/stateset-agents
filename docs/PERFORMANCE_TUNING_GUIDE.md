@@ -393,7 +393,7 @@ grpo_config = TrainingConfig(
 ### GSPO Tuning
 
 ```python
-from training.gspo_trainer import GSPOConfig
+from stateset_agents.training.gspo_trainer import GSPOConfig
 
 gspo_config = GSPOConfig(
     # Sequence-level clipping (tighter than GRPO)

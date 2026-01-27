@@ -16,8 +16,8 @@ import asyncio
 from stateset_agents.core.agent import Agent, AgentConfig
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import HelpfulnessReward
-from training.trainer import SingleTurnGRPOTrainer
-from training.config import TrainingConfig
+from stateset_agents.training.trainer import SingleTurnGRPOTrainer
+from stateset_agents.training.config import TrainingConfig
 
 async def train_single_turn():
     # Create a basic agent
@@ -92,7 +92,7 @@ The `SingleTurnGRPOTrainer` implements GRPO for single-turn interactions:
 ### TrainingConfig Options
 
 ```python
-from training.config import TrainingConfig
+from stateset_agents.training.config import TrainingConfig
 
 config = TrainingConfig(
     num_episodes=50,              # Number of training episodes
@@ -196,7 +196,7 @@ trainer = SingleTurnGRPOTrainer(
 ### W&B Integration
 
 ```python
-from utils.wandb_integration import WandBLogger
+from stateset_agents.utils.wandb_integration import WandBLogger
 
 wandb_logger = WandBLogger(project="single-turn-training", name="qa-model")
 

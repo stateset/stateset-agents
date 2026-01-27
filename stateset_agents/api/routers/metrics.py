@@ -20,6 +20,8 @@ from stateset_agents.utils.security import SecurityMonitor
 
 router = APIRouter(tags=["observability"])
 
+METRICS_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
+
 # Track service start time for uptime calculation
 _service_start_time = time.monotonic()
 
@@ -222,7 +224,7 @@ async def get_metrics(
     try:
         perf_monitor = get_global_monitor()
         summary = perf_monitor.get_metrics_summary()
-    except Exception:
+    except METRICS_EXCEPTIONS:
         summary = {}
 
     # Get middleware metrics

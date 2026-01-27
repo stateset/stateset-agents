@@ -15,7 +15,7 @@ import pytest
 
 # Handle import errors gracefully (e.g., torchvision compatibility issues)
 try:
-    from training.advanced_training_orchestrator import (
+    from stateset_agents.training.advanced_training_orchestrator import (
         AdvancedTrainingOrchestrator,
         ExperimentTracker,
         JobScheduler,

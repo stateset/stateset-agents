@@ -126,7 +126,7 @@ config = TrainingConfig(
 GSPO has similar requirements to GRPO:
 
 ```python
-from training.gspo_trainer import GSPOConfig
+from stateset_agents.training.gspo_trainer import GSPOConfig
 
 # For 7B model on single 80GB A100
 config = GSPOConfig(

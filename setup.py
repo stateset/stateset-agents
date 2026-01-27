@@ -21,23 +21,9 @@ setup(
             # Primary namespace
             "stateset_agents",
             "stateset_agents.*",
-            # Top-level implementation packages used by stateset_agents
-            "core",
-            "core.*",
-            "training",
-            "training.*",
-            "utils",
-            "utils.*",
-            "rewards",
-            "rewards.*",
-            "api",
-            "api.*",
-            "grpo_agent_framework",
-            "grpo_agent_framework.*",
-            "environments",
-            "environments.*",
         ]
     ),
+    package_data={"stateset_agents": ["py.typed"]},
     license="Business Source License 1.1",
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -65,6 +51,7 @@ setup(
             "pytest>=7.0.0",
             "pytest-asyncio>=0.21.0",
             "pytest-cov>=4.0.0",
+            "hypothesis>=6.0.0",
             "black>=23.0.0",
             "isort>=5.12.0",
             "flake8>=6.0.0",

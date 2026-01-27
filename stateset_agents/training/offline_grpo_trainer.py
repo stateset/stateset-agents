@@ -29,6 +29,8 @@ from .base_trainer import BaseTrainer, BaseTrainerConfig
 
 logger = logging.getLogger(__name__)
 
+OFFLINE_DATA_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
+
 
 def _require_torch():
     """Ensure torch is available"""
@@ -350,7 +352,7 @@ class OfflineGRPOTrainer:
         # Convert dataset to offline RL format
         try:
             offline_data = dataset.to_offline_rl_format()
-        except Exception as e:
+        except OFFLINE_DATA_EXCEPTIONS as e:
             logger.warning(f"Could not convert to offline RL format: {e}")
             # Use simplified format
             offline_data = self._prepare_simplified_dataset(dataset)

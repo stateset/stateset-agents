@@ -28,6 +28,16 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
+LLM_JUDGE_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    KeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 
 class JudgeProvider(Enum):
     """Supported LLM providers for judging."""
@@ -301,7 +311,7 @@ class OpenAIJudge(LLMJudgeBase):
         except asyncio.TimeoutError:
             logger.warning("OpenAI API call timed out")
             return '{"score": 0.5, "reasoning": "Timeout"}'
-        except Exception as e:
+        except LLM_JUDGE_EXCEPTIONS as e:
             logger.error(f"OpenAI API error: {e}")
             return '{"score": 0.5, "reasoning": "API error"}'
 
@@ -350,7 +360,7 @@ class AnthropicJudge(LLMJudgeBase):
         except asyncio.TimeoutError:
             logger.warning("Anthropic API call timed out")
             return '{"score": 0.5, "reasoning": "Timeout"}'
-        except Exception as e:
+        except LLM_JUDGE_EXCEPTIONS as e:
             logger.error(f"Anthropic API error: {e}")
             return '{"score": 0.5, "reasoning": "API error"}'
 
@@ -404,7 +414,7 @@ class LocalJudge(LLMJudgeBase):
             )
             return response
 
-        except Exception as e:
+        except LLM_JUDGE_EXCEPTIONS as e:
             logger.error(f"Local model error: {e}")
             return '{"score": 0.5, "reasoning": "Generation error"}'
 

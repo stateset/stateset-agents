@@ -26,7 +26,7 @@ The easiest way to train a customer service agent:
 
 ```python
 import asyncio
-from training import train_customer_service_with_trl
+from stateset_agents.training import train_customer_service_with_trl
 
 async def main():
     agent = await train_customer_service_with_trl(
@@ -84,10 +84,10 @@ LEARNING_RATE=3e-6 \
 Create a custom TRL GRPO configuration:
 
 ```python
-from training import TRLGRPOConfig, train_with_trl_grpo
+from stateset_agents.training import TRLGRPOConfig, train_with_trl_grpo
 from stateset_agents.core.agent import MultiTurnAgent, AgentConfig
 from stateset_agents.core.environment import ConversationEnvironment
-from rewards.multi_objective_reward import MultiObjectiveReward
+from stateset_agents.rewards.multi_objective_reward import MultiObjectiveReward
 
 # Create configuration
 config = TRLGRPOConfig(

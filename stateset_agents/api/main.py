@@ -19,6 +19,8 @@ from .resilience import HealthChecker, HealthStatus, get_all_circuit_stats
 
 logger = logging.getLogger(__name__)
 
+API_LIFESPAN_EXCEPTIONS = (ImportError, OSError, RuntimeError, ValueError)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager with resource initialization."""
@@ -34,7 +36,7 @@ async def lifespan(app: FastAPI):
         cache_config = CacheConfig.from_env()
         await init_cache(cache_config)
         logger.info("Cache initialized with backend: %s", cache_config.backend.value)
-    except Exception as e:
+    except API_LIFESPAN_EXCEPTIONS as e:
         logger.warning("Cache initialization skipped: %s", e)
 
     # Initialize database (optional)
@@ -43,7 +45,7 @@ async def lifespan(app: FastAPI):
         db_config = DatabaseConfig.from_env()
         await init_database(db_config)
         logger.info("Database initialized with backend: %s", db_config.backend.value)
-    except Exception as e:
+    except API_LIFESPAN_EXCEPTIONS as e:
         logger.warning("Database initialization skipped: %s", e)
 
     # Register health checks
@@ -57,13 +59,13 @@ async def lifespan(app: FastAPI):
     try:
         from .distributed_cache import close_cache
         await close_cache()
-    except Exception:
+    except API_LIFESPAN_EXCEPTIONS:
         pass
 
     try:
         from .persistence import close_database
         await close_database()
-    except Exception:
+    except API_LIFESPAN_EXCEPTIONS:
         pass
 
 

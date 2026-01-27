@@ -32,6 +32,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+DAPO_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
 # Import framework components
 from .config import TrainingConfig, get_config_for_task
 
@@ -476,7 +485,7 @@ class DAPOTrainer:
             if success:
                 logger.info("vLLM initialized for DAPO - generation will be 5-20x faster!")
             return success
-        except Exception as e:
+        except DAPO_EXCEPTIONS as e:
             logger.warning(f"Failed to initialize vLLM: {e}")
             return False
 
@@ -640,7 +649,7 @@ class DAPOTrainer:
             logger.debug(f"vLLM generated {len(responses)} responses for DAPO")
             return responses
 
-        except Exception as e:
+        except DAPO_EXCEPTIONS as e:
             logger.warning(f"vLLM generation failed: {e}. Falling back to HuggingFace.")
             return await self._generate_with_hf(prompt)
 

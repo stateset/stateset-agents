@@ -27,6 +27,8 @@ from .loss_computation import _prepare_inputs_and_labels
 
 logger = logging.getLogger(__name__)
 
+CONTINUAL_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
+
 
 class ContinualLearningStrategy(str, Enum):
     """High-level continual learning strategy selection."""
@@ -421,7 +423,7 @@ class ContinualLearningManager:
             self.reference_model = deepcopy(agent.model).eval()
             for param in self.reference_model.parameters():
                 param.requires_grad = False
-        except Exception as exc:
+        except CONTINUAL_EXCEPTIONS as exc:
             logger.warning("Failed to snapshot reference model: %s", exc)
             self.reference_model = None
 
@@ -510,7 +512,7 @@ class ContinualLearningManager:
                 for (name, _), grad in zip(named_params, grads):
                     if grad is not None:
                         fisher[name] += grad.detach() ** 2
-            except Exception as exc:
+            except CONTINUAL_EXCEPTIONS as exc:
                 logger.debug("Skipping EWC sample %s: %s", idx, exc)
                 continue
 

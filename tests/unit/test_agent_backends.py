@@ -1,4 +1,4 @@
-from core.agent_backends import create_stub_backend
+from stateset_agents.core.agent_backends import create_stub_backend
 
 
 def test_create_stub_backend_uses_configuration_values():

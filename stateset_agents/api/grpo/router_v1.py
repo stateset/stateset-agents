@@ -31,6 +31,8 @@ from ..logging_config import get_logger
 
 logger = get_logger(__name__)
 
+GRPO_V1_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 # API v1 Router
 router_v1 = APIRouter(prefix="/v1", tags=["v1"])
 
@@ -207,7 +209,7 @@ def create_v1_router(
                 ))
                 accepted += 1
 
-            except Exception as e:
+            except GRPO_V1_EXCEPTIONS as e:
                 results.append(BatchItemResult(
                     index=i,
                     job_id=None,

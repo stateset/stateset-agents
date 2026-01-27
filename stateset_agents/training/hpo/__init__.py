@@ -9,8 +9,8 @@ This module provides comprehensive HPO capabilities for GRPO training:
 - **Rich Analysis**: Visualization, importance analysis, optimization history
 
 Quick Start:
-    >>> from training.hpo import GRPOHPOTrainer, HPOConfig, quick_hpo
-    >>> from training.hpo.search_spaces import create_grpo_search_space
+    >>> from stateset_agents.training.hpo import GRPOHPOTrainer, HPOConfig, quick_hpo
+    >>> from stateset_agents.training.hpo.search_spaces import create_grpo_search_space
     >>>
     >>> # Quick HPO with defaults
     >>> summary = await quick_hpo(

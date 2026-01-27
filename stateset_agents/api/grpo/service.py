@@ -68,6 +68,12 @@ from .state import get_state_manager
 
 logger = get_logger(__name__)
 
+GRPO_INIT_EXCEPTIONS = (ImportError, OSError, RuntimeError, TypeError, ValueError)
+GRPO_REQUEST_EXCEPTIONS = (HTTPException, OSError, RuntimeError, TypeError, ValueError)
+GRPO_ENGINE_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+GRPO_BATCH_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+GRPO_WS_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 
 # Global services and handlers
 _services: Dict[str, Any] = {}
@@ -232,8 +238,8 @@ async def lifespan(app: FastAPI):
 
     # Initialize services
     try:
-        from utils.monitoring import MonitoringService
-        from utils.cache import CacheService
+        from stateset_agents.utils.monitoring import MonitoringService
+        from stateset_agents.utils.cache import CacheService
 
         _services["monitoring"] = MonitoringService(
             enable_prometheus=config.enable_prometheus
@@ -279,7 +285,7 @@ async def lifespan(app: FastAPI):
                 num_workers=1,
             )
             logger.info("Initialized computational engine")
-        except Exception as e:
+        except GRPO_INIT_EXCEPTIONS as e:
             logger.warning("Could not create computational engine: %s", e)
             _services["demo_engine"] = LightweightDemoEngine()
 
@@ -293,7 +299,7 @@ async def lifespan(app: FastAPI):
             dialogue_database=DialogueDatabase([]),
         )
         logger.info("Initialized multi-turn agent")
-    except Exception as e:
+    except GRPO_INIT_EXCEPTIONS as e:
         logger.warning("Could not create multi-turn agent: %s", e)
 
     # Initialize handlers
@@ -470,7 +476,7 @@ Rate limiting is enforced per API key or client IP. Default: 60 requests/minute.
 
         try:
             response = await call_next(request)
-        except Exception:
+        except GRPO_REQUEST_EXCEPTIONS:
             logger.exception("Unhandled exception on %s", request.url.path)
             response = _build_error_response(
                 request,
@@ -752,7 +758,7 @@ def _register_routes(app: FastAPI) -> None:
                     try:
                         result = engine.scale_computation(request.scale_factor)
                         results[engine_id] = result
-                    except Exception as e:
+                    except GRPO_ENGINE_EXCEPTIONS as e:
                         results[engine_id] = {"error": str(e)}
 
         # Scale demo engine
@@ -760,7 +766,7 @@ def _register_routes(app: FastAPI) -> None:
             try:
                 result = _services["demo_engine"].scale_computation(request.scale_factor)
                 results["demo_engine"] = result
-            except Exception as e:
+            except GRPO_ENGINE_EXCEPTIONS as e:
                 results["demo_engine"] = {"error": str(e)}
 
         return GRPOScaleResponse(
@@ -827,7 +833,7 @@ def _register_routes(app: FastAPI) -> None:
                 ))
                 accepted += 1
 
-            except Exception as e:
+            except GRPO_BATCH_EXCEPTIONS as e:
                 logger.warning("Batch item %d failed: %s", i, e)
                 results.append(BatchItemResult(
                     index=i,
@@ -936,7 +942,7 @@ def _register_routes(app: FastAPI) -> None:
             await _websocket_handler.handle_connection(websocket)
         except WebSocketDisconnect:
             logger.info("WebSocket client disconnected")
-        except Exception as e:
+        except GRPO_WS_EXCEPTIONS as e:
             logger.error("WebSocket error: %s", e)
             await websocket.close()
 

@@ -278,7 +278,7 @@ class TestTrainingPipelineIntegration:
         # Check that the import uses the full stateset_agents path
         assert "from stateset_agents.training.trainer import SingleTurnGRPOTrainer" in source
         # Ensure old incorrect import is not present
-        assert "from training.trainer import SingleTurnGRPOTrainer" not in source
+        assert "from stateset_agents.training.trainer import SingleTurnGRPOTrainer" not in source
 
     def test_train_function_passes_checkpoint_name_correctly(self):
         """Test that train() calls save_checkpoint with checkpoint_name kwarg."""

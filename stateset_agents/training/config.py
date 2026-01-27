@@ -347,7 +347,7 @@ class TrainingConfig:
                     warnings.append(
                         f"resume_from_checkpoint '{self.resume_from_checkpoint}' does not exist"
                     )
-            except Exception:
+            except (OSError, ValueError):
                 warnings.append("resume_from_checkpoint path could not be validated")
 
         return warnings

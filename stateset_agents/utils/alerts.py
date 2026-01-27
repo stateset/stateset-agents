@@ -7,6 +7,7 @@ notification channels, alert aggregation, and integration with external systems.
 
 import asyncio
 import json
+import logging
 import smtplib
 import time
 import uuid
@@ -16,7 +17,7 @@ from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import requests
 
@@ -26,6 +27,7 @@ try:
 
     HAS_AIOHTTP = True
 except ImportError:
+    aiohttp = None
     HAS_AIOHTTP = False
 
 try:
@@ -33,7 +35,36 @@ try:
 
     HAS_SLACK = True
 except ImportError:
+    slack_sdk = None
     HAS_SLACK = False
+
+logger = logging.getLogger(__name__)
+
+SLACK_EXCEPTIONS: Tuple[Type[BaseException], ...] = ()
+if HAS_SLACK and slack_sdk is not None:
+    slack_errors = []
+    for name in ("SlackApiError", "SlackClientError", "SlackRequestError"):
+        exc = getattr(slack_sdk.errors, name, None)
+        if isinstance(exc, type) and issubclass(exc, Exception):
+            slack_errors.append(exc)
+    SLACK_EXCEPTIONS = tuple(slack_errors)
+
+AIOHTTP_EXCEPTIONS: Tuple[Type[BaseException], ...] = ()
+if HAS_AIOHTTP and aiohttp is not None:
+    AIOHTTP_EXCEPTIONS = (aiohttp.ClientError,)
+
+NOTIFICATION_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    SLACK_EXCEPTIONS
+    + AIOHTTP_EXCEPTIONS
+    + (
+        smtplib.SMTPException,
+        requests.RequestException,
+        asyncio.TimeoutError,
+        OSError,
+        ValueError,
+        TypeError,
+    )
+)
 
 
 class AlertSeverity(Enum):
@@ -217,8 +248,8 @@ Alert ID: {alert.id}
 
             return True
 
-        except Exception as e:
-            print(f"Failed to send email notification: {e}")
+        except (smtplib.SMTPException, OSError) as e:
+            logger.error("Failed to send email notification: %s", e)
             return False
 
 
@@ -228,7 +259,7 @@ class SlackNotificationHandler(NotificationHandler):
     async def send_notification(self, alert: Alert) -> bool:
         """Send Slack notification"""
         if not HAS_SLACK:
-            print("Slack SDK not available")
+            logger.warning("Slack SDK not available")
             return False
 
         try:
@@ -286,8 +317,11 @@ class SlackNotificationHandler(NotificationHandler):
 
             return response["ok"]
 
-        except Exception as e:
-            print(f"Failed to send Slack notification: {e}")
+        except SLACK_EXCEPTIONS as e:
+            logger.error("Failed to send Slack notification: %s", e)
+            return False
+        except (KeyError, TypeError, ValueError, OSError) as e:
+            logger.error("Failed to send Slack notification: %s", e)
             return False
 
 
@@ -320,8 +354,11 @@ class WebhookNotificationHandler(NotificationHandler):
                 response = requests.post(url, json=payload, headers=headers, timeout=10)
                 return response.status_code < 400
 
-        except Exception as e:
-            print(f"Failed to send webhook notification: {e}")
+        except AIOHTTP_EXCEPTIONS as e:
+            logger.error("Failed to send webhook notification: %s", e)
+            return False
+        except (requests.RequestException, asyncio.TimeoutError, OSError) as e:
+            logger.error("Failed to send webhook notification: %s", e)
             return False
 
 
@@ -371,8 +408,11 @@ class PagerDutyNotificationHandler(NotificationHandler):
                 response = requests.post(url, json=payload, headers=headers, timeout=10)
                 return response.status_code < 400
 
-        except Exception as e:
-            print(f"Failed to send PagerDuty notification: {e}")
+        except AIOHTTP_EXCEPTIONS as e:
+            logger.error("Failed to send PagerDuty notification: %s", e)
+            return False
+        except (requests.RequestException, asyncio.TimeoutError, OSError) as e:
+            logger.error("Failed to send PagerDuty notification: %s", e)
             return False
 
 
@@ -444,8 +484,8 @@ class AlertManager:
                 else:
                     await self._handle_alert_resolve(rule, metrics)
 
-            except Exception as e:
-                print(f"Error evaluating alert rule {rule_name}: {e}")
+            except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
+                logger.error("Error evaluating alert rule %s: %s", rule_name, e)
 
     async def _handle_alert_trigger(self, rule: AlertRule, metrics: Dict[str, Any]):
         """Handle alert trigger"""
@@ -518,8 +558,8 @@ class AlertManager:
                         self.statistics["notifications_sent"] += 1
                     else:
                         self.statistics["notifications_failed"] += 1
-                except Exception as e:
-                    print(f"Notification handler error: {e}")
+                except NOTIFICATION_EXCEPTIONS as e:
+                    logger.error("Notification handler error: %s", e)
                     self.statistics["notifications_failed"] += 1
 
         # Update notification tracking

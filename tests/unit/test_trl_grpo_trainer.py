@@ -27,12 +27,12 @@ sys.modules['trl.core'] = MockModule()
 sys.modules['peft'] = MockModule()
 sys.modules['vllm'] = MockModule()
 
-from training.trl_grpo_trainer import (
+from stateset_agents.training.trl_grpo_trainer import (
     TRLGRPOConfig,
     TrajectoryGenerator,
     ModelManager,
 )
-from training.config import TrainingConfig
+from stateset_agents.training.config import TrainingConfig
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.trajectory import MultiTurnTrajectory, ConversationTurn
@@ -335,7 +335,7 @@ class TestTRLGRPOTrainerWrapper:
         mock_trainer = MagicMock()
         mock_trainer_cls.return_value = mock_trainer
 
-        from training.trl_grpo_trainer import TRLGRPOTrainerWrapper
+        from stateset_agents.training.trl_grpo_trainer import TRLGRPOTrainerWrapper
 
         wrapper = TRLGRPOTrainerWrapper(
             config=config,
@@ -366,7 +366,7 @@ class TestTRLGRPOTrainerWrapper:
         mock_grpo_config_cls.return_value = MagicMock()
         mock_trainer_cls.return_value = MagicMock()
 
-        from training.trl_grpo_trainer import TRLGRPOTrainerWrapper
+        from stateset_agents.training.trl_grpo_trainer import TRLGRPOTrainerWrapper
 
         wrapper = TRLGRPOTrainerWrapper(
             config=config,

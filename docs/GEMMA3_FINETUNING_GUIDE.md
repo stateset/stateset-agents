@@ -69,8 +69,8 @@ from stateset_agents import MultiTurnAgent
 from stateset_agents.core.agent import AgentConfig
 from stateset_agents.core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
 from stateset_agents.rewards.multi_objective_reward import create_customer_service_reward
-from training.gspo_trainer import GSPOConfig, train_with_gspo
-from training.config import get_config_for_task
+from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
+from stateset_agents.training.config import get_config_for_task
 
 async def finetune_gemma3():
     # Create agent with Gemma 3

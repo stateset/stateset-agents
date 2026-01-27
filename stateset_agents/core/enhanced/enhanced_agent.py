@@ -99,7 +99,7 @@ class VectorMemory:
             cuda_available = False
             try:  # pragma: no cover - device probing
                 cuda_available = torch.cuda.is_available()
-            except Exception:
+            except (AttributeError, RuntimeError):
                 cuda_available = False
             self.device = torch.device("cuda" if cuda_available else "cpu")
         else:

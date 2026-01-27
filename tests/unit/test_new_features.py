@@ -15,7 +15,7 @@ FEATURES_AVAILABLE = True
 try:
     import torch
 
-    from training.offline_rl_algorithms import (
+    from stateset_agents.training.offline_rl_algorithms import (
         CQLConfig,
         IQLConfig,
         ConservativeQLearning,
@@ -30,7 +30,7 @@ except (ImportError, RuntimeError):
 
 # Test Bayesian Reward imports
 try:
-    from rewards.bayesian_reward_model import (
+    from stateset_agents.rewards.bayesian_reward_model import (
         BayesianRewardConfig,
         BayesianRewardFunction,
         ActiveLearningSelector,
@@ -42,7 +42,7 @@ except (ImportError, RuntimeError):
 
 # Test Few-Shot Adaptation imports
 try:
-    from core.few_shot_adaptation import (
+    from stateset_agents.core.few_shot_adaptation import (
         FewShotExample,
         DomainProfile,
         PromptBasedAdaptation,

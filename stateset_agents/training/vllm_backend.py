@@ -12,7 +12,7 @@ Key Features:
 - Seamless fallback to HuggingFace when vLLM is unavailable
 
 Usage:
-    from training.vllm_backend import VLLMGenerator, VLLMConfig
+    from stateset_agents.training.vllm_backend import VLLMGenerator, VLLMConfig
 
     config = VLLMConfig(
         model_name="meta-llama/Llama-2-7b-hf",
@@ -41,6 +41,15 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import torch
 
 logger = logging.getLogger(__name__)
+
+VLLM_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    OSError,
+    asyncio.TimeoutError,
+)
 
 # Check vLLM availability
 try:
@@ -215,7 +224,7 @@ class VLLMGenerator:
             logger.info("vLLM engine initialized successfully")
             return True
 
-        except Exception as e:
+        except VLLM_EXCEPTIONS as e:
             logger.error(f"Failed to initialize vLLM: {e}")
             logger.warning("Falling back to HuggingFace generation")
             self._initialized = False
@@ -529,7 +538,7 @@ class HuggingFaceGeneratorFallback:
             logger.info("HuggingFace fallback initialized")
             return True
 
-        except Exception as e:
+        except VLLM_EXCEPTIONS as e:
             logger.error(f"Failed to initialize HuggingFace fallback: {e}")
             return False
 

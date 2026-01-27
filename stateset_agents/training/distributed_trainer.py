@@ -44,6 +44,8 @@ from .trainer import GRPOTrainer
 
 logger = logging.getLogger(__name__)
 
+DISTRIBUTED_TRAIN_EXCEPTIONS = (OSError, RuntimeError, ValueError)
+
 
 @dataclass
 class DistributedConfig:
@@ -498,7 +500,7 @@ def run_distributed_training(
         # Run training
         asyncio.run(trainer.train())
 
-    except Exception as e:
+    except DISTRIBUTED_TRAIN_EXCEPTIONS as e:
         logger.error(f"Distributed training failed on rank {rank}: {e}")
         raise
     finally:

@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from utils.monitoring import HealthCheck
+from stateset_agents.utils.monitoring import HealthCheck
 
 
 @pytest.mark.asyncio

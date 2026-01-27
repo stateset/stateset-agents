@@ -19,7 +19,7 @@ class TestDAPOConfig:
 
     def test_dapo_config_defaults(self):
         """Test DAPO config with default values."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
 
         config = DAPOConfig()
 
@@ -29,7 +29,7 @@ class TestDAPOConfig:
 
     def test_dapo_config_clip_higher(self):
         """Test DAPO Clip-Higher configuration."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
 
         config = DAPOConfig()
 
@@ -40,7 +40,7 @@ class TestDAPOConfig:
 
     def test_dapo_config_dynamic_sampling(self):
         """Test DAPO dynamic sampling configuration."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
 
         config = DAPOConfig()
 
@@ -51,7 +51,7 @@ class TestDAPOConfig:
 
     def test_dapo_config_overlong_shaping(self):
         """Test DAPO overlong reward shaping configuration."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
 
         config = DAPOConfig()
 
@@ -62,7 +62,7 @@ class TestDAPOConfig:
 
     def test_dapo_config_no_kl_penalty(self):
         """Test DAPO has no KL penalty by default."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
 
         config = DAPOConfig()
 
@@ -71,7 +71,7 @@ class TestDAPOConfig:
 
     def test_dapo_config_custom_values(self):
         """Test DAPO config with custom values."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
 
         config = DAPOConfig(
             model_name="llama-7b",
@@ -200,7 +200,7 @@ class TestDAPOOverlongShaping:
 
     def test_overlong_penalty_config(self):
         """Test overlong penalty configuration."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
 
         config = DAPOConfig()
 
@@ -306,7 +306,7 @@ class TestDAPOGroupSampling:
 
     def test_group_size_config(self):
         """Test group size configuration."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
 
         config = DAPOConfig()
 
@@ -338,13 +338,13 @@ class TestDAPOModelManager:
     @pytest.fixture
     def dapo_config(self):
         """Create a DAPO config for testing."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
         return DAPOConfig(model_name="gpt2", use_lora=True)
 
     @pytest.fixture
     def model_manager(self, dapo_config):
         """Create a DAPOModelManager for testing."""
-        from training.dapo_trainer import DAPOModelManager
+        from stateset_agents.training.dapo_trainer import DAPOModelManager
         return DAPOModelManager(dapo_config)
 
     def test_model_manager_creation(self, model_manager):
@@ -359,7 +359,7 @@ class TestDAPOvLLMIntegration:
 
     def test_vllm_config(self):
         """Test vLLM configuration."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
 
         config = DAPOConfig(use_vllm=True)
 
@@ -375,7 +375,7 @@ class TestDAPOTrainer:
     @pytest.fixture
     def dapo_config(self):
         """Create a DAPO config for testing."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
         return DAPOConfig(
             model_name="gpt2",
             group_size=4,
@@ -450,7 +450,7 @@ class TestDAPOLearningRate:
 
     def test_constant_lr_schedule(self):
         """Test DAPO uses constant learning rate."""
-        from training.dapo_trainer import DAPOConfig
+        from stateset_agents.training.dapo_trainer import DAPOConfig
 
         config = DAPOConfig()
 

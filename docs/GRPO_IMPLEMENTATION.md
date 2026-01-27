@@ -280,7 +280,7 @@ async def training_step(trajectory_groups):
 ### Training Config Parameters
 
 ```python
-from training.config import TrainingConfig
+from stateset_agents.training.config import TrainingConfig
 
 config = TrainingConfig(
     # Basic training
@@ -313,7 +313,7 @@ config = TrainingConfig(
 ### Pre-defined Profiles:
 
 ```python
-from training.config import TrainingProfile
+from stateset_agents.training.config import TrainingProfile
 
 # Conservative: Maximum stability
 config = TrainingConfig.from_profile(TrainingProfile.CONSERVATIVE)
@@ -336,8 +336,8 @@ import asyncio
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import create_customer_service_reward
-from training.trainer import MultiTurnGRPOTrainer
-from training.config import TrainingConfig
+from stateset_agents.training.trainer import MultiTurnGRPOTrainer
+from stateset_agents.training.config import TrainingConfig
 
 async def train():
     # 1. Create agent
@@ -424,7 +424,7 @@ config = TrainingConfig(
 
 ```python
 # Use TRL for production training
-from training.trl_grpo_trainer import train_with_trl_grpo
+from stateset_agents.training.trl_grpo_trainer import train_with_trl_grpo
 
 trained_agent = await train_with_trl_grpo(
     config=config,

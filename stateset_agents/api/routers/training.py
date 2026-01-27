@@ -23,6 +23,8 @@ from ..errors import (
 router = APIRouter(prefix="/training", tags=["training"])
 training_service = TrainingService()
 
+TRAINING_API_EXCEPTIONS = (AttributeError, KeyError, RuntimeError, TypeError, ValueError)
+
 
 # ============================================================================
 # Response Models
@@ -119,7 +121,7 @@ async def start_training(
         raise
     except ValueError as e:
         raise TrainingConfigError(str(e))
-    except Exception as e:
+    except TRAINING_API_EXCEPTIONS as e:
         raise InternalError("Failed to start training", internal_error=e)
 
 

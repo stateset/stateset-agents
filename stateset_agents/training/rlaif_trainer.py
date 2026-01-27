@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 from .config import TrainingConfig
 
 try:
-    from rewards.llm_judge import (
+    from stateset_agents.rewards.llm_judge import (
         JudgeConfig,
         JudgeProvider,
         LLMJudge,
@@ -52,7 +52,7 @@ except ImportError:
         import sys
         import os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from rewards.llm_judge import (
+        from stateset_agents.rewards.llm_judge import (
             JudgeConfig,
             JudgeProvider,
             LLMJudge,

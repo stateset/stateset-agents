@@ -80,7 +80,7 @@ class TestErrorHandler:
     @pytest.fixture
     def error_handler(self):
         """Create an ErrorHandler for testing."""
-        from core.error_handling import ErrorHandler
+        from stateset_agents.core.error_handling import ErrorHandler
         return ErrorHandler(max_error_history=10)
 
     def test_bounded_history(self, error_handler):
@@ -110,7 +110,7 @@ class TestErrorHandler:
 
     def test_grpo_exception_handling(self, error_handler):
         """Test handling of GRPO-specific exceptions."""
-        from core.error_handling import GRPOException, ErrorCategory, ErrorSeverity
+        from stateset_agents.core.error_handling import GRPOException, ErrorCategory, ErrorSeverity
 
         grpo_error = GRPOException(
             "Test GRPO error",
@@ -135,12 +135,12 @@ class TestMetricsCollectorThreadSafety:
     @pytest.fixture
     def metrics_collector(self):
         """Create a MetricsCollector for testing."""
-        from utils.monitoring import MetricsCollector
+        from stateset_agents.utils.monitoring import MetricsCollector
         return MetricsCollector(enable_prometheus=False)
 
     def test_concurrent_metric_recording(self, metrics_collector):
         """Test that concurrent metric recording is thread-safe."""
-        from utils.monitoring import Metric, MetricType
+        from stateset_agents.utils.monitoring import Metric, MetricType
         errors = []
 
         def record_metrics(thread_id):
@@ -169,7 +169,7 @@ class TestMetricsCollectorThreadSafety:
 
     def test_concurrent_snapshot(self, metrics_collector):
         """Test that getting summaries is thread-safe."""
-        from utils.monitoring import Metric, MetricType
+        from stateset_agents.utils.monitoring import Metric, MetricType
         errors = []
 
         def record_and_get_summary(thread_id):
@@ -203,7 +203,7 @@ class TestSecurityEncryption:
     def test_encryption_not_xor(self):
         """Test that encryption is not using weak XOR cipher."""
         pytest.importorskip("cryptography")
-        from utils.security import SecureConfig
+        from stateset_agents.utils.security import SecureConfig
         import os
 
         secure_config = SecureConfig()
@@ -234,7 +234,7 @@ class TestSecurityEncryption:
 
     def test_encryption_without_key_uses_base64(self):
         """Test that missing encryption key falls back to base64."""
-        from utils.security import SecureConfig
+        from stateset_agents.utils.security import SecureConfig
         import os
         import base64
 
@@ -295,7 +295,7 @@ class TestAsyncRewardComputation:
     @pytest.mark.asyncio
     async def test_reward_function_async_context(self):
         """Test that RewardFunction handles async context properly."""
-        from core.reward_base import RewardFunction, RewardResult
+        from stateset_agents.core.reward_base import RewardFunction, RewardResult
 
         class TestReward(RewardFunction):
             async def compute_reward(self, turns, context=None):
@@ -309,7 +309,7 @@ class TestAsyncRewardComputation:
 
     def test_reward_function_sync_context(self):
         """Test that RewardFunction handles sync context properly."""
-        from core.reward_base import RewardFunction, RewardResult
+        from stateset_agents.core.reward_base import RewardFunction, RewardResult
 
         class TestReward(RewardFunction):
             async def compute_reward(self, turns, context=None):
@@ -336,7 +336,7 @@ class TestCompositeRewardEdgeCases:
     @pytest.mark.asyncio
     async def test_composite_reward_empty_results(self):
         """Test CompositeReward handles empty results gracefully."""
-        from core.reward_base import CompositeReward, RewardFunction, RewardResult
+        from stateset_agents.core.reward_base import CompositeReward, RewardFunction, RewardResult
 
         class FailingReward(RewardFunction):
             async def compute_reward(self, turns, context=None):
@@ -355,7 +355,7 @@ class TestCompositeRewardEdgeCases:
     @pytest.mark.asyncio
     async def test_composite_reward_with_valid_functions(self):
         """Test CompositeReward with working reward functions."""
-        from core.reward_base import CompositeReward, RewardFunction, RewardResult
+        from stateset_agents.core.reward_base import CompositeReward, RewardFunction, RewardResult
 
         class WorkingReward(RewardFunction):
             async def compute_reward(self, turns, context=None):
@@ -372,7 +372,7 @@ class TestCompositeRewardEdgeCases:
     @pytest.mark.asyncio
     async def test_composite_reward_no_functions(self):
         """Test CompositeReward handles no reward functions."""
-        from core.reward_base import CompositeReward
+        from stateset_agents.core.reward_base import CompositeReward
 
         composite = CompositeReward(reward_functions=[])
 
@@ -388,7 +388,7 @@ class TestEnvironmentGetReward:
     @pytest.mark.asyncio
     async def test_environment_get_reward_exists(self):
         """Test that Environment has get_reward method."""
-        from core.environment import Environment
+        from stateset_agents.core.environment import Environment
 
         class TestEnv(Environment):
             async def reset(self):
@@ -405,8 +405,8 @@ class TestEnvironmentGetReward:
     @pytest.mark.asyncio
     async def test_environment_get_reward_returns_float(self):
         """Test that get_reward returns a float."""
-        from core.environment import Environment
-        from core.reward_base import RewardFunction, RewardResult
+        from stateset_agents.core.environment import Environment
+        from stateset_agents.core.reward_base import RewardFunction, RewardResult
 
         class TestReward(RewardFunction):
             async def compute_reward(self, turns, context=None):

@@ -21,7 +21,7 @@ async def main():
 
     # Check if TRL is available
     try:
-        from training import TRL_AVAILABLE, train_customer_service_with_trl
+        from stateset_agents.training import TRL_AVAILABLE, train_customer_service_with_trl
 
         if not TRL_AVAILABLE:
             logger.error(

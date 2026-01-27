@@ -91,6 +91,27 @@ python examples/train_reward_model.py
 - Model evaluation
 - Integration with GRPO
 
+#### 4. Symbolic Physics Discovery
+
+Train on toy symbolic constraints with hidden targets in metadata:
+
+```bash
+python examples/physics_symbolic_discovery.py --tasks examples/data/symbolic_physics_tasks.jsonl
+```
+
+**Covers:**
+- Task schema with constraints + derived variables
+- Constraint-based symbolic rewards
+- Metadata-aware GSPO queries
+
+Evaluate model outputs against constraints:
+
+```bash
+python examples/physics_symbolic_evaluate.py \
+    --tasks examples/data/symbolic_physics_tasks.jsonl \
+    --predictions /path/to/predictions.jsonl
+```
+
 ### Advanced Training ⭐ NEW!
 
 See **[Advanced Training README](./ADVANCED_TRAINING_README.md)** for detailed guides on:

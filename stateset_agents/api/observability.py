@@ -19,6 +19,8 @@ from .config import get_config
 # Context variable for request tracing
 _trace_context: ContextVar[Dict[str, Any]] = ContextVar("trace_context", default={})
 
+TRACE_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 
 # ============================================================================
 # Structured Logging
@@ -328,7 +330,7 @@ def trace(name: Optional[str] = None):
                 result = await func(*args, **kwargs)
                 span.set_status("OK")
                 return result
-            except Exception as e:
+            except TRACE_EXCEPTIONS as e:
                 span.set_status("ERROR", str(e))
                 raise
             finally:
@@ -349,7 +351,7 @@ def trace(name: Optional[str] = None):
                 result = func(*args, **kwargs)
                 span.set_status("OK")
                 return result
-            except Exception as e:
+            except TRACE_EXCEPTIONS as e:
                 span.set_status("ERROR", str(e))
                 raise
             finally:
