@@ -62,6 +62,15 @@ STATE_EXCEPTIONS = (
 T = TypeVar("T")
 
 
+def _json_default_serializer(obj: Any) -> Any:
+    """Best-effort JSON serializer for complex objects."""
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    if hasattr(obj, "__dict__"):
+        return obj.__dict__
+    return str(obj)
+
+
 class CacheStrategy(Enum):
     """Cache strategies"""
 
@@ -308,16 +317,72 @@ class InMemoryCacheBackend(CacheBackend):
         return False
 
 
+class MultiCacheBackend(CacheBackend):
+    """Multi-level cache backend with local + remote backends."""
+
+    def __init__(self, primary: CacheBackend, secondary: CacheBackend):
+        self.primary = primary
+        self.secondary = secondary
+
+    async def get(self, key: str) -> Optional[Any]:
+        value = await self.primary.get(key)
+        if value is not None:
+            return value
+
+        value = await self.secondary.get(key)
+        if value is not None:
+            await self.primary.set(key, value)
+        return value
+
+    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        primary_ok = await self.primary.set(key, value, ttl)
+        secondary_ok = await self.secondary.set(key, value, ttl)
+        return primary_ok or secondary_ok
+
+    async def delete(self, key: str) -> bool:
+        primary_ok = await self.primary.delete(key)
+        secondary_ok = await self.secondary.delete(key)
+        return primary_ok or secondary_ok
+
+    async def exists(self, key: str) -> bool:
+        if await self.primary.exists(key):
+            return True
+        return await self.secondary.exists(key)
+
+    async def clear(self) -> bool:
+        primary_ok = await self.primary.clear()
+        secondary_ok = await self.secondary.clear()
+        return primary_ok or secondary_ok
+
+
 class RedisCacheBackend(CacheBackend):
     """Redis-based distributed cache backend"""
 
     def __init__(
-        self, redis_url: str = "redis://localhost:6379", key_prefix: str = "grpo:"
+        self,
+        redis_url: str = "redis://localhost:6379",
+        key_prefix: str = "grpo:",
+        serializer: str = "json",
+        allow_pickle: bool = False,
     ):
         self.redis_url = redis_url
         self.key_prefix = key_prefix
+        self.serializer = serializer.lower()
+        self.allow_pickle = allow_pickle
         self.client = None
         self._connection_pool = None
+
+        if self.serializer not in ("json", "pickle"):
+            logger.warning(
+                "Unknown serializer '%s', defaulting to json", self.serializer
+            )
+            self.serializer = "json"
+
+        if self.serializer == "pickle" and not self.allow_pickle:
+            logger.warning(
+                "Pickle serializer disabled by default for security; falling back to json"
+            )
+            self.serializer = "json"
 
     async def _ensure_connected(self):
         """Ensure Redis connection"""
@@ -340,7 +405,7 @@ class RedisCacheBackend(CacheBackend):
             if data is None:
                 return None
 
-            return pickle.loads(data)
+            return self._deserialize(data)
         except STATE_EXCEPTIONS as e:
             logger.error(f"Redis get error: {e}")
             return None
@@ -350,7 +415,7 @@ class RedisCacheBackend(CacheBackend):
         await self._ensure_connected()
 
         try:
-            data = pickle.dumps(value)
+            data = self._serialize(value)
 
             if ttl:
                 await self.client.setex(self._make_key(key), ttl, data)
@@ -383,6 +448,18 @@ class RedisCacheBackend(CacheBackend):
         except STATE_EXCEPTIONS as e:
             logger.error(f"Redis exists error: {e}")
             return False
+
+    def _serialize(self, value: Any) -> bytes:
+        """Serialize value for Redis storage."""
+        if self.serializer == "pickle":
+            return pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+        return json.dumps(value, default=_json_default_serializer).encode("utf-8")
+
+    def _deserialize(self, data: bytes) -> Any:
+        """Deserialize value from Redis storage."""
+        if self.serializer == "pickle":
+            return pickle.loads(data)
+        return json.loads(data.decode("utf-8"))
 
     async def clear(self) -> bool:
         """Clear all cache entries with prefix"""
@@ -789,18 +866,28 @@ class DistributedStateService:
         enable_local_cache: bool = True,
         cache_strategy: CacheStrategy = CacheStrategy.READ_THROUGH,
         consistency_level: ConsistencyLevel = ConsistencyLevel.EVENTUAL,
+        cache_serializer: str = "json",
+        allow_pickle: bool = False,
     ):
         # Setup cache backends
-        backends = []
-
-        if enable_local_cache:
-            backends.append(InMemoryCacheBackend(max_size=10000))
+        local_cache = InMemoryCacheBackend(max_size=10000) if enable_local_cache else None
+        redis_cache = None
 
         if redis_url and REDIS_AVAILABLE:
-            backends.append(RedisCacheBackend(redis_url))
+            redis_cache = RedisCacheBackend(
+                redis_url,
+                serializer=cache_serializer,
+                allow_pickle=allow_pickle,
+            )
 
-        # Use the first available backend
-        self.cache_backend = backends[0] if backends else InMemoryCacheBackend()
+        if local_cache and redis_cache:
+            self.cache_backend = MultiCacheBackend(local_cache, redis_cache)
+        elif redis_cache:
+            self.cache_backend = redis_cache
+        elif local_cache:
+            self.cache_backend = local_cache
+        else:
+            self.cache_backend = InMemoryCacheBackend()
 
         # Setup state managers
         self.state_manager = StateManager(

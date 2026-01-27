@@ -35,7 +35,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -451,6 +451,19 @@ class ConversationMemory:
         """Estimate token count (roughly 4 chars per token)."""
         return len(text) // 4
 
+    def _schedule_background(self, coro: Awaitable[Any]) -> None:
+        """Schedule background work safely in sync or async contexts."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                asyncio.run(coro)
+            except RuntimeError:
+                logger.warning("No running event loop; skipping background task")
+            return
+
+        loop.create_task(coro)
+
     def add_turn(
         self,
         message: Dict[str, str],
@@ -504,7 +517,7 @@ class ConversationMemory:
         if self.config.enable_summarization:
             turns_since_summary = self._turn_count - self._last_summarization
             if turns_since_summary >= self.config.summary_threshold:
-                asyncio.create_task(self._maybe_summarize())
+                self._schedule_background(self._maybe_summarize())
 
         # Decay importance of older memories
         for turn in self._short_term[:-1]:
@@ -520,7 +533,7 @@ class ConversationMemory:
             removed = self._short_term.pop(0)
             # Move to long-term if important
             if removed.get("importance", 0) > 0.3:
-                asyncio.create_task(self._save_to_long_term(removed))
+                self._schedule_background(self._save_to_long_term(removed))
 
         # By token count
         total_tokens = sum(
@@ -531,7 +544,7 @@ class ConversationMemory:
             removed = self._short_term.pop(0)
             total_tokens -= self._estimate_tokens(removed.get("content", ""))
             if removed.get("importance", 0) > 0.3:
-                asyncio.create_task(self._save_to_long_term(removed))
+                self._schedule_background(self._save_to_long_term(removed))
 
     async def _save_to_long_term(self, turn: Dict[str, Any]) -> None:
         """Save a turn to long-term memory."""

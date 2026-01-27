@@ -54,6 +54,7 @@ class TestCacheConfig:
         os.environ["CACHE_DEFAULT_TTL"] = "600"
         os.environ["CACHE_KEY_PREFIX"] = "test:"
         os.environ["CACHE_MAX_MEMORY_ITEMS"] = "5000"
+        os.environ["CACHE_SERIALIZER"] = "json"
 
         config = CacheConfig.from_env()
 
@@ -67,6 +68,25 @@ class TestCacheConfig:
         del os.environ["CACHE_DEFAULT_TTL"]
         del os.environ["CACHE_KEY_PREFIX"]
         del os.environ["CACHE_MAX_MEMORY_ITEMS"]
+        del os.environ["CACHE_SERIALIZER"]
+
+    def test_config_invalid_backend_defaults(self):
+        """Test invalid backend falls back to memory."""
+        os.environ["CACHE_BACKEND"] = "unknown"
+
+        config = CacheConfig.from_env()
+        assert config.backend == CacheBackend.MEMORY
+
+        del os.environ["CACHE_BACKEND"]
+
+    def test_config_serializer_from_env(self):
+        """Test serializer configuration from environment."""
+        os.environ["CACHE_SERIALIZER"] = "pickle"
+
+        config = CacheConfig.from_env()
+        assert config.serializer == "pickle"
+
+        del os.environ["CACHE_SERIALIZER"]
 
     def test_config_with_redis_url(self):
         """Test config with Redis URL."""
@@ -184,6 +204,20 @@ class TestMemoryCache:
 
         result = await cache.get("to_delete")
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_delete_pattern(self, cache):
+        """Test deleting keys by pattern."""
+        await cache.set("user:1", "value1")
+        await cache.set("user:2", "value2")
+        await cache.set("order:1", "value3")
+
+        deleted = await cache.delete_pattern("user:*")
+
+        assert deleted == 2
+        assert await cache.exists("user:1") is False
+        assert await cache.exists("user:2") is False
+        assert await cache.exists("order:1") is True
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent(self, cache):
@@ -473,6 +507,30 @@ class TestCachingDecorators:
         result = await operation()
         assert result == "result"
         assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cache_invalidate_pattern(self):
+        """Test cache invalidation with wildcard pattern."""
+        await init_cache(CacheConfig(backend=CacheBackend.MEMORY))
+
+        cache = get_cache()
+        assert cache is not None
+
+        await cache.set("user:1", "value1")
+        await cache.set("user:2", "value2")
+        await cache.set("order:1", "value3")
+
+        @cache_invalidate("user:*")
+        async def update_user() -> str:
+            return "ok"
+
+        await update_user()
+
+        assert await cache.get("user:1") is None
+        assert await cache.get("user:2") is None
+        assert await cache.get("order:1") == "value3"
+
+        await close_cache()
 
 
 # ============================================================================

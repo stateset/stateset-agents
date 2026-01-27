@@ -4,6 +4,7 @@ API Caching Module
 Simple in-memory caching for frequently accessed endpoints.
 """
 
+import hashlib
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, TypeVar
@@ -135,9 +136,11 @@ def cached(ttl_seconds: float, key_prefix: str = ""):
             # Generate cache key
             cache_key = f"{key_prefix}:{func.__name__}"
             if args:
-                cache_key += f":{hash(args)}"
+                cache_key += ":" + hashlib.md5(repr(args).encode()).hexdigest()[:8]
             if kwargs:
-                cache_key += f":{hash(frozenset(kwargs.items()))}"
+                cache_key += ":" + hashlib.md5(
+                    repr(sorted(kwargs.items())).encode()
+                ).hexdigest()[:8]
 
             # Try to get from cache
             cached_value = _cache.get(cache_key)
@@ -167,9 +170,11 @@ def cached_sync(ttl_seconds: float, key_prefix: str = ""):
         def wrapper(*args, **kwargs) -> T:
             cache_key = f"{key_prefix}:{func.__name__}"
             if args:
-                cache_key += f":{hash(args)}"
+                cache_key += ":" + hashlib.md5(repr(args).encode()).hexdigest()[:8]
             if kwargs:
-                cache_key += f":{hash(frozenset(kwargs.items()))}"
+                cache_key += ":" + hashlib.md5(
+                    repr(sorted(kwargs.items())).encode()
+                ).hexdigest()[:8]
 
             cached_value = _cache.get(cache_key)
             if cached_value is not None:

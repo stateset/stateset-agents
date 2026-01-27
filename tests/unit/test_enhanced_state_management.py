@@ -18,6 +18,7 @@ from stateset_agents.core.enhanced_state_management import (
     ConsistencyLevel,
     EvictionPolicy,
     InMemoryCacheBackend,
+    MultiCacheBackend,
     StateSnapshot,
 )
 
@@ -325,6 +326,48 @@ class TestFIFOEviction:
 
         # Fill the cache
         assert len(fifo_cache.cache) == 3
+
+
+class TestMultiCacheBackend:
+    """Test MultiCacheBackend behavior."""
+
+    @pytest.fixture
+    def multi_cache(self):
+        """Create a multi-level cache with two in-memory backends."""
+        primary = InMemoryCacheBackend(max_size=10)
+        secondary = InMemoryCacheBackend(max_size=10)
+        return MultiCacheBackend(primary, secondary), primary, secondary
+
+    @pytest.mark.asyncio
+    async def test_get_populates_primary(self, multi_cache):
+        """Test that secondary hits populate the primary cache."""
+        cache, primary, secondary = multi_cache
+        await secondary.set("key1", "value1")
+
+        result = await cache.get("key1")
+
+        assert result == "value1"
+        assert await primary.exists("key1") is True
+
+    @pytest.mark.asyncio
+    async def test_set_writes_both(self, multi_cache):
+        """Test that set writes to both caches."""
+        cache, primary, secondary = multi_cache
+        await cache.set("key2", "value2")
+
+        assert await primary.exists("key2") is True
+        assert await secondary.exists("key2") is True
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_both(self, multi_cache):
+        """Test that delete removes from both caches."""
+        cache, primary, secondary = multi_cache
+        await cache.set("key3", "value3")
+
+        await cache.delete("key3")
+
+        assert await primary.exists("key3") is False
+        assert await secondary.exists("key3") is False
 
 
 class TestDistributedStateService:

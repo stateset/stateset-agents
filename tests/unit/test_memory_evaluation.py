@@ -232,6 +232,22 @@ class TestConversationMemory:
         assert context.messages[0]["role"] == "user"
         assert context.messages[1]["role"] == "assistant"
 
+    def test_add_turn_sync_background_tasks(self):
+        """Test sync add_turn with summarization and long-term saves enabled."""
+        from stateset_agents.core.memory import ConversationMemory, MemoryConfig
+
+        config = MemoryConfig(
+            max_short_term_turns=1,
+            enable_summarization=True,
+            summary_threshold=1,
+        )
+        memory = ConversationMemory(config)
+
+        for i in range(4):
+            memory.add_turn({"role": "user", "content": f"Turn {i}"})
+
+        assert len(memory._short_term) <= 1
+
     def test_working_memory(self):
         """Test working memory for task context."""
         from stateset_agents.core.memory import ConversationMemory

@@ -6,9 +6,11 @@ cache management features for high-availability deployments.
 """
 
 import asyncio
+import fnmatch
 import hashlib
 import json
 import logging
+import pickle
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -22,6 +24,15 @@ logger = logging.getLogger(__name__)
 CACHE_EXCEPTIONS = (ConnectionError, OSError, RuntimeError, TimeoutError, TypeError, ValueError)
 
 T = TypeVar("T")
+
+
+def _json_default_serializer(obj: Any) -> Any:
+    """Best-effort JSON serializer for complex objects."""
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    if hasattr(obj, "__dict__"):
+        return obj.__dict__
+    return str(obj)
 
 
 # ============================================================================
@@ -58,7 +69,22 @@ class CacheConfig:
         import os
 
         backend_str = os.getenv("CACHE_BACKEND", "memory").lower()
-        backend = CacheBackend(backend_str) if backend_str in CacheBackend.__members__.values() else CacheBackend.MEMORY
+        try:
+            backend = CacheBackend(backend_str)
+        except ValueError:
+            logger.warning("Unknown CACHE_BACKEND '%s', defaulting to memory", backend_str)
+            backend = CacheBackend.MEMORY
+
+        serializer = os.getenv("CACHE_SERIALIZER", "json").lower()
+        if serializer not in ("json", "pickle"):
+            logger.warning(
+                "Unknown CACHE_SERIALIZER '%s', defaulting to json", serializer
+            )
+            serializer = "json"
+        elif serializer == "pickle":
+            logger.warning(
+                "CACHE_SERIALIZER=pickle is unsafe with untrusted cache backends"
+            )
 
         return cls(
             backend=backend,
@@ -68,6 +94,7 @@ class CacheConfig:
             default_ttl_seconds=int(os.getenv("CACHE_DEFAULT_TTL", "300")),
             max_memory_items=int(os.getenv("CACHE_MAX_MEMORY_ITEMS", "10000")),
             key_prefix=os.getenv("CACHE_KEY_PREFIX", "stateset:"),
+            serializer=serializer,
             compression_enabled=os.getenv("CACHE_COMPRESSION", "false").lower() == "true",
         )
 
@@ -137,6 +164,11 @@ class CacheInterface(ABC, Generic[T]):
     @abstractmethod
     async def delete(self, key: str) -> bool:
         """Delete a key from cache."""
+        pass
+
+    @abstractmethod
+    async def delete_pattern(self, pattern: str) -> int:
+        """Delete keys matching a pattern. Returns number of keys removed."""
         pass
 
     @abstractmethod
@@ -223,7 +255,12 @@ class MemoryCache(CacheInterface):
 
         try:
             # Estimate size
-            size_bytes = len(json.dumps(value)) if isinstance(value, (dict, list)) else 100
+            if self.config.serializer == "pickle":
+                size_bytes = len(pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL))
+            elif isinstance(value, (dict, list)):
+                size_bytes = len(json.dumps(value, default=_json_default_serializer))
+            else:
+                size_bytes = 100
 
             async with self._lock:
                 # Evict if at capacity
@@ -256,6 +293,24 @@ class MemoryCache(CacheInterface):
                 self._stats.deletes += 1
                 return True
             return False
+
+    async def delete_pattern(self, pattern: str) -> int:
+        """Delete keys matching a pattern."""
+        if pattern.startswith(self.config.key_prefix):
+            pattern_with_prefix = pattern
+        else:
+            pattern_with_prefix = f"{self.config.key_prefix}{pattern}"
+
+        async with self._lock:
+            matching = [
+                key
+                for key in list(self._cache.keys())
+                if fnmatch.fnmatch(key, pattern_with_prefix)
+            ]
+            for key in matching:
+                del self._cache[key]
+                self._stats.deletes += 1
+            return len(matching)
 
     async def exists(self, key: str) -> bool:
         """Check if a key exists and is not expired."""
@@ -441,6 +496,34 @@ class RedisCache(CacheInterface):
             self._stats.errors += 1
             return False
 
+    async def delete_pattern(self, pattern: str) -> int:
+        """Delete keys matching a pattern."""
+        if not self._connected:
+            return 0
+
+        if pattern.startswith(self.config.key_prefix):
+            pattern_with_prefix = pattern
+        else:
+            pattern_with_prefix = f"{self.config.key_prefix}{pattern}"
+
+        try:
+            cursor = 0
+            deleted = 0
+            while True:
+                cursor, keys = await self._client.scan(
+                    cursor, match=pattern_with_prefix, count=100
+                )
+                if keys:
+                    deleted += await self._client.delete(*keys)
+                    self._stats.deletes += len(keys)
+                if cursor == 0:
+                    break
+            return deleted
+        except CACHE_EXCEPTIONS as e:
+            logger.error(f"Redis delete_pattern error: {e}")
+            self._stats.errors += 1
+            return 0
+
     async def exists(self, key: str) -> bool:
         """Check if a key exists in Redis."""
         if not self._connected:
@@ -507,7 +590,12 @@ class RedisCache(CacheInterface):
 
     def _serialize(self, value: Any) -> bytes:
         """Serialize value for storage."""
-        data = json.dumps(value).encode("utf-8")
+        if self.config.serializer == "pickle":
+            data = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+        else:
+            data = json.dumps(
+                value, default=_json_default_serializer
+            ).encode("utf-8")
 
         # Compress if large
         if self.config.compression_enabled and len(data) > self.config.compression_threshold:
@@ -522,6 +610,8 @@ class RedisCache(CacheInterface):
             import zlib
             data = zlib.decompress(data[5:])
 
+        if self.config.serializer == "pickle":
+            return pickle.loads(data)
         return json.loads(data.decode("utf-8"))
 
     async def close(self) -> None:
@@ -586,6 +676,16 @@ class HybridCache(CacheInterface):
             return redis_ok or memory_ok
 
         return memory_ok
+
+    async def delete_pattern(self, pattern: str) -> int:
+        """Delete matching keys from both caches."""
+        memory_deleted = await self._memory.delete_pattern(pattern)
+
+        redis_deleted = 0
+        if self._use_redis and await self._redis.health_check():
+            redis_deleted = await self._redis.delete_pattern(pattern)
+
+        return memory_deleted + redis_deleted
 
     async def exists(self, key: str) -> bool:
         """Check if key exists in either cache."""
@@ -744,7 +844,11 @@ def cache_invalidate(key_pattern: str):
 
             cache = get_cache()
             if cache is not None:
-                await cache.delete(key_pattern)
+                has_wildcards = any(ch in key_pattern for ch in ("*", "?", "["))
+                if has_wildcards and hasattr(cache, "delete_pattern"):
+                    await cache.delete_pattern(key_pattern)
+                else:
+                    await cache.delete(key_pattern)
 
             return result
 

@@ -6,6 +6,7 @@ notification channels, alert aggregation, and integration with external systems.
 """
 
 import asyncio
+import functools
 import json
 import logging
 import smtplib
@@ -65,6 +66,14 @@ NOTIFICATION_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
         TypeError,
     )
 )
+
+
+async def _run_blocking(func: Callable[..., Any], *args, **kwargs) -> Any:
+    """Run blocking I/O without blocking the event loop (Python 3.8+)."""
+    if hasattr(asyncio, "to_thread"):
+        return await asyncio.to_thread(func, *args, **kwargs)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
 
 
 class AlertSeverity(Enum):
@@ -351,7 +360,9 @@ class WebhookNotificationHandler(NotificationHandler):
                     ) as response:
                         return response.status < 400
             else:
-                response = requests.post(url, json=payload, headers=headers, timeout=10)
+                response = await _run_blocking(
+                    requests.post, url, json=payload, headers=headers, timeout=10
+                )
                 return response.status_code < 400
 
         except AIOHTTP_EXCEPTIONS as e:
@@ -405,7 +416,9 @@ class PagerDutyNotificationHandler(NotificationHandler):
                     ) as response:
                         return response.status < 400
             else:
-                response = requests.post(url, json=payload, headers=headers, timeout=10)
+                response = await _run_blocking(
+                    requests.post, url, json=payload, headers=headers, timeout=10
+                )
                 return response.status_code < 400
 
         except AIOHTTP_EXCEPTIONS as e:

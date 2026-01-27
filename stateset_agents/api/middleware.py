@@ -18,6 +18,7 @@ from starlette.responses import Response, JSONResponse
 from fastapi import FastAPI
 
 from .config import get_config, APIConfig
+from .grpo.rate_limiter import UnifiedRateLimiter, get_rate_limiter
 from .constants import (
     SECURITY_HEADERS,
     HSTS_HEADER,
@@ -158,15 +159,12 @@ class SlidingWindowRateLimiter:
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiting middleware with sliding window algorithm."""
 
-    def __init__(self, app: FastAPI, limiter: Optional[SlidingWindowRateLimiter] = None):
+    def __init__(self, app: FastAPI, limiter: Optional[UnifiedRateLimiter] = None):
         super().__init__(app)
-        if limiter is not None:
-            self.limiter = limiter
-        else:
-            config = get_config()
-            self.limiter = SlidingWindowRateLimiter(
-                window_seconds=config.rate_limit.window_seconds
-            )
+        config = get_config()
+        self.limiter = limiter or get_rate_limiter(
+            window_seconds=config.rate_limit.window_seconds
+        )
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         config = get_config()

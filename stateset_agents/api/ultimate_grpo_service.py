@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
+from stateset_agents.api.grpo.rate_limiter import UnifiedRateLimiter, get_rate_limiter
+
 try:
     import uvicorn
     from fastapi import (
@@ -152,26 +154,16 @@ class APIConfig:
 
 
 class SlidingWindowRateLimiter:
-    """In-memory sliding window rate limiter."""
+    """In-memory sliding window rate limiter (legacy compatibility)."""
 
     def __init__(self, window_seconds: int = 60):
-        self.window_seconds = window_seconds
-        self.windows: Dict[str, deque] = defaultdict(deque)
+        self._delegate: UnifiedRateLimiter = UnifiedRateLimiter(
+            window_seconds=window_seconds
+        )
 
     def allow(self, key: str, limit: int) -> bool:
         """Return True if the request is within the rate limit."""
-        now = time.monotonic()
-        window = self.windows[key]
-        cutoff = now - self.window_seconds
-
-        while window and window[0] <= cutoff:
-            window.popleft()
-
-        if len(window) >= limit:
-            return False
-
-        window.append(now)
-        return True
+        return self._delegate.allow(key, limit)
 
 
 class APIMetrics:
@@ -222,7 +214,7 @@ class RequestContext:
 
 
 API_CONFIG = APIConfig.from_env()
-RATE_LIMITER = SlidingWindowRateLimiter()
+RATE_LIMITER = get_rate_limiter()
 API_METRICS = APIMetrics()
 
 
