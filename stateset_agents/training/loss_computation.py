@@ -30,6 +30,20 @@ _warned_missing_log_probs = False
 _warned_missing_assistant_mask = False
 
 
+def _resolve_model_device(agent: Any, torch_mod: Any) -> Any:
+    """Resolve the device for model tensors with safe CPU fallback."""
+    device = getattr(agent.model, "device", None)
+    if device is None and hasattr(agent.model, "parameters"):
+        try:
+            first_param = next(agent.model.parameters())
+            device = getattr(first_param, "device", None)
+        except StopIteration:
+            device = None
+    if device is None:
+        device = torch_mod.device("cpu")
+    return device
+
+
 def compute_grpo_loss(
     trajectory_groups: List[Any],
     config: Any,
@@ -53,6 +67,7 @@ def compute_grpo_loss(
         Dictionary containing loss tensors and metrics
     """
     torch = require_torch()
+    device = _resolve_model_device(agent, torch)
 
     total_loss = 0.0
     policy_losses = []
@@ -69,7 +84,9 @@ def compute_grpo_loss(
 
         # Extract rewards and optionally clip
         rewards = torch.tensor(
-            [t.total_reward for t in group.trajectories], dtype=torch.float32
+            [t.total_reward for t in group.trajectories],
+            dtype=torch.float32,
+            device=device,
         )
         if reward_clip is not None:
             rewards = torch.clamp(
@@ -84,7 +101,9 @@ def compute_grpo_loss(
             with torch.no_grad():
                 batch_mean = rewards.mean().item()
                 update_global_stats(batch_mean, len(rewards))
-            baseline = torch.tensor(global_reward_mean, dtype=torch.float32)
+            baseline = torch.tensor(
+                global_reward_mean, dtype=torch.float32, device=device
+            )
         else:  # group_mean (default)
             baseline = rewards.mean()
 
@@ -141,7 +160,7 @@ def _compute_group_policy_loss(
     torch = require_torch()
     F = get_functional()
 
-    device = agent.model.device
+    device = _resolve_model_device(agent, torch)
     total_loss = torch.tensor(0.0, device=device, requires_grad=True)
     num_trajectories = 0
 
@@ -245,6 +264,7 @@ def compute_enhanced_grpo_loss(
         Dictionary containing loss tensors and metrics
     """
     torch = require_torch()
+    device = _resolve_model_device(agent, torch)
     F = get_functional()
     amp = get_amp()
 
@@ -263,7 +283,9 @@ def compute_enhanced_grpo_loss(
 
         # Extract rewards for this group
         rewards = torch.tensor(
-            [t.total_reward for t in group.trajectories], dtype=torch.float32
+            [t.total_reward for t in group.trajectories],
+            dtype=torch.float32,
+            device=device,
         )
 
         # GRPO: Use group mean as baseline
@@ -334,13 +356,13 @@ def compute_enhanced_grpo_loss(
             total_loss = policy_loss + beta * kl_penalty
         else:
             total_loss = policy_loss
-            kl_penalty = torch.tensor(0.0, device=agent.model.device)
+            kl_penalty = torch.tensor(0.0, device=device)
     else:
         total_loss = torch.tensor(
-            0.0, requires_grad=True, device=agent.model.device
+            0.0, requires_grad=True, device=device
         )
         policy_loss = total_loss
-        kl_penalty = torch.tensor(0.0, device=agent.model.device)
+        kl_penalty = torch.tensor(0.0, device=device)
 
     return {
         "total_loss": total_loss,

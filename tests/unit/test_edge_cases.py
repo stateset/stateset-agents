@@ -236,6 +236,40 @@ class TestRewardEdgeCases:
 class TestTrajectoryEdgeCases:
     """Edge cases for trajectory handling."""
 
+    def test_conversation_turn_positional_role_with_reward(self):
+        """Role-like first arg with reward should not be treated as legacy."""
+        from stateset_agents.core.trajectory import ConversationTurn
+
+        turn = ConversationTurn("assistant", "Hi there", 0.5)
+
+        assert turn.role == "assistant"
+        assert turn.content == "Hi there"
+        assert turn.reward == 0.5
+        assert turn.user_message is None
+        assert turn.assistant_response is None
+
+    def test_conversation_turn_positional_role_case_insensitive(self):
+        """Role parsing should handle common case variants."""
+        from stateset_agents.core.trajectory import ConversationTurn
+
+        turn = ConversationTurn("User", "Hello", 1.0)
+
+        assert turn.role == "user"
+        assert turn.content == "Hello"
+        assert turn.reward == 1.0
+
+    def test_conversation_turn_positional_legacy_pair_with_reward(self):
+        """Non-role first arg should keep legacy behavior."""
+        from stateset_agents.core.trajectory import ConversationTurn
+
+        turn = ConversationTurn("hello", "hi", 0.2)
+
+        assert turn.role == "assistant"
+        assert turn.content == "hi"
+        assert turn.user_message == "hello"
+        assert turn.assistant_response == "hi"
+        assert turn.reward == 0.2
+
     def test_empty_trajectory(self):
         """Test creating trajectory with no turns."""
         from stateset_agents.core.trajectory import MultiTurnTrajectory

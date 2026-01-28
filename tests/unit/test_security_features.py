@@ -210,6 +210,39 @@ class TestInputValidation:
 
 
 # ============================================================================
+# Cache Config Security Tests
+# ============================================================================
+
+
+class TestCacheConfigSecurity:
+    """Tests for cache serializer safety gates."""
+
+    def test_pickle_disabled_by_default(self, monkeypatch):
+        """Pickle should be rejected unless explicitly enabled."""
+        from stateset_agents.api.distributed_cache import CacheConfig
+
+        monkeypatch.setenv("CACHE_SERIALIZER", "pickle")
+        monkeypatch.delenv("CACHE_ALLOW_PICKLE", raising=False)
+
+        config = CacheConfig.from_env()
+
+        assert config.serializer == "json"
+        assert config.allow_pickle is False
+
+    def test_pickle_allowed_with_explicit_flag(self, monkeypatch):
+        """Pickle can be enabled explicitly via CACHE_ALLOW_PICKLE."""
+        from stateset_agents.api.distributed_cache import CacheConfig
+
+        monkeypatch.setenv("CACHE_SERIALIZER", "pickle")
+        monkeypatch.setenv("CACHE_ALLOW_PICKLE", "true")
+
+        config = CacheConfig.from_env()
+
+        assert config.serializer == "pickle"
+        assert config.allow_pickle is True
+
+
+# ============================================================================
 # Structured Output Tests
 # ============================================================================
 

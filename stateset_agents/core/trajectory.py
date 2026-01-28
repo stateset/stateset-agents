@@ -53,18 +53,25 @@ class ConversationTurn:
 
         if args:
             if len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], str):
+                valid_roles = {"user", "assistant", "system", "tool"}
                 # (A, B, [float]) — treat as legacy (user_message, assistant_response, reward)
-                if len(args) >= 3 and isinstance(args[2], (int, float)):
-                    self.user_message = args[0]
-                    self.assistant_response = args[1]
-                    self.reward = float(args[2])
-                    self.role = "assistant"
-                    self.content = self.assistant_response
+                if len(args) >= 3 and isinstance(args[2], (int, float)) and not isinstance(args[2], bool):
+                    role_candidate = args[0].lower()
+                    if role_candidate in valid_roles:
+                        self.role = role_candidate
+                        self.content = args[1]
+                        self.reward = float(args[2])
+                    else:
+                        self.user_message = args[0]
+                        self.assistant_response = args[1]
+                        self.reward = float(args[2])
+                        self.role = "assistant"
+                        self.content = self.assistant_response
                 else:
                     # (role, content, [reward])
-                    self.role = args[0]
+                    self.role = args[0].lower() if args[0].lower() in valid_roles else args[0]
                     self.content = args[1]
-                    if len(args) >= 3 and isinstance(args[2], (int, float)):
+                    if len(args) >= 3 and isinstance(args[2], (int, float)) and not isinstance(args[2], bool):
                         self.reward = float(args[2])
             else:
                 raise TypeError("Invalid positional arguments for ConversationTurn")

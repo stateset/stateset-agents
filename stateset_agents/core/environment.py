@@ -194,6 +194,11 @@ class Environment(ABC):
         turns: List[ConversationTurn] = []
         turn_rewards: List[float] = []
         total_reward = 0.0
+        def _is_reward(value: Any) -> bool:
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+        def _is_done(value: Any) -> bool:
+            return isinstance(value, bool)
 
         initial_prompt = ""
         try:
@@ -220,17 +225,28 @@ class Environment(ABC):
             turns.append(agent_turn)
 
             step_result = await self.step(state, agent_turn)
-            if (
-                isinstance(step_result, tuple)
-                and len(step_result) == 4
-                and isinstance(step_result[1], ConversationTurn)
-            ):
-                # Legacy (next_state, env_response, reward, done)
-                new_state, env_response, step_reward, done = step_result  # type: ignore[misc]
-                info: Dict[str, Any] = {}
+            if isinstance(step_result, tuple) and len(step_result) == 4:
+                # Detect newer (state, reward, done, info) signature first.
+                if _is_reward(step_result[1]) and _is_done(step_result[2]):
+                    new_state, step_reward, done, info = step_result  # type: ignore[misc]
+                    env_response = info.get("env_response") if isinstance(info, dict) else None
+                # Detect legacy (state, env_response, reward, done) signature.
+                elif _is_reward(step_result[2]) and _is_done(step_result[3]):
+                    new_state, env_response, step_reward, done = step_result  # type: ignore[misc]
+                    info = {}
+                elif isinstance(step_result[1], ConversationTurn):
+                    new_state, env_response, step_reward, done = step_result  # type: ignore[misc]
+                    info = {}
+                else:
+                    logger.warning(
+                        "Ambiguous Environment.step() return signature; "
+                        "assuming (state, reward, done, info)."
+                    )
+                    new_state, step_reward, done, info = step_result  # type: ignore[misc]
+                    env_response = info.get("env_response") if isinstance(info, dict) else None
             else:
                 new_state, step_reward, done, info = step_result  # type: ignore[misc]
-                env_response = info.get("env_response")
+                env_response = info.get("env_response") if isinstance(info, dict) else None
 
             total_reward += float(step_reward)
             turn_rewards.append(float(step_reward))
@@ -244,9 +260,17 @@ class Environment(ABC):
             try:
                 final_reward = await self.reward_fn.compute_reward(turns, state.context)
                 if hasattr(final_reward, "score"):
-                    total_reward += final_reward.score
+                    final_value = float(final_reward.score)
                 elif isinstance(final_reward, dict) and "score" in final_reward:
-                    total_reward += float(final_reward["score"])  # type: ignore[arg-type]
+                    final_value = float(final_reward["score"])  # type: ignore[arg-type]
+                else:
+                    final_value = None
+                if final_value is not None:
+                    total_reward += final_value
+                    if turn_rewards:
+                        turn_rewards[-1] += final_value
+                    else:
+                        turn_rewards.append(final_value)
             except ENVIRONMENT_EXCEPTIONS:
                 pass
 

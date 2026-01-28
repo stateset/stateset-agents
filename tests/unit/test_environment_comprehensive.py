@@ -240,6 +240,78 @@ class TestEnvironmentScenarioHandling:
         unique_scenarios = set(selected_scenarios)
         assert len(unique_scenarios) > 1
 
+
+class TestEnvironmentRunEpisodeSignatures:
+    """Tests for Environment.run_episode signature handling."""
+
+    @pytest.mark.asyncio
+    async def test_run_episode_legacy_signature_with_string_response(self):
+        """Legacy (state, env_response, reward, done) tuples should be parsed safely."""
+        from stateset_agents.core.environment import Environment, EnvironmentState, EpisodeStatus
+
+        class LegacyEnv(Environment):
+            async def reset(self, scenario=None):
+                return EnvironmentState(
+                    episode_id="legacy",
+                    turn_count=0,
+                    status=EpisodeStatus.ONGOING,
+                    context={"scenario": scenario or {}},
+                )
+
+            async def step(self, state, action):
+                new_state = state.copy()
+                new_state.turn_count += 1
+                new_state.status = EpisodeStatus.COMPLETED
+                return new_state, "user reply", 1.0, True
+
+        env = LegacyEnv(max_turns=1)
+
+        async def agent_fn(history, context):
+            return "assistant reply"
+
+        trajectory = await env.run_episode(agent_fn, scenario={"id": "s"})
+
+        assert trajectory.total_reward == 1.0
+        assert trajectory.turn_rewards == [1.0]
+
+    @pytest.mark.asyncio
+    async def test_run_episode_new_signature_with_final_reward(self):
+        """New (state, reward, done, info) tuples should include final rewards in turn totals."""
+        from stateset_agents.core.environment import Environment, EnvironmentState, EpisodeStatus
+        from stateset_agents.core.reward_base import RewardFunction, RewardResult
+        from stateset_agents.core.trajectory import ConversationTurn
+
+        class FixedReward(RewardFunction):
+            async def compute_reward(self, turns, context=None):
+                return RewardResult(score=0.5)
+
+        class NewEnv(Environment):
+            async def reset(self, scenario=None):
+                return EnvironmentState(
+                    episode_id="new",
+                    turn_count=0,
+                    status=EpisodeStatus.ONGOING,
+                    context={"scenario": scenario or {}},
+                )
+
+            async def step(self, state, action):
+                new_state = state.copy()
+                new_state.turn_count += 1
+                new_state.status = EpisodeStatus.COMPLETED
+                info = {"env_response": ConversationTurn(role="user", content="ok")}
+                return new_state, 1.0, True, info
+
+        env = NewEnv(max_turns=1, reward_fn=FixedReward())
+
+        async def agent_fn(history, context):
+            return "assistant reply"
+
+        trajectory = await env.run_episode(agent_fn, scenario={"id": "s"})
+
+        assert trajectory.total_reward == 1.5
+        assert trajectory.turn_rewards == [1.5]
+        assert len(trajectory.turns) == 2
+
     def test_environment_with_empty_scenarios(self):
         """Test environment handles empty scenario list"""
         # Should handle gracefully or raise appropriate error

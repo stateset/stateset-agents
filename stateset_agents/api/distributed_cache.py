@@ -57,11 +57,27 @@ class CacheConfig:
     max_memory_items: int = 10000
     key_prefix: str = "stateset:"
     serializer: str = "json"  # json or pickle
+    allow_pickle: bool = False
     compression_enabled: bool = False
     compression_threshold: int = 1024  # bytes
     health_check_interval: int = 30
     retry_attempts: int = 3
     retry_delay: float = 0.1
+
+    def __post_init__(self) -> None:
+        serializer = str(self.serializer).lower()
+        if serializer not in ("json", "pickle"):
+            logger.warning(
+                "Unknown CACHE_SERIALIZER '%s', defaulting to json", serializer
+            )
+            serializer = "json"
+        if serializer == "pickle" and not self.allow_pickle:
+            logger.warning(
+                "CACHE_SERIALIZER=pickle is unsafe with untrusted cache backends; "
+                "set CACHE_ALLOW_PICKLE=true to override."
+            )
+            serializer = "json"
+        self.serializer = serializer
 
     @classmethod
     def from_env(cls) -> "CacheConfig":
@@ -76,15 +92,18 @@ class CacheConfig:
             backend = CacheBackend.MEMORY
 
         serializer = os.getenv("CACHE_SERIALIZER", "json").lower()
+        allow_pickle = os.getenv("CACHE_ALLOW_PICKLE", "false").lower() == "true"
         if serializer not in ("json", "pickle"):
             logger.warning(
                 "Unknown CACHE_SERIALIZER '%s', defaulting to json", serializer
             )
             serializer = "json"
-        elif serializer == "pickle":
+        elif serializer == "pickle" and not allow_pickle:
             logger.warning(
-                "CACHE_SERIALIZER=pickle is unsafe with untrusted cache backends"
+                "CACHE_SERIALIZER=pickle is unsafe with untrusted cache backends; "
+                "set CACHE_ALLOW_PICKLE=true to override."
             )
+            serializer = "json"
 
         return cls(
             backend=backend,
@@ -95,6 +114,7 @@ class CacheConfig:
             max_memory_items=int(os.getenv("CACHE_MAX_MEMORY_ITEMS", "10000")),
             key_prefix=os.getenv("CACHE_KEY_PREFIX", "stateset:"),
             serializer=serializer,
+            allow_pickle=allow_pickle,
             compression_enabled=os.getenv("CACHE_COMPRESSION", "false").lower() == "true",
         )
 
@@ -591,11 +611,20 @@ class RedisCache(CacheInterface):
     def _serialize(self, value: Any) -> bytes:
         """Serialize value for storage."""
         if self.config.serializer == "pickle":
-            data = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
-        else:
-            data = json.dumps(
-                value, default=_json_default_serializer
-            ).encode("utf-8")
+            if not self.config.allow_pickle:
+                logger.warning(
+                    "Pickle serializer disabled; falling back to json serialization."
+                )
+            else:
+                data = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+                # Compress if large
+                if self.config.compression_enabled and len(data) > self.config.compression_threshold:
+                    import zlib
+                    data = b"ZLIB:" + zlib.compress(data)
+                return data
+        data = json.dumps(
+            value, default=_json_default_serializer
+        ).encode("utf-8")
 
         # Compress if large
         if self.config.compression_enabled and len(data) > self.config.compression_threshold:
@@ -611,7 +640,12 @@ class RedisCache(CacheInterface):
             data = zlib.decompress(data[5:])
 
         if self.config.serializer == "pickle":
-            return pickle.loads(data)
+            if not self.config.allow_pickle:
+                logger.warning(
+                    "Pickle serializer disabled; refusing to deserialize pickle payload."
+                )
+            else:
+                return pickle.loads(data)
         return json.loads(data.decode("utf-8"))
 
     async def close(self) -> None:
