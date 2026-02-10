@@ -55,7 +55,7 @@ dev = [
     "safety>=2.0.0",
     "semgrep>=1.0.0",
     "torch>=2.0.0",
-    "transformers>=4.30.0,<4.45.0",
+    "transformers>=4.30.0,<4.58.0",
     "datasets>=2.0.0",
     "accelerate>=0.20.0",
     "wandb>=0.15.0",
@@ -67,7 +67,7 @@ dev = [
 ]
 training = [
     "torch>=2.0.0",
-    "transformers>=4.30.0,<4.45.0",
+    "transformers>=4.30.0,<4.58.0",
     "datasets>=2.0.0",
     "accelerate>=0.20.0",
     "wandb>=0.15.0",
