@@ -5,8 +5,9 @@ These tests verify that Kimi-K2.5 model can be properly configured,
 trained, and deployed within the StateSet Agents framework.
 """
 
-import pytest
 import inspect
+
+import pytest
 
 
 class TestKimiK25Config:
@@ -94,7 +95,7 @@ class TestKimiK25LoRAConfig:
 
         config = get_kimi_config(use_lora=True)
 
-        assert config.use_lora == True
+        assert config.use_lora is True
         assert config.lora_r >= 64  # Higher rank for MoE
 
     def test_lora_alpha_value(self):
@@ -192,8 +193,8 @@ class TestKimiK25MultimodalSupport:
             "supports_interleaved_thinking": True,
         }
 
-        assert model_features["supports_images"] == True
-        assert model_features["supports_videos"] == True
+        assert model_features["supports_images"] is True
+        assert model_features["supports_videos"] is True
         assert model_features["vision_encoder"] == "MoonViT"
 
 

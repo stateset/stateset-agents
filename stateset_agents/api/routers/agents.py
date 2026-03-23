@@ -4,43 +4,60 @@ Agents Router Module
 API endpoints for agent management and conversations.
 """
 
-from datetime import datetime
 from dataclasses import asdict, is_dataclass
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Any
 
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field
+
+from stateset_agents.utils.security import SecurityMonitor
+
+from ..constants import MAX_MESSAGE_LENGTH
+from ..dependencies import (
+    AuthenticatedUser,
+    get_agent_service,
+    get_current_user,
+    get_security_monitor,
+)
+from ..errors import (
+    AgentNotFoundError,
+    ConversationNotFoundError,
+    InternalError,
+    InvalidAgentConfigError,
+    PromptInjectionError,
+)
+from ..models import PaginatedResponse
 from ..schemas import (
     AgentConfigRequest,
     ConversationRequest,
     ConversationResponse,
     ErrorResponse,
 )
-from ..models import PaginatedResponse
-from ..services.agent_service import AgentService
-from ..dependencies import get_current_user, get_security_monitor, AuthenticatedUser
-from ..errors import (
-    AgentNotFoundError,
-    InvalidAgentConfigError,
-    ConversationNotFoundError,
-    PromptInjectionError,
-    InternalError,
-)
 from ..security import InputValidator, get_api_security_monitor
-from ..constants import MAX_MESSAGE_LENGTH
-from stateset_agents.utils.security import SecurityMonitor
+from ..services.agent_service import AgentService
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 conversation_router = APIRouter(prefix="/conversations", tags=["conversations"])
 
-# Singleton for now, could be dependency injected per request if needed
-security_monitor = SecurityMonitor()
-agent_service = AgentService(security_monitor)
-
 AGENT_API_EXCEPTIONS = (AttributeError, KeyError, RuntimeError, TypeError, ValueError)
 
 
-def _agent_config_to_dict(config: Any) -> Dict[str, Any]:
+def _can_access_conversation(
+    conversation: dict[str, Any], user: AuthenticatedUser
+) -> bool:
+    if "admin" in user.roles:
+        return True
+
+    metadata = conversation.get("metadata")
+    if not isinstance(metadata, dict):
+        return True
+
+    owner = metadata.get("user_id")
+    return owner is None or owner == user.user_id
+
+
+def _agent_config_to_dict(config: Any) -> dict[str, Any]:
     if isinstance(config, dict):
         return config
     if is_dataclass(config):
@@ -52,48 +69,67 @@ def _agent_config_to_dict(config: Any) -> Dict[str, Any]:
 # Response Models
 # ============================================================================
 
+
 class AgentCreatedResponse(BaseModel):
     """Response for agent creation."""
+
     agent_id: str = Field(..., description="Unique identifier for the created agent")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow, description="Creation timestamp"
+    )
     config: AgentConfigRequest = Field(..., description="Agent configuration")
     message: str = Field("Agent created successfully", description="Status message")
 
 
 class AgentDetailResponse(BaseModel):
     """Detailed agent information."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
     agent_id: str = Field(..., description="Agent identifier")
     model_name: str = Field(..., description="Model name")
     created_at: datetime = Field(..., description="Creation timestamp")
     conversation_count: int = Field(0, description="Number of conversations")
     total_tokens_used: int = Field(0, description="Total tokens used")
-    config: Dict[str, Any] = Field(default_factory=dict, description="Agent configuration")
+    config: dict[str, Any] = Field(
+        default_factory=dict, description="Agent configuration"
+    )
     status: str = Field("active", description="Agent status")
 
 
 class AgentListResponse(PaginatedResponse):
     """Paginated list of agents."""
-    items: List[AgentDetailResponse] = Field(default_factory=list, description="List of agents")
+
+    items: list[AgentDetailResponse] = Field(
+        default_factory=list, description="List of agents"
+    )
 
 
 class ConversationSummary(BaseModel):
     """Summary of a conversation."""
+
     conversation_id: str = Field(..., description="Conversation identifier")
     agent_id: str = Field(..., description="Associated agent ID")
     message_count: int = Field(0, description="Number of messages")
     created_at: datetime = Field(..., description="Creation timestamp")
-    last_message_at: Optional[datetime] = Field(None, description="Last message timestamp")
+    last_message_at: datetime | None = Field(
+        None, description="Last message timestamp"
+    )
     total_tokens: int = Field(0, description="Total tokens used")
 
 
 class ConversationListResponse(PaginatedResponse):
     """Paginated list of conversations."""
-    items: List[ConversationSummary] = Field(default_factory=list, description="List of conversations")
+
+    items: list[ConversationSummary] = Field(
+        default_factory=list, description="List of conversations"
+    )
 
 
 # ============================================================================
 # Agent Endpoints
 # ============================================================================
+
 
 @router.post(
     "",
@@ -102,7 +138,10 @@ class ConversationListResponse(PaginatedResponse):
     summary="Create Agent",
     description="Create a new AI agent with the specified configuration.",
     responses={
-        201: {"description": "Agent created successfully", "model": AgentCreatedResponse},
+        201: {
+            "description": "Agent created successfully",
+            "model": AgentCreatedResponse,
+        },
         400: {"description": "Invalid configuration", "model": ErrorResponse},
         401: {"description": "Authentication required", "model": ErrorResponse},
         500: {"description": "Internal server error", "model": ErrorResponse},
@@ -111,6 +150,7 @@ class ConversationListResponse(PaginatedResponse):
 async def create_agent(
     config: AgentConfigRequest,
     user: AuthenticatedUser = Depends(get_current_user),
+    svc: AgentService = Depends(get_agent_service),
 ) -> AgentCreatedResponse:
     """
     Create a new agent with the specified configuration.
@@ -138,10 +178,10 @@ async def create_agent(
                 )
             except ValueError as e:
                 if "potentially harmful content" in str(e).lower():
-                    raise PromptInjectionError("system_prompt")
-                raise InvalidAgentConfigError(str(e))
+                    raise PromptInjectionError("system_prompt") from e
+                raise InvalidAgentConfigError(str(e)) from e
 
-        agent_id = await agent_service.create_agent(config)
+        agent_id = await svc.create_agent(config)
 
         return AgentCreatedResponse(
             agent_id=agent_id,
@@ -153,9 +193,9 @@ async def create_agent(
     except PromptInjectionError:
         raise
     except ValueError as e:
-        raise InvalidAgentConfigError(str(e))
+        raise InvalidAgentConfigError(str(e)) from e
     except AGENT_API_EXCEPTIONS as e:
-        raise InternalError("Failed to create agent", internal_error=e)
+        raise InternalError("Failed to create agent", internal_error=e) from e
 
 
 @router.get(
@@ -171,8 +211,9 @@ async def create_agent(
 async def list_agents(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    status: Optional[str] = Query(None, description="Filter by status"),
+    status: str | None = Query(None, description="Filter by status"),
     user: AuthenticatedUser = Depends(get_current_user),
+    svc: AgentService = Depends(get_agent_service),
 ) -> AgentListResponse:
     """
     Get a paginated list of all agents.
@@ -187,11 +228,15 @@ async def list_agents(
         Paginated list of agent details.
     """
     # Get all agents from service
-    all_agents = list(agent_service.agents.items())
+    all_agents = list(svc.agents.items())
 
     # Apply status filter if provided
     if status:
-        all_agents = [(aid, a) for aid, a in all_agents if getattr(a, "status", "active") == status]
+        all_agents = [
+            (aid, a)
+            for aid, a in all_agents
+            if getattr(a, "status", "active") == status
+        ]
 
     total = len(all_agents)
 
@@ -205,7 +250,7 @@ async def list_agents(
             agent_id=agent_id,
             model_name=getattr(agent, "model_name", "unknown"),
             created_at=getattr(agent, "created_at", datetime.utcnow()),
-            conversation_count=len(agent_service.conversations.get(agent_id, [])),
+            conversation_count=len(svc.conversations.get(agent_id, [])),
             total_tokens_used=getattr(agent, "total_tokens", 0),
             config=_agent_config_to_dict(getattr(agent, "config", {})),
             status=getattr(agent, "status", "active"),
@@ -237,6 +282,7 @@ async def list_agents(
 async def get_agent(
     agent_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
+    svc: AgentService = Depends(get_agent_service),
 ) -> AgentDetailResponse:
     """
     Get detailed information about a specific agent.
@@ -251,16 +297,16 @@ async def get_agent(
     Raises:
         AgentNotFoundError: If the agent doesn't exist.
     """
-    if agent_id not in agent_service.agents:
+    if agent_id not in svc.agents:
         raise AgentNotFoundError(agent_id)
 
-    agent = agent_service.agents[agent_id]
+    agent = svc.agents[agent_id]
 
     return AgentDetailResponse(
         agent_id=agent_id,
         model_name=getattr(agent, "model_name", "unknown"),
         created_at=getattr(agent, "created_at", datetime.utcnow()),
-        conversation_count=len(agent_service.conversations.get(agent_id, [])),
+        conversation_count=len(svc.conversations.get(agent_id, [])),
         total_tokens_used=getattr(agent, "total_tokens", 0),
         config=_agent_config_to_dict(getattr(agent, "config", {})),
         status=getattr(agent, "status", "active"),
@@ -281,6 +327,7 @@ async def get_agent(
 async def delete_agent(
     agent_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
+    svc: AgentService = Depends(get_agent_service),
 ) -> None:
     """
     Delete an agent and all associated conversations.
@@ -292,10 +339,10 @@ async def delete_agent(
     Raises:
         AgentNotFoundError: If the agent doesn't exist.
     """
-    if agent_id not in agent_service.agents:
+    if agent_id not in svc.agents:
         raise AgentNotFoundError(agent_id)
 
-    deleted = agent_service.delete_agent(agent_id)
+    deleted = svc.delete_agent(agent_id)
     if not deleted:
         raise AgentNotFoundError(agent_id)
 
@@ -303,6 +350,7 @@ async def delete_agent(
 # ============================================================================
 # Conversation Endpoints
 # ============================================================================
+
 
 @conversation_router.post(
     "",
@@ -322,6 +370,7 @@ async def converse_with_agent(
     background_tasks: BackgroundTasks,
     user: AuthenticatedUser = Depends(get_current_user),
     monitor: SecurityMonitor = Depends(get_security_monitor),
+    svc: AgentService = Depends(get_agent_service),
 ) -> ConversationResponse:
     """
     Have a conversation with an agent.
@@ -344,6 +393,9 @@ async def converse_with_agent(
         InternalError: If response generation fails.
     """
     try:
+        # Never trust caller-provided user identifiers in payload.
+        request.user_id = user.user_id
+
         # Validate messages for prompt injection
         api_security = get_api_security_monitor()
 
@@ -366,8 +418,8 @@ async def converse_with_agent(
                         patterns=patterns,
                         user_id=user.user_id if user else None,
                     )
-                    raise PromptInjectionError(f"messages[{i}].content")
-                raise HTTPException(status_code=400, detail=str(e))
+                    raise PromptInjectionError(f"messages[{i}].content") from e
+                raise HTTPException(status_code=400, detail=str(e)) from e
 
             if security_event:
                 api_security.log_event(security_event)
@@ -376,14 +428,16 @@ async def converse_with_agent(
         agent_id = getattr(request, "agent_id", "default")
 
         # Create a temporary agent if none exists
-        if agent_id not in agent_service.agents:
+        if agent_id not in svc.agents:
             config = AgentConfigRequest(model_name="gpt2")
-            agent_id = await agent_service.create_agent(config)
+            agent_id = await svc.create_agent(config)
 
-        response = await agent_service.get_conversation_response(agent_id, request)
+        response = await svc.get_conversation_response(agent_id, request)
 
         # Log the conversation for analytics
-        async def _log_conversation_event(event_type: str, details: Dict[str, Any]) -> None:
+        async def _log_conversation_event(
+            event_type: str, details: dict[str, Any]
+        ) -> None:
             monitor.log_security_event(event_type, details)
 
         background_tasks.add_task(
@@ -405,7 +459,7 @@ async def converse_with_agent(
     except HTTPException:
         raise
     except AGENT_API_EXCEPTIONS as e:
-        raise InternalError("Conversation failed", internal_error=e)
+        raise InternalError("Conversation failed", internal_error=e) from e
 
 
 @conversation_router.get(
@@ -414,15 +468,19 @@ async def converse_with_agent(
     summary="List Conversations",
     description="Get a paginated list of conversations.",
     responses={
-        200: {"description": "List of conversations", "model": ConversationListResponse},
+        200: {
+            "description": "List of conversations",
+            "model": ConversationListResponse,
+        },
         401: {"description": "Authentication required", "model": ErrorResponse},
     },
 )
 async def list_conversations(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    agent_id: Optional[str] = Query(None, description="Filter by agent ID"),
+    agent_id: str | None = Query(None, description="Filter by agent ID"),
     user: AuthenticatedUser = Depends(get_current_user),
+    svc: AgentService = Depends(get_agent_service),
 ) -> ConversationListResponse:
     """
     Get a paginated list of conversations.
@@ -437,21 +495,25 @@ async def list_conversations(
         Paginated list of conversation summaries.
     """
     # Gather all conversations
-    all_convs: List[ConversationSummary] = []
+    all_convs: list[ConversationSummary] = []
 
-    for aid, conv_list in agent_service.conversations.items():
+    for aid, conv_list in svc.conversations.items():
         if agent_id and aid != agent_id:
             continue
 
         for conv in conv_list:
-            all_convs.append(ConversationSummary(
-                conversation_id=conv.get("id", "unknown"),
-                agent_id=aid,
-                message_count=len(conv.get("messages", [])),
-                created_at=conv.get("created_at", datetime.utcnow()),
-                last_message_at=conv.get("last_message_at"),
-                total_tokens=conv.get("total_tokens", 0),
-            ))
+            if not _can_access_conversation(conv, user):
+                continue
+            all_convs.append(
+                ConversationSummary(
+                    conversation_id=conv.get("id", "unknown"),
+                    agent_id=aid,
+                    message_count=len(conv.get("messages", [])),
+                    created_at=conv.get("created_at", datetime.utcnow()),
+                    last_message_at=conv.get("last_message_at"),
+                    total_tokens=conv.get("total_tokens", 0),
+                )
+            )
 
     total = len(all_convs)
 
@@ -486,7 +548,8 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
-) -> Dict[str, Any]:
+    svc: AgentService = Depends(get_agent_service),
+) -> dict[str, Any]:
     """
     Get details of a specific conversation.
 
@@ -501,9 +564,11 @@ async def get_conversation(
         ConversationNotFoundError: If the conversation doesn't exist.
     """
     # Search for conversation across all agents
-    for aid, conv_list in agent_service.conversations.items():
+    for aid, conv_list in svc.conversations.items():
         for conv in conv_list:
             if conv.get("id") == conversation_id:
+                if not _can_access_conversation(conv, user):
+                    raise ConversationNotFoundError(conversation_id)
                 return {
                     "conversation_id": conversation_id,
                     "agent_id": aid,
@@ -531,6 +596,7 @@ async def get_conversation(
 async def delete_conversation(
     conversation_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
+    svc: AgentService = Depends(get_agent_service),
 ) -> None:
     """
     Delete a specific conversation.
@@ -542,6 +608,6 @@ async def delete_conversation(
     Raises:
         ConversationNotFoundError: If the conversation doesn't exist.
     """
-    deleted = agent_service.delete_conversation(conversation_id)
+    deleted = svc.delete_conversation(conversation_id, user_id=user.user_id)
     if not deleted:
         raise ConversationNotFoundError(conversation_id)

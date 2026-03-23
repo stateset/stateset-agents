@@ -1,38 +1,85 @@
-import uuid
-import logging
 import asyncio
-import os
+import logging
+import uuid
 from datetime import datetime
-from typing import Dict, Optional
-from fastapi import HTTPException
+from typing import Any
+
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
-# from stateset_agents.training.train import train  <-- Moved inside method
+
 from ..schemas import TrainingRequest
 
 logger = logging.getLogger(__name__)
 
-TRAINING_SERVICE_EXCEPTIONS = (AttributeError, OSError, RuntimeError, TypeError, ValueError)
+TRAINING_SERVICE_EXCEPTIONS = (
+    AttributeError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
+
+
+class JobProgressCallback:
+    """Training callback that updates a job dict with episode progress.
+
+    Also monitors a ``cancel_event`` and raises ``asyncio.CancelledError``
+    when cancellation is requested so the trainer loop exits cleanly.
+    """
+
+    def __init__(
+        self,
+        job: dict[str, Any],
+        total_episodes: int,
+        cancel_event: asyncio.Event,
+    ) -> None:
+        self.job = job
+        self.total_episodes = total_episodes
+        self.cancel_event = cancel_event
+
+    def on_episode_end(self, episode: int, metrics: dict[str, Any]) -> None:
+        """Called by the trainer after each episode."""
+        self.job["current_episode"] = episode + 1
+        self.job["progress"] = ((episode + 1) / self.total_episodes) * 100.0
+        # Only store JSON-serializable scalar metrics
+        self.job["metrics"] = {
+            k: v
+            for k, v in metrics.items()
+            if isinstance(v, (int, float, str, bool))
+        }
+
+        if self.cancel_event.is_set():
+            raise asyncio.CancelledError("Training cancelled by user")
+
 
 class TrainingService:
     """Service for managing training jobs."""
 
-    def __init__(self):
-        self.training_jobs: Dict[str, Dict] = {}
+    def __init__(self) -> None:
+        self.training_jobs: dict[str, dict[str, Any]] = {}
+        self._cancel_events: dict[str, asyncio.Event] = {}
+        self._tasks: dict[str, asyncio.Task[None]] = {}
 
     @property
-    def jobs(self) -> Dict[str, Dict]:
+    def jobs(self) -> dict[str, dict[str, Any]]:
         """Compatibility alias used by some router/tests."""
         return self.training_jobs
 
-    async def start_training(self, request: TrainingRequest) -> str:
+    @staticmethod
+    def _can_access_job(job: dict[str, Any], user_id: str | None) -> bool:
+        if user_id is None:
+            return True
+        owner = job.get("user_id")
+        return owner is None or owner == user_id
+
+    async def start_training(self, request: TrainingRequest, user_id: str | None = None) -> str:
         """Start a training job."""
         training_id = str(uuid.uuid4())
         now = datetime.utcnow()
 
         # Create training configuration
-        agent_config = AgentConfig(**request.agent_config.dict())
+        agent_config = AgentConfig(**request.agent_config.model_dump())
         agent = MultiTurnAgent(agent_config)
 
         # Create environment
@@ -48,9 +95,10 @@ class TrainingService:
             ]
         )
 
-        # Start training in background
+        # Create job record
         self.training_jobs[training_id] = {
             "status": "running",
+            "user_id": user_id,
             "created_at": now,
             "started_at": now,
             "completed_at": None,
@@ -59,16 +107,18 @@ class TrainingService:
             "total_episodes": request.num_episodes,
             "metrics": {},
             "error": None,
-            "config": request.dict(),
+            "config": request.model_dump(),
         }
 
-        # In non-production environments we avoid kicking off heavyweight
-        # background training loops by default.
-        environment_name = os.getenv("API_ENVIRONMENT", "production").lower()
-        if environment_name == "production":
-            asyncio.create_task(
-                self._run_training(training_id, agent, environment, reward_fn, request)
+        # Create cancellation event and launch background task
+        cancel_event = asyncio.Event()
+        self._cancel_events[training_id] = cancel_event
+        task = asyncio.create_task(
+            self._run_training(
+                training_id, agent, environment, reward_fn, request, cancel_event
             )
+        )
+        self._tasks[training_id] = task
 
         return training_id
 
@@ -76,15 +126,22 @@ class TrainingService:
         self,
         training_id: str,
         agent: MultiTurnAgent,
-        environment,
-        reward_fn,
+        environment: ConversationEnvironment,
+        reward_fn: CompositeReward,
         request: TrainingRequest,
-    ):
-        """Run training job."""
+        cancel_event: asyncio.Event,
+    ) -> None:
+        """Run training job in the background."""
         from stateset_agents.training.train import train
 
+        progress_cb = JobProgressCallback(
+            job=self.training_jobs[training_id],
+            total_episodes=request.num_episodes,
+            cancel_event=cancel_event,
+        )
+
         try:
-            trained_agent = await train(
+            await train(
                 agent=agent,
                 environment=environment,
                 reward_fn=reward_fn,
@@ -92,18 +149,28 @@ class TrainingService:
                 profile=request.profile,
                 config_overrides=request.training_config_overrides,
                 resume_from_checkpoint=request.resume_from_checkpoint,
+                callbacks=[progress_cb],
             )
 
             self.training_jobs[training_id].update(
                 {
                     "status": "completed",
+                    "progress": 100.0,
                     "completed_at": datetime.utcnow(),
-                    "trained_agent": trained_agent,
+                }
+            )
+
+        except asyncio.CancelledError:
+            logger.info("Training cancelled for job %s", training_id)
+            self.training_jobs[training_id].update(
+                {
+                    "status": "cancelled",
+                    "completed_at": datetime.utcnow(),
                 }
             )
 
         except TRAINING_SERVICE_EXCEPTIONS as e:
-            logger.error(f"Training failed for job {training_id}: {e}")
+            logger.error("Training failed for job %s: %s", training_id, e)
             self.training_jobs[training_id].update(
                 {
                     "status": "failed",
@@ -112,9 +179,28 @@ class TrainingService:
                 }
             )
 
-    def get_training_status(self, training_id: str) -> Dict:
-        """Get training job status."""
-        if training_id not in self.training_jobs:
-            raise HTTPException(status_code=404, detail="Training job not found")
+        finally:
+            self._cancel_events.pop(training_id, None)
+            self._tasks.pop(training_id, None)
 
-        return self.training_jobs[training_id]
+    def cancel_training(self, training_id: str, user_id: str | None = None) -> bool:
+        """Request cancellation of a running training job."""
+        job = self.training_jobs.get(training_id)
+        if not job or not self._can_access_job(job, user_id):
+            return False
+
+        event = self._cancel_events.get(training_id)
+        if event is not None:
+            event.set()
+
+        if training_id in self.training_jobs:
+            self.training_jobs[training_id]["status"] = "cancelled"
+            self.training_jobs[training_id]["completed_at"] = datetime.utcnow()
+        return True
+
+    def get_training_status(self, training_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+        """Get training job status, or None if not found."""
+        job = self.training_jobs.get(training_id)
+        if not job or not self._can_access_job(job, user_id):
+            return None
+        return job

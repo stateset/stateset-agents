@@ -208,13 +208,12 @@ StateSet Agents includes GSPO, a more stable alternative to GRPO.
 Fine-tune Qwen models with GSPO:
 
 ```bash
-python examples/finetune_qwen3_gspo.py \
-    --model Qwen/Qwen2.5-7B \
-    --task customer_service \
-    --use-lora
+python examples/finetune_qwen3_5_0_8b_gspo.py --task customer_service
+python examples/finetune_qwen3_5_0_8b_gspo.py --starter-profile memory --dry-run
+python examples/finetune_qwen3_5_0_8b_gspo.py --list-profiles
 ```
 
-See [QWEN3_FINETUNING_GUIDE.md](../docs/QWEN3_FINETUNING_GUIDE.md)
+See [QWEN3_FINETUNING_GUIDE.md](../docs/QWEN3_FINETUNING_GUIDE.md) for a getting-started walkthrough for post-training `Qwen/Qwen3.5-0.8B`, including the built-in `balanced`, `memory`, and `quality` starter profiles and the new profile-discovery mode. The family-wide fallback script remains `examples/finetune_qwen3_gspo.py`.
 
 #### Gemma Models
 
@@ -411,6 +410,7 @@ pip install stateset-agents[dev,api,trl,hpo]
 
 #### ...fine-tune a specific model
 → Choose from:
+- `finetune_qwen3_5_0_8b_gspo.py`
 - `finetune_qwen3_gspo.py`
 - `finetune_gemma3_gspo.py`
 - `finetune_llama3_gspo.py`
@@ -505,8 +505,9 @@ asyncio.run(example_module.main())
 
 7. `distributed_multi_gpu_training.py` - Scale to multiple GPUs ⭐
 8. `advanced_optimization_techniques.py` - Optimize performance ⭐
-9. `finetune_qwen3_gspo.py` - Fine-tune large models
-10. `hpo_training_example.py` - Automated hyperparameter tuning
+9. `finetune_qwen3_5_0_8b_gspo.py` - Run the Qwen3.5-0.8B starter path
+10. `finetune_qwen3_gspo.py` - Fine-tune broader Qwen model variants
+11. `hpo_training_example.py` - Automated hyperparameter tuning
 
 ## 🐛 Troubleshooting
 

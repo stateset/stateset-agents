@@ -1,0 +1,15 @@
+vllm:
+  gpu:
+    count: 8
+    accelerator: "nvidia-tesla-a100"
+  resources:
+    requests:
+      cpu: "10"
+      memory: "600Gi"
+      "ephemeral-storage": "500Gi"
+      "nvidia.com/gpu": "8"
+    limits:
+      cpu: "10"
+      memory: "600Gi"
+      "ephemeral-storage": "500Gi"
+      "nvidia.com/gpu": "8"

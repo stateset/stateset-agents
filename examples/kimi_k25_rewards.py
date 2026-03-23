@@ -8,10 +8,9 @@ This module provides reward functions optimized for Kimi-K2.5's unique features:
 - Long context handling
 """
 
-import asyncio
 import logging
-from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +39,9 @@ class ThinkingQualityReward(RewardComponent):
 
     def compute(
         self,
-        reasoning_content: Optional[str] = None,
-        response_content: Optional[str] = None,
-        query: Optional[str] = None,
+        reasoning_content: str | None = None,
+        response_content: str | None = None,
+        query: str | None = None,
         **kwargs,
     ) -> float:
         """
@@ -120,8 +119,8 @@ class MultimodalIntegrationReward(RewardComponent):
 
     def compute(
         self,
-        messages: Optional[List[Dict[str, Any]]] = None,
-        response_content: Optional[str] = None,
+        messages: list[dict[str, Any]] | None = None,
+        response_content: str | None = None,
         **kwargs,
     ) -> float:
         """
@@ -198,8 +197,8 @@ class AgentCoordinationReward(RewardComponent):
 
     def compute(
         self,
-        response_content: Optional[str] = None,
-        query: Optional[str] = None,
+        response_content: str | None = None,
+        query: str | None = None,
         **kwargs,
     ) -> float:
         """
@@ -279,8 +278,8 @@ class LongContextUtilizationReward(RewardComponent):
 
     def compute(
         self,
-        conversation_history: Optional[List[Dict[str, Any]]] = None,
-        response_content: Optional[str] = None,
+        conversation_history: list[dict[str, Any]] | None = None,
+        response_content: str | None = None,
         **kwargs,
     ) -> float:
         """
@@ -348,8 +347,8 @@ class CodeGenerationReward(RewardComponent):
 
     def compute(
         self,
-        response_content: Optional[str] = None,
-        query: Optional[str] = None,
+        response_content: str | None = None,
+        query: str | None = None,
         **kwargs,
     ) -> float:
         """
@@ -410,7 +409,7 @@ class KimiMultiObjectiveReward:
     """
 
     def __init__(
-        self, components: Optional[List[RewardComponent]] = None, threshold: float = 0.6
+        self, components: list[RewardComponent] | None = None, threshold: float = 0.6
     ):
         if components is None:
             components = [
@@ -426,11 +425,11 @@ class KimiMultiObjectiveReward:
 
     async def compute_reward(
         self,
-        messages: Optional[List[Dict[str, Any]]] = None,
-        response: Optional[str] = None,
-        reasoning_content: Optional[str] = None,
-        query: Optional[str] = None,
-        conversation_history: Optional[List[Dict[str, Any]]] = None,
+        messages: list[dict[str, Any]] | None = None,
+        response: str | None = None,
+        reasoning_content: str | None = None,
+        query: str | None = None,
+        conversation_history: list[dict[str, Any]] | None = None,
         **kwargs,
     ) -> float:
         """

@@ -10,7 +10,8 @@ from __future__ import annotations
 import contextlib
 import inspect
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 
@@ -45,13 +46,13 @@ def _resolve_model_device(agent: Any, torch_mod: Any) -> Any:
 
 
 def compute_grpo_loss(
-    trajectory_groups: List[Any],
+    trajectory_groups: list[Any],
     config: Any,
     agent: Any,
     global_reward_mean: float,
     global_reward_count: int,
     update_global_stats: Callable[[float, int], None],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Compute GRPO loss from trajectory groups with configurable baseline and normalization.
 
@@ -69,9 +70,8 @@ def compute_grpo_loss(
     torch = require_torch()
     device = _resolve_model_device(agent, torch)
 
-    total_loss = 0.0
     policy_losses = []
-    all_advantages_for_logging: List[float] = []
+    all_advantages_for_logging: list[float] = []
 
     # Configuration controls
     baseline_type = getattr(config, "baseline_type", "group_mean")
@@ -110,8 +110,12 @@ def compute_grpo_loss(
         advantages = rewards - baseline
 
         # Normalize advantages if configured and variance > 0
-        if normalize_adv and len(advantages) > 1:
-            std = advantages.std()
+        if normalize_adv and advantages.numel() > 1:
+            # Avoid torch warnings for small tensors by using correction=0.
+            try:
+                std = advantages.std(correction=0)
+            except TypeError:  # Older PyTorch.
+                std = advantages.std(unbiased=False)
             if torch.isfinite(std) and std > 0:
                 advantages = (advantages - advantages.mean()) / (std + 1e-8)
 
@@ -158,19 +162,16 @@ def _compute_group_policy_loss(
         Policy loss tensor
     """
     torch = require_torch()
-    F = get_functional()
 
     device = _resolve_model_device(agent, torch)
     total_loss = torch.tensor(0.0, device=device, requires_grad=True)
     num_trajectories = 0
 
     # PPO-style clipping ratio (falls back to advantage clipping when old log probs are absent).
-    clip_ratio = getattr(
-        config, "clip_ratio", getattr(config, "clip_epsilon", 0.2)
-    )
+    clip_ratio = getattr(config, "clip_ratio", getattr(config, "clip_epsilon", 0.2))
 
     for traj_idx, (trajectory, advantage) in enumerate(
-        zip(group.trajectories, advantages)
+        zip(group.trajectories, advantages, strict=False)
     ):
         try:
             inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
@@ -209,12 +210,17 @@ def _compute_group_policy_loss(
                         new_log_prob = -(outputs.loss * token_count)
 
                 # Optional: PPO-style clipping when old log probs are available.
-                if clip_ratio > 0 and old_log_prob is not None and new_log_prob is not None:
+                if (
+                    clip_ratio > 0
+                    and old_log_prob is not None
+                    and new_log_prob is not None
+                ):
                     ratio = torch.exp(new_log_prob - old_log_prob)
                     surrogate = ratio * advantage
-                    clipped = torch.clamp(
-                        ratio, 1.0 - clip_ratio, 1.0 + clip_ratio
-                    ) * advantage
+                    clipped = (
+                        torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
+                        * advantage
+                    )
                     policy_loss = -torch.min(surrogate, clipped)
                 elif clip_ratio > 0:
                     global _warned_missing_log_probs
@@ -244,12 +250,12 @@ def _compute_group_policy_loss(
 
 
 def compute_enhanced_grpo_loss(
-    trajectory_groups: List[Any],
+    trajectory_groups: list[Any],
     beta: float,
     config: Any,
     agent: Any,
-    reference_model: Optional[Any] = None,
-) -> Dict[str, Any]:
+    reference_model: Any | None = None,
+) -> dict[str, Any]:
     """
     Enhanced GRPO loss computation with KL penalty and proper advantages.
 
@@ -299,8 +305,8 @@ def compute_enhanced_grpo_loss(
         all_advantages.extend(advantages.tolist())
 
         # Process each trajectory in the group
-        for traj_idx, (trajectory, advantage) in enumerate(
-            zip(group.trajectories, advantages)
+        for _traj_idx, (trajectory, advantage) in enumerate(
+            zip(group.trajectories, advantages, strict=False)
         ):
             inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
 
@@ -358,9 +364,7 @@ def compute_enhanced_grpo_loss(
             total_loss = policy_loss
             kl_penalty = torch.tensor(0.0, device=device)
     else:
-        total_loss = torch.tensor(
-            0.0, requires_grad=True, device=device
-        )
+        total_loss = torch.tensor(0.0, requires_grad=True, device=device)
         policy_loss = total_loss
         kl_penalty = torch.tensor(0.0, device=device)
 
@@ -395,9 +399,9 @@ def _format_trajectory_for_model(trajectory: Any, agent: Any) -> str:
         return "\n".join(parts)
 
 
-def _trajectory_to_messages(trajectory: Any) -> List[Dict[str, str]]:
+def _trajectory_to_messages(trajectory: Any) -> list[dict[str, str]]:
     """Convert trajectory turns into normalized chat messages."""
-    messages: List[Dict[str, str]] = []
+    messages: list[dict[str, str]] = []
     for turn in getattr(trajectory, "turns", []):
         if isinstance(turn, dict):
             role = str(turn.get("role", "user"))
@@ -411,11 +415,11 @@ def _trajectory_to_messages(trajectory: Any) -> List[Dict[str, str]]:
 
 def _format_trajectory_with_spans(
     trajectory: Any,
-) -> Tuple[str, List[Tuple[int, int]]]:
+) -> tuple[str, list[tuple[int, int]]]:
     """Format trajectory text and track assistant spans for masking."""
     messages = _trajectory_to_messages(trajectory)
-    parts: List[str] = []
-    assistant_spans: List[Tuple[int, int]] = []
+    parts: list[str] = []
+    assistant_spans: list[tuple[int, int]] = []
     cursor = 0
 
     for msg in messages:
@@ -441,7 +445,7 @@ def _format_trajectory_with_spans(
 
 def _prepare_inputs_and_labels(
     trajectory: Any, agent: Any, config: Any
-) -> Tuple[Dict[str, Any], Any]:
+) -> tuple[dict[str, Any], Any]:
     """Prepare model inputs and loss labels, masking to assistant tokens when possible."""
     torch = get_torch() or require_torch()
     max_length = int(getattr(config, "max_prompt_length", 512)) + int(
@@ -482,9 +486,7 @@ def _prepare_inputs_and_labels(
                     assistant_mask = out.get("assistant_tokens_mask")
 
                     labels = (
-                        input_ids.clone()
-                        if hasattr(input_ids, "clone")
-                        else input_ids
+                        input_ids.clone() if hasattr(input_ids, "clone") else input_ids
                     )
                     if assistant_mask is not None and hasattr(labels, "masked_fill"):
                         mask = assistant_mask
@@ -494,7 +496,7 @@ def _prepare_inputs_and_labels(
                     if attention_mask is not None and hasattr(labels, "masked_fill"):
                         labels = labels.masked_fill(attention_mask.eq(0), -100)
 
-                    inputs: Dict[str, Any] = {"input_ids": input_ids}
+                    inputs: dict[str, Any] = {"input_ids": input_ids}
                     if attention_mask is not None:
                         inputs["attention_mask"] = attention_mask
 
@@ -544,9 +546,7 @@ def _prepare_inputs_and_labels(
                         offsets_list = []
 
                     if offsets_list and len(offsets_list) == input_ids.shape[1]:
-                        assistant_mask = torch.zeros_like(
-                            input_ids, dtype=torch.bool
-                        )
+                        assistant_mask = torch.zeros_like(input_ids, dtype=torch.bool)
                         for idx, (start, end) in enumerate(offsets_list):
                             if start == end:
                                 continue

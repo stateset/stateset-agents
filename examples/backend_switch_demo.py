@@ -7,7 +7,6 @@ Run with:
 
 import argparse
 import asyncio
-from typing import List, Dict
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 
@@ -28,14 +27,18 @@ def build_agent(args: argparse.Namespace) -> MultiTurnAgent:
     return MultiTurnAgent(config)
 
 
-async def run_conversation(agent: MultiTurnAgent, messages: List[Dict[str, str]]) -> None:
+async def run_conversation(
+    agent: MultiTurnAgent, messages: list[dict[str, str]]
+) -> None:
     await agent.initialize()
     reply = await agent.generate_response(messages)
     print("Assistant:", reply)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Backend switch demo for StateSet Agents")
+    parser = argparse.ArgumentParser(
+        description="Backend switch demo for StateSet Agents"
+    )
     parser.add_argument("--stub", action="store_true", help="Use the stub backend")
     parser.add_argument("--model", default="gpt2", help="Model name or stub identifier")
     parser.add_argument("--temperature", type=float, default=0.7)
@@ -47,7 +50,9 @@ def main() -> None:
         args.model = "stub://demo"
 
     agent = build_agent(args)
-    history = [{"role": "user", "content": "Hello! Can you tell me about the latest update?"}]
+    history = [
+        {"role": "user", "content": "Hello! Can you tell me about the latest update?"}
+    ]
 
     try:
         asyncio.run(run_conversation(agent, history))

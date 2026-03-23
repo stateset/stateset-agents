@@ -9,10 +9,15 @@ This module provides reward functions tailored to specific domains:
 """
 
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .reward_base import RewardFunction, RewardResult, RewardType
 from .trajectory import ConversationTurn
+
+
+def _turn_text(turn: ConversationTurn) -> str:
+    """Normalize nullable turn content to plain text."""
+    return turn.content if isinstance(turn.content, str) else ""
 
 
 class DomainSpecificReward(RewardFunction):
@@ -23,15 +28,15 @@ class DomainSpecificReward(RewardFunction):
     def __init__(
         self,
         weight: float = 1.0,
-        domain_keywords: Optional[Dict[str, List[str]]] = None,
-        expected_responses: Optional[Dict[str, str]] = None,
+        domain_keywords: dict[str, list[str]] | None = None,
+        expected_responses: dict[str, str] | None = None,
     ):
         super().__init__(weight, RewardType.IMMEDIATE, self.__class__.__name__)
         self.domain_keywords = domain_keywords or {}
         self.expected_responses = expected_responses or {}
 
     async def compute_reward(
-        self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """Compute domain-specific reward"""
 
@@ -64,8 +69,8 @@ class DomainSpecificReward(RewardFunction):
         )
 
     def _get_query_for_turn(
-        self, turns: List[ConversationTurn], assistant_idx: int
-    ) -> Optional[str]:
+        self, turns: list[ConversationTurn], assistant_idx: int
+    ) -> str | None:
         """Get the user query preceding an assistant turn"""
         # Find the user turn before this assistant turn
         assistant_count = 0
@@ -75,7 +80,8 @@ class DomainSpecificReward(RewardFunction):
                     # Look backwards for user turn
                     for j in range(i - 1, -1, -1):
                         if turns[j].role == "user":
-                            return turns[j].content
+                            content = turns[j].content
+                            return content if isinstance(content, str) and content else None
                     break
                 assistant_count += 1
         return None
@@ -84,8 +90,8 @@ class DomainSpecificReward(RewardFunction):
     async def _compute_turn_score(
         self,
         turn: ConversationTurn,
-        expected: Optional[str],
-        context: Optional[Dict[str, Any]],
+        expected: str | None,
+        context: dict[str, Any] | None,
     ) -> float:
         """Compute score for a single turn"""
         pass
@@ -97,7 +103,7 @@ class CustomerServiceReward(DomainSpecificReward):
     """
 
     def __init__(
-        self, weight: float = 1.0, expected_responses: Optional[Dict[str, str]] = None
+        self, weight: float = 1.0, expected_responses: dict[str, str] | None = None
     ):
         domain_keywords = {
             "empathy": [
@@ -126,11 +132,12 @@ class CustomerServiceReward(DomainSpecificReward):
     async def _compute_turn_score(
         self,
         turn: ConversationTurn,
-        expected: Optional[str],
-        context: Optional[Dict[str, Any]],
+        expected: str | None,
+        context: dict[str, Any] | None,
     ) -> float:
         """Compute customer service quality score"""
-        response_lower = turn.content.lower()
+        response = _turn_text(turn)
+        response_lower = response.lower()
         score = 0.0
 
         # Base similarity reward if expected response provided
@@ -166,7 +173,7 @@ class CustomerServiceReward(DomainSpecificReward):
         score += prof_score * 0.1
 
         # Length appropriateness
-        word_count = len(turn.content.split())
+        word_count = len(response.split())
         if 20 <= word_count <= 80:
             score += 0.1
         elif word_count < 10:
@@ -194,11 +201,11 @@ class TechnicalSupportReward(DomainSpecificReward):
     async def _compute_turn_score(
         self,
         turn: ConversationTurn,
-        expected: Optional[str],
-        context: Optional[Dict[str, Any]],
+        expected: str | None,
+        context: dict[str, Any] | None,
     ) -> float:
         """Compute technical support quality score"""
-        response_lower = turn.content.lower()
+        response_lower = _turn_text(turn).lower()
         score = 0.0
 
         # Diagnostic approach
@@ -259,11 +266,12 @@ class SalesAssistantReward(DomainSpecificReward):
     async def _compute_turn_score(
         self,
         turn: ConversationTurn,
-        expected: Optional[str],
-        context: Optional[Dict[str, Any]],
+        expected: str | None,
+        context: dict[str, Any] | None,
     ) -> float:
         """Compute sales effectiveness score"""
-        response_lower = turn.content.lower()
+        response = _turn_text(turn)
+        response_lower = response.lower()
         score = 0.0
 
         # Benefits highlighting
@@ -296,7 +304,7 @@ class SalesAssistantReward(DomainSpecificReward):
             score -= 0.1  # Too pushy
 
         # Question asking (engagement)
-        if "?" in turn.content:
+        if "?" in response:
             score += 0.1
 
         return max(0.0, min(1.0, score))

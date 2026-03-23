@@ -30,7 +30,11 @@ This guide will get you up and running with StateSet Agents in just a few minute
 
 .. code-block:: bash
 
-   docker run -p 8000:8000 stateset/agents:latest
+   docker run -p 8000:8000 \
+     -e API_ENVIRONMENT=development \
+     -e API_REQUIRE_AUTH=false \
+     -e INFERENCE_BACKEND=stub \
+     stateset/stateset-agents-api:latest
 
 🔧 **Verify Installation**
 
@@ -147,11 +151,11 @@ Start the REST API server:
 
 .. code-block:: bash
 
-   # Using Python
-   python -m stateset_agents.api.enhanced_api_service
+   # Using the CLI
+   stateset-agents serve --host 0.0.0.0 --port 8000
 
-   # Using Docker
-   docker-compose -f deployment/docker/docker-compose.dev.yml up stateset-agents-dev
+   # Using Docker Compose (development)
+   docker compose -f deployment/docker/docker-compose.dev.yml up stateset-agents-api-dev
 
 The API will be available at http://localhost:8000
 

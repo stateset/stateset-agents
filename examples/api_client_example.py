@@ -10,10 +10,9 @@ Prerequisites:
 
 Usage:
     # Start the API server first:
-    python -m api.main
-
-    # Or using the CLI:
     stateset-agents serve --host 0.0.0.0 --port 8000
+    # For local dev:
+    #   export API_REQUIRE_AUTH=false
 
     # Then run this example:
     python examples/api_client_example.py
@@ -22,8 +21,7 @@ Usage:
 import asyncio
 import os
 import sys
-from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 import httpx
 from dotenv import load_dotenv
@@ -33,13 +31,13 @@ load_dotenv()
 
 # API Configuration
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
-API_JWT_SECRET = os.getenv("API_JWT_SECRET", "test_secret_for_development_only_not_for_prod")
+STATESET_API_KEY = os.getenv("STATESET_API_KEY")
 
 
 class StateSetAPIClient:
     """Client for interacting with the StateSet Agents API."""
 
-    def __init__(self, base_url: str = API_BASE_URL, api_key: Optional[str] = None):
+    def __init__(self, base_url: str = API_BASE_URL, api_key: str | None = None):
         """
         Initialize the API client.
 
@@ -48,10 +46,13 @@ class StateSetAPIClient:
             api_key: Optional API key for authentication
         """
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key or API_JWT_SECRET
+        self.api_key = api_key or STATESET_API_KEY
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         self.client = httpx.AsyncClient(
             timeout=30.0,
-            headers={"Authorization": f"Bearer {self.api_key}"}
+            headers=headers,
         )
 
     async def close(self):
@@ -70,21 +71,21 @@ class StateSetAPIClient:
     # Health & Status
     # ============================================================================
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Check API health status."""
         response = await self.client.get(f"{self.base_url}/health")
         response.raise_for_status()
         return response.json()
 
-    async def get_info(self) -> Dict[str, Any]:
+    async def get_info(self) -> dict[str, Any]:
         """Get API information."""
         response = await self.client.get(f"{self.base_url}/")
         response.raise_for_status()
         return response.json()
 
-    async def get_metrics(self) -> Dict[str, Any]:
-        """Get system metrics."""
-        response = await self.client.get(f"{self.base_url}/metrics/summary")
+    async def get_metrics(self) -> dict[str, Any]:
+        """Get system metrics (admin-only by default)."""
+        response = await self.client.get(f"{self.base_url}/metrics/json")
         response.raise_for_status()
         return response.json()
 
@@ -95,11 +96,11 @@ class StateSetAPIClient:
     async def create_agent(
         self,
         model_name: str = "gpt2",
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
         max_new_tokens: int = 256,
-        **kwargs
-    ) -> Dict[str, Any]:
+        **kwargs,
+    ) -> dict[str, Any]:
         """
         Create a new agent.
 
@@ -118,22 +119,16 @@ class StateSetAPIClient:
             "temperature": temperature,
             "max_new_tokens": max_new_tokens,
             "system_prompt": system_prompt,
-            **kwargs
+            **kwargs,
         }
 
-        response = await self.client.post(
-            f"{self.base_url}/agents",
-            json=payload
-        )
+        response = await self.client.post(f"{self.base_url}/agents", json=payload)
         response.raise_for_status()
         return response.json()
 
     async def list_agents(
-        self,
-        page: int = 1,
-        page_size: int = 20,
-        status: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, page: int = 1, page_size: int = 20, status: str | None = None
+    ) -> dict[str, Any]:
         """
         List all agents with pagination.
 
@@ -149,14 +144,11 @@ class StateSetAPIClient:
         if status:
             params["status"] = status
 
-        response = await self.client.get(
-            f"{self.base_url}/agents",
-            params=params
-        )
+        response = await self.client.get(f"{self.base_url}/agents", params=params)
         response.raise_for_status()
         return response.json()
 
-    async def get_agent(self, agent_id: str) -> Dict[str, Any]:
+    async def get_agent(self, agent_id: str) -> dict[str, Any]:
         """
         Get detailed information about a specific agent.
 
@@ -186,14 +178,14 @@ class StateSetAPIClient:
 
     async def send_message(
         self,
-        messages: List[Dict[str, str]],
-        agent_id: Optional[str] = None,
-        conversation_id: Optional[str] = None,
+        messages: list[dict[str, str]],
+        agent_id: str | None = None,
+        conversation_id: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 512,
         stream: bool = False,
-        context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Send a message to an agent and get a response.
 
@@ -223,18 +215,14 @@ class StateSetAPIClient:
             payload["context"] = context
 
         response = await self.client.post(
-            f"{self.base_url}/conversations",
-            json=payload
+            f"{self.base_url}/conversations", json=payload
         )
         response.raise_for_status()
         return response.json()
 
     async def list_conversations(
-        self,
-        page: int = 1,
-        page_size: int = 20,
-        agent_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, page: int = 1, page_size: int = 20, agent_id: str | None = None
+    ) -> dict[str, Any]:
         """
         List conversations with pagination.
 
@@ -251,13 +239,12 @@ class StateSetAPIClient:
             params["agent_id"] = agent_id
 
         response = await self.client.get(
-            f"{self.base_url}/conversations",
-            params=params
+            f"{self.base_url}/conversations", params=params
         )
         response.raise_for_status()
         return response.json()
 
-    async def get_conversation(self, conversation_id: str) -> Dict[str, Any]:
+    async def get_conversation(self, conversation_id: str) -> dict[str, Any]:
         """
         Get full conversation history.
 
@@ -290,6 +277,7 @@ class StateSetAPIClient:
 # Example Usage
 # ============================================================================
 
+
 async def main():
     """Demonstrate API usage with various endpoints."""
 
@@ -300,7 +288,6 @@ async def main():
 
     try:
         async with StateSetAPIClient() as client:
-
             # Step 1: Check API health
             print("[1/7] Checking API health...")
             health = await client.health_check()
@@ -320,9 +307,9 @@ async def main():
             agent_response = await client.create_agent(
                 model_name="gpt2",
                 system_prompt="You are a helpful customer service agent for an e-commerce company. "
-                             "Be polite, empathetic, and provide clear solutions to customer issues.",
+                "Be polite, empathetic, and provide clear solutions to customer issues.",
                 temperature=0.7,
-                max_new_tokens=256
+                max_new_tokens=256,
             )
             agent_id = agent_response["agent_id"]
             print(f"   Agent created with ID: {agent_id}")
@@ -335,15 +322,16 @@ async def main():
 
             # First message
             messages = [
-                {"role": "user", "content": "Hi, my order #12345 hasn't arrived yet. It's been 2 weeks!"}
+                {
+                    "role": "user",
+                    "content": "Hi, my order #12345 hasn't arrived yet. It's been 2 weeks!",
+                }
             ]
 
             print(f"User: {messages[0]['content']}")
 
             conv_response = await client.send_message(
-                messages=messages,
-                temperature=0.7,
-                max_tokens=256
+                messages=messages, temperature=0.7, max_tokens=256
             )
 
             agent_reply = conv_response["response"]
@@ -356,10 +344,9 @@ async def main():
 
             # Continue the conversation
             messages.append({"role": "assistant", "content": agent_reply})
-            messages.append({
-                "role": "user",
-                "content": "I need a refund. This is unacceptable!"
-            })
+            messages.append(
+                {"role": "user", "content": "I need a refund. This is unacceptable!"}
+            )
 
             print(f"User: {messages[-1]['content']}")
 
@@ -367,7 +354,7 @@ async def main():
                 messages=messages,
                 conversation_id=conversation_id,
                 temperature=0.7,
-                max_tokens=256
+                max_tokens=256,
             )
 
             agent_reply = conv_response["response"]
@@ -381,7 +368,9 @@ async def main():
             print("[5/7] Listing all agents...")
             agents = await client.list_agents(page=1, page_size=10)
             print(f"   Total agents: {agents.get('total', 0)}")
-            print(f"   Current page: {agents.get('page', 1)}/{agents.get('total', 0) // agents.get('page_size', 20) + 1}")
+            print(
+                f"   Current page: {agents.get('page', 1)}/{agents.get('total', 0) // agents.get('page_size', 20) + 1}"
+            )
 
             if agents.get("items"):
                 for agent in agents["items"][:3]:  # Show first 3
@@ -432,8 +421,6 @@ async def main():
     except httpx.ConnectError:
         print("\nError: Could not connect to the API server.")
         print("Please ensure the API is running:")
-        print("  python -m api.main")
-        print("  OR")
         print("  stateset-agents serve --host 0.0.0.0 --port 8000")
         sys.exit(1)
     except httpx.HTTPStatusError as e:
@@ -443,6 +430,7 @@ async def main():
     except Exception as e:
         print(f"\nUnexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

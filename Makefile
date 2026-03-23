@@ -1,4 +1,6 @@
-.PHONY: help install install-dev install-all test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major quick-publish benchmark dev-test ci security-scan docker-build docker-run docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
+.PHONY: help install install-dev install-all test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
+
+PYTHON_BIN := $(shell command -v python3 >/dev/null 2>&1 && echo python3 || command -v python)
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -9,7 +11,7 @@ install: ## Install package with core dependencies
 	pip install -e .
 
 install-dev: ## Install package with development dependencies
-	pip install -e ".[dev]"
+	pip install -e ".[dev,api]"
 
 install-all: ## Install package with all optional dependencies
 	pip install -e ".[dev,api,examples,training,trl]"
@@ -34,7 +36,6 @@ test-slow: ## Run slow tests
 # Code quality
 lint: ## Run linters
 	ruff check .
-	flake8 .
 
 lint-fix: ## Auto-fix lint issues and format
 	ruff check . --fix
@@ -46,7 +47,7 @@ format: ## Format code with black and isort
 	isort .
 
 check-types: ## Run mypy type checking
-	mypy .
+	mypy --config-file mypy.ini
 
 check-types-script: ## Run custom type checking script
 	python scripts/check_types.py
@@ -75,23 +76,58 @@ build: ## Build distribution packages
 test-package: ## Install built wheel and smoke test
 	pip install dist/*.whl && python -c "import stateset_agents; print(stateset_agents.__version__)"
 
+require-release-branch: ## Ensure releases run only from sanctioned branches
+	@if [ "$${SKIP_RELEASE_BRANCH_CHECK:-0}" != "1" ]; then \
+		branch=$$(git rev-parse --abbrev-ref HEAD); \
+		if [ "$$branch" = "HEAD" ] || [ -z "$$branch" ]; then \
+			echo "Release checks require a local branch (detached HEAD detected)."; \
+			exit 1; \
+		fi; \
+		case "$$branch" in \
+			main|master|release/*) \
+				;; \
+			*) \
+				echo "Refusing to publish from branch '$$branch'."; \
+				echo "Use a main/master/release/* branch or set SKIP_RELEASE_BRANCH_CHECK=1 for override."; \
+				exit 1; \
+				;; \
+		esac; \
+	fi
+
 publish-test: ## Publish to TestPyPI
-	twine upload --repository testpypi dist/*
+	$(MAKE) require-release-branch
+	$(MAKE) publish-readiness
+	$(PYTHON_BIN) -m twine upload --skip-existing --repository testpypi dist/*
 
 publish: ## Publish to PyPI
-	twine upload dist/*
+	$(MAKE) require-release-branch
+	$(MAKE) publish-readiness
+	$(PYTHON_BIN) -m twine upload --skip-existing dist/*
 
 release: ## Create a release with custom version
-	python scripts/publish.py --version $${VERSION}
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Usage: make release VERSION=<version|patch|minor|major>"; \
+		echo "Example: make release VERSION=1.2.3"; \
+		exit 1; \
+	fi
+	$(MAKE) require-release-branch
+	$(MAKE) publish-readiness
+	python scripts/publish.py --skip-readiness --production --version $${VERSION}
 
 release-patch: ## Create patch release
-	python scripts/publish.py --version patch
+	$(MAKE) require-release-branch
+	$(MAKE) publish-readiness
+	python scripts/publish.py --skip-readiness --production --version patch
 
 release-minor: ## Create minor release
-	python scripts/publish.py --version minor
+	$(MAKE) require-release-branch
+	$(MAKE) publish-readiness
+	python scripts/publish.py --skip-readiness --production --version minor
 
 release-major: ## Create major release
-	python scripts/publish.py --version major
+	$(MAKE) require-release-branch
+	$(MAKE) publish-readiness
+	python scripts/publish.py --skip-readiness --production --version major
 
 quick-publish: ## Run interactive publishing script
 	./scripts/quick_publish.sh
@@ -106,20 +142,34 @@ docker-build: ## Build Docker image
 docker-run: ## Run Docker container
 	docker run -p 8000:8000 stateset-agents
 
+docker-build-gateway: ## Build FastAPI gateway image (deployment/docker/Dockerfile)
+	docker build -f deployment/docker/Dockerfile -t stateset/stateset-agents-api:0.7.1 .
+
+docker-run-gateway: ## Run FastAPI gateway locally (stub backend)
+	docker run -p 8000:8000 \
+	  -e API_ENVIRONMENT=development \
+	  -e API_REQUIRE_AUTH=false \
+	  -e INFERENCE_BACKEND=stub \
+	  -e INFERENCE_DEFAULT_MODEL=moonshotai/Kimi-K2.5 \
+	  stateset/stateset-agents-api:0.7.1
+
+docker-build-trainer: ## Build trainer image (deployment/docker/Dockerfile.trainer)
+	docker build -f deployment/docker/Dockerfile.trainer -t stateset/stateset-agents-trainer:0.7.1 .
+
 docker-dev: ## Run development environment
-	docker-compose -f deployment/docker/docker-compose.dev.yml up stateset-agents-dev
+	docker compose -f deployment/docker/docker-compose.dev.yml up stateset-agents-api-dev
 
 docker-test: ## Run tests in Docker
-	docker-compose -f deployment/docker/docker-compose.dev.yml --profile test up stateset-agents-test
+	docker compose -f deployment/docker/docker-compose.dev.yml --profile test up stateset-agents-test
 
 docker-build-all: ## Build all Docker images
-	docker-compose -f deployment/docker/docker-compose.yml build
+	docker compose -f deployment/docker/docker-compose.yml build
 
 docker-up: ## Start all services
-	docker-compose -f deployment/docker/docker-compose.yml up -d
+	docker compose -f deployment/docker/docker-compose.yml up -d
 
 docker-down: ## Stop all services
-	docker-compose -f deployment/docker/docker-compose.yml down
+	docker compose -f deployment/docker/docker-compose.yml down
 
 # Development workflows
 dev-test: ## Quick development checks (format, type, unit tests)
@@ -132,9 +182,77 @@ ci: ## Simulate CI pipeline locally
 	$(MAKE) test-cov
 
 security-scan: ## Run basic security scanning tools
-	bandit -r stateset_agents grpo_agent_framework || true
+	bandit -r stateset_agents || true
 	safety check || true
 	semgrep --config=auto . || true
+
+security-scan-strict: ## Run stricter security scanning (exit on high severity findings)
+	bandit -r stateset_agents -f json -o bandit-report.json || true
+	safety check --json > safety-report.json || true
+	python - <<'PY'
+import json, sys
+from pathlib import Path
+
+bandit_path = Path("bandit-report.json")
+safety_path = Path("safety-report.json")
+
+if not bandit_path.exists() or not bandit_path.read_text().strip():
+    print("Bandit report not generated")
+    sys.exit(1)
+
+try:
+    bandit_payload = json.loads(bandit_path.read_text())
+except Exception as exc:
+    print(f"Bandit output parse failed: {exc}")
+    sys.exit(1)
+
+bandit_results = []
+if isinstance(bandit_payload, dict):
+    bandit_results = bandit_payload.get("results", [])
+elif isinstance(bandit_payload, list):
+    bandit_results = bandit_payload
+
+high_findings = [
+    item
+    for item in bandit_results
+    if str(item.get("issue_severity", "")).upper() in {"MEDIUM", "HIGH", "CRITICAL"}
+]
+
+if high_findings:
+    for item in high_findings[:10]:
+        print(
+            f"Bandit: {item.get('filename')}:{item.get('line_number')} "
+            f"{item.get('test_id')} {item.get('issue_severity')}"
+        )
+    print(f"Bandit: failing with {len(high_findings)} medium/high/critical findings")
+    sys.exit(1)
+
+if not safety_path.exists() or not safety_path.read_text().strip():
+    print("Safety report not generated; ensure safety is installed")
+    sys.exit(1)
+
+try:
+    safety_payload = json.loads(safety_path.read_text())
+except Exception as exc:
+    print(f"Safety output parse failed: {exc}")
+    sys.exit(1)
+
+vulns = safety_payload.get("vulnerabilities", safety_payload if isinstance(safety_payload, list) else [])
+high = [v for v in vulns if str(v.get("severity", "")).upper() in {"HIGH", "CRITICAL"}]
+
+if high:
+    for v in high[:10]:
+        print(
+            f"High severity vulnerability: {v.get('package_name', 'unknown')} "
+            f"{v.get('id', '')}"
+        )
+    sys.exit(1)
+
+sys.exit(0)
+PY
+
+publish-readiness: ## Run pre-publish release readiness gate
+	bash scripts/publish_readiness.sh
 
 # Pre-commit
 pre-commit-install: ## Install pre-commit hooks

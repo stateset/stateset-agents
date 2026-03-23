@@ -9,7 +9,7 @@ and ``httpx.ASGITransport`` on a private event loop.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -28,9 +28,9 @@ class SyncASGIClient:
         self._base_url = base_url
         self._follow_redirects = follow_redirects
         self._loop = asyncio.new_event_loop()
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
-    def __enter__(self) -> "SyncASGIClient":
+    def __enter__(self) -> SyncASGIClient:
         asyncio.set_event_loop(self._loop)
         transport = httpx.ASGITransport(app=self._app)
         self._client = httpx.AsyncClient(
@@ -68,4 +68,3 @@ class SyncASGIClient:
 
     def options(self, url: str, **kwargs: Any) -> httpx.Response:
         return self.request("OPTIONS", url, **kwargs)
-

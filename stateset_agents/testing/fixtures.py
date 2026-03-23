@@ -4,7 +4,7 @@ Test fixtures for StateSet Agents.
 Provides reusable fixtures for unit and integration tests.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,9 +15,7 @@ class AgentFixture:
 
     @staticmethod
     def create_mock(
-        model_name: str = "gpt2",
-        system_prompt: Optional[str] = None,
-        **kwargs
+        model_name: str = "gpt2", system_prompt: str | None = None, **kwargs
     ) -> MagicMock:
         """Create a mock agent for testing."""
         agent = MagicMock()
@@ -30,10 +28,7 @@ class AgentFixture:
         return agent
 
     @staticmethod
-    def create_stub_config(
-        model_name: str = "stub://test",
-        **kwargs
-    ) -> Dict[str, Any]:
+    def create_stub_config(model_name: str = "stub://test", **kwargs) -> dict[str, Any]:
         """Create a stub agent configuration for testing."""
         return {
             "model_name": model_name,
@@ -49,10 +44,7 @@ class EnvironmentFixture:
     """Fixture for creating test environments."""
 
     @staticmethod
-    def create_mock(
-        scenarios: Optional[List[Dict]] = None,
-        **kwargs
-    ) -> MagicMock:
+    def create_mock(scenarios: list[dict] | None = None, **kwargs) -> MagicMock:
         """Create a mock environment for testing."""
         env = MagicMock()
         env.scenarios = scenarios or EnvironmentFixture.default_scenarios()
@@ -62,7 +54,7 @@ class EnvironmentFixture:
         return env
 
     @staticmethod
-    def default_scenarios() -> List[Dict[str, Any]]:
+    def default_scenarios() -> list[dict[str, Any]]:
         """Return default test scenarios."""
         return [
             {
@@ -83,16 +75,18 @@ class EnvironmentFixture:
     def create_conversation_config(
         max_turns: int = 5,
         num_scenarios: int = 2,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a conversation environment configuration."""
         scenarios = []
         for i in range(num_scenarios):
-            scenarios.append({
-                "id": f"scenario-{i}",
-                "topic": "test",
-                "context": f"Test scenario {i} context",
-                "user_responses": ["Hello", "Tell me more", "Thanks"],
-            })
+            scenarios.append(
+                {
+                    "id": f"scenario-{i}",
+                    "topic": "test",
+                    "context": f"Test scenario {i} context",
+                    "user_responses": ["Hello", "Tell me more", "Thanks"],
+                }
+            )
 
         return {
             "scenarios": scenarios,
@@ -115,15 +109,19 @@ class RewardFixture:
     @staticmethod
     def constant(value: float = 1.0):
         """Create a constant reward function."""
+
         async def _reward(*args, **kwargs):
             return value
+
         return _reward
 
     @staticmethod
-    def deterministic(mapping: Dict[str, float]):
+    def deterministic(mapping: dict[str, float]):
         """Create a deterministic reward based on input."""
+
         async def _reward(text: str, **kwargs):
             return mapping.get(text, 0.0)
+
         return _reward
 
 
@@ -131,10 +129,7 @@ class ModelFixture:
     """Fixture for creating test model configurations."""
 
     @staticmethod
-    def create_mock_config(
-        model_name: str = "gpt2",
-        **kwargs
-    ) -> Dict[str, Any]:
+    def create_mock_config(model_name: str = "gpt2", **kwargs) -> dict[str, Any]:
         """Create a mock model configuration."""
         return {
             "model_name": model_name,
@@ -156,7 +151,7 @@ class ModelFixture:
         return tokenizer
 
     @staticmethod
-    def small_models() -> List[str]:
+    def small_models() -> list[str]:
         """Return list of small models suitable for testing."""
         return [
             "gpt2",

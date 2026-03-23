@@ -32,18 +32,17 @@ from .adapter import GymEnvironmentAdapter
 from .agents import GymAgent, create_gym_agent
 from .mappers import (
     ActionMapper,
-    DiscreteActionMapper,
     ContinuousActionMapper,
+    DiscreteActionMapper,
     create_action_mapper,
 )
 from .processors import (
-    ObservationProcessor,
-    VectorObservationProcessor,
     CartPoleObservationProcessor,
     MountainCarObservationProcessor,
+    ObservationProcessor,
+    VectorObservationProcessor,
     create_observation_processor,
 )
-
 
 __all__ = [
     # Main adapter

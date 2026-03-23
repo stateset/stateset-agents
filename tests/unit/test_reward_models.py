@@ -4,8 +4,6 @@ Comprehensive Unit Tests for Reward Models
 Tests for transformer-based reward models and calibration systems.
 """
 
-import asyncio
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -19,11 +17,8 @@ except ImportError:
 from stateset_agents.core.reward import RewardResult
 from stateset_agents.core.trajectory import ConversationTurn
 
-
 # Mark all tests as requiring torch
-pytestmark = pytest.mark.skipif(
-    not TORCH_AVAILABLE, reason="PyTorch not available"
-)
+pytestmark = pytest.mark.skipif(not TORCH_AVAILABLE, reason="PyTorch not available")
 
 
 class TestTransformerRewardModel:
@@ -31,7 +26,9 @@ class TestTransformerRewardModel:
 
     def test_model_initialization(self):
         """Test model can be initialized"""
-        from stateset_agents.training.transformer_reward_model import TransformerRewardModel
+        from stateset_agents.training.transformer_reward_model import (
+            TransformerRewardModel,
+        )
 
         model = TransformerRewardModel(
             base_model_name="sentence-transformers/all-MiniLM-L6-v2",
@@ -47,7 +44,9 @@ class TestTransformerRewardModel:
 
     def test_model_forward_pass(self):
         """Test forward pass through model"""
-        from stateset_agents.training.transformer_reward_model import TransformerRewardModel
+        from stateset_agents.training.transformer_reward_model import (
+            TransformerRewardModel,
+        )
 
         model = TransformerRewardModel(hidden_dim=128, num_layers=1)
         model.eval()
@@ -74,7 +73,9 @@ class TestTransformerRewardModel:
 
     def test_freeze_unfreeze_encoders(self):
         """Test freezing and unfreezing encoder weights"""
-        from stateset_agents.training.transformer_reward_model import TransformerRewardModel
+        from stateset_agents.training.transformer_reward_model import (
+            TransformerRewardModel,
+        )
 
         model = TransformerRewardModel(hidden_dim=128)
 
@@ -84,7 +85,9 @@ class TestTransformerRewardModel:
         # Freeze
         model.freeze_encoders()
         assert not model.prompt_encoder.embeddings.word_embeddings.weight.requires_grad
-        assert not model.response_encoder.embeddings.word_embeddings.weight.requires_grad
+        assert (
+            not model.response_encoder.embeddings.word_embeddings.weight.requires_grad
+        )
 
         # Reward head should still be trainable
         for param in model.reward_head.parameters():
@@ -127,7 +130,11 @@ class TestRewardDataset:
     def test_dataset_creation(self):
         """Test dataset can be created"""
         from transformers import AutoTokenizer
-        from stateset_agents.training.transformer_reward_model import RewardDataset, RewardExample
+
+        from stateset_agents.training.transformer_reward_model import (
+            RewardDataset,
+            RewardExample,
+        )
 
         examples = [
             RewardExample(
@@ -434,10 +441,7 @@ class TestRewardCalibration:
     @pytest.mark.asyncio
     async def test_multi_reward_calibrator(self):
         """Test MultiRewardCalibrator"""
-        from stateset_agents.core.reward import (
-            HelpfulnessReward,
-            SafetyReward,
-        )
+        from stateset_agents.core.reward import HelpfulnessReward, SafetyReward
         from stateset_agents.training.reward_calibration import MultiRewardCalibrator
 
         rewards = [HelpfulnessReward(weight=1.0), SafetyReward(weight=1.0)]
@@ -467,9 +471,7 @@ class TestRewardCalibration:
         """Test AdaptiveRewardScaler"""
         from stateset_agents.training.reward_calibration import AdaptiveRewardScaler
 
-        scaler = AdaptiveRewardScaler(
-            initial_scale=1.0, min_scale=0.1, max_scale=10.0
-        )
+        scaler = AdaptiveRewardScaler(initial_scale=1.0, min_scale=0.1, max_scale=10.0)
 
         # Scale some rewards
         scaled1 = scaler.scale_reward(0.5)
@@ -499,7 +501,6 @@ class TestRewardModelIntegration:
     @pytest.mark.asyncio
     async def test_end_to_end_workflow(self, tmp_path):
         """Test complete workflow from training to deployment"""
-        from stateset_agents.core.reward import HelpfulnessReward
         from stateset_agents.training.reward_calibration import CalibratedRewardFunction
         from stateset_agents.training.transformer_reward_model import (
             LearnedRewardFunction,
@@ -549,8 +550,7 @@ class TestRewardModelIntegration:
         # Create learned reward function
         learned_reward = LearnedRewardFunction(trainer=trainer, normalize=True)
 
-        # Calibrate with heuristic reward
-        heuristic_reward = HelpfulnessReward()
+        # Calibrate learned reward
         calibrated_learned = CalibratedRewardFunction(
             base_reward_fn=learned_reward, auto_calibrate=True
         )

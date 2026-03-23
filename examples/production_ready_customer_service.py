@@ -16,52 +16,39 @@ import signal
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
+
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.error_handling import CircuitBreaker, RetryWithBackoff
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("agent.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.FileHandler("agent.log"), logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
 
 try:
     from prometheus_client import Counter, Histogram, start_http_server
+
     HAS_PROMETHEUS = True
 except ImportError:
     HAS_PROMETHEUS = False
     logger.warning("Prometheus client not available. Metrics disabled.")
 
-from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
-from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.reward import (
-    CompositeReward,
-    HelpfulnessReward,
-    SafetyReward,
-    create_customer_service_reward,
-)
-from stateset_agents.core.error_handling import RetryWithBackoff, CircuitBreaker
-
-
 # Metrics
 if HAS_PROMETHEUS:
     REQUESTS_TOTAL = Counter(
-        "customer_service_requests_total",
-        "Total customer service requests",
-        ["status"]
+        "customer_service_requests_total", "Total customer service requests", ["status"]
     )
     RESPONSE_TIME = Histogram(
         "customer_service_response_seconds",
         "Response generation time",
-        buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0)
+        buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0),
     )
     CONVERSATIONS_ACTIVE = Counter(
-        "customer_service_conversations_active",
-        "Active conversations"
+        "customer_service_conversations_active", "Active conversations"
     )
 
 
@@ -72,26 +59,23 @@ class ProductionCustomerServiceAgent:
         self,
         model_name: str = "gpt2",
         enable_metrics: bool = True,
-        checkpoint_dir: Optional[str] = None
+        checkpoint_dir: str | None = None,
     ):
         self.model_name = model_name
         self.enable_metrics = enable_metrics
-        self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else Path("./checkpoints")
-        self.agent: Optional[MultiTurnAgent] = None
+        self.checkpoint_dir = (
+            Path(checkpoint_dir) if checkpoint_dir else Path("./checkpoints")
+        )
+        self.agent: MultiTurnAgent | None = None
         self.is_healthy = False
         self.shutdown_requested = False
 
         # Error handling
         self.retry_handler = RetryWithBackoff(
-            max_retries=3,
-            base_delay=1.0,
-            max_delay=10.0,
-            exponential_base=2
+            max_retries=3, base_delay=1.0, max_delay=10.0, exponential_base=2
         )
         self.circuit_breaker = CircuitBreaker(
-            failure_threshold=5,
-            recovery_timeout=60.0,
-            expected_exception=Exception
+            failure_threshold=5, recovery_timeout=60.0, expected_exception=Exception
         )
 
         # Setup signal handlers for graceful shutdown
@@ -124,7 +108,7 @@ class ProductionCustomerServiceAgent:
                 max_new_tokens=512,
                 temperature=0.7,
                 top_p=0.9,
-                use_chat_template=True
+                use_chat_template=True,
             )
 
             # Initialize agent
@@ -147,7 +131,7 @@ class ProductionCustomerServiceAgent:
             self.is_healthy = False
             return False
 
-    def _get_latest_checkpoint(self) -> Optional[Path]:
+    def _get_latest_checkpoint(self) -> Path | None:
         """Get the most recent checkpoint"""
         checkpoints = list(self.checkpoint_dir.glob("checkpoint_*.pt"))
         if not checkpoints:
@@ -162,9 +146,9 @@ class ProductionCustomerServiceAgent:
     async def handle_conversation(
         self,
         conversation_id: str,
-        messages: List[Dict[str, str]],
-        context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        messages: list[dict[str, str]],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Handle a customer service conversation with full error handling"""
 
         if not self.is_healthy or not self.agent:
@@ -172,15 +156,14 @@ class ProductionCustomerServiceAgent:
             return {
                 "success": False,
                 "error": "Service temporarily unavailable",
-                "response": "I apologize, but our system is currently experiencing issues. Please try again in a few moments."
+                "response": "I apologize, but our system is currently experiencing issues. Please try again in a few moments.",
             }
 
         start_time = datetime.now()
         conversation_context = context or {}
-        conversation_context.update({
-            "conversation_id": conversation_id,
-            "timestamp": start_time.isoformat()
-        })
+        conversation_context.update(
+            {"conversation_id": conversation_id, "timestamp": start_time.isoformat()}
+        )
 
         logger.info(f"Handling conversation {conversation_id}")
 
@@ -190,9 +173,7 @@ class ProductionCustomerServiceAgent:
             async def generate_response_with_retry():
                 # Use retry logic for transient failures
                 return await self.retry_handler.execute(
-                    self.agent.generate_response,
-                    messages,
-                    conversation_context
+                    self.agent.generate_response, messages, conversation_context
                 )
 
             # Generate response
@@ -218,14 +199,13 @@ class ProductionCustomerServiceAgent:
                 "response_time_seconds": response_time,
                 "metadata": {
                     "turn_count": self.agent.turn_count,
-                    "model": self.model_name
-                }
+                    "model": self.model_name,
+                },
             }
 
         except Exception as e:
             logger.error(
-                f"Error handling conversation {conversation_id}: {e}",
-                exc_info=True
+                f"Error handling conversation {conversation_id}: {e}", exc_info=True
             )
 
             # Update metrics
@@ -237,16 +217,16 @@ class ProductionCustomerServiceAgent:
                 "success": False,
                 "error": str(e),
                 "response": "I apologize, but I'm having trouble processing your request right now. Could you please rephrase or try again?",
-                "conversation_id": conversation_id
+                "conversation_id": conversation_id,
             }
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Perform health check"""
         return {
             "healthy": self.is_healthy,
             "agent_initialized": self.agent is not None,
             "model": self.model_name,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
     async def shutdown(self):
@@ -256,7 +236,10 @@ class ProductionCustomerServiceAgent:
 
         # Save checkpoint before shutdown
         if self.agent:
-            checkpoint_path = self.checkpoint_dir / f"checkpoint_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pt"
+            checkpoint_path = (
+                self.checkpoint_dir
+                / f"checkpoint_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pt"
+            )
             logger.info(f"Saving checkpoint to {checkpoint_path}")
             # Implement checkpoint saving logic here
 
@@ -264,7 +247,9 @@ class ProductionCustomerServiceAgent:
 
     async def run_server(self, host: str = "0.0.0.0", port: int = 8000):
         """Run as a production server"""
-        logger.info(f"Starting production customer service agent server on {host}:{port}")
+        logger.info(
+            f"Starting production customer service agent server on {host}:{port}"
+        )
 
         # Start Prometheus metrics server if available
         if HAS_PROMETHEUS and self.enable_metrics:
@@ -300,7 +285,7 @@ async def main():
     agent = ProductionCustomerServiceAgent(
         model_name="gpt2",  # Replace with your production model
         enable_metrics=True,
-        checkpoint_dir="./checkpoints"
+        checkpoint_dir="./checkpoints",
     )
 
     # Initialize
@@ -312,20 +297,20 @@ async def main():
     messages = [
         {
             "role": "user",
-            "content": "Hi, I'm having trouble with my order. It was supposed to arrive yesterday but hasn't shown up yet."
+            "content": "Hi, I'm having trouble with my order. It was supposed to arrive yesterday but hasn't shown up yet.",
         }
     ]
 
     result = await agent.handle_conversation(
         conversation_id="example_001",
         messages=messages,
-        context={"customer_tier": "premium", "order_id": "ORD-12345"}
+        context={"customer_tier": "premium", "order_id": "ORD-12345"},
     )
 
     logger.info("Conversation Result:")
     logger.info(f"Success: {result['success']}")
     logger.info(f"Response: {result['response']}")
-    if 'response_time_seconds' in result:
+    if "response_time_seconds" in result:
         logger.info(f"Response Time: {result['response_time_seconds']:.3f}s")
 
     # Health check

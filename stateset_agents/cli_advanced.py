@@ -4,24 +4,14 @@ Advanced CLI commands for StateSet Agents.
 Provides debugging, profiling, validation, and REPL support.
 """
 
-import asyncio
 import json
-import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 import typer
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TaskProgressColumn,
-    TextColumn,
-)
 from rich.table import Table
 from rich.tree import Tree
 
@@ -31,10 +21,10 @@ app = typer.Typer(help="Advanced StateSet Agents CLI commands")
 
 @app.command()
 def debug(
-    config_path: Optional[str] = typer.Option(
+    config_path: str | None = typer.Option(
         None, "--config", "-c", help="Path to config file"
     ),
-    agent_path: Optional[str] = typer.Option(
+    agent_path: str | None = typer.Option(
         None, "--agent", "-a", help="Path to saved agent"
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
@@ -42,6 +32,7 @@ def debug(
     """Launch interactive debug REPL for agents."""
     try:
         from IPython import embed
+
         console.print("[bold green]🚀 Starting StateSet Agents Debug REPL[/bold green]")
         console.print("Available variables:")
         console.print("  - console: Rich console")
@@ -72,18 +63,26 @@ def debug(
         embed(using=False, colors="neutral", banner1="", user_ns=namespace)
 
     except ImportError:
-        console.print("[red]IPython not installed. Install with 'pip install ipython'[/red]")
+        console.print(
+            "[red]IPython not installed. Install with 'pip install ipython'[/red]"
+        )
         sys.exit(1)
 
 
 @app.command()
 def profile(
-    trainer: str = typer.Option("gspo", "--trainer", "-t", help="Trainer type to profile"),
-    config_path: Optional[str] = typer.Option(
+    trainer: str = typer.Option(
+        "gspo", "--trainer", "-t", help="Trainer type to profile"
+    ),
+    config_path: str | None = typer.Option(
         None, "--config", "-c", help="Path to config file"
     ),
-    duration: int = typer.Option(60, "--duration", "-d", help="Profiling duration in seconds"),
-    memory: bool = typer.Option(True, "--memory/--no-memory", help="Profile memory usage"),
+    duration: int = typer.Option(
+        60, "--duration", "-d", help="Profiling duration in seconds"
+    ),
+    memory: bool = typer.Option(
+        True, "--memory/--no-memory", help="Profile memory usage"
+    ),
 ):
     """Profile training performance."""
     console.print(f"[bold green]🔍 Profiling {trainer} trainer[/bold green]")
@@ -91,7 +90,6 @@ def profile(
     import cProfile
     import io
     import pstats
-    from datetime import datetime
 
     # Create profiler
     profiler = cProfile.Profile()
@@ -103,6 +101,7 @@ def profile(
     # Simulate or run actual training
     # In real implementation, this would run training
     import time
+
     time.sleep(min(duration, 10))  # Cap at 10s for demo
 
     profiler.disable()
@@ -139,14 +138,14 @@ def profile(
 
             console.print(table)
         except ImportError:
-            console.print("[yellow]psutil not installed. Install with 'pip install psutil'[/yellow]")
+            console.print(
+                "[yellow]psutil not installed. Install with 'pip install psutil'[/yellow]"
+            )
 
 
 @app.command()
 def doctor(
-    training: bool = typer.Option(
-        False, "--training", help="Check training readiness"
-    ),
+    training: bool = typer.Option(False, "--training", help="Check training readiness"),
     fix: bool = typer.Option(
         False, "--fix", help="Attempt to fix issues automatically"
     ),
@@ -167,14 +166,22 @@ def doctor(
 
     # Python version
     import sys
-    py_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    table.add_row("Python Version", "[green]✓" if sys.version_info >= (3, 8) else "[red]✗", py_version)
+
+    py_version = (
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    )
+    table.add_row(
+        "Python Version",
+        "[green]✓" if sys.version_info >= (3, 8) else "[red]✗",
+        py_version,
+    )
 
     # CUDA availability
     try:
         import torch
+
         if torch.cuda.is_available():
-            table.add_row("CUDA", f"[green]✓", f"{torch.cuda.device_count()} GPU(s)")
+            table.add_row("CUDA", "[green]✓", f"{torch.cuda.device_count()} GPU(s)")
         else:
             table.add_row("CUDA", "[yellow]⚠", "Not available (CPU only)")
     except ImportError:
@@ -220,16 +227,9 @@ def doctor(
 def validate(
     config_path: str = typer.Argument(..., help="Path to config file"),
     config_type: str = typer.Option(
-        "training",
-        "--type",
-        "-t",
-        help="Config type (training, agent, environment)"
+        "training", "--type", "-t", help="Config type (training, agent, environment)"
     ),
-    strict: bool = typer.Option(
-        False,
-        "--strict",
-        help="Enable strict validation"
-    ),
+    strict: bool = typer.Option(False, "--strict", help="Enable strict validation"),
 ):
     """Validate configuration file."""
     console.print(f"[bold green]📋 Validating {config_type} config[/bold green]")
@@ -246,10 +246,13 @@ def validate(
         elif path.suffix in [".yaml", ".yml"]:
             try:
                 import yaml
+
                 config = yaml.safe_load(f)
-            except ImportError:
-                console.print("[red]PyYAML not installed. Install with 'pip install pyyaml'[/red]")
-                raise typer.Exit(1)
+            except ImportError as exc:
+                console.print(
+                    "[red]PyYAML not installed. Install with 'pip install pyyaml'[/red]"
+                )
+                raise typer.Exit(1) from exc
         else:
             console.print(f"[red]Unsupported config format: {path.suffix}[/red]")
             raise typer.Exit(1)
@@ -298,7 +301,9 @@ def validate(
 def progress(
     checkpoint_dir: str = typer.Argument(..., help="Directory with checkpoints"),
     watch: bool = typer.Option(False, "--watch", "-w", help="Watch for updates"),
-    interval: int = typer.Option(5, "--interval", "-i", help="Watch interval in seconds"),
+    interval: int = typer.Option(
+        5, "--interval", "-i", help="Watch interval in seconds"
+    ),
 ):
     """View training progress from checkpoints."""
     import time
@@ -330,6 +335,7 @@ def progress(
 
             mtime = ckpt.stat().st_mtime
             from datetime import datetime
+
             modified = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
 
             table.add_row(ckpt.name, global_step, modified)
@@ -340,7 +346,7 @@ def progress(
     path = Path(checkpoint_dir)
 
     if watch:
-        with Live(console=console, refresh_per_second=4) as live:
+        with Live(console=console, refresh_per_second=4):
             while True:
                 display_progress(path)
                 time.sleep(interval)

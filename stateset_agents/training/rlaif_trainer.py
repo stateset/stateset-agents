@@ -21,44 +21,38 @@ Reference: https://arxiv.org/abs/2212.08073 (Constitutional AI)
 Reference: https://arxiv.org/abs/2309.00267 (RLAIF)
 """
 
-import asyncio
 import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import torch
-import torch.nn as nn
+
+from .config import TrainingConfig
 
 logger = logging.getLogger(__name__)
 
-# Import framework components
-from .config import TrainingConfig
-
 try:
     from stateset_agents.rewards.llm_judge import (
-        JudgeConfig,
+        EvaluationCriteria,
         JudgeProvider,
         LLMJudge,
-        EvaluationCriteria,
-        create_llm_judge_reward,
     )
+
     LLM_JUDGE_AVAILABLE = True
 except ImportError:
     try:
         # Try relative import
         import sys
-        import os
+
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from stateset_agents.rewards.llm_judge import (
-            JudgeConfig,
+            EvaluationCriteria,
             JudgeProvider,
             LLMJudge,
-            EvaluationCriteria,
-            create_llm_judge_reward,
         )
+
         LLM_JUDGE_AVAILABLE = True
     except ImportError:
         LLM_JUDGE_AVAILABLE = False
@@ -78,10 +72,9 @@ def _load_transformers_rlaif():
         return True
 
     try:
-        from transformers import (
-            AutoModelForCausalLM as _AutoModelForCausalLM,
-            AutoTokenizer as _AutoTokenizer,
-        )
+        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
+        from transformers import AutoTokenizer as _AutoTokenizer
+
         AutoModelForCausalLM = _AutoModelForCausalLM
         AutoTokenizer = _AutoTokenizer
         _transformers_rlaif_loaded = True
@@ -103,16 +96,16 @@ class RLAIFConfig(TrainingConfig):
     # Judge configuration
     judge_provider: str = "openai"  # "openai", "anthropic", "local"
     judge_model: str = "gpt-4o"
-    judge_api_key: Optional[str] = None
+    judge_api_key: str | None = None
 
     # Evaluation criteria
-    criteria: List[str] = field(
+    criteria: list[str] = field(
         default_factory=lambda: ["helpfulness", "correctness", "harmlessness"]
     )
 
     # Constitutional AI constraints
     use_constitutional: bool = True
-    constitutional_principles: List[str] = field(
+    constitutional_principles: list[str] = field(
         default_factory=lambda: [
             "Be helpful, harmless, and honest",
             "Avoid generating harmful, biased, or misleading content",
@@ -188,7 +181,7 @@ class ConstitutionalAI:
         self,
         model: Any,
         tokenizer: Any,
-        principles: Optional[List[str]] = None,
+        principles: list[str] | None = None,
         domain: str = "general",
     ):
         self.model = model
@@ -222,7 +215,7 @@ class ConstitutionalAI:
             )
 
         return self.tokenizer.decode(
-            outputs[0][inputs.input_ids.shape[1]:],
+            outputs[0][inputs.input_ids.shape[1] :],
             skip_special_tokens=True,
         )
 
@@ -283,7 +276,7 @@ Revised response:"""
         query: str,
         response: str,
         num_iterations: int = 1,
-    ) -> Tuple[str, List[Dict[str, str]]]:
+    ) -> tuple[str, list[dict[str, str]]]:
         """
         Apply iterative critique-revision loop.
 
@@ -302,11 +295,13 @@ Revised response:"""
             critique = self.critique(query, current_response)
             revised = self.revise(query, current_response, critique)
 
-            history.append({
-                "iteration": i + 1,
-                "critique": critique,
-                "response": revised,
-            })
+            history.append(
+                {
+                    "iteration": i + 1,
+                    "critique": critique,
+                    "response": revised,
+                }
+            )
 
             current_response = revised
 
@@ -338,8 +333,8 @@ class RLAIFTrainer:
     def __init__(
         self,
         config: RLAIFConfig,
-        model: Optional[Any] = None,
-        tokenizer: Optional[Any] = None,
+        model: Any | None = None,
+        tokenizer: Any | None = None,
     ):
         self.config = config
         self.device = torch.device(
@@ -358,7 +353,9 @@ class RLAIFTrainer:
 
             self.model = AutoModelForCausalLM.from_pretrained(
                 config.model_name,
-                torch_dtype=torch.float16 if self.device.type == "cuda" else torch.float32,
+                torch_dtype=torch.float16
+                if self.device.type == "cuda"
+                else torch.float32,
                 device_map="auto" if self.device.type == "cuda" else None,
             )
         else:
@@ -418,7 +415,7 @@ class RLAIFTrainer:
     def generate_completion(
         self,
         prompt: str,
-        max_new_tokens: Optional[int] = None,
+        max_new_tokens: int | None = None,
     ) -> str:
         """Generate completion from model."""
         max_new_tokens = max_new_tokens or self.config.max_completion_length
@@ -441,15 +438,15 @@ class RLAIFTrainer:
             )
 
         return self.tokenizer.decode(
-            outputs[0][inputs.input_ids.shape[1]:],
+            outputs[0][inputs.input_ids.shape[1] :],
             skip_special_tokens=True,
         )
 
     async def collect_trajectories(
         self,
-        prompts: List[str],
+        prompts: list[str],
         num_generations: int = 4,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Collect trajectories with AI-generated rewards.
 
@@ -479,7 +476,9 @@ class RLAIFTrainer:
 
                     # Use refined completion and track improvement
                     original_reward = await self.compute_reward(prompt, completion)
-                    refined_reward = await self.compute_reward(prompt, refined_completion)
+                    refined_reward = await self.compute_reward(
+                        prompt, refined_completion
+                    )
 
                     trajectory = {
                         "prompt": prompt,
@@ -511,8 +510,8 @@ class RLAIFTrainer:
 
     async def train_step(
         self,
-        trajectories: List[Dict[str, Any]],
-    ) -> Dict[str, float]:
+        trajectories: list[dict[str, Any]],
+    ) -> dict[str, float]:
         """
         Execute one training step.
 
@@ -528,13 +527,14 @@ class RLAIFTrainer:
         rewards = [t["reward"] for t in trajectories]
 
         # Tokenize
-        full_texts = [p + c for p, c in zip(prompts, completions)]
+        full_texts = [p + c for p, c in zip(prompts, completions, strict=False)]
         encodings = self.tokenizer(
             full_texts,
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=self.config.max_prompt_length + self.config.max_completion_length,
+            max_length=self.config.max_prompt_length
+            + self.config.max_completion_length,
         )
 
         input_ids = encodings["input_ids"].to(self.device)
@@ -550,9 +550,9 @@ class RLAIFTrainer:
 
         # Log probs for chosen tokens
         log_probs = torch.log_softmax(logits, dim=-1)
-        token_log_probs = log_probs.gather(
-            dim=-1, index=labels.unsqueeze(-1)
-        ).squeeze(-1)
+        token_log_probs = log_probs.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(
+            -1
+        )
 
         # Create completion mask
         prompt_encodings = self.tokenizer(prompts, padding=True, return_tensors="pt")
@@ -572,7 +572,10 @@ class RLAIFTrainer:
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         # Policy gradient loss
-        policy_loss = -(token_log_probs * advantages * completion_mask).sum() / completion_mask.sum()
+        policy_loss = (
+            -(token_log_probs * advantages * completion_mask).sum()
+            / completion_mask.sum()
+        )
 
         # Backward pass
         self.model.zero_grad()
@@ -606,9 +609,9 @@ class RLAIFTrainer:
 
     async def train(
         self,
-        prompts: List[str],
-        num_episodes: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        prompts: list[str],
+        num_episodes: int | None = None,
+    ) -> dict[str, Any]:
         """
         Run full RLAIF training loop.
 
@@ -648,7 +651,10 @@ class RLAIFTrainer:
                 )
 
             # Self-play (if enabled)
-            if self.config.use_self_play and episode % self.config.self_play_interval == 0:
+            if (
+                self.config.use_self_play
+                and episode % self.config.self_play_interval == 0
+            ):
                 await self._self_play_round()
 
         return {
@@ -679,7 +685,7 @@ class RLAIFTrainer:
         metrics = await self.train_step(trajectories)
         logger.info(f"Self-play metrics: {metrics}")
 
-    def save_checkpoint(self, path: Optional[str] = None) -> str:
+    def save_checkpoint(self, path: str | None = None) -> str:
         """Save model checkpoint."""
         if path is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -695,11 +701,14 @@ class RLAIFTrainer:
         self.tokenizer.save_pretrained(path)
 
         # Save training state
-        torch.save({
-            "global_step": self.global_step,
-            "metrics_history": self.metrics_history,
-            "config": self.config,
-        }, os.path.join(path, "training_state.pt"))
+        torch.save(
+            {
+                "global_step": self.global_step,
+                "metrics_history": self.metrics_history,
+                "config": self.config,
+            },
+            os.path.join(path, "training_state.pt"),
+        )
 
         logger.info(f"Checkpoint saved to {path}")
         return path
@@ -708,11 +717,11 @@ class RLAIFTrainer:
 # Convenience function for quick RLAIF training
 async def train_rlaif(
     model_name: str,
-    prompts: List[str],
+    prompts: list[str],
     judge_model: str = "gpt-4o",
     num_episodes: int = 100,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Quick RLAIF training with minimal configuration.
 

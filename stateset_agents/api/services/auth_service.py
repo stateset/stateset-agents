@@ -6,13 +6,12 @@ load environment configuration (which may require secrets) at import time.
 
 from __future__ import annotations
 
-from typing import Optional
 
 from stateset_agents.utils.security import AuthService
 
 from ..config import get_config
 
-_auth_service: Optional[AuthService] = None
+_auth_service: AuthService | None = None
 
 
 async def get_auth_service() -> AuthService:

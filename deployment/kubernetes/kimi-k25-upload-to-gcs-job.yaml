@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kimi-k25-upload-to-gcs
+  namespace: stateset-agents
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: kimi-k25-upload-to-gcs
+    spec:
+      restartPolicy: Never
+      # Enable SA token mounting for Workload Identity (recommended) when writing to GCS.
+      automountServiceAccountToken: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: uploader
+        image: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        command: ["bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          if [ -z "${MODEL_GCS_URI:-}" ]; then
+            echo "MODEL_GCS_URI is required (e.g. gs://bucket/kimi-k25/runs/<run>)" >&2
+            exit 2
+          fi
+          if [ ! -d "/models/kimi-k25" ]; then
+            echo "missing directory: /models/kimi-k25 (did you run the training job?)" >&2
+            exit 2
+          fi
+          echo "Uploading /models/kimi-k25 -> ${MODEL_GCS_URI}"
+          gcloud storage rsync --recursive "/models/kimi-k25" "${MODEL_GCS_URI}"
+          echo "ok"
+        env:
+        - name: MODEL_GCS_URI
+          value: "gs://YOUR_BUCKET/kimi-k25/runs/YOUR_RUN_ID"
+        volumeMounts:
+        - name: models
+          mountPath: /models
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: stateset-models-pvc
+

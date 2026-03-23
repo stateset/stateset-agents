@@ -14,15 +14,6 @@ submodules:
 - reward_factories: create_helpful_agent_reward, create_domain_reward, etc.
 """
 
-# Re-export base classes and types
-from .reward_base import (
-    CompositeReward,
-    RewardFunction,
-    RewardResult,
-    RewardType,
-    reward_function,
-)
-
 # Re-export basic reward functions
 from .basic_rewards import (
     ConcisenessReward,
@@ -41,6 +32,15 @@ from .domain_rewards import (
     TechnicalSupportReward,
 )
 
+# Re-export base classes and types
+from .reward_base import (
+    CompositeReward,
+    RewardFunction,
+    RewardResult,
+    RewardType,
+    reward_function,
+)
+
 # Re-export factories and utilities
 from .reward_factories import (
     SimilarityAwareReward,
@@ -51,34 +51,6 @@ from .reward_factories import (
     create_task_agent_reward,
     create_tutoring_reward,
 )
-
-# Example usage of custom reward decorator
-@reward_function(weight=0.5)
-async def politeness_reward(turns, context=None) -> float:
-    """Custom reward for politeness"""
-    from .trajectory import ConversationTurn
-
-    polite_phrases = [
-        "please",
-        "thank you",
-        "you're welcome",
-        "excuse me",
-        "i apologize",
-    ]
-
-    assistant_turns = [t for t in turns if t.role == "assistant"]
-    if not assistant_turns:
-        return 0.0
-
-    total_score = 0.0
-    for turn in assistant_turns:
-        content_lower = turn.content.lower()
-        phrase_count = sum(1 for phrase in polite_phrases if phrase in content_lower)
-        turn_score = min(phrase_count * 0.2, 1.0)
-        total_score += turn_score
-
-    return total_score / len(assistant_turns)
-
 
 __all__ = [
     # Base types
@@ -108,6 +80,4 @@ __all__ = [
     "create_tutoring_reward",
     "create_domain_reward",
     "create_adaptive_reward",
-    # Example custom reward
-    "politeness_reward",
 ]

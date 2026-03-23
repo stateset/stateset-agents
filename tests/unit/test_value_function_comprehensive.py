@@ -11,13 +11,14 @@ Covers:
 - Edge cases and error handling
 """
 
+from unittest.mock import Mock
+
 import pytest
 import torch
-import numpy as np
-from unittest.mock import Mock, MagicMock
+
 from stateset_agents.core.value_function import (
-    ValueHead,
     ValueFunction,
+    ValueHead,
     create_value_function,
 )
 
@@ -31,7 +32,7 @@ class TestValueHeadExtended:
         value_head = ValueHead(hidden_size, dropout=0.1, use_layer_norm=True)
 
         assert value_head is not None
-        assert hasattr(value_head, 'norm')
+        assert hasattr(value_head, "norm")
 
     def test_value_head_without_layer_norm(self):
         """Test ValueHead without layer normalization"""
@@ -81,7 +82,7 @@ class TestValueFunctionConfiguration:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         for gamma in [0.9, 0.95, 0.99, 1.0]:
             value_fn = ValueFunction(mock_model, gamma=gamma)
@@ -92,7 +93,7 @@ class TestValueFunctionConfiguration:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         for gae_lambda in [0.0, 0.5, 0.9, 0.95, 1.0]:
             value_fn = ValueFunction(mock_model, gae_lambda=gae_lambda)
@@ -103,7 +104,7 @@ class TestValueFunctionConfiguration:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=True)
         assert value_fn.normalize_advantages is True
@@ -113,7 +114,7 @@ class TestValueFunctionConfiguration:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=False)
         assert value_fn.normalize_advantages is False
@@ -123,7 +124,7 @@ class TestValueFunctionConfiguration:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         custom_head = ValueHead(768, dropout=0.2)
         value_fn = ValueFunction(mock_model, value_head=custom_head)
@@ -139,9 +140,11 @@ class TestGAEComputation:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
-        value_fn = ValueFunction(mock_model, gamma=0.99, gae_lambda=0.95, normalize_advantages=False)
+        value_fn = ValueFunction(
+            mock_model, gamma=0.99, gae_lambda=0.95, normalize_advantages=False
+        )
 
         rewards = [1.0]
         values = torch.tensor([0.5], dtype=torch.float32)
@@ -157,7 +160,7 @@ class TestGAEComputation:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=False)
 
@@ -175,7 +178,7 @@ class TestGAEComputation:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=False)
 
@@ -193,7 +196,7 @@ class TestGAEComputation:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=False)
 
@@ -210,7 +213,7 @@ class TestGAEComputation:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=False)
 
@@ -232,12 +235,14 @@ class TestGRPOAdvantages:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model)
 
         group_rewards = [0.8, 0.5, 0.9, 0.6, 0.7]
-        advantages = value_fn.compute_grpo_advantages(group_rewards, baseline_type="group_mean")
+        advantages = value_fn.compute_grpo_advantages(
+            group_rewards, baseline_type="group_mean"
+        )
 
         # Mean should be close to zero
         assert torch.abs(advantages.mean()) < 1e-5
@@ -247,12 +252,14 @@ class TestGRPOAdvantages:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=False)
 
         group_rewards = [0.1, 0.5, 0.9, 0.3, 0.7]
-        advantages = value_fn.compute_grpo_advantages(group_rewards, baseline_type="group_median")
+        advantages = value_fn.compute_grpo_advantages(
+            group_rewards, baseline_type="group_median"
+        )
 
         # Median is 0.5, so check distribution around it
         median = torch.tensor(group_rewards).median()
@@ -265,7 +272,7 @@ class TestGRPOAdvantages:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=False)
 
@@ -280,7 +287,7 @@ class TestGRPOAdvantages:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=False)
 
@@ -295,7 +302,7 @@ class TestGRPOAdvantages:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model)
 
@@ -314,7 +321,7 @@ class TestValueFunctionConvenienceCreator:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = create_value_function(mock_model)
 
@@ -327,13 +334,10 @@ class TestValueFunctionConvenienceCreator:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = create_value_function(
-            mock_model,
-            gamma=0.9,
-            gae_lambda=0.85,
-            normalize_advantages=False
+            mock_model, gamma=0.9, gae_lambda=0.85, normalize_advantages=False
         )
 
         assert value_fn.gamma == 0.9
@@ -349,8 +353,8 @@ class TestValueFunctionEdgeCases:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.d_model = 512  # T5-style models use d_model
-        mock_model.device = torch.device('cpu')
-        delattr(mock_model.config, 'hidden_size')  # Remove hidden_size
+        mock_model.device = torch.device("cpu")
+        delattr(mock_model.config, "hidden_size")  # Remove hidden_size
 
         value_fn = ValueFunction(mock_model)
         # Should fallback to default or d_model
@@ -359,7 +363,7 @@ class TestValueFunctionEdgeCases:
     def test_value_function_without_config(self):
         """Test ValueFunction with model that has no config"""
         mock_model = Mock()
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
         # No config attribute
 
         value_fn = ValueFunction(mock_model)
@@ -371,7 +375,7 @@ class TestValueFunctionEdgeCases:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=False)
 
@@ -380,7 +384,7 @@ class TestValueFunctionEdgeCases:
 
         # Should handle gracefully (may truncate or error)
         try:
-            advantages, returns = value_fn.compute_gae(rewards, values[:len(rewards)])
+            advantages, returns = value_fn.compute_gae(rewards, values[: len(rewards)])
             assert len(advantages) == len(rewards)
         except Exception:
             # If it errors, that's also acceptable behavior
@@ -391,7 +395,7 @@ class TestValueFunctionEdgeCases:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=False)
 
@@ -409,7 +413,7 @@ class TestValueFunctionEdgeCases:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, normalize_advantages=True)
 

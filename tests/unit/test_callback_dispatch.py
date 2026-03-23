@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from stateset_agents.training.callbacks import (
     notify_episode_end,
@@ -14,9 +14,9 @@ from stateset_agents.training.diagnostics import DiagnosticsMonitor
 
 @dataclass
 class EpisodeRecorder:
-    calls: List[Tuple[int, Dict[str, Any]]]
+    calls: list[tuple[int, dict[str, Any]]]
 
-    def on_episode_end(self, episode: int, metrics: Dict[str, Any]) -> None:
+    def on_episode_end(self, episode: int, metrics: dict[str, Any]) -> None:
         self.calls.append((episode, dict(metrics)))
 
 
@@ -24,7 +24,7 @@ async def test_notify_episode_end_dispatches_callable_and_method_callbacks() -> 
     cfg = TrainingConfig(num_episodes=1)
     diagnostics = DiagnosticsMonitor(cfg)
     recorder = EpisodeRecorder(calls=[])
-    callbacks: List[Any] = [diagnostics, recorder]
+    callbacks: list[Any] = [diagnostics, recorder]
 
     await notify_training_start(callbacks, trainer="trainer", config=cfg)
     await notify_episode_end(callbacks, episode=0, metrics={"total_reward": 1.23})
@@ -33,4 +33,3 @@ async def test_notify_episode_end_dispatches_callable_and_method_callbacks() -> 
     assert diagnostics.episode_count == 1
     assert diagnostics.total_rewards == [1.23]
     assert recorder.calls == [(0, {"total_reward": 1.23})]
-

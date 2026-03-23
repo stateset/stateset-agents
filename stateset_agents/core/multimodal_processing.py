@@ -5,18 +5,23 @@ This module provides comprehensive multimodal capabilities for processing and fu
 different types of inputs including text, images, audio, video, and structured data.
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import io
-import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from importlib.util import find_spec
+from typing import Any
 
 import numpy as np
+
+from .advanced_monitoring import get_monitoring_service, monitor_async_function
+from .error_handling import ErrorHandler
 
 MULTIMODAL_EXCEPTIONS = (
     RuntimeError,
@@ -32,6 +37,7 @@ try:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
+
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
@@ -45,6 +51,7 @@ AutoModel = None
 AutoProcessor = None
 AutoTokenizer = None
 
+
 def _load_transformers():
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_loaded, AutoModel, AutoProcessor, AutoTokenizer
@@ -54,6 +61,7 @@ def _load_transformers():
         from transformers import AutoModel as _AutoModel
         from transformers import AutoProcessor as _AutoProcessor
         from transformers import AutoTokenizer as _AutoTokenizer
+
         AutoModel = _AutoModel
         AutoProcessor = _AutoProcessor
         AutoTokenizer = _AutoTokenizer
@@ -62,6 +70,7 @@ def _load_transformers():
     except (ImportError, RuntimeError) as e:
         logger.warning(f"Failed to load transformers: {e}")
         return False
+
 
 try:
     from PIL import Image
@@ -78,16 +87,7 @@ try:
 except ImportError:
     AUDIO_AVAILABLE = False
 
-try:
-    import cv2
-
-    OPENCV_AVAILABLE = True
-except ImportError:
-    OPENCV_AVAILABLE = False
-
-from .advanced_monitoring import get_monitoring_service, monitor_async_function
-from .error_handling import ErrorHandler, RetryConfig, retry_async
-from .performance_optimizer import PerformanceOptimizer
+OPENCV_AVAILABLE = find_spec("cv2") is not None
 
 logger = logging.getLogger(__name__)
 
@@ -134,13 +134,13 @@ class ModalityInput:
 
     modality: ModalityType
     data: Any  # Raw data (bytes, numpy array, etc.)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    encoding: Optional[str] = None  # base64, raw, etc.
-    source: Optional[str] = None  # URL, file path, etc.
+    metadata: dict[str, Any] = field(default_factory=dict)
+    encoding: str | None = None  # base64, raw, etc.
+    source: str | None = None  # URL, file path, etc.
     timestamp: datetime = field(default_factory=datetime.now)
     quality: ProcessingQuality = ProcessingQuality.MEDIUM
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "modality": self.modality.value,
             "metadata": self.metadata,
@@ -159,12 +159,12 @@ class ProcessedFeatures:
 
     modality: ModalityType
     features: torch.Tensor  # Processed feature tensor
-    attention_mask: Optional[torch.Tensor] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    attention_mask: torch.Tensor | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     processing_time: float = 0.0
     confidence_score: float = 1.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "modality": self.modality.value,
             "feature_shape": list(self.features.shape)
@@ -561,7 +561,7 @@ class StructuredDataProcessor(ModalityProcessor):
 
     def _flatten_dict(
         self, data: dict, parent_key: str = "", sep: str = "_"
-    ) -> List[float]:
+    ) -> list[float]:
         """Flatten nested dictionary to list of numbers"""
         items = []
         for k, v in data.items():
@@ -594,7 +594,7 @@ class MultimodalFusion(nn.Module):
 
     def __init__(
         self,
-        modality_dims: Dict[ModalityType, int],
+        modality_dims: dict[ModalityType, int],
         fusion_strategy: FusionStrategy = FusionStrategy.ATTENTION_FUSION,
         output_dim: int = 512,
     ):
@@ -646,7 +646,7 @@ class MultimodalFusion(nn.Module):
             )
 
     def forward(
-        self, modality_features: Dict[ModalityType, torch.Tensor]
+        self, modality_features: dict[ModalityType, torch.Tensor]
     ) -> torch.Tensor:
         """Fuse features from multiple modalities"""
         # Project all features to same dimension
@@ -666,9 +666,7 @@ class MultimodalFusion(nn.Module):
 
         elif self.fusion_strategy == FusionStrategy.EARLY_FUSION:
             # Concatenate raw features
-            concatenated = torch.cat(
-                [features for features in projected_features.values()], dim=-1
-            )
+            concatenated = torch.cat(list(projected_features.values()), dim=-1)
             return self.fusion_layer(concatenated)
 
         elif self.fusion_strategy == FusionStrategy.LATE_FUSION:
@@ -693,13 +691,13 @@ class MultimodalProcessor:
         self.device = device
 
         # Initialize processors
-        self.processors: Dict[ModalityType, ModalityProcessor] = {}
+        self.processors: dict[ModalityType, ModalityProcessor] = {}
         self.fusion_network = None
 
         self.error_handler = ErrorHandler()
         self.monitoring = get_monitoring_service()
 
-    async def initialize(self, enabled_modalities: List[ModalityType]):
+    async def initialize(self, enabled_modalities: list[ModalityType]):
         """Initialize processors for enabled modalities"""
         for modality in enabled_modalities:
             try:
@@ -739,8 +737,8 @@ class MultimodalProcessor:
 
     @monitor_async_function("multimodal_processing")
     async def process_multimodal_input(
-        self, inputs: List[ModalityInput]
-    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        self, inputs: list[ModalityInput]
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Process multimodal input and return fused features"""
         start_time = datetime.now()
 
@@ -788,7 +786,7 @@ class MultimodalProcessor:
             return torch.zeros(1, 512, device=self.device), {"error": str(e)}
 
     async def _log_processing_metrics(
-        self, inputs: List[ModalityInput], processing_time: float
+        self, inputs: list[ModalityInput], processing_time: float
     ):
         """Log processing metrics"""
         metrics = {
@@ -801,11 +799,11 @@ class MultimodalProcessor:
             if isinstance(value, (int, float)):
                 await self.monitoring.record_metric(f"multimodal.{metric_name}", value)
 
-    def get_supported_modalities(self) -> List[ModalityType]:
+    def get_supported_modalities(self) -> list[ModalityType]:
         """Get list of supported modalities"""
         return list(self.processors.keys())
 
-    def get_processing_stats(self) -> Dict[str, Any]:
+    def get_processing_stats(self) -> dict[str, Any]:
         """Get processing statistics"""
         return {
             "supported_modalities": [mod.value for mod in self.processors.keys()],
@@ -823,12 +821,14 @@ class MultimodalProcessor:
 
 # Factory functions
 def create_multimodal_processor(
-    modalities: List[str],
+    modalities: list[str],
     fusion_strategy: str = "attention_fusion",
     device: str = "cpu",
 ) -> MultimodalProcessor:
     """Create a multimodal processor with specified modalities"""
-    modality_types = [ModalityType(mod) for mod in modalities]
+    # Validate modality strings early (raises ValueError on invalid entries).
+    for mod in modalities:
+        ModalityType(mod)
     fusion_strat = FusionStrategy(fusion_strategy)
 
     processor = MultimodalProcessor(fusion_strat, device)
@@ -838,7 +838,7 @@ def create_multimodal_processor(
 def create_modality_input(
     modality: str,
     data: Any,
-    metadata: Dict[str, Any] = None,
+    metadata: dict[str, Any] = None,
     encoding: str = None,
     quality: str = "medium",
 ) -> ModalityInput:
@@ -865,7 +865,7 @@ def encode_audio_to_base64(audio_path: str) -> str:
         return base64.b64encode(audio_file.read()).decode("utf-8")
 
 
-def validate_multimodal_input(inputs: List[ModalityInput]) -> List[str]:
+def validate_multimodal_input(inputs: list[ModalityInput]) -> list[str]:
     """Validate multimodal inputs and return any issues"""
     issues = []
 

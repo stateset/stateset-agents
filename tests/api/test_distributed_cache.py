@@ -12,29 +12,28 @@ Comprehensive tests for distributed caching including:
 import asyncio
 import os
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from api.distributed_cache import (
+from stateset_agents.api.distributed_cache import (
     CacheBackend,
     CacheConfig,
     CacheStats,
+    HybridCache,
     MemoryCache,
     MemoryCacheEntry,
-    HybridCache,
-    create_cache,
-    init_cache,
-    get_cache,
-    close_cache,
-    cached,
     cache_invalidate,
+    cached,
+    close_cache,
+    create_cache,
+    get_cache,
+    init_cache,
 )
-
 
 # ============================================================================
 # Cache Configuration Tests
 # ============================================================================
+
 
 class TestCacheConfig:
     """Tests for cache configuration."""
@@ -82,11 +81,14 @@ class TestCacheConfig:
     def test_config_serializer_from_env(self):
         """Test serializer configuration from environment."""
         os.environ["CACHE_SERIALIZER"] = "pickle"
+        os.environ["CACHE_ALLOW_PICKLE"] = "true"
 
         config = CacheConfig.from_env()
         assert config.serializer == "pickle"
+        assert config.allow_pickle is True
 
         del os.environ["CACHE_SERIALIZER"]
+        del os.environ["CACHE_ALLOW_PICKLE"]
 
     def test_config_with_redis_url(self):
         """Test config with Redis URL."""
@@ -106,6 +108,7 @@ class TestCacheConfig:
 # ============================================================================
 # Cache Statistics Tests
 # ============================================================================
+
 
 class TestCacheStats:
     """Tests for cache statistics."""
@@ -156,6 +159,7 @@ class TestCacheStats:
 # ============================================================================
 # Memory Cache Tests
 # ============================================================================
+
 
 class TestMemoryCache:
     """Tests for memory cache implementation."""
@@ -322,6 +326,7 @@ class TestMemoryCache:
     @pytest.mark.asyncio
     async def test_concurrent_access(self, cache):
         """Test concurrent access to cache."""
+
         async def write_task(key: str):
             for i in range(10):
                 await cache.set(f"{key}_{i}", f"value_{i}")
@@ -348,6 +353,7 @@ class TestMemoryCache:
 # ============================================================================
 # Hybrid Cache Tests
 # ============================================================================
+
 
 class TestHybridCache:
     """Tests for hybrid cache (memory + Redis fallback)."""
@@ -394,6 +400,7 @@ class TestHybridCache:
 # Cache Factory Tests
 # ============================================================================
 
+
 class TestCacheFactory:
     """Tests for cache factory function."""
 
@@ -424,6 +431,7 @@ class TestCacheFactory:
 # Global Cache Instance Tests
 # ============================================================================
 
+
 class TestGlobalCache:
     """Tests for global cache instance."""
 
@@ -449,6 +457,7 @@ class TestGlobalCache:
 # ============================================================================
 # Caching Decorator Tests
 # ============================================================================
+
 
 class TestCachingDecorators:
     """Tests for caching decorators."""
@@ -536,6 +545,7 @@ class TestCachingDecorators:
 # ============================================================================
 # Cache Entry Tests
 # ============================================================================
+
 
 class TestMemoryCacheEntry:
     """Tests for cache entry dataclass."""

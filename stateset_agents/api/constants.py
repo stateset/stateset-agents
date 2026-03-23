@@ -4,7 +4,6 @@ API Constants Module
 Centralized location for all magic numbers, limits, and configuration constants.
 """
 
-from typing import FrozenSet
 
 # ============================================================================
 # Rate Limiting Constants
@@ -91,54 +90,53 @@ PERCENTILE_P99 = 0.99
 # ============================================================================
 
 # Common prompt injection patterns to detect
-PROMPT_INJECTION_PATTERNS: FrozenSet[str] = frozenset({
-    # Instruction override attempts
-    r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
-    r"disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
-    r"forget\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
-    r"forget\s+(all\s+)?(your|these)\s+(instructions?|prompts?|rules?)",
-    r"do\s+not\s+follow\s+(the\s+)?(previous|prior|above|system)\s+(instructions?|prompts?|rules?)",
-    r"override\s+(all\s+)?(previous|prior|above|system)\s+(instructions?|prompts?|rules?)",
-
-    # Role manipulation attempts
-    r"you\s+are\s+now\s+(?:a|an|in)\s+(?:different|new|unrestricted|jailbreak)",
-    r"you\s+are\s+now\s+(?:a|an|in)\s+(?:developer|admin|sudo|debug|god)\s+mode",
-    r"(?:pretend|act|behave)\s+(?:like|as\s+if)\s+you\s+(?:are|have)\s+no\s+(?:rules|restrictions|limitations)",
-    r"enter\s+(?:developer|admin|sudo|debug|god)\s+mode",
-    r"switch\s+to\s+(?:developer|admin|sudo|debug|unrestricted)\s+mode",
-
-    # System prompt extraction attempts
-    r"(?:reveal|show|display|print|output)\s+(?:your|the)\s+(?:system|initial|original)\s+(?:prompt|instructions?|rules?)",
-    r"what\s+(?:is|are)\s+your\s+(?:system|initial|original)\s+(?:prompt|instructions?|rules?)",
-    r"(?:repeat|echo)\s+(?:your|the)\s+(?:system|initial|first)\s+(?:prompt|message|instructions?)",
-
-    # Delimiter-based injection attempts
-    r"(?:^|\s)###\s*(?:system|instruction|admin|new\s+rules?)",
-    r"(?:^|\s)---\s*(?:system|instruction|admin|new\s+rules?)",
-    r"(?:^|\s)===+\s*(?:system|instruction|admin|new\s+rules?)",
-    r"\[(?:system|admin|instruction)\]",
-    r"<(?:system|admin|instruction)>",
-
-    # DAN/jailbreak attempts
-    r"(?:DAN|do\s+anything\s+now)",
-    r"jailbreak",
-    r"bypass\s+(?:safety|content|ethical)\s+(?:filter|restriction|guideline)",
-
-    # Code execution attempts
-    r"```(?:python|bash|shell|exec)[\s\S]*(?:os\.|subprocess|eval|exec)",
-})
+PROMPT_INJECTION_PATTERNS: frozenset[str] = frozenset(
+    {
+        # Instruction override attempts
+        r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
+        r"disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
+        r"forget\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
+        r"forget\s+(all\s+)?(your|these)\s+(instructions?|prompts?|rules?)",
+        r"do\s+not\s+follow\s+(the\s+)?(previous|prior|above|system)\s+(instructions?|prompts?|rules?)",
+        r"override\s+(all\s+)?(previous|prior|above|system)\s+(instructions?|prompts?|rules?)",
+        # Role manipulation attempts
+        r"you\s+are\s+now\s+(?:a|an|in)\s+(?:different|new|unrestricted|jailbreak)",
+        r"you\s+are\s+now\s+(?:a|an|in)\s+(?:developer|admin|sudo|debug|god)\s+mode",
+        r"(?:pretend|act|behave)\s+(?:like|as\s+if)\s+you\s+(?:are|have)\s+no\s+(?:rules|restrictions|limitations)",
+        r"enter\s+(?:developer|admin|sudo|debug|god)\s+mode",
+        r"switch\s+to\s+(?:developer|admin|sudo|debug|unrestricted)\s+mode",
+        # System prompt extraction attempts
+        r"(?:reveal|show|display|print|output)\s+(?:your|the)\s+(?:system|initial|original)\s+(?:prompt|instructions?|rules?)",
+        r"what\s+(?:is|are)\s+your\s+(?:system|initial|original)\s+(?:prompt|instructions?|rules?)",
+        r"(?:repeat|echo)\s+(?:your|the)\s+(?:system|initial|first)\s+(?:prompt|message|instructions?)",
+        # Delimiter-based injection attempts
+        r"(?:^|\s)###\s*(?:system|instruction|admin|new\s+rules?)",
+        r"(?:^|\s)---\s*(?:system|instruction|admin|new\s+rules?)",
+        r"(?:^|\s)===+\s*(?:system|instruction|admin|new\s+rules?)",
+        r"\[(?:system|admin|instruction)\]",
+        r"<(?:system|admin|instruction)>",
+        # DAN/jailbreak attempts
+        r"(?:DAN|do\s+anything\s+now)",
+        r"jailbreak",
+        r"bypass\s+(?:safety|content|ethical)\s+(?:filter|restriction|guideline)",
+        # Code execution attempts
+        r"```(?:python|bash|shell|exec)[\s\S]*(?:os\.|subprocess|eval|exec)",
+    }
+)
 
 # Suspicious but not necessarily malicious patterns (log but don't block)
-SUSPICIOUS_PATTERNS: FrozenSet[str] = frozenset({
-    r"system\s*:",
-    r"admin\s*:",
-    r"internal\s*:",
-    r"confidential\s*:",
-    r"secret\s*:",
-    r"password\s*:",
-    r"api[_\s]*key\s*:",
-    r"token\s*:",
-})
+SUSPICIOUS_PATTERNS: frozenset[str] = frozenset(
+    {
+        r"system\s*:",
+        r"admin\s*:",
+        r"internal\s*:",
+        r"confidential\s*:",
+        r"secret\s*:",
+        r"password\s*:",
+        r"api[_\s]*key\s*:",
+        r"token\s*:",
+    }
+)
 
 # Maximum nested depth for JSON objects in requests
 MAX_JSON_NESTING_DEPTH = 10
@@ -200,16 +198,18 @@ API_DESCRIPTION = "Production-ready RL Agents API for conversational AI"
 # Model Whitelists (optional - for stricter validation)
 # ============================================================================
 
-ALLOWED_MODEL_PREFIXES: FrozenSet[str] = frozenset({
-    "gpt2",
-    "gpt-",
-    "llama",
-    "mistral",
-    "qwen",
-    "gemma",
-    "phi",
-    "falcon",
-    "mpt",
-    "opt-",
-    "bloom",
-})
+ALLOWED_MODEL_PREFIXES: frozenset[str] = frozenset(
+    {
+        "gpt2",
+        "gpt-",
+        "llama",
+        "mistral",
+        "qwen",
+        "gemma",
+        "phi",
+        "falcon",
+        "mpt",
+        "opt-",
+        "bloom",
+    }
+)

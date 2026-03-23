@@ -46,7 +46,7 @@ async def main():
     agent = create_gym_agent(
         model_name="gpt2",
         use_stub=True,  # Use stub for quick demo (no model download)
-        temperature=0.8
+        temperature=0.8,
     )
     await agent.initialize()
 
@@ -57,7 +57,7 @@ async def main():
         num_episodes=10,  # Just 10 for quick demo
         num_generations=4,
         learning_rate=3e-5,
-        log_interval=2
+        log_interval=2,
     )
 
     trainer = MultiTurnGRPOTrainer(agent, env, config)

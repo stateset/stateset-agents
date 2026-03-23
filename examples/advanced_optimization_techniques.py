@@ -45,11 +45,10 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
-from torch.optim import AdamW, SGD
+from torch.optim import SGD, AdamW
 from torch.optim.lr_scheduler import (
     CosineAnnealingLR,
     LinearLR,
@@ -65,8 +64,7 @@ from stateset_agents.core.reward import create_customer_service_reward
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -75,9 +73,11 @@ logger = logging.getLogger(__name__)
 # 1. Optimizer Configurations
 # ============================================================================
 
+
 @dataclass
 class OptimizerConfig:
     """Configuration for optimizer"""
+
     name: str
     learning_rate: float = 5e-5
     weight_decay: float = 0.01
@@ -96,8 +96,7 @@ class OptimizerConfig:
 
 
 def create_optimizer(
-    model: nn.Module,
-    config: OptimizerConfig
+    model: nn.Module, config: OptimizerConfig
 ) -> torch.optim.Optimizer:
     """
     Create optimizer with advanced configurations
@@ -114,14 +113,16 @@ def create_optimizer(
     optimizer_grouped_parameters = [
         {
             "params": [
-                p for n, p in model.named_parameters()
+                p
+                for n, p in model.named_parameters()
                 if not any(nd in n for nd in no_decay) and p.requires_grad
             ],
             "weight_decay": config.weight_decay,
         },
         {
             "params": [
-                p for n, p in model.named_parameters()
+                p
+                for n, p in model.named_parameters()
                 if any(nd in n for nd in no_decay) and p.requires_grad
             ],
             "weight_decay": 0.0,
@@ -141,6 +142,7 @@ def create_optimizer(
     elif config.name.lower() == "adafactor":
         try:
             from transformers.optimization import Adafactor
+
             optimizer = Adafactor(
                 optimizer_grouped_parameters,
                 lr=config.learning_rate,
@@ -161,6 +163,7 @@ def create_optimizer(
     elif config.name.lower() == "lion":
         try:
             from lion_pytorch import Lion
+
             optimizer = Lion(
                 optimizer_grouped_parameters,
                 lr=config.learning_rate,
@@ -190,12 +193,13 @@ def create_optimizer(
 # 2. Learning Rate Schedulers
 # ============================================================================
 
+
 def create_lr_scheduler(
     optimizer: torch.optim.Optimizer,
     scheduler_type: str,
     num_training_steps: int,
     num_warmup_steps: int = 0,
-    **kwargs
+    **kwargs,
 ):
     """
     Create learning rate scheduler
@@ -262,6 +266,7 @@ def create_lr_scheduler(
 # ============================================================================
 # 3. Mixed Precision Training
 # ============================================================================
+
 
 class MixedPrecisionTrainer:
     """
@@ -330,6 +335,7 @@ class MixedPrecisionTrainer:
 # 4. Gradient Management
 # ============================================================================
 
+
 class GradientManager:
     """
     Manages gradient accumulation, clipping, and normalization
@@ -373,7 +379,7 @@ class GradientManager:
             for p in parameters:
                 param_norm = p.grad.data.norm(2)
                 total_norm += param_norm.item() ** 2
-            total_norm = total_norm ** 0.5
+            total_norm = total_norm**0.5
 
             torch.nn.utils.clip_grad_value_(parameters, self.max_grad_norm)
         else:
@@ -389,6 +395,7 @@ class GradientManager:
 # ============================================================================
 # 5. Memory Optimization
 # ============================================================================
+
 
 def enable_gradient_checkpointing(model: nn.Module):
     """
@@ -410,14 +417,17 @@ def print_memory_stats():
         reserved = torch.cuda.memory_reserved() / 1024**3
         max_allocated = torch.cuda.max_memory_allocated() / 1024**3
 
-        logger.info(f"GPU Memory: Allocated={allocated:.2f}GB, "
-                   f"Reserved={reserved:.2f}GB, "
-                   f"Max={max_allocated:.2f}GB")
+        logger.info(
+            f"GPU Memory: Allocated={allocated:.2f}GB, "
+            f"Reserved={reserved:.2f}GB, "
+            f"Max={max_allocated:.2f}GB"
+        )
 
 
 # ============================================================================
 # 6. Training Loop with All Optimizations
 # ============================================================================
+
 
 async def train_with_optimizations(
     agent: MultiTurnAgent,
@@ -574,15 +584,22 @@ async def train_with_optimizations(
         if epoch_reward > best_reward:
             best_reward = epoch_reward
             if args.save_checkpoints:
-                checkpoint_path = Path(args.checkpoint_dir) / f"best_model_epoch_{epoch + 1}.pt"
+                checkpoint_path = (
+                    Path(args.checkpoint_dir) / f"best_model_epoch_{epoch + 1}.pt"
+                )
                 checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-                torch.save({
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": scheduler.state_dict() if scheduler else None,
-                    "best_reward": best_reward,
-                }, checkpoint_path)
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "scheduler_state_dict": scheduler.state_dict()
+                        if scheduler
+                        else None,
+                        "best_reward": best_reward,
+                    },
+                    checkpoint_path,
+                )
                 logger.info(f"Saved best checkpoint to {checkpoint_path}")
 
     logger.info("=" * 80)
@@ -593,6 +610,7 @@ async def train_with_optimizations(
 # ============================================================================
 # Main Entry Point
 # ============================================================================
+
 
 async def main():
     parser = argparse.ArgumentParser(
@@ -605,57 +623,91 @@ async def main():
 
     # Optimizer arguments
     parser.add_argument(
-        "--optimizer", type=str, default="adamw",
+        "--optimizer",
+        type=str,
+        default="adamw",
         choices=["adamw", "adafactor", "lion", "sgd"],
-        help="Optimizer type"
+        help="Optimizer type",
     )
-    parser.add_argument("--learning-rate", type=float, default=5e-5, help="Learning rate")
-    parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay")
-    parser.add_argument("--max-grad-norm", type=float, default=1.0, help="Max gradient norm for clipping")
     parser.add_argument(
-        "--grad-clip-method", type=str, default="norm",
+        "--learning-rate", type=float, default=5e-5, help="Learning rate"
+    )
+    parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay")
+    parser.add_argument(
+        "--max-grad-norm",
+        type=float,
+        default=1.0,
+        help="Max gradient norm for clipping",
+    )
+    parser.add_argument(
+        "--grad-clip-method",
+        type=str,
+        default="norm",
         choices=["norm", "value"],
-        help="Gradient clipping method"
+        help="Gradient clipping method",
     )
 
     # Learning rate scheduler
     parser.add_argument(
-        "--scheduler", type=str, default="cosine",
+        "--scheduler",
+        type=str,
+        default="cosine",
         choices=["cosine", "plateau", "constant"],
-        help="LR scheduler type"
+        help="LR scheduler type",
     )
     parser.add_argument("--warmup-ratio", type=float, default=0.1, help="Warmup ratio")
-    parser.add_argument("--min-lr", type=float, default=1e-7, help="Minimum learning rate")
+    parser.add_argument(
+        "--min-lr", type=float, default=1e-7, help="Minimum learning rate"
+    )
 
     # Mixed precision
     parser.add_argument(
-        "--mixed-precision", type=str, default="none",
+        "--mixed-precision",
+        type=str,
+        default="none",
         choices=["none", "fp16", "bf16"],
-        help="Mixed precision training"
+        help="Mixed precision training",
     )
 
     # Gradient accumulation
-    parser.add_argument("--grad-accumulation", type=int, default=1, help="Gradient accumulation steps")
+    parser.add_argument(
+        "--grad-accumulation", type=int, default=1, help="Gradient accumulation steps"
+    )
 
     # Memory optimization
-    parser.add_argument("--gradient-checkpointing", action="store_true", help="Enable gradient checkpointing")
+    parser.add_argument(
+        "--gradient-checkpointing",
+        action="store_true",
+        help="Enable gradient checkpointing",
+    )
     parser.add_argument("--cpu-offload", action="store_true", help="Offload to CPU")
 
     # Model compilation
     parser.add_argument("--compile", action="store_true", help="Use torch.compile")
     parser.add_argument(
-        "--compile-mode", type=str, default="default",
+        "--compile-mode",
+        type=str,
+        default="default",
         choices=["default", "reduce-overhead", "max-autotune"],
-        help="Compilation mode"
+        help="Compilation mode",
     )
 
     # Training arguments
-    parser.add_argument("--num-episodes", type=int, default=100, help="Number of episodes")
+    parser.add_argument(
+        "--num-episodes", type=int, default=100, help="Number of episodes"
+    )
     parser.add_argument("--num-epochs", type=int, default=3, help="Number of epochs")
 
     # Checkpointing
-    parser.add_argument("--save-checkpoints", action="store_true", help="Save checkpoints")
-    parser.add_argument("--checkpoint-dir", type=str, default="./checkpoints/optimized", help="Checkpoint directory")
+    parser.add_argument(
+        "--save-checkpoints", action="store_true", help="Save checkpoints"
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        default="./checkpoints/optimized",
+        help="Checkpoint directory",
+    )
 
     args = parser.parse_args()
 

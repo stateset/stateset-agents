@@ -7,7 +7,6 @@ from data collection to deployment in GRPO training.
 
 import asyncio
 from pathlib import Path
-from typing import List
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
@@ -20,7 +19,7 @@ from stateset_agents.training.transformer_reward_model import (
 )
 
 
-async def collect_training_data(num_episodes: int = 100) -> List[RewardExample]:
+async def collect_training_data(num_episodes: int = 100) -> list[RewardExample]:
     """
     Collect training data by running the agent with heuristic rewards
 
@@ -95,8 +94,8 @@ async def collect_training_data(num_episodes: int = 100) -> List[RewardExample]:
 
 
 async def train_reward_model(
-    train_examples: List[RewardExample],
-    val_examples: List[RewardExample],
+    train_examples: list[RewardExample],
+    val_examples: list[RewardExample],
     checkpoint_dir: str = "./checkpoints/reward_model",
 ) -> TransformerRewardTrainer:
     """
@@ -129,7 +128,7 @@ async def train_reward_model(
         verbose=True,
     )
 
-    print(f"\nPhase 1 Results:")
+    print("\nPhase 1 Results:")
     print(f"  Final train loss: {results_phase1['final_train_loss']:.4f}")
     print(f"  Final val loss: {results_phase1['final_val_loss']:.4f}")
     print(f"  Best val loss: {results_phase1['best_val_loss']:.4f}")
@@ -147,7 +146,7 @@ async def train_reward_model(
         verbose=True,
     )
 
-    print(f"\nPhase 2 Results:")
+    print("\nPhase 2 Results:")
     print(f"  Final train loss: {results_phase2['final_train_loss']:.4f}")
     print(f"  Final val loss: {results_phase2['final_val_loss']:.4f}")
     print(f"  Best val loss: {results_phase2['best_val_loss']:.4f}")
@@ -162,7 +161,7 @@ async def train_reward_model(
 
 
 async def evaluate_reward_model(
-    trainer: TransformerRewardTrainer, test_examples: List[RewardExample]
+    trainer: TransformerRewardTrainer, test_examples: list[RewardExample]
 ):
     """
     Evaluate the trained reward model
@@ -229,7 +228,7 @@ async def train_grpo_with_learned_reward(trainer: TransformerRewardTrainer):
     agent = MultiTurnAgent(AgentConfig(model_name="gpt2", use_stub_model=True))
     await agent.initialize()
 
-    # Create environment with learned reward
+    # Create environment with composite reward (learned + heuristic)
     environment = ConversationEnvironment(
         scenarios=[
             {
@@ -239,7 +238,7 @@ async def train_grpo_with_learned_reward(trainer: TransformerRewardTrainer):
             }
         ],
         max_turns=6,
-        reward_fn=learned_reward,  # Use learned reward
+        reward_fn=composite_reward,
     )
 
     print("\n✓ GRPO training configured with learned reward model")
@@ -252,7 +251,7 @@ async def train_grpo_with_learned_reward(trainer: TransformerRewardTrainer):
         trajectory.turns, trajectory.metadata
     )
 
-    print(f"\nTest Episode Results:")
+    print("\nTest Episode Results:")
     print(f"  Turns: {len(trajectory.turns)}")
     print(f"  Learned Reward: {reward_result.score:.3f}")
     print(f"  Breakdown: {reward_result.breakdown}")
@@ -281,7 +280,7 @@ async def main():
     val_examples = all_examples[n_train : n_train + n_val]
     test_examples = all_examples[n_train + n_val :]
 
-    print(f"\nData Split:")
+    print("\nData Split:")
     print(f"  Training: {len(train_examples)} examples")
     print(f"  Validation: {len(val_examples)} examples")
     print(f"  Test: {len(test_examples)} examples")

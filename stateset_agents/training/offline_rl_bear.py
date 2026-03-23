@@ -9,8 +9,7 @@ Bootstrapping Error Reduction" (NeurIPS 2019)
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -18,8 +17,8 @@ try:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
-    from torch.optim import Adam
     from torch.distributions import Normal
+    from torch.optim import Adam
 except ImportError:
     torch = None
     nn = None
@@ -107,12 +106,12 @@ class MMDKernel:
             kernel_values: [batch, n_x, n_y]
         """
         # Compute squared distances
-        xx = torch.sum(x ** 2, dim=-1, keepdim=True)  # [batch, n_x, 1]
-        yy = torch.sum(y ** 2, dim=-1, keepdim=True)  # [batch, n_y, 1]
+        xx = torch.sum(x**2, dim=-1, keepdim=True)  # [batch, n_x, 1]
+        yy = torch.sum(y**2, dim=-1, keepdim=True)  # [batch, n_y, 1]
         xy = torch.bmm(x, y.transpose(-2, -1))  # [batch, n_x, n_y]
 
         distances = xx - 2 * xy + yy.transpose(-2, -1)
-        return torch.exp(-distances / (2 * sigma ** 2))
+        return torch.exp(-distances / (2 * sigma**2))
 
     def laplacian_kernel(
         self,
@@ -132,8 +131,8 @@ class MMDKernel:
             kernel_values: [batch, n_x, n_y]
         """
         # Compute L2 distances
-        xx = torch.sum(x ** 2, dim=-1, keepdim=True)
-        yy = torch.sum(y ** 2, dim=-1, keepdim=True)
+        xx = torch.sum(x**2, dim=-1, keepdim=True)
+        yy = torch.sum(y**2, dim=-1, keepdim=True)
         xy = torch.bmm(x, y.transpose(-2, -1))
 
         distances = torch.sqrt(
@@ -256,7 +255,7 @@ class BEARActor(nn.Module):
         layers = []
         input_dim = state_dim
 
-        for i in range(num_layers):
+        for _i in range(num_layers):
             layers.append(nn.Linear(input_dim, hidden_size))
             layers.append(nn.ReLU())
             input_dim = hidden_size
@@ -278,7 +277,7 @@ class BEARActor(nn.Module):
     def forward(
         self,
         state: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Get mean and log_std for action distribution.
 
@@ -299,7 +298,7 @@ class BEARActor(nn.Module):
         self,
         state: torch.Tensor,
         num_samples: int = 1,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Sample actions from the policy.
 
@@ -315,7 +314,6 @@ class BEARActor(nn.Module):
         std = torch.exp(log_std)
 
         # Expand for multiple samples
-        batch_size = state.shape[0]
         mean = mean.unsqueeze(1).repeat(1, num_samples, 1)
         std = std.unsqueeze(1).repeat(1, num_samples, 1)
 
@@ -362,8 +360,10 @@ class ConversationalBEAR:
         self,
         state_dim: int,
         action_dim: int,
-        config: Optional[BEARConfig] = None,
-        device: str = "cuda" if torch is not None and torch.cuda.is_available() else "cpu",
+        config: BEARConfig | None = None,
+        device: str = "cuda"
+        if torch is not None and torch.cuda.is_available()
+        else "cpu",
     ):
         _require_torch()
 
@@ -472,7 +472,7 @@ class ConversationalBEAR:
         rewards: torch.Tensor,
         next_states: torch.Tensor,
         dones: torch.Tensor,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute Q-function loss"""
         with torch.no_grad():
             # Sample next actions from policy
@@ -526,7 +526,7 @@ class ConversationalBEAR:
         self,
         states: torch.Tensor,
         actions: torch.Tensor,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """
         Compute actor loss with MMD constraint.
 
@@ -580,7 +580,7 @@ class ConversationalBEAR:
 
         return actor_loss, mmd_loss, metrics
 
-    def _update_alpha(self, mmd_loss: torch.Tensor) -> Dict[str, float]:
+    def _update_alpha(self, mmd_loss: torch.Tensor) -> dict[str, float]:
         """Update Lagrange multiplier for MMD constraint"""
         if not self.config.use_automatic_alpha:
             return {"alpha_loss": 0.0}
@@ -610,7 +610,7 @@ class ConversationalBEAR:
         rewards: torch.Tensor,
         next_states: torch.Tensor,
         dones: torch.Tensor,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Perform one BEAR training step.
 
@@ -667,18 +667,14 @@ class ConversationalBEAR:
         tau = self.config.soft_target_tau
 
         for target_param, param in zip(
-            self.q1_target.parameters(), self.q1.parameters()
+            self.q1_target.parameters(), self.q1.parameters(), strict=False
         ):
-            target_param.data.copy_(
-                tau * param.data + (1 - tau) * target_param.data
-            )
+            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
         for target_param, param in zip(
-            self.q2_target.parameters(), self.q2.parameters()
+            self.q2_target.parameters(), self.q2.parameters(), strict=False
         ):
-            target_param.data.copy_(
-                tau * param.data + (1 - tau) * target_param.data
-            )
+            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
     def select_action(
         self,
@@ -774,22 +770,24 @@ class BEARTrainer:
         self,
         state_dim: int,
         action_dim: int,
-        config: Optional[BEARConfig] = None,
-        device: str = "cuda" if torch is not None and torch.cuda.is_available() else "cpu",
+        config: BEARConfig | None = None,
+        device: str = "cuda"
+        if torch is not None and torch.cuda.is_available()
+        else "cpu",
     ):
         _require_torch()
 
         self.bear = ConversationalBEAR(state_dim, action_dim, config, device)
         self.config = config or BEARConfig()
         self.device = device
-        self.training_metrics: List[Dict[str, float]] = []
+        self.training_metrics: list[dict[str, float]] = []
 
     def train(
         self,
-        dataset: Dict[str, np.ndarray],
+        dataset: dict[str, np.ndarray],
         num_epochs: int = 100,
         batch_size: int = 256,
-    ) -> List[Dict[str, float]]:
+    ) -> list[dict[str, float]]:
         """
         Train BEAR on offline dataset.
 
@@ -811,9 +809,7 @@ class BEARTrainer:
         dataset_size = states.shape[0]
         num_batches = dataset_size // batch_size
 
-        logger.info(
-            f"Training BEAR on {dataset_size} samples for {num_epochs} epochs"
-        )
+        logger.info(f"Training BEAR on {dataset_size} samples for {num_epochs} epochs")
 
         for epoch in range(num_epochs):
             indices = torch.randperm(dataset_size)

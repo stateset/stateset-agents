@@ -9,11 +9,11 @@ import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any
+from collections.abc import Callable
 
 try:
-    import prometheus_client as prom
-    from prometheus_client import Counter, Gauge, Histogram, Summary
+    from prometheus_client import Counter, Gauge, Histogram
 
     PROMETHEUS_AVAILABLE = True
 except ImportError:
@@ -21,7 +21,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-DASHBOARD_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+DASHBOARD_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     ValueError,
     TypeError,
@@ -36,8 +36,8 @@ class MetricSnapshot:
     """Snapshot of metrics at a point in time"""
 
     timestamp: datetime
-    metrics: Dict[str, float]
-    tags: Dict[str, str] = field(default_factory=dict)
+    metrics: dict[str, float]
+    tags: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -59,13 +59,13 @@ class MetricAggregator:
 
     def __init__(self, window_size: int = 1000):
         self.window_size = window_size
-        self.metrics: Dict[str, deque] = defaultdict(lambda: deque(maxlen=window_size))
+        self.metrics: dict[str, deque] = defaultdict(lambda: deque(maxlen=window_size))
 
     def add(self, metric_name: str, value: float):
         """Add a metric value"""
         self.metrics[metric_name].append(value)
 
-    def get_stats(self, metric_name: str) -> Dict[str, float]:
+    def get_stats(self, metric_name: str) -> dict[str, float]:
         """Get statistics for a metric"""
         values = list(self.metrics.get(metric_name, []))
 
@@ -85,7 +85,7 @@ class MetricAggregator:
             "p99": float(np.percentile(values, 99)),
         }
 
-    def get_all_stats(self) -> Dict[str, Dict[str, float]]:
+    def get_all_stats(self) -> dict[str, dict[str, float]]:
         """Get statistics for all metrics"""
         return {name: self.get_stats(name) for name in self.metrics.keys()}
 
@@ -93,12 +93,12 @@ class MetricAggregator:
 class AlertManager:
     """Manages alerts and thresholds"""
 
-    def __init__(self, alert_callback: Optional[Callable[[Alert], None]] = None):
+    def __init__(self, alert_callback: Callable[[Alert], None] | None = None):
         self.alert_callback = alert_callback
-        self.thresholds: Dict[str, List[Tuple[str, float, Callable]]] = defaultdict(
+        self.thresholds: dict[str, list[tuple[str, float, Callable]]] = defaultdict(
             list
         )
-        self.active_alerts: Dict[str, Alert] = {}
+        self.active_alerts: dict[str, Alert] = {}
         self.alert_history: deque = deque(maxlen=1000)
 
     def add_threshold(
@@ -154,11 +154,11 @@ class AlertManager:
                     alert.resolved = True
                     logger.info(f"Alert resolved: {alert.message}")
 
-    def get_active_alerts(self) -> List[Alert]:
+    def get_active_alerts(self) -> list[Alert]:
         """Get all active alerts"""
         return list(self.active_alerts.values())
 
-    def get_alert_history(self, hours: int = 24) -> List[Alert]:
+    def get_alert_history(self, hours: int = 24) -> list[Alert]:
         """Get alert history for the last N hours"""
         cutoff = datetime.now() - timedelta(hours=hours)
         return [a for a in self.alert_history if a.timestamp >= cutoff]
@@ -173,7 +173,7 @@ class AdvancedDashboard:
         self,
         enable_prometheus: bool = True,
         metrics_window: int = 10000,
-        alert_callback: Optional[Callable[[Alert], None]] = None,
+        alert_callback: Callable[[Alert], None] | None = None,
     ):
         self.enable_prometheus = enable_prometheus and PROMETHEUS_AVAILABLE
         self.aggregator = MetricAggregator(window_size=metrics_window)
@@ -187,7 +187,7 @@ class AdvancedDashboard:
         self.snapshots: deque = deque(maxlen=1000)
 
         # Start background tasks
-        self._tasks: List[asyncio.Task] = []
+        self._tasks: list[asyncio.Task] = []
 
     def _init_prometheus_metrics(self):
         """Initialize Prometheus metrics"""
@@ -216,7 +216,7 @@ class AdvancedDashboard:
         logger.info("✓ Prometheus metrics initialized")
 
     async def log_metric(
-        self, name: str, value: float, tags: Optional[Dict[str, str]] = None
+        self, name: str, value: float, tags: dict[str, str] | None = None
     ):
         """Log a metric value"""
         # Add to aggregator
@@ -229,7 +229,7 @@ class AdvancedDashboard:
         if self.enable_prometheus:
             self._update_prometheus(name, value, tags or {})
 
-    def _update_prometheus(self, name: str, value: float, tags: Dict[str, str]):
+    def _update_prometheus(self, name: str, value: float, tags: dict[str, str]):
         """Update Prometheus metrics"""
         if not self.enable_prometheus:
             return
@@ -265,19 +265,21 @@ class AdvancedDashboard:
 
         self.alert_manager.add_threshold(metric_name, severity, threshold, condition)
 
-    def get_metric_stats(self, metric_name: str) -> Dict[str, float]:
+    def get_metric_stats(self, metric_name: str) -> dict[str, float]:
         """Get statistics for a metric"""
         return self.aggregator.get_stats(metric_name)
 
-    def get_all_stats(self) -> Dict[str, Dict[str, float]]:
+    def get_all_stats(self) -> dict[str, dict[str, float]]:
         """Get all metric statistics"""
         return self.aggregator.get_all_stats()
 
-    def get_active_alerts(self) -> List[Alert]:
+    def get_active_alerts(self) -> list[Alert]:
         """Get active alerts"""
         return self.alert_manager.get_active_alerts()
 
-    def take_snapshot(self, metrics: Dict[str, float], tags: Optional[Dict[str, str]] = None):
+    def take_snapshot(
+        self, metrics: dict[str, float], tags: dict[str, str] | None = None
+    ):
         """Take a snapshot of current metrics"""
         snapshot = MetricSnapshot(
             timestamp=datetime.now(), metrics=metrics, tags=tags or {}
@@ -285,7 +287,7 @@ class AdvancedDashboard:
         self.snapshots.append(snapshot)
         return snapshot
 
-    def get_snapshot_history(self, hours: int = 1) -> List[MetricSnapshot]:
+    def get_snapshot_history(self, hours: int = 1) -> list[MetricSnapshot]:
         """Get snapshot history"""
         cutoff = datetime.now() - timedelta(hours=hours)
         return [s for s in self.snapshots if s.timestamp >= cutoff]
@@ -364,7 +366,7 @@ class AdvancedDashboard:
                 logger.error(f"Error taking snapshot: {e}")
                 await asyncio.sleep(60)
 
-    def get_dashboard_summary(self) -> Dict[str, Any]:
+    def get_dashboard_summary(self) -> dict[str, Any]:
         """Get a summary for dashboard display"""
         stats = self.get_all_stats()
         alerts = self.get_active_alerts()

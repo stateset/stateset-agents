@@ -6,8 +6,8 @@ without requiring heavy compute resources.
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DemoEngineMetrics:
     """Metrics tracked by the demo engine."""
+
     total_trajectories: int = 0
     total_reward: float = 0.0
     scale_factor: float = 1.0
@@ -45,13 +46,15 @@ class LightweightDemoEngine:
             scale_factor: Initial computation scale factor
         """
         self._metrics = DemoEngineMetrics(scale_factor=scale_factor)
-        logger.info("LightweightDemoEngine initialized with scale_factor=%.2f", scale_factor)
+        logger.info(
+            "LightweightDemoEngine initialized with scale_factor=%.2f", scale_factor
+        )
 
     async def train_iteration(
         self,
-        prompts: List[str],
+        prompts: list[str],
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Simulate a training iteration without heavy compute.
 
         Args:
@@ -78,7 +81,7 @@ class LightweightDemoEngine:
             "is_demo_mode": True,
         }
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Return current engine metrics.
 
         Returns:
@@ -91,7 +94,7 @@ class LightweightDemoEngine:
             "is_demo_mode": True,
         }
 
-    def scale_computation(self, scale_factor: float) -> Dict[str, Any]:
+    def scale_computation(self, scale_factor: float) -> dict[str, Any]:
         """Adjust the simulated computation scale.
 
         Args:

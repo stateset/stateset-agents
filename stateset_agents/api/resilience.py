@@ -13,12 +13,15 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
+from typing import Any, TypeVar
+from collections.abc import Callable
+
+from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 
 logger = logging.getLogger(__name__)
 
-CIRCUIT_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
-HEALTHCHECK_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+CIRCUIT_EXCEPTIONS = INFERENCE_EXCEPTIONS
+HEALTHCHECK_EXCEPTIONS = INFERENCE_EXCEPTIONS
 
 T = TypeVar("T")
 F = TypeVar("F", bound=Callable[..., Any])
@@ -28,35 +31,39 @@ F = TypeVar("F", bound=Callable[..., Any])
 # Circuit Breaker
 # ============================================================================
 
+
 class CircuitState(str, Enum):
     """Circuit breaker states."""
-    CLOSED = "closed"      # Normal operation
-    OPEN = "open"          # Failing, rejecting requests
+
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Failing, rejecting requests
     HALF_OPEN = "half_open"  # Testing if service recovered
 
 
 @dataclass
 class CircuitBreakerConfig:
     """Circuit breaker configuration."""
-    failure_threshold: int = 5           # Failures before opening
-    success_threshold: int = 3           # Successes before closing
-    timeout_seconds: float = 30.0        # Time before half-open
-    excluded_exceptions: tuple = ()      # Exceptions that don't count as failures
-    fallback: Optional[Callable] = None  # Fallback function when open
+
+    failure_threshold: int = 5  # Failures before opening
+    success_threshold: int = 3  # Successes before closing
+    timeout_seconds: float = 30.0  # Time before half-open
+    excluded_exceptions: tuple = ()  # Exceptions that don't count as failures
+    fallback: Callable | None = None  # Fallback function when open
 
 
 @dataclass
 class CircuitStats:
     """Circuit breaker statistics."""
+
     state: CircuitState = CircuitState.CLOSED
     failure_count: int = 0
     success_count: int = 0
     total_requests: int = 0
     rejected_requests: int = 0
-    last_failure_time: Optional[float] = None
+    last_failure_time: float | None = None
     last_state_change: float = field(default_factory=time.time)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "state": self.state.value,
@@ -92,7 +99,7 @@ class CircuitBreaker:
     def __init__(
         self,
         name: str,
-        config: Optional[CircuitBreakerConfig] = None,
+        config: CircuitBreakerConfig | None = None,
     ):
         self.name = name
         self.config = config or CircuitBreakerConfig()
@@ -111,9 +118,11 @@ class CircuitBreaker:
 
     def __call__(self, func: F) -> F:
         """Decorator to wrap function with circuit breaker."""
+
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             return await self.call(func, *args, **kwargs)
+
         return wrapper
 
     async def call(self, func: Callable, *args, **kwargs) -> Any:
@@ -130,8 +139,7 @@ class CircuitBreaker:
                     if self.config.fallback:
                         return await self._execute_fallback(*args, **kwargs)
                     raise CircuitOpenError(
-                        f"Circuit {self.name} is OPEN. "
-                        f"Request rejected."
+                        f"Circuit {self.name} is OPEN. " f"Request rejected."
                     )
 
         # Execute the function
@@ -169,7 +177,7 @@ class CircuitBreaker:
 
             logger.warning(
                 f"Circuit {self.name} recorded failure: {exception}",
-                extra={"circuit": self.name, "failures": self._stats.failure_count}
+                extra={"circuit": self.name, "failures": self._stats.failure_count},
             )
 
             if self._stats.state == CircuitState.HALF_OPEN:
@@ -199,7 +207,11 @@ class CircuitBreaker:
 
         logger.info(
             f"Circuit {self.name} transitioned: {old_state.value} -> {new_state.value}",
-            extra={"circuit": self.name, "old_state": old_state.value, "new_state": new_state.value}
+            extra={
+                "circuit": self.name,
+                "old_state": old_state.value,
+                "new_state": new_state.value,
+            },
         )
 
     async def _execute_fallback(self, *args, **kwargs) -> Any:
@@ -216,6 +228,7 @@ class CircuitBreaker:
 
 class CircuitOpenError(Exception):
     """Raised when circuit breaker is open."""
+
     pass
 
 
@@ -223,9 +236,11 @@ class CircuitOpenError(Exception):
 # Retry Pattern
 # ============================================================================
 
+
 @dataclass
 class RetryConfig:
     """Retry configuration."""
+
     max_attempts: int = 3
     base_delay: float = 1.0
     max_delay: float = 60.0
@@ -245,14 +260,16 @@ class RetryStrategy:
             ...
     """
 
-    def __init__(self, config: Optional[RetryConfig] = None):
+    def __init__(self, config: RetryConfig | None = None):
         self.config = config or RetryConfig()
 
     def __call__(self, func: F) -> F:
         """Decorator to wrap function with retry logic."""
+
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             return await self.execute(func, *args, **kwargs)
+
         return wrapper
 
     async def execute(self, func: Callable, *args, **kwargs) -> Any:
@@ -263,7 +280,7 @@ class RetryStrategy:
             try:
                 return await func(*args, **kwargs)
 
-            except self.config.non_retryable_exceptions as e:
+            except self.config.non_retryable_exceptions:
                 # Don't retry these
                 raise
 
@@ -273,14 +290,14 @@ class RetryStrategy:
                 if attempt == self.config.max_attempts:
                     logger.error(
                         f"All {self.config.max_attempts} retry attempts failed",
-                        extra={"attempt": attempt, "error": str(e)}
+                        extra={"attempt": attempt, "error": str(e)},
                     )
                     raise
 
                 delay = self._calculate_delay(attempt)
                 logger.warning(
                     f"Attempt {attempt} failed, retrying in {delay:.2f}s: {e}",
-                    extra={"attempt": attempt, "delay": delay, "error": str(e)}
+                    extra={"attempt": attempt, "delay": delay, "error": str(e)},
                 )
                 await asyncio.sleep(delay)
 
@@ -319,8 +336,10 @@ def retry(
 # Timeout Pattern
 # ============================================================================
 
+
 class TimeoutError(Exception):
     """Raised when operation times out."""
+
     pass
 
 
@@ -333,19 +352,19 @@ def timeout(seconds: float) -> Callable[[F], F]:
         async def slow_operation():
             ...
     """
+
     def decorator(func: F) -> F:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             try:
-                return await asyncio.wait_for(
-                    func(*args, **kwargs),
-                    timeout=seconds
-                )
-            except asyncio.TimeoutError:
+                return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
+            except asyncio.TimeoutError as exc:
                 raise TimeoutError(
                     f"Operation {func.__name__} timed out after {seconds}s"
-                )
+                ) from exc
+
         return wrapper
+
     return decorator
 
 
@@ -353,9 +372,11 @@ def timeout(seconds: float) -> Callable[[F], F]:
 # Bulkhead Pattern
 # ============================================================================
 
+
 @dataclass
 class BulkheadConfig:
     """Bulkhead configuration."""
+
     max_concurrent: int = 10
     max_waiting: int = 100
     timeout_seconds: float = 30.0
@@ -363,6 +384,7 @@ class BulkheadConfig:
 
 class BulkheadFullError(Exception):
     """Raised when bulkhead is at capacity."""
+
     pass
 
 
@@ -384,7 +406,7 @@ class Bulkhead:
     def __init__(
         self,
         name: str,
-        config: Optional[BulkheadConfig] = None,
+        config: BulkheadConfig | None = None,
     ):
         self.name = name
         self.config = config or BulkheadConfig()
@@ -395,9 +417,11 @@ class Bulkhead:
 
     def __call__(self, func: F) -> F:
         """Decorator to wrap function with bulkhead."""
+
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             return await self.execute(func, *args, **kwargs)
+
         return wrapper
 
     async def execute(self, func: Callable, *args, **kwargs) -> Any:
@@ -413,15 +437,14 @@ class Bulkhead:
         try:
             # Python 3.10 compatibility - use wait_for instead of asyncio.timeout
             await asyncio.wait_for(
-                self._semaphore.acquire(),
-                timeout=self.config.timeout_seconds
+                self._semaphore.acquire(), timeout=self.config.timeout_seconds
             )
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             async with self._lock:
                 self._waiting -= 1
             raise BulkheadFullError(
                 f"Timeout waiting for bulkhead {self.name}"
-            )
+            ) from exc
 
         async with self._lock:
             self._waiting -= 1
@@ -435,7 +458,7 @@ class Bulkhead:
                 self._active -= 1
 
     @property
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Get bulkhead statistics."""
         return {
             "name": self.name,
@@ -450,8 +473,10 @@ class Bulkhead:
 # Health Check
 # ============================================================================
 
+
 class HealthStatus(str, Enum):
     """Health check status."""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
@@ -460,12 +485,13 @@ class HealthStatus(str, Enum):
 @dataclass
 class HealthCheckResult:
     """Result of a health check."""
+
     name: str
     status: HealthStatus
-    message: Optional[str] = None
+    message: str | None = None
     latency_ms: float = 0.0
     last_check: datetime = field(default_factory=datetime.utcnow)
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class HealthChecker:
@@ -481,8 +507,8 @@ class HealthChecker:
     """
 
     def __init__(self):
-        self._checks: Dict[str, Callable] = {}
-        self._results: Dict[str, HealthCheckResult] = {}
+        self._checks: dict[str, Callable] = {}
+        self._results: dict[str, HealthCheckResult] = {}
 
     def add_check(self, name: str, check_func: Callable) -> None:
         """Add a health check function."""
@@ -538,7 +564,7 @@ class HealthChecker:
         self._results[name] = check_result
         return check_result
 
-    async def check_all(self) -> Dict[str, HealthCheckResult]:
+    async def check_all(self) -> dict[str, HealthCheckResult]:
         """Run all health checks concurrently."""
         tasks = [self.check(name) for name in self._checks]
         await asyncio.gather(*tasks)
@@ -564,12 +590,12 @@ class HealthChecker:
 # Global Circuit Breaker Registry
 # ============================================================================
 
-_circuit_breakers: Dict[str, CircuitBreaker] = {}
+_circuit_breakers: dict[str, CircuitBreaker] = {}
 
 
 def get_circuit_breaker(
     name: str,
-    config: Optional[CircuitBreakerConfig] = None,
+    config: CircuitBreakerConfig | None = None,
 ) -> CircuitBreaker:
     """Get or create a circuit breaker by name."""
     if name not in _circuit_breakers:
@@ -577,9 +603,8 @@ def get_circuit_breaker(
     return _circuit_breakers[name]
 
 
-def get_all_circuit_stats() -> Dict[str, Dict[str, Any]]:
+def get_all_circuit_stats() -> dict[str, dict[str, Any]]:
     """Get statistics for all circuit breakers."""
     return {
-        name: breaker.stats.to_dict()
-        for name, breaker in _circuit_breakers.items()
+        name: breaker.stats.to_dict() for name, breaker in _circuit_breakers.items()
     }

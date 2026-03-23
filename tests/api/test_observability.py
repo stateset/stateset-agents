@@ -8,8 +8,6 @@ OpenTelemetry integration, and metrics collection.
 import json
 import logging
 import time
-from datetime import datetime
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,7 +18,8 @@ class TestStructuredLogFormatter:
     @pytest.fixture
     def formatter(self):
         """Create a StructuredLogFormatter for testing."""
-        from api.observability import StructuredLogFormatter
+        from stateset_agents.api.observability import StructuredLogFormatter
+
         return StructuredLogFormatter(service_name="test-service")
 
     @pytest.fixture
@@ -96,6 +95,7 @@ class TestStructuredLogFormatter:
             raise ValueError("Test error")
         except ValueError:
             import sys
+
             exc_info = sys.exc_info()
 
         record = logging.LogRecord(
@@ -122,7 +122,8 @@ class TestConsoleLogFormatter:
     @pytest.fixture
     def formatter(self):
         """Create a ConsoleLogFormatter for testing."""
-        from api.observability import ConsoleLogFormatter
+        from stateset_agents.api.observability import ConsoleLogFormatter
+
         return ConsoleLogFormatter()
 
     @pytest.fixture
@@ -162,11 +163,11 @@ class TestConsoleLogFormatter:
     def test_format_different_levels(self, formatter):
         """Test formatting different log levels."""
         levels = [
-            (logging.DEBUG, "\033[36m"),    # Cyan
-            (logging.INFO, "\033[32m"),     # Green
+            (logging.DEBUG, "\033[36m"),  # Cyan
+            (logging.INFO, "\033[32m"),  # Green
             (logging.WARNING, "\033[33m"),  # Yellow
-            (logging.ERROR, "\033[31m"),    # Red
-            (logging.CRITICAL, "\033[35m"), # Magenta
+            (logging.ERROR, "\033[31m"),  # Red
+            (logging.CRITICAL, "\033[35m"),  # Magenta
         ]
 
         for level, color in levels:
@@ -200,7 +201,7 @@ class TestSetupLogging:
 
     def test_setup_logging_json_format(self):
         """Test setting up JSON format logging."""
-        from api.observability import setup_logging
+        from stateset_agents.api.observability import setup_logging
 
         setup_logging(
             service_name="test-service",
@@ -213,7 +214,7 @@ class TestSetupLogging:
 
     def test_setup_logging_console_format(self):
         """Test setting up console format logging."""
-        from api.observability import setup_logging
+        from stateset_agents.api.observability import setup_logging
 
         setup_logging(
             service_name="test-service",
@@ -230,14 +231,14 @@ class TestTraceContext:
 
     def test_trace_context_default(self):
         """Test default trace context."""
-        from api.observability import _trace_context
+        from stateset_agents.api.observability import _trace_context
 
         ctx = _trace_context.get()
         assert ctx == {}
 
     def test_trace_context_set_and_get(self):
         """Test setting and getting trace context."""
-        from api.observability import _trace_context
+        from stateset_agents.api.observability import _trace_context
 
         ctx = {
             "trace_id": "trace_123",
@@ -270,7 +271,7 @@ class TestRequestIdTracking:
 
     def test_request_id_in_logs(self):
         """Test request ID appears in logs."""
-        from api.observability import StructuredLogFormatter
+        from stateset_agents.api.observability import StructuredLogFormatter
 
         formatter = StructuredLogFormatter()
         record = logging.LogRecord(
@@ -373,8 +374,9 @@ class TestLoggerIntegration:
 
     def test_logger_with_formatter(self, test_logger):
         """Test logger with structured formatter."""
-        from api.observability import StructuredLogFormatter
         from io import StringIO
+
+        from stateset_agents.api.observability import StructuredLogFormatter
 
         # Create handler with formatter
         stream = StringIO()
@@ -409,14 +411,18 @@ class TestTraceDecorator:
                 @wraps(func)
                 def wrapper(*args, **kwargs):
                     start = time.time()
-                    traced_calls.append({
-                        "name": name,
-                        "start": start,
-                    })
+                    traced_calls.append(
+                        {
+                            "name": name,
+                            "start": start,
+                        }
+                    )
                     result = func(*args, **kwargs)
                     traced_calls[-1]["elapsed"] = time.time() - start
                     return result
+
                 return wrapper
+
             return decorator
 
         @trace_function("test_operation")
@@ -437,7 +443,7 @@ class TestClientContext:
 
     def test_client_ip_logging(self):
         """Test client IP logging."""
-        from api.observability import StructuredLogFormatter
+        from stateset_agents.api.observability import StructuredLogFormatter
 
         formatter = StructuredLogFormatter()
         record = logging.LogRecord(
@@ -458,7 +464,7 @@ class TestClientContext:
 
     def test_user_agent_logging(self):
         """Test user agent logging."""
-        from api.observability import StructuredLogFormatter
+        from stateset_agents.api.observability import StructuredLogFormatter
 
         formatter = StructuredLogFormatter()
         record = logging.LogRecord(
@@ -483,7 +489,7 @@ class TestJobAndConversationTracking:
 
     def test_job_id_logging(self):
         """Test job ID logging."""
-        from api.observability import StructuredLogFormatter
+        from stateset_agents.api.observability import StructuredLogFormatter
 
         formatter = StructuredLogFormatter()
         record = logging.LogRecord(
@@ -504,7 +510,7 @@ class TestJobAndConversationTracking:
 
     def test_conversation_id_logging(self):
         """Test conversation ID logging."""
-        from api.observability import StructuredLogFormatter
+        from stateset_agents.api.observability import StructuredLogFormatter
 
         formatter = StructuredLogFormatter()
         record = logging.LogRecord(

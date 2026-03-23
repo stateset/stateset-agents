@@ -11,9 +11,8 @@ import logging
 import time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from rich.align import Align
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
@@ -27,7 +26,6 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.text import Text
-from rich.tree import Tree
 
 from ..core.computational_engine import create_computational_engine
 
@@ -75,7 +73,7 @@ class GRPOShowcase:
             "creative_writing": self._create_creative_scenario(),
         }
 
-    def _create_customer_service_scenario(self) -> Dict[str, Any]:
+    def _create_customer_service_scenario(self) -> dict[str, Any]:
         """Create customer service scenario"""
         return {
             "name": "Customer Service Excellence",
@@ -98,7 +96,7 @@ class GRPOShowcase:
             "reward_components": ["empathy", "professionalism", "action_oriented"],
         }
 
-    def _create_technical_support_scenario(self) -> Dict[str, Any]:
+    def _create_technical_support_scenario(self) -> dict[str, Any]:
         """Create technical support scenario"""
         return {
             "name": "Technical Support Mastery",
@@ -125,7 +123,7 @@ class GRPOShowcase:
             ],
         }
 
-    def _create_sales_scenario(self) -> Dict[str, Any]:
+    def _create_sales_scenario(self) -> dict[str, Any]:
         """Create sales scenario"""
         return {
             "name": "Sales Excellence",
@@ -152,7 +150,7 @@ class GRPOShowcase:
             ],
         }
 
-    def _create_educational_scenario(self) -> Dict[str, Any]:
+    def _create_educational_scenario(self) -> dict[str, Any]:
         """Create educational scenario"""
         return {
             "name": "Educational Excellence",
@@ -175,7 +173,7 @@ class GRPOShowcase:
             "reward_components": ["pedagogical_approach", "clarity", "engagement"],
         }
 
-    def _create_creative_scenario(self) -> Dict[str, Any]:
+    def _create_creative_scenario(self) -> dict[str, Any]:
         """Create creative writing scenario"""
         return {
             "name": "Creative Writing",
@@ -282,7 +280,7 @@ class GRPOShowcase:
         console.print("✅ Showcase initialization complete!", style="bold green")
 
     async def _create_computational_engine(
-        self, scenario_name: str, scenario: Dict[str, Any]
+        self, scenario_name: str, scenario: dict[str, Any]
     ):
         """Create computational engine for scenario"""
         from ..core.agent import Agent
@@ -318,11 +316,11 @@ class GRPOShowcase:
                 self.scenario = scenario
                 self.interaction_count = 0
 
-            async def reset(self) -> Dict[str, Any]:
+            async def reset(self) -> dict[str, Any]:
                 self.interaction_count = 0
                 return {"scenario": self.scenario["name"], "interaction": 0}
 
-            async def step(self, action: str) -> Dict[str, Any]:
+            async def step(self, action: str) -> dict[str, Any]:
                 self.interaction_count += 1
                 return {
                     "state": {"interaction": self.interaction_count},
@@ -387,7 +385,7 @@ class GRPOShowcase:
 
             console.print(f"⏱️  Demonstration time: {demo_time:.2f}s", style="dim")
 
-    async def _demo_computational_engine(self) -> Dict[str, Any]:
+    async def _demo_computational_engine(self) -> dict[str, Any]:
         """Demonstrate computational engine capabilities"""
         engine = self.engines.get("customer_service")
         if not engine:
@@ -411,7 +409,7 @@ class GRPOShowcase:
             "philosophy_aligned": "✅ Computation > Hand-crafted Rules",
         }
 
-    async def _demo_multiturn_conversations(self) -> Dict[str, Any]:
+    async def _demo_multiturn_conversations(self) -> dict[str, Any]:
         """Demonstrate multi-turn conversation capabilities"""
         agent = self.agents["customer_service"]
 
@@ -444,10 +442,11 @@ class GRPOShowcase:
             "strategy_applied": "customer_service",
             "tools_available": len(agent.tools),
             "conversation_id": context.conversation_id[:8] + "...",
+            "conversation_summary": summary,
             "user_satisfaction": "High (simulated)",
         }
 
-    async def _demo_multiobjective_rewards(self) -> Dict[str, Any]:
+    async def _demo_multiobjective_rewards(self) -> dict[str, Any]:
         """Demonstrate multi-objective reward system"""
         reward_func = self.multi_objective_rewards["customer_service"]
 
@@ -498,7 +497,7 @@ class GRPOShowcase:
             "reward_evolution": "✅ Continuously improving",
         }
 
-    async def _demo_neural_rewards(self) -> Dict[str, Any]:
+    async def _demo_neural_rewards(self) -> dict[str, Any]:
         """Demonstrate neural reward learning"""
         neural_reward = self.neural_rewards["customer_service"]
 
@@ -552,13 +551,13 @@ class GRPOShowcase:
             "hand_crafted_features": "❌ Zero - Pure learning from data",
         }
 
-    async def _demo_parallel_processing(self) -> Dict[str, Any]:
+    async def _demo_parallel_processing(self) -> dict[str, Any]:
         """Demonstrate parallel processing capabilities"""
         # Simulate parallel processing across multiple engines
         start_time = time.time()
 
         tasks = []
-        for engine_name, engine in self.engines.items():
+        for _engine_name, engine in self.engines.items():
             if engine:
                 task = engine.train_iteration(["Test prompt for parallel processing"])
                 tasks.append(task)
@@ -580,7 +579,7 @@ class GRPOShowcase:
             "scaling_potential": "Unlimited with more GPUs",
         }
 
-    async def _demo_monitoring(self) -> Dict[str, Any]:
+    async def _demo_monitoring(self) -> dict[str, Any]:
         """Demonstrate real-time monitoring capabilities"""
         # Generate some monitoring data
         await self.monitoring.log_metric("demo_response_time", 0.45)
@@ -609,7 +608,7 @@ class GRPOShowcase:
             "insights_generated": "Automated analysis",
         }
 
-    async def _demo_tool_integration(self) -> Dict[str, Any]:
+    async def _demo_tool_integration(self) -> dict[str, Any]:
         """Demonstrate tool integration capabilities"""
         agent = self.agents["customer_service"]
 
@@ -637,7 +636,7 @@ class GRPOShowcase:
             "scalability": "Horizontal scaling supported",
         }
 
-    async def _demo_strategy_adaptation(self) -> Dict[str, Any]:
+    async def _demo_strategy_adaptation(self) -> dict[str, Any]:
         """Demonstrate strategy adaptation capabilities"""
         agent = self.agents["customer_service"]
 
@@ -822,7 +821,7 @@ class GRPOShowcase:
 
                 await asyncio.sleep(1)
 
-    async def generate_final_report(self) -> Dict[str, Any]:
+    async def generate_final_report(self) -> dict[str, Any]:
         """Generate comprehensive final report"""
         return {
             "showcase_summary": {
@@ -917,7 +916,6 @@ async def main():
 if __name__ == "__main__":
     try:
         import numpy as np
-        import rich
 
         asyncio.run(main())
     except ImportError:

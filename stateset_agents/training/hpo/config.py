@@ -6,7 +6,7 @@ This module provides configuration dataclasses for HPO runs.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base import SearchSpace
 
@@ -44,41 +44,47 @@ class HPOConfig:
 
     # Core HPO settings
     backend: str = "optuna"
-    search_space: Optional[SearchSpace] = None
-    search_space_name: Optional[str] = None  # Name of predefined search space
+    search_space: SearchSpace | None = None
+    search_space_name: str | None = None  # Name of predefined search space
     n_trials: int = 100
-    timeout: Optional[float] = None
+    timeout: float | None = None
     objective_metric: str = "reward"
     direction: str = "maximize"
     output_dir: Path = Path("./hpo_results")
-    study_name: Optional[str] = None
+    study_name: str | None = None
 
     # Backend-specific configs
-    optuna_config: Dict[str, Any] = field(default_factory=lambda: {
-        "sampler": "tpe",
-        "pruner": "median",
-        "n_startup_trials": 10,
-        "n_warmup_steps": 5,
-        "storage": None,  # Set to "sqlite:///optuna.db" for persistence
-    })
+    optuna_config: dict[str, Any] = field(
+        default_factory=lambda: {
+            "sampler": "tpe",
+            "pruner": "median",
+            "n_startup_trials": 10,
+            "n_warmup_steps": 5,
+            "storage": None,  # Set to "sqlite:///optuna.db" for persistence
+        }
+    )
 
-    ray_config: Dict[str, Any] = field(default_factory=lambda: {
-        "scheduler": "asha",
-        "search_alg": "bayesopt",
-        "max_concurrent": 4,
-    })
+    ray_config: dict[str, Any] = field(
+        default_factory=lambda: {
+            "scheduler": "asha",
+            "search_alg": "bayesopt",
+            "max_concurrent": 4,
+        }
+    )
 
-    wandb_config: Dict[str, Any] = field(default_factory=lambda: {
-        "method": "bayes",
-        "project": "stateset-hpo",
-        "entity": None,
-    })
+    wandb_config: dict[str, Any] = field(
+        default_factory=lambda: {
+            "method": "bayes",
+            "project": "stateset-hpo",
+            "entity": None,
+        }
+    )
 
     # Training integration
-    base_training_config: Optional[Dict[str, Any]] = None
+    base_training_config: dict[str, Any] | None = None
     checkpoint_freq: int = 10  # Checkpoint every N trials
     keep_best_n: int = 5  # Keep top 5 checkpoints
-    early_stopping_patience: Optional[int] = None  # Stop if no improvement
+    early_stopping_patience: int | None = None  # Stop if no improvement
 
     # Resource management
     n_parallel_trials: int = 1  # Parallel trials (distributed backends)
@@ -99,17 +105,21 @@ class HPOConfig:
         # Validate backend
         valid_backends = ["optuna", "ray_tune", "wandb"]
         if self.backend not in valid_backends:
-            raise ValueError(f"Backend must be one of {valid_backends}, got {self.backend}")
+            raise ValueError(
+                f"Backend must be one of {valid_backends}, got {self.backend}"
+            )
 
         # Validate direction
         if self.direction not in ["maximize", "minimize"]:
-            raise ValueError(f"Direction must be 'maximize' or 'minimize', got {self.direction}")
+            raise ValueError(
+                f"Direction must be 'maximize' or 'minimize', got {self.direction}"
+            )
 
         # Ensure either search_space or search_space_name is provided
         if self.search_space is None and self.search_space_name is None:
             raise ValueError("Must provide either search_space or search_space_name")
 
-    def get_backend_config(self) -> Dict[str, Any]:
+    def get_backend_config(self) -> dict[str, Any]:
         """Get backend-specific configuration."""
         if self.backend == "optuna":
             return self.optuna_config
@@ -120,7 +130,7 @@ class HPOConfig:
         else:
             return {}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "backend": self.backend,
@@ -155,7 +165,7 @@ CONSERVATIVE_HPO_CONFIG = HPOConfig(
         "sampler": "tpe",
         "pruner": "median",
         "n_startup_trials": 10,
-    }
+    },
 )
 
 AGGRESSIVE_HPO_CONFIG = HPOConfig(
@@ -168,7 +178,7 @@ AGGRESSIVE_HPO_CONFIG = HPOConfig(
         "sampler": "tpe",
         "pruner": "hyperband",
         "n_startup_trials": 15,
-    }
+    },
 )
 
 QUICK_HPO_CONFIG = HPOConfig(
@@ -181,7 +191,7 @@ QUICK_HPO_CONFIG = HPOConfig(
         "sampler": "random",
         "pruner": "median",
         "n_startup_trials": 5,
-    }
+    },
 )
 
 DISTRIBUTED_HPO_CONFIG = HPOConfig(
@@ -195,7 +205,7 @@ DISTRIBUTED_HPO_CONFIG = HPOConfig(
         "scheduler": "asha",
         "search_alg": "bayesopt",
         "max_concurrent": 8,
-    }
+    },
 )
 
 

@@ -15,7 +15,6 @@ Usage:
 import argparse
 import asyncio
 import logging
-from pathlib import Path
 
 # Setup logging
 logging.basicConfig(
@@ -44,16 +43,19 @@ async def train_gspo_demo(
     """
     from stateset_agents import MultiTurnAgent
     from stateset_agents.core.agent import AgentConfig
-    from stateset_agents.core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
+    from stateset_agents.core.environment import (
+        CONVERSATION_CONFIGS,
+        ConversationEnvironment,
+    )
     from stateset_agents.rewards.multi_objective_reward import (
         create_customer_service_reward,
         create_domain_reward,
     )
     from stateset_agents.training.config import get_config_for_task
-    from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
     from stateset_agents.training.gspo_token_trainer import train_with_gspo_token
+    from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
 
-    logger.info(f"🚀 Starting GSPO Training Demo")
+    logger.info("🚀 Starting GSPO Training Demo")
     logger.info(f"Task: {task}")
     logger.info(f"Model: {model_name}")
     logger.info(f"Variant: {'GSPO-token' if use_gspo_token else 'GSPO'}")
@@ -68,9 +70,7 @@ async def train_gspo_demo(
 
     agent_config = AgentConfig(
         model_name=model_name,
-        system_prompt=system_prompts.get(
-            task, "You are a helpful assistant."
-        ),
+        system_prompt=system_prompts.get(task, "You are a helpful assistant."),
     )
     agent = MultiTurnAgent(agent_config)
     await agent.initialize()
@@ -147,14 +147,15 @@ async def train_gspo_demo(
 
     test_messages = {
         "customer_service": [
-            {"role": "user", "content": "My order hasn't arrived and I need it urgently."}
+            {
+                "role": "user",
+                "content": "My order hasn't arrived and I need it urgently.",
+            }
         ],
         "technical_support": [
             {"role": "user", "content": "My application keeps crashing. Can you help?"}
         ],
-        "sales": [
-            {"role": "user", "content": "Tell me about your premium features."}
-        ],
+        "sales": [{"role": "user", "content": "Tell me about your premium features."}],
     }
 
     test_message = test_messages.get(

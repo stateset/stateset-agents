@@ -2,11 +2,10 @@
 Cache service for the GRPO Agent Framework
 """
 
-import json
 import logging
 import time
 from threading import Lock
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +16,11 @@ class CacheService:
     """
 
     def __init__(self, default_ttl: int = 300):
-        self.cache: Dict[str, Tuple[Any, float]] = {}  # key -> (value, expiry)
+        self.cache: dict[str, tuple[Any, float]] = {}  # key -> (value, expiry)
         self.default_ttl = default_ttl
         self.lock = Lock()
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Get value from cache if not expired"""
         with self.lock:
             if key in self.cache:
@@ -33,7 +32,7 @@ class CacheService:
                     del self.cache[key]
             return None
 
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+    def set(self, key: str, value: Any, ttl: int | None = None) -> None:
         """Set value in cache with optional TTL"""
         with self.lock:
             expiry = time.time() + (ttl if ttl is not None else self.default_ttl)

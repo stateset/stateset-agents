@@ -2,11 +2,11 @@
 Comprehensive tests for reward system
 """
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from stateset_agents.core.domain_rewards import CustomerServiceReward
 from stateset_agents.core.reward import (
     CompositeReward,
     HelpfulnessReward,
@@ -35,7 +35,7 @@ class TestRewardResult:
         result = RewardResult(
             score=0.85,
             breakdown={"helpfulness": 0.9, "safety": 0.8},
-            metadata={"source": "test"}
+            metadata={"source": "test"},
         )
 
         assert result.score == 0.85
@@ -55,17 +55,31 @@ class TestRewardResult:
         """Test reward result with component breakdown"""
         result = RewardResult(
             score=0.75,
-            breakdown={
-                "empathy": 0.8,
-                "action_oriented": 0.7,
-                "professionalism": 0.75
-            },
-            metadata={"num_turns": 3}
+            breakdown={"empathy": 0.8, "action_oriented": 0.7, "professionalism": 0.75},
+            metadata={"num_turns": 3},
         )
 
         assert len(result.breakdown) == 3
         assert "empathy" in result.breakdown
         assert result.metadata["num_turns"] == 3
+
+    def test_reward_result_total_reward_alias(self):
+        """Test compatibility alias used by trainer code."""
+        result = RewardResult(score=0.4)
+
+        assert result.total_reward == 0.4
+
+        result.total_reward = 0.9
+
+        assert result.score == 0.9
+        assert result.to_dict()["total_reward"] == 0.9
+
+    def test_reward_result_from_dict_accepts_total_reward(self):
+        """Test deserializing legacy total_reward payloads."""
+        result = RewardResult.from_dict({"total_reward": 0.7})
+
+        assert result.score == 0.7
+        assert result.total_reward == 0.7
 
 
 # ===========================
@@ -84,6 +98,7 @@ class TestRewardFunction:
 
     def test_reward_function_with_weight(self):
         """Test reward function with custom weight"""
+
         class TestReward(RewardFunction):
             async def compute_reward(self, turns, context=None):
                 return RewardResult(score=0.5, breakdown={}, metadata={})
@@ -94,19 +109,20 @@ class TestRewardFunction:
     @pytest.mark.asyncio
     async def test_custom_reward_function(self):
         """Test custom reward function implementation"""
+
         class CustomReward(RewardFunction):
             async def compute_reward(self, turns, context=None):
                 score = len(turns) * 0.1
                 return RewardResult(
                     score=min(1.0, score),
                     breakdown={"turn_count": len(turns)},
-                    metadata={}
+                    metadata={},
                 )
 
         reward = CustomReward()
         turns = [
             {"role": "user", "content": "Hello"},
-            {"role": "assistant", "content": "Hi there!"}
+            {"role": "assistant", "content": "Hi there!"},
         ]
 
         result = await reward.compute_reward(turns)
@@ -137,10 +153,15 @@ class TestHelpfulnessReward:
     async def test_helpfulness_reward_with_turns(self):
         """Test helpfulness reward computation"""
         reward = HelpfulnessReward()
-        turns = make_turns([
-            {"role": "user", "content": "How do I reset my password?"},
-            {"role": "assistant", "content": "To reset your password, click on 'Forgot Password' and follow the email instructions."}
-        ])
+        turns = make_turns(
+            [
+                {"role": "user", "content": "How do I reset my password?"},
+                {
+                    "role": "assistant",
+                    "content": "To reset your password, click on 'Forgot Password' and follow the email instructions.",
+                },
+            ]
+        )
 
         result = await reward.compute_reward(turns)
 
@@ -162,17 +183,30 @@ class TestHelpfulnessReward:
     async def test_helpfulness_reward_multiple_turns(self):
         """Test helpfulness reward with multiple conversation turns"""
         reward = HelpfulnessReward()
-        turns = make_turns([
-            {"role": "user", "content": "I need help"},
-            {"role": "assistant", "content": "Sure, I can help you!"},
-            {"role": "user", "content": "What about shipping?"},
-            {"role": "assistant", "content": "Shipping takes 3-5 business days."}
-        ])
+        turns = make_turns(
+            [
+                {"role": "user", "content": "I need help"},
+                {"role": "assistant", "content": "Sure, I can help you!"},
+                {"role": "user", "content": "What about shipping?"},
+                {"role": "assistant", "content": "Shipping takes 3-5 business days."},
+            ]
+        )
 
         result = await reward.compute_reward(turns)
 
         assert isinstance(result, RewardResult)
         assert 0.0 <= result.score <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_helpfulness_reward_handles_missing_content(self):
+        """Test helpfulness reward tolerates assistant turns without content."""
+        reward = HelpfulnessReward()
+        turns = [ConversationTurn(role="assistant", content=None)]
+
+        result = await reward.compute_reward(turns)
+
+        assert isinstance(result, RewardResult)
+        assert result.score == 0.0
 
 
 # ===========================
@@ -192,15 +226,34 @@ class TestSafetyReward:
     async def test_safety_reward_with_safe_content(self):
         """Test safety reward with safe content"""
         reward = SafetyReward()
-        turns = make_turns([
-            {"role": "user", "content": "Tell me about your product"},
-            {"role": "assistant", "content": "Our product is a cloud-based solution for business."}
-        ])
+        turns = make_turns(
+            [
+                {"role": "user", "content": "Tell me about your product"},
+                {
+                    "role": "assistant",
+                    "content": "Our product is a cloud-based solution for business.",
+                },
+            ]
+        )
 
         result = await reward.compute_reward(turns)
 
         assert isinstance(result, RewardResult)
         assert 0.0 <= result.score <= 1.0
+
+
+class TestDomainSpecificRewards:
+    """Regression tests for domain-specific reward functions."""
+
+    @pytest.mark.asyncio
+    async def test_customer_service_reward_handles_missing_content(self):
+        reward = CustomerServiceReward()
+        turns = [ConversationTurn(role="assistant", content=None)]
+
+        result = await reward.compute_reward(turns)
+
+        assert isinstance(result, RewardResult)
+        assert result.score == 0.0
 
     @pytest.mark.asyncio
     async def test_safety_reward_empty_input(self):
@@ -234,10 +287,7 @@ class TestCompositeReward:
 
     def test_composite_reward_initialization(self):
         """Test composite reward with multiple components"""
-        reward_functions = [
-            HelpfulnessReward(weight=0.6),
-            SafetyReward(weight=0.4)
-        ]
+        reward_functions = [HelpfulnessReward(weight=0.6), SafetyReward(weight=0.4)]
 
         reward = CompositeReward(reward_functions)
         assert len(reward.reward_functions) == 2
@@ -250,16 +300,15 @@ class TestCompositeReward:
     @pytest.mark.asyncio
     async def test_composite_reward_computes_combined_score(self):
         """Test composite reward computes combined score"""
-        reward_functions = [
-            HelpfulnessReward(weight=0.5),
-            SafetyReward(weight=0.5)
-        ]
+        reward_functions = [HelpfulnessReward(weight=0.5), SafetyReward(weight=0.5)]
 
         reward = CompositeReward(reward_functions)
-        turns = make_turns([
-            {"role": "user", "content": "Need help"},
-            {"role": "assistant", "content": "I'm here to help!"}
-        ])
+        turns = make_turns(
+            [
+                {"role": "user", "content": "Need help"},
+                {"role": "assistant", "content": "I'm here to help!"},
+            ]
+        )
 
         result = await reward.compute_reward(turns)
 
@@ -293,8 +342,7 @@ class TestCompositeReward:
         # With 0.7 weight on score 1.0 and 0.3 weight on score 0.0
         # Expected: 0.7 * 1.0 + 0.3 * 0.0 = 0.7
         assert isinstance(result, RewardResult)
-        # Score should be weighted combination
-        assert result.score >= 0.5  # At least half of max
+        assert abs(result.score - 0.7) < 1e-6, f"Expected 0.7, got {result.score}"
 
     @pytest.mark.asyncio
     async def test_composite_reward_passes_context(self):
@@ -314,7 +362,7 @@ class TestCompositeReward:
         reward_functions = [
             HelpfulnessReward(weight=0.4),
             SafetyReward(weight=0.3),
-            HelpfulnessReward(weight=0.3)  # Can have duplicates with different weights
+            HelpfulnessReward(weight=0.3),  # Can have duplicates with different weights
         ]
 
         reward = CompositeReward(reward_functions)
@@ -335,10 +383,12 @@ class TestRewardIntegration:
         helpfulness = HelpfulnessReward()
         safety = SafetyReward()
 
-        turns = make_turns([
-            {"role": "user", "content": "Help me"},
-            {"role": "assistant", "content": "I'm here to assist!"}
-        ])
+        turns = make_turns(
+            [
+                {"role": "user", "content": "Help me"},
+                {"role": "assistant", "content": "I'm here to assist!"},
+            ]
+        )
 
         result1 = await helpfulness.compute_reward(turns)
         result2 = await safety.compute_reward(turns)
@@ -370,23 +420,28 @@ class TestRewardIntegration:
         assert isinstance(result_single, RewardResult)
 
         # Multiple turns
-        multiple = make_turns([
-            {"role": "user", "content": "Hi"},
-            {"role": "assistant", "content": "Hello!"},
-            {"role": "user", "content": "How are you?"},
-            {"role": "assistant", "content": "I'm doing well!"}
-        ])
+        multiple = make_turns(
+            [
+                {"role": "user", "content": "Hi"},
+                {"role": "assistant", "content": "Hello!"},
+                {"role": "user", "content": "How are you?"},
+                {"role": "assistant", "content": "I'm doing well!"},
+            ]
+        )
         result_multiple = await reward.compute_reward(multiple)
         assert isinstance(result_multiple, RewardResult)
 
     @pytest.mark.asyncio
     async def test_reward_error_handling(self):
         """Test reward function handles errors gracefully"""
+
         class ErrorReward(RewardFunction):
             async def compute_reward(self, turns, context=None):
                 # Should handle malformed input
                 if not turns:
-                    return RewardResult(score=0.0, breakdown={}, metadata={"error": "empty"})
+                    return RewardResult(
+                        score=0.0, breakdown={}, metadata={"error": "empty"}
+                    )
                 return RewardResult(score=0.5, breakdown={}, metadata={})
 
         reward = ErrorReward()

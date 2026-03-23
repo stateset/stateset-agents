@@ -7,16 +7,14 @@ Maps gym's (obs, reward, done, info) API to Environment's (state, turn, reward, 
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from ..environment import Environment, EnvironmentState, EpisodeStatus
 from ..trajectory import ConversationTurn
-from .processors import ObservationProcessor, create_observation_processor
 from .mappers import ActionMapper, create_action_mapper
-
+from .processors import ObservationProcessor, create_observation_processor
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +57,12 @@ class GymEnvironmentAdapter(Environment):
     def __init__(
         self,
         gym_env: Any,
-        observation_processor: Optional[ObservationProcessor] = None,
-        action_mapper: Optional[ActionMapper] = None,
-        max_steps: Optional[int] = None,
+        observation_processor: ObservationProcessor | None = None,
+        action_mapper: ActionMapper | None = None,
+        max_steps: int | None = None,
         negative_reward_on_invalid: float = -1.0,
         auto_create_processors: bool = True,
-        **kwargs
+        **kwargs,
     ):
         # Determine max steps
         if max_steps is None:
@@ -80,7 +78,7 @@ class GymEnvironmentAdapter(Environment):
 
         self.gym_env = gym_env
         self.negative_reward_on_invalid = negative_reward_on_invalid
-        self.env_id = gym_env.spec.id if hasattr(gym_env, 'spec') else "Unknown"
+        self.env_id = gym_env.spec.id if hasattr(gym_env, "spec") else "Unknown"
 
         # Auto-create processors if requested and not provided
         if auto_create_processors:
@@ -104,10 +102,12 @@ class GymEnvironmentAdapter(Environment):
         self.action_mapper = action_mapper
 
         # Track current gym state for each episode
-        self._gym_states: Dict[str, Any] = {}
-        self._episode_rewards: Dict[str, float] = {}
+        self._gym_states: dict[str, Any] = {}
+        self._episode_rewards: dict[str, float] = {}
 
-    async def reset(self, scenario: Optional[Dict[str, Any]] = None) -> EnvironmentState:
+    async def reset(
+        self, scenario: dict[str, Any] | None = None
+    ) -> EnvironmentState:
         """
         Reset the gym environment and return initial state.
 
@@ -149,7 +149,7 @@ class GymEnvironmentAdapter(Environment):
             },
             metadata={
                 "gym_info": info,
-            }
+            },
         )
 
         # Track state
@@ -162,10 +162,8 @@ class GymEnvironmentAdapter(Environment):
         return state
 
     async def step(
-        self,
-        state: EnvironmentState,
-        action: ConversationTurn
-    ) -> Tuple[EnvironmentState, ConversationTurn, float, bool]:
+        self, state: EnvironmentState, action: ConversationTurn
+    ) -> tuple[EnvironmentState, ConversationTurn, float, bool]:
         """
         Execute one step in the gym environment.
 
@@ -181,8 +179,7 @@ class GymEnvironmentAdapter(Environment):
         # Parse action from agent's text response
         try:
             gym_action = self.action_mapper.parse_action(
-                action.content,
-                context={"state": state}
+                action.content, context={"state": state}
             )
         except GYM_EXCEPTIONS as e:
             logger.error(f"Error parsing action from '{action.content}': {e}")
@@ -198,14 +195,16 @@ class GymEnvironmentAdapter(Environment):
             obs_turn = ConversationTurn(
                 role="system",
                 content=obs_text,
-                metadata={"gym_info": info, "error": "invalid_action"}
+                metadata={"gym_info": info, "error": "invalid_action"},
             )
 
             # Update state
             new_state = state.copy()
             new_state.turn_count += 1
             new_state.context["observation_text"] = obs_text
-            new_state.context["cumulative_reward"] = state.context.get("cumulative_reward", 0.0) + reward
+            new_state.context["cumulative_reward"] = (
+                state.context.get("cumulative_reward", 0.0) + reward
+            )
 
             return new_state, obs_turn, reward, done
 
@@ -232,7 +231,9 @@ class GymEnvironmentAdapter(Environment):
 
         # Update tracking
         self._gym_states[episode_id] = obs
-        self._episode_rewards[episode_id] = self._episode_rewards.get(episode_id, 0.0) + reward
+        self._episode_rewards[episode_id] = (
+            self._episode_rewards.get(episode_id, 0.0) + reward
+        )
 
         # Process observation
         obs_text = self.observation_processor.process(obs, context=state.context)
@@ -246,7 +247,7 @@ class GymEnvironmentAdapter(Environment):
                 "gym_observation": obs,
                 "gym_action": gym_action,
                 "gym_info": info,
-            }
+            },
         )
 
         # Update state
@@ -278,7 +279,9 @@ class GymEnvironmentAdapter(Environment):
 
         return new_state, obs_turn, reward, done
 
-    async def get_initial_prompt(self, scenario: Optional[Dict[str, Any]] = None) -> str:
+    async def get_initial_prompt(
+        self, scenario: dict[str, Any] | None = None
+    ) -> str:
         """
         Get initial task description for the agent.
 
@@ -289,7 +292,7 @@ class GymEnvironmentAdapter(Environment):
 
     def close(self):
         """Close the gym environment and cleanup resources."""
-        if hasattr(self.gym_env, 'close'):
+        if hasattr(self.gym_env, "close"):
             self.gym_env.close()
         self.active_episodes.clear()
         self._gym_states.clear()

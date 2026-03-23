@@ -14,7 +14,6 @@ Usage:
 """
 
 import logging
-from typing import List, Optional, Tuple, Dict, Any
 
 import numpy as np
 
@@ -24,6 +23,7 @@ logger = logging.getLogger(__name__)
 _RUST_AVAILABLE = False
 try:
     import stateset_rl_core as _rust_core
+
     _RUST_AVAILABLE = True
     logger.info("Rust acceleration enabled (stateset_rl_core)")
 except ImportError:
@@ -60,9 +60,9 @@ def compute_group_advantages(
     rewards = np.asarray(rewards, dtype=np.float64)
 
     if _RUST_AVAILABLE and rewards.ndim == 2:
-        return np.asarray(_rust_core.compute_group_advantages(
-            rewards, baseline_type, normalize
-        ))
+        return np.asarray(
+            _rust_core.compute_group_advantages(rewards, baseline_type, normalize)
+        )
 
     # Pure Python fallback
     if rewards.ndim == 1:
@@ -130,11 +130,11 @@ def compute_gae(
 
 
 def batch_compute_gae(
-    all_rewards: List[np.ndarray],
-    all_values: List[np.ndarray],
+    all_rewards: list[np.ndarray],
+    all_values: list[np.ndarray],
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """
     Batch compute GAE for multiple trajectories in parallel.
 
@@ -151,13 +151,17 @@ def batch_compute_gae(
     all_values = [np.asarray(v, dtype=np.float64) for v in all_values]
 
     if _RUST_AVAILABLE:
-        return [np.asarray(a) for a in _rust_core.batch_compute_gae(
-            all_rewards, all_values, gamma, gae_lambda
-        )]
+        return [
+            np.asarray(a)
+            for a in _rust_core.batch_compute_gae(
+                all_rewards, all_values, gamma, gae_lambda
+            )
+        ]
 
     # Sequential fallback
-    return [compute_gae(r, v, gamma, gae_lambda)
-            for r, v in zip(all_rewards, all_values)]
+    return [
+        compute_gae(r, v, gamma, gae_lambda) for r, v in zip(all_rewards, all_values, strict=False)
+    ]
 
 
 def normalize_rewards(
@@ -166,7 +170,7 @@ def normalize_rewards(
     running_var: float = 1.0,
     count: int = 0,
     epsilon: float = 1e-8,
-) -> Tuple[np.ndarray, float, float, int]:
+) -> tuple[np.ndarray, float, float, int]:
     """
     Normalize rewards using running statistics.
 
@@ -243,9 +247,11 @@ def compute_gspo_importance_ratios(
     sequence_lengths = np.asarray(sequence_lengths, dtype=np.int64)
 
     if _RUST_AVAILABLE:
-        return np.asarray(_rust_core.compute_gspo_importance_ratios(
-            log_probs_new, log_probs_old, sequence_lengths
-        ))
+        return np.asarray(
+            _rust_core.compute_gspo_importance_ratios(
+                log_probs_new, log_probs_old, sequence_lengths
+            )
+        )
 
     # Pure Python fallback
     log_ratios = log_probs_new - log_probs_old
@@ -276,16 +282,16 @@ def apply_gspo_clipping(
     advantages = np.asarray(advantages, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return np.asarray(_rust_core.apply_gspo_clipping(
-            ratios, advantages, clip_left, clip_right
-        ))
+        return np.asarray(
+            _rust_core.apply_gspo_clipping(ratios, advantages, clip_left, clip_right)
+        )
 
     # Pure Python fallback
     unclipped = ratios * advantages
     clipped_ratios = np.where(
         advantages >= 0,
         np.minimum(ratios, 1.0 + clip_right),
-        np.maximum(ratios, 1.0 - clip_left)
+        np.maximum(ratios, 1.0 - clip_left),
     )
     clipped = clipped_ratios * advantages
     return np.minimum(unclipped, clipped)
@@ -311,16 +317,16 @@ def compute_ppo_surrogate(
     advantages = np.asarray(advantages, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return np.asarray(_rust_core.compute_ppo_surrogate(
-            ratios, advantages, clip_epsilon
-        ))
+        return np.asarray(
+            _rust_core.compute_ppo_surrogate(ratios, advantages, clip_epsilon)
+        )
 
     unclipped = ratios * advantages
     clipped = np.clip(ratios, 1 - clip_epsilon, 1 + clip_epsilon) * advantages
     return np.minimum(unclipped, clipped)
 
 
-def compute_reward_statistics(rewards: List[float]) -> Dict[str, float]:
+def compute_reward_statistics(rewards: list[float]) -> dict[str, float]:
     """Compute comprehensive reward statistics."""
     if _RUST_AVAILABLE:
         return _rust_core.compute_reward_statistics(rewards)

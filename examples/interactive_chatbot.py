@@ -14,7 +14,6 @@ Usage:
 
 import os
 import sys
-from typing import List, Dict, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -24,6 +23,7 @@ try:
     from rich.markdown import Markdown
     from rich.panel import Panel
     from rich.prompt import Prompt
+
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
@@ -33,13 +33,15 @@ except ImportError:
 load_dotenv()
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
-API_JWT_SECRET = os.getenv("API_JWT_SECRET", "test_secret_for_development_only_not_for_prod")
+API_JWT_SECRET = os.getenv(
+    "API_JWT_SECRET", "test_secret_for_development_only_not_for_prod"
+)
 
 
 class Chatbot:
     """Interactive chatbot powered by StateSet Agents API."""
 
-    def __init__(self, system_prompt: Optional[str] = None):
+    def __init__(self, system_prompt: str | None = None):
         """
         Initialize the chatbot.
 
@@ -48,14 +50,16 @@ class Chatbot:
         """
         self.base_url = API_BASE_URL.rstrip("/")
         self.session = requests.Session()
-        self.session.headers.update({
-            "Authorization": f"Bearer {API_JWT_SECRET}",
-            "Content-Type": "application/json"
-        })
+        self.session.headers.update(
+            {
+                "Authorization": f"Bearer {API_JWT_SECRET}",
+                "Content-Type": "application/json",
+            }
+        )
         self.session.timeout = 30
 
-        self.messages: List[Dict[str, str]] = []
-        self.conversation_id: Optional[str] = None
+        self.messages: list[dict[str, str]] = []
+        self.conversation_id: str | None = None
         self.system_prompt = system_prompt or self._get_default_prompt()
         self.console = Console() if RICH_AVAILABLE else None
 
@@ -76,7 +80,9 @@ class Chatbot:
             health = response.json()
 
             if RICH_AVAILABLE:
-                self.console.print(f"[green]Connected to API (v{health.get('version', 'unknown')})[/green]")
+                self.console.print(
+                    f"[green]Connected to API (v{health.get('version', 'unknown')})[/green]"
+                )
             else:
                 print(f"Connected to API (v{health.get('version', 'unknown')})")
 
@@ -113,10 +119,7 @@ class Chatbot:
 
         # Send request
         try:
-            response = self.session.post(
-                f"{self.base_url}/conversations",
-                json=payload
-            )
+            response = self.session.post(f"{self.base_url}/conversations", json=payload)
             response.raise_for_status()
             result = response.json()
 
@@ -135,7 +138,7 @@ class Chatbot:
                 try:
                     error_data = e.response.json()
                     error_msg += f" - {error_data.get('message', 'Unknown error')}"
-                except:
+                except (AttributeError, ValueError):
                     error_msg += f" - {e.response.text[:100]}"
             return error_msg
         except requests.RequestException as e:
@@ -145,11 +148,15 @@ class Chatbot:
         """Run the interactive chatbot."""
         if not self.initialize():
             if RICH_AVAILABLE:
-                self.console.print("\n[red]Cannot start chatbot. Please ensure the API server is running:[/red]")
-                self.console.print("  python -m api.main")
+                self.console.print(
+                    "\n[red]Cannot start chatbot. Please ensure the API server is running:[/red]"
+                )
+                self.console.print("  stateset-agents serve --host 0.0.0.0 --port 8000")
             else:
-                print("\nCannot start chatbot. Please ensure the API server is running:")
-                print("  python -m api.main")
+                print(
+                    "\nCannot start chatbot. Please ensure the API server is running:"
+                )
+                print("  stateset-agents serve --host 0.0.0.0 --port 8000")
             sys.exit(1)
 
         # Welcome message
@@ -160,7 +167,7 @@ class Chatbot:
                 "Type '/clear' to start a new conversation.\n"
                 "Type '/help' for more commands.",
                 title="Welcome",
-                border_style="cyan"
+                border_style="cyan",
             )
             self.console.print(welcome)
         else:
@@ -184,27 +191,31 @@ class Chatbot:
                     continue
 
                 # Handle commands
-                if user_input.lower() in ['quit', 'exit', 'bye', 'goodbye']:
+                if user_input.lower() in ["quit", "exit", "bye", "goodbye"]:
                     if RICH_AVAILABLE:
-                        self.console.print("\n[yellow]Goodbye! Have a great day![/yellow]\n")
+                        self.console.print(
+                            "\n[yellow]Goodbye! Have a great day![/yellow]\n"
+                        )
                     else:
                         print("\nGoodbye! Have a great day!\n")
                     break
 
-                if user_input.lower() == '/clear':
+                if user_input.lower() == "/clear":
                     self.messages = []
                     self.conversation_id = None
                     if RICH_AVAILABLE:
-                        self.console.print("[yellow]Conversation cleared. Starting fresh![/yellow]")
+                        self.console.print(
+                            "[yellow]Conversation cleared. Starting fresh![/yellow]"
+                        )
                     else:
                         print("Conversation cleared. Starting fresh!")
                     continue
 
-                if user_input.lower() == '/help':
+                if user_input.lower() == "/help":
                     self._show_help()
                     continue
 
-                if user_input.lower() == '/history':
+                if user_input.lower() == "/history":
                     self._show_history()
                     continue
 
@@ -250,7 +261,9 @@ class Chatbot:
 - The agent remembers the conversation context
 - Use `/clear` if you want to change topics completely
             """
-            self.console.print(Panel(Markdown(help_text), title="Help", border_style="yellow"))
+            self.console.print(
+                Panel(Markdown(help_text), title="Help", border_style="yellow")
+            )
         else:
             print("\nAvailable Commands:")
             print("  /help    - Show this help message")
@@ -291,7 +304,7 @@ def main():
     # Parse command-line arguments for custom system prompt
     system_prompt = None
     if len(sys.argv) > 1:
-        if sys.argv[1] in ['-h', '--help']:
+        if sys.argv[1] in ["-h", "--help"]:
             print("Usage: python interactive_chatbot.py [system_prompt]")
             print("\nExample:")
             print('  python interactive_chatbot.py "You are a Python expert"')

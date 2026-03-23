@@ -9,45 +9,58 @@ Tests cover:
 - End-to-end HPO workflows
 """
 
+import importlib
 import sys
-import pytest
-import asyncio
-from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch
 import tempfile
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 # Block vllm import to avoid torchvision issues - mock it before any imports
-if 'vllm' not in sys.modules:
-    sys.modules['vllm'] = type(sys)('vllm')  # type: ignore
+if "vllm" not in sys.modules:
+    sys.modules["vllm"] = type(sys)("vllm")  # type: ignore
 
 # Try imports - skip if not available
 HPO_AVAILABLE = True
 try:
+    from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+    from stateset_agents.core.environment import ConversationEnvironment
+    from stateset_agents.core.reward import (
+        CompositeReward,
+        HelpfulnessReward,
+        SafetyReward,
+    )
+    from stateset_agents.training.config import TrainingConfig
     from stateset_agents.training.hpo import (
-        SearchSpace,
-        SearchDimension,
-        SearchSpaceType,
+        GRPOHPOTrainer,
         HPOConfig,
         HPOResult,
         HPOSummary,
-        GRPOHPOTrainer,
-        quick_hpo,
-        create_grpo_search_space,
+        SearchDimension,
+        SearchSpace,
+        SearchSpaceType,
         create_customer_service_search_space,
+        create_grpo_search_space,
         get_search_space,
         list_available_search_spaces,
+        quick_hpo,
     )
-
-    from stateset_agents.core.agent import MultiTurnAgent, AgentConfig
-    from stateset_agents.core.environment import ConversationEnvironment
-    from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
-    from stateset_agents.training.config import TrainingConfig
-except (ImportError, RuntimeError) as e:
+except (ImportError, RuntimeError):
     HPO_AVAILABLE = False
+
+if HPO_AVAILABLE:
+    try:
+        _hpo_module = importlib.import_module("stateset_agents.training.hpo")
+        OPTUNA_AVAILABLE = bool(getattr(_hpo_module, "__optuna_available__", False))
+    except Exception:
+        OPTUNA_AVAILABLE = False
+else:
+    OPTUNA_AVAILABLE = False
 
 pytestmark = pytest.mark.skipif(
     not HPO_AVAILABLE,
-    reason="HPO modules not available (check transformers/torchvision compatibility)"
+    reason="HPO modules not available (check transformers/torchvision compatibility)",
 )
 
 
@@ -55,16 +68,14 @@ pytestmark = pytest.mark.skipif(
 # Test Search Space Definitions
 # ============================================================================
 
+
 class TestSearchSpace:
     """Tests for SearchSpace and SearchDimension."""
 
     def test_search_dimension_float(self):
         """Test float search dimension."""
         dim = SearchDimension(
-            "learning_rate",
-            SearchSpaceType.FLOAT,
-            low=1e-6,
-            high=1e-3
+            "learning_rate", SearchSpaceType.FLOAT, low=1e-6, high=1e-3
         )
         assert dim.name == "learning_rate"
         assert dim.type == SearchSpaceType.FLOAT
@@ -74,9 +85,7 @@ class TestSearchSpace:
     def test_search_dimension_categorical(self):
         """Test categorical search dimension."""
         dim = SearchDimension(
-            "optimizer",
-            SearchSpaceType.CATEGORICAL,
-            choices=["adam", "adamw", "sgd"]
+            "optimizer", SearchSpaceType.CATEGORICAL, choices=["adam", "adamw", "sgd"]
         )
         assert dim.name == "optimizer"
         assert dim.choices == ["adam", "adamw", "sgd"]
@@ -85,33 +94,29 @@ class TestSearchSpace:
         """Test search dimension validation."""
         # Missing bounds for numeric parameter
         with pytest.raises(ValueError):
-            SearchDimension(
-                "learning_rate",
-                SearchSpaceType.FLOAT
-            )
+            SearchDimension("learning_rate", SearchSpaceType.FLOAT)
 
         # Missing choices for categorical
         with pytest.raises(ValueError):
-            SearchDimension(
-                "optimizer",
-                SearchSpaceType.CATEGORICAL
-            )
+            SearchDimension("optimizer", SearchSpaceType.CATEGORICAL)
 
     def test_search_space_creation(self):
         """Test search space creation."""
         dimensions = [
             SearchDimension("lr", SearchSpaceType.LOGUNIFORM, 1e-6, 1e-3),
-            SearchDimension("batch_size", SearchSpaceType.CHOICE, choices=[16, 32, 64])
+            SearchDimension("batch_size", SearchSpaceType.CHOICE, choices=[16, 32, 64]),
         ]
         space = SearchSpace(dimensions)
         assert len(space.dimensions) == 2
 
     def test_search_space_get_dimension(self):
         """Test getting dimension by name."""
-        space = SearchSpace([
-            SearchDimension("lr", SearchSpaceType.FLOAT, 0.0, 1.0),
-            SearchDimension("gamma", SearchSpaceType.FLOAT, 0.9, 0.99)
-        ])
+        space = SearchSpace(
+            [
+                SearchDimension("lr", SearchSpaceType.FLOAT, 0.0, 1.0),
+                SearchDimension("gamma", SearchSpaceType.FLOAT, 0.9, 0.99),
+            ]
+        )
         lr_dim = space.get_dimension("lr")
         assert lr_dim is not None
         assert lr_dim.name == "lr"
@@ -121,9 +126,9 @@ class TestSearchSpace:
 
     def test_search_space_serialization(self):
         """Test search space to/from dict."""
-        space = SearchSpace([
-            SearchDimension("lr", SearchSpaceType.LOGUNIFORM, 1e-6, 1e-3)
-        ])
+        space = SearchSpace(
+            [SearchDimension("lr", SearchSpaceType.LOGUNIFORM, 1e-6, 1e-3)]
+        )
 
         # To dict
         space_dict = space.to_dict()
@@ -185,16 +190,13 @@ class TestPredefinedSearchSpaces:
 # Test HPO Configuration
 # ============================================================================
 
+
 class TestHPOConfig:
     """Tests for HPO configuration."""
 
     def test_hpo_config_creation(self):
         """Test basic HPO config creation."""
-        config = HPOConfig(
-            backend="optuna",
-            search_space_name="grpo",
-            n_trials=50
-        )
+        config = HPOConfig(backend="optuna", search_space_name="grpo", n_trials=50)
         assert config.backend == "optuna"
         assert config.n_trials == 50
 
@@ -202,27 +204,18 @@ class TestHPOConfig:
         """Test HPO config validation."""
         # Invalid backend
         with pytest.raises(ValueError):
-            HPOConfig(
-                backend="invalid",
-                search_space_name="grpo"
-            )
+            HPOConfig(backend="invalid", search_space_name="grpo")
 
         # Invalid direction
         with pytest.raises(ValueError):
-            HPOConfig(
-                backend="optuna",
-                search_space_name="grpo",
-                direction="invalid"
-            )
+            HPOConfig(backend="optuna", search_space_name="grpo", direction="invalid")
 
     def test_hpo_config_output_dir(self):
         """Test output directory creation."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir) / "hpo_results"
             config = HPOConfig(
-                backend="optuna",
-                search_space_name="grpo",
-                output_dir=output_dir
+                backend="optuna", search_space_name="grpo", output_dir=output_dir
             )
             assert config.output_dir.exists()
 
@@ -231,10 +224,7 @@ class TestHPOConfig:
         config = HPOConfig(
             backend="optuna",
             search_space_name="grpo",
-            optuna_config={
-                "sampler": "tpe",
-                "pruner": "median"
-            }
+            optuna_config={"sampler": "tpe", "pruner": "median"},
         )
         backend_config = config.get_backend_config()
         assert backend_config["sampler"] == "tpe"
@@ -243,6 +233,7 @@ class TestHPOConfig:
 # ============================================================================
 # Test HPO Results
 # ============================================================================
+
 
 class TestHPOResults:
     """Tests for HPO result classes."""
@@ -255,7 +246,7 @@ class TestHPOResults:
             metrics={"reward": 0.85},
             best_metric=0.85,
             training_time=120.5,
-            status="success"
+            status="success",
         )
         assert result.trial_id == "trial_0"
         assert result.best_metric == 0.85
@@ -267,7 +258,7 @@ class TestHPOResults:
             params={"lr": 1e-5},
             metrics={"reward": 0.85},
             best_metric=0.85,
-            training_time=100.0
+            training_time=100.0,
         )
 
         result_dict = result.to_dict()
@@ -281,7 +272,7 @@ class TestHPOResults:
             params={"lr": 1e-5},
             metrics={"reward": 0.85},
             best_metric=0.85,
-            training_time=100.0
+            training_time=100.0,
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -303,7 +294,7 @@ class TestHPOResults:
             best_trial_id="trial_1",
             total_trials=3,
             successful_trials=3,
-            all_results=results
+            all_results=results,
         )
 
         assert summary.best_metric == 0.85
@@ -314,10 +305,10 @@ class TestHPOResults:
 # Test Optuna Backend (with mocking)
 # ============================================================================
 
+
 @pytest.mark.skipif(
-    not hasattr(__import__('training.hpo'), '__optuna_available__') or
-    not __import__('training.hpo').__optuna_available__,
-    reason="Optuna not installed"
+    not OPTUNA_AVAILABLE,
+    reason="Optuna not installed",
 )
 class TestOptunaBackend:
     """Tests for Optuna backend."""
@@ -331,7 +322,7 @@ class TestOptunaBackend:
             search_space=search_space,
             study_name="test_study",
             sampler="tpe",
-            pruner="median"
+            pruner="median",
         )
 
         assert backend.study_name == "test_study"
@@ -342,19 +333,16 @@ class TestOptunaBackend:
         """Test simple Optuna optimization."""
         from stateset_agents.training.hpo.optuna_backend import OptunaBackend
 
-        search_space = SearchSpace([
-            SearchDimension("x", SearchSpaceType.FLOAT, -10.0, 10.0)
-        ])
-
-        backend = OptunaBackend(
-            search_space=search_space,
-            objective_metric="value"
+        search_space = SearchSpace(
+            [SearchDimension("x", SearchSpaceType.FLOAT, -10.0, 10.0)]
         )
+
+        backend = OptunaBackend(search_space=search_space, objective_metric="value")
 
         # Simple quadratic objective
         def objective(params):
             x = params["x"]
-            return -(x - 2.0) ** 2  # Maximum at x=2
+            return -((x - 2.0) ** 2)  # Maximum at x=2
 
         summary = await backend.optimize(objective, n_trials=10)
 
@@ -370,6 +358,7 @@ class TestOptunaBackend:
 # Test GRPO HPO Trainer Integration
 # ============================================================================
 
+
 class TestGRPOHPOTrainer:
     """Tests for GRPO HPO trainer integration."""
 
@@ -379,7 +368,7 @@ class TestGRPOHPOTrainer:
         self.agent_config = AgentConfig(
             model_name="stub://demo",
             use_stub_model=True,
-            stub_responses=["Test response"]
+            stub_responses=["Test response"],
         )
         self.agent = MultiTurnAgent(self.agent_config)
 
@@ -388,22 +377,19 @@ class TestGRPOHPOTrainer:
             {
                 "conversation_id": "test_1",
                 "user_inputs": ["Hello", "How are you?"],
-                "max_turns": 2
+                "max_turns": 2,
             }
         ]
         self.environment = ConversationEnvironment(scenarios)
 
         # Create reward
-        self.reward_function = CompositeReward([
-            (HelpfulnessReward(), 0.5),
-            (SafetyReward(), 0.5)
-        ])
+        self.reward_function = CompositeReward(
+            [(HelpfulnessReward(), 0.5), (SafetyReward(), 0.5)]
+        )
 
         # Base config
         self.base_config = TrainingConfig(
-            learning_rate=1e-5,
-            num_episodes=10,
-            output_dir="./test_output"
+            learning_rate=1e-5, num_episodes=10, output_dir="./test_output"
         )
 
     def test_grpo_hpo_trainer_creation(self):
@@ -413,7 +399,7 @@ class TestGRPOHPOTrainer:
                 backend="optuna",
                 search_space_name="grpo",
                 n_trials=5,
-                output_dir=Path(tmpdir)
+                output_dir=Path(tmpdir),
             )
 
             trainer = GRPOHPOTrainer(
@@ -421,7 +407,7 @@ class TestGRPOHPOTrainer:
                 environment=self.environment,
                 reward_function=self.reward_function,
                 base_config=self.base_config,
-                hpo_config=hpo_config
+                hpo_config=hpo_config,
             )
 
             assert trainer.hpo_config.n_trials == 5
@@ -431,9 +417,7 @@ class TestGRPOHPOTrainer:
         """Test creating training config with HPO params."""
         with tempfile.TemporaryDirectory() as tmpdir:
             hpo_config = HPOConfig(
-                backend="optuna",
-                search_space_name="grpo",
-                output_dir=Path(tmpdir)
+                backend="optuna", search_space_name="grpo", output_dir=Path(tmpdir)
             )
 
             trainer = GRPOHPOTrainer(
@@ -441,14 +425,11 @@ class TestGRPOHPOTrainer:
                 environment=self.environment,
                 reward_function=self.reward_function,
                 base_config=self.base_config,
-                hpo_config=hpo_config
+                hpo_config=hpo_config,
             )
 
             # Override params
-            params = {
-                "learning_rate": 5e-6,
-                "gamma": 0.95
-            }
+            params = {"learning_rate": 5e-6, "gamma": 0.95}
 
             config = trainer._create_training_config(params)
             assert config.learning_rate == 5e-6
@@ -456,9 +437,8 @@ class TestGRPOHPOTrainer:
 
     @pytest.mark.asyncio
     @pytest.mark.skipif(
-        not hasattr(__import__('training.hpo'), '__optuna_available__') or
-        not __import__('training.hpo').__optuna_available__,
-        reason="Optuna not installed"
+        not OPTUNA_AVAILABLE,
+        reason="Optuna not installed",
     )
     async def test_grpo_hpo_trainer_optimize(self):
         """Test full HPO optimization (integration test)."""
@@ -467,7 +447,7 @@ class TestGRPOHPOTrainer:
                 backend="optuna",
                 search_space_name="conservative",  # Small search space
                 n_trials=3,  # Very few trials for speed
-                output_dir=Path(tmpdir)
+                output_dir=Path(tmpdir),
             )
 
             trainer = GRPOHPOTrainer(
@@ -475,7 +455,7 @@ class TestGRPOHPOTrainer:
                 environment=self.environment,
                 reward_function=self.reward_function,
                 base_config=self.base_config,
-                hpo_config=hpo_config
+                hpo_config=hpo_config,
             )
 
             # Mock the training to return a dummy metric
@@ -494,15 +474,14 @@ class TestGRPOHPOTrainer:
 # Test Quick HPO Utility
 # ============================================================================
 
+
 class TestQuickHPO:
     """Tests for quick HPO utility function."""
 
     def setup_method(self):
         """Setup test components."""
         self.agent_config = AgentConfig(
-            model_name="stub://demo",
-            use_stub_model=True,
-            stub_responses=["Test"]
+            model_name="stub://demo", use_stub_model=True, stub_responses=["Test"]
         )
         self.agent = MultiTurnAgent(self.agent_config)
 
@@ -512,22 +491,21 @@ class TestQuickHPO:
         self.reward_function = HelpfulnessReward()
 
         self.base_config = TrainingConfig(
-            learning_rate=1e-5,
-            num_episodes=5,
-            output_dir="./test_output"
+            learning_rate=1e-5, num_episodes=5, output_dir="./test_output"
         )
 
     @pytest.mark.asyncio
     @pytest.mark.skipif(
-        not hasattr(__import__('training.hpo'), '__optuna_available__') or
-        not __import__('training.hpo').__optuna_available__,
-        reason="Optuna not installed"
+        not OPTUNA_AVAILABLE,
+        reason="Optuna not installed",
     )
     async def test_quick_hpo(self):
         """Test quick HPO utility."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # Mock the actual training
-            with patch('training.hpo.grpo_hpo_trainer.MultiTurnGRPOTrainer') as mock_trainer:
+            with patch(
+                "stateset_agents.training.hpo.grpo_hpo_trainer.MultiTurnGRPOTrainer"
+            ) as mock_trainer:
                 mock_instance = AsyncMock()
                 mock_instance.train = AsyncMock(return_value={"reward": 0.8})
                 mock_trainer.return_value = mock_instance
@@ -538,7 +516,7 @@ class TestQuickHPO:
                     reward_function=self.reward_function,
                     base_config=self.base_config,
                     n_trials=2,
-                    output_dir=Path(tmpdir)
+                    output_dir=Path(tmpdir),
                 )
 
                 # Basic validation

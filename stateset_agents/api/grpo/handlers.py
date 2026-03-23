@@ -10,7 +10,9 @@ import time
 import uuid
 from collections import deque
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
+
+from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 
 from ..logging_config import get_logger
 from .config import get_grpo_config
@@ -25,8 +27,14 @@ from .state import ConversationState, TrainingJob, get_state_manager
 
 logger = get_logger(__name__)
 
-GRPO_HANDLER_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
-GRPO_WS_EXCEPTIONS = (asyncio.TimeoutError, OSError, RuntimeError, TypeError, ValueError)
+GRPO_HANDLER_EXCEPTIONS = INFERENCE_EXCEPTIONS
+GRPO_WS_EXCEPTIONS = (
+    asyncio.TimeoutError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
 
 
 class TrainingHandler:
@@ -36,7 +44,7 @@ class TrainingHandler:
     Manages job creation, execution, status tracking, and cleanup.
     """
 
-    def __init__(self, services: Dict[str, Any]):
+    def __init__(self, services: dict[str, Any]):
         """
         Initialize training handler.
 
@@ -47,6 +55,20 @@ class TrainingHandler:
         self.state = get_state_manager()
         self.metrics = get_grpo_metrics()
         self.config = get_grpo_config()
+
+    @staticmethod
+    def _is_admin_user(user_roles: list[str] | None = None) -> bool:
+        """Return True when the user has admin privileges."""
+        return bool(user_roles and "admin" in user_roles)
+
+    def _can_access_job(
+        self,
+        job: TrainingJob,
+        user_id: str,
+        user_roles: list[str] | None = None,
+    ) -> bool:
+        """Check whether a user is allowed to access a job."""
+        return self._is_admin_user(user_roles) or job.user_id == user_id
 
     async def start_training(
         self,
@@ -99,7 +121,7 @@ class TrainingHandler:
     async def run_computational_training(
         self,
         job_id: str,
-        prompts: List[str],
+        prompts: list[str],
         num_iterations: int,
         use_neural_rewards: bool = True,
         use_ruler_rewards: bool = False,
@@ -148,7 +170,9 @@ class TrainingHandler:
                 # Small delay to allow other async operations
                 await asyncio.sleep(0.01)
 
-            average_reward = total_reward / total_trajectories if total_trajectories else 0.0
+            average_reward = (
+                total_reward / total_trajectories if total_trajectories else 0.0
+            )
 
             self.state.update_job(job_id, status="completed")
             self.metrics.record_training_completed(
@@ -172,9 +196,9 @@ class TrainingHandler:
     async def run_distributed_training(
         self,
         job_id: str,
-        prompts: List[str],
+        prompts: list[str],
         num_iterations: int,
-        distributed_config: Dict[str, Any],
+        distributed_config: dict[str, Any],
     ) -> None:
         """
         Execute distributed training strategy.
@@ -203,7 +227,12 @@ class TrainingHandler:
             self.state.update_job(job_id, status="failed", error=str(e))
             self.metrics.record_training_failed()
 
-    def get_job_status(self, job_id: str) -> Optional[GRPOTrainingResponse]:
+    def get_job_status(
+        self,
+        job_id: str,
+        user_id: str,
+        user_roles: list[str] | None = None,
+    ) -> GRPOTrainingResponse | None:
         """
         Get status of a training job.
 
@@ -214,13 +243,17 @@ class TrainingHandler:
             Training response with current status, or None if not found.
         """
         job = self.state.get_job(job_id)
-        if not job:
+        if not job or not self._can_access_job(job, user_id, user_roles):
             return None
 
         # Calculate metrics from results
         if job.results:
-            avg_reward = sum(r.get("average_reward", 0) for r in job.results) / len(job.results)
-            total_computation = sum(r.get("total_computation_used", 0) for r in job.results)
+            avg_reward = sum(r.get("average_reward", 0) for r in job.results) / len(
+                job.results
+            )
+            total_computation = sum(
+                r.get("total_computation_used", 0) for r in job.results
+            )
             latest_metrics = job.results[-1] if job.results else {}
         else:
             avg_reward = 0.0
@@ -241,7 +274,12 @@ class TrainingHandler:
             request_id=job.request_id,
         )
 
-    def cancel_job(self, job_id: str) -> bool:
+    def cancel_job(
+        self,
+        job_id: str,
+        user_id: str,
+        user_roles: list[str] | None = None,
+    ) -> bool:
         """
         Cancel a training job.
 
@@ -252,7 +290,7 @@ class TrainingHandler:
             True if cancelled, False if not found or already completed.
         """
         job = self.state.get_job(job_id)
-        if not job:
+        if not job or not self._can_access_job(job, user_id, user_roles):
             return False
 
         if job.status in ("completed", "failed", "cancelled"):
@@ -269,7 +307,7 @@ class ConversationHandler:
     Manages conversation lifecycle and message processing.
     """
 
-    def __init__(self, services: Dict[str, Any]):
+    def __init__(self, services: dict[str, Any]):
         """
         Initialize conversation handler.
 
@@ -281,10 +319,25 @@ class ConversationHandler:
         self.metrics = get_grpo_metrics()
         self.config = get_grpo_config()
 
+    @staticmethod
+    def _is_admin_user(user_roles: list[str] | None = None) -> bool:
+        """Return True when the user has admin privileges."""
+        return bool(user_roles and "admin" in user_roles)
+
+    def _can_access_conversation(
+        self,
+        conversation: ConversationState,
+        user_id: str,
+        user_roles: list[str] | None = None,
+    ) -> bool:
+        """Check whether a user is allowed to access a conversation."""
+        return self._is_admin_user(user_roles) or conversation.user_id == user_id
+
     async def handle_message(
         self,
         request: GRPOConversationRequest,
         user_id: str,
+        user_roles: list[str] | None = None,
     ) -> GRPOConversationResponse:
         """
         Handle a conversation message.
@@ -298,20 +351,29 @@ class ConversationHandler:
 
         Raises:
             ValueError: If agent not initialized or conversation not found.
+            PermissionError: If caller cannot access the conversation.
         """
         start_time = time.monotonic()
+
+        if request.user_id and request.user_id != user_id and not self._is_admin_user(
+            user_roles
+        ):
+            raise PermissionError("Conversation user mismatch")
 
         multiturn_agent = self.services.get("multiturn_agent")
         if not multiturn_agent:
             raise ValueError("Multi-turn agent not initialized")
 
         conversation_id = request.conversation_id
+        effective_user_id = request.user_id or user_id
 
         if conversation_id:
             # Continue existing conversation
             conv = self.state.get_conversation(conversation_id)
             if not conv:
                 raise ValueError(f"Conversation {conversation_id} not found")
+            if not self._can_access_conversation(conv, user_id, user_roles):
+                raise PermissionError("Conversation access denied")
 
             turns = await multiturn_agent.continue_conversation(
                 conversation_id,
@@ -325,7 +387,7 @@ class ConversationHandler:
         else:
             # Start new conversation
             conversation_context = await multiturn_agent.start_conversation(
-                user_id=request.user_id or user_id,
+                user_id=effective_user_id,
                 initial_context=request.context,
             )
 
@@ -335,7 +397,9 @@ class ConversationHandler:
                 strategy=request.strategy,
             )
 
-            conversation_context.add_turn({"role": "assistant", "content": response_text})
+            conversation_context.add_turn(
+                {"role": "assistant", "content": response_text}
+            )
             context = (
                 multiturn_agent.get_conversation_summary(
                     conversation_context.conversation_id
@@ -347,7 +411,7 @@ class ConversationHandler:
             # Track in state manager
             self.state.create_conversation(
                 conversation_id=conversation_id,
-                user_id=request.user_id or user_id,
+                user_id=effective_user_id,
                 strategy=request.strategy,
             )
             self.metrics.record_conversation_started()
@@ -371,7 +435,12 @@ class ConversationHandler:
             processing_time_ms=processing_time,
         )
 
-    def end_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+    def end_conversation(
+        self,
+        conversation_id: str,
+        user_id: str,
+        user_roles: list[str] | None = None,
+    ) -> dict[str, Any] | None:
         """
         End a conversation.
 
@@ -381,6 +450,12 @@ class ConversationHandler:
         Returns:
             Final conversation summary, or None if not found.
         """
+        conversation = self.state.get_conversation(conversation_id)
+        if not conversation:
+            return None
+        if not self._can_access_conversation(conversation, user_id, user_roles):
+            raise PermissionError("Conversation access denied")
+
         multiturn_agent = self.services.get("multiturn_agent")
         if not multiturn_agent:
             return None
@@ -397,7 +472,7 @@ class ConversationHandler:
             "final_summary": context.get_context_summary(),
         }
 
-    def get_conversation(self, conversation_id: str) -> Optional[ConversationState]:
+    def get_conversation(self, conversation_id: str) -> ConversationState | None:
         """
         Get conversation state.
 
@@ -423,7 +498,7 @@ class WebSocketHandler:
 
     def __init__(
         self,
-        services: Dict[str, Any],
+        services: dict[str, Any],
         training_handler: TrainingHandler,
         conversation_handler: ConversationHandler,
     ):
@@ -499,7 +574,7 @@ class WebSocketHandler:
         self,
         websocket: Any,
         message_type: str,
-        message_data: Dict[str, Any],
+        message_data: dict[str, Any],
     ) -> None:
         """Route message to appropriate handler."""
         if message_type == "chat":
@@ -517,7 +592,7 @@ class WebSocketHandler:
     async def _handle_chat(
         self,
         websocket: Any,
-        message_data: Dict[str, Any],
+        message_data: dict[str, Any],
     ) -> None:
         """Handle chat message."""
         try:
@@ -527,23 +602,28 @@ class WebSocketHandler:
                 return
 
             request = GRPOConversationRequest(**chat_data)
+            ws_user_id = f"ws_{id(websocket)}"
             response = await self.conversation_handler.handle_message(
                 request,
-                user_id="ws_user",
+                ws_user_id,
             )
 
-            await websocket.send_json({
-                "type": "chat_response",
-                "data": {
-                    "conversation_id": response.conversation_id,
-                    "response": response.response,
-                    "context": response.context,
-                    "metadata": response.metadata,
-                    "tokens_used": response.tokens_used,
-                    "processing_time_ms": response.processing_time_ms,
-                },
-            })
+            await websocket.send_json(
+                {
+                    "type": "chat_response",
+                    "data": {
+                        "conversation_id": response.conversation_id,
+                        "response": response.response,
+                        "context": response.context,
+                        "metadata": response.metadata,
+                        "tokens_used": response.tokens_used,
+                        "processing_time_ms": response.processing_time_ms,
+                    },
+                }
+            )
 
+        except PermissionError as e:
+            await self._send_error(websocket, f"Chat request denied: {str(e)[:200]}")
         except ValueError as e:
             await self._send_error(websocket, f"Invalid chat request: {str(e)[:200]}")
         except GRPO_WS_EXCEPTIONS as e:
@@ -562,10 +642,12 @@ class WebSocketHandler:
             if "demo_engine" in self.services:
                 metrics["demo_engine"] = self.services["demo_engine"].get_metrics()
 
-            await websocket.send_json({
-                "type": "metrics_response",
-                "data": metrics,
-            })
+            await websocket.send_json(
+                {
+                    "type": "metrics_response",
+                    "data": metrics,
+                }
+            )
 
         except GRPO_WS_EXCEPTIONS as e:
             logger.error("WebSocket metrics error: %s", e)
@@ -573,14 +655,18 @@ class WebSocketHandler:
 
     async def _handle_ping(self, websocket: Any) -> None:
         """Handle ping message."""
-        await websocket.send_json({
-            "type": "pong",
-            "timestamp": datetime.utcnow().isoformat(),
-        })
+        await websocket.send_json(
+            {
+                "type": "pong",
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
 
     async def _send_error(self, websocket: Any, message: str) -> None:
         """Send error message."""
-        await websocket.send_json({
-            "type": "error",
-            "message": message,
-        })
+        await websocket.send_json(
+            {
+                "type": "error",
+                "message": message,
+            }
+        )

@@ -15,7 +15,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from utils.performance_monitor import (
     BenchmarkRunner,
@@ -47,7 +47,7 @@ class FrameworkBenchmark:
         config=None,
         num_messages: int = 10,
         message_length: int = 50,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark agent response generation performance."""
         logger.info("🔬 Benchmarking agent response generation...")
 
@@ -110,7 +110,7 @@ class FrameworkBenchmark:
         config=None,
         num_conversations: int = 5,
         turns_per_conversation: int = 10,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark memory usage patterns."""
         logger.info("🔬 Benchmarking memory usage...")
 
@@ -150,7 +150,7 @@ class FrameworkBenchmark:
                         "role": "user",
                         "content": f"Conversation {conv}, turn {turn}: Hello",
                     }
-                    response = await agent.generate_response(messages)
+                    _ = await agent.generate_response(messages)
 
                 metrics = self.monitor.end_operation(conversation_id)
                 results["memory_usage"].append(
@@ -165,7 +165,7 @@ class FrameworkBenchmark:
 
     async def benchmark_training_performance(
         self, trainer_class=None, agent=None, environment=None, num_episodes: int = 3
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark training performance."""
         logger.info("🔬 Benchmarking training performance...")
 
@@ -189,7 +189,7 @@ class FrameworkBenchmark:
 
     async def run_full_benchmark_suite(
         self, agent_class=None, trainer_class=None, config=None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run the complete benchmark suite."""
         logger.info("🚀 Running full benchmark suite...")
 
@@ -227,7 +227,7 @@ class FrameworkBenchmark:
 
         return results
 
-    def save_results(self, results: Dict[str, Any], filename: str):
+    def save_results(self, results: dict[str, Any], filename: str):
         """Save benchmark results to file."""
         filepath = self.output_dir / filename
 
@@ -236,11 +236,11 @@ class FrameworkBenchmark:
 
         logger.info(f"📊 Benchmark results saved to {filepath}")
 
-    def load_results(self, filename: str) -> Dict[str, Any]:
+    def load_results(self, filename: str) -> dict[str, Any]:
         """Load benchmark results from file."""
         filepath = self.output_dir / filename
 
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             return json.load(f)
 
 

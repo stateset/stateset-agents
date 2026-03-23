@@ -5,9 +5,8 @@ Tests cover orchestration configuration, component states, decision making,
 and intelligent coordination of framework components.
 """
 
-import asyncio
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -202,14 +201,30 @@ class TestOrchestrationDecision:
 class TestIntelligentOrchestrator:
     """Test IntelligentOrchestrator class."""
 
+    def test_module_reexports_split_models(self):
+        """Public orchestrator symbols should remain available from the main module."""
+        from stateset_agents.core import intelligent_orchestrator as orchestrator_module
+        from stateset_agents.core import intelligent_orchestrator_models as models_module
+
+        assert orchestrator_module.OrchestrationConfig is models_module.OrchestrationConfig
+        assert (
+            orchestrator_module.OrchestrationDecision
+            is models_module.OrchestrationDecision
+        )
+        assert orchestrator_module.ComponentStatus is models_module.ComponentStatus
+
     @pytest.fixture
     def mock_dependencies(self):
         """Mock external dependencies."""
-        with patch("core.intelligent_orchestrator.get_monitoring_service") as mock_monitoring, \
-             patch("core.intelligent_orchestrator.get_state_service") as mock_state, \
-             patch("core.intelligent_orchestrator.ErrorHandler") as mock_error_handler:
+        with patch(
+            "stateset_agents.core.intelligent_orchestrator.get_monitoring_service"
+        ) as mock_monitoring, patch(
+            "stateset_agents.core.intelligent_orchestrator.get_state_service"
+        ) as mock_state, patch(
+            "stateset_agents.core.intelligent_orchestrator.ErrorHandler"
+        ) as mock_error_handler:
             mock_monitoring.return_value = MagicMock()
-            mock_monitoring.return_value.record_metric = AsyncMock()
+            mock_monitoring.return_value.record_metric = MagicMock()
             mock_state.return_value = MagicMock()
             yield {
                 "monitoring": mock_monitoring,
@@ -250,7 +265,9 @@ class TestIntelligentOrchestrator:
     @pytest.mark.asyncio
     async def test_orchestrator_initialize(self, orchestrator, mock_dependencies):
         """Test orchestrator initialization."""
-        with patch("core.intelligent_orchestrator.PerformanceOptimizer"):
+        with patch(
+            "stateset_agents.core.intelligent_orchestrator.PerformanceOptimizer"
+        ):
             await orchestrator.initialize()
 
             assert orchestrator.is_running is True
@@ -276,10 +293,18 @@ class TestIntelligentOrchestrator:
     def test_calculate_performance_trend(self, orchestrator):
         """Test trend calculation with sufficient data."""
         # Earlier values: 0.6, later values: 0.8 -> positive trend
-        orchestrator.global_performance_history = (
-            [0.5, 0.55, 0.6, 0.65, 0.6, 0.58, 0.62, 0.6, 0.61, 0.59] +
-            [0.75, 0.78, 0.8, 0.82, 0.79, 0.81, 0.8, 0.83, 0.81, 0.8]
-        )
+        orchestrator.global_performance_history = [
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.6,
+            0.58,
+            0.62,
+            0.6,
+            0.61,
+            0.59,
+        ] + [0.75, 0.78, 0.8, 0.82, 0.79, 0.81, 0.8, 0.83, 0.81, 0.8]
         result = orchestrator._calculate_performance_trend()
         assert result > 0  # Positive trend
 
@@ -303,19 +328,26 @@ class TestIntelligentOrchestrator:
         orchestrator._update_component_state("new_component", ComponentStatus.ACTIVE)
 
         assert "new_component" in orchestrator.component_states
-        assert orchestrator.component_states["new_component"].status == ComponentStatus.ACTIVE
+        assert (
+            orchestrator.component_states["new_component"].status
+            == ComponentStatus.ACTIVE
+        )
 
     def test_update_component_state_existing(self, orchestrator):
         """Test updating state for an existing component."""
         orchestrator._update_component_state("component", ComponentStatus.INITIALIZING)
         orchestrator._update_component_state("component", ComponentStatus.ACTIVE)
 
-        assert orchestrator.component_states["component"].status == ComponentStatus.ACTIVE
+        assert (
+            orchestrator.component_states["component"].status == ComponentStatus.ACTIVE
+        )
 
     def test_update_component_state_with_metrics(self, orchestrator):
         """Test updating state with performance metrics."""
         metrics = {"accuracy": 0.9, "latency": 0.05}
-        orchestrator._update_component_state("component", ComponentStatus.ACTIVE, metrics)
+        orchestrator._update_component_state(
+            "component", ComponentStatus.ACTIVE, metrics
+        )
 
         state = orchestrator.component_states["component"]
         assert state.performance_metrics["accuracy"] == 0.9
@@ -365,9 +397,7 @@ class TestIntelligentOrchestrator:
     def test_get_optimization_insights_performance_bottleneck(self, orchestrator):
         """Test optimization insights detecting performance bottlenecks."""
         orchestrator._update_component_state(
-            "slow_component",
-            ComponentStatus.ACTIVE,
-            {"processing_time": 2.0}
+            "slow_component", ComponentStatus.ACTIVE, {"processing_time": 2.0}
         )
         insights = orchestrator.get_optimization_insights()
 
@@ -386,9 +416,7 @@ class TestIntelligentOrchestrator:
 
     def test_assess_adaptation_need_low_exploration(self, orchestrator):
         """Test adaptation need with low exploration."""
-        learning_insights = {
-            "exploration_insights": {"current_epsilon": 0.01}
-        }
+        learning_insights = {"exploration_insights": {"current_epsilon": 0.01}}
         result = orchestrator._assess_adaptation_need(learning_insights, 0.0)
         assert result is True
 
@@ -402,6 +430,16 @@ class TestIntelligentOrchestrator:
 
         assert orchestrator.is_running is False
         assert orchestrator.component_states["comp1"].status == ComponentStatus.INACTIVE
+
+    @pytest.mark.asyncio
+    async def test_log_metrics_accepts_sync_monitoring_service(self, orchestrator):
+        """Metric logging should work with the real sync-backed monitoring facade."""
+        orchestrator.monitoring = MagicMock()
+        orchestrator.monitoring.record_metric = MagicMock()
+
+        await orchestrator._log_orchestration_metrics()
+
+        assert orchestrator.monitoring.record_metric.called
 
     @pytest.mark.asyncio
     async def test_automated_decision_low_performance(self, orchestrator):
@@ -476,8 +514,8 @@ class TestIntelligentOrchestrator:
 class TestFactoryFunctions:
     """Test factory functions for creating orchestrators."""
 
-    @patch("core.intelligent_orchestrator.get_monitoring_service")
-    @patch("core.intelligent_orchestrator.get_state_service")
+    @patch("stateset_agents.core.intelligent_orchestrator.get_monitoring_service")
+    @patch("stateset_agents.core.intelligent_orchestrator.get_state_service")
     def test_create_intelligent_orchestrator_default(self, mock_state, mock_monitoring):
         """Test creating orchestrator with defaults."""
         mock_monitoring.return_value = MagicMock()
@@ -486,10 +524,12 @@ class TestFactoryFunctions:
         orchestrator = create_intelligent_orchestrator()
 
         assert orchestrator.config.mode == OrchestrationMode.ADAPTIVE
-        assert orchestrator.config.optimization_objective == OptimizationObjective.BALANCED
+        assert (
+            orchestrator.config.optimization_objective == OptimizationObjective.BALANCED
+        )
 
-    @patch("core.intelligent_orchestrator.get_monitoring_service")
-    @patch("core.intelligent_orchestrator.get_state_service")
+    @patch("stateset_agents.core.intelligent_orchestrator.get_monitoring_service")
+    @patch("stateset_agents.core.intelligent_orchestrator.get_state_service")
     def test_create_intelligent_orchestrator_custom(self, mock_state, mock_monitoring):
         """Test creating orchestrator with custom settings."""
         mock_monitoring.return_value = MagicMock()
@@ -502,7 +542,10 @@ class TestFactoryFunctions:
         )
 
         assert orchestrator.config.mode == OrchestrationMode.MANUAL
-        assert orchestrator.config.optimization_objective == OptimizationObjective.PERFORMANCE
+        assert (
+            orchestrator.config.optimization_objective
+            == OptimizationObjective.PERFORMANCE
+        )
         assert orchestrator.device == "cuda"
 
     def test_create_orchestration_config_enable_all(self):

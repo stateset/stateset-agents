@@ -5,10 +5,8 @@ Tests cover GSPO configuration, model management, sequence-level optimization,
 and training components.
 """
 
-import asyncio
-from dataclasses import dataclass
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
@@ -105,12 +103,14 @@ class TestGSPOModelManager:
     def gspo_config(self):
         """Create a GSPO config for testing."""
         from stateset_agents.training.gspo_trainer import GSPOConfig
+
         return GSPOConfig(model_name="gpt2", use_lora=True)
 
     @pytest.fixture
     def model_manager(self, gspo_config):
         """Create a GSPOModelManager for testing."""
         from stateset_agents.training.gspo_trainer import GSPOModelManager
+
         return GSPOModelManager(gspo_config)
 
     def test_model_manager_creation(self, model_manager):
@@ -120,9 +120,9 @@ class TestGSPOModelManager:
         assert model_manager.ref_model is None
         assert model_manager.device is not None
 
-    @patch("training.gspo_trainer.AutoTokenizer")
-    @patch("training.gspo_trainer.AutoModelForCausalLM")
-    @patch("training.gspo_trainer.get_peft_model")
+    @patch("stateset_agents.training.gspo_trainer.AutoTokenizer")
+    @patch("stateset_agents.training.gspo_trainer.AutoModelForCausalLM")
+    @patch("stateset_agents.training.gspo_trainer.get_peft_model")
     def test_load_model_and_tokenizer(
         self, mock_peft, mock_model_class, mock_tokenizer_class, model_manager
     ):
@@ -142,8 +142,8 @@ class TestGSPOModelManager:
         mock_tokenizer_class.from_pretrained.assert_called_once()
         mock_model_class.from_pretrained.assert_called_once()
 
-    @patch("training.gspo_trainer.AutoTokenizer")
-    @patch("training.gspo_trainer.AutoModelForCausalLM")
+    @patch("stateset_agents.training.gspo_trainer.AutoTokenizer")
+    @patch("stateset_agents.training.gspo_trainer.AutoModelForCausalLM")
     def test_load_model_with_quantization(
         self, mock_model_class, mock_tokenizer_class, gspo_config
     ):
@@ -152,6 +152,7 @@ class TestGSPOModelManager:
         gspo_config.use_lora = False
 
         from stateset_agents.training.gspo_trainer import GSPOModelManager
+
         manager = GSPOModelManager(gspo_config)
 
         mock_tokenizer = MagicMock()
@@ -163,8 +164,10 @@ class TestGSPOModelManager:
         mock_model.gradient_checkpointing_enable = MagicMock()
         mock_model_class.from_pretrained.return_value = mock_model
 
-        with patch("training.gspo_trainer._require_bitsandbytes"), patch(
-            "training.gspo_trainer.prepare_model_for_kbit_training"
+        with patch(
+            "stateset_agents.training.gspo_trainer._require_bitsandbytes"
+        ), patch(
+            "stateset_agents.training.gspo_trainer.prepare_model_for_kbit_training"
         ) as mock_kbit:
             mock_kbit.return_value = mock_model
             model, tokenizer = manager.load_model_and_tokenizer()
@@ -294,7 +297,11 @@ class TestGSPOKLPenalty:
 
         # KL(current || ref) = sum(p_current * (log p_current - log p_ref))
         # For sequence level: sum over tokens, then mean over batch
-        kl = (torch.exp(log_probs_current) * (log_probs_current - log_probs_ref)).sum(dim=1).mean()
+        kl = (
+            (torch.exp(log_probs_current) * (log_probs_current - log_probs_ref))
+            .sum(dim=1)
+            .mean()
+        )
 
         assert kl.dim() == 0  # Scalar
 
@@ -385,8 +392,7 @@ class TestGSPOGeneration:
         # Simulate generating G responses per prompt
         prompts = [f"Prompt {i}" for i in range(num_prompts)]
         responses = {
-            p: [f"Response {j} for {p}" for j in range(group_size)]
-            for p in prompts
+            p: [f"Response {j} for {p}" for j in range(group_size)] for p in prompts
         }
 
         assert len(responses) == num_prompts
@@ -412,7 +418,7 @@ class TestGSPOIterativeTraining:
         group_size = 4
 
         total_samples = 0
-        for outer in range(num_outer):
+        for _outer in range(num_outer):
             # Generate phase
             samples_generated = prompts_per_iter * group_size
 
@@ -433,7 +439,7 @@ class TestGSPOvLLMIntegration:
         config = GSPOConfig(use_vllm=True)
         assert config.use_vllm is True
 
-    @patch("training.gspo_trainer.VLLM_AVAILABLE", True)
+    @patch("stateset_agents.training.gspo_trainer.VLLM_AVAILABLE", True)
     def test_vllm_generation_concept(self):
         """Test vLLM generation conceptually."""
         # vLLM provides faster batched generation
@@ -460,9 +466,6 @@ class TestGSPOTokenVariant:
         batch_size = 4
         seq_len = 50
 
-        # Token-level log probs
-        log_probs = torch.randn(batch_size, seq_len)
-
         # Token-level rewards (e.g., from reward model)
         token_rewards = torch.randn(batch_size, seq_len)
 
@@ -479,6 +482,7 @@ class TestGSPOTrainer:
     def gspo_config(self):
         """Create a GSPO config for testing."""
         from stateset_agents.training.gspo_trainer import GSPOConfig
+
         return GSPOConfig(
             model_name="gpt2",
             num_generations=4,
@@ -580,7 +584,7 @@ class TestGSPOTrainerSequenceLogProbs:
 
     def test_log_probs_require_grad(self):
         """Sequence log probs should require grad for policy optimization."""
-        from stateset_agents.training.gspo_trainer import GSPOTrainer, GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOConfig, GSPOTrainer
 
         model = self._DummyCausalLM()
         tokenizer = self._DummyTokenizer()
@@ -626,6 +630,8 @@ class TestGSPOMetrics:
 
         # Ratios should be around 1
         assert 0.9 < mean_ratio < 1.1
+        assert max_ratio == 1.05
+        assert min_ratio == 0.95
 
     def test_kl_metrics(self):
         """Test KL divergence metrics."""

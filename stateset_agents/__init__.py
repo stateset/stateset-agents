@@ -5,6 +5,12 @@ A comprehensive framework for training multi-turn AI agents using
 Group Relative Policy Optimization (GRPO).
 """
 
+from __future__ import annotations
+
+from importlib import import_module
+from importlib.util import find_spec
+from typing import Any
+
 __version__ = "0.7.1"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
@@ -17,308 +23,278 @@ OPTIONAL_IMPORT_EXCEPTIONS = (
     ValueError,
 )
 
-# Core exports
-try:
-    from .core.agent import Agent, MultiTurnAgent, ToolAgent
-except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover - optional heavy dependencies
-    Agent = None  # type: ignore
-    MultiTurnAgent = None  # type: ignore
-    ToolAgent = None  # type: ignore
+_TRAINING_INSTALL_HINT = "pip install 'stateset-agents[training]'"
+_AIOHTTP_INSTALL_HINT = "pip install aiohttp"
 
-try:
-    from .core.environment import ConversationEnvironment, Environment, TaskEnvironment
-except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
-    ConversationEnvironment = None  # type: ignore
-    Environment = None  # type: ignore
-    TaskEnvironment = None  # type: ignore
 
-try:
-    from .core.long_term_planning import (
-        PlanningConfig,
-        PlanningManager,
-        Plan,
-        PlanStep,
-        PlanStatus,
+def _export_group(
+    module_name: str,
+    names: list[str],
+    *,
+    install_hint: str | None = None,
+) -> dict[str, tuple[str, str, str | None]]:
+    return {
+        name: (module_name, name, install_hint)
+        for name in names
+    }
+
+
+_LAZY_EXPORTS: dict[str, tuple[str, str, str | None]] = {}
+
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.agent",
+        ["Agent", "MultiTurnAgent", "ToolAgent"],
     )
-except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
-    PlanningConfig = None  # type: ignore
-    PlanningManager = None  # type: ignore
-    Plan = None  # type: ignore
-    PlanStep = None  # type: ignore
-    PlanStatus = None  # type: ignore
-
-# New enhanced features
-from .core.error_handling import (
-    CircuitBreakerConfig,
-    DataException,
-    ErrorCode,
-    ErrorHandler,
-    GRPOException,
-    ModelException,
-    NetworkException,
-    ResourceException,
-    RetryConfig,
-    TrainingException,
-    ValidationException,
-    circuit_breaker,
-    get_error_summary,
-    handle_error,
-    retry_async,
 )
-from .core.reward import (  # Pre-built rewards; Domain-specific rewards; Enhanced rewards; Factory functions
-    CompositeReward,
-    ConcisenessReward,
-    CorrectnessReward,
-    CustomerServiceReward,
-    DomainSpecificReward,
-    EngagementReward,
-    HelpfulnessReward,
-    RewardFunction,
-    SafetyReward,
-    SalesAssistantReward,
-    SimilarityAwareReward,
-    TaskCompletionReward,
-    TechnicalSupportReward,
-    create_adaptive_reward,
-    create_domain_reward,
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.environment",
+        ["Environment", "ConversationEnvironment", "TaskEnvironment"],
+    )
 )
-from .core.trajectory import ConversationTurn, MultiTurnTrajectory, Trajectory
-
-try:
-    from .core.performance_optimizer import (
-        BatchOptimizer,
-        ComputeConfig,
-        DataConfig,
-        MemoryConfig,
-        MemoryMonitor,
-        ModelOptimizer,
-        OptimizationLevel,
-        PerformanceMetrics,
-        PerformanceOptimizer,
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.long_term_planning",
+        ["PlanningConfig", "PlanningManager", "Plan", "PlanStep", "PlanStatus"],
     )
-except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover - optional heavy deps (torch/transformers)
-    PerformanceOptimizer = None  # type: ignore
-    MemoryMonitor = None  # type: ignore
-    ModelOptimizer = None  # type: ignore
-    BatchOptimizer = None  # type: ignore
-    OptimizationLevel = None  # type: ignore
-    MemoryConfig = None  # type: ignore
-    ComputeConfig = None  # type: ignore
-    DataConfig = None  # type: ignore
-    PerformanceMetrics = None  # type: ignore
-from .core.type_system import ConfigValidator
-from .core.type_system import ConversationTurn as TypedConversationTurn
-from .core.type_system import (
-    DeviceType,
-    ModelConfig,
-    ModelSize,
-    RewardMetrics,
-    TrainingConfig,
-    TrainingStage,
-    TrajectoryData,
-    TypeSafeSerializer,
-    TypeValidator,
-    create_typed_config,
-    ensure_async_type_safety,
-    ensure_type_safety,
 )
-
-try:
-    from .core.async_pool import (
-        AsyncResourcePool,
-        AsyncTaskManager,
-        PooledResource,
-        get_http_pool,
-        get_task_manager,
-        managed_async_resources,
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.trajectory",
+        ["Trajectory", "MultiTurnTrajectory", "ConversationTurn"],
     )
-except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover - optional aiohttp
-    AsyncResourcePool = None  # type: ignore
-    AsyncTaskManager = None  # type: ignore
-    PooledResource = None  # type: ignore
-    get_http_pool = None  # type: ignore
-    get_task_manager = None  # type: ignore
-    managed_async_resources = None  # type: ignore
-
-# Data processing exports
-try:
-    from .core.data_processing import (
-        ConversationExample,
-        DataLoader,
-        DataProcessor,
-        load_and_prepare_data,
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.reward",
+        [
+            "RewardFunction",
+            "CompositeReward",
+            "HelpfulnessReward",
+            "SafetyReward",
+            "CorrectnessReward",
+            "ConcisenessReward",
+            "EngagementReward",
+            "TaskCompletionReward",
+            "CustomerServiceReward",
+            "TechnicalSupportReward",
+            "SalesAssistantReward",
+            "DomainSpecificReward",
+            "SimilarityAwareReward",
+            "create_domain_reward",
+            "create_adaptive_reward",
+        ],
     )
-except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
-    ConversationExample = None  # type: ignore
-    DataLoader = None  # type: ignore
-    DataProcessor = None  # type: ignore
-    load_and_prepare_data = None  # type: ignore
-
-# Training exports (optional to avoid import issues)
-try:
-    from .training.trainer import GRPOTrainer, MultiTurnGRPOTrainer
-except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover - allow import without training deps
-    GRPOTrainer = None
-    MultiTurnGRPOTrainer = None
-
-try:
-    from .training.config import (
-        TrainingConfig as TrainerTrainingConfig,
-        TrainingProfile,
-        get_config_for_task,
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.error_handling",
+        [
+            "GRPOException",
+            "TrainingException",
+            "ModelException",
+            "DataException",
+            "NetworkException",
+            "ResourceException",
+            "ValidationException",
+            "ErrorCode",
+            "ErrorHandler",
+            "RetryConfig",
+            "CircuitBreakerConfig",
+            "retry_async",
+            "circuit_breaker",
+            "handle_error",
+            "get_error_summary",
+        ],
     )
-    from .training.train import AutoTrainer, train
-    TrainingConfig = TrainerTrainingConfig
-except OPTIONAL_IMPORT_EXCEPTIONS:
-    TrainingProfile = None
-    get_config_for_task = None
-    train = None
-    AutoTrainer = None
-
-# Utilities
-try:
-    from .utils.wandb_integration import WandBLogger, init_wandb
-except OPTIONAL_IMPORT_EXCEPTIONS:
-    WandBLogger = None
-    init_wandb = None
-
-# Offline RL Data utilities
-try:
-    from .data import (
-        ConversationDataset,
-        ConversationDatasetConfig,
-        ConversationReplayBuffer,
-        EmbeddingCache,
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.performance_optimizer",
+        [
+            "PerformanceOptimizer",
+            "MemoryMonitor",
+            "ModelOptimizer",
+            "BatchOptimizer",
+            "OptimizationLevel",
+            "MemoryConfig",
+            "ComputeConfig",
+            "DataConfig",
+            "PerformanceMetrics",
+        ],
+        install_hint=_TRAINING_INSTALL_HINT,
     )
-except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
-    ConversationDataset = None  # type: ignore
-    ConversationDatasetConfig = None  # type: ignore
-    ConversationReplayBuffer = None  # type: ignore
-    EmbeddingCache = None  # type: ignore
-
-# Sim-to-Real evaluation
-try:
-    from .evaluation import (
-        SimToRealMetrics,
-        SimToRealEvaluator,
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.type_system",
+        [
+            "TypeValidator",
+            "ConfigValidator",
+            "TypeSafeSerializer",
+            "create_typed_config",
+            "ensure_type_safety",
+            "ensure_async_type_safety",
+            "ModelConfig",
+            "TypedTrainingConfig",
+            "TrajectoryData",
+            "RewardMetrics",
+            "DeviceType",
+            "ModelSize",
+            "TrainingStage",
+        ],
     )
-except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
-    SimToRealMetrics = None  # type: ignore
-    SimToRealEvaluator = None  # type: ignore
-
-# Conversation Simulator
-try:
-    from .environments import (
-        ConversationSimulator,
-        ConversationSimulatorConfig,
-    )
-except OPTIONAL_IMPORT_EXCEPTIONS:  # pragma: no cover
-    ConversationSimulator = None  # type: ignore
-    ConversationSimulatorConfig = None  # type: ignore
-
-__all__ = [
-    # Core classes
-    "Agent",
-    "MultiTurnAgent",
-    "ToolAgent",
-    "Environment",
-    "ConversationEnvironment",
-    "TaskEnvironment",
-    "PlanningConfig",
-    "PlanningManager",
-    "Plan",
-    "PlanStep",
-    "PlanStatus",
-    "Trajectory",
-    "MultiTurnTrajectory",
+)
+_LAZY_EXPORTS["TypedConversationTurn"] = (
+    "stateset_agents.core.type_system",
     "ConversationTurn",
-    "RewardFunction",
-    "CompositeReward",
-    # Reward functions
-    "HelpfulnessReward",
-    "SafetyReward",
-    "CorrectnessReward",
-    "ConcisenessReward",
-    "EngagementReward",
-    "TaskCompletionReward",
-    "CustomerServiceReward",
-    "TechnicalSupportReward",
-    "SalesAssistantReward",
-    "DomainSpecificReward",
-    "SimilarityAwareReward",
-    "create_domain_reward",
-    "create_adaptive_reward",
-    # Enhanced error handling
-    "GRPOException",
-    "TrainingException",
-    "ModelException",
-    "DataException",
-    "NetworkException",
-    "ResourceException",
-    "ValidationException",
-    "ErrorCode",
-    "ErrorHandler",
-    "RetryConfig",
-    "CircuitBreakerConfig",
-    "retry_async",
-    "circuit_breaker",
-    "handle_error",
-    "get_error_summary",
-    # Performance optimization
-    "PerformanceOptimizer",
-    "MemoryMonitor",
-    "ModelOptimizer",
-    "BatchOptimizer",
-    "OptimizationLevel",
-    "MemoryConfig",
-    "ComputeConfig",
-    "DataConfig",
-    "PerformanceMetrics",
-    # Type system
-    "TypeValidator",
-    "ConfigValidator",
-    "TypeSafeSerializer",
-    "create_typed_config",
-    "ensure_type_safety",
-    "ensure_async_type_safety",
-    "ModelConfig",
-    "TrainingConfig",
-    "TypedConversationTurn",
-    "TrajectoryData",
-    "RewardMetrics",
-    "DeviceType",
-    "ModelSize",
-    "TrainingStage",
-    # Async resource management
-    "AsyncResourcePool",
-    "AsyncTaskManager",
-    "PooledResource",
-    "get_http_pool",
-    "get_task_manager",
-    "managed_async_resources",
-    # Data processing
-    "DataLoader",
-    "DataProcessor",
-    "ConversationExample",
-    "load_and_prepare_data",
-    # Training (optional)
-    "GRPOTrainer",
-    "MultiTurnGRPOTrainer",
-    "TrainingProfile",
-    "get_config_for_task",
-    "train",
-    "AutoTrainer",
-    # Utilities
-    "WandBLogger",
-    "init_wandb",
-    # Offline RL Data
-    "ConversationDataset",
-    "ConversationDatasetConfig",
-    "ConversationReplayBuffer",
-    "EmbeddingCache",
-    # Sim-to-Real
-    "SimToRealMetrics",
-    "SimToRealEvaluator",
-    "ConversationSimulator",
-    "ConversationSimulatorConfig",
-]
+    None,
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.async_pool",
+        [
+            "AsyncResourcePool",
+            "AsyncTaskManager",
+            "PooledResource",
+            "get_http_pool",
+            "get_task_manager",
+            "managed_async_resources",
+        ],
+        install_hint=_AIOHTTP_INSTALL_HINT,
+    )
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.data_processing",
+        [
+            "DataLoader",
+            "DataProcessor",
+            "ConversationExample",
+            "load_and_prepare_data",
+        ],
+    )
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.training.trainer",
+        ["GRPOTrainer", "MultiTurnGRPOTrainer"],
+        install_hint=_TRAINING_INSTALL_HINT,
+    )
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.training.config",
+        ["TrainingConfig", "TrainingProfile", "get_config_for_task"],
+        install_hint=_TRAINING_INSTALL_HINT,
+    )
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.training.train",
+        ["train", "AutoTrainer"],
+        install_hint=_TRAINING_INSTALL_HINT,
+    )
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.training.auto_research",
+        ["AutoResearchConfig", "AutoResearchLoop", "run_auto_research"],
+        install_hint=_TRAINING_INSTALL_HINT,
+    )
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.utils.wandb_integration",
+        ["WandBLogger", "init_wandb"],
+        install_hint=_TRAINING_INSTALL_HINT,
+    )
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.data",
+        [
+            "ConversationDataset",
+            "ConversationDatasetConfig",
+            "ConversationReplayBuffer",
+            "EmbeddingCache",
+        ],
+    )
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.evaluation",
+        ["SimToRealMetrics", "SimToRealEvaluator"],
+    )
+)
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.environments",
+        ["ConversationSimulator", "ConversationSimulatorConfig"],
+    )
+)
+
+__all__ = list(_LAZY_EXPORTS)
+
+
+def _build_import_error(
+    name: str,
+    module_name: str,
+    install_hint: str | None,
+) -> str:
+    message = (
+        f"{name} could not be imported from {module_name} because optional "
+        "dependencies are unavailable or failed to initialize."
+    )
+    if install_hint:
+        message += f" Install with: {install_hint}"
+    return message
+
+
+def _maybe_import_submodule(name: str) -> Any | None:
+    """Import real subpackages like ``stateset_agents.training`` on demand."""
+    module_name = f"{__name__}.{name}"
+    try:
+        spec = find_spec(module_name)
+    except OPTIONAL_IMPORT_EXCEPTIONS:
+        spec = None
+
+    if spec is None:
+        return None
+
+    module = import_module(module_name)
+    globals()[name] = module
+    return module
+
+
+def __getattr__(name: str) -> Any:
+    export = _LAZY_EXPORTS.get(name)
+    if export is None:
+        module = _maybe_import_submodule(name)
+        if module is not None:
+            return module
+        raise AttributeError(f"module 'stateset_agents' has no attribute {name!r}")
+
+    module_name, attr_name, install_hint = export
+
+    try:
+        module = import_module(module_name)
+    except OPTIONAL_IMPORT_EXCEPTIONS as exc:
+        raise ImportError(
+            _build_import_error(name, module_name, install_hint)
+        ) from exc
+
+    try:
+        value = getattr(module, attr_name)
+    except AttributeError as exc:
+        raise AttributeError(
+            f"module '{module_name}' has no attribute {attr_name!r}"
+        ) from exc
+
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

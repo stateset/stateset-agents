@@ -1,0 +1,87 @@
+# Auto-Research Configuration
+# ===========================
+#
+# Use with: stateset-agents auto-research --config examples/auto_research_config.yaml
+#
+# This config file defines the full auto-research loop setup.
+# CLI flags override values from this file.
+
+auto_research:
+  # Experiment loop
+  time_budget: 300          # seconds per experiment (training + eval)
+  max_experiments: 50       # 0 = unlimited
+  max_wall_clock: 0         # total budget in seconds; 0 = unlimited
+  proposer: perturbation    # random, grid, bayesian, perturbation, llm
+  algorithm: gspo           # gspo, grpo, dapo, vapo
+  search_space: auto_research  # auto_research, quick, reward, model, grpo
+
+  # Evaluation
+  eval_episodes: 10
+  eval_seed: 42
+
+  # Output
+  output_dir: ./auto_research_results
+
+  # W&B (optional)
+  wandb: false
+  wandb_project: auto-research
+
+  # Agent configuration
+  agent:
+    model_name: gpt2
+    max_new_tokens: 64
+    temperature: 0.7
+
+  # Environment
+  environment:
+    max_turns: 8
+    scenarios:
+      - topic: general_inquiry
+        context: "Customer has a general question about services."
+        user_responses:
+          - "Hi, I have a question about your services."
+          - "What are your business hours?"
+          - "Thanks for the help!"
+
+      - topic: feedback
+        context: "Customer wants to share feedback."
+        user_responses:
+          - "I wanted to give feedback about my recent order."
+          - "The delivery was faster than expected!"
+          - "Keep up the good work."
+
+      - topic: upgrade_request
+        context: "Customer wants to upgrade their plan."
+        user_responses:
+          - "I'd like to upgrade my plan."
+          - "I'm currently on Basic and want Premium."
+          - "Will my existing data carry over?"
+
+    eval_scenarios:
+      - topic: order_status
+        context: "Customer placed an order and wants an update."
+        user_responses:
+          - "Hi, I placed an order on Monday."
+          - "The order number is #12345."
+          - "When will it arrive?"
+
+      - topic: product_return
+        context: "Customer received a damaged item."
+        user_responses:
+          - "I received my order but the item is broken."
+          - "It's a wireless keyboard."
+          - "I'd like a refund please."
+
+      - topic: billing_dispute
+        context: "Customer was charged twice."
+        user_responses:
+          - "I was charged twice for order #67890."
+          - "Yes I can see both charges."
+          - "When will the refund appear?"
+
+      - topic: technical_support
+        context: "Customer's app keeps crashing."
+        user_responses:
+          - "The app keeps crashing when I open it."
+          - "I'm on Android 14, Samsung Galaxy S24."
+          - "I already tried reinstalling it."

@@ -41,4 +41,3 @@ def test_data_loader_split_fallback_without_sklearn(monkeypatch):
     # Deterministic output for a fixed seed.
     assert [e.query for e in train_1] == [e.query for e in train_2]
     assert [e.query for e in eval_1] == [e.query for e in eval_2]
-

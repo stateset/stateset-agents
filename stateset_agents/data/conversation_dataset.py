@@ -10,8 +10,8 @@ import json
 import logging
 import random
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any, Optional
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -54,7 +54,7 @@ class ConversationDatasetConfig:
     compute_returns: bool = True
     discount_factor: float = 0.99
     min_trajectory_length: int = 1
-    max_trajectory_length: Optional[int] = None
+    max_trajectory_length: int | None = None
 
 
 @dataclass
@@ -64,8 +64,8 @@ class ConversationTurnData:
     role: str
     content: str
     reward: float = 0.0
-    timestamp: Optional[float] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    timestamp: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -73,15 +73,15 @@ class TrajectoryData:
     """Single conversation trajectory for offline RL"""
 
     trajectory_id: str
-    turns: List[ConversationTurnData]
+    turns: list[ConversationTurnData]
     total_reward: float
-    turn_rewards: List[float]
-    returns_to_go: Optional[List[float]] = None
+    turn_rewards: list[float]
+    returns_to_go: list[float] | None = None
     is_simulated: bool = False
-    domain_label: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    domain_label: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def compute_returns_to_go(self, gamma: float = 0.99) -> List[float]:
+    def compute_returns_to_go(self, gamma: float = 0.99) -> list[float]:
         """Compute returns-to-go for Decision Transformer"""
         returns = []
         running_return = 0.0
@@ -110,15 +110,15 @@ class ConversationDataset(TorchDataset):
 
     def __init__(
         self,
-        trajectories: List[TrajectoryData],
-        config: Optional[ConversationDatasetConfig] = None,
+        trajectories: list[TrajectoryData],
+        config: ConversationDatasetConfig | None = None,
         embedding_cache: Optional["EmbeddingCache"] = None,
     ):
         self.trajectories = trajectories
         self.config = config or ConversationDatasetConfig()
         self.embedding_cache = embedding_cache
-        self._embedding_dim: Optional[int] = None
-        self._statistics: Optional[Dict[str, float]] = None
+        self._embedding_dim: int | None = None
+        self._statistics: dict[str, float] | None = None
 
         if self.config.normalize_rewards:
             self.normalize_rewards(self.config.reward_normalization_method)
@@ -139,7 +139,7 @@ class ConversationDataset(TorchDataset):
     def from_jsonl(
         cls,
         path: str,
-        config: Optional[ConversationDatasetConfig] = None,
+        config: ConversationDatasetConfig | None = None,
         **kwargs,
     ) -> "ConversationDataset":
         """
@@ -156,7 +156,7 @@ class ConversationDataset(TorchDataset):
         config = config or ConversationDatasetConfig(data_path=path, format="jsonl")
         trajectories = []
 
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             for line_num, line in enumerate(f):
                 line = line.strip()
                 if not line:
@@ -178,13 +178,13 @@ class ConversationDataset(TorchDataset):
     def from_json(
         cls,
         path: str,
-        config: Optional[ConversationDatasetConfig] = None,
+        config: ConversationDatasetConfig | None = None,
         **kwargs,
     ) -> "ConversationDataset":
         """Load dataset from JSON file (list of trajectories)"""
         config = config or ConversationDatasetConfig(data_path=path, format="json")
 
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         if isinstance(data, dict) and "trajectories" in data:
@@ -204,7 +204,7 @@ class ConversationDataset(TorchDataset):
         cls,
         dataset_name: str,
         split: str = "train",
-        config: Optional[ConversationDatasetConfig] = None,
+        config: ConversationDatasetConfig | None = None,
         conversation_column: str = "conversations",
         reward_column: str = "reward",
         **kwargs,
@@ -219,10 +219,10 @@ class ConversationDataset(TorchDataset):
         """
         try:
             from datasets import load_dataset
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
                 "HuggingFace datasets required. Install: pip install datasets"
-            )
+            ) from exc
 
         config = config or ConversationDatasetConfig(
             data_path=dataset_name, format="hf_dataset"
@@ -246,8 +246,8 @@ class ConversationDataset(TorchDataset):
     @classmethod
     def from_dict(
         cls,
-        data: Dict[str, Any],
-        config: Optional[ConversationDatasetConfig] = None,
+        data: dict[str, Any],
+        config: ConversationDatasetConfig | None = None,
         **kwargs,
     ) -> "ConversationDataset":
         """Create dataset from dictionary (useful for testing)"""
@@ -262,9 +262,7 @@ class ConversationDataset(TorchDataset):
         return cls(trajectories, config, **kwargs)
 
     @staticmethod
-    def _parse_trajectory(
-        data: Dict[str, Any], idx: int
-    ) -> Optional[TrajectoryData]:
+    def _parse_trajectory(data: dict[str, Any], idx: int) -> TrajectoryData | None:
         """Parse a single trajectory from dictionary"""
         try:
             turns = []
@@ -299,11 +297,11 @@ class ConversationDataset(TorchDataset):
 
     @staticmethod
     def _parse_hf_item(
-        item: Dict[str, Any],
+        item: dict[str, Any],
         idx: int,
         conversation_column: str,
         reward_column: str,
-    ) -> Optional[TrajectoryData]:
+    ) -> TrajectoryData | None:
         """Parse HuggingFace dataset item"""
         try:
             turns = []
@@ -327,9 +325,7 @@ class ConversationDataset(TorchDataset):
                             )
                         )
                     elif isinstance(conv, str):
-                        turns.append(
-                            ConversationTurnData(role="user", content=conv)
-                        )
+                        turns.append(ConversationTurnData(role="user", content=conv))
 
             if not turns:
                 return None
@@ -352,7 +348,7 @@ class ConversationDataset(TorchDataset):
         self,
         batch_size: int,
         include_embeddings: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Sample a batch of trajectories for training.
 
@@ -367,7 +363,9 @@ class ConversationDataset(TorchDataset):
         """
         _require_torch()
 
-        indices = random.sample(range(len(self.trajectories)), min(batch_size, len(self.trajectories)))
+        indices = random.sample(
+            range(len(self.trajectories)), min(batch_size, len(self.trajectories))
+        )
         batch_trajectories = [self.trajectories[i] for i in indices]
 
         rewards = []
@@ -396,9 +394,7 @@ class ConversationDataset(TorchDataset):
 
         return result
 
-    def _get_embeddings(
-        self, trajectories: List[TrajectoryData]
-    ) -> Tuple[Any, Any]:
+    def _get_embeddings(self, trajectories: list[TrajectoryData]) -> tuple[Any, Any]:
         """Get state and action embeddings for trajectories"""
         if not self.embedding_cache:
             raise ValueError("Embedding cache required for embeddings")
@@ -430,7 +426,7 @@ class ConversationDataset(TorchDataset):
 
         return states, actions
 
-    def get_statistics(self) -> Dict[str, float]:
+    def get_statistics(self) -> dict[str, float]:
         """Compute dataset statistics"""
         if self._statistics is not None:
             return self._statistics
@@ -478,13 +474,17 @@ class ConversationDataset(TorchDataset):
         if method == "standard":
             mean = np.mean(all_rewards)
             std = np.std(all_rewards) + 1e-8
-            normalize = lambda r: (r - mean) / std
+
+            def normalize(r: float) -> float:
+                return float((r - mean) / std)
 
         elif method == "minmax":
             min_r = np.min(all_rewards)
             max_r = np.max(all_rewards)
             range_r = max_r - min_r + 1e-8
-            normalize = lambda r: (r - min_r) / range_r
+
+            def normalize(r: float) -> float:
+                return float((r - min_r) / range_r)
 
         elif method == "percentile":
             p5 = np.percentile(all_rewards, 5)
@@ -492,7 +492,9 @@ class ConversationDataset(TorchDataset):
             clipped = np.clip(all_rewards, p5, p95)
             mean = np.mean(clipped)
             std = np.std(clipped) + 1e-8
-            normalize = lambda r: (np.clip(r, p5, p95) - mean) / std
+
+            def normalize(r: float) -> float:
+                return float((np.clip(r, p5, p95) - mean) / std)
 
         else:
             raise ValueError(f"Unknown normalization method: {method}")
@@ -523,14 +525,12 @@ class ConversationDataset(TorchDataset):
             f"Filtered from {len(self.trajectories)} to {len(filtered)} "
             f"trajectories (min_reward={min_reward})"
         )
-        return ConversationDataset(
-            filtered, self.config, self.embedding_cache
-        )
+        return ConversationDataset(filtered, self.config, self.embedding_cache)
 
     def filter_by_length(
         self,
-        min_length: Optional[int] = None,
-        max_length: Optional[int] = None,
+        min_length: int | None = None,
+        max_length: int | None = None,
     ) -> "ConversationDataset":
         """Filter trajectories by turn count"""
         filtered = self.trajectories
@@ -541,16 +541,14 @@ class ConversationDataset(TorchDataset):
         if max_length is not None:
             filtered = [t for t in filtered if len(t.turns) <= max_length]
 
-        return ConversationDataset(
-            filtered, self.config, self.embedding_cache
-        )
+        return ConversationDataset(filtered, self.config, self.embedding_cache)
 
     def split(
         self,
         train_ratio: float = 0.8,
         shuffle: bool = True,
-        seed: Optional[int] = None,
-    ) -> Tuple["ConversationDataset", "ConversationDataset"]:
+        seed: int | None = None,
+    ) -> tuple["ConversationDataset", "ConversationDataset"]:
         """Split dataset into train and validation sets"""
         trajectories = list(self.trajectories)
 
@@ -568,7 +566,7 @@ class ConversationDataset(TorchDataset):
             ConversationDataset(val_trajectories, self.config, self.embedding_cache),
         )
 
-    def to_offline_rl_format(self) -> Dict[str, np.ndarray]:
+    def to_offline_rl_format(self) -> dict[str, np.ndarray]:
         """
         Convert to format expected by offline RL algorithms.
 
@@ -615,7 +613,9 @@ class ConversationDataset(TorchDataset):
 
                     states.append(state_emb.numpy())
                     actions.append(action_emb.numpy())
-                    rewards.append(traj.turn_rewards[i] if i < len(traj.turn_rewards) else 0.0)
+                    rewards.append(
+                        traj.turn_rewards[i] if i < len(traj.turn_rewards) else 0.0
+                    )
                     next_states.append(next_state_emb.numpy())
                     dones.append(float(is_done))
 
@@ -652,8 +652,8 @@ class ConversationReplayBuffer:
         self.priority_alpha = priority_alpha
         self.priority_beta = priority_beta
 
-        self.trajectories: List[TrajectoryData] = []
-        self.priorities: List[float] = []
+        self.trajectories: list[TrajectoryData] = []
+        self.priorities: list[float] = []
         self._total_turns = 0
 
     def __len__(self) -> int:
@@ -680,7 +680,7 @@ class ConversationReplayBuffer:
             max_priority = max(self.priorities) if self.priorities else 1.0
             self.priorities.append(max_priority)
 
-    def add_trajectories(self, trajectories: List[TrajectoryData]) -> None:
+    def add_trajectories(self, trajectories: list[TrajectoryData]) -> None:
         """Add multiple trajectories"""
         for traj in trajectories:
             self.add_trajectory(traj)
@@ -689,7 +689,7 @@ class ConversationReplayBuffer:
         self,
         batch_size: int,
         return_indices: bool = False,
-    ) -> Union[List[TrajectoryData], Tuple[List[TrajectoryData], List[int]]]:
+    ) -> list[TrajectoryData] | tuple[list[TrajectoryData], list[int]]:
         """
         Sample trajectories from buffer.
 
@@ -727,7 +727,7 @@ class ConversationReplayBuffer:
     def sample_turns(
         self,
         batch_size: int,
-    ) -> List[Tuple[TrajectoryData, int]]:
+    ) -> list[tuple[TrajectoryData, int]]:
         """
         Sample individual turns uniformly across all trajectories.
 
@@ -748,20 +748,19 @@ class ConversationReplayBuffer:
         indices = np.random.choice(len(turn_to_traj), size=batch_size, replace=False)
 
         return [
-            (self.trajectories[turn_to_traj[i][0]], turn_to_traj[i][1])
-            for i in indices
+            (self.trajectories[turn_to_traj[i][0]], turn_to_traj[i][1]) for i in indices
         ]
 
     def update_priorities(
         self,
-        indices: List[int],
-        priorities: List[float],
+        indices: list[int],
+        priorities: list[float],
     ) -> None:
         """Update priorities for prioritized replay"""
         if not self.priority:
             return
 
-        for idx, priority in zip(indices, priorities):
+        for idx, priority in zip(indices, priorities, strict=False):
             if 0 <= idx < len(self.priorities):
                 self.priorities[idx] = priority + 1e-6  # Avoid zero priority
 
@@ -771,7 +770,7 @@ class ConversationReplayBuffer:
         self.priorities.clear()
         self._total_turns = 0
 
-    def get_statistics(self) -> Dict[str, float]:
+    def get_statistics(self) -> dict[str, float]:
         """Get buffer statistics"""
         if not self.trajectories:
             return {"num_trajectories": 0, "total_turns": 0}
@@ -798,7 +797,7 @@ class EmbeddingCache:
         self,
         embedding_model: str = "all-MiniLM-L6-v2",
         cache_size: int = 100000,
-        device: Optional[str] = None,
+        device: str | None = None,
     ):
         if SentenceTransformer is None:
             raise ImportError(
@@ -808,11 +807,11 @@ class EmbeddingCache:
 
         self.model_name = embedding_model
         self.cache_size = cache_size
-        self._cache: Dict[str, Any] = {}
-        self._access_order: List[str] = []
+        self._cache: dict[str, Any] = {}
+        self._access_order: list[str] = []
 
         # Lazy load model
-        self._model: Optional[SentenceTransformer] = None
+        self._model: SentenceTransformer | None = None
         self._device = device
 
     @property
@@ -861,7 +860,7 @@ class EmbeddingCache:
 
     async def embed_conversation(
         self,
-        turns: List[ConversationTurnData],
+        turns: list[ConversationTurnData],
     ) -> Any:
         """
         Embed a full conversation asynchronously.
@@ -881,7 +880,7 @@ class EmbeddingCache:
 
         return embeddings
 
-    def embed_batch(self, texts: List[str]) -> Any:
+    def embed_batch(self, texts: list[str]) -> Any:
         """Embed a batch of texts"""
         return self.model.encode(texts, convert_to_tensor=True)
 
@@ -893,7 +892,7 @@ class EmbeddingCache:
     def __len__(self) -> int:
         return len(self._cache)
 
-    def get_cache_stats(self) -> Dict[str, Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics"""
         return {
             "cache_size": len(self._cache),

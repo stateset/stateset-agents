@@ -5,15 +5,15 @@ This module provides advanced performance optimization techniques including
 memory management, computational efficiency, and resource utilization.
 """
 
-import asyncio
+from __future__ import annotations
+
 import gc
 import logging
-import threading
 import time
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 try:  # pragma: no cover - optional dependency
     import psutil  # type: ignore
@@ -29,10 +29,16 @@ except ImportError:  # pragma: no cover
 
 if torch is not None:  # pragma: no cover - optional dependency
     try:
-        from torch.cuda.amp import GradScaler, autocast  # type: ignore
+        # Prefer the modern torch.amp APIs; fall back to torch.cuda.amp for older
+        # PyTorch versions. (torch.cuda.amp.* emits deprecation warnings in
+        # newer versions.)
+        from torch.amp import GradScaler, autocast  # type: ignore
     except (ImportError, AttributeError, RuntimeError):  # pragma: no cover
-        GradScaler = None  # type: ignore[assignment]
-        autocast = None  # type: ignore[assignment]
+        try:
+            from torch.cuda.amp import GradScaler, autocast  # type: ignore
+        except (ImportError, AttributeError, RuntimeError):  # pragma: no cover
+            GradScaler = None  # type: ignore[assignment]
+            autocast = None  # type: ignore[assignment]
 else:  # pragma: no cover
     GradScaler = None  # type: ignore[assignment]
     autocast = None  # type: ignore[assignment]
@@ -41,6 +47,7 @@ else:  # pragma: no cover
 PreTrainedModel = Any  # type: ignore[assignment]
 _transformers_perf_loaded = False
 
+
 def _load_pretrained_model() -> bool:
     """Lazily load PreTrainedModel to avoid import-time errors."""
     global _transformers_perf_loaded, PreTrainedModel
@@ -48,11 +55,13 @@ def _load_pretrained_model() -> bool:
         return True
     try:
         from transformers import PreTrainedModel as _PreTrainedModel  # type: ignore
+
         PreTrainedModel = _PreTrainedModel
         _transformers_perf_loaded = True
         return True
     except (ImportError, RuntimeError):  # pragma: no cover
         return False
+
 
 if TYPE_CHECKING:
     from torch import Tensor
@@ -134,10 +143,10 @@ class MemoryMonitor:
             )
         self.config = config
         self.peak_memory = 0.0
-        self.memory_history: List[float] = []
+        self.memory_history: list[float] = []
         self.gc_stats = {"calls": 0, "freed_mb": 0.0}
 
-    def get_memory_usage(self) -> Dict[str, float]:
+    def get_memory_usage(self) -> dict[str, float]:
         """Get current memory usage"""
         # CPU memory
         assert psutil is not None  # Narrow type for type checkers
@@ -227,10 +236,18 @@ class ModelOptimizer:
         if config.use_mixed_precision:
             if GradScaler is None:
                 raise ImportError(
-                    "torch.cuda.amp.GradScaler is unavailable. Upgrade PyTorch or "
+                    "torch.amp.GradScaler is unavailable. Upgrade PyTorch or "
                     "disable mixed precision."
                 )
-            self.scaler = GradScaler()
+            # Avoid enabling AMP on CPU-only environments (keeps logs/tests clean).
+            cuda_available = bool(getattr(torch.cuda, "is_available", lambda: False)())
+            if not cuda_available:
+                logger.info(
+                    "Mixed precision requested, but CUDA is not available; "
+                    "disabling GradScaler/autocast."
+                )
+            else:
+                self.scaler = GradScaler()
 
     def optimize_model(self, model: PreTrainedModel) -> PreTrainedModel:
         """Apply model optimizations"""
@@ -285,14 +302,19 @@ class ModelOptimizer:
         if self.config.use_mixed_precision and self.scaler:
             if autocast is None:
                 logger.warning(
-                    "Requested mixed precision but torch.cuda.amp.autocast is unavailable. "
+                    "Requested mixed precision but torch.amp.autocast is unavailable. "
                     "Proceeding without autocast."
                 )
                 with nullcontext():
                     yield None
             else:
-                with autocast():
-                    yield self.scaler
+                try:
+                    with autocast(device_type="cuda"):
+                        yield self.scaler
+                except TypeError:
+                    # Older `torch.cuda.amp.autocast()` signature.
+                    with autocast():
+                        yield self.scaler
         else:
             yield None
 
@@ -308,7 +330,7 @@ class BatchOptimizer:
             )
         self.config = config
         self.optimal_batch_size = 1
-        self.performance_history: List[PerformanceMetrics] = []
+        self.performance_history: list[PerformanceMetrics] = []
         self.last_oom_batch_size = None
 
     def find_optimal_batch_size(
@@ -333,7 +355,7 @@ class BatchOptimizer:
 
                 with torch.no_grad():
                     start_time = time.time()
-                    output = model(batch_input)
+                    _ = model(batch_input)
                     end_time = time.time()
 
                 # Calculate throughput
@@ -398,7 +420,7 @@ class PerformanceProfiler:
     """Performance profiling and analysis"""
 
     def __init__(self):
-        self.metrics_history: List[PerformanceMetrics] = []
+        self.metrics_history: list[PerformanceMetrics] = []
         self.profiling_active = False
 
     def start_profiling(self):
@@ -406,7 +428,7 @@ class PerformanceProfiler:
         self.profiling_active = True
         logger.info("Started performance profiling")
 
-    def stop_profiling(self) -> Dict[str, Any]:
+    def stop_profiling(self) -> dict[str, Any]:
         """Stop profiling and return analysis"""
         self.profiling_active = False
         logger.info("Stopped performance profiling")
@@ -422,7 +444,7 @@ class PerformanceProfiler:
             if len(self.metrics_history) > 10000:
                 self.metrics_history = self.metrics_history[-5000:]
 
-    def analyze_performance(self) -> Dict[str, Any]:
+    def analyze_performance(self) -> dict[str, Any]:
         """Analyze recorded performance metrics"""
         if not self.metrics_history:
             return {"error": "No metrics recorded"}
@@ -464,9 +486,9 @@ class PerformanceOptimizer:
     def __init__(
         self,
         optimization_level: OptimizationLevel = OptimizationLevel.BALANCED,
-        memory_config: Optional[MemoryConfig] = None,
-        compute_config: Optional[ComputeConfig] = None,
-        data_config: Optional[DataConfig] = None,
+        memory_config: MemoryConfig | None = None,
+        compute_config: ComputeConfig | None = None,
+        data_config: DataConfig | None = None,
     ):
         self.optimization_level = optimization_level
         self.memory_config = memory_config or self._get_default_memory_config()
@@ -526,7 +548,7 @@ class PerformanceOptimizer:
         else:
             return DataConfig()
 
-    def optimize_training_step(self, model: PreTrainedModel) -> Dict[str, Any]:
+    def optimize_training_step(self, model: PreTrainedModel) -> dict[str, Any]:
         """Optimize a single training step"""
 
         self.optimization_step += 1
@@ -557,7 +579,7 @@ class PerformanceOptimizer:
             "optimization_active": True,
         }
 
-    def get_performance_report(self) -> Dict[str, Any]:
+    def get_performance_report(self) -> dict[str, Any]:
         """Get comprehensive performance report"""
 
         memory_stats = self.memory_monitor.get_memory_usage()
@@ -576,8 +598,8 @@ class PerformanceOptimizer:
         }
 
     def _generate_recommendations(
-        self, memory_stats: Dict[str, float], performance_analysis: Dict[str, Any]
-    ) -> List[str]:
+        self, memory_stats: dict[str, float], performance_analysis: dict[str, Any]
+    ) -> list[str]:
         """Generate optimization recommendations"""
 
         recommendations = []

@@ -2,7 +2,7 @@
 
 This guide covers how to set up your environment for publishing StateSet Agents to PyPI, Docker Hub, and other distribution channels.
 
-## �� PyPI Setup
+## PyPI Setup
 
 ### 1. Create PyPI Accounts
 
@@ -60,7 +60,9 @@ password = YOUR_TEST_PYPI_TOKEN
 
 1. Go to https://hub.docker.com/
 2. Create account or login
-3. Create repository: `stateset/agents`
+3. Create repositories:
+   - `stateset/stateset-agents-api`
+   - `stateset/stateset-agents-trainer`
 
 ### 2. Set Docker Credentials
 
@@ -125,7 +127,7 @@ gh auth login
 
 ```bash
 # Install build tools
-pip install build twine
+pip install build twine bandit safety
 
 # Install GitHub CLI (optional)
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
@@ -158,9 +160,8 @@ gh auth status
    git commit -m "feat: add new feature"
    
    # Test locally
-   make test-all
-   make build
-   make test-package
+   make dev-test
+   make publish-readiness
    ```
 
 2. **Test Release**
@@ -186,7 +187,7 @@ gh auth status
 
 The CI/CD pipeline handles:
 
-1. **Version bumping** - Automatic or manual version updates
+1. **Version consistency** - release event tag is validated against `pyproject.toml` version
 2. **Package building** - Creates wheel and source distributions
 3. **Publishing** - Uploads to PyPI/TestPyPI based on trigger
 4. **Docker images** - Builds and pushes multi-platform images
@@ -198,15 +199,24 @@ The CI/CD pipeline handles:
 For manual control:
 
 ```bash
-# Full manual release
-python scripts/publish.py --version 1.2.3
+# Full manual release to production
+python scripts/publish.py --production --version 1.2.3
+
+# Optional override for one-off operations:
+#   SKIP_RELEASE_BRANCH_CHECK=1 python scripts/publish.py --production --version 1.2.3
+#   python scripts/publish.py --production --version 1.2.3 --skip-branch-check
 
 # Or step by step
-make build
-make test-package
-make publish-test  # Test first
-make publish       # Then production
-make docker-release
+# publish-readiness is enforced automatically in scripts/publish.py
+# Makefile and interactive quick-publish publishing flows require main/master or
+# release/* branches unless SKIP_RELEASE_BRANCH_CHECK=1 is set for one-off operations.
+# (This includes TestPyPI and production publish options in make publish-test and
+# quick publish menu entries.)
+make publish-readiness
+make publish-test  # Readiness gate + TestPyPI
+make publish       # Readiness gate + production PyPI
+make quick-publish # Interactive publish menu (includes branch checks)
+# Docker images and release metadata are handled in the GitHub publish workflow
 ```
 
 ## 📦 Package Metadata
@@ -269,21 +279,26 @@ LABEL org.opencontainers.image.licenses="Business Source License 1.1"
 ### Pre-Publishing Checks
 
 ```bash
-# Run all tests
-make test-all
+# Run all publication checks
+make publish-readiness
+```
 
-# Check code quality
-make lint
+The run emits `publish-readiness-summary.json` with a compact machine-readable result:
+`status`, `failed_step`, optional `failure_detail`, `duration_seconds`, and git metadata.
 
-# Security scan
-make security-scan
+```bash
+# Example summary keys (for CI/automation)
+cat publish-readiness-summary.json
+```
 
+Sample high-level interpretation:
+- `status: "passed"` => all checks passed
+- `status: "failed"` => inspect `failed_step` for the first failing gate
+- `failure_detail` appears for preflight issues (for example: missing tooling)
+
+```bash
 # Build documentation
 make docs-build
-
-# Test package build
-make build
-make test-package
 ```
 
 ### Post-Publishing Verification
@@ -295,8 +310,11 @@ pip install stateset-agents --index-url https://test.pypi.org/simple/
 # Test production installation
 pip install stateset-agents
 
-# Test Docker image
-docker run stateset/agents:latest --help
+# Test Docker images
+docker run --rm stateset/stateset-agents-api:latest \
+  python -c "import stateset_agents; print(stateset_agents.__version__)"
+docker run --rm stateset/stateset-agents-trainer:latest \
+  python -c "import stateset_agents; print(stateset_agents.__version__)"
 
 # Check documentation
 curl -f https://docs.stateset.ai/
@@ -343,8 +361,8 @@ gh release create v1.2.3-test --generate-notes --draft
 
 #### PyPI Rollback
 ```bash
-# Yank release (keeps it but marks as broken)
-twine upload --skip-existing dist/* --yank
+# Yank release (keeps it but marks it as broken)
+python -m twine upload --skip-existing dist/* --yank
 
 # Or delete (if very broken)
 # Contact PyPI admins for deletion
@@ -353,11 +371,14 @@ twine upload --skip-existing dist/* --yank
 #### Docker Rollback
 ```bash
 # Remove broken tag
-docker rmi stateset/agents:1.2.3
+docker rmi stateset/stateset-agents-api:1.2.3
+docker rmi stateset/stateset-agents-trainer:1.2.3
 
 # Update latest to previous version
-docker tag stateset/agents:1.2.2 stateset/agents:latest
-docker push stateset/agents:latest
+docker tag stateset/stateset-agents-api:1.2.2 stateset/stateset-agents-api:latest
+docker push stateset/stateset-agents-api:latest
+docker tag stateset/stateset-agents-trainer:1.2.2 stateset/stateset-agents-trainer:latest
+docker push stateset/stateset-agents-trainer:latest
 ```
 
 #### GitHub Rollback

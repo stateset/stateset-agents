@@ -5,9 +5,7 @@ Tests cover VAPO configuration, model management, value head network,
 and training components.
 """
 
-import asyncio
-from dataclasses import dataclass
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
@@ -113,12 +111,14 @@ class TestVAPOModelManager:
     def vapo_config(self):
         """Create a VAPO config for testing."""
         from stateset_agents.training.vapo_trainer import VAPOConfig
+
         return VAPOConfig(model_name="gpt2", use_lora=True)
 
     @pytest.fixture
     def model_manager(self, vapo_config):
         """Create a VAPOModelManager for testing."""
         from stateset_agents.training.vapo_trainer import VAPOModelManager
+
         return VAPOModelManager(vapo_config)
 
     def test_model_manager_creation(self, model_manager):
@@ -127,9 +127,9 @@ class TestVAPOModelManager:
         assert model_manager.tokenizer is None
         assert model_manager.device is not None
 
-    @patch("training.vapo_trainer.AutoTokenizer")
-    @patch("training.vapo_trainer.AutoModelForCausalLM")
-    @patch("training.vapo_trainer.get_peft_model")
+    @patch("stateset_agents.training.vapo_trainer.AutoTokenizer")
+    @patch("stateset_agents.training.vapo_trainer.AutoModelForCausalLM")
+    @patch("stateset_agents.training.vapo_trainer.get_peft_model")
     def test_load_model_and_tokenizer(
         self, mock_peft, mock_model_class, mock_tokenizer_class, model_manager
     ):
@@ -149,8 +149,8 @@ class TestVAPOModelManager:
         mock_model_class.from_pretrained.assert_called_once()
         assert tokenizer.pad_token == tokenizer.eos_token
 
-    @patch("training.vapo_trainer.AutoTokenizer")
-    @patch("training.vapo_trainer.AutoModelForCausalLM")
+    @patch("stateset_agents.training.vapo_trainer.AutoTokenizer")
+    @patch("stateset_agents.training.vapo_trainer.AutoModelForCausalLM")
     def test_load_model_without_lora(
         self, mock_model_class, mock_tokenizer_class, vapo_config
     ):
@@ -158,6 +158,7 @@ class TestVAPOModelManager:
         vapo_config.use_lora = False
 
         from stateset_agents.training.vapo_trainer import VAPOModelManager
+
         manager = VAPOModelManager(vapo_config)
 
         mock_tokenizer = MagicMock()
@@ -180,6 +181,7 @@ class TestValueHead:
     def value_head(self):
         """Create a ValueHead for testing."""
         from stateset_agents.training.vapo_trainer import ValueHead
+
         return ValueHead(
             hidden_size=768,
             value_hidden_size=1024,
@@ -448,6 +450,7 @@ class TestVAPOTrainer:
     def vapo_config(self):
         """Create a VAPO config for testing."""
         from stateset_agents.training.vapo_trainer import VAPOConfig
+
         return VAPOConfig(
             model_name="gpt2",
             num_iterations=2,
@@ -487,7 +490,9 @@ class TestVAPOMetrics:
         value_coef = 0.5
         lm_weight = 0.1
 
-        total_loss = policy_loss + value_coef * value_loss + lm_weight * positive_lm_loss
+        total_loss = (
+            policy_loss + value_coef * value_loss + lm_weight * positive_lm_loss
+        )
 
         expected = 0.5 + 0.5 * 0.3 + 0.1 * 0.2
         assert abs(total_loss.item() - expected) < 1e-5

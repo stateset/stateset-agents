@@ -12,11 +12,9 @@ This example demonstrates the major improvements in v0.3.0:
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Dict, List
 
 # Import enhanced framework features
 from stateset_agents import (  # Core components; Enhanced features; Types
-    AsyncTaskManager,
     CompositeReward,
     ConfigValidator,
     ConversationEnvironment,
@@ -24,17 +22,17 @@ from stateset_agents import (  # Core components; Enhanced features; Types
     ErrorHandler,
     HelpfulnessReward,
     ModelConfig,
-    ModelSize,
     MultiTurnAgent,
     NetworkException,
     OptimizationLevel,
     PerformanceOptimizer,
     RetryConfig,
     SafetyReward,
-    TrainingConfig,
     TypeValidator,
     create_typed_config,
+    get_task_manager,
     managed_async_resources,
+    retry_async,
 )
 
 # Configure logging
@@ -85,8 +83,8 @@ async def demonstrate_type_safety():
     test_cases = [
         (42, int, "Integer validation"),
         ("hello", str, "String validation"),
-        ([1, 2, 3], List[int], "List[int] validation"),
-        ({"key": "value"}, Dict[str, str], "Dict[str, str] validation"),
+        ([1, 2, 3], list[int], "List[int] validation"),
+        ({"key": "value"}, dict[str, str], "Dict[str, str] validation"),
     ]
 
     for value, expected_type, description in test_cases:
@@ -161,7 +159,7 @@ async def demonstrate_performance_optimization():
 
     # Get performance report
     performance_report = optimizer.get_performance_report()
-    logger.info(f"📈 Performance report:")
+    logger.info("📈 Performance report:")
     logger.info(f"   Optimization level: {performance_report['optimization_level']}")
     logger.info(f"   Total steps: {performance_report['total_steps']}")
     logger.info(f"   Current memory: {performance_report['current_memory']}")
@@ -233,7 +231,7 @@ async def demonstrate_integrated_agent():
                 ]
             }
         ]
-        env = ConversationEnvironment(scenarios=scenarios)
+        ConversationEnvironment(scenarios=scenarios)
 
         # Create composite reward with error handling
         reward_fn = CompositeReward(
@@ -328,7 +326,7 @@ async def run_comprehensive_demo():
         if not result["success"] and "error" in result:
             logger.info(f"      Error: {result['error']}")
 
-    logger.info(f"\n🎉 Enhanced GRPO Framework v0.3.0 demonstration completed!")
+    logger.info("\n🎉 Enhanced GRPO Framework v0.3.0 demonstration completed!")
 
     return successful_demos == total_demos
 

@@ -35,18 +35,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Dict,
-    Generic,
-    List,
-    Optional,
-    Type,
-    TypeVar,
-    Union,
-    get_args,
-    get_origin,
-)
+from typing import Any, TypeVar, Union, get_args, get_origin
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +44,7 @@ T = TypeVar("T")
 
 # Check for Pydantic availability
 try:
-    from pydantic import BaseModel, ValidationError, create_model
-    from pydantic.json_schema import GenerateJsonSchema
+    from pydantic import BaseModel, ValidationError
 
     PYDANTIC_AVAILABLE = True
 except ImportError:
@@ -97,8 +85,8 @@ class StructuredOutputError(Exception):
         self,
         message: str,
         attempts: int,
-        last_error: Optional[Exception] = None,
-        raw_outputs: Optional[List[str]] = None,
+        last_error: Exception | None = None,
+        raw_outputs: list[str] | None = None,
     ):
         super().__init__(message)
         self.attempts = attempts
@@ -106,7 +94,7 @@ class StructuredOutputError(Exception):
         self.raw_outputs = raw_outputs or []
 
 
-def json_schema_from_type(python_type: Type) -> Dict[str, Any]:
+def json_schema_from_type(python_type: type) -> dict[str, Any]:
     """Generate JSON schema from a Python type annotation.
 
     Supports:
@@ -149,7 +137,11 @@ def json_schema_from_type(python_type: Type) -> Dict[str, Any]:
         }
 
     # Handle Pydantic models
-    if PYDANTIC_AVAILABLE and isinstance(python_type, type) and issubclass(python_type, BaseModel):
+    if (
+        PYDANTIC_AVAILABLE
+        and isinstance(python_type, type)
+        and issubclass(python_type, BaseModel)
+    ):
         return python_type.model_json_schema()
 
     # Handle primitives
@@ -229,7 +221,9 @@ def extract_json_from_response(response: str) -> str:
         Extracted JSON string
     """
     # Try to find JSON in code blocks first
-    code_block_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\}|\[[\s\S]*?\])\s*```", response)
+    code_block_match = re.search(
+        r"```(?:json)?\s*(\{[\s\S]*?\}|\[[\s\S]*?\])\s*```", response
+    )
     if code_block_match:
         return code_block_match.group(1)
 
@@ -266,11 +260,11 @@ class StructuredOutputMixin:
 
     async def generate_structured(
         self,
-        messages: Union[str, List[Dict[str, str]]],
-        response_model: Optional[Type[T]] = None,
-        json_schema: Optional[Dict[str, Any]] = None,
-        context: Optional[Dict[str, Any]] = None,
-        config: Optional[StructuredOutputConfig] = None,
+        messages: str | list[dict[str, str]],
+        response_model: type[T] | None = None,
+        json_schema: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+        config: StructuredOutputConfig | None = None,
     ) -> T:
         """Generate a structured response conforming to a schema.
 
@@ -363,13 +357,15 @@ class StructuredOutputMixin:
                     f"failed: JSON decode error - {e}"
                 )
                 # Add error context to messages for retry
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        f"Your response was not valid JSON. Error: {e}. "
-                        "Please respond with ONLY a valid JSON object matching the schema."
-                    ),
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Your response was not valid JSON. Error: {e}. "
+                            "Please respond with ONLY a valid JSON object matching the schema."
+                        ),
+                    }
+                )
 
             except ValidationError as e:
                 last_error = e
@@ -378,13 +374,15 @@ class StructuredOutputMixin:
                     f"failed: Validation error - {e}"
                 )
                 # Add error context to messages for retry
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        f"Your JSON response did not match the required schema. "
-                        f"Validation errors: {e}. Please fix and try again."
-                    ),
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Your JSON response did not match the required schema. "
+                            f"Validation errors: {e}. Please fix and try again."
+                        ),
+                    }
+                )
 
             except (ValueError, TypeError, RuntimeError, AttributeError) as e:
                 last_error = e
@@ -401,7 +399,7 @@ class StructuredOutputMixin:
         )
 
     def _build_schema_instruction(
-        self, schema: Dict[str, Any], config: StructuredOutputConfig
+        self, schema: dict[str, Any], config: StructuredOutputConfig
     ) -> str:
         """Build instruction string for structured output generation."""
         schema_str = json.dumps(schema, indent=2)
@@ -421,7 +419,7 @@ class StructuredOutputMixin:
 
         return instruction
 
-    def _validate_json_schema(self, data: Any, schema: Dict[str, Any]) -> None:
+    def _validate_json_schema(self, data: Any, schema: dict[str, Any]) -> None:
         """Basic JSON schema validation without external dependencies.
 
         For full JSON Schema validation, use response_model with Pydantic.

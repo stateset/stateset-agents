@@ -1,38 +1,14 @@
-from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field, field_validator
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 
 class AgentConfigRequest(BaseModel):
     """Configuration for creating an agent."""
 
-    model_name: str = Field(..., description="Name of the model to use", example="gpt2")
-    max_new_tokens: int = Field(
-        512, description="Maximum tokens to generate", ge=1, le=4096
-    )
-    temperature: float = Field(0.8, description="Sampling temperature", ge=0.0, le=2.0)
-    top_p: float = Field(0.9, description="Top-p sampling parameter", ge=0.0, le=1.0)
-    top_k: int = Field(50, description="Top-k sampling parameter", ge=1, le=1000)
-    system_prompt: Optional[str] = Field(
-        None, description="System prompt for the agent"
-    )
-    use_chat_template: bool = Field(True, description="Whether to use chat template")
-    enable_planning: bool = Field(False, description="Enable long-term planning")
-    planning_config: Optional[Dict[str, Any]] = Field(
-        None, description="Planning configuration overrides"
-    )
-
-    @field_validator("planning_config")
-    @classmethod
-    def validate_planning_config(
-        cls, v: Optional[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
-        if v is None:
-            return v
-        if not isinstance(v, dict):
-            raise ValueError("planning_config must be a dictionary")
-        return v
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        protected_namespaces=(),
+        json_schema_extra={
             "example": {
                 "model_name": "gpt2",
                 "max_new_tokens": 256,
@@ -43,47 +19,41 @@ class AgentConfigRequest(BaseModel):
                 "planning_config": {"max_steps": 4},
             }
         }
+    )
+
+    model_name: str = Field(..., description="Name of the model to use")
+    max_new_tokens: int = Field(
+        512, description="Maximum tokens to generate", ge=1, le=4096
+    )
+    temperature: float = Field(0.8, description="Sampling temperature", ge=0.0, le=2.0)
+    top_p: float = Field(0.9, description="Top-p sampling parameter", ge=0.0, le=1.0)
+    top_k: int = Field(50, description="Top-k sampling parameter", ge=1, le=1000)
+    system_prompt: str | None = Field(
+        None, description="System prompt for the agent"
+    )
+    use_chat_template: bool = Field(True, description="Whether to use chat template")
+    enable_planning: bool = Field(False, description="Enable long-term planning")
+    planning_config: dict[str, Any] | None = Field(
+        None, description="Planning configuration overrides"
+    )
+
+    @field_validator("planning_config")
+    @classmethod
+    def validate_planning_config(
+        cls, v: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        if v is None:
+            return v
+        if not isinstance(v, dict):
+            raise ValueError("planning_config must be a dictionary")
+        return v
 
 
 class ConversationRequest(BaseModel):
     """Request for agent conversation."""
 
-    messages: List[Dict[str, str]] = Field(
-        ...,
-        description=(
-            "List of conversation messages (append-only when conversation_id is set)"
-        ),
-    )
-    conversation_id: Optional[str] = Field(None, description="Conversation identifier")
-    user_id: Optional[str] = Field(None, description="User identifier")
-    max_tokens: int = Field(
-        512, description="Maximum tokens in response", ge=1, le=4096
-    )
-    temperature: float = Field(0.8, description="Response temperature", ge=0.0, le=2.0)
-    stream: bool = Field(False, description="Whether to stream the response")
-    context: Optional[Dict[str, Any]] = Field(None, description="Additional context")
-
-    @field_validator("messages")
-    @classmethod
-    def validate_messages(cls, v: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """Validate conversation messages."""
-        if not v:
-            raise ValueError("Messages cannot be empty")
-
-        for msg in v:
-            if "role" not in msg or "content" not in msg:
-                raise ValueError("Each message must have 'role' and 'content' fields")
-            if msg["role"] not in ["system", "user", "assistant"]:
-                raise ValueError(
-                    "Message role must be 'system', 'user', or 'assistant'"
-                )
-            if not isinstance(msg["content"], str) or not msg["content"].strip():
-                raise ValueError("Message content must be a non-empty string")
-
-        return v
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "messages": [
                     {"role": "system", "content": "You are a helpful assistant."},
@@ -100,43 +70,49 @@ class ConversationRequest(BaseModel):
                 },
             }
         }
+    )
+
+    messages: list[dict[str, str]] = Field(
+        ...,
+        description=(
+            "List of conversation messages (append-only when conversation_id is set)"
+        ),
+    )
+    conversation_id: str | None = Field(None, description="Conversation identifier")
+    user_id: str | None = Field(None, description="User identifier")
+    max_tokens: int = Field(
+        512, description="Maximum tokens in response", ge=1, le=4096
+    )
+    temperature: float = Field(0.8, description="Response temperature", ge=0.0, le=2.0)
+    stream: bool = Field(False, description="Whether to stream the response")
+    context: dict[str, Any] | None = Field(None, description="Additional context")
+
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Validate conversation messages."""
+        if not v:
+            raise ValueError("Messages cannot be empty")
+
+        for msg in v:
+            if "role" not in msg or "content" not in msg:
+                raise ValueError("Each message must have 'role' and 'content' fields")
+            if msg["role"] not in ["system", "user", "assistant"]:
+                raise ValueError(
+                    "Message role must be 'system', 'user', or 'assistant'"
+                )
+            if not isinstance(msg["content"], str) or not msg["content"].strip():
+                raise ValueError("Message content must be a non-empty string")
+
+        return v
 
 
 class TrainingRequest(BaseModel):
     """Request for training an agent."""
 
-    agent_config: AgentConfigRequest
-    environment_scenarios: List[Dict[str, Any]] = Field(
-        ..., description="Training scenarios"
-    )
-    reward_config: Dict[str, Any] = Field(
-        ..., description="Reward function configuration"
-    )
-    num_episodes: int = Field(
-        100, description="Number of training episodes", ge=1, le=10000
-    )
-    profile: str = Field("balanced", description="Training profile")
-    resume_from_checkpoint: Optional[str] = Field(
-        None, description="Checkpoint path to resume training from"
-    )
-    training_config_overrides: Optional[Dict[str, Any]] = Field(
-        None, description="Optional training configuration overrides"
-    )
-
-    @field_validator("resume_from_checkpoint")
-    @classmethod
-    def validate_resume_from_checkpoint(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        if not isinstance(v, str):
-            raise ValueError("resume_from_checkpoint must be a string path")
-        cleaned = v.strip()
-        if not cleaned:
-            raise ValueError("resume_from_checkpoint cannot be empty")
-        return cleaned
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        protected_namespaces=(),
+        json_schema_extra={
             "example": {
                 "agent_config": {
                     "model_name": "gpt2",
@@ -161,6 +137,37 @@ class TrainingRequest(BaseModel):
                 },
             }
         }
+    )
+
+    agent_config: AgentConfigRequest
+    environment_scenarios: list[dict[str, Any]] = Field(
+        ..., description="Training scenarios"
+    )
+    reward_config: dict[str, Any] = Field(
+        ..., description="Reward function configuration"
+    )
+    num_episodes: int = Field(
+        100, description="Number of training episodes", ge=1, le=10000
+    )
+    profile: str = Field("balanced", description="Training profile")
+    resume_from_checkpoint: str | None = Field(
+        None, description="Checkpoint path to resume training from"
+    )
+    training_config_overrides: dict[str, Any] | None = Field(
+        None, description="Optional training configuration overrides"
+    )
+
+    @field_validator("resume_from_checkpoint")
+    @classmethod
+    def validate_resume_from_checkpoint(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            raise ValueError("resume_from_checkpoint must be a string path")
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("resume_from_checkpoint cannot be empty")
+        return cleaned
 
 
 class ConversationResponse(BaseModel):
@@ -170,7 +177,7 @@ class ConversationResponse(BaseModel):
     conversation_id: str = Field(..., description="Conversation identifier")
     tokens_used: int = Field(..., description="Number of tokens used")
     processing_time: float = Field(..., description="Processing time in seconds")
-    metadata: Dict[str, Any] = Field(
+    metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
     )
 
@@ -180,7 +187,7 @@ class TrainingResponse(BaseModel):
 
     training_id: str = Field(..., description="Training job identifier")
     status: str = Field(..., description="Training status")
-    estimated_time: Optional[float] = Field(
+    estimated_time: float | None = Field(
         None, description="Estimated completion time"
     )
     message: str = Field(..., description="Status message")
@@ -193,17 +200,17 @@ class HealthResponse(BaseModel):
     timestamp: float = Field(..., description="Response timestamp")
     version: str = Field(..., description="API version")
     uptime: float = Field(..., description="Service uptime in seconds")
-    components: Dict[str, str] = Field(..., description="Component health status")
+    components: dict[str, str] = Field(..., description="Component health status")
 
 
 class MetricsResponse(BaseModel):
     """Metrics response."""
 
     timestamp: float = Field(..., description="Metrics timestamp")
-    system_metrics: Dict[str, Union[int, float]] = Field(
+    system_metrics: dict[str, int | float] = Field(
         ..., description="System metrics"
     )
-    performance_metrics: Dict[str, Union[int, float]] = Field(
+    performance_metrics: dict[str, int | float] = Field(
         ..., description="Performance metrics"
     )
     security_events: int = Field(..., description="Number of security events")
@@ -214,7 +221,7 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
-    details: Optional[Dict[str, Any]] = Field(
+    details: dict[str, Any] | None = Field(
         None, description="Additional error details"
     )
     timestamp: float = Field(..., description="Error timestamp")

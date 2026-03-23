@@ -5,11 +5,12 @@ High-level training interface for GRPO Agent Framework
 import asyncio
 import logging
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from stateset_agents.core.agent import Agent, MultiTurnAgent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
+
 from .config import TrainingConfig, TrainingProfile
 from .diagnostics import DiagnosticsMonitor
 from .trainer import MultiTurnGRPOTrainer
@@ -37,13 +38,14 @@ class TrainingMode(Enum):
 async def train(
     agent: Agent,
     environment: Environment,
-    reward_fn: Optional[RewardFunction] = None,
+    reward_fn: RewardFunction | None = None,
     num_episodes: int = 1000,
     profile: str = "balanced",
     training_mode: str = "auto",
-    config_overrides: Optional[Dict[str, Any]] = None,
-    save_path: Optional[str] = None,
-    resume_from_checkpoint: Optional[str] = None,
+    config_overrides: dict[str, Any] | None = None,
+    save_path: str | None = None,
+    resume_from_checkpoint: str | None = None,
+    callbacks: list[Any] | None = None,
     **kwargs,
 ) -> Agent:
     """
@@ -95,6 +97,7 @@ async def train(
         )
     else:
         from stateset_agents.training.trainer import SingleTurnGRPOTrainer
+
         trainer = SingleTurnGRPOTrainer(
             agent=agent, environment=environment, reward_fn=reward_fn, config=config
         )
@@ -102,6 +105,10 @@ async def train(
     # Add diagnostics
     diagnostics = DiagnosticsMonitor(config)
     trainer.add_callback(diagnostics)
+
+    # Add caller-supplied callbacks
+    for cb in callbacks or []:
+        trainer.add_callback(cb)
 
     # Initialize and train
     await trainer.initialize()
@@ -131,7 +138,7 @@ class AutoTrainer:
         self,
         agent: Agent,
         environment: Environment,
-        reward_fn: Optional[RewardFunction] = None,
+        reward_fn: RewardFunction | None = None,
         **kwargs,
     ) -> Agent:
         """
@@ -167,8 +174,8 @@ class AutoTrainer:
         self,
         agent: Agent,
         environment: Environment,
-        reward_fn: Optional[RewardFunction],
-    ) -> Dict[str, Any]:
+        reward_fn: RewardFunction | None,
+    ) -> dict[str, Any]:
         """Analyze task characteristics"""
 
         logger.info("Running baseline evaluation...")
@@ -225,7 +232,7 @@ class AutoTrainer:
         logger.info(f"Task analysis: {analysis}")
         return analysis
 
-    def _select_profile(self, task_analysis: Dict[str, Any]) -> str:
+    def _select_profile(self, task_analysis: dict[str, Any]) -> str:
         """Select optimal training profile based on task analysis"""
 
         difficulty = task_analysis.get("difficulty", "moderate")
@@ -243,120 +250,17 @@ class AutoTrainer:
             return "balanced"  # Default for moderate cases
 
 
-# Convenience functions for common training scenarios
+from .preset_training import (
+    train_customer_service_agent,
+    train_task_agent,
+    train_tutoring_agent,
+)
 
-
-async def train_customer_service_agent(
-    model_name: str = "openai/gpt-oss-120b",
-    scenarios_file: Optional[str] = None,
-    num_episodes: int = 500,
-    **kwargs,
-) -> Agent:
-    """Train a customer service agent"""
-
-    from ..core.agent import AGENT_CONFIGS, create_agent
-    from ..core.environment import CONVERSATION_CONFIGS, ConversationEnvironment
-    from ..core.reward import create_customer_service_reward
-
-    # Create agent
-    agent_config = AGENT_CONFIGS["customer_service"].copy()
-    agent_config.update(kwargs.get("agent_config", {}))
-
-    agent = create_agent(agent_type="multi_turn", model_name=model_name, **agent_config)
-
-    # Create environment
-    env_config = CONVERSATION_CONFIGS["customer_service"].copy()
-    if scenarios_file:
-        import json
-
-        with open(scenarios_file, "r") as f:
-            env_config["scenarios"] = json.load(f)
-
-    environment = ConversationEnvironment(**env_config)
-
-    # Create reward function
-    reward_fn = create_customer_service_reward()
-
-    # Train
-    return await train(
-        agent=agent,
-        environment=environment,
-        reward_fn=reward_fn,
-        num_episodes=num_episodes,
-        **kwargs,
-    )
-
-
-async def train_tutoring_agent(
-    model_name: str = "openai/gpt-oss-120b",
-    subject: str = "general",
-    num_episodes: int = 800,
-    **kwargs,
-) -> Agent:
-    """Train a tutoring agent"""
-
-    from ..core.agent import AGENT_CONFIGS, create_agent
-    from ..core.environment import CONVERSATION_CONFIGS, ConversationEnvironment
-    from ..core.reward import create_tutoring_reward
-
-    # Create agent
-    agent_config = AGENT_CONFIGS["tutor"].copy()
-    agent_config.update(kwargs.get("agent_config", {}))
-
-    agent = create_agent(agent_type="multi_turn", model_name=model_name, **agent_config)
-
-    # Create environment
-    env_config = CONVERSATION_CONFIGS["tutoring"].copy()
-    environment = ConversationEnvironment(**env_config)
-
-    # Create reward function
-    reward_fn = create_tutoring_reward()
-
-    # Train
-    return await train(
-        agent=agent,
-        environment=environment,
-        reward_fn=reward_fn,
-        num_episodes=num_episodes,
-        **kwargs,
-    )
-
-
-async def train_task_agent(
-    model_name: str = "openai/gpt-oss-120b",
-    task_type: str = "data_analysis",
-    num_episodes: int = 600,
-    **kwargs,
-) -> Agent:
-    """Train a task-oriented agent"""
-
-    from ..core.agent import AGENT_CONFIGS, create_agent
-    from ..core.environment import TASK_CONFIGS, TaskEnvironment
-    from ..core.reward import create_task_agent_reward
-
-    # Create agent
-    agent_config = AGENT_CONFIGS["helpful_assistant"].copy()
-    agent_config.update(kwargs.get("agent_config", {}))
-
-    agent = create_agent(agent_type="multi_turn", model_name=model_name, **agent_config)
-
-    # Create environment
-    env_config = TASK_CONFIGS.get(task_type, TASK_CONFIGS["data_analysis"])
-
-    def success_criteria(turns, context):
-        return context.get("task_progress", 0.0) >= 1.0
-
-    environment = TaskEnvironment(success_criteria=success_criteria, **env_config)
-
-    # Create reward function
-    task_criteria = env_config["tasks"][0] if env_config["tasks"] else {}
-    reward_fn = create_task_agent_reward(task_criteria)
-
-    # Train
-    return await train(
-        agent=agent,
-        environment=environment,
-        reward_fn=reward_fn,
-        num_episodes=num_episodes,
-        **kwargs,
-    )
+__all__ = [
+    "TrainingMode",
+    "train",
+    "AutoTrainer",
+    "train_customer_service_agent",
+    "train_tutoring_agent",
+    "train_task_agent",
+]

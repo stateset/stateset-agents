@@ -6,17 +6,45 @@ import os
 import shutil
 import sys
 import tempfile
+import inspect
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 
-# Set up API environment variables BEFORE any imports that might use them
-# This ensures API tests can run without manual environment setup
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.agent_backends import create_stub_backend
+
+try:
+    from _pytest.fixtures import FixtureDef
+
+    if not hasattr(FixtureDef, "unittest"):
+        FixtureDef.unittest = False  # type: ignore[attr-defined]
+except Exception:
+    pass
+
+if (
+    "app" not in inspect.signature(httpx.Client.__init__).parameters
+    and not getattr(httpx.Client, "_stateset_agents_app_compat", False)
+):
+    _original_httpx_client_init = httpx.Client.__init__
+
+    def _compat_httpx_client_init(self, *args, **kwargs):
+        kwargs.pop("app", None)
+        return _original_httpx_client_init(self, *args, **kwargs)
+
+    httpx.Client.__init__ = _compat_httpx_client_init  # type: ignore[assignment]
+    httpx.Client._stateset_agents_app_compat = True  # type: ignore[attr-defined]
+
+# Set up API environment variables BEFORE importing API modules that might read
+# them at import time. This lets API tests run without manual env setup.
 os.environ.setdefault("API_ENVIRONMENT", "development")
-os.environ.setdefault("API_JWT_SECRET", "test-secret-key-for-testing-purposes-only-minimum-32-chars")
+os.environ.setdefault(
+    "API_JWT_SECRET", "test-secret-key-for-testing-purposes-only-minimum-32-chars"
+)
 os.environ.setdefault("API_CORS_ORIGINS", "*")
 os.environ.setdefault("API_REQUIRE_AUTH", "false")
 os.environ.setdefault("API_RATE_LIMIT_ENABLED", "false")
@@ -132,7 +160,7 @@ class AsyncMockHelper:
 
     @staticmethod
     def create_async_mock(
-        return_value: Any = None, side_effect: Optional[Any] = None
+        return_value: Any = None, side_effect: Any | None = None
     ) -> AsyncMock:
         mock_obj = AsyncMock()
         if return_value is not None:
@@ -142,7 +170,7 @@ class AsyncMockHelper:
         return mock_obj
 
     @staticmethod
-    def mock_agent_response(responses: List[str]):
+    def mock_agent_response(responses: list[str]):
         """Create a coroutine that cycles through provided responses."""
         response_index = 0
 
@@ -161,9 +189,13 @@ def async_mock_helper() -> AsyncMockHelper:
     return AsyncMockHelper()
 
 
-@pytest.fixture(autouse=True)
-def mock_torch_cuda():
-    """Ensure tests run as if no GPU is available."""
+@pytest.fixture
+def force_cpu():
+    """Force tests to run as if no GPU is available.
+
+    This is opt-in only — use it in tests that explicitly need CPU-only
+    behaviour.  Most tests should use the stub backend instead.
+    """
     with mock.patch("torch.cuda.is_available", return_value=False):
         yield
 
@@ -173,6 +205,14 @@ def mock_transformers_logging():
     """Silence noisy transformers logs during the test suite."""
     logging.getLogger("transformers").setLevel(logging.WARNING)
     yield
+
+
+@pytest.fixture(autouse=True)
+def reset_torch_default_dtype():
+    """Keep the suite isolated from tests that mutate PyTorch global dtype."""
+    torch.set_default_dtype(torch.float32)
+    yield
+    torch.set_default_dtype(torch.float32)
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -216,7 +256,9 @@ def api_test_env():
             os.environ[key] = original
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: List[pytest.Item]) -> None:
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
     """Automatically add markers based on test location."""
     for item in items:
         # Add markers based on path
@@ -228,3 +270,43 @@ def pytest_collection_modifyitems(config: pytest.Config, items: List[pytest.Item
             item.add_marker(pytest.mark.unit)
         elif "/integration/" in str(item.fspath):
             item.add_marker(pytest.mark.integration)
+
+
+# ---------------------------------------------------------------------------
+# Real stub-backend fixtures (prefer these over MagicMock-based mocks)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def stub_agent_config():
+    """Agent config that uses the real stub backend — no mocking required."""
+    return AgentConfig(
+        model_name="stub://test",
+        use_stub_model=True,
+        max_new_tokens=64,
+        temperature=0.7,
+    )
+
+
+@pytest.fixture
+async def initialized_stub_agent(stub_agent_config):
+    """A fully initialized MultiTurnAgent running the real stub backend."""
+    agent = MultiTurnAgent(stub_agent_config)
+    await agent.initialize()
+    return agent
+
+
+@pytest.fixture
+def stub_backend():
+    """Directly provide a StubBackend for dependency-injection tests."""
+    return create_stub_backend(
+        stub_responses=["Test response one.", "Test response two."],
+        max_new_tokens=64,
+        temperature=0.7,
+        top_p=0.9,
+        top_k=50,
+        do_sample=True,
+        repetition_penalty=1.1,
+        pad_token_id=0,
+        eos_token_id=0,
+    )

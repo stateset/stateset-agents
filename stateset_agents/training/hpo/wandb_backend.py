@@ -9,13 +9,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
-from .base import HPOBackend, HPOCallback, HPOResult, HPOSummary, SearchDimension, SearchSpaceType
+from .base import (
+    HPOBackend,
+    HPOCallback,
+    HPOResult,
+    HPOSummary,
+    SearchDimension,
+    SearchSpaceType,
+)
 
 try:
     import wandb  # type: ignore
@@ -65,12 +72,12 @@ class WandBSweepsBackend(HPOBackend):
         search_space,
         objective_metric: str = "reward",
         direction: str = "maximize",
-        callbacks: Optional[List[HPOCallback]] = None,
-        output_dir: Optional[Path] = None,
+        callbacks: list[HPOCallback] | None = None,
+        output_dir: Path | None = None,
         method: str = "bayes",
         project: str = "stateset-hpo",
-        entity: Optional[str] = None,
-        sweep_name: Optional[str] = None,
+        entity: str | None = None,
+        sweep_name: str | None = None,
     ):
         super().__init__(search_space, objective_metric, direction, callbacks)
         self.output_dir = Path(output_dir or "./hpo_results")
@@ -79,7 +86,7 @@ class WandBSweepsBackend(HPOBackend):
         self.entity = entity
         self.sweep_name = sweep_name or f"wandb_hpo_{int(time.time())}"
 
-    def _convert_dimension(self, dim: SearchDimension) -> Dict[str, Any]:
+    def _convert_dimension(self, dim: SearchDimension) -> dict[str, Any]:
         if dim.type in (SearchSpaceType.CATEGORICAL, SearchSpaceType.CHOICE):
             return {"values": dim.choices}
         if dim.type == SearchSpaceType.INT:
@@ -102,8 +109,11 @@ class WandBSweepsBackend(HPOBackend):
             }
         raise ValueError(f"Unsupported search space type for W&B: {dim.type}")
 
-    def _build_sweep_config(self) -> Dict[str, Any]:
-        params = {dim.name: self._convert_dimension(dim) for dim in self.search_space.dimensions}
+    def _build_sweep_config(self) -> dict[str, Any]:
+        params = {
+            dim.name: self._convert_dimension(dim)
+            for dim in self.search_space.dimensions
+        }
         goal = "maximize" if self.direction == "maximize" else "minimize"
         return {
             "name": self.sweep_name,
@@ -112,20 +122,24 @@ class WandBSweepsBackend(HPOBackend):
             "parameters": params,
         }
 
-    async def suggest_params(self, trial_id: str) -> Dict[str, Any]:
-        raise NotImplementedError("W&B sweeps suggest params internally via optimize().")
+    async def suggest_params(self, trial_id: str) -> dict[str, Any]:
+        raise NotImplementedError(
+            "W&B sweeps suggest params internally via optimize()."
+        )
 
     async def report_result(self, result: HPOResult) -> None:
         self.results.append(result)
 
-    async def should_prune(self, trial_id: str, intermediate_metrics: Dict[str, float]) -> bool:
+    async def should_prune(
+        self, trial_id: str, intermediate_metrics: dict[str, float]
+    ) -> bool:
         return False
 
     async def optimize(
         self,
-        objective_fn: Callable[[Dict[str, Any]], float],
+        objective_fn: Callable[[dict[str, Any]], float],
         n_trials: int = 100,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> HPOSummary:
         _require_wandb()
 
@@ -151,7 +165,7 @@ class WandBSweepsBackend(HPOBackend):
             self._notify_trial_start(trial_id, params)
             trial_start = time.time()
             status = "success"
-            metrics: Dict[str, float] = {}
+            metrics: dict[str, float] = {}
             try:
                 metric_value = float(_resolve_async_value(objective_fn(params)))
                 metrics[self.objective_metric] = metric_value
@@ -159,7 +173,7 @@ class WandBSweepsBackend(HPOBackend):
             except WANDB_BACKEND_EXCEPTIONS as e:
                 status = "failed"
                 logger.error(f"W&B trial {trial_id} failed: {e}")
-                wandb.log({self.objective_metric: float('-inf')})
+                wandb.log({self.objective_metric: float("-inf")})
             training_time = time.time() - trial_start
             result = HPOResult(
                 trial_id=str(trial_id),
@@ -193,7 +207,7 @@ class WandBSweepsBackend(HPOBackend):
         total_time = time.time() - start_time
 
         best_metric = float("-inf") if self.direction == "maximize" else float("inf")
-        best_params: Dict[str, Any] = {}
+        best_params: dict[str, Any] = {}
         best_trial_id = ""
         for r in self.results:
             val = r.metrics.get(self.objective_metric)

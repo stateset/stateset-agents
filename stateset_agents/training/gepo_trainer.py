@@ -13,27 +13,24 @@ Key innovations:
 Reference: https://arxiv.org/abs/2508.17850
 """
 
-import asyncio
 import json
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
+from collections.abc import Callable
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+
+from .config import TrainingConfig
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-# Import framework components
-from .config import TrainingConfig, get_config_for_task
 
 # Try to import from gspo_trainer, with fallback for standalone usage
 try:
@@ -46,8 +43,7 @@ except ImportError:
 try:
     import numpy as np
     import wandb
-    from datasets import Dataset
-    from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
+    from peft import LoraConfig, TaskType, get_peft_model
 except ImportError as e:
     logger.error(f"Missing required dependency: {e}")
     logger.error("Please install: pip install peft datasets wandb")
@@ -59,6 +55,7 @@ AutoModelForCausalLM = None
 AutoTokenizer = None
 get_cosine_schedule_with_warmup = None
 
+
 def _load_transformers_gepo():
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_gepo_loaded, AutoModelForCausalLM, AutoTokenizer
@@ -66,11 +63,10 @@ def _load_transformers_gepo():
     if _transformers_gepo_loaded:
         return True
     try:
-        from transformers import (
-            AutoModelForCausalLM as _AutoModelForCausalLM,
-            AutoTokenizer as _AutoTokenizer,
-            get_cosine_schedule_with_warmup as _get_cosine,
-        )
+        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
+        from transformers import AutoTokenizer as _AutoTokenizer
+        from transformers import get_cosine_schedule_with_warmup as _get_cosine
+
         AutoModelForCausalLM = _AutoModelForCausalLM
         AutoTokenizer = _AutoTokenizer
         get_cosine_schedule_with_warmup = _get_cosine
@@ -145,7 +141,7 @@ class GEPOModelManager:
         self.ref_model = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def load_model_and_tokenizer(self) -> Tuple[Any, Any]:
+    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
         """Load model and tokenizer with optional LoRA"""
         logger.info(f"Loading model: {self.config.model_name}")
 
@@ -160,9 +156,9 @@ class GEPOModelManager:
 
         # Model loading kwargs
         model_kwargs = {
-            "torch_dtype": torch.float16 if self.config.fp16 else (
-                torch.bfloat16 if self.config.bf16 else torch.float32
-            ),
+            "torch_dtype": torch.float16
+            if self.config.fp16
+            else (torch.bfloat16 if self.config.bf16 else torch.float32),
             "device_map": "auto" if torch.cuda.is_available() else None,
             "trust_remote_code": True,
         }
@@ -214,7 +210,7 @@ class GEPOTrainer:
         model: Any,
         tokenizer: Any,
         reward_fn: Callable[[str, str], float],
-        ref_model: Optional[Any] = None,
+        ref_model: Any | None = None,
     ):
         # Ensure transformers is loaded for scheduler
         _load_transformers_gepo()
@@ -266,7 +262,7 @@ class GEPOTrainer:
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         response_start_idx: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute log probabilities for response tokens.
 
@@ -343,7 +339,7 @@ class GEPOTrainer:
     def compute_group_advantages(
         self,
         rewards: torch.Tensor,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """
         Compute group-relative advantages using within-group baseline normalization.
 
@@ -378,7 +374,7 @@ class GEPOTrainer:
         self,
         prompt: str,
         group_size: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Generate a group of responses for a single prompt.
 
@@ -417,25 +413,27 @@ class GEPOTrainer:
                 )
 
                 # Decode response
-                full_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
                 response_text = self.tokenizer.decode(
                     outputs[0][prompt_length:], skip_special_tokens=True
                 )
 
-                responses.append({
-                    "response": response_text,
-                    "input_ids": outputs[0],
-                    "attention_mask": torch.ones_like(outputs[0]),
-                    "response_start_idx": prompt_length - 1,  # -1 for shift in log prob
-                })
+                responses.append(
+                    {
+                        "response": response_text,
+                        "input_ids": outputs[0],
+                        "attention_mask": torch.ones_like(outputs[0]),
+                        "response_start_idx": prompt_length
+                        - 1,  # -1 for shift in log prob
+                    }
+                )
 
         self.model.train()
         return responses
 
     async def train_step(
         self,
-        prompts: List[str],
-    ) -> Dict[str, float]:
+        prompts: list[str],
+    ) -> dict[str, float]:
         """
         Execute one GEPO training step.
 
@@ -454,7 +452,6 @@ class GEPOTrainer:
         """
         self.model.train()
 
-        total_loss = 0.0
         all_rewards = []
         all_advantages = []
         all_gepo_coefs = []
@@ -469,7 +466,7 @@ class GEPOTrainer:
             )
 
             if len(group_responses) < 2:
-                logger.warning(f"Insufficient responses for prompt, skipping")
+                logger.warning("Insufficient responses for prompt, skipping")
                 continue
 
             # Compute rewards
@@ -478,7 +475,9 @@ class GEPOTrainer:
                 reward = self.reward_fn(prompt, resp["response"])
                 rewards.append(reward)
 
-            rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=self.device)
+            rewards_tensor = torch.tensor(
+                rewards, dtype=torch.float32, device=self.device
+            )
             all_rewards.extend(rewards)
 
             # Compute group advantages
@@ -516,7 +515,9 @@ class GEPOTrainer:
                 sampler_seq_probs = torch.exp(sampler_seq_log_probs)
 
             # Compute GEPO coefficients
-            gepo_coefs = self.compute_gepo_coefficient(learner_seq_probs, sampler_seq_probs)
+            gepo_coefs = self.compute_gepo_coefficient(
+                learner_seq_probs, sampler_seq_probs
+            )
             all_gepo_coefs.extend(gepo_coefs.detach().tolist())
 
             # Apply PPO-style clipping
@@ -613,12 +614,12 @@ class GEPOTrainer:
 async def train_with_gepo(
     model_name: str,
     reward_fn: Callable[[str, str], float],
-    train_prompts: List[str],
-    config: Optional[GEPOConfig] = None,
+    train_prompts: list[str],
+    config: GEPOConfig | None = None,
     output_dir: str = "./outputs/gepo",
     use_wandb: bool = False,
-    wandb_project: Optional[str] = None,
-) -> Tuple[Any, Any, Dict[str, List[float]]]:
+    wandb_project: str | None = None,
+) -> tuple[Any, Any, dict[str, list[float]]]:
     """
     Train a model using GEPO algorithm.
 

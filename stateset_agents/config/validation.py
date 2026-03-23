@@ -4,10 +4,8 @@ Configuration validation for StateSet Agents.
 Provides JSON Schema validation and pre-flight checks.
 """
 
-from typing import Any, Dict, List, Optional, Type, Union
-
-import json
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -24,8 +22,8 @@ class ValidationResult:
     """Validation result for configuration."""
 
     is_valid: bool
-    errors: List[ValidationError]
-    warnings: List[ValidationError]
+    errors: list[ValidationError]
+    warnings: list[ValidationError]
 
     def __bool__(self) -> bool:
         return self.is_valid
@@ -34,13 +32,17 @@ class ValidationResult:
     def has_warnings(self) -> bool:
         return len(self.warnings) > 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "is_valid": self.is_valid,
-            "errors": [{"field": e.field, "message": e.message, "severity": e.severity}
-                      for e in self.errors],
-            "warnings": [{"field": w.field, "message": w.message, "severity": w.severity}
-                        for w in self.warnings],
+            "errors": [
+                {"field": e.field, "message": e.message, "severity": e.severity}
+                for e in self.errors
+            ],
+            "warnings": [
+                {"field": w.field, "message": w.message, "severity": w.severity}
+                for w in self.warnings
+            ],
         }
 
 
@@ -60,7 +62,11 @@ class ConfigSchema:
             "use_lora": {"type": "boolean"},
             "lora_r": {"type": "integer", "minimum": 1, "maximum": 1024},
             "lora_alpha": {"type": "integer", "minimum": 1, "maximum": 2048},
-            "gradient_accumulation_steps": {"type": "integer", "minimum": 1, "maximum": 1000},
+            "gradient_accumulation_steps": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000,
+            },
             "max_grad_norm": {"type": "number", "minimum": 0.0, "maximum": 100.0},
             "num_generations": {"type": "integer", "minimum": 2, "maximum": 100},
             "clip_range": {
@@ -112,12 +118,12 @@ class ConfigValidator:
     """Configuration validator with pre-flight checks."""
 
     def __init__(self):
-        self.errors: List[ValidationError] = []
-        self.warnings: List[ValidationError] = []
+        self.errors: list[ValidationError] = []
+        self.warnings: list[ValidationError] = []
 
     def validate_training_config(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         strict: bool = False,
     ) -> ValidationResult:
         """Validate training configuration."""
@@ -176,8 +182,14 @@ class ConfigValidator:
                 )
 
         # Check effective batch size
-        if "per_device_train_batch_size" in config and "gradient_accumulation_steps" in config:
-            effective_batch = config["per_device_train_batch_size"] * config["gradient_accumulation_steps"]
+        if (
+            "per_device_train_batch_size" in config
+            and "gradient_accumulation_steps" in config
+        ):
+            effective_batch = (
+                config["per_device_train_batch_size"]
+                * config["gradient_accumulation_steps"]
+            )
             if effective_batch < 8:
                 self.warnings.append(
                     ValidationError(
@@ -207,7 +219,7 @@ class ConfigValidator:
 
     def validate_agent_config(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> ValidationResult:
         """Validate agent configuration."""
         self.errors = []
@@ -215,9 +227,7 @@ class ConfigValidator:
 
         # Check model name
         if "model_name" not in config or not config["model_name"]:
-            self.errors.append(
-                ValidationError("model_name", "Model name is required")
-            )
+            self.errors.append(ValidationError("model_name", "Model name is required"))
 
         # Check generation parameters
         if "temperature" in config:
@@ -262,7 +272,7 @@ class ConfigValidator:
 
     def validate_environment_config(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> ValidationResult:
         """Validate environment configuration."""
         self.errors = []
@@ -302,19 +312,10 @@ class PreFlightChecker:
         errors = []
         warnings = []
 
-        # Check Python version
-        import sys
-        if sys.version_info < (3, 8):
-            errors.append(
-                ValidationError(
-                    "python_version",
-                    f"Python {sys.version_info.major}.{sys.version_info.minor} is not supported. Need 3.8+.",
-                )
-            )
-
         # Check CUDA availability
         try:
             import torch
+
             if torch.cuda.is_available():
                 gpu_count = torch.cuda.device_count()
                 if gpu_count == 0:
@@ -360,8 +361,8 @@ class PreFlightChecker:
 
     @staticmethod
     def check_training_readiness(
-        config: Dict[str, Any],
-        data_path: Optional[str] = None,
+        config: dict[str, Any],
+        data_path: str | None = None,
     ) -> ValidationResult:
         """Check if training can start."""
         errors = []
@@ -370,6 +371,7 @@ class PreFlightChecker:
         # Check if output directory exists
         if "output_dir" in config:
             import os
+
             output_dir = config["output_dir"]
             if os.path.exists(output_dir):
                 warnings.append(

@@ -6,30 +6,26 @@ agent network architectures for specific tasks and performance requirements.
 """
 
 import asyncio
-import json
 import logging
-import math
 import random
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 
 try:
     import torch
     import torch.nn as nn
-    import torch.nn.functional as F
 
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
 
 from .advanced_monitoring import get_monitoring_service, monitor_async_function
-from .error_handling import ErrorHandler, RetryConfig, retry_async
-from .performance_optimizer import PerformanceOptimizer
+from .error_handling import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +85,12 @@ class LayerConfig:
     layer_type: LayerType
     input_dim: int
     output_dim: int
-    activation: Optional[ActivationType] = None
+    activation: ActivationType | None = None
     dropout_rate: float = 0.0
     use_bias: bool = True
-    layer_specific_params: Dict[str, Any] = field(default_factory=dict)
+    layer_specific_params: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "layer_type": self.layer_type.value,
             "input_dim": self.input_dim,
@@ -110,7 +106,7 @@ class LayerConfig:
 class ArchitectureConfig:
     """Complete neural architecture configuration"""
 
-    layers: List[LayerConfig]
+    layers: list[LayerConfig]
     total_parameters: int
     depth: int
     width: int  # Maximum layer width
@@ -120,7 +116,7 @@ class ArchitectureConfig:
     memory_usage: float = 0.0
     flops: int = 0  # Floating point operations
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "layers": [layer.to_dict() for layer in self.layers],
             "total_parameters": self.total_parameters,
@@ -143,8 +139,8 @@ class ArchitectureSearchSpace:
         max_depth: int = 12,
         min_width: int = 64,
         max_width: int = 2048,
-        allowed_layer_types: List[LayerType] = None,
-        allowed_activations: List[ActivationType] = None,
+        allowed_layer_types: list[LayerType] = None,
+        allowed_activations: list[ActivationType] = None,
     ):
         self.min_depth = min_depth
         self.max_depth = max_depth
@@ -271,7 +267,7 @@ class ArchitectureSearchSpace:
             layer_specific_params=layer_specific_params,
         )
 
-    def _calculate_parameters(self, layers: List[LayerConfig]) -> int:
+    def _calculate_parameters(self, layers: list[LayerConfig]) -> int:
         """Calculate total number of parameters"""
         total_params = 0
 
@@ -305,7 +301,7 @@ class ArchitectureSearchSpace:
 
         return total_params
 
-    def _generate_architecture_id(self, layers: List[LayerConfig]) -> str:
+    def _generate_architecture_id(self, layers: list[LayerConfig]) -> str:
         """Generate a unique ID for the architecture"""
         layer_signature = []
         for layer in layers:
@@ -321,7 +317,7 @@ class ArchitectureEvaluator:
     """Evaluates neural architectures"""
 
     def __init__(self):
-        self.evaluation_cache: Dict[str, float] = {}
+        self.evaluation_cache: dict[str, float] = {}
         self.error_handler = ErrorHandler()
 
     async def evaluate_architecture(
@@ -478,7 +474,7 @@ class EvolutionarySearch:
         self.elite_size = int(elite_ratio * population_size)
 
         self.generation = 0
-        self.best_architecture: Optional[ArchitectureConfig] = None
+        self.best_architecture: ArchitectureConfig | None = None
         self.best_score = float("-inf")
 
     async def search(
@@ -588,7 +584,7 @@ class EvolutionarySearch:
         output_dim: int,
     ) -> ArchitectureConfig:
         """Mutate an architecture"""
-        child_layers = [layer for layer in parent.layers]  # Copy layers
+        child_layers = list(parent.layers)  # Copy layers
 
         # Random mutations
         if random.random() < self.mutation_rate:
@@ -635,8 +631,8 @@ class EvolutionarySearch:
         )
 
     def _fix_dimensions(
-        self, layers: List[LayerConfig], input_dim: int, output_dim: int
-    ) -> List[LayerConfig]:
+        self, layers: list[LayerConfig], input_dim: int, output_dim: int
+    ) -> list[LayerConfig]:
         """Fix dimensional inconsistencies in layer sequence"""
         if not layers:
             return layers
@@ -661,14 +657,14 @@ class NeuralArchitectureSearch:
     def __init__(
         self,
         strategy: SearchStrategy = SearchStrategy.EVOLUTIONARY,
-        search_space: Optional[ArchitectureSearchSpace] = None,
+        search_space: ArchitectureSearchSpace | None = None,
     ):
         self.strategy = strategy
         self.search_space = search_space or ArchitectureSearchSpace()
         self.evaluator = ArchitectureEvaluator()
 
-        self.search_history: List[ArchitectureConfig] = []
-        self.best_architectures: List[ArchitectureConfig] = []
+        self.search_history: list[ArchitectureConfig] = []
+        self.best_architectures: list[ArchitectureConfig] = []
 
         self.monitoring = get_monitoring_service()
         self.error_handler = ErrorHandler()
@@ -681,7 +677,7 @@ class NeuralArchitectureSearch:
         input_dim: int,
         output_dim: int,
         max_search_time: int = 3600,  # 1 hour
-        target_performance: Optional[float] = None,
+        target_performance: float | None = None,
     ) -> ArchitectureConfig:
         """Search for optimal neural architecture"""
 
@@ -780,7 +776,7 @@ class NeuralArchitectureSearch:
             f"Params: {best_arch.total_parameters}, Time: {search_time:.2f}s"
         )
 
-    def get_search_insights(self) -> Dict[str, Any]:
+    def get_search_insights(self) -> dict[str, Any]:
         """Get insights from the search process"""
         if not self.search_history:
             return {"message": "No search history available"}
@@ -828,7 +824,7 @@ def create_nas_controller(
 
 
 def create_custom_search_space(
-    layer_types: List[str], activations: List[str], **kwargs
+    layer_types: list[str], activations: list[str], **kwargs
 ) -> ArchitectureSearchSpace:
     """Create a custom search space"""
     layer_type_enums = [LayerType(lt) for lt in layer_types]

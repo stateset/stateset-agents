@@ -4,7 +4,7 @@ Test matchers for StateSet Agents.
 Provides assertion helpers for common test patterns.
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 
 class RewardMatcher:
@@ -29,7 +29,7 @@ class RewardMatcher:
 
     @staticmethod
     def has_reasonable_variance(
-        rewards: List[float],
+        rewards: list[float],
         max_variance: float = 10.0,
     ) -> bool:
         """Check if reward variance is reasonable."""
@@ -62,7 +62,7 @@ class TrajectoryMatcher:
     @staticmethod
     def has_matching_rewards(
         trajectory: Any,
-        expected_count: Optional[int] = None,
+        expected_count: int | None = None,
     ) -> bool:
         """Check if rewards match trajectory turns."""
         if not hasattr(trajectory, "turns") or not hasattr(trajectory, "rewards"):
@@ -85,12 +85,12 @@ class ConfigMatcher:
     """Matchers for configuration-related assertions."""
 
     @staticmethod
-    def has_required_keys(config: Dict[str, Any], required: List[str]) -> bool:
+    def has_required_keys(config: dict[str, Any], required: list[str]) -> bool:
         """Check if config has all required keys."""
         return all(key in config for key in required)
 
     @staticmethod
-    def has_valid_types(config: Dict[str, Any], types: Dict[str, type]) -> bool:
+    def has_valid_types(config: dict[str, Any], types: dict[str, type]) -> bool:
         """Check if config values have valid types."""
         for key, expected_type in types.items():
             if key in config and not isinstance(config[key], expected_type):
@@ -98,7 +98,7 @@ class ConfigMatcher:
         return True
 
     @staticmethod
-    def has_valid_ranges(config: Dict[str, Any], ranges: Dict[str, tuple]) -> bool:
+    def has_valid_ranges(config: dict[str, Any], ranges: dict[str, tuple]) -> bool:
         """Check if config values are within valid ranges."""
         for key, (min_val, max_val) in ranges.items():
             if key in config:
@@ -118,7 +118,7 @@ class ModelMatcher:
         return isinstance(name, str) and len(name) > 0
 
     @staticmethod
-    def has_valid_generation_config(config: Dict[str, Any]) -> bool:
+    def has_valid_generation_config(config: dict[str, Any]) -> bool:
         """Check if generation config is valid."""
         if "temperature" in config:
             if not 0 <= config["temperature"] <= 2.0:

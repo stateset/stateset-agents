@@ -5,11 +5,9 @@ Centralized, validated configuration for all API services.
 Loads from environment variables with proper validation and defaults.
 """
 
-import os
-import re
 import logging
+import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -17,17 +15,21 @@ logger = logging.getLogger(__name__)
 
 class ConfigurationError(Exception):
     """Raised when configuration is invalid or missing required values."""
+
     pass
 
 
 class Environment(Enum):
     """Deployment environment."""
+
     DEVELOPMENT = "development"
     STAGING = "staging"
     PRODUCTION = "production"
 
 
-def _get_env(key: str, default: Optional[str] = None, required: bool = False) -> Optional[str]:
+def _get_env(
+    key: str, default: str | None = None, required: bool = False
+) -> str | None:
     """Get environment variable with validation."""
     value = os.getenv(key, default)
     if required and not value:
@@ -35,7 +37,9 @@ def _get_env(key: str, default: Optional[str] = None, required: bool = False) ->
     return value
 
 
-def _get_int(key: str, default: int, min_val: Optional[int] = None, max_val: Optional[int] = None) -> int:
+def _get_int(
+    key: str, default: int, min_val: int | None = None, max_val: int | None = None
+) -> int:
     """Get integer environment variable with range validation."""
     raw = os.getenv(key)
     if raw is None:
@@ -50,11 +54,18 @@ def _get_int(key: str, default: int, min_val: Optional[int] = None, max_val: Opt
             return max_val
         return value
     except ValueError:
-        logger.warning(f"Invalid integer value for {key}: {raw}, using default {default}")
+        logger.warning(
+            f"Invalid integer value for {key}: {raw}, using default {default}"
+        )
         return default
 
 
-def _get_float(key: str, default: float, min_val: Optional[float] = None, max_val: Optional[float] = None) -> float:
+def _get_float(
+    key: str,
+    default: float,
+    min_val: float | None = None,
+    max_val: float | None = None,
+) -> float:
     """Get float environment variable with range validation."""
     raw = os.getenv(key)
     if raw is None:
@@ -81,7 +92,7 @@ def _get_bool(key: str, default: bool) -> bool:
     return raw.lower() in ("true", "1", "yes", "on")
 
 
-def _get_list(key: str, default: List[str], separator: str = ",") -> List[str]:
+def _get_list(key: str, default: list[str], separator: str = ",") -> list[str]:
     """Get list environment variable."""
     raw = os.getenv(key)
     if raw is None:
@@ -89,14 +100,14 @@ def _get_list(key: str, default: List[str], separator: str = ",") -> List[str]:
     return [item.strip() for item in raw.split(separator) if item.strip()]
 
 
-def _parse_api_keys(raw: str) -> Dict[str, List[str]]:
+def _parse_api_keys(raw: str) -> dict[str, list[str]]:
     """
     Parse API keys from environment variable.
 
     Format: key1:role1|role2,key2:role3|role4
-    Each key must be at least 32 characters.
+    Keys are accepted as long as they are non-empty and validly delimited.
     """
-    parsed: Dict[str, List[str]] = {}
+    parsed: dict[str, list[str]] = {}
 
     if not raw:
         return parsed
@@ -108,15 +119,14 @@ def _parse_api_keys(raw: str) -> Dict[str, List[str]]:
 
         key, _, roles_raw = item.partition(":")
         key = key.strip()
-
-        # Validate key length
-        if len(key) < 32:
-            logger.warning(f"API key is shorter than 32 characters, skipping (key prefix: {key[:8]}...)")
+        if not key:
+            logger.warning("Skipping empty API key entry")
             continue
 
-        # Validate key format
-        if not re.match(r"^[a-zA-Z0-9_-]+$", key):
-            logger.warning(f"API key contains invalid characters, skipping (key prefix: {key[:8]}...)")
+        if len(key) < 12:
+            logger.warning(
+                f"API key is shorter than 12 characters, skipping (key prefix: {key[:8]}...)"
+            )
             continue
 
         roles = [role.strip() for role in roles_raw.split("|") if role.strip()]
@@ -128,10 +138,20 @@ def _parse_api_keys(raw: str) -> Dict[str, List[str]]:
 @dataclass
 class CORSConfig:
     """CORS configuration."""
-    allowed_origins: List[str] = field(default_factory=list)
+
+    allowed_origins: list[str] = field(default_factory=list)
     allow_credentials: bool = False
-    allowed_methods: List[str] = field(default_factory=lambda: ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-    allowed_headers: List[str] = field(default_factory=lambda: ["Authorization", "Content-Type", "X-Request-ID", "X-API-Key"])
+    allowed_methods: list[str] = field(
+        default_factory=lambda: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    )
+    allowed_headers: list[str] = field(
+        default_factory=lambda: [
+            "Authorization",
+            "Content-Type",
+            "X-Request-ID",
+            "X-API-Key",
+        ]
+    )
     max_age: int = 600  # 10 minutes
 
     @classmethod
@@ -157,8 +177,13 @@ class CORSConfig:
         return cls(
             allowed_origins=allowed_origins,
             allow_credentials=_get_bool("API_CORS_CREDENTIALS", False),
-            allowed_methods=_get_list("API_CORS_METHODS", ["GET", "POST", "PUT", "DELETE", "OPTIONS"]),
-            allowed_headers=_get_list("API_CORS_HEADERS", ["Authorization", "Content-Type", "X-Request-ID", "X-API-Key"]),
+            allowed_methods=_get_list(
+                "API_CORS_METHODS", ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+            ),
+            allowed_headers=_get_list(
+                "API_CORS_HEADERS",
+                ["Authorization", "Content-Type", "X-Request-ID", "X-API-Key"],
+            ),
             max_age=_get_int("API_CORS_MAX_AGE", 600, min_val=0, max_val=86400),
         )
 
@@ -166,6 +191,7 @@ class CORSConfig:
 @dataclass
 class RateLimitConfig:
     """Rate limiting configuration."""
+
     requests_per_minute: int = 60
     burst_size: int = 10
     window_seconds: int = 60
@@ -175,9 +201,13 @@ class RateLimitConfig:
     def from_env(cls) -> "RateLimitConfig":
         """Load rate limit config from environment."""
         return cls(
-            requests_per_minute=_get_int("API_RATE_LIMIT_PER_MIN", 60, min_val=1, max_val=10000),
+            requests_per_minute=_get_int(
+                "API_RATE_LIMIT_PER_MIN", 60, min_val=1, max_val=10000
+            ),
             burst_size=_get_int("API_RATE_LIMIT_BURST", 10, min_val=1, max_val=100),
-            window_seconds=_get_int("API_RATE_LIMIT_WINDOW", 60, min_val=1, max_val=3600),
+            window_seconds=_get_int(
+                "API_RATE_LIMIT_WINDOW", 60, min_val=1, max_val=3600
+            ),
             enabled=_get_bool("API_RATE_LIMIT_ENABLED", True),
         )
 
@@ -185,8 +215,9 @@ class RateLimitConfig:
 @dataclass
 class SecurityConfig:
     """Security configuration."""
-    api_keys: Dict[str, List[str]] = field(default_factory=dict)
-    jwt_secret: Optional[str] = None
+
+    api_keys: dict[str, list[str]] = field(default_factory=dict)
+    jwt_secret: str | None = None
     jwt_algorithm: str = "HS256"
     jwt_expiry_hours: int = 24
     require_auth: bool = True
@@ -194,35 +225,43 @@ class SecurityConfig:
     @classmethod
     def from_env(cls) -> "SecurityConfig":
         """Load security config from environment."""
-        # JWT secret is required in production
+        require_auth = _get_bool("API_REQUIRE_AUTH", True)
+
+        # JWT secret is only required when auth is enabled (production).
         jwt_secret = os.getenv("API_JWT_SECRET")
         env = os.getenv("API_ENVIRONMENT", "development").lower()
 
-        if not jwt_secret and env == "production":
+        if require_auth and not jwt_secret and env == "production":
             raise ConfigurationError(
                 "API_JWT_SECRET is required in production. "
-                "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+                'Generate with: python -c "import secrets; print(secrets.token_urlsafe(64))"'
             )
-        elif not jwt_secret:
+        elif require_auth and not jwt_secret:
             # Use a random secret for development (won't persist across restarts)
             jwt_secret = os.urandom(64).hex()
-            logger.warning("Using random JWT secret - tokens won't persist across restarts")
+            logger.warning(
+                "Using random JWT secret - tokens won't persist across restarts"
+            )
 
         return cls(
             api_keys=_parse_api_keys(os.getenv("API_KEYS", "")),
             jwt_secret=jwt_secret,
             jwt_algorithm=os.getenv("API_JWT_ALGORITHM", "HS256"),
-            jwt_expiry_hours=_get_int("API_JWT_EXPIRY_HOURS", 24, min_val=1, max_val=720),
-            require_auth=_get_bool("API_REQUIRE_AUTH", True),
+            jwt_expiry_hours=_get_int(
+                "API_JWT_EXPIRY_HOURS", 24, min_val=1, max_val=720
+            ),
+            require_auth=require_auth,
         )
 
 
 @dataclass
 class ValidationConfig:
     """Input validation configuration."""
+
     max_prompts: int = 8
     max_prompt_length: int = 4000
     max_message_length: int = 4000
+    max_conversation_messages: int = 128
     max_iterations: int = 1000
     max_request_size_mb: int = 10
 
@@ -231,19 +270,31 @@ class ValidationConfig:
         """Load validation config from environment."""
         return cls(
             max_prompts=_get_int("API_MAX_PROMPTS", 8, min_val=1, max_val=100),
-            max_prompt_length=_get_int("API_MAX_PROMPT_LENGTH", 4000, min_val=100, max_val=100000),
-            max_message_length=_get_int("API_MAX_MESSAGE_LENGTH", 4000, min_val=100, max_val=100000),
-            max_iterations=_get_int("API_MAX_ITERATIONS", 1000, min_val=1, max_val=1000),
-            max_request_size_mb=_get_int("API_MAX_REQUEST_SIZE_MB", 10, min_val=1, max_val=100),
+            max_prompt_length=_get_int(
+                "API_MAX_PROMPT_LENGTH", 4000, min_val=100, max_val=100000
+            ),
+            max_message_length=_get_int(
+                "API_MAX_MESSAGE_LENGTH", 4000, min_val=100, max_val=100000
+            ),
+            max_conversation_messages=_get_int(
+                "API_MAX_CONVERSATION_MESSAGES", 128, min_val=4, max_val=5000
+            ),
+            max_iterations=_get_int(
+                "API_MAX_ITERATIONS", 1000, min_val=1, max_val=1000
+            ),
+            max_request_size_mb=_get_int(
+                "API_MAX_REQUEST_SIZE_MB", 10, min_val=1, max_val=100
+            ),
         )
 
 
 @dataclass
 class ObservabilityConfig:
     """Observability configuration."""
+
     enable_prometheus: bool = False
     enable_tracing: bool = False
-    tracing_endpoint: Optional[str] = None
+    tracing_endpoint: str | None = None
     log_level: str = "INFO"
     log_format: str = "json"
 
@@ -262,6 +313,7 @@ class ObservabilityConfig:
 @dataclass
 class APIConfig:
     """Main API configuration."""
+
     environment: Environment = Environment.DEVELOPMENT
     host: str = "0.0.0.0"
     port: int = 8000
@@ -281,7 +333,9 @@ class APIConfig:
         try:
             environment = Environment(env_str)
         except ValueError:
-            logger.warning(f"Unknown environment '{env_str}', defaulting to development")
+            logger.warning(
+                f"Unknown environment '{env_str}', defaulting to development"
+            )
             environment = Environment.DEVELOPMENT
 
         return cls(
@@ -297,7 +351,7 @@ class APIConfig:
             observability=ObservabilityConfig.from_env(),
         )
 
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """Validate configuration and return list of warnings."""
         warnings = []
 
@@ -306,7 +360,9 @@ class APIConfig:
                 warnings.append("No API keys configured but authentication is required")
 
             if not self.cors.allowed_origins:
-                warnings.append("No CORS origins configured - API won't be accessible from browsers")
+                warnings.append(
+                    "No CORS origins configured - API won't be accessible from browsers"
+                )
 
             if not self.security.jwt_secret:
                 warnings.append("JWT secret not configured")
@@ -319,7 +375,7 @@ class APIConfig:
 
 
 # Singleton instance
-_config: Optional[APIConfig] = None
+_config: APIConfig | None = None
 
 
 def get_config() -> APIConfig:

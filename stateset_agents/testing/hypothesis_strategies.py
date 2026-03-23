@@ -5,7 +5,6 @@ These strategies generate valid test data for property-based testing
 of StateSet Agents components.
 """
 
-from typing import List
 
 from hypothesis import strategies as st
 from hypothesis.strategies import composite
@@ -15,9 +14,7 @@ from hypothesis.strategies import composite
 def conversation_turns(draw):
     """Generate valid conversation turns."""
     role = draw(st.sampled_from(["user", "assistant", "system"]))
-    content = draw(
-        st.text(min_size=1, max_size=1000).filter(lambda x: x.strip())
-    )
+    content = draw(st.text(min_size=1, max_size=1000).filter(lambda x: x.strip()))
     metadata = draw(
         st.dictionaries(
             st.sampled_from(["timestamp", "turn_id", "emotion"]),
@@ -48,8 +45,12 @@ def trajectory_configs(draw):
     return {
         "max_turns": max_turns,
         "num_turns": num_turns,
-        "turns": draw(st.lists(conversation_turns(), min_size=num_turns, max_size=num_turns)),
-        "rewards": draw(st.lists(reward_values(), min_size=num_turns, max_size=num_turns)),
+        "turns": draw(
+            st.lists(conversation_turns(), min_size=num_turns, max_size=num_turns)
+        ),
+        "rewards": draw(
+            st.lists(reward_values(), min_size=num_turns, max_size=num_turns)
+        ),
     }
 
 

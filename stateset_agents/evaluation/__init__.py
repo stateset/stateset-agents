@@ -5,8 +5,8 @@ Includes metrics for sim-to-real transfer evaluation and agent performance.
 """
 
 from .sim_to_real_metrics import (
-    SimToRealMetrics,
     SimToRealEvaluator,
+    SimToRealMetrics,
     compute_distribution_divergence,
     compute_response_statistics,
 )

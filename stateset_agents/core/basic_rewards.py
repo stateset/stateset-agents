@@ -11,10 +11,15 @@ This module provides fundamental reward functions including:
 """
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .reward_base import RewardFunction, RewardResult, RewardType
 from .trajectory import ConversationTurn
+
+
+def _turn_text(turn: ConversationTurn) -> str:
+    """Normalize nullable turn content to plain text."""
+    return turn.content if isinstance(turn.content, str) else ""
 
 
 class HelpfulnessReward(RewardFunction):
@@ -26,7 +31,7 @@ class HelpfulnessReward(RewardFunction):
         super().__init__(weight, RewardType.IMMEDIATE, "HelpfulnessReward")
 
     async def compute_reward(
-        self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """Evaluate helpfulness of assistant responses"""
 
@@ -38,7 +43,7 @@ class HelpfulnessReward(RewardFunction):
         breakdown = {}
 
         for i, turn in enumerate(assistant_turns):
-            score = self._evaluate_helpfulness(turn.content)
+            score = self._evaluate_helpfulness(_turn_text(turn))
             total_score += score
             breakdown[f"turn_{i}_helpfulness"] = score
 
@@ -104,7 +109,7 @@ class SafetyReward(RewardFunction):
         ]
 
     async def compute_reward(
-        self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """Evaluate safety of assistant responses"""
 
@@ -116,7 +121,7 @@ class SafetyReward(RewardFunction):
         breakdown = {}
 
         for i, turn in enumerate(assistant_turns):
-            score = self._evaluate_safety(turn.content)
+            score = self._evaluate_safety(_turn_text(turn))
             total_score += score
             breakdown[f"turn_{i}_safety"] = score
 
@@ -158,13 +163,13 @@ class CorrectnessReward(RewardFunction):
     """
 
     def __init__(
-        self, weight: float = 1.0, ground_truth: Optional[Dict[str, Any]] = None
+        self, weight: float = 1.0, ground_truth: dict[str, Any] | None = None
     ):
         super().__init__(weight, RewardType.IMMEDIATE, "CorrectnessReward")
         self.ground_truth = ground_truth or {}
 
     async def compute_reward(
-        self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """Evaluate correctness of assistant responses"""
 
@@ -183,7 +188,7 @@ class CorrectnessReward(RewardFunction):
         breakdown = {}
 
         for i, turn in enumerate(assistant_turns):
-            score = self._evaluate_correctness(turn.content, ground_truth)
+            score = self._evaluate_correctness(_turn_text(turn), ground_truth)
             total_score += score
             breakdown[f"turn_{i}_correctness"] = score
 
@@ -196,7 +201,7 @@ class CorrectnessReward(RewardFunction):
         )
 
     def _evaluate_correctness(
-        self, content: str, ground_truth: Dict[str, Any]
+        self, content: str, ground_truth: dict[str, Any]
     ) -> float:
         """Evaluate correctness against ground truth"""
         if not ground_truth:
@@ -236,7 +241,7 @@ class ConcisenessReward(RewardFunction):
         self.optimal_length = optimal_length
 
     async def compute_reward(
-        self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """Evaluate conciseness of assistant responses"""
 
@@ -248,7 +253,7 @@ class ConcisenessReward(RewardFunction):
         breakdown = {}
 
         for i, turn in enumerate(assistant_turns):
-            score = self._evaluate_conciseness(turn.content)
+            score = self._evaluate_conciseness(_turn_text(turn))
             total_score += score
             breakdown[f"turn_{i}_conciseness"] = score
 
@@ -287,7 +292,7 @@ class EngagementReward(RewardFunction):
         super().__init__(weight, RewardType.IMMEDIATE, "EngagementReward")
 
     async def compute_reward(
-        self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """Evaluate engagement level of assistant responses"""
 
@@ -299,7 +304,7 @@ class EngagementReward(RewardFunction):
         breakdown = {}
 
         for i, turn in enumerate(assistant_turns):
-            score = self._evaluate_engagement(turn.content)
+            score = self._evaluate_engagement(_turn_text(turn))
             total_score += score
             breakdown[f"turn_{i}_engagement"] = score
 
@@ -364,13 +369,13 @@ class TaskCompletionReward(RewardFunction):
     """
 
     def __init__(
-        self, weight: float = 1.0, task_criteria: Optional[Dict[str, Any]] = None
+        self, weight: float = 1.0, task_criteria: dict[str, Any] | None = None
     ):
         super().__init__(weight, RewardType.CUMULATIVE, "TaskCompletionReward")
         self.task_criteria = task_criteria or {}
 
     async def compute_reward(
-        self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """Evaluate task completion"""
 
@@ -395,7 +400,7 @@ class TaskCompletionReward(RewardFunction):
         # Check for goal achievement
         if criteria.get("goal_keywords"):
             all_text = " ".join(
-                turn.content for turn in turns if turn.role == "assistant"
+                _turn_text(turn) for turn in turns if turn.role == "assistant"
             )
             goal_matches = sum(
                 1

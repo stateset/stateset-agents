@@ -5,13 +5,17 @@ This module defines the core agent interfaces and implementations
 for training conversational AI agents using GRPO.
 """
 
+from __future__ import annotations
+
 import asyncio
-import json
 import logging
-from abc import ABC
-from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Type, Union
+from collections.abc import AsyncIterator, Callable
+from typing import Any
+
+from .agent_backends import ModelBackend, StubModel, create_stub_backend
+from .agent_config import AgentConfig, ConfigValidationError
+from .long_term_planning import PlanningConfig, PlanningManager
+from .trajectory import ConversationTurn
 
 try:
     import torch
@@ -22,19 +26,26 @@ AutoModelForCausalLM = None
 AutoTokenizer = None
 _transformers_agent_loaded = False
 
+
 class GenerationConfig:  # type: ignore[override]
     """Fallback GenerationConfig when transformers not available."""
+
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
+
 class StoppingCriteria:  # type: ignore[override]
     """Fallback StoppingCriteria when transformers not available."""
+
     def __call__(self, *args, **kwargs):  # pragma: no cover - placeholder
         return False
 
+
 class StoppingCriteriaList(list):  # type: ignore[override]
     """Fallback StoppingCriteriaList when transformers not available."""
+
     pass
+
 
 def _load_transformers_agent() -> bool:
     """Lazily load transformers to avoid import-time errors."""
@@ -54,7 +65,9 @@ def _load_transformers_agent() -> bool:
                     AutoTokenizer = shim_tokenizer
         except AGENT_SHIM_EXCEPTIONS:
             pass
-        return True
+        if AutoModelForCausalLM is not None and AutoTokenizer is not None:
+            return True
+        _transformers_agent_loaded = False
     # If tests or callers have already injected mocks, respect them.
     if AutoModelForCausalLM is not None and AutoTokenizer is not None:
         _transformers_agent_loaded = True
@@ -75,13 +88,12 @@ def _load_transformers_agent() -> bool:
     except AGENT_SHIM_EXCEPTIONS:
         pass
     try:
-        from transformers import (
-            AutoModelForCausalLM as _AutoModelForCausalLM,
-            AutoTokenizer as _AutoTokenizer,
-            GenerationConfig as _GenerationConfig,
-            StoppingCriteria as _StoppingCriteria,
-            StoppingCriteriaList as _StoppingCriteriaList,
-        )
+        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
+        from transformers import AutoTokenizer as _AutoTokenizer
+        from transformers import GenerationConfig as _GenerationConfig
+        from transformers import StoppingCriteria as _StoppingCriteria
+        from transformers import StoppingCriteriaList as _StoppingCriteriaList
+
         AutoModelForCausalLM = _AutoModelForCausalLM
         AutoTokenizer = _AutoTokenizer
         GenerationConfig = _GenerationConfig
@@ -93,41 +105,60 @@ def _load_transformers_agent() -> bool:
         logging.warning(f"Failed to load transformers: {e}")
         return False
 
-try:
-    from peft import LoraConfig, get_peft_model
-except ImportError:
-    LoraConfig = None
-    get_peft_model = None
-    logging.warning("PEFT not available. Install with: pip install peft")
 
-from .agent_backends import ModelBackend, StubModel, create_stub_backend
-from .trajectory import ConversationTurn, MultiTurnTrajectory
-from .long_term_planning import PlanningConfig, PlanningManager
+LoraConfig = None
+get_peft_model = None
+_peft_loaded = False
+
+
+def _load_peft() -> bool:
+    """Lazily load PEFT to keep lightweight imports quiet in API-only usage."""
+    global _peft_loaded, LoraConfig, get_peft_model
+    if _peft_loaded:
+        return LoraConfig is not None and get_peft_model is not None
+    try:
+        from peft import LoraConfig as _LoraConfig
+        from peft import get_peft_model as _get_peft_model
+
+        LoraConfig = _LoraConfig
+        get_peft_model = _get_peft_model
+        _peft_loaded = True
+        return True
+    except ImportError:  # pragma: no cover
+        _peft_loaded = True
+        return False
+
 
 logger = logging.getLogger(__name__)
 
-AGENT_SHIM_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+AGENT_SHIM_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     KeyError,
     TypeError,
 )
-TOKENIZER_ATTR_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+TOKENIZER_ATTR_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     TypeError,
     ValueError,
 )
-PLANNING_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+PLANNING_EXCEPTIONS: tuple[type[BaseException], ...] = (
     TypeError,
     ValueError,
     KeyError,
     RuntimeError,
 )
-CHAT_TEMPLATE_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+try:
+    from jinja2.exceptions import TemplateError as _Jinja2TemplateError
+except ImportError:  # pragma: no cover
+    _Jinja2TemplateError = ValueError  # type: ignore[assignment,misc]
+
+CHAT_TEMPLATE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     TypeError,
     ValueError,
+    _Jinja2TemplateError,
 )
-TOOL_EXEC_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+TOOL_EXEC_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     TypeError,
     ValueError,
@@ -136,239 +167,18 @@ TOOL_EXEC_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
 )
 
 
-class ConfigValidationError(ValueError):
-    """Raised when agent configuration validation fails.
-
-    Attributes:
-        field: The configuration field that failed validation
-        value: The invalid value that was provided
-        message: Human-readable error message with suggestions
-    """
-    def __init__(self, field: str, value: Any, message: str, suggestions: Optional[List[str]] = None):
-        self.field = field
-        self.value = value
-        self.suggestions = suggestions or []
-        suggestion_text = f" Suggestions: {', '.join(self.suggestions)}" if self.suggestions else ""
-        super().__init__(f"Invalid {field}={value!r}: {message}{suggestion_text}")
-
-
-@dataclass
-class AgentConfig:
-    """Configuration for agent behavior - Compatible with HuggingFace patterns.
-
-    This configuration class controls all aspects of agent behavior including
-    model loading, generation parameters, and optional features like PEFT/LoRA.
-
-    Attributes:
-        model_name: HuggingFace model identifier or path (e.g., "meta-llama/Llama-2-7b-chat-hf")
-        max_new_tokens: Maximum tokens to generate per response (1-8192)
-        temperature: Sampling temperature controlling randomness (0.0-2.0)
-        top_p: Nucleus sampling probability mass (0.0-1.0)
-        top_k: Top-k sampling parameter (1-1000)
-        do_sample: Whether to use sampling; if False, uses greedy decoding
-        repetition_penalty: Penalty for repeating tokens (1.0-2.0)
-        pad_token_id: Override for padding token ID
-        eos_token_id: Override for end-of-sequence token ID
-        system_prompt: Default system prompt prepended to conversations
-        use_chat_template: Whether to use the model's chat template
-        torch_dtype: Model precision ("float16", "bfloat16", "float32")
-        attn_implementation: Attention implementation ("flash_attention_2", "sdpa", "eager", None)
-        device_map: Device placement strategy ("auto", "cuda", "cpu", or specific device)
-        trust_remote_code: Whether to trust remote code from HuggingFace Hub
-        model_kwargs: Additional kwargs passed to model loading
-        tokenizer_kwargs: Additional kwargs passed to tokenizer loading
-        use_peft: Whether to apply PEFT/LoRA adapters
-        peft_config: PEFT configuration dict (requires use_peft=True)
-        use_stub_model: Use lightweight stub for offline development/testing
-        stub_responses: Custom responses for stub model
-        enable_reasoning: Enable chain-of-thought reasoning extraction
-        reasoning_tag: XML tag for reasoning blocks (default: "think")
-        enable_planning: Enable long-term planning context injection
-        planning_config: Optional planning configuration overrides
-        enable_planning: Enable long-term planning context
-        planning_config: Optional planning configuration dictionary
-
-    Example:
-        >>> config = AgentConfig(
-        ...     model_name="meta-llama/Llama-2-7b-chat-hf",
-        ...     temperature=0.7,
-        ...     max_new_tokens=256,
-        ...     system_prompt="You are a helpful assistant."
-        ... )
-        >>> config.validate()  # Raises ConfigValidationError if invalid
-
-    Raises:
-        ConfigValidationError: If any configuration value is out of valid range
-    """
-
-    model_name: str
-    max_new_tokens: int = 512
-    temperature: float = 0.8
-    top_p: float = 0.9
-    top_k: int = 50
-    do_sample: bool = True
-    repetition_penalty: float = 1.1
-    pad_token_id: Optional[int] = None
-    eos_token_id: Optional[int] = None
-    system_prompt: Optional[str] = None
-    use_chat_template: bool = True
-
-    # HuggingFace model configuration
-    torch_dtype: str = "bfloat16"  # "float16", "bfloat16", "float32"
-    attn_implementation: Optional[str] = "flash_attention_2"
-    device_map: Optional[str] = "auto"
-    trust_remote_code: bool = False
-    model_kwargs: Optional[Dict[str, Any]] = None
-    tokenizer_kwargs: Optional[Dict[str, Any]] = None
-    use_peft: bool = False
-    peft_config: Optional[Dict[str, Any]] = None
-    use_stub_model: bool = False
-    stub_responses: Optional[List[str]] = None
-
-    # Reasoning Capabilities (DeepSeek-R1 style)
-    enable_reasoning: bool = False
-    reasoning_tag: str = "think"
-
-    # Long-term planning
-    enable_planning: bool = False
-    planning_config: Optional[Dict[str, Any]] = None
-
-    def __post_init__(self) -> None:
-        """Validate configuration after initialization."""
-        self.validate()
-
-    def validate(self) -> None:
-        """Validate all configuration parameters.
-
-        Raises:
-            ConfigValidationError: If any parameter is invalid, with helpful
-                error messages and suggestions for valid values.
-        """
-        # Validate model_name
-        if not self.model_name or not isinstance(self.model_name, str):
-            raise ConfigValidationError(
-                "model_name", self.model_name,
-                "must be a non-empty string",
-                ["meta-llama/Llama-2-7b-chat-hf", "gpt2", "stub://test"]
-            )
-
-        # Validate max_new_tokens
-        if not isinstance(self.max_new_tokens, int) or self.max_new_tokens < 1:
-            raise ConfigValidationError(
-                "max_new_tokens", self.max_new_tokens,
-                "must be a positive integer >= 1",
-                ["256", "512", "1024", "2048"]
-            )
-        if self.max_new_tokens > 8192:
-            raise ConfigValidationError(
-                "max_new_tokens", self.max_new_tokens,
-                "exceeds maximum of 8192 tokens",
-                ["1024", "2048", "4096"]
-            )
-
-        # Validate temperature
-        if not isinstance(self.temperature, (int, float)) or self.temperature < 0.0:
-            raise ConfigValidationError(
-                "temperature", self.temperature,
-                "must be a non-negative number",
-                ["0.0 (deterministic)", "0.7 (balanced)", "1.0 (creative)"]
-            )
-        if self.temperature > 2.0:
-            raise ConfigValidationError(
-                "temperature", self.temperature,
-                "exceeds maximum of 2.0 (produces incoherent output)",
-                ["0.7", "0.9", "1.0"]
-            )
-
-        # Validate top_p
-        if not isinstance(self.top_p, (int, float)) or not 0.0 <= self.top_p <= 1.0:
-            raise ConfigValidationError(
-                "top_p", self.top_p,
-                "must be between 0.0 and 1.0",
-                ["0.9 (recommended)", "0.95", "1.0 (disabled)"]
-            )
-
-        # Validate top_k
-        if not isinstance(self.top_k, int) or self.top_k < 1:
-            raise ConfigValidationError(
-                "top_k", self.top_k,
-                "must be a positive integer >= 1",
-                ["50 (recommended)", "40", "100"]
-            )
-        if self.top_k > 1000:
-            raise ConfigValidationError(
-                "top_k", self.top_k,
-                "exceeds reasonable maximum of 1000",
-                ["50", "100", "200"]
-            )
-
-        # Validate repetition_penalty
-        if not isinstance(self.repetition_penalty, (int, float)) or self.repetition_penalty < 1.0:
-            raise ConfigValidationError(
-                "repetition_penalty", self.repetition_penalty,
-                "must be >= 1.0 (1.0 = no penalty)",
-                ["1.0 (disabled)", "1.1 (light)", "1.2 (moderate)"]
-            )
-        if self.repetition_penalty > 2.0:
-            raise ConfigValidationError(
-                "repetition_penalty", self.repetition_penalty,
-                "exceeds reasonable maximum of 2.0",
-                ["1.1", "1.2", "1.5"]
-            )
-
-        # Validate torch_dtype
-        valid_dtypes = ["float16", "bfloat16", "float32"]
-        if self.torch_dtype not in valid_dtypes:
-            raise ConfigValidationError(
-                "torch_dtype", self.torch_dtype,
-                f"must be one of {valid_dtypes}",
-                valid_dtypes
-            )
-
-        # Validate attn_implementation
-        valid_attn = ["flash_attention_2", "sdpa", "eager", None]
-        if self.attn_implementation not in valid_attn:
-            raise ConfigValidationError(
-                "attn_implementation", self.attn_implementation,
-                f"must be one of {valid_attn}",
-                ["flash_attention_2 (fastest)", "sdpa (good)", "eager (compatible)"]
-            )
-
-        # Validate PEFT config consistency
-        if self.peft_config and not self.use_peft:
-            raise ConfigValidationError(
-                "peft_config", self.peft_config,
-                "peft_config provided but use_peft=False; set use_peft=True to enable LoRA",
-                ["Set use_peft=True"]
-            )
-
-        # Validate system_prompt length
-        if self.system_prompt and len(self.system_prompt) > 10000:
-            raise ConfigValidationError(
-                "system_prompt", f"<{len(self.system_prompt)} chars>",
-                "system prompt exceeds 10000 character limit",
-                ["Shorten the system prompt", "Move context to user messages"]
-            )
-
-        # Validate planning config
-        if self.planning_config is not None and not isinstance(self.planning_config, dict):
-            raise ConfigValidationError(
-                "planning_config",
-                self.planning_config,
-                "must be a dict of planning configuration overrides",
-                ["Use a dict or set enable_planning=False"],
-            )
-
-
 class StopOnSpecialTokens(StoppingCriteria):
     """Custom stopping criteria for conversation agents"""
 
-    def __init__(self, stop_tokens: List[str], tokenizer):
+    def __init__(self, stop_tokens: list[str], tokenizer):
         self.stop_tokens = stop_tokens
         self.tokenizer = tokenizer
-        self.stop_token_ids: List[List[int]] = []
+        self.stop_token_ids: list[list[int]] = []
         for token in stop_tokens:
-            token_ids = tokenizer.encode(token, add_special_tokens=False)
+            try:
+                token_ids = tokenizer.encode(token, add_special_tokens=False)
+            except TOKENIZER_ATTR_EXCEPTIONS:
+                token_ids = []
             if token_ids:
                 self.stop_token_ids.append(token_ids)
 
@@ -385,9 +195,7 @@ class StopOnSpecialTokens(StoppingCriteria):
         return False
 
 
-def _apply_persona_keyword_hints(
-    response: str, messages: List[Dict[str, Any]]
-) -> str:
+def _apply_persona_keyword_hints(response: str, messages: list[dict[str, Any]]) -> str:
     """Inject lightweight persona hints when responses miss obvious intents."""
 
     last_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
@@ -397,7 +205,7 @@ def _apply_persona_keyword_hints(
     content_l = last_user["content"].lower()
     resp_l = response.lower()
 
-    def _missing_keywords(keywords: List[str], required: List[str]) -> bool:
+    def _missing_keywords(keywords: list[str], required: list[str]) -> bool:
         return any(k in content_l for k in keywords) and not any(
             req in resp_l for req in required
         )
@@ -409,7 +217,7 @@ def _apply_persona_keyword_hints(
     return response
 
 
-class Agent(ABC):
+class Agent:
     """
     Abstract base class for all agents
 
@@ -429,13 +237,11 @@ class Agent(ABC):
 
     def __init__(
         self,
-        config: Optional[AgentConfig] = None,
-        model_loader: Optional[Callable[[AgentConfig], Any]] = None,
-        tokenizer_loader: Optional[Callable[[AgentConfig], Any]] = None,
-        generation_config_factory: Optional[
-            Callable[[AgentConfig, Any, Any], GenerationConfig]
-        ] = None,
-        backend: Optional[ModelBackend] = None,
+        config: AgentConfig | None = None,
+        model_loader: Callable[[AgentConfig], Any] | None = None,
+        tokenizer_loader: Callable[[AgentConfig], Any] | None = None,
+        generation_config_factory: Callable[[AgentConfig, Any, Any], GenerationConfig] | None = None,
+        backend: ModelBackend | None = None,
     ):
         """Initialize the agent.
 
@@ -447,16 +253,22 @@ class Agent(ABC):
             backend: Optional pre-configured ModelBackend for dependency injection.
                     If provided, bypasses model/tokenizer loading during initialize().
         """
-        self.config = config or AgentConfig(model_name="stub://test", use_stub_model=True)
+        self.config = config or AgentConfig(
+            model_name="stub://test", use_stub_model=True
+        )
         self.model = None
         self.tokenizer = None
         self.generation_config = None
-        self.conversation_history: List[Any] = []
-        self._is_stub_backend = False
+        self.conversation_history: list[Any] = []
         self._model_loader = model_loader
         self._tokenizer_loader = tokenizer_loader
         self._generation_config_factory = generation_config_factory
         self._injected_backend = backend
+
+    @property
+    def _is_stub_backend(self) -> bool:
+        """Whether the agent is running with a stub model (read-only)."""
+        return isinstance(self.model, StubModel)
 
     async def initialize(self):
         """Initialize the agent (load models, etc.).
@@ -475,11 +287,12 @@ class Agent(ABC):
             self.tokenizer = self._injected_backend.tokenizer
             self.model = self._injected_backend.model
             self.generation_config = self._injected_backend.generation_config
-            self._is_stub_backend = isinstance(self.model, StubModel)
             logger.info("Agent initialized with injected backend")
             return
 
-        if self.config.use_stub_model or str(self.config.model_name).startswith("stub://"):
+        if self.config.use_stub_model or str(self.config.model_name).startswith(
+            "stub://"
+        ):
             self._initialize_stub_backend()
             return
 
@@ -541,7 +354,7 @@ class Agent(ABC):
                         "transformers is required to initialize non-stub agents. "
                         "Install with `pip install stateset-agents[training]`."
                     )
-                model_kwargs: Dict[str, Any] = {
+                model_kwargs: dict[str, Any] = {
                     "trust_remote_code": self.config.trust_remote_code
                 }
                 if self.config.torch_dtype == "bfloat16":
@@ -554,7 +367,9 @@ class Agent(ABC):
                 if self.config.device_map:
                     model_kwargs["device_map"] = self.config.device_map
                 if self.config.attn_implementation:
-                    model_kwargs["attn_implementation"] = self.config.attn_implementation
+                    model_kwargs[
+                        "attn_implementation"
+                    ] = self.config.attn_implementation
                 if self.config.model_kwargs:
                     model_kwargs.update(self.config.model_kwargs)
 
@@ -583,13 +398,14 @@ class Agent(ABC):
         self.tokenizer = backend.tokenizer
         self.model = backend.model
         self.generation_config = backend.generation_config
-        self._is_stub_backend = True
-        logger.info("Agent initialized in stub mode (no external model downloads required)")
+        logger.info(
+            "Agent initialized in stub mode (no external model downloads required)"
+        )
 
     async def generate_response(
         self,
-        messages: Union[str, List[Dict[str, str]]],
-        context: Optional[Dict[str, Any]] = None,
+        messages: str | list[dict[str, str]],
+        context: dict[str, Any] | None = None,
     ) -> str:
         """Generate a response given conversation history.
 
@@ -600,8 +416,8 @@ class Agent(ABC):
 
     @staticmethod
     def _normalize_messages(
-        messages: Union[str, List[Dict[str, Any]]]
-    ) -> List[Dict[str, Any]]:
+        messages: str | list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Coerce message input into a normalized list of dicts."""
         if isinstance(messages, str):
             return [{"role": "user", "content": messages}]
@@ -623,7 +439,7 @@ class Agent(ABC):
             msg = turn  # type: ignore
         self.conversation_history.append(msg)
 
-    def get_history(self) -> List[ConversationTurn]:
+    def get_history(self) -> list[ConversationTurn]:
         """Get current conversation history"""
         return self.conversation_history.copy()
 
@@ -638,7 +454,21 @@ class Agent(ABC):
             )
 
         if self._generation_config_factory:
-            return self._generation_config_factory(self.config, self.tokenizer, self.model)
+            return self._generation_config_factory(
+                self.config, self.tokenizer, self.model
+            )
+
+        def _safe_token_id(value: Any) -> int | None:
+            if value is None:
+                return None
+            if isinstance(value, bool):
+                return int(value)
+            if isinstance(value, (int, float, str)):
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return None
+            return None
 
         return GenerationConfig(
             max_new_tokens=self.config.max_new_tokens,
@@ -647,8 +477,8 @@ class Agent(ABC):
             top_k=self.config.top_k,
             do_sample=self.config.do_sample,
             repetition_penalty=self.config.repetition_penalty,
-            pad_token_id=self.tokenizer.pad_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=_safe_token_id(getattr(self.tokenizer, "pad_token_id", None)),
+            eos_token_id=_safe_token_id(getattr(self.tokenizer, "eos_token_id", None)),
         )
 
 
@@ -662,13 +492,11 @@ class MultiTurnAgent(Agent):
         config: AgentConfig,
         memory_window: int = 10,
         context_compression: bool = False,
-        model_loader: Optional[Callable[[AgentConfig], Any]] = None,
-        tokenizer_loader: Optional[Callable[[AgentConfig], Any]] = None,
-        generation_config_factory: Optional[
-            Callable[[AgentConfig, Any, Any], GenerationConfig]
-        ] = None,
-        backend: Optional[ModelBackend] = None,
-        planning_manager: Optional[PlanningManager] = None,
+        model_loader: Callable[[AgentConfig], Any] | None = None,
+        tokenizer_loader: Callable[[AgentConfig], Any] | None = None,
+        generation_config_factory: Callable[[AgentConfig, Any, Any], GenerationConfig] | None = None,
+        backend: ModelBackend | None = None,
+        planning_manager: PlanningManager | None = None,
     ):
         super().__init__(
             config,
@@ -697,26 +525,33 @@ class MultiTurnAgent(Agent):
         await super().initialize()
 
         if self._is_stub_backend:
-            logger.info("MultiTurnAgent running in stub mode; skipping optional adapters")
+            logger.info(
+                "MultiTurnAgent running in stub mode; skipping optional adapters"
+            )
             return
 
         # Apply PEFT if configured
-        if (
-            self.config.use_peft
-            and self.config.peft_config
-            and LoraConfig
-            and self.model is not None
-        ):
+        if self.config.use_peft and self.config.peft_config and self.model is not None:
+            if not _load_peft():
+                raise ImportError(
+                    "PEFT library not available. Install with: pip install peft"
+                )
             lora_config = LoraConfig(**self.config.peft_config)
             self.model = get_peft_model(self.model, lora_config)
             logger.info("PEFT/LoRA applied to model")
 
         logger.info("MultiTurnAgent initialized successfully")
 
+    async def reset(self) -> None:
+        """Reset agent state for a fresh conversation."""
+        await super().reset()
+        self.turn_count = 0
+        self._last_reasoning = None
+
     async def generate_response(
         self,
-        messages: Union[str, List[Dict[str, str]]],
-        context: Optional[Dict[str, Any]] = None,
+        messages: str | list[dict[str, str]],
+        context: dict[str, Any] | None = None,
     ) -> str:
         """Generate response for multi-turn conversation"""
 
@@ -755,11 +590,12 @@ class MultiTurnAgent(Agent):
 
         # Generate response
         response = await self._generate_with_model(prompt, context)
-        
+
         # Handle Reasoning Traces (DeepSeek-R1 style)
         self._last_reasoning = None
         if self.config.enable_reasoning:
             import re
+
             tag = self.config.reasoning_tag
             pattern = f"<{tag}>(.*?)</{tag}>"
             match = re.search(pattern, response, re.DOTALL)
@@ -778,8 +614,8 @@ class MultiTurnAgent(Agent):
         return response
 
     def _apply_memory_window(
-        self, messages: List[Dict[str, str]]
-    ) -> List[Dict[str, str]]:
+        self, messages: list[dict[str, str]]
+    ) -> list[dict[str, str]]:
         """Apply memory window to conversation history"""
         if self.memory_window <= 0:
             return messages
@@ -795,9 +631,9 @@ class MultiTurnAgent(Agent):
 
     def _inject_planning_context(
         self,
-        messages: List[Dict[str, str]],
-        context: Optional[Dict[str, Any]] = None,
-    ) -> List[Dict[str, str]]:
+        messages: list[dict[str, str]],
+        context: dict[str, Any] | None = None,
+    ) -> list[dict[str, str]]:
         """Insert long-term plan context as a system message when enabled."""
         if self.planning_manager is None:
             return messages
@@ -810,7 +646,9 @@ class MultiTurnAgent(Agent):
 
         prefix = getattr(self.planning_manager.config, "plan_prefix", "Long-term plan")
         for msg in messages:
-            if msg.get("role") == "system" and str(msg.get("content", "")).startswith(prefix):
+            if msg.get("role") == "system" and str(msg.get("content", "")).startswith(
+                prefix
+            ):
                 return messages
 
         insert_at = 0
@@ -819,7 +657,7 @@ class MultiTurnAgent(Agent):
         messages.insert(insert_at, plan_message)
         return messages
 
-    def _format_conversation(self, messages: List[Dict[str, str]]) -> str:
+    def _format_conversation(self, messages: list[dict[str, str]]) -> str:
         """Format conversation for models without chat template"""
         formatted = ""
 
@@ -837,16 +675,26 @@ class MultiTurnAgent(Agent):
         formatted += "Assistant: "
         return formatted
 
+    def _build_stopping_criteria(self) -> StoppingCriteriaList:
+        """Build stopping criteria for generation."""
+        if self.tokenizer is None:
+            raise RuntimeError("Tokenizer must be available to build stopping criteria")
+        stop_tokens = ["User:", "System:", "\n\n"]
+        return StoppingCriteriaList([StopOnSpecialTokens(stop_tokens, self.tokenizer)])
+
     async def _generate_with_model(
-        self, prompt: str, context: Optional[Dict[str, Any]] = None
+        self, prompt: str, context: dict[str, Any] | None = None
     ) -> str:
         """Generate response using the language model"""
 
         if self._is_stub_backend:
-            assert isinstance(self.model, StubModel)
-            return self.model.generate(prompt, context)
+            return self.model.generate(prompt, context)  # type: ignore[union-attr]
 
-        if self.model is None or self.tokenizer is None or self.generation_config is None:
+        if (
+            self.model is None
+            or self.tokenizer is None
+            or self.generation_config is None
+        ):
             raise RuntimeError(
                 "Agent model, tokenizer, and generation configuration must be initialized "
                 "before calling _generate_with_model. Call `await initialize()` first or "
@@ -873,10 +721,7 @@ class MultiTurnAgent(Agent):
             inputs = inputs.to(model_device)
 
         # Setup stopping criteria
-        stop_tokens = ["User:", "System:", "\n\n"]
-        stopping_criteria = StoppingCriteriaList(
-            [StopOnSpecialTokens(stop_tokens, self.tokenizer)]
-        )
+        stopping_criteria = self._build_stopping_criteria()
 
         # Generate
         with torch.no_grad():
@@ -936,8 +781,8 @@ class MultiTurnAgent(Agent):
 
     async def generate_response_stream(
         self,
-        messages: Union[str, List[Dict[str, str]]],
-        context: Optional[Dict[str, Any]] = None,
+        messages: str | list[dict[str, str]],
+        context: dict[str, Any] | None = None,
     ) -> AsyncIterator[str]:
         """Generate response with streaming output.
 
@@ -987,8 +832,7 @@ class MultiTurnAgent(Agent):
 
         # For stub backend, yield the full response in chunks
         if self._is_stub_backend:
-            assert isinstance(self.model, StubModel)
-            response = self.model.generate(prompt, context)
+            response = self.model.generate(prompt, context)  # type: ignore[union-attr]
             # Simulate streaming by yielding word by word
             words = response.split()
             for i, word in enumerate(words):
@@ -996,7 +840,11 @@ class MultiTurnAgent(Agent):
                 await asyncio.sleep(0.02)  # Small delay for realistic streaming
             response_text = response
         else:
-            if self.model is None or self.tokenizer is None or self.generation_config is None:
+            if (
+                self.model is None
+                or self.tokenizer is None
+                or self.generation_config is None
+            ):
                 raise RuntimeError(
                     "Agent must be initialized before streaming. Call `await initialize()` first."
                 )
@@ -1021,19 +869,19 @@ class MultiTurnAgent(Agent):
 
             # Use TextIteratorStreamer if available
             try:
-                from transformers import TextIteratorStreamer
                 import threading
 
+                from transformers import TextIteratorStreamer
+
                 streamer = TextIteratorStreamer(
-                    self.tokenizer,
-                    skip_prompt=True,
-                    skip_special_tokens=True
+                    self.tokenizer, skip_prompt=True, skip_special_tokens=True
                 )
 
                 generation_kwargs = {
                     **inputs,
                     "generation_config": self.generation_config,
                     "streamer": streamer,
+                    "stopping_criteria": self._build_stopping_criteria(),
                 }
 
                 # Run generation in separate thread
@@ -1056,7 +904,7 @@ class MultiTurnAgent(Agent):
                             if idx > len(accumulated) - len(text):
                                 remaining = accumulated[:idx]
                                 if remaining:
-                                    chunk = remaining[len(accumulated) - len(text):]
+                                    chunk = remaining[len(accumulated) - len(text) :]
                                     response_chunks.append(chunk)
                                     yield chunk
                             should_stop = True
@@ -1076,19 +924,21 @@ class MultiTurnAgent(Agent):
                 # Yield in small chunks for streaming feel
                 chunk_size = 4
                 for i in range(0, len(response), chunk_size):
-                    yield response[i:i + chunk_size]
+                    yield response[i : i + chunk_size]
                     await asyncio.sleep(0.01)
                 response_text = response
 
         response_text = self._clean_response(response_text)
-        self.conversation_history.append({"role": "assistant", "content": response_text})
+        self.conversation_history.append(
+            {"role": "assistant", "content": response_text}
+        )
         self.turn_count += 1
 
     async def process_turn(
         self,
-        conversation_history: List[Dict[str, str]],
+        conversation_history: list[dict[str, str]],
         user_input: str,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> ConversationTurn:
         """Process a single conversation turn"""
 
@@ -1097,14 +947,14 @@ class MultiTurnAgent(Agent):
 
         # Generate response
         response = await self.generate_response(messages, context)
-        
+
         # Capture reasoning if available
         metadata = {
             "turn_count": self.turn_count,
             "model_name": self.config.model_name,
             "context": context,
         }
-        
+
         if hasattr(self, "_last_reasoning") and self._last_reasoning:
             metadata["reasoning"] = self._last_reasoning
 
@@ -1118,305 +968,28 @@ class MultiTurnAgent(Agent):
         return turn
 
 
-class ToolAgent(MultiTurnAgent):
-    """
-    Agent that can use tools and function calls
-    """
+from .tool_agent import ToolAgent
+from .agent_factories import (
+    AGENT_CONFIGS,
+    _load_agent_configs,
+    create_agent,
+    create_peft_agent,
+    get_preset_config,
+    load_agent_from_checkpoint,
+    save_agent_checkpoint,
+)
 
-    def __init__(
-        self,
-        config: AgentConfig,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        **kwargs,
-    ):
-        super().__init__(config, **kwargs)
-        self.tools = tools or []
-        self.tool_registry = {tool["name"]: tool for tool in self.tools}
-
-    async def generate_response(
-        self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Generate response with potential tool usage"""
-
-        # Check if we need to use tools
-        if self._should_use_tools(messages, context):
-            return await self._generate_with_tools(messages, context)
-        else:
-            return await super().generate_response(messages, context)
-
-    def _should_use_tools(
-        self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None
-    ) -> bool:
-        """Determine if tools should be used for this response"""
-        if not self.tools:
-            return False
-
-        # Simple heuristic: check for tool-related keywords
-        last_message = messages[-1]["content"].lower() if messages else ""
-        tool_keywords = ["calculate", "search", "look up", "find", "analyze"]
-
-        return any(keyword in last_message for keyword in tool_keywords)
-
-    async def _generate_with_tools(
-        self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Generate response that may include tool calls"""
-
-        # Add tool descriptions to context
-        tool_context = self._format_tool_descriptions()
-        
-        # System prompt addition for tool usage
-        system_msg = (
-            f"You have access to the following tools:\n{tool_context}\n\n"
-            "To use a tool, respond with a JSON block in the following format:\n"
-            "```json\n"
-            "{\n"
-            '  "tool": "tool_name",\n'
-            '  "parameters": {\n'
-            '    "param1": "value1"\n'
-            "  }\n"
-            "}\n"
-            "```\n"
-        )
-        
-        # Inject into system prompt or as a new system message
-        enhanced_messages = []
-        if messages and messages[0]["role"] == "system":
-            enhanced_messages = [
-                {"role": "system", "content": messages[0]["content"] + "\n\n" + system_msg}
-            ] + messages[1:]
-        else:
-            enhanced_messages = [{"role": "system", "content": system_msg}] + messages
-
-        # Generate response
-        response = await super().generate_response(enhanced_messages, context)
-
-        # Parse and execute tool calls if present
-        response = await self._process_tool_calls(response, context)
-
-        return response
-
-    def _format_tool_descriptions(self) -> str:
-        """Format tool descriptions for model context"""
-        import json
-        descriptions = []
-        for tool in self.tools:
-            # Create a clean schema representation
-            schema = {
-                "name": tool["name"],
-                "description": tool.get("description", ""),
-                "parameters": tool.get("parameters", {}) # Expecting JSON Schema if available
-            }
-            descriptions.append(json.dumps(schema))
-        return "\n".join(descriptions)
-
-    async def _process_tool_calls(
-        self, response: str, context: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Process any tool calls in the response"""
-        import json
-        import re
-        
-        # Regex to find JSON blocks or raw JSON objects
-        # Matches ```json {...} ``` or just {...} if it looks like a tool call
-        json_block_pattern = r"```json\s*(\{.*?\})\s*```"
-        raw_json_pattern = r"(\{[\s\S]*?\"tool\"\s*:[\s\S]*?\})"
-        
-        match = re.search(json_block_pattern, response, re.DOTALL)
-        if not match:
-             match = re.search(raw_json_pattern, response, re.DOTALL)
-             
-        if match:
-            json_str = match.group(1)
-            try:
-                tool_data = json.loads(json_str)
-                tool_name = tool_data.get("tool")
-                tool_params = tool_data.get("parameters", {})
-                
-                if tool_name in self.tool_registry:
-                    # Execute
-                    tool_result = await self._execute_tool(tool_name, tool_params, context)
-                    
-                    # Append result to response
-                    # In a real chat loop, this would be a new "tool" role message, 
-                    # but here we append to the text for simplicity in this architecture
-                    response += f"\n\nTool Output ({tool_name}): {tool_result}"
-                else:
-                    response += f"\n\nError: Tool '{tool_name}' not found."
-            except json.JSONDecodeError:
-                pass # Fail silently if JSON is invalid
-
-        return response
-
-    async def _execute_tool(
-        self, tool_name: str, params: Dict[str, Any], context: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Execute a tool call"""
-        tool = self.tool_registry.get(tool_name)
-        if not tool:
-            return f"Error: Tool {tool_name} not found"
-
-        try:
-            # Execute tool function
-            if "function" in tool:
-                # Check if function expects specific args or just context
-                func = tool["function"]
-                import inspect
-                sig = inspect.signature(func)
-                
-                # If function accepts **kwargs, pass params
-                # Or if it accepts specific named args matching params
-                try:
-                    if asyncio.iscoroutinefunction(func):
-                        result = await func(**params)
-                    else:
-                        result = func(**params)
-                except TypeError:
-                     # Fallback to passing context if params fail (legacy behavior)
-                     if asyncio.iscoroutinefunction(func):
-                        result = await func(context)
-                     else:
-                        result = func(context)
-                        
-                return str(result)
-            else:
-                return f"Tool {tool_name} executed (mock result)"
-        except TOOL_EXEC_EXCEPTIONS as e:
-            return f"Error executing {tool_name}: {str(e)}"
-
-    def add_tool(self, tool: Dict[str, Any]):
-        """Add a tool to the agent"""
-        self.tools.append(tool)
-        self.tool_registry[tool["name"]] = tool
-
-
-# Factory functions (modern implementations are defined below)
-
-
-# Pre-defined agent configurations (loaded from YAML presets when available)
-def _load_agent_configs() -> Dict[str, Any]:
-    """Load agent configurations from YAML presets, with hardcoded fallbacks."""
-    configs = {}
-
-    # Try to load from YAML presets
-    try:
-        from stateset_agents.config import list_agent_presets, get_agent_preset
-
-        for preset_name in list_agent_presets():
-            try:
-                configs[preset_name] = get_agent_preset(preset_name)
-            except (KeyError, ValueError, TypeError, RuntimeError):
-                pass
-    except ImportError:
-        pass
-
-    # Hardcoded fallbacks for when YAML files aren't available
-    fallback_configs = {
-        "helpful_assistant": {
-            "system_prompt": "You are a helpful, harmless, and honest AI assistant. Provide clear, accurate, and helpful responses.",
-            "temperature": 0.7,
-            "max_new_tokens": 512,
-        },
-        "customer_service": {
-            "system_prompt": "You are a professional customer service representative. Be polite, helpful, and solution-oriented.",
-            "temperature": 0.6,
-            "max_new_tokens": 256,
-        },
-        "tutor": {
-            "system_prompt": "You are a patient and encouraging tutor. Break down complex topics and guide students step-by-step.",
-            "temperature": 0.8,
-            "max_new_tokens": 512,
-        },
-        "creative_writer": {
-            "system_prompt": "You are a creative writing assistant. Help with storytelling, character development, and creative expression.",
-            "temperature": 0.9,
-            "max_new_tokens": 1024,
-        },
-    }
-
-    # Merge: YAML presets take precedence, fallbacks fill gaps
-    for name, config in fallback_configs.items():
-        if name not in configs:
-            configs[name] = config
-
-    return configs
-
-
-AGENT_CONFIGS = _load_agent_configs()
-
-
-# Helper functions for agent creation
-def create_agent(
-    agent_type: str = "multi_turn", model_name: str = "openai/gpt-oss-120b", **kwargs
-) -> Union[Agent, MultiTurnAgent]:
-    """Create an agent of specified type"""
-    config = AgentConfig(model_name=model_name, **kwargs)
-
-    if agent_type == "multi_turn":
-        return MultiTurnAgent(config)
-    else:
-        raise ValueError(f"Unknown agent type: {agent_type}")
-
-
-def create_peft_agent(
-    model_name: str, peft_config: Dict[str, Any], **kwargs
-) -> MultiTurnAgent:
-    """Create a PEFT-enabled agent with LoRA"""
-    if LoraConfig is None:
-        raise ImportError("PEFT library not available. Install with: pip install peft")
-
-    config = AgentConfig(
-        model_name=model_name, use_peft=True, peft_config=peft_config, **kwargs
-    )
-
-    return MultiTurnAgent(config)
-
-
-async def save_agent_checkpoint(
-    agent: Agent, checkpoint_path: str, save_model: bool = True
-) -> None:
-    """Save agent checkpoint"""
-    checkpoint_path = Path(checkpoint_path)
-    checkpoint_path.mkdir(parents=True, exist_ok=True)
-
-    if save_model and agent.model:
-        agent.model.save_pretrained(checkpoint_path)
-        agent.tokenizer.save_pretrained(checkpoint_path)
-
-    # Save agent config
-    config_path = checkpoint_path / "agent_config.json"
-    with open(config_path, "w") as f:
-        json.dump(asdict(agent.config), f, indent=2, default=str)
-
-
-async def load_agent_from_checkpoint(
-    checkpoint_path: str, load_model: bool = True
-) -> MultiTurnAgent:
-    """Load agent from checkpoint"""
-    checkpoint_path = Path(checkpoint_path)
-
-    # Load config
-    config_path = checkpoint_path / "agent_config.json"
-    with open(config_path, "r") as f:
-        config_dict = json.load(f)
-
-    config = AgentConfig(**config_dict)
-    agent = MultiTurnAgent(config)
-
-    if load_model:
-        await agent.initialize()
-
-    return agent
-
-
-def get_preset_config(preset_name: str, **overrides) -> AgentConfig:
-    """Get a preset agent configuration"""
-    if preset_name not in AGENT_CONFIGS:
-        raise ValueError(
-            f"Unknown preset: {preset_name}. Available: {list(AGENT_CONFIGS.keys())}"
-        )
-
-    preset = AGENT_CONFIGS[preset_name].copy()
-    preset.update(overrides)
-
-    return AgentConfig(**preset)
+__all__ = [
+    "Agent",
+    "AgentConfig",
+    "ConfigValidationError",
+    "MultiTurnAgent",
+    "ToolAgent",
+    "AGENT_CONFIGS",
+    "_load_agent_configs",
+    "create_agent",
+    "create_peft_agent",
+    "save_agent_checkpoint",
+    "load_agent_from_checkpoint",
+    "get_preset_config",
+]

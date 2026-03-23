@@ -4,9 +4,9 @@ Tests for long-term planning utilities.
 
 from stateset_agents.core.long_term_planning import (
     HeuristicPlanner,
-    PlanStatus,
     PlanningConfig,
     PlanningManager,
+    PlanStatus,
 )
 
 

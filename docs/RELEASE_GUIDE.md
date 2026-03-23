@@ -44,10 +44,15 @@ make release-minor
 make release-major
 
 # Release candidate
-make release-rc
+make release VERSION=1.2.3-rc.1
 
-# Custom version release
+# Custom version release (explicit)
 make release VERSION=1.2.3
+
+# Shorthand version bumps
+make release VERSION=patch
+make release VERSION=minor
+make release VERSION=major
 ```
 
 ### Manual Release Process
@@ -57,8 +62,13 @@ make release VERSION=1.2.3
 # Create release branch
 git checkout -b release/v1.2.3
 
-# Update version numbers
-python scripts/publish.py --version 1.2.3
+# Update version numbers (runs publish-readiness by default)
+python scripts/publish.py --production --version 1.2.3
+
+# Release targets require main/master or release/* branch unless overridden with
+# SKIP_RELEASE_BRANCH_CHECK=1.
+# Or use:
+# python scripts/publish.py --production --version 1.2.3 --skip-branch-check
 
 # Update changelog
 vim CHANGELOG.md
@@ -67,14 +77,20 @@ vim CHANGELOG.md
 #### 2. Test Release
 ```bash
 # Run full test suite
-make test-all
+make test
+
+# Validate publish readiness gate (format, types, tests, security, build)
+make publish-readiness
 
 # Build and test package
 make build
 make test-package
 
-# Test with TestPyPI
+# Test with TestPyPI (readiness gate included)
 make publish-test
+
+# Optional interactive flow (same branch-gated policies as Makefile targets)
+make quick-publish
 ```
 
 #### 3. Create GitHub Release
@@ -94,14 +110,15 @@ gh release create v1.2.3 \
 
 #### 4. Publish to PyPI
 ```bash
-# Publish to production PyPI
+# Publish to production PyPI (readiness gate included)
 make publish
 ```
 
 ## 📝 Release Checklist
 
 ### Pre-Release
-- [ ] All tests pass (`make test-all`)
+- [ ] Full test suite passes (`make test`)
+- [ ] Publish-readiness checks pass (`make publish-readiness`)
 - [ ] Code quality checks pass (`make lint`)
 - [ ] Security scan clean (`make security-scan`)
 - [ ] Documentation updated (`make docs-build`)
@@ -137,10 +154,7 @@ make release VERSION=1.2.3
 make release-patch
 
 # Test release only
-make release-test
-
-# Docker release
-make docker-release
+make release VERSION=1.2.3
 ```
 
 ### Manual Commands
@@ -153,10 +167,10 @@ pip install dist/*.whl
 python -c "import stateset_agents; print(stateset_agents.__version__)"
 
 # Publish to TestPyPI
-twine upload --repository testpypi dist/*
+python -m twine upload --skip-existing --repository testpypi dist/*
 
 # Publish to PyPI
-twine upload dist/*
+python -m twine upload --skip-existing dist/*
 
 # Create GitHub release
 gh release create v1.2.3 --generate-notes
@@ -186,13 +200,23 @@ classifiers = [
 
 ### Docker Images
 ```bash
-# Build and tag
-docker build -t stateset/agents:1.2.3 -f deployment/docker/Dockerfile .
-docker tag stateset/agents:1.2.3 stateset/agents:latest
+# Build and tag (API gateway)
+docker build -f deployment/docker/Dockerfile --target runtime \
+  -t stateset/stateset-agents-api:1.2.3 \
+  .
+docker tag stateset/stateset-agents-api:1.2.3 stateset/stateset-agents-api:latest
+
+# Build and tag (trainer jobs)
+docker build -f deployment/docker/Dockerfile.trainer \
+  -t stateset/stateset-agents-trainer:1.2.3 \
+  .
+docker tag stateset/stateset-agents-trainer:1.2.3 stateset/stateset-agents-trainer:latest
 
 # Push to registry
-docker push stateset/agents:1.2.3
-docker push stateset/agents:latest
+docker push stateset/stateset-agents-api:1.2.3
+docker push stateset/stateset-agents-api:latest
+docker push stateset/stateset-agents-trainer:1.2.3
+docker push stateset/stateset-agents-trainer:latest
 ```
 
 ## 🔒 Security Releases
@@ -222,9 +246,9 @@ gh security-advisory create \
 - **Source distribution** - Both wheel and source packages
 
 ### Docker Hub
-- **Official images** - `stateset/agents`
-- **GPU support** - `stateset/agents:gpu`
-- **Version tags** - `stateset/agents:v1.2.3`
+- **Gateway image** - `stateset/stateset-agents-api`
+- **Trainer image** - `stateset/stateset-agents-trainer`
+- **GPU inference** - deploy vLLM (or another model server) alongside the gateway
 
 ### GitHub
 - **Source code** - GitHub repository
@@ -251,14 +275,14 @@ If a release needs to be rolled back:
 
 1. **Stop deployment** - Halt CI/CD pipelines
 2. **Revert changes** - Git revert if needed
-3. **Yank release** - `twine upload --skip-existing dist/*` with `--yank`
+3. **Yank release** - `python -m twine upload --skip-existing dist/*` with `--yank`
 4. **Communicate** - Inform users of rollback
 5. **Fix issues** - Address root cause
 6. **Re-release** - Deploy fixed version
 
 ```bash
 # Yank a release from PyPI
-twine upload --skip-existing --yank dist/*
+python -m twine upload --skip-existing --yank dist/*
 ```
 
 ## 📞 Communication Templates

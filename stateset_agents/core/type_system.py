@@ -1,37 +1,29 @@
 """
 Type System and Validation for GRPO Agent Framework
 
-This module provides comprehensive type definitions, validation, and 
+This module provides comprehensive type definitions, validation, and
 type-safe interfaces for all framework components.
 """
 
-import asyncio
 import inspect
 import json
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 from typing import (
     Any,
-    Awaitable,
-    Callable,
-    Dict,
     Generic,
-    List,
     Literal,
-    Optional,
     Protocol,
-    Tuple,
     TypeVar,
     Union,
     get_args,
     get_origin,
     get_type_hints,
 )
+from collections.abc import Awaitable, Callable
 
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import NotRequired, Required, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -94,34 +86,34 @@ class ModelConfig(TypedDict, total=False):
     """Type-safe model configuration"""
 
     model_name: str
-    model_type: NotRequired[Optional[str]]
-    device: NotRequired[Optional[Union[DeviceType, str]]]
+    model_type: NotRequired[str | None]
+    device: NotRequired[DeviceType | str | None]
     torch_dtype: NotRequired[Literal["float16", "bfloat16", "float32"]]
-    max_length: NotRequired[Optional[int]]
-    max_new_tokens: NotRequired[Optional[int]]
+    max_length: NotRequired[int | None]
+    max_new_tokens: NotRequired[int | None]
     temperature: float
     top_p: float
     top_k: int
     do_sample: bool
     repetition_penalty: NotRequired[float]
-    pad_token_id: NotRequired[Optional[int]]
-    eos_token_id: NotRequired[Optional[int]]
-    system_prompt: NotRequired[Optional[str]]
+    pad_token_id: NotRequired[int | None]
+    eos_token_id: NotRequired[int | None]
+    system_prompt: NotRequired[str | None]
     use_chat_template: NotRequired[bool]
-    attn_implementation: NotRequired[Optional[str]]
-    device_map: NotRequired[Optional[str]]
+    attn_implementation: NotRequired[str | None]
+    device_map: NotRequired[str | None]
     use_cache: NotRequired[bool]
     trust_remote_code: NotRequired[bool]
-    model_kwargs: NotRequired[Optional[Dict[str, Any]]]
-    tokenizer_kwargs: NotRequired[Optional[Dict[str, Any]]]
+    model_kwargs: NotRequired[dict[str, Any] | None]
+    tokenizer_kwargs: NotRequired[dict[str, Any] | None]
     use_peft: NotRequired[bool]
-    peft_config: NotRequired[Optional[Dict[str, Any]]]
+    peft_config: NotRequired[dict[str, Any] | None]
     use_stub_model: NotRequired[bool]
-    stub_responses: NotRequired[Optional[List[str]]]
+    stub_responses: NotRequired[list[str] | None]
     enable_reasoning: NotRequired[bool]
     reasoning_tag: NotRequired[str]
     enable_planning: NotRequired[bool]
-    planning_config: NotRequired[Optional[Dict[str, Any]]]
+    planning_config: NotRequired[dict[str, Any] | None]
 
 
 class TrainingConfig(TypedDict, total=False):
@@ -130,7 +122,7 @@ class TrainingConfig(TypedDict, total=False):
     model_name: NotRequired[str]
     num_episodes: NotRequired[int]
     num_epochs: NotRequired[int]
-    batch_size: NotRequired[Optional[int]]
+    batch_size: NotRequired[int | None]
     per_device_train_batch_size: NotRequired[int]
     gradient_accumulation_steps: NotRequired[int]
     learning_rate: NotRequired[float]
@@ -148,20 +140,20 @@ class TrainingConfig(TypedDict, total=False):
     rollout_concurrency: NotRequired[int]
     max_prompt_length: NotRequired[int]
     max_completion_length: NotRequired[int]
-    max_steps_per_episode: NotRequired[Optional[int]]
+    max_steps_per_episode: NotRequired[int | None]
     eval_steps: NotRequired[int]
     save_steps: NotRequired[int]
     logging_steps: NotRequired[int]
     save_total_limit: NotRequired[int]
     output_dir: NotRequired[str]
-    run_name: NotRequired[Optional[str]]
-    wandb_run_name: NotRequired[Optional[str]]
+    run_name: NotRequired[str | None]
+    wandb_run_name: NotRequired[str | None]
     overwrite_output_dir: NotRequired[bool]
-    report_to: NotRequired[Optional[str]]
-    wandb_project: NotRequired[Optional[str]]
-    wandb_entity: NotRequired[Optional[str]]
-    wandb_tags: NotRequired[Optional[List[str]]]
-    wandb_notes: NotRequired[Optional[str]]
+    report_to: NotRequired[str | None]
+    wandb_project: NotRequired[str | None]
+    wandb_entity: NotRequired[str | None]
+    wandb_tags: NotRequired[list[str] | None]
+    wandb_notes: NotRequired[str | None]
     auto_adjust: NotRequired[bool]
     early_stopping: NotRequired[bool]
     patience: NotRequired[int]
@@ -186,9 +178,9 @@ class TrainingConfig(TypedDict, total=False):
     ewc_num_samples: NotRequired[int]
     ewc_decay: NotRequired[float]
     task_id_key: NotRequired[str]
-    task_schedule: NotRequired[Optional[List[str]]]
+    task_schedule: NotRequired[list[str] | None]
     task_switch_steps: NotRequired[int]
-    max_examples: NotRequired[Optional[int]]
+    max_examples: NotRequired[int | None]
     eval_split_size: NotRequired[float]
     stratify_by_task: NotRequired[bool]
     data_format: NotRequired[str]
@@ -199,7 +191,7 @@ class TrainingConfig(TypedDict, total=False):
     lora_r: NotRequired[int]
     lora_alpha: NotRequired[int]
     lora_dropout: NotRequired[float]
-    lora_target_modules: NotRequired[Optional[List[str]]]
+    lora_target_modules: NotRequired[list[str] | None]
     temperature: NotRequired[float]
     top_p: NotRequired[float]
     top_k: NotRequired[int]
@@ -208,10 +200,10 @@ class TrainingConfig(TypedDict, total=False):
     vllm_gpu_memory_utilization: NotRequired[float]
     vllm_tensor_parallel_size: NotRequired[int]
     vllm_enable_prefix_caching: NotRequired[bool]
-    vllm_max_model_len: NotRequired[Optional[int]]
-    vllm_quantization: NotRequired[Optional[str]]
+    vllm_max_model_len: NotRequired[int | None]
+    vllm_quantization: NotRequired[str | None]
     vllm_enable_chunked_prefill: NotRequired[bool]
-    resume_from_checkpoint: NotRequired[Optional[str]]
+    resume_from_checkpoint: NotRequired[str | None]
     seed: NotRequired[int]
     remove_unused_columns: NotRequired[bool]
     disable_tqdm: NotRequired[bool]
@@ -220,6 +212,10 @@ class TrainingConfig(TypedDict, total=False):
     dataloader_pin_memory: NotRequired[bool]
     fp16: NotRequired[bool]
     bf16: NotRequired[bool]
+    gradient_checkpointing: NotRequired[bool]
+
+
+TypedTrainingConfig = TrainingConfig
 
 
 class ConversationTurn(TypedDict):
@@ -228,38 +224,38 @@ class ConversationTurn(TypedDict):
     role: Literal["user", "assistant", "system"]
     content: str
     timestamp: NotRequired[Timestamp]
-    metadata: NotRequired[Dict[str, Any]]
+    metadata: NotRequired[dict[str, Any]]
 
 
 class TrajectoryData(TypedDict):
     """Type-safe trajectory data"""
 
     conversation_id: ConversationId
-    turns: List[ConversationTurn]
+    turns: list[ConversationTurn]
     total_tokens: TokenCount
     duration_seconds: float
-    context_metadata: NotRequired[Dict[str, Any]]
+    context_metadata: NotRequired[dict[str, Any]]
 
 
 class RewardMetrics(TypedDict):
     """Type-safe reward metrics"""
 
     total_score: Score
-    component_scores: Dict[str, Score]
+    component_scores: dict[str, Score]
     confidence: float
     explanation: NotRequired[str]
-    metadata: NotRequired[Dict[str, Any]]
+    metadata: NotRequired[dict[str, Any]]
 
 
 # Protocol definitions for type-safe interfaces
 class Configurable(Protocol):
     """Protocol for configurable components"""
 
-    def configure(self, config: Dict[str, Any]) -> None:
+    def configure(self, config: dict[str, Any]) -> None:
         """Configure the component"""
         ...
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         """Get current configuration"""
         ...
 
@@ -267,11 +263,11 @@ class Configurable(Protocol):
 class Trainable(Protocol):
     """Protocol for trainable components"""
 
-    async def train_step(self, batch: Any) -> Dict[str, float]:
+    async def train_step(self, batch: Any) -> dict[str, float]:
         """Execute a single training step"""
         ...
 
-    def get_trainable_parameters(self) -> List[Any]:
+    def get_trainable_parameters(self) -> list[Any]:
         """Get trainable parameters"""
         ...
 
@@ -279,7 +275,7 @@ class Trainable(Protocol):
 class Evaluable(Protocol):
     """Protocol for evaluable components"""
 
-    async def evaluate(self, test_data: Any) -> Dict[str, float]:
+    async def evaluate(self, test_data: Any) -> dict[str, float]:
         """Evaluate performance"""
         ...
 
@@ -287,12 +283,12 @@ class Evaluable(Protocol):
 class Serializable(Protocol):
     """Protocol for serializable components"""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         ...
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Serializable":
+    def from_dict(cls, data: dict[str, Any]) -> "Serializable":
         """Create from dictionary"""
         ...
 
@@ -310,7 +306,7 @@ class TypedComponent(Generic[T], ABC):
         """Validate configuration"""
         pass
 
-    def update_config(self, updates: Dict[str, Any]) -> None:
+    def update_config(self, updates: dict[str, Any]) -> None:
         """Update configuration with validation"""
         if isinstance(self.config, dict):
             self.config.update(updates)
@@ -326,14 +322,14 @@ class Agent(Protocol):
 
     async def generate_response(
         self,
-        messages: Union[str, List[ConversationTurn]],
+        messages: str | list[ConversationTurn],
         **kwargs: Any,
     ) -> str:
         """Generate response to conversation"""
         ...
 
     async def start_conversation(
-        self, user_id: UserId, initial_context: Optional[Dict[str, Any]] = None
+        self, user_id: UserId, initial_context: dict[str, Any] | None = None
     ) -> ConversationId:
         """Start new conversation"""
         ...
@@ -342,13 +338,13 @@ class Agent(Protocol):
 class Environment(Protocol):
     """Type-safe environment interface"""
 
-    async def reset(self) -> Dict[str, Any]:
+    async def reset(self) -> dict[str, Any]:
         """Reset environment state"""
         ...
 
     async def step(
-        self, action: str, state: Dict[str, Any]
-    ) -> Tuple[Dict[str, Any], float, bool]:
+        self, action: str, state: dict[str, Any]
+    ) -> tuple[dict[str, Any], float, bool]:
         """Execute environment step"""
         ...
 
@@ -357,7 +353,7 @@ class RewardFunction(Protocol):
     """Type-safe reward function interface"""
 
     async def compute_reward(
-        self, trajectory: TrajectoryData, context: Optional[Dict[str, Any]] = None
+        self, trajectory: TrajectoryData, context: dict[str, Any] | None = None
     ) -> RewardMetrics:
         """Compute reward for trajectory"""
         ...
@@ -375,6 +371,15 @@ class TypeValidator:
                 # Handle generic types
                 origin = get_origin(expected_type)
                 args = get_args(expected_type)
+
+                if (
+                    origin in (NotRequired, Required)
+                    or (origin and str(origin).endswith("NotRequired"))
+                    or (origin and str(origin).endswith("Required"))
+                ):
+                    if args:
+                        return TypeValidator.validate_type(value, args[0])
+                    return True
 
                 if origin is Union:
                     return any(TypeValidator.validate_type(value, arg) for arg in args)
@@ -415,7 +420,7 @@ class TypeValidator:
             return False
 
     @staticmethod
-    def validate_config(config: Dict[str, Any], config_type: type) -> List[str]:
+    def validate_config(config: dict[str, Any], config_type: type) -> list[str]:
         """Validate configuration against TypedDict"""
         errors = []
 
@@ -457,7 +462,7 @@ class TypeValidator:
                 return False
 
             for (name, param), (exp_name, exp_param) in zip(
-                sig.parameters.items(), expected_sig.parameters.items()
+                sig.parameters.items(), expected_sig.parameters.items(), strict=False
             ):
                 if name != exp_name:
                     return False
@@ -474,10 +479,10 @@ class ConfigValidator:
     """Configuration validation with detailed error reporting"""
 
     def __init__(self):
-        self.errors: List[str] = []
-        self.warnings: List[str] = []
+        self.errors: list[str] = []
+        self.warnings: list[str] = []
 
-    def validate_model_config(self, config: Dict[str, Any]) -> bool:
+    def validate_model_config(self, config: dict[str, Any]) -> bool:
         """Validate model configuration"""
         self.errors.clear()
         self.warnings.clear()
@@ -506,7 +511,7 @@ class ConfigValidator:
 
         return len(self.errors) == 0
 
-    def validate_training_config(self, config: Dict[str, Any]) -> bool:
+    def validate_training_config(self, config: dict[str, Any]) -> bool:
         """Validate training configuration"""
         self.errors.clear()
         self.warnings.clear()
@@ -539,7 +544,7 @@ class ConfigValidator:
 
         return len(self.errors) == 0
 
-    def get_validation_report(self) -> Dict[str, List[str]]:
+    def get_validation_report(self) -> dict[str, list[str]]:
         """Get validation report"""
         return {
             "errors": self.errors.copy(),
@@ -549,7 +554,7 @@ class ConfigValidator:
 
 
 # Type-safe factory functions
-def create_typed_config(config_type: type, **kwargs) -> Dict[str, Any]:
+def create_typed_config(config_type: type, **kwargs) -> dict[str, Any]:
     """Create type-safe configuration"""
     config = kwargs.copy()
 
@@ -636,7 +641,7 @@ class TypeSafeSerializer:
     """Type-safe JSON serialization"""
 
     @staticmethod
-    def serialize(obj: Any, expected_type: Optional[type] = None) -> str:
+    def serialize(obj: Any, expected_type: type | None = None) -> str:
         """Serialize object with type information"""
         if expected_type and not TypeValidator.validate_type(obj, expected_type):
             raise TypeError(f"Object does not match expected type {expected_type}")
@@ -703,6 +708,7 @@ __all__ = [
     # TypedDicts
     "ModelConfig",
     "TrainingConfig",
+    "TypedTrainingConfig",
     "ConversationTurn",
     "TrajectoryData",
     "RewardMetrics",

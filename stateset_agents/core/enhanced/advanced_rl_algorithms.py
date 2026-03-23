@@ -10,22 +10,18 @@ This module implements multiple RL algorithms including:
 - Group Sequence Policy Optimization - Token variant (GSPO-token)
 """
 
-import asyncio
 import logging
-from collections import deque
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import Categorical, Normal
+from torch.distributions import Categorical
 
-from ..agent import Agent, AgentConfig, MultiTurnAgent
-from ..environment import ConversationEnvironment, Environment
-from ..reward import RewardFunction, RewardResult
-from ..trajectory import ConversationTurn, MultiTurnTrajectory, TrajectoryGroup
+from ..environment import Environment
+from ..trajectory import ConversationTurn, MultiTurnTrajectory
 from .enhanced_agent import EnhancedMultiTurnAgent
 
 logger = logging.getLogger(__name__)
@@ -189,7 +185,7 @@ class PPOTrainer:
         state = await environment.reset()
         trajectory_turns = []
 
-        for step in range(max_steps):
+        for _step in range(max_steps):
             # Get current conversation state
             messages = [
                 {"role": turn.role, "content": turn.content}
@@ -245,7 +241,7 @@ class PPOTrainer:
 
         return trajectory
 
-    async def _get_state_embedding(self, messages: List[Dict[str, str]]) -> np.ndarray:
+    async def _get_state_embedding(self, messages: list[dict[str, str]]) -> np.ndarray:
         """Get embedding representation of conversation state"""
         # Simple approach: concatenate last few messages
         conversation_text = " ".join([msg["content"] for msg in messages[-3:]])
@@ -263,7 +259,7 @@ class PPOTrainer:
         return embedding
 
     def compute_advantages(
-        self, rewards: List[float], values: List[float], dones: List[bool]
+        self, rewards: list[float], values: list[float], dones: list[bool]
     ):
         """Compute Generalized Advantage Estimation (GAE)"""
         advantages = []
@@ -410,7 +406,7 @@ class DPOTrainer:
 
         return reference_model.to(self.device)
 
-    async def train_step(self, preference_pairs: List[Dict[str, Any]]):
+    async def train_step(self, preference_pairs: list[dict[str, Any]]):
         """
         Train on preference pairs
 
@@ -530,7 +526,7 @@ class A2CTrainer:
         state = await environment.reset()
         episode_rewards = []
 
-        for step in range(n_steps):
+        for _step in range(n_steps):
             # Get state embedding
             messages = [{"role": "system", "content": "You are a helpful assistant."}]
             state_embedding = await self._get_state_embedding(messages)
@@ -576,7 +572,7 @@ class A2CTrainer:
 
         return episode_rewards
 
-    async def _get_state_embedding(self, messages: List[Dict[str, str]]) -> np.ndarray:
+    async def _get_state_embedding(self, messages: list[dict[str, str]]) -> np.ndarray:
         """Get embedding for state (simplified)"""
         conversation_text = messages[-1]["content"] if messages else ""
 
@@ -601,11 +597,7 @@ class A2CTrainer:
             self.device
         )
         actions = torch.tensor(self.actions, dtype=torch.long).to(self.device)
-        rewards = torch.tensor(self.rewards, dtype=torch.float32).to(self.device)
         values = torch.tensor(self.values, dtype=torch.float32).to(self.device)
-        old_log_probs = torch.tensor(self.log_probs, dtype=torch.float32).to(
-            self.device
-        )
 
         # Compute returns and advantages
         returns = []
@@ -673,13 +665,13 @@ class AdvancedRLOrchestrator:
         self.performance_history = []
 
     def add_algorithm(
-        self, name: str, trainer: Union[PPOTrainer, DPOTrainer, A2CTrainer]
+        self, name: str, trainer: PPOTrainer | DPOTrainer | A2CTrainer
     ):
         """Add an RL algorithm"""
         self.algorithms[name] = trainer
 
     def select_algorithm(
-        self, task_type: str, data_characteristics: Dict[str, Any]
+        self, task_type: str, data_characteristics: dict[str, Any]
     ) -> str:
         """Automatically select the best algorithm for the task"""
 
@@ -695,7 +687,7 @@ class AdvancedRLOrchestrator:
     async def train(
         self,
         environment: Environment,
-        training_data: Dict[str, Any],
+        training_data: dict[str, Any],
         task_type: str = "general",
         **kwargs,
     ):
@@ -722,7 +714,7 @@ class AdvancedRLOrchestrator:
         elif algorithm_name == "a2c":
             return await self._train_a2c(trainer, environment, **kwargs)
 
-    def _analyze_data(self, training_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_data(self, training_data: dict[str, Any]) -> dict[str, Any]:
         """Analyze training data characteristics"""
         characteristics = {}
 
@@ -742,7 +734,7 @@ class AdvancedRLOrchestrator:
         """Train with PPO"""
         for episode in range(num_episodes):
             # Collect trajectory
-            trajectory = await trainer.collect_trajectory(environment)
+            await trainer.collect_trajectory(environment)
 
             # Train step
             metrics = await trainer.train_step()
@@ -750,7 +742,7 @@ class AdvancedRLOrchestrator:
             logger.info(f"PPO Episode {episode}: Loss = {metrics['total_loss']:.4f}")
 
     async def _train_dpo(
-        self, trainer: DPOTrainer, training_data: Dict[str, Any], num_steps: int = 100
+        self, trainer: DPOTrainer, training_data: dict[str, Any], num_steps: int = 100
     ):
         """Train with DPO"""
         preference_pairs = training_data.get("preference_pairs", [])
@@ -778,7 +770,7 @@ class AdvancedRLOrchestrator:
             )
 
             # Train step
-            metrics = await trainer.train_step()
+            await trainer.train_step()
 
             logger.info(f"A2C Episode {episode}: Total Reward = {sum(rewards):.2f}")
 

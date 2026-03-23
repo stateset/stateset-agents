@@ -1,0 +1,15 @@
+{{- if .Values.vllm.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "stateset-agents.fullname" . }}-vllm
+  namespace: {{ .Values.global.namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ include "stateset-agents.fullname" . }}-vllm
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+{{- end }}

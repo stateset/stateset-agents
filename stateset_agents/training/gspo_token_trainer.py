@@ -8,11 +8,11 @@ Reference: https://arxiv.org/abs/2507.18071v2 (Section 4.3)
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
 
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
@@ -20,7 +20,8 @@ from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction as MultiObjectiveReward,
 )
-from .gspo_trainer import GSPOConfig, GSPOTrainer, GSPOTrajectoryGenerator
+
+from .gspo_trainer import GSPOConfig, GSPOTrainer
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class GSPOTokenTrainer(GSPOTrainer):
         agent: Agent,
         environment: ConversationEnvironment,
         reward_model: MultiObjectiveReward,
-        ref_model: Optional[Any] = None,
+        ref_model: Any | None = None,
     ):
         super().__init__(
             config, model, tokenizer, agent, environment, reward_model, ref_model
@@ -83,8 +84,8 @@ class GSPOTokenTrainer(GSPOTrainer):
         return detached_seq_ratio
 
     async def train_step_token_level(
-        self, queries: List[str], num_groups: int = 1
-    ) -> Dict[str, float]:
+        self, queries: list[str], num_groups: int = 1
+    ) -> dict[str, float]:
         """
         Execute one GSPO-token training step with token-level advantages.
 
@@ -182,12 +183,12 @@ class GSPOTokenTrainer(GSPOTrainer):
                 seq_len = shift_labels.shape[1]
                 sequence_lengths.append(seq_len)
 
-            current_log_probs = torch.tensor(
-                current_log_probs, dtype=torch.float32
-            ).to(self.model.device)
-            sequence_lengths = torch.tensor(
-                sequence_lengths, dtype=torch.float32
-            ).to(self.model.device)
+            current_log_probs = torch.tensor(current_log_probs, dtype=torch.float32).to(
+                self.model.device
+            )
+            sequence_lengths = torch.tensor(sequence_lengths, dtype=torch.float32).to(
+                self.model.device
+            )
 
             # Compute sequence importance ratios
             importance_ratios = self.compute_sequence_importance_ratio(
@@ -211,17 +212,13 @@ class GSPOTokenTrainer(GSPOTrainer):
             # For each response, we compute token-level weighted loss
 
             loss = 0.0
-            for i, (token_log_probs, response) in enumerate(
-                zip(token_log_probs_list, responses)
-            ):
+            for i, token_log_probs in enumerate(token_log_probs_list):
                 seq_len = token_log_probs.shape[1]
 
                 # Create token-level advantages (in this demo, we use sequence advantage)
                 # In practice, you could assign different advantages per token
                 # For multi-turn: assign advantages based on which turn each token belongs to
-                token_advantages = (
-                    advantages[i].unsqueeze(0).expand(seq_len).detach()
-                )
+                token_advantages = advantages[i].unsqueeze(0).expand(seq_len).detach()
 
                 # Detached sequence ratio for clipping (no gradients)
                 detached_seq_ratio = clipped_ratios[i].detach()
@@ -297,7 +294,7 @@ async def train_with_gspo_token(
     agent: Agent,
     environment: ConversationEnvironment,
     reward_model: MultiObjectiveReward,
-    train_queries: Optional[List[str]] = None,
+    train_queries: list[str] | None = None,
 ) -> Agent:
     """
     Train using GSPO-token variant with token-level advantages.
@@ -316,10 +313,11 @@ async def train_with_gspo_token(
     Returns:
         Trained agent
     """
-    from .gspo_trainer import GSPOModelManager, train_with_gspo
     import json
     import os
     from datetime import datetime
+
+    from .gspo_trainer import GSPOModelManager
 
     logger.info("Initializing GSPO-token training")
     logger.info(f"Configuration: {json.dumps(config.to_dict(), indent=2)}")

@@ -7,7 +7,6 @@ authentication helpers, secure configuration management, and security monitoring
 
 import binascii
 import hashlib
-import hmac
 import json
 import logging
 import os
@@ -15,7 +14,7 @@ import re
 import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any
 
 from stateset_agents.core.error_handling import ErrorCode, ValidationException
 
@@ -73,7 +72,7 @@ class InputValidator:
 
     @staticmethod
     def validate_filename(
-        filename: str, allowed_extensions: Optional[Set[str]] = None
+        filename: str, allowed_extensions: set[str] | None = None
     ) -> bool:
         """Validate filename for security."""
         if not isinstance(filename, str) or not filename:
@@ -96,7 +95,7 @@ class InputValidator:
         return True
 
     @staticmethod
-    def detect_injection_attempts(input_str: str) -> List[str]:
+    def detect_injection_attempts(input_str: str) -> list[str]:
         """Detect potential injection attacks."""
         threats = []
 
@@ -133,10 +132,10 @@ class InputValidator:
 class SecureConfig:
     """Secure configuration management."""
 
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self, config_file: str | None = None):
         self.config_file = Path(config_file) if config_file else None
-        self._config: Dict[str, Any] = {}
-        self._secrets: Dict[str, str] = {}
+        self._config: dict[str, Any] = {}
+        self._secrets: dict[str, str] = {}
 
         # Load configuration if file provided
         if self.config_file and self.config_file.exists():
@@ -152,7 +151,7 @@ class SecureConfig:
         else:
             self._secrets[key] = value
 
-    def get_secret(self, key: str, decrypt: bool = True) -> Optional[str]:
+    def get_secret(self, key: str, decrypt: bool = True) -> str | None:
         """Retrieve a secret."""
         if key not in self._secrets:
             return None
@@ -176,11 +175,13 @@ class SecureConfig:
                 "Set a 32+ character key for production use."
             )
             import base64
+
             return base64.b64encode(value.encode()).decode()
 
         try:
-            from cryptography.fernet import Fernet
             import base64
+
+            from cryptography.fernet import Fernet
 
             # Derive a valid Fernet key from the provided key
             # Fernet requires 32 url-safe base64-encoded bytes
@@ -194,6 +195,7 @@ class SecureConfig:
                 "Install cryptography for secure secret storage: pip install cryptography"
             )
             import base64
+
             return base64.b64encode(value.encode()).decode()
 
     def _simple_decrypt(self, value: str) -> str:
@@ -203,14 +205,16 @@ class SecureConfig:
         if not key_str:
             # Assume base64 encoded if no key
             import base64
+
             try:
                 return base64.b64decode(value.encode()).decode()
             except (binascii.Error, UnicodeDecodeError, ValueError):
                 return value
 
         try:
-            from cryptography.fernet import Fernet, InvalidToken
             import base64
+
+            from cryptography.fernet import Fernet, InvalidToken
 
             # Derive the same Fernet key
             key_bytes = hashlib.sha256(key_str.encode()).digest()
@@ -227,6 +231,7 @@ class SecureConfig:
                 ) from e
         except ImportError:
             import base64
+
             try:
                 return base64.b64decode(value.encode()).decode()
             except (binascii.Error, UnicodeDecodeError, ValueError):
@@ -258,7 +263,7 @@ class SecureConfig:
         if not self.config_file or not self.config_file.exists():
             return
 
-        with open(self.config_file, "r") as f:
+        with open(self.config_file) as f:
             data = json.load(f)
             self._config = data.get("config", {})
 
@@ -267,15 +272,15 @@ class SecurityMonitor:
     """Monitor security events and anomalies."""
 
     def __init__(self):
-        self.events: List[Dict[str, Any]] = []
+        self.events: list[dict[str, Any]] = []
         self.logger = logging.getLogger(__name__ + ".SecurityMonitor")
 
     def log_security_event(
         self,
         event_type: str,
-        details: Dict[str, Any],
+        details: dict[str, Any],
         severity: str = "info",
-        source_ip: Optional[str] = None,
+        source_ip: str | None = None,
     ):
         """Log a security event."""
         event = {
@@ -292,7 +297,7 @@ class SecurityMonitor:
         log_method = getattr(self.logger, severity, self.logger.info)
         log_method(f"Security event: {event_type} - {details}")
 
-    def get_recent_events(self, hours: int = 24) -> List[Dict[str, Any]]:
+    def get_recent_events(self, hours: int = 24) -> list[dict[str, Any]]:
         """Get recent security events."""
         cutoff = datetime.utcnow() - timedelta(hours=hours)
 
@@ -302,7 +307,7 @@ class SecurityMonitor:
             if datetime.fromisoformat(event["timestamp"]) > cutoff
         ]
 
-    def detect_anomalies(self) -> List[Dict[str, Any]]:
+    def detect_anomalies(self) -> list[dict[str, Any]]:
         """Detect security anomalies."""
         anomalies = []
         recent_events = self.get_recent_events(hours=1)
@@ -333,12 +338,12 @@ class AuthService:
 
     def __init__(self, secret_key: str):
         self.secret_key = secret_key
-        self.users: Dict[str, Dict[str, Any]] = {}
-        self.sessions: Dict[str, Dict[str, Any]] = {}
+        self.users: dict[str, dict[str, Any]] = {}
+        self.sessions: dict[str, dict[str, Any]] = {}
         self.monitor = SecurityMonitor()
 
     def register_user(
-        self, username: str, password: str, roles: List[str] = None
+        self, username: str, password: str, roles: list[str] = None
     ) -> bool:
         """Register a new user."""
         if username in self.users:
@@ -357,7 +362,7 @@ class AuthService:
 
         return True
 
-    def authenticate(self, username: str, password: str) -> Optional[str]:
+    def authenticate(self, username: str, password: str) -> str | None:
         """Authenticate user and return session token."""
         if username not in self.users:
             self.monitor.log_security_event(
@@ -448,19 +453,19 @@ _security_monitor = SecurityMonitor()
 
 def log_security_event(
     event_type: str,
-    details: Dict[str, Any],
+    details: dict[str, Any],
     severity: str = "info",
-    source_ip: Optional[str] = None,
+    source_ip: str | None = None,
 ):
     """Log a security event globally."""
     _security_monitor.log_security_event(event_type, details, severity, source_ip)
 
 
-def get_security_events(hours: int = 24) -> List[Dict[str, Any]]:
+def get_security_events(hours: int = 24) -> list[dict[str, Any]]:
     """Get recent security events."""
     return _security_monitor.get_recent_events(hours)
 
 
-def detect_security_anomalies() -> List[Dict[str, Any]]:
+def detect_security_anomalies() -> list[dict[str, Any]]:
     """Detect security anomalies."""
     return _security_monitor.detect_anomalies()

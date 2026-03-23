@@ -2,6 +2,13 @@
 
 Production deployment guides for StateSet Agents on AWS, GCP, and Azure.
 
+Note: as of `stateset-agents` v0.7.x, deployment is split into:
+- `stateset/stateset-agents-api`: FastAPI gateway (Anthropic/OpenAI compatible)
+- `stateset/stateset-agents-trainer`: training job image (bring your own CUDA base)
+
+GPU inference should run in a dedicated model server (e.g. vLLM) deployed
+alongside the gateway. The gateway proxies requests to that backend.
+
 ---
 
 ## Table of Contents
@@ -63,7 +70,7 @@ resource "aws_ecs_task_definition" "api" {
     }]
 
     environment = [
-      { name = "API_ENV", value = "production" },
+      { name = "API_ENVIRONMENT", value = "production" },
       { name = "API_WORKERS", value = "4" }
     ]
 
@@ -185,12 +192,22 @@ curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.li
 sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
 sudo systemctl restart docker
 
-# Run StateSet Agents
-docker run -d --gpus all \
+# Run vLLM (GPU inference, OpenAI-compatible)
+docker run -d --gpus all --network host \
+  vllm/vllm-openai:nightly \
+  python3 -m vllm.entrypoints.openai.api_server \
+    --model moonshotai/Kimi-K2.5 \
+    --host 0.0.0.0 \
+    --port 8001 \
+    --trust-remote-code
+
+# Run StateSet Agents gateway (Anthropic/OpenAI compatible)
+docker run -d --network host \
   -e API_JWT_SECRET=$API_JWT_SECRET \
-  -e API_ENV=production \
-  -p 8000:8000 \
-  stateset/stateset-agents:latest-gpu
+  -e API_ENVIRONMENT=production \
+  -e INFERENCE_BACKEND=vllm \
+  -e INFERENCE_BACKEND_URL=http://127.0.0.1:8001 \
+  stateset/stateset-agents-api:latest
 ```
 
 ---
@@ -218,7 +235,7 @@ spec:
       containerConcurrency: 80
       timeoutSeconds: 300
       containers:
-        - image: gcr.io/PROJECT_ID/stateset-agents:latest
+        - image: gcr.io/PROJECT_ID/stateset-agents-api:latest
           ports:
             - containerPort: 8000
           resources:
@@ -226,7 +243,7 @@ spec:
               cpu: "2"
               memory: 4Gi
           env:
-            - name: API_ENV
+            - name: API_ENVIRONMENT
               value: production
             - name: API_JWT_SECRET
               valueFrom:
@@ -238,7 +255,7 @@ spec:
 ```bash
 # Deploy to Cloud Run
 gcloud run deploy stateset-api \
-  --image gcr.io/$PROJECT_ID/stateset-agents:latest \
+  --image gcr.io/$PROJECT_ID/stateset-agents-api:latest \
   --platform managed \
   --region us-central1 \
   --memory 4Gi \
@@ -264,9 +281,9 @@ def launch_vertex_training(
 
     job = aiplatform.CustomContainerTrainingJob(
         display_name="stateset-grpo-training",
-        container_uri=f"gcr.io/{project}/stateset-agents:training",
-        command=["python", "-m", "training.train"],
-        model_serving_container_image_uri=f"gcr.io/{project}/stateset-agents:serving",
+        container_uri=f"gcr.io/{project}/stateset-agents-trainer:latest",
+        command=["bash", "-lc", "python examples/finetune_kimi_k25_gspo.py --model moonshotai/Kimi-K2.5 --task customer_service --use-lora --export-merged --output-dir /models/kimi-k25"],
+        model_serving_container_image_uri=f"gcr.io/{project}/stateset-agents-api:latest",
     )
 
     model = job.run(
@@ -286,51 +303,18 @@ def launch_vertex_training(
 
 ### GKE with GPU
 
-```yaml
-# k8s/gke-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: stateset-api
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: stateset-api
-  template:
-    metadata:
-      labels:
-        app: stateset-api
-    spec:
-      containers:
-        - name: api
-          image: gcr.io/PROJECT_ID/stateset-agents:latest-gpu
-          resources:
-            limits:
-              nvidia.com/gpu: 1
-              memory: 16Gi
-              cpu: "4"
-          ports:
-            - containerPort: 8000
-          env:
-            - name: API_ENV
-              value: production
-          envFrom:
-            - secretRef:
-                name: stateset-secrets
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: stateset-api
-spec:
-  type: LoadBalancer
-  ports:
-    - port: 80
-      targetPort: 8000
-  selector:
-    app: stateset-api
-```
+For large-model GPU inference, deploy a dedicated model server (vLLM) and point
+the gateway at it.
+
+Recommended manifests:
+- vLLM: `deployment/kubernetes/kimi-k25-vllm.yaml`
+- Gateway: `deployment/kubernetes/production-deployment.yaml`
+
+Helm alternative:
+- Chart: `deployment/helm/stateset-agents`
+- GPU profiles: `deployment/helm/stateset-agents/values-a100.yaml`,
+  `deployment/helm/stateset-agents/values-h100.yaml`,
+  `deployment/helm/stateset-agents/values-b200.yaml`
 
 ---
 
@@ -343,11 +327,11 @@ spec:
 az container create \
   --resource-group stateset-rg \
   --name stateset-api \
-  --image statesetacr.azurecr.io/stateset-agents:latest \
+  --image statesetacr.azurecr.io/stateset-agents-api:latest \
   --cpu 2 \
   --memory 4 \
   --ports 8000 \
-  --environment-variables API_ENV=production \
+  --environment-variables API_ENVIRONMENT=production \
   --secure-environment-variables API_JWT_SECRET=$JWT_SECRET \
   --dns-name-label stateset-api
 ```
@@ -420,8 +404,8 @@ spec:
           value: "gpu"
           effect: "NoSchedule"
       containers:
-        - name: api
-          image: statesetacr.azurecr.io/stateset-agents:latest-gpu
+        - name: vllm
+          image: vllm/vllm-openai:nightly
           resources:
             limits:
               nvidia.com/gpu: 1
@@ -435,89 +419,40 @@ spec:
 
 ### docker-compose.yml (Local Development)
 
-```yaml
-version: "3.8"
+Use the repo compose files in `deployment/docker/`:
+- `deployment/docker/docker-compose.yml`: runtime gateway + optional deps (redis/postgres/prometheus)
+- `deployment/docker/docker-compose.dev.yml`: minimal dev gateway + test container
 
-services:
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - API_ENV=development
-      - API_JWT_SECRET=dev-secret-change-in-production
-      - API_DEBUG=true
-    volumes:
-      - ./models:/app/models
-      - ./logs:/app/logs
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+Examples:
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana-data:/var/lib/grafana
-
-volumes:
-  redis-data:
-  grafana-data:
+```bash
+docker compose -f deployment/docker/docker-compose.yml up -d stateset-agents-api
+docker compose -f deployment/docker/docker-compose.yml --profile monitoring up -d prometheus
 ```
 
 ### Production Dockerfile
 
-```dockerfile
-# Dockerfile
-FROM python:3.10-slim as builder
+The repo includes a production gateway Dockerfile at `deployment/docker/Dockerfile`.
 
-WORKDIR /app
-RUN pip install --no-cache-dir poetry
-COPY pyproject.toml poetry.lock ./
-RUN poetry export -f requirements.txt --output requirements.txt
+Build the gateway image:
 
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04 as runtime
-
-WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 python3-pip curl && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /app/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-ENV API_ENV=production
-ENV API_WORKERS=4
-EXPOSE 8000
-
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
-
-CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```bash
+docker build -f deployment/docker/Dockerfile --target runtime -t stateset/stateset-agents-api:latest .
 ```
+
+Run the gateway locally (proxying to a vLLM backend):
+
+```bash
+docker run --rm -p 8000:8000 \
+  -e API_ENVIRONMENT=production \
+  -e API_JWT_SECRET="$API_JWT_SECRET" \
+  -e INFERENCE_BACKEND=vllm \
+  -e INFERENCE_BACKEND_URL="http://localhost:8001" \
+  -e INFERENCE_DEFAULT_MODEL="moonshotai/Kimi-K2.5" \
+  stateset/stateset-agents-api:latest
+```
+
+Note: GPU model serving should run in a dedicated model-server container (for example, vLLM) and the gateway should point `INFERENCE_BACKEND_URL` at that service.
 
 ---
 
@@ -525,14 +460,20 @@ CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `API_ENV` | Environment (development/production) | development | Yes |
-| `API_JWT_SECRET` | JWT signing secret (32+ chars) | - | Yes |
-| `API_WORKERS` | Number of uvicorn workers | 1 | No |
-| `API_CORS_ORIGINS` | Allowed CORS origins | * | No |
+| `API_ENVIRONMENT` | Environment (development/staging/production) | development | Yes |
+| `API_JWT_SECRET` | JWT signing secret (required in production) | - | Yes |
+| `API_REQUIRE_AUTH` | Require auth for protected endpoints | true | No |
+| `API_CORS_ORIGINS` | Allowed CORS origins (`*` only allowed in development) | - | No |
 | `API_RATE_LIMIT_ENABLED` | Enable rate limiting | true | No |
 | `WANDB_API_KEY` | Weights & Biases API key | - | No |
-| `HF_TOKEN` | HuggingFace API token | - | No |
+| `HUGGING_FACE_HUB_TOKEN` | Hugging Face token (used by training jobs / vLLM model downloads) | - | No |
 | `REDIS_URL` | Redis connection URL | - | No |
+| `INFERENCE_BACKEND` | Inference backend type (`vllm` or `stub`) | vllm | No |
+| `INFERENCE_BACKEND_URL` | Base URL for the inference backend | http://localhost:8000 | No |
+| `INFERENCE_DEFAULT_MODEL` | Default model id when request omits `model` | - | No |
+| `INFERENCE_TIMEOUT_SECONDS` | Backend request timeout (seconds) | 120 | No |
+| `INFERENCE_MAX_RETRIES` | Backend retry count | 2 | No |
+| `INFERENCE_MODEL_MAP` | Optional model id remapping (`alias=id` pairs) | - | No |
 
 ---
 
@@ -623,7 +564,7 @@ gcloud run deploy stateset-api --source .
 az deployment group create --template-file azure/main.bicep
 
 # Local
-docker-compose up -d
+docker compose -f deployment/docker/docker-compose.yml up -d stateset-agents-api
 ```
 
 ---

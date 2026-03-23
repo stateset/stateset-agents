@@ -1,10 +1,17 @@
 """
-Fine-tune Qwen3 Models with GSPO
+Fine-tune Qwen Models with GSPO
 
-This script demonstrates how to fine-tune Qwen3 models using GSPO,
-the same algorithm used by Alibaba to train the production Qwen3 models.
+This script demonstrates text-only GSPO post-training for Qwen models in
+StateSet Agents.
 
-Supported Qwen3 Models:
+Recommended starting checkpoint for new post-training runs:
+- Qwen/Qwen3.5-0.8B-Base
+
+For a dedicated first-run path for Qwen3.5-0.8B, prefer
+`examples/finetune_qwen3_5_0_8b_gspo.py`.
+
+Other supported examples:
+- Qwen/Qwen3.5-0.8B
 - Qwen/Qwen2.5-0.5B
 - Qwen/Qwen2.5-1.5B
 - Qwen/Qwen2.5-3B
@@ -14,25 +21,30 @@ Supported Qwen3 Models:
 - Qwen/Qwen2.5-72B
 
 Usage:
-    # Small model (0.5B) - Great for testing
-    python examples/finetune_qwen3_gspo.py --model Qwen/Qwen2.5-0.5B --task customer_service
+    # Recommended first run
+    python examples/finetune_qwen3_gspo.py --model Qwen/Qwen3.5-0.8B-Base --task customer_service
 
-    # Medium model (7B) - Balanced performance
+    # 0.8B on a smaller GPU
+    python examples/finetune_qwen3_gspo.py --model Qwen/Qwen3.5-0.8B-Base --task customer_service --use-4bit
+
+    # Larger Qwen model with LoRA
     python examples/finetune_qwen3_gspo.py --model Qwen/Qwen2.5-7B --task technical_support --use-lora
-
-    # Large model (32B) - High quality
-    python examples/finetune_qwen3_gspo.py --model Qwen/Qwen2.5-32B --task sales --use-lora --use-4bit
-
-    # MoE model (A3B) - Efficient and powerful
-    python examples/finetune_qwen3_gspo.py --model Qwen/Qwen2.5-A3B --task customer_service
 """
 
 import argparse
 import asyncio
 import logging
-import os
+import sys
 from pathlib import Path
-from typing import Optional
+
+REPO_ROOT = str(Path(__file__).resolve().parents[1])
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from stateset_agents.training.qwen3_5_starter import (
+    get_qwen3_5_config,
+    get_qwen3_5_gspo_config,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,7 +59,7 @@ def get_qwen3_config(
     use_lora: bool = True,
     use_4bit: bool = False,
     use_8bit: bool = False,
-    output_dir: str = "./outputs/qwen3_gspo",
+    output_dir: str = "./outputs/qwen3_5_gspo",
 ):
     """
     Get optimized GSPO configuration for Qwen3 models.
@@ -55,15 +67,15 @@ def get_qwen3_config(
     These configurations are based on the original GSPO paper
     and optimized for different model sizes.
     """
-    from stateset_agents.training.gspo_trainer import GSPOConfig
     from stateset_agents.training.config import get_config_for_task
+    from stateset_agents.training.gspo_trainer import GSPOConfig
 
     # Get base config for task
     base_config = get_config_for_task(task, model_name=model_name)
 
     # Determine model size and adjust hyperparameters
     if "0.5B" in model_name or "0.5b" in model_name:
-        # Small model config
+        # Small model config (0.5B)
         config = GSPOConfig.from_training_config(
             base_config,
             # GSPO parameters
@@ -94,7 +106,26 @@ def get_qwen3_config(
             save_steps=10,
             logging_steps=1,
         )
-    elif "1.5B" in model_name or "1.5b" in model_name or "3B" in model_name or "3b" in model_name:
+    elif "0.8B" in model_name or "0.8b" in model_name:
+        # Reuse the dedicated Qwen3.5-0.8B helper for the generic family script.
+        qwen35_config = get_qwen3_5_config(
+            model_name=model_name,
+            task=task,
+            use_lora=use_lora,
+            use_4bit=use_4bit,
+            use_8bit=use_8bit,
+            output_dir=output_dir,
+            num_outer_iterations=100,
+            generations_per_iteration=40,
+            save_steps_every=10,
+        )
+        config = get_qwen3_5_gspo_config(qwen35_config, base_config=base_config)
+    elif (
+        "1.5B" in model_name
+        or "1.5b" in model_name
+        or "3B" in model_name
+        or "3b" in model_name
+    ):
         # Medium model config
         config = GSPOConfig.from_training_config(
             base_config,
@@ -110,7 +141,15 @@ def get_qwen3_config(
             lora_r=32,
             lora_alpha=64,
             lora_dropout=0.05,
-            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             gradient_checkpointing=True,
             use_4bit=use_4bit,
             use_8bit=use_8bit,
@@ -121,7 +160,12 @@ def get_qwen3_config(
             save_steps=10,
             logging_steps=1,
         )
-    elif "7B" in model_name or "7b" in model_name or "14B" in model_name or "14b" in model_name:
+    elif (
+        "7B" in model_name
+        or "7b" in model_name
+        or "14B" in model_name
+        or "14b" in model_name
+    ):
         # Large model config
         config = GSPOConfig.from_training_config(
             base_config,
@@ -137,9 +181,19 @@ def get_qwen3_config(
             lora_r=64,
             lora_alpha=128,
             lora_dropout=0.05,
-            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             gradient_checkpointing=True,
-            use_4bit=use_4bit if use_4bit else use_8bit,  # Use quantization for large models
+            use_4bit=use_4bit
+            if use_4bit
+            else use_8bit,  # Use quantization for large models
             use_8bit=use_8bit if not use_4bit else False,
             max_prompt_length=2048,
             max_completion_length=2048,
@@ -164,7 +218,15 @@ def get_qwen3_config(
             lora_r=64,
             lora_alpha=128,
             lora_dropout=0.05,
-            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             gradient_checkpointing=True,
             use_4bit=True,  # Always use quantization for very large models
             max_prompt_length=4096,
@@ -184,15 +246,15 @@ async def finetune_qwen3(
     use_lora: bool = True,
     use_4bit: bool = False,
     use_8bit: bool = False,
-    output_dir: str = "./outputs/qwen3_gspo",
+    output_dir: str = "./outputs/qwen3_5_gspo",
     use_wandb: bool = False,
-    wandb_project: Optional[str] = None,
+    wandb_project: str | None = None,
 ):
     """
-    Fine-tune a Qwen3 model using GSPO.
+    Fine-tune a Qwen model using GSPO.
 
     Args:
-        model_name: Qwen3 model name (e.g., "Qwen/Qwen2.5-7B")
+        model_name: Qwen model name (for post-training, prefer "Qwen/Qwen3.5-0.8B-Base")
         task: Task type (customer_service, technical_support, sales)
         use_lora: Use LoRA for efficient fine-tuning
         use_4bit: Use 4-bit quantization
@@ -203,17 +265,22 @@ async def finetune_qwen3(
     """
     from stateset_agents import MultiTurnAgent
     from stateset_agents.core.agent import AgentConfig
-    from stateset_agents.core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
+    from stateset_agents.core.environment import (
+        CONVERSATION_CONFIGS,
+        ConversationEnvironment,
+    )
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
     from stateset_agents.training.gspo_trainer import train_with_gspo
 
     logger.info("=" * 80)
-    logger.info("🚀 Fine-tuning Qwen3 with GSPO")
+    logger.info("🚀 Fine-tuning Qwen3.5 with GSPO")
     logger.info("=" * 80)
     logger.info(f"Model: {model_name}")
     logger.info(f"Task: {task}")
     logger.info(f"LoRA: {use_lora}")
-    logger.info(f"Quantization: {'4-bit' if use_4bit else '8-bit' if use_8bit else 'None'}")
+    logger.info(
+        f"Quantization: {'4-bit' if use_4bit else '8-bit' if use_8bit else 'None'}"
+    )
     logger.info(f"Output: {output_dir}")
     logger.info("=" * 80)
 
@@ -225,11 +292,13 @@ async def finetune_qwen3(
     }
 
     # Create agent
-    logger.info("Initializing Qwen3 agent...")
+    logger.info("Initializing Qwen3.5 agent...")
     agent_config = AgentConfig(
         model_name=model_name,
         system_prompt=system_prompts.get(task, system_prompts["customer_service"]),
-        max_new_tokens=2048,
+        max_new_tokens=1024,
+        trust_remote_code=True,
+        attn_implementation="sdpa",
     )
     agent = MultiTurnAgent(agent_config)
     await agent.initialize()
@@ -264,13 +333,15 @@ async def finetune_qwen3(
     # Enable W&B if requested
     if use_wandb:
         gspo_config.report_to = "wandb"
-        gspo_config.wandb_project = wandb_project or f"qwen3-gspo-{task}"
-        gspo_config.wandb_tags = ["qwen3", "gspo", task, model_name.split("/")[-1]]
+        gspo_config.wandb_project = wandb_project or f"qwen3_5-gspo-{task}"
+        gspo_config.wandb_tags = ["qwen3.5", "gspo", task, model_name.split("/")[-1]]
         logger.info(f"✅ W&B enabled: {gspo_config.wandb_project}")
 
     logger.info("✅ GSPO configuration ready")
     logger.info(f"   - Group size: {gspo_config.num_generations}")
-    logger.info(f"   - Clipping: [{gspo_config.clip_range_left}, {gspo_config.clip_range_right}]")
+    logger.info(
+        f"   - Clipping: [{gspo_config.clip_range_left}, {gspo_config.clip_range_right}]"
+    )
     logger.info(f"   - Learning rate: {gspo_config.learning_rate}")
     logger.info(f"   - Iterations: {gspo_config.num_outer_iterations}")
 
@@ -292,7 +363,7 @@ async def finetune_qwen3(
 
     # Test the trained agent
     logger.info("\n" + "=" * 80)
-    logger.info("Testing trained Qwen3 model...")
+    logger.info("Testing trained Qwen3.5 model...")
     logger.info("=" * 80)
 
     test_queries = {
@@ -306,7 +377,7 @@ async def finetune_qwen3(
 
     logger.info(f"\nUser: {test_query}")
     response = await trained_agent.generate_response(messages)
-    logger.info(f"Qwen3: {response}\n")
+    logger.info(f"Qwen3.5: {response}\n")
     logger.info("=" * 80)
 
     return trained_agent
@@ -315,29 +386,29 @@ async def finetune_qwen3(
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
-        description="Fine-tune Qwen3 models with GSPO",
+        description="Fine-tune Qwen models with GSPO",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Small model for testing
-  python examples/finetune_qwen3_gspo.py --model Qwen/Qwen2.5-0.5B
+  # Recommended first run
+  python examples/finetune_qwen3_gspo.py --model Qwen/Qwen3.5-0.8B-Base
+
+  # 0.8B model with 4-bit quantization
+  python examples/finetune_qwen3_gspo.py --model Qwen/Qwen3.5-0.8B-Base --use-4bit
 
   # 7B model with LoRA
   python examples/finetune_qwen3_gspo.py --model Qwen/Qwen2.5-7B --use-lora
 
-  # 32B model with 4-bit quantization
-  python examples/finetune_qwen3_gspo.py --model Qwen/Qwen2.5-32B --use-4bit
-
   # Enable W&B logging
-  python examples/finetune_qwen3_gspo.py --model Qwen/Qwen2.5-7B --wandb --wandb-project my-project
+  python examples/finetune_qwen3_gspo.py --model Qwen/Qwen3.5-0.8B-Base --wandb --wandb-project my-project
         """,
     )
 
     parser.add_argument(
         "--model",
         type=str,
-        default="Qwen/Qwen2.5-0.5B",
-        help="Qwen3 model name (e.g., Qwen/Qwen2.5-7B)",
+        default="Qwen/Qwen3.5-0.8B-Base",
+        help="Qwen model name (for post-training, prefer Qwen/Qwen3.5-0.8B-Base)",
     )
     parser.add_argument(
         "--task",
@@ -360,7 +431,7 @@ Examples:
     parser.add_argument(
         "--use-4bit",
         action="store_true",
-        help="Use 4-bit quantization (for large models)",
+        help="Use 4-bit quantization (helpful on smaller GPUs)",
     )
     parser.add_argument(
         "--use-8bit",
@@ -370,7 +441,7 @@ Examples:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="./outputs/qwen3_gspo",
+        default="./outputs/qwen3_5_gspo",
         help="Output directory for checkpoints",
     )
     parser.add_argument(

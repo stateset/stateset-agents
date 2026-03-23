@@ -2,7 +2,6 @@
 
 import os
 import sys
-from pathlib import Path
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(".."))
@@ -42,11 +41,10 @@ pygments_style = "sphinx"
 # -- Options for HTML output -------------------------------------------------
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
-html_logo = "_static/logo.png"
+html_logo = None
 html_theme_options = {
     "canonical_url": "",
     "analytics_id": "",
-    "display_version": True,
     "prev_next_buttons_location": "bottom",
     "style_external_links": False,
     "vcs_pageview_mode": "",
@@ -86,13 +84,17 @@ napoleon_use_rtype = True
 napoleon_type_aliases = None
 
 # -- Options for intersphinx -------------------------------------------------
-intersphinx_mapping = {
-    "python": ("https://docs.python.org/3", None),
-    "torch": ("https://pytorch.org/docs/stable/", None),
-    "transformers": ("https://huggingface.co/docs/transformers/main/en/", None),
-    "fastapi": ("https://fastapi.tiangolo.com/", None),
-    "pydantic": ("https://pydantic-docs.helpmanual.io/", None),
-}
+if os.getenv("SPHINX_INTERSPHINX", "0") == "1":
+    intersphinx_mapping = {
+        "python": ("https://docs.python.org/3", None),
+        "torch": ("https://pytorch.org/docs/stable/", None),
+        "transformers": ("https://huggingface.co/docs/transformers/main/en/", None),
+        "fastapi": ("https://fastapi.tiangolo.com/", None),
+        "pydantic": ("https://pydantic-docs.helpmanual.io/", None),
+    }
+else:
+    # Default to offline-friendly docs builds.
+    intersphinx_mapping = {}
 
 # -- Options for todo -------------------------------------------------------
 todo_include_todos = True

@@ -2,12 +2,11 @@
 Unit tests for Kimi-K2.5 integration
 """
 
-import pytest
-import asyncio
 from unittest.mock import MagicMock, patch
-from pathlib import Path
 
-from kimi_k25_config import get_kimi_k25_config
+import pytest
+
+from examples.kimi_k25_config import get_kimi_k25_config
 from stateset_agents.core.agent import AgentConfig
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.rewards.multi_objective_reward import (
@@ -23,8 +22,8 @@ class TestKimiK25Config:
         config = get_kimi_k25_config(task="customer_service")
 
         assert config.model_name == "moonshotai/Kimi-K2.5"
-        assert config.use_lora == True
-        assert config.use_vllm == True
+        assert config.use_lora is True
+        assert config.use_vllm is True
         assert config.num_generations == 8  # Larger group for MoE
         assert config.learning_rate == 3e-6
         assert config.lora_r == 64
@@ -39,7 +38,7 @@ class TestKimiK25Config:
             num_outer_iterations=50,
         )
 
-        assert config.use_lora == False
+        assert config.use_lora is False
         assert config.learning_rate == 1e-5
         assert config.num_outer_iterations == 50
 
@@ -59,7 +58,7 @@ class TestKimiK25Config:
             vllm_gpu_memory_utilization=0.9,
         )
 
-        assert config.use_vllm == True
+        assert config.use_vllm is True
         assert config.vllm_gpu_memory_utilization == 0.9
 
 
@@ -90,7 +89,6 @@ class TestKimiK25Agent:
     @pytest.mark.asyncio
     async def test_agent_system_prompt(self):
         """Test Kimi-specific system prompt"""
-        from stateset_agents import MultiTurnAgent
 
         kimi_system_prompt = "You are Kimi, an AI assistant created by Moonshot AI."
 
@@ -139,17 +137,17 @@ class TestKimiK25Multimodal:
 
     def test_model_info(self):
         """Test Kimi-K2.5 model information"""
-        from kimi_k25_config import KIMI_K25_INFO
+        from examples.kimi_k25_config import KIMI_K25_INFO
 
         assert KIMI_K25_INFO["model_name"] == "moonshotai/Kimi-K2.5"
         assert KIMI_K25_INFO["total_params"] == "1T"
         assert KIMI_K25_INFO["activated_params"] == "32B"
         assert KIMI_K25_INFO["context_length"] == "256K"
-        assert KIMI_K25_INFO["multimodal"] == True
+        assert KIMI_K25_INFO["multimodal"] is True
 
     def test_deployment_engines(self):
         """Test supported deployment engines"""
-        from kimi_k25_config import KIMI_K25_INFO
+        from examples.kimi_k25_config import KIMI_K25_INFO
 
         expected_engines = ["vLLM", "SGLang", "KTransformers"]
         for engine in expected_engines:
@@ -163,7 +161,7 @@ class TestKimiK25Integration:
     @pytest.mark.asyncio
     async def test_full_training_pipeline_smoke(self):
         """Smoke test for full training pipeline (runs with minimal iterations)"""
-        from kimi_k25_config import get_kimi_k25_config
+        from examples.kimi_k25_config import get_kimi_k25_config
         from stateset_agents.rewards.multi_objective_reward import (
             create_customer_service_reward,
         )

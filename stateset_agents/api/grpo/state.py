@@ -7,16 +7,19 @@ Thread-safe state management with TTL support.
 import logging
 import threading
 import time
+from collections.abc import ItemsView, KeysView, ValuesView
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, Generic, Iterator, Optional, TypeVar
+from typing import Any, Generic, TypeVar, cast, overload
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+_DefaultT = TypeVar("_DefaultT")
+_MISSING = object()
 
 
-class TTLDict(Dict[str, T], Generic[T]):
+class TTLDict(dict[str, T], Generic[T]):
     """
     Dictionary with automatic cleanup of expired entries.
 
@@ -41,7 +44,7 @@ class TTLDict(Dict[str, T], Generic[T]):
         self.ttl_seconds = ttl_seconds
         self.max_size = max_size
         self.cleanup_interval = cleanup_interval
-        self._timestamps: Dict[str, float] = {}
+        self._timestamps: dict[str, float] = {}
         self._lock = threading.RLock()
         self._last_cleanup = time.time()
 
@@ -77,6 +80,8 @@ class TTLDict(Dict[str, T], Generic[T]):
 
     def __contains__(self, key: object) -> bool:
         """Check if key exists and is not expired."""
+        if not isinstance(key, str):
+            return False
         with self._lock:
             if not super().__contains__(key):
                 return False
@@ -87,48 +92,61 @@ class TTLDict(Dict[str, T], Generic[T]):
                     return False
             return True
 
-    def get(self, key: str, default: Optional[T] = None) -> Optional[T]:
+    @overload
+    def get(self, key: str, default: None = None) -> T | None:
+        ...
+
+    @overload
+    def get(self, key: str, default: _DefaultT) -> T | _DefaultT:
+        ...
+
+    def get(self, key: str, default: _DefaultT | None = None) -> T | _DefaultT | None:
         """Get item with default value."""
         try:
             return self[key]
         except KeyError:
             return default
 
-    def setdefault(self, key: str, default: Optional[T] = None) -> T:
+    def setdefault(self, key: str, default: T | None = None) -> T:
         """Set default value if key doesn't exist or is expired."""
         with self._lock:
             if key not in self:
-                self[key] = default
+                self[key] = cast(T, default)
             return super().__getitem__(key)
 
-    def pop(self, key: str, *args) -> T:
+    @overload
+    def pop(self, key: str) -> T:
+        ...
+
+    @overload
+    def pop(self, key: str, default: _DefaultT) -> T | _DefaultT:
+        ...
+
+    def pop(self, key: str, default: object = _MISSING) -> T | _DefaultT:
         """Remove and return item."""
         with self._lock:
             self._timestamps.pop(key, None)
-            return super().pop(key, *args)
+            if default is _MISSING:
+                return super().pop(key)
+            return super().pop(key, cast(_DefaultT, default))
 
-    def items(self) -> Iterator[tuple]:
-        """Iterate over non-expired items."""
+    def items(self) -> ItemsView[str, T]:  # type: ignore[override]
+        """Return non-expired items."""
         with self._lock:
-            now = time.time()
-            for key in list(super().keys()):
-                if key in self._timestamps:
-                    if now - self._timestamps[key] <= self.ttl_seconds:
-                        yield key, super().__getitem__(key)
+            self.cleanup_expired()
+            return super().items()
 
-    def keys(self) -> Iterator[str]:
-        """Iterate over non-expired keys."""
+    def keys(self) -> KeysView[str]:  # type: ignore[override]
+        """Return non-expired keys."""
         with self._lock:
-            now = time.time()
-            for key in list(super().keys()):
-                if key in self._timestamps:
-                    if now - self._timestamps[key] <= self.ttl_seconds:
-                        yield key
+            self.cleanup_expired()
+            return super().keys()
 
-    def values(self) -> Iterator[T]:
-        """Iterate over non-expired values."""
-        for _, value in self.items():
-            yield value
+    def values(self) -> ValuesView[T]:  # type: ignore[override]
+        """Return non-expired values."""
+        with self._lock:
+            self.cleanup_expired()
+            return super().values()
 
     def _evict_oldest(self, count: int = 1) -> int:
         """
@@ -173,9 +191,7 @@ class TTLDict(Dict[str, T], Generic[T]):
         with self._lock:
             now = time.time()
             expired_keys = [
-                k
-                for k, ts in self._timestamps.items()
-                if now - ts > self.ttl_seconds
+                k for k, ts in self._timestamps.items() if now - ts > self.ttl_seconds
             ]
 
             for key in expired_keys:
@@ -187,14 +203,12 @@ class TTLDict(Dict[str, T], Generic[T]):
 
             return len(expired_keys)
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Get statistics about the dictionary."""
         with self._lock:
             now = time.time()
             expired = sum(
-                1
-                for ts in self._timestamps.values()
-                if now - ts > self.ttl_seconds
+                1 for ts in self._timestamps.values() if now - ts > self.ttl_seconds
             )
 
             return {
@@ -209,33 +223,35 @@ class TTLDict(Dict[str, T], Generic[T]):
 @dataclass
 class TrainingJob:
     """Training job state."""
+
     job_id: str
     status: str
     strategy: str
     user_id: str
     request_id: str
     created_at: datetime = field(default_factory=datetime.utcnow)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     iterations_completed: int = 0
     total_trajectories: int = 0
-    error: Optional[str] = None
+    error: str | None = None
     results: list = field(default_factory=list)
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class ConversationState:
     """Conversation state."""
+
     conversation_id: str
     user_id: str
-    agent_id: Optional[str] = None
+    agent_id: str | None = None
     strategy: str = "default"
     created_at: datetime = field(default_factory=datetime.utcnow)
-    last_message_at: Optional[datetime] = None
+    last_message_at: datetime | None = None
     message_count: int = 0
     total_tokens: int = 0
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
 
 
 class StateManager:
@@ -269,8 +285,8 @@ class StateManager:
             ttl_seconds=job_ttl,
             max_size=max_jobs,
         )
-        self.engines: Dict[str, Any] = {}
-        self.services: Dict[str, Any] = {}
+        self.engines: dict[str, Any] = {}
+        self.services: dict[str, Any] = {}
 
     def create_job(
         self,
@@ -278,7 +294,7 @@ class StateManager:
         strategy: str,
         user_id: str,
         request_id: str,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
     ) -> TrainingJob:
         """Create and track a new training job."""
         job = TrainingJob(
@@ -292,19 +308,19 @@ class StateManager:
         self.jobs[job_id] = job
         return job
 
-    def get_job(self, job_id: str) -> Optional[TrainingJob]:
+    def get_job(self, job_id: str) -> TrainingJob | None:
         """Get a training job by ID."""
         return self.jobs.get(job_id)
 
     def update_job(
         self,
         job_id: str,
-        status: Optional[str] = None,
-        iterations: Optional[int] = None,
-        trajectories: Optional[int] = None,
-        error: Optional[str] = None,
-        result: Optional[Dict[str, Any]] = None,
-    ) -> Optional[TrainingJob]:
+        status: str | None = None,
+        iterations: int | None = None,
+        trajectories: int | None = None,
+        error: str | None = None,
+        result: dict[str, Any] | None = None,
+    ) -> TrainingJob | None:
         """Update a training job."""
         job = self.jobs.get(job_id)
         if not job:
@@ -336,7 +352,7 @@ class StateManager:
         self,
         conversation_id: str,
         user_id: str,
-        agent_id: Optional[str] = None,
+        agent_id: str | None = None,
         strategy: str = "default",
     ) -> ConversationState:
         """Create and track a new conversation."""
@@ -349,7 +365,7 @@ class StateManager:
         self.conversations[conversation_id] = conv
         return conv
 
-    def get_conversation(self, conversation_id: str) -> Optional[ConversationState]:
+    def get_conversation(self, conversation_id: str) -> ConversationState | None:
         """Get a conversation by ID."""
         return self.conversations.get(conversation_id)
 
@@ -357,7 +373,7 @@ class StateManager:
         self,
         conversation_id: str,
         tokens: int = 0,
-    ) -> Optional[ConversationState]:
+    ) -> ConversationState | None:
         """Update conversation state after a message."""
         conv = self.conversations.get(conversation_id)
         if not conv:
@@ -370,7 +386,7 @@ class StateManager:
         self.conversations[conversation_id] = conv
         return conv
 
-    def end_conversation(self, conversation_id: str) -> Optional[ConversationState]:
+    def end_conversation(self, conversation_id: str) -> ConversationState | None:
         """End and remove a conversation."""
         return self.conversations.pop(conversation_id, None)
 
@@ -378,11 +394,11 @@ class StateManager:
         """Register an active engine."""
         self.engines[engine_id] = engine
 
-    def get_engine(self, engine_id: str) -> Optional[Any]:
+    def get_engine(self, engine_id: str) -> Any | None:
         """Get an engine by ID."""
         return self.engines.get(engine_id)
 
-    def unregister_engine(self, engine_id: str) -> Optional[Any]:
+    def unregister_engine(self, engine_id: str) -> Any | None:
         """Unregister and return an engine."""
         return self.engines.pop(engine_id, None)
 
@@ -390,11 +406,11 @@ class StateManager:
         """Register a service."""
         self.services[name] = service
 
-    def get_service(self, name: str) -> Optional[Any]:
+    def get_service(self, name: str) -> Any | None:
         """Get a service by name."""
         return self.services.get(name)
 
-    def cleanup(self) -> Dict[str, int]:
+    def cleanup(self) -> dict[str, int]:
         """
         Run cleanup on all state.
 
@@ -406,7 +422,7 @@ class StateManager:
             "jobs_cleaned": self.jobs.cleanup_expired(),
         }
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Get state statistics."""
         return {
             "conversations": self.conversations.stats(),
@@ -417,7 +433,7 @@ class StateManager:
 
 
 # Global singleton
-_state_manager: Optional[StateManager] = None
+_state_manager: StateManager | None = None
 
 
 def get_state_manager() -> StateManager:

@@ -1,0 +1,183 @@
+global:
+  namespace: stateset-agents
+  createNamespace: false
+
+serviceAccount:
+  create: false
+  name: ""
+  annotations: {}
+
+api:
+  enabled: true
+  image:
+    # Python API gateway image built from `deployment/docker/Dockerfile`.
+    repository: stateset/stateset-agents-api
+    tag: "0.7.1"
+    digest: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  env:
+    API_ENVIRONMENT: "production"
+    API_REQUIRE_AUTH: "true"
+    API_PORT: "8000"
+    INFERENCE_BACKEND: "vllm"
+    INFERENCE_BACKEND_URL: ""
+    INFERENCE_DEFAULT_MODEL: "moonshotai/Kimi-K2.5"
+    INFERENCE_DEFAULT_MAX_TOKENS: "1024"
+    INFERENCE_HEALTH_PATH: "/health"
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "4"
+      memory: "16Gi"
+  tmp:
+    enabled: true
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+vllm:
+  enabled: true
+  finetuned: false
+  # Extra scheduling knobs for GKE reservations, driver labels, etc.
+  nodeSelectorExtra: {}
+  tolerations: []
+  affinity: {}
+  image:
+    repository: vllm/vllm-openai
+    tag: "nightly"
+    digest: ""
+    pullPolicy: IfNotPresent
+  modelSync:
+    enabled: false
+    gcsUri: ""
+    # Local directory to sync into. Defaults to vllm.modelPath when finetuned.
+    localDir: ""
+    image:
+      repository: gcr.io/google.com/cloudsdktool/cloud-sdk
+      tag: "slim"
+      digest: ""
+      pullPolicy: IfNotPresent
+  modelId: "moonshotai/Kimi-K2.5"
+  modelPath: "/models/kimi-k25/merged"
+  hfSecretName: "hf-secret"
+  hfSecretKey: "hf_token"
+  gpu:
+    count: 8
+    accelerator: "nvidia-tesla-a100"
+  resources:
+    requests:
+      cpu: "10"
+      memory: "600Gi"
+      ephemeral-storage: "500Gi"
+      "nvidia.com/gpu": "8"
+    limits:
+      cpu: "10"
+      memory: "600Gi"
+      ephemeral-storage: "500Gi"
+      "nvidia.com/gpu": "8"
+  args:
+  - "--tensor-parallel-size=8"
+  - "--mm-encoder-tp-mode=data"
+  - "--tool-call-parser=kimi_k2"
+  - "--reasoning-parser=kimi_k2"
+  - "--max-model-len=256000"
+  - "--gpu-memory-utilization=0.90"
+  - "--enable-chunked-prefill"
+  - "--enable-prefix-caching"
+  - "--trust-remote-code"
+  - "--host=0.0.0.0"
+  - "--port=8000"
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+
+pvc:
+  enabled: true
+  # Set to false if you want to mount an existing PVC that is not Helm-managed.
+  create: true
+  name: "stateset-models-pvc"
+  size: "500Gi"
+  storageClassName: "standard-rwo"
+
+trainingJob:
+  enabled: false
+  # By default, training reuses the vLLM GPU class and resources unless overridden.
+  gpu:
+    accelerator: ""
+  nodeSelectorExtra: {}
+  tolerations: []
+  affinity: {}
+  resources: {}
+  image:
+    # Trainer image should include the `training` extras and any example/scripts
+    # you plan to run in the Job.
+    repository: stateset/stateset-agents-trainer
+    tag: "0.7.1"
+    digest: ""
+    pullPolicy: IfNotPresent
+  hfSecretName: "hf-secret"
+  hfSecretKey: "hf_token"
+  wandbSecretName: "wandb-secret"
+  wandbSecretKey: "api_key"
+  outputDir: "/models/kimi-k25"
+  command:
+  - "bash"
+  - "-lc"
+  - "python examples/finetune_kimi_k25_gspo.py --model moonshotai/Kimi-K2.5 --task customer_service --use-lora --use-vllm --export-merged --output-dir /models/kimi-k25"
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    runAsNonRoot: true
+
+secrets:
+  api:
+    create: false
+    name: "stateset-agents-secrets"
+    jwtSecret: ""
+    apiKeys: ""
+  hf:
+    create: false
+    token: ""
+  wandb:
+    create: false
+    token: ""
+
+ingress:
+  enabled: false
+  className: "nginx"
+  host: "api.stateset.com"
+  tls:
+    enabled: true
+    secretName: "stateset-tls"
+  annotations: {}

@@ -4,11 +4,10 @@ GRPO Metrics Module
 Unified metrics collection for the GRPO service.
 """
 
-import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..constants import (
     PERCENTILE_P50,
@@ -27,12 +26,12 @@ class GRPOMetrics:
     """
 
     # Request tracking
-    request_counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
-    status_counts: Dict[int, int] = field(default_factory=lambda: defaultdict(int))
+    request_counts: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    status_counts: dict[int, int] = field(default_factory=lambda: defaultdict(int))
     latencies: deque = field(
         default_factory=lambda: deque(maxlen=RATE_LIMIT_DEQUE_MAXLEN)
     )
-    error_counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    error_counts: dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
     # Rate limiting
     rate_limit_hits: int = 0
@@ -111,7 +110,7 @@ class GRPOMetrics:
         """Record WebSocket message."""
         self.websocket_messages += 1
 
-    def get_latency_percentiles(self) -> Dict[str, float]:
+    def get_latency_percentiles(self) -> dict[str, float]:
         """Calculate latency percentiles."""
         if not self.latencies:
             return {
@@ -137,7 +136,7 @@ class GRPOMetrics:
             "p99_ms": round(sorted_latencies[p99_index], 2),
         }
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get comprehensive metrics summary."""
         return {
             "timestamp": datetime.utcnow().isoformat(),
@@ -170,7 +169,7 @@ class GRPOMetrics:
             },
         }
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         """
         Get a snapshot of key metrics (legacy interface).
 
@@ -190,7 +189,7 @@ class GRPOMetrics:
 
 
 # Global singleton
-_metrics: Optional[GRPOMetrics] = None
+_metrics: GRPOMetrics | None = None
 
 
 def get_grpo_metrics() -> GRPOMetrics:

@@ -7,13 +7,13 @@ Provides robust parsing with multiple fallback strategies for error handling.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List
 import logging
-import re
 import random
-import numpy as np
+import re
+from abc import ABC, abstractmethod
+from typing import Any
 
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,7 @@ class ActionMapper(ABC):
 
     @abstractmethod
     def parse_action(
-        self,
-        agent_response: str,
-        context: Optional[Dict[str, Any]] = None
+        self, agent_response: str, context: dict[str, Any] | None = None
     ) -> Any:
         """
         Parse agent response to extract gym action.
@@ -80,8 +78,8 @@ class DiscreteActionMapper(ActionMapper):
     def __init__(
         self,
         n_actions: int,
-        action_names: Optional[List[str]] = None,
-        default_action: Optional[int] = None
+        action_names: list[str] | None = None,
+        default_action: int | None = None,
     ):
         self.n_actions = n_actions
         self.action_names = action_names or []
@@ -95,9 +93,7 @@ class DiscreteActionMapper(ActionMapper):
                     self.name_to_action[name.upper()] = idx
 
     def parse_action(
-        self,
-        agent_response: str,
-        context: Optional[Dict[str, Any]] = None
+        self, agent_response: str, context: dict[str, Any] | None = None
     ) -> int:
         """
         Parse agent response to extract discrete action.
@@ -109,7 +105,9 @@ class DiscreteActionMapper(ActionMapper):
         4. Default or random action
         """
         if not agent_response or not isinstance(agent_response, str):
-            logger.warning(f"Invalid agent response: {agent_response}. Using fallback action.")
+            logger.warning(
+                f"Invalid agent response: {agent_response}. Using fallback action."
+            )
             return self._get_fallback_action()
 
         response = agent_response.strip()
@@ -132,7 +130,7 @@ class DiscreteActionMapper(ActionMapper):
                 return action_idx
 
         # Strategy 3: Extract number using regex (handles "Action: 1", "I choose 2", etc.)
-        number_match = re.search(r'\b(\d+)\b', response)
+        number_match = re.search(r"\b(\d+)\b", response)
         if number_match:
             action = int(number_match.group(1))
             if 0 <= action < self.n_actions:
@@ -183,9 +181,9 @@ class ContinuousActionMapper(ActionMapper):
     def __init__(
         self,
         action_dim: int,
-        action_low: Optional[np.ndarray] = None,
-        action_high: Optional[np.ndarray] = None,
-        default_action: Optional[np.ndarray] = None
+        action_low: np.ndarray | None = None,
+        action_high: np.ndarray | None = None,
+        default_action: np.ndarray | None = None,
     ):
         self.action_dim = action_dim
 
@@ -207,9 +205,7 @@ class ContinuousActionMapper(ActionMapper):
             self.default_action = np.asarray(default_action)
 
     def parse_action(
-        self,
-        agent_response: str,
-        context: Optional[Dict[str, Any]] = None
+        self, agent_response: str, context: dict[str, Any] | None = None
     ) -> np.ndarray:
         """
         Parse agent response to extract continuous action vector.
@@ -217,17 +213,21 @@ class ContinuousActionMapper(ActionMapper):
         Tries multiple parsing strategies and clips to valid range.
         """
         if not agent_response or not isinstance(agent_response, str):
-            logger.warning(f"Invalid agent response. Using default action.")
+            logger.warning("Invalid agent response. Using default action.")
             return self.default_action.copy()
 
         response = agent_response.strip()
 
         # Strategy 1: Extract numbers from brackets [...]
-        bracket_match = re.search(r'\[([\d\s.,e+-]+)\]', response)
+        bracket_match = re.search(r"\[([\d\s.,e+-]+)\]", response)
         if bracket_match:
             try:
                 numbers_str = bracket_match.group(1)
-                numbers = [float(x.strip()) for x in re.split(r'[,\s]+', numbers_str) if x.strip()]
+                numbers = [
+                    float(x.strip())
+                    for x in re.split(r"[,\s]+", numbers_str)
+                    if x.strip()
+                ]
                 if len(numbers) == self.action_dim:
                     action = np.array(numbers)
                     return self._clip_action(action)
@@ -236,14 +236,19 @@ class ContinuousActionMapper(ActionMapper):
 
         # Strategy 2: Extract space/comma-separated numbers
         try:
-            numbers = [float(x) for x in re.findall(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', response)]
+            numbers = [
+                float(x)
+                for x in re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", response)
+            ]
             if len(numbers) == self.action_dim:
                 action = np.array(numbers)
                 return self._clip_action(action)
             elif len(numbers) > self.action_dim:
                 # Take first action_dim numbers
-                action = np.array(numbers[:self.action_dim])
-                logger.warning(f"Found {len(numbers)} numbers, using first {self.action_dim}.")
+                action = np.array(numbers[: self.action_dim])
+                logger.warning(
+                    f"Found {len(numbers)} numbers, using first {self.action_dim}."
+                )
                 return self._clip_action(action)
         except (ValueError, IndexError) as e:
             logger.warning(f"Failed to parse numbers: {e}")
@@ -319,6 +324,27 @@ def create_action_mapper(gym_env: Any, **kwargs) -> ActionMapper:
             )
             return DiscreteActionMapper(n_actions=n_actions, **kwargs)
 
+        # Heuristic fallback for mocked/spoofed spaces in tests.
+        n_actions = getattr(action_space, "n", None)
+        if isinstance(n_actions, int) and n_actions > 0:
+            return DiscreteActionMapper(n_actions=n_actions, **kwargs)
+
+        nvec = getattr(action_space, "nvec", None)
+        if nvec is not None:
+            return DiscreteActionMapper(n_actions=int(np.prod(nvec)), **kwargs)
+
+        shape = getattr(action_space, "shape", None)
+        if shape is not None:
+            action_dim = (
+                int(shape[0]) if hasattr(shape, "__len__") and len(shape) > 0 else 1
+            )
+            return ContinuousActionMapper(
+                action_dim=action_dim,
+                action_low=getattr(action_space, "low", None),
+                action_high=getattr(action_space, "high", None),
+                **kwargs,
+            )
+
         raise ValueError(
             f"Unsupported action space type: {type(action_space)}. "
             "Supported types: Discrete, Box, MultiDiscrete"
@@ -336,7 +362,9 @@ def create_action_mapper(gym_env: Any, **kwargs) -> ActionMapper:
 
     shape = getattr(action_space, "shape", None)
     if shape is not None:
-        action_dim = int(shape[0]) if hasattr(shape, "__len__") and len(shape) > 0 else 1
+        action_dim = (
+            int(shape[0]) if hasattr(shape, "__len__") and len(shape) > 0 else 1
+        )
         return ContinuousActionMapper(
             action_dim=action_dim,
             action_low=getattr(action_space, "low", None),

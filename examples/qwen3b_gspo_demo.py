@@ -10,11 +10,13 @@ and 8-bit loading.
 import argparse
 import asyncio
 import logging
-from typing import Optional
 
 from stateset_agents import MultiTurnAgent
 from stateset_agents.core.agent import AgentConfig
-from stateset_agents.core.environment import CONVERSATION_CONFIGS, ConversationEnvironment
+from stateset_agents.core.environment import (
+    CONVERSATION_CONFIGS,
+    ConversationEnvironment,
+)
 from stateset_agents.rewards.multi_objective_reward import create_domain_reward
 from stateset_agents.training.config import get_config_for_task
 from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
@@ -32,7 +34,7 @@ async def train_qwen3b_with_gspo(
     use_lora: bool = True,
     use_8bit: bool = True,
     use_wandb: bool = False,
-    wandb_project: Optional[str] = None,
+    wandb_project: str | None = None,
 ) -> MultiTurnAgent:
     """
     Train Qwen/Qwen2.5-3B on a conversational task using GSPO.
@@ -67,7 +69,9 @@ async def train_qwen3b_with_gspo(
     await agent.initialize()
 
     # Environment
-    env_config = CONVERSATION_CONFIGS.get(task, CONVERSATION_CONFIGS["customer_service"])
+    env_config = CONVERSATION_CONFIGS.get(
+        task, CONVERSATION_CONFIGS["customer_service"]
+    )
     environment = ConversationEnvironment(**env_config)
 
     # Reward model
@@ -89,7 +93,15 @@ async def train_qwen3b_with_gspo(
         lora_r=32,
         lora_alpha=64,
         lora_dropout=0.05,
-        lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        lora_target_modules=[
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
         gradient_checkpointing=True,
         use_8bit=use_8bit,
         max_prompt_length=1024,
@@ -116,7 +128,9 @@ async def train_qwen3b_with_gspo(
 
     # Quick sanity check
     sample_query = "My package is late and I need an update. Can you help?"
-    response = await trained_agent.generate_response([{"role": "user", "content": sample_query}])
+    response = await trained_agent.generate_response(
+        [{"role": "user", "content": sample_query}]
+    )
     logger.info("User: %s", sample_query)
     logger.info("Qwen3B: %s", response)
 

@@ -22,16 +22,15 @@ Usage:
     python examples/rl_environments/evaluate_gym_agent.py --env CartPole-v1 --model outputs/cartpole_grpo/final_model --num-episodes 100
 """
 
-import asyncio
 import argparse
+import asyncio
 import logging
-import numpy as np
 from pathlib import Path
-from typing import List, Dict, Optional
+
+import numpy as np
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -42,8 +41,8 @@ async def evaluate_agent(
     env_adapter,
     num_episodes: int = 50,
     render: bool = False,
-    max_steps: int = 500
-) -> Dict[str, float]:
+    max_steps: int = 500,
+) -> dict[str, float]:
     """
     Evaluate agent on environment.
 
@@ -72,7 +71,6 @@ async def evaluate_agent(
         state = await env_adapter.reset()
         episode_reward = 0
         done = False
-        turns = []
 
         # Get system prompt
         system_prompt = await env_adapter.get_initial_prompt()
@@ -98,8 +96,10 @@ async def evaluate_agent(
 
         if (episode + 1) % 10 == 0:
             avg_reward = np.mean(episode_rewards[-10:])
-            logger.info(f"  Episode {episode + 1}/{num_episodes}, "
-                       f"Avg reward (last 10): {avg_reward:.2f}")
+            logger.info(
+                f"  Episode {episode + 1}/{num_episodes}, "
+                f"Avg reward (last 10): {avg_reward:.2f}"
+            )
 
     # Compute statistics
     results = {
@@ -118,18 +118,22 @@ async def evaluate_agent(
 async def main():
     """Main evaluation function."""
     parser = argparse.ArgumentParser(description="Evaluate trained Gym agent")
-    parser.add_argument("--env", type=str, default="CartPole-v1",
-                       help="Gym environment ID")
-    parser.add_argument("--model", type=str, default=None,
-                       help="Path to trained model (optional)")
-    parser.add_argument("--num-episodes", type=int, default=50,
-                       help="Number of evaluation episodes")
-    parser.add_argument("--render", action="store_true",
-                       help="Render episodes")
-    parser.add_argument("--max-steps", type=int, default=500,
-                       help="Max steps per episode")
-    parser.add_argument("--use-stub", action="store_true",
-                       help="Use stub model for testing")
+    parser.add_argument(
+        "--env", type=str, default="CartPole-v1", help="Gym environment ID"
+    )
+    parser.add_argument(
+        "--model", type=str, default=None, help="Path to trained model (optional)"
+    )
+    parser.add_argument(
+        "--num-episodes", type=int, default=50, help="Number of evaluation episodes"
+    )
+    parser.add_argument("--render", action="store_true", help="Render episodes")
+    parser.add_argument(
+        "--max-steps", type=int, default=500, help="Max steps per episode"
+    )
+    parser.add_argument(
+        "--use-stub", action="store_true", help="Use stub model for testing"
+    )
 
     args = parser.parse_args()
 
@@ -149,18 +153,16 @@ async def main():
     logger.info(f"\n[1/4] Creating {args.env} environment...")
     gym_env = gym.make(args.env, render_mode="human" if args.render else None)
     env_adapter = GymEnvironmentAdapter(
-        gym_env,
-        auto_create_processors=True,
-        max_steps=args.max_steps
+        gym_env, auto_create_processors=True, max_steps=args.max_steps
     )
-    logger.info(f"✓ Environment created")
+    logger.info("✓ Environment created")
 
     # Create agent
-    logger.info(f"\n[2/4] Creating agent...")
+    logger.info("\n[2/4] Creating agent...")
     agent = create_gym_agent(
         model_name="gpt2",
         use_stub=args.use_stub,
-        temperature=0.3  # Lower temperature for evaluation (less random)
+        temperature=0.3,  # Lower temperature for evaluation (less random)
     )
 
     # Load model if path provided
@@ -176,48 +178,48 @@ async def main():
             logger.info("  Using fresh agent")
 
     await agent.initialize()
-    logger.info(f"✓ Agent initialized")
+    logger.info("✓ Agent initialized")
 
     # Evaluate
-    logger.info(f"\n[3/4] Running evaluation...")
+    logger.info("\n[3/4] Running evaluation...")
     results = await evaluate_agent(
         env_id=args.env,
         agent=agent,
         env_adapter=env_adapter,
         num_episodes=args.num_episodes,
         render=args.render,
-        max_steps=args.max_steps
+        max_steps=args.max_steps,
     )
 
     # Report results
-    logger.info(f"\n[4/4] Evaluation Results")
+    logger.info("\n[4/4] Evaluation Results")
     logger.info("=" * 60)
     logger.info(f"Environment: {args.env}")
     logger.info(f"Episodes: {results['num_episodes']}")
-    logger.info(f"\nReward Statistics:")
+    logger.info("\nReward Statistics:")
     logger.info(f"  Mean:   {results['mean_reward']:.2f} ± {results['std_reward']:.2f}")
     logger.info(f"  Min:    {results['min_reward']:.2f}")
     logger.info(f"  Max:    {results['max_reward']:.2f}")
-    logger.info(f"\nEpisode Length:")
+    logger.info("\nEpisode Length:")
     logger.info(f"  Mean:   {results['mean_length']:.2f} ± {results['std_length']:.2f}")
 
     # Interpretation
-    logger.info(f"\n📊 Interpretation:")
+    logger.info("\n📊 Interpretation:")
     if args.env.startswith("CartPole"):
-        if results['mean_reward'] > 400:
+        if results["mean_reward"] > 400:
             logger.info("  🏆 Excellent! Agent is performing near-optimally.")
-        elif results['mean_reward'] > 200:
+        elif results["mean_reward"] > 200:
             logger.info("  ✅ Good! Agent has learned to balance well.")
-        elif results['mean_reward'] > 50:
+        elif results["mean_reward"] > 50:
             logger.info("  📈 Decent. Agent is learning but needs more training.")
         else:
             logger.info("  ⚠️  Weak performance. More training needed.")
     elif args.env.startswith("MountainCar"):
-        if results['mean_reward'] > -90:
+        if results["mean_reward"] > -90:
             logger.info("  🏆 Excellent! Agent reaches goal very efficiently.")
-        elif results['mean_reward'] > -110:
+        elif results["mean_reward"] > -110:
             logger.info("  ✅ Good! Agent consistently reaches the goal.")
-        elif results['mean_reward'] > -150:
+        elif results["mean_reward"] > -150:
             logger.info("  📈 Progress! Agent sometimes reaches goal.")
         else:
             logger.info("  ⚠️  Struggling. Agent rarely reaches goal.")

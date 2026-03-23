@@ -13,6 +13,7 @@ this file will be discovered and applied.
 
 import os
 import sys
+import inspect
 from pathlib import Path
 
 try:
@@ -29,4 +30,34 @@ try:
     os.environ.setdefault("STATESET_AGENTS_SITE_PATH_PINNED", "1")
 except Exception:
     # Do not fail interpreter startup; keep environment as-is
+    pass
+
+try:
+    # pytest-asyncio 0.21 expects FixtureDef.unittest, which pytest 9 removed.
+    # A class attribute restores the old default behaviour for compatible tests.
+    from _pytest.fixtures import FixtureDef
+
+    if not hasattr(FixtureDef, "unittest"):
+        FixtureDef.unittest = False  # type: ignore[attr-defined]
+except Exception:
+    pass
+
+try:
+    # Starlette/FastAPI TestClient still passes ``app=...`` to httpx.Client in
+    # some versions, while httpx>=0.28 removed that parameter.
+    import httpx
+
+    if (
+        "app" not in inspect.signature(httpx.Client.__init__).parameters
+        and not getattr(httpx.Client, "_stateset_agents_app_compat", False)
+    ):
+        _original_httpx_client_init = httpx.Client.__init__
+
+        def _compat_httpx_client_init(self, *args, **kwargs):
+            kwargs.pop("app", None)
+            return _original_httpx_client_init(self, *args, **kwargs)
+
+        httpx.Client.__init__ = _compat_httpx_client_init  # type: ignore[assignment]
+        httpx.Client._stateset_agents_app_compat = True  # type: ignore[attr-defined]
+except Exception:
     pass

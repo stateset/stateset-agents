@@ -18,7 +18,6 @@ import logging
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +25,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class KLStats:
     """Statistics for KL divergence tracking."""
+
     current_kl: float = 0.0
     mean_kl: float = 0.0
     max_kl: float = 0.0
-    min_kl: float = float('inf')
+    min_kl: float = float("inf")
     num_updates: int = 0
 
     def update(self, kl: float) -> None:
@@ -168,8 +168,7 @@ class LinearKLScheduler(KLController):
 
         progress = min(step / self.total_steps, 1.0)
         self.kl_coef = (
-            self.init_kl_coef
-            + (self.final_kl_coef - self.init_kl_coef) * progress
+            self.init_kl_coef + (self.final_kl_coef - self.init_kl_coef) * progress
         )
 
         return self.kl_coef
@@ -204,10 +203,9 @@ class CosineKLScheduler(KLController):
         cosine_value = math.cos(math.pi * self.num_cycles * progress)
 
         # Map cosine from [-1, 1] to [min_kl_coef, init_kl_coef]
-        self.kl_coef = (
-            self.min_kl_coef
-            + 0.5 * (self.init_kl_coef - self.min_kl_coef) * (1 + cosine_value)
-        )
+        self.kl_coef = self.min_kl_coef + 0.5 * (
+            self.init_kl_coef - self.min_kl_coef
+        ) * (1 + cosine_value)
 
         return self.kl_coef
 
@@ -247,7 +245,9 @@ class WarmupKLScheduler(KLController):
             self.kl_coef = progress * self.peak_kl_coef
         else:
             # Linear decay from peak to final
-            decay_progress = (step - self.warmup_steps) / (self.total_steps - self.warmup_steps)
+            decay_progress = (step - self.warmup_steps) / (
+                self.total_steps - self.warmup_steps
+            )
             decay_progress = min(decay_progress, 1.0)
             self.kl_coef = (
                 self.peak_kl_coef
@@ -290,15 +290,14 @@ class HybridKLController(KLController):
 
         # Scheduled component: cosine decay
         progress = step / self.total_steps
-        self.scheduled_coef = (
-            self.min_kl_coef
-            + 0.5 * (self.kl_coef - self.min_kl_coef) * (1 + math.cos(math.pi * progress))
-        )
+        self.scheduled_coef = self.min_kl_coef + 0.5 * (
+            self.kl_coef - self.min_kl_coef
+        ) * (1 + math.cos(math.pi * progress))
 
         # Adaptive component
         if self.target_kl > 0:
             kl_ratio = current_kl / self.target_kl
-            adaptive_multiplier = kl_ratio ** self.adaptation_strength
+            adaptive_multiplier = kl_ratio**self.adaptation_strength
         else:
             adaptive_multiplier = 1.0
 
@@ -331,7 +330,7 @@ class NoKLController(KLController):
 def create_kl_controller(
     controller_type: str,
     init_kl_coef: float = 0.1,
-    target_kl: Optional[float] = None,
+    target_kl: float | None = None,
     total_steps: int = 10000,
     **kwargs,
 ) -> KLController:

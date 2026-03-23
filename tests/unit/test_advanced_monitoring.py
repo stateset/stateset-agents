@@ -7,14 +7,15 @@ and observability features.
 
 import asyncio
 import time
-from collections import deque
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from stateset_agents.core.advanced_monitoring import (
     Alert,
     AlertSeverity,
+    AdvancedMonitoringService,
+    DistributedTracer,
     MetricPoint,
     MetricsCollector,
     MetricType,
@@ -170,7 +171,9 @@ class TestMetricsCollector:
     @pytest.fixture
     def collector(self):
         """Create a MetricsCollector for testing."""
-        with patch("core.advanced_monitoring.PROMETHEUS_AVAILABLE", False):
+        with patch(
+            "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
+        ):
             collector = MetricsCollector(retention_period=3600)
             # Cleanup task is now lazily initialized, so no need to cancel
             return collector
@@ -240,12 +243,17 @@ class TestMetricsCollectorWithPrometheus:
     @pytest.fixture
     def collector_with_prometheus(self):
         """Create a MetricsCollector with mocked Prometheus."""
-        with patch("core.advanced_monitoring.PROMETHEUS_AVAILABLE", True), \
-             patch("core.advanced_monitoring.CollectorRegistry"), \
-             patch("core.advanced_monitoring.Counter"), \
-             patch("core.advanced_monitoring.Gauge"), \
-             patch("core.advanced_monitoring.Histogram"), \
-             patch("core.advanced_monitoring.Summary"):
+        with patch(
+            "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", True
+        ), patch("stateset_agents.core.advanced_monitoring.CollectorRegistry"), patch(
+            "stateset_agents.core.advanced_monitoring.Counter"
+        ), patch(
+            "stateset_agents.core.advanced_monitoring.Gauge"
+        ), patch(
+            "stateset_agents.core.advanced_monitoring.Histogram"
+        ), patch(
+            "stateset_agents.core.advanced_monitoring.Summary"
+        ):
             collector = MetricsCollector()
             # Cleanup task is now lazily initialized, so no need to cancel
             return collector
@@ -254,6 +262,14 @@ class TestMetricsCollectorWithPrometheus:
         """Test Prometheus metrics are set up correctly."""
         assert collector_with_prometheus.prometheus_registry is not None
         assert len(collector_with_prometheus.prometheus_metrics) > 0
+        assert (
+            collector_with_prometheus.prometheus_metrics["grpo.requests.total"]
+            is collector_with_prometheus.prometheus_metrics["requests_total"]
+        )
+        assert (
+            collector_with_prometheus.prometheus_metrics["grpo.errors.total"]
+            is collector_with_prometheus.prometheus_metrics["errors_total"]
+        )
 
 
 class TestAdvancedMonitoringService:
@@ -262,9 +278,15 @@ class TestAdvancedMonitoringService:
     @pytest.fixture
     def mock_service(self):
         """Create a mock monitoring service."""
-        with patch("core.advanced_monitoring.PROMETHEUS_AVAILABLE", False), \
-             patch("core.advanced_monitoring.OPENTELEMETRY_AVAILABLE", False):
-            from stateset_agents.core.advanced_monitoring import AdvancedMonitoringService
+        with patch(
+            "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
+        ), patch(
+            "stateset_agents.core.advanced_monitoring.OPENTELEMETRY_AVAILABLE", False
+        ):
+            from stateset_agents.core.advanced_monitoring import (
+                AdvancedMonitoringService,
+            )
+
             service = AdvancedMonitoringService()
             return service
 
@@ -283,9 +305,7 @@ class TestAdvancedMonitoringService:
     def test_record_training_iteration(self, mock_service):
         """Test recording training iterations."""
         mock_service.record_training_iteration(
-            "MultiTurnAgent",
-            "grpo",
-            {"loss": 0.5, "reward": 0.8}
+            "MultiTurnAgent", "grpo", {"loss": 0.5, "reward": 0.8}
         )
 
         # Should record multiple metrics
@@ -299,6 +319,17 @@ class TestAdvancedMonitoringService:
             mock_service.record_error("api", "ValueError", e)
 
         # Should have error metrics
+        assert len(mock_service.metrics_collector.metrics) >= 1
+
+    @pytest.mark.asyncio
+    async def test_record_metric(self, mock_service):
+        """Test recording a direct metric through the service facade."""
+        await mock_service.record_metric(
+            "custom.metric",
+            3.5,
+            {"component": "test"},
+        )
+
         assert len(mock_service.metrics_collector.metrics) >= 1
 
     def test_get_health_summary(self, mock_service):
@@ -318,9 +349,73 @@ class TestAdvancedMonitoringService:
 
         assert isinstance(dashboard, dict)
 
+    def test_service_updates_prometheus_collectors_for_requests_and_errors(self):
+        """Test service metrics update the registered Prometheus collectors."""
+
+        def make_metric(labelnames):
+            metric = MagicMock()
+            metric._labelnames = labelnames
+            bound_metric = MagicMock()
+            metric.labels.return_value = bound_metric
+            return metric, bound_metric
+
+        requests_total, requests_total_bound = make_metric(
+            ("method", "endpoint", "status")
+        )
+        request_duration, request_duration_bound = make_metric(
+            ("method", "endpoint")
+        )
+        request_size, _ = make_metric(("method", "endpoint"))
+        training_iterations, _ = make_metric(("agent_type", "strategy"))
+        memory_usage, _ = make_metric(("component",))
+        gpu_utilization, _ = make_metric(("device",))
+        error_rate, _ = make_metric(("component", "error_type"))
+        errors_total, errors_total_bound = make_metric(("component", "error_type"))
+
+        with patch(
+            "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", True
+        ), patch(
+            "stateset_agents.core.advanced_monitoring.OPENTELEMETRY_AVAILABLE", False
+        ), patch("stateset_agents.core.advanced_monitoring.CollectorRegistry"), patch(
+            "stateset_agents.core.advanced_monitoring.Counter",
+            side_effect=[requests_total, training_iterations, errors_total],
+        ), patch(
+            "stateset_agents.core.advanced_monitoring.Gauge",
+            side_effect=[memory_usage, gpu_utilization, error_rate],
+        ), patch(
+            "stateset_agents.core.advanced_monitoring.Histogram",
+            return_value=request_duration,
+        ), patch(
+            "stateset_agents.core.advanced_monitoring.Summary",
+            return_value=request_size,
+        ):
+            service = AdvancedMonitoringService(enable_tracing=False)
+
+        service.record_request("GET", "/api/health", 200, 0.05)
+
+        requests_total.labels.assert_called_once_with("GET", "/api/health", "200")
+        requests_total_bound.inc.assert_called_once_with(1)
+        request_duration.labels.assert_called_once_with("GET", "/api/health")
+        request_duration_bound.observe.assert_called_once_with(0.05)
+
+        service.record_error("api", "ValueError", ValueError("boom"))
+
+        errors_total.labels.assert_called_once_with("api", "ValueError")
+        errors_total_bound.inc.assert_called_once_with(1)
+
 
 class TestDistributedTracing:
     """Test distributed tracing functionality."""
+
+    def test_distributed_tracer_child_span_inherits_trace_id(self):
+        """Test child spans stay on the same trace."""
+        tracer = DistributedTracer()
+
+        parent = tracer.start_span("parent")
+        child = tracer.start_span("child", parent_span_id=parent.span_id)
+
+        assert child.trace_id == parent.trace_id
+        assert child.parent_span_id == parent.span_id
 
     def test_create_trace(self):
         """Test creating a new trace."""
@@ -435,6 +530,7 @@ class TestMonitorAsyncFunction:
 
         result = await sample_function()
         assert result == "result"
+        assert sample_function.__name__ == "sample_function"
 
     @pytest.mark.asyncio
     async def test_decorator_with_exception(self):
@@ -469,7 +565,9 @@ class TestMetricAggregation:
     @pytest.fixture
     def collector_with_data(self):
         """Create a collector with sample data."""
-        with patch("core.advanced_monitoring.PROMETHEUS_AVAILABLE", False):
+        with patch(
+            "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
+        ):
             collector = MetricsCollector()
             # Cleanup task is now lazily initialized, so no need to cancel
 
@@ -504,7 +602,9 @@ class TestMetricRetention:
     @pytest.fixture
     def collector_short_retention(self):
         """Create a collector with short retention."""
-        with patch("core.advanced_monitoring.PROMETHEUS_AVAILABLE", False):
+        with patch(
+            "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
+        ):
             collector = MetricsCollector(retention_period=1)  # 1 second
             # Cleanup task is now lazily initialized, so no need to cancel
             return collector

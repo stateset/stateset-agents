@@ -1,13 +1,16 @@
 """Unit tests for Kimi-K2.5 integration with StateSet Agents."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+
 from examples.kimi_k25_config import (
+    KimiK25Config,
     get_kimi_k25_config,
     get_kimi_k25_config_gspo,
     validate_kimi_k25_config,
-    KimiK25Config,
 )
+from stateset_agents.training.config import get_config_for_task
 
 
 class TestKimiK25Config:
@@ -210,11 +213,11 @@ class TestKimiK25Integration:
     @pytest.mark.asyncio
     async def test_agent_initialization(self):
         """Test Kimi-K2.5 agent initialization."""
-        from stateset_agents import MultiTurnAgent
         from stateset_agents.core.agent import AgentConfig
 
         with patch("stateset_agents.core.agent.AutoModelForCausalLM") as mock_model:
             with patch("stateset_agents.core.agent.AutoTokenizer") as mock_tokenizer:
+                mock_model.from_pretrained.return_value = MagicMock()
                 mock_tokenizer.from_pretrained.return_value = MagicMock()
 
                 agent_config = AgentConfig(

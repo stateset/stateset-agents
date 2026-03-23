@@ -1,0 +1,17 @@
+vllm:
+  gpu:
+    count: 8
+    accelerator: "nvidia-b200"
+  nodeSelectorExtra:
+    cloud.google.com/gke-gpu-driver-version: "latest"
+  resources:
+    requests:
+      cpu: "10"
+      memory: "1000Gi"
+      "ephemeral-storage": "1Ti"
+      "nvidia.com/gpu": "8"
+    limits:
+      cpu: "10"
+      memory: "1000Gi"
+      "ephemeral-storage": "1Ti"
+      "nvidia.com/gpu": "8"

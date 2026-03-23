@@ -27,14 +27,26 @@ data:
   BATCH_SIZE: "4"
 
   # API Configuration
+  API_ENVIRONMENT: "production"
   API_HOST: "0.0.0.0"
   API_PORT: "8000"
+  API_REQUIRE_AUTH: "true"
+  API_RATE_LIMIT_ENABLED: "true"
   WORKERS: "4"
 
-  # Monitoring
-  ENABLE_METRICS: "true"
-  METRICS_PORT: "9090"
-  LOG_LEVEL: "INFO"
+  # Inference Backend Configuration
+  INFERENCE_BACKEND: "vllm"
+  INFERENCE_BACKEND_URL: "http://kimi-k25-vllm-finetuned.stateset-agents.svc.cluster.local:8000"
+  INFERENCE_DEFAULT_MODEL: "moonshotai/Kimi-K2.5"
+  # vLLM serves the fine-tuned model using a local path model ID; map the public
+  # model name to that internal identifier.
+  INFERENCE_MODEL_MAP: '{"moonshotai/Kimi-K2.5":"/models/kimi-k25/merged"}'
+  INFERENCE_DEFAULT_MAX_TOKENS: "1024"
+  INFERENCE_HEALTH_PATH: "/health"
+  INFERENCE_STREAM_INCLUDE_USAGE: "true"
+
+  # Observability
+  API_LOG_LEVEL: "INFO"
 
 ---
 apiVersion: apps/v1
@@ -55,39 +67,61 @@ spec:
         app: stateset-agents-api
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9090"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - name: tmp
+        emptyDir: {}
       containers:
       - name: stateset-agents
-        image: stateset/agents:0.5.0
+        image: stateset/stateset-agents-api:0.7.1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
         ports:
         - containerPort: 8000
           name: http
-        - containerPort: 9090
-          name: metrics
         envFrom:
         - configMapRef:
             name: stateset-agents-config
+        - secretRef:
+            name: stateset-agents-secrets
         resources:
           requests:
             cpu: "2"
             memory: "8Gi"
-            nvidia.com/gpu: "1"
           limits:
             cpu: "4"
             memory: "16Gi"
-            nvidia.com/gpu: "1"
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+          periodSeconds: 5
+          failureThreshold: 30
         livenessProbe:
           httpGet:
-            path: /health
+            path: /healthz
             port: 8000
-          initialDelaySeconds: 60
+          initialDelaySeconds: 10
           periodSeconds: 30
         readinessProbe:
           httpGet:
-            path: /health/ready
+            path: /ready
             port: 8000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 10
           periodSeconds: 10
 
 ---
@@ -102,9 +136,6 @@ spec:
   - port: 80
     targetPort: 8000
     name: http
-  - port: 9090
-    targetPort: 9090
-    name: metrics
   selector:
     app: stateset-agents-api
 

@@ -5,46 +5,44 @@ on:
     branches: [ main, master ]
     paths:
       - 'stateset_agents/**/*.py'
-      - 'grpo_agent_framework/**/*.py'
       - 'benchmarks/**'
   pull_request:
     branches: [ main, master, develop ]
     paths:
       - 'stateset_agents/**/*.py'
-      - 'grpo_agent_framework/**/*.py'
       - 'benchmarks/**'
   workflow_dispatch:
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
-    
+        python-version: "3.12"
+
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-benchmark-${{ hashFiles('**/pyproject.toml') }}
         restore-keys: |
           ${{ runner.os }}-pip-benchmark-
           ${{ runner.os }}-pip-
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
-    
+
     - name: Run benchmarks
       run: |
         python -m pytest benchmarks/ -v --benchmark-json=benchmark-results.json
-    
+
     - name: Store benchmark result
       uses: benchmark-action/github-action-benchmark@v1
       with:

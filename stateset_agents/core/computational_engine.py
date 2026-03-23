@@ -19,7 +19,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -50,9 +50,9 @@ class ComputationalTrajectory:
     learned_reward: float  # Reward from learned reward model
     computational_cost: float  # Tracks computation used
     timestamp: datetime
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "prompt": self.prompt,
@@ -75,7 +75,7 @@ class ComputationalGRPOEngine:
         agent: Agent,
         environment: Environment,
         reward_function: RewardFunction,
-        num_workers: Optional[int] = None,
+        num_workers: int | None = None,
         trajectory_batch_size: int = 32,
         use_learned_rewards: bool = True,
     ):
@@ -101,8 +101,8 @@ class ComputationalGRPOEngine:
         }
 
     async def generate_trajectory_batch(
-        self, prompts: List[str]
-    ) -> List[ComputationalTrajectory]:
+        self, prompts: list[str]
+    ) -> list[ComputationalTrajectory]:
         """
         Generate trajectories in parallel, maximizing computational efficiency
         """
@@ -192,7 +192,7 @@ class ComputationalGRPOEngine:
             # Random rewards would corrupt training and make results non-reproducible
             return 0.5
 
-    async def train_iteration(self, prompts: List[str]) -> Dict[str, Any]:
+    async def train_iteration(self, prompts: list[str]) -> dict[str, Any]:
         """
         Run a complete GRPO training iteration
         """
@@ -229,7 +229,7 @@ class ComputationalGRPOEngine:
 
         return results
 
-    async def _update_agent(self, trajectories: List[ComputationalTrajectory]):
+    async def _update_agent(self, trajectories: list[ComputationalTrajectory]):
         """Update the agent from trajectory feedback"""
         # Convert trajectories to agent-compatible format
         training_data = []
@@ -248,7 +248,7 @@ class ComputationalGRPOEngine:
             await self.agent.update_from_feedback(training_data)
 
     def _compute_advantages(
-        self, trajectories: List[ComputationalTrajectory]
+        self, trajectories: list[ComputationalTrajectory]
     ) -> np.ndarray:
         """Compute advantages for GRPO"""
         rewards = np.array([t.learned_reward for t in trajectories])
@@ -262,13 +262,12 @@ class ComputationalGRPOEngine:
         return advantages
 
     async def _update_policy(
-        self, trajectories: List[ComputationalTrajectory], advantages: np.ndarray
+        self, trajectories: list[ComputationalTrajectory], advantages: np.ndarray
     ) -> float:
         """Update policy using GRPO with actual gradient computation"""
         try:
             # Lazy import torch for optional dependency
             import torch
-            import torch.nn.functional as F
         except ImportError:
             logger.warning("PyTorch not available, using simulated policy update")
             # Fallback to agent's custom update if available
@@ -294,19 +293,23 @@ class ComputationalGRPOEngine:
         model.train()
 
         # Get device - try from model attribute first, then from parameters
-        if hasattr(model, 'device'):
-            device = model.device if isinstance(model.device, torch.device) else torch.device(model.device)
+        if hasattr(model, "device"):
+            device = (
+                model.device
+                if isinstance(model.device, torch.device)
+                else torch.device(model.device)
+            )
         else:
             try:
                 device = next(model.parameters()).device
             except StopIteration:
-                device = torch.device('cpu')
+                device = torch.device("cpu")
 
         total_loss = 0.0
         num_updates = 0
 
         # Process each trajectory
-        for traj, advantage in zip(trajectories, advantages):
+        for traj, advantage in zip(trajectories, advantages, strict=False):
             try:
                 # Tokenize the conversation
                 full_text = f"User: {traj.prompt}\nAssistant: {traj.response}"
@@ -317,7 +320,10 @@ class ComputationalGRPOEngine:
                     max_length=512,
                     padding=True,
                 )
-                inputs = {k: v.to(device) if hasattr(v, 'to') else v for k, v in inputs.items()}
+                inputs = {
+                    k: v.to(device) if hasattr(v, "to") else v
+                    for k, v in inputs.items()
+                }
 
                 # Forward pass
                 outputs = model(**inputs, labels=inputs["input_ids"])
@@ -359,7 +365,7 @@ class ComputationalGRPOEngine:
             "scale_factor": scale_factor,
         }
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get engine metrics"""
         return {
             "engine_metrics": self.metrics,
@@ -389,7 +395,7 @@ def create_computational_engine(
     agent: Agent,
     environment: Environment,
     reward_function: RewardFunction,
-    num_workers: Optional[int] = None,
+    num_workers: int | None = None,
     **kwargs,
 ) -> ComputationalGRPOEngine:
     """Create a computational GRPO engine with optimal configuration"""

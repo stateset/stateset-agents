@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.environments.symbolic_physics import (
@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _load_json_records(path: Path) -> List[Dict[str, Any]]:
+def _load_json_records(path: Path) -> list[dict[str, Any]]:
     if path.suffix.lower() == ".jsonl":
         records = []
         with path.open("r", encoding="utf-8") as handle:
@@ -46,9 +46,9 @@ def _load_json_records(path: Path) -> List[Dict[str, Any]]:
     raise ValueError("Unsupported predictions format")
 
 
-def _load_predictions(path: Path) -> Dict[str, str]:
+def _load_predictions(path: Path) -> dict[str, str]:
     records = _load_json_records(path)
-    predictions: Dict[str, str] = {}
+    predictions: dict[str, str] = {}
     for record in records:
         task_id = record.get("id") or record.get("task_id") or record.get("name")
         expression = record.get("expression") or record.get("prediction")
@@ -61,7 +61,7 @@ async def _score_task(
     task: SymbolicPhysicsTask,
     expression: str,
     reward_fn: SymbolicPhysicsRewardFunction,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     turn = ConversationTurn(role="assistant", content=expression)
     result = await reward_fn.compute_reward(turns=[turn], context=task.to_dict())
     return {
@@ -74,7 +74,9 @@ async def _score_task(
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate symbolic physics predictions.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate symbolic physics predictions."
+    )
     parser.add_argument(
         "--tasks",
         type=Path,
@@ -98,8 +100,8 @@ async def main() -> None:
         )
     )
 
-    results: List[Dict[str, Any]] = []
-    missing: List[str] = []
+    results: list[dict[str, Any]] = []
+    missing: list[str] = []
     for task in tasks:
         expr = predictions.get(task.task_id)
         if not expr:

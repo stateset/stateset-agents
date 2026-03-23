@@ -10,10 +10,9 @@ Tests:
 - Sim-to-Real Transfer
 """
 
-import pytest
+
 import numpy as np
-from unittest.mock import MagicMock, AsyncMock, patch
-from dataclasses import dataclass
+import pytest
 
 
 # Test ConversationDataset
@@ -34,8 +33,8 @@ class TestConversationDataset:
     def test_trajectory_data_compute_returns(self):
         """Test returns-to-go computation"""
         from stateset_agents.data.conversation_dataset import (
-            TrajectoryData,
             ConversationTurnData,
+            TrajectoryData,
         )
 
         turns = [
@@ -80,8 +79,8 @@ class TestConversationDataset:
         from stateset_agents.data.conversation_dataset import (
             ConversationDataset,
             ConversationDatasetConfig,
-            TrajectoryData,
             ConversationTurnData,
+            TrajectoryData,
         )
 
         trajectories = [
@@ -100,7 +99,9 @@ class TestConversationDataset:
         ]
 
         # Disable normalization to test raw statistics
-        config = ConversationDatasetConfig(normalize_rewards=False, compute_returns=False)
+        config = ConversationDatasetConfig(
+            normalize_rewards=False, compute_returns=False
+        )
         dataset = ConversationDataset(trajectories, config=config)
         stats = dataset.get_statistics()
 
@@ -111,8 +112,8 @@ class TestConversationDataset:
         """Test ConversationReplayBuffer operations"""
         from stateset_agents.data.conversation_dataset import (
             ConversationReplayBuffer,
-            TrajectoryData,
             ConversationTurnData,
+            TrajectoryData,
         )
 
         buffer = ConversationReplayBuffer(capacity=10)
@@ -138,8 +139,8 @@ class TestConversationDataset:
         """Test buffer respects capacity limit"""
         from stateset_agents.data.conversation_dataset import (
             ConversationReplayBuffer,
-            TrajectoryData,
             ConversationTurnData,
+            TrajectoryData,
         )
 
         buffer = ConversationReplayBuffer(capacity=2)
@@ -192,8 +193,8 @@ class TestDomainRandomization:
     def test_persona_generator_random(self):
         """Test random persona generation"""
         from stateset_agents.training.domain_randomization import (
-            PersonaGenerator,
             DomainRandomizationConfig,
+            PersonaGenerator,
         )
 
         config = DomainRandomizationConfig(seed=42)
@@ -208,8 +209,8 @@ class TestDomainRandomization:
     def test_persona_interpolation(self):
         """Test persona interpolation"""
         from stateset_agents.training.domain_randomization import (
-            PersonaGenerator,
             DomainRandomizationConfig,
+            PersonaGenerator,
             UserPersona,
         )
 
@@ -225,8 +226,8 @@ class TestDomainRandomization:
     def test_scenario_generator(self):
         """Test scenario generation"""
         from stateset_agents.training.domain_randomization import (
-            ScenarioGenerator,
             DomainRandomizationConfig,
+            ScenarioGenerator,
         )
 
         config = DomainRandomizationConfig(
@@ -242,8 +243,8 @@ class TestDomainRandomization:
     def test_curriculum_sampling(self):
         """Test curriculum learning schedule"""
         from stateset_agents.training.domain_randomization import (
-            ScenarioGenerator,
             DomainRandomizationConfig,
+            ScenarioGenerator,
         )
 
         config = DomainRandomizationConfig(
@@ -262,8 +263,8 @@ class TestDomainRandomization:
     def test_domain_randomizer(self):
         """Test DomainRandomizer integration"""
         from stateset_agents.training.domain_randomization import (
-            DomainRandomizer,
             DomainRandomizationConfig,
+            DomainRandomizer,
         )
 
         config = DomainRandomizationConfig(seed=42)
@@ -377,7 +378,9 @@ class TestOfflineRLConfigs:
 
     def test_decision_transformer_config_defaults(self):
         """Test DecisionTransformerConfig default values"""
-        from stateset_agents.training.decision_transformer import DecisionTransformerConfig
+        from stateset_agents.training.decision_transformer import (
+            DecisionTransformerConfig,
+        )
 
         config = DecisionTransformerConfig()
         assert config.n_layer == 6
@@ -411,7 +414,10 @@ class TestSimToRealTransfer:
 
     def test_transfer_ratio_warmup(self):
         """Test sim/real ratio during warmup"""
-        from stateset_agents.training.sim_to_real import SimToRealTransfer, SimToRealConfig
+        from stateset_agents.training.sim_to_real import (
+            SimToRealConfig,
+            SimToRealTransfer,
+        )
 
         config = SimToRealConfig(warmup_steps=100)
         transfer = SimToRealTransfer(config)
@@ -422,7 +428,10 @@ class TestSimToRealTransfer:
 
     def test_transfer_ratio_linear(self):
         """Test linear transfer schedule"""
-        from stateset_agents.training.sim_to_real import SimToRealTransfer, SimToRealConfig
+        from stateset_agents.training.sim_to_real import (
+            SimToRealConfig,
+            SimToRealTransfer,
+        )
 
         config = SimToRealConfig(
             transfer_schedule="linear",
@@ -439,7 +448,10 @@ class TestSimToRealTransfer:
 
     def test_transfer_ratio_cosine(self):
         """Test cosine transfer schedule"""
-        from stateset_agents.training.sim_to_real import SimToRealTransfer, SimToRealConfig
+        from stateset_agents.training.sim_to_real import (
+            SimToRealConfig,
+            SimToRealTransfer,
+        )
 
         config = SimToRealConfig(
             transfer_schedule="cosine",
@@ -464,6 +476,7 @@ class TestMMDKernel:
         """Test Gaussian kernel MMD"""
         pytest.importorskip("torch")
         import torch
+
         from stateset_agents.training.offline_rl_bear import MMDKernel
 
         kernel = MMDKernel(kernel_type="gaussian", sigma=1.0)
@@ -479,6 +492,7 @@ class TestMMDKernel:
         """Test Laplacian kernel MMD"""
         pytest.importorskip("torch")
         import torch
+
         from stateset_agents.training.offline_rl_bear import MMDKernel
 
         kernel = MMDKernel(kernel_type="laplacian", sigma=1.0)
@@ -510,9 +524,9 @@ class TestModuleImports:
     def test_import_training_offline_rl(self):
         """Test offline RL training imports"""
         from stateset_agents.training import (
-            OFFLINE_RL_AVAILABLE,
             BCQ_AVAILABLE,
             BEAR_AVAILABLE,
+            OFFLINE_RL_AVAILABLE,
         )
 
         assert isinstance(OFFLINE_RL_AVAILABLE, bool)
@@ -521,10 +535,7 @@ class TestModuleImports:
 
     def test_import_evaluation_module(self):
         """Test evaluation module imports"""
-        from stateset_agents.evaluation import (
-            SimToRealMetrics,
-            SimToRealEvaluator,
-        )
+        from stateset_agents.evaluation import SimToRealEvaluator, SimToRealMetrics
 
         assert SimToRealMetrics is not None
         assert SimToRealEvaluator is not None
@@ -532,11 +543,8 @@ class TestModuleImports:
     def test_import_domain_randomization(self):
         """Test domain randomization imports"""
         from stateset_agents.training.domain_randomization import (
-            UserPersona,
             DomainRandomizationConfig,
-            PersonaGenerator,
-            ScenarioGenerator,
-            DomainRandomizer,
+            UserPersona,
         )
 
         assert UserPersona is not None

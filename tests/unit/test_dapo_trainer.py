@@ -5,13 +5,9 @@ Tests cover DAPO configuration, asymmetric clipping, dynamic sampling,
 overlong reward shaping, and token-level loss computation.
 """
 
-import asyncio
-from dataclasses import dataclass
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import torch
-import torch.nn as nn
 
 
 class TestDAPOConfig:
@@ -110,7 +106,7 @@ class TestDAPOClipHigher:
         ratio = 1.3  # Above standard PPO clip
 
         # Standard PPO would clip to 1.2
-        standard_clipped = min(ratio, 1 + 0.2)
+        standard_clipped = min(ratio, 1 + clip_eps_low)
         assert standard_clipped == 1.2
 
         # DAPO allows up to 1.28
@@ -125,6 +121,8 @@ class TestDAPOClipHigher:
 
         ratios = torch.tensor([0.7, 0.95, 1.1, 1.35])
         advantages = torch.tensor([1.0, -0.5, 0.8, -0.3])
+        assert ratios.numel() == batch_size
+        assert advantages.numel() == batch_size
 
         # Asymmetric clipping
         clipped = torch.clamp(ratios, 1 - clip_eps_low, 1 + clip_eps_high)
@@ -183,11 +181,11 @@ class TestDAPODynamicSampling:
         max_thresh = 1.0
 
         test_cases = [
-            (0.0, False),   # All wrong -> filter
-            (0.5, True),    # Mixed -> keep
-            (0.25, True),   # Mixed -> keep
-            (0.75, True),   # Mixed -> keep
-            (1.0, False),   # All correct -> filter
+            (0.0, False),  # All wrong -> filter
+            (0.5, True),  # Mixed -> keep
+            (0.25, True),  # Mixed -> keep
+            (0.75, True),  # Mixed -> keep
+            (1.0, False),  # All correct -> filter
         ]
 
         for accuracy, should_keep in test_cases:
@@ -242,7 +240,6 @@ class TestDAPOOverlongShaping:
         overlong_penalty = -1.0
 
         # Short sequence: no penalty
-        short_len = 500
         short_shaped = base_reward
         assert short_shaped == 1.0
 
@@ -253,7 +250,6 @@ class TestDAPOOverlongShaping:
         assert near_max_shaped < base_reward
 
         # Truncated sequence: full penalty
-        truncated_len = max_len
         truncated_shaped = base_reward + overlong_penalty
         assert truncated_shaped == 0.0
 
@@ -268,6 +264,8 @@ class TestDAPOTokenLevelLoss:
 
         # Token-level losses per sample
         losses_per_sample = torch.tensor([10.0, 20.0, 5.0, 15.0])
+        assert len(seq_lengths) == batch_size
+        assert losses_per_sample.numel() == batch_size
 
         # Sample-level normalization (mean over samples)
         sample_level = losses_per_sample.mean()
@@ -339,12 +337,14 @@ class TestDAPOModelManager:
     def dapo_config(self):
         """Create a DAPO config for testing."""
         from stateset_agents.training.dapo_trainer import DAPOConfig
+
         return DAPOConfig(model_name="gpt2", use_lora=True)
 
     @pytest.fixture
     def model_manager(self, dapo_config):
         """Create a DAPOModelManager for testing."""
         from stateset_agents.training.dapo_trainer import DAPOModelManager
+
         return DAPOModelManager(dapo_config)
 
     def test_model_manager_creation(self, model_manager):
@@ -376,6 +376,7 @@ class TestDAPOTrainer:
     def dapo_config(self):
         """Create a DAPO config for testing."""
         from stateset_agents.training.dapo_trainer import DAPOConfig
+
         return DAPOConfig(
             model_name="gpt2",
             group_size=4,
@@ -463,6 +464,6 @@ class TestDAPOLearningRate:
         num_steps = 1000
 
         # Constant schedule returns same LR
-        for step in range(num_steps):
+        for _step in range(num_steps):
             current_lr = initial_lr  # Constant
             assert current_lr == initial_lr

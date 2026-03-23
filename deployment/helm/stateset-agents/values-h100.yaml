@@ -1,0 +1,15 @@
+vllm:
+  gpu:
+    count: 8
+    accelerator: "nvidia-h100-80gb"
+  resources:
+    requests:
+      cpu: "12"
+      memory: "1200Gi"
+      "ephemeral-storage": "1Ti"
+      "nvidia.com/gpu": "8"
+    limits:
+      cpu: "12"
+      memory: "1200Gi"
+      "ephemeral-storage": "1Ti"
+      "nvidia.com/gpu": "8"

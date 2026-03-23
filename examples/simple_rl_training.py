@@ -11,15 +11,17 @@ Usage:
 
 import asyncio
 import logging
-from stateset_agents.core.agent import MultiTurnAgent, AgentConfig
+
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.rewards.multi_objective_reward import create_domain_reward
-from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
 from stateset_agents.training.config import TrainingConfig
+from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 async def main():
     # 1. Configure the Agent
@@ -43,19 +45,19 @@ async def main():
             "topic": "greeting",
             "user_goal": "Exchange pleasantries",
             "context": "The user is just saying hello.",
-            "user_responses": ["Hello!", "How are you?", "Nice to meet you."]
+            "user_responses": ["Hello!", "How are you?", "Nice to meet you."],
         }
     ]
     environment = ConversationEnvironment(
         scenarios=scenarios,
         max_turns=5,  # Short episodes
-        persona="You are a friendly bot."
+        persona="You are a friendly bot.",
     )
 
     # 3. Configure the Reward Model
     # We use a pre-built domain reward for general helpfulness.
     logger.info("Initializing Reward Model...")
-    reward_model = create_domain_reward("customer_service") 
+    reward_model = create_domain_reward("customer_service")
 
     # 4. Configure Training
     logger.info("Configuring Training...")
@@ -66,17 +68,17 @@ async def main():
         num_train_epochs=1,
         per_device_train_batch_size=2,
     )
-    
+
     # GSPO specific configuration
     gspo_config = GSPOConfig.from_training_config(
         base_config,
         num_outer_iterations=2,  # Very few iterations for demo
         generations_per_iteration=4,
-        num_generations=2,       # Group size (K)
+        num_generations=2,  # Group size (K)
         learning_rate=1e-5,
         save_steps=10,
         logging_steps=1,
-        report_to="none"         # Disable wandb for simple demo
+        report_to="none",  # Disable wandb for simple demo
     )
 
     # 5. Run Training
@@ -85,15 +87,18 @@ async def main():
         config=gspo_config,
         agent=agent,
         environment=environment,
-        reward_model=reward_model
+        reward_model=reward_model,
     )
 
     logger.info("Training Complete!")
-    
+
     # 6. Test the trained agent
     logger.info("Testing the agent...")
-    response = await trained_agent.generate_response([{"role": "user", "content": "Hello!"}])
+    response = await trained_agent.generate_response(
+        [{"role": "user", "content": "Hello!"}]
+    )
     logger.info(f"Agent response: {response}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

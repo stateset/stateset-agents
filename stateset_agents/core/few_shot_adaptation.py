@@ -9,7 +9,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -25,8 +25,8 @@ except ImportError:
     Adam = None
 
 from .agent import Agent
-from .trajectory import ConversationTurn, MultiTurnTrajectory
-from .reward import RewardFunction, RewardResult
+from .reward import RewardFunction
+from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +46,9 @@ class FewShotExample:
 
     input: str
     output: str
-    context: Dict[str, Any] = field(default_factory=dict)
-    reward: Optional[float] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
+    reward: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -58,10 +58,10 @@ class DomainProfile:
     domain_id: str
     name: str
     description: str
-    examples: List[FewShotExample] = field(default_factory=list)
-    keywords: List[str] = field(default_factory=list)
-    success_criteria: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    examples: list[FewShotExample] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+    success_criteria: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class AdaptationStrategy(ABC):
@@ -71,14 +71,14 @@ class AdaptationStrategy(ABC):
     async def adapt(
         self,
         agent: Agent,
-        examples: List[FewShotExample],
+        examples: list[FewShotExample],
         domain: DomainProfile,
     ) -> Agent:
         """Adapt agent to new domain"""
         pass
 
     @abstractmethod
-    def get_adaptation_metrics(self) -> Dict[str, Any]:
+    def get_adaptation_metrics(self) -> dict[str, Any]:
         """Get metrics about adaptation process"""
         pass
 
@@ -93,7 +93,7 @@ class PromptBasedAdaptation(AdaptationStrategy):
     def __init__(
         self,
         max_examples: int = 5,
-        example_template: Optional[str] = None,
+        example_template: str | None = None,
         include_reasoning: bool = True,
     ):
         self.max_examples = max_examples
@@ -104,7 +104,7 @@ class PromptBasedAdaptation(AdaptationStrategy):
     async def adapt(
         self,
         agent: Agent,
-        examples: List[FewShotExample],
+        examples: list[FewShotExample],
         domain: DomainProfile,
     ) -> Agent:
         """Create prompt-adapted agent"""
@@ -115,18 +115,22 @@ class PromptBasedAdaptation(AdaptationStrategy):
         few_shot_prompt = self._build_few_shot_prompt(selected_examples, domain)
 
         # Create adapted agent with augmented prompt
-        adapted_agent = self._create_prompt_adapted_agent(agent, few_shot_prompt, domain)
+        adapted_agent = self._create_prompt_adapted_agent(
+            agent, few_shot_prompt, domain
+        )
 
         self.adaptation_count += 1
-        logger.info(f"Adapted agent with {len(selected_examples)} examples for domain: {domain.name}")
+        logger.info(
+            f"Adapted agent with {len(selected_examples)} examples for domain: {domain.name}"
+        )
 
         return adapted_agent
 
     def _select_examples(
         self,
-        examples: List[FewShotExample],
+        examples: list[FewShotExample],
         k: int,
-    ) -> List[FewShotExample]:
+    ) -> list[FewShotExample]:
         """Select k most informative examples"""
         if len(examples) <= k:
             return examples
@@ -136,7 +140,9 @@ class PromptBasedAdaptation(AdaptationStrategy):
 
         if examples_with_reward:
             # Select high-reward examples
-            sorted_examples = sorted(examples_with_reward, key=lambda e: e.reward, reverse=True)
+            sorted_examples = sorted(
+                examples_with_reward, key=lambda e: e.reward, reverse=True
+            )
             selected = sorted_examples[:k]
         else:
             # Random selection
@@ -146,14 +152,21 @@ class PromptBasedAdaptation(AdaptationStrategy):
 
     def _build_few_shot_prompt(
         self,
-        examples: List[FewShotExample],
+        examples: list[FewShotExample],
         domain: DomainProfile,
     ) -> str:
         """Build few-shot prompt from examples"""
-        prompt_parts = [f"Domain: {domain.name}", f"Description: {domain.description}", "", "Examples:"]
+        prompt_parts = [
+            f"Domain: {domain.name}",
+            f"Description: {domain.description}",
+            "",
+            "Examples:",
+        ]
 
         for i, example in enumerate(examples, 1):
-            example_text = self.example_template.format(input=example.input, output=example.output)
+            example_text = self.example_template.format(
+                input=example.input, output=example.output
+            )
 
             if self.include_reasoning and "reasoning" in example.metadata:
                 example_text += f"\nReasoning: {example.metadata['reasoning']}"
@@ -193,7 +206,7 @@ class PromptBasedAdaptation(AdaptationStrategy):
 
         return PromptAdaptedAgent(base_agent, few_shot_prompt)
 
-    def get_adaptation_metrics(self) -> Dict[str, Any]:
+    def get_adaptation_metrics(self) -> dict[str, Any]:
         return {"adaptation_count": self.adaptation_count, "strategy": "prompt_based"}
 
 
@@ -210,7 +223,7 @@ class LoRAAdaptation(AdaptationStrategy):
         alpha: float = 16,
         learning_rate: float = 1e-4,
         num_epochs: int = 5,
-        target_modules: Optional[List[str]] = None,
+        target_modules: list[str] | None = None,
     ):
         _require_torch()
 
@@ -220,12 +233,12 @@ class LoRAAdaptation(AdaptationStrategy):
         self.num_epochs = num_epochs
         self.target_modules = target_modules or ["q_proj", "v_proj"]
         self.adaptation_count = 0
-        self.training_history: List[Dict[str, float]] = []
+        self.training_history: list[dict[str, float]] = []
 
     async def adapt(
         self,
         agent: Agent,
-        examples: List[FewShotExample],
+        examples: list[FewShotExample],
         domain: DomainProfile,
     ) -> Agent:
         """Fine-tune agent with LoRA"""
@@ -244,15 +257,15 @@ class LoRAAdaptation(AdaptationStrategy):
 
     def _prepare_training_data(
         self,
-        examples: List[FewShotExample],
-    ) -> List[Tuple[str, str]]:
+        examples: list[FewShotExample],
+    ) -> list[tuple[str, str]]:
         """Convert examples to training pairs"""
         return [(ex.input, ex.output) for ex in examples]
 
     async def _fine_tune_with_lora(
         self,
         agent: Agent,
-        train_data: List[Tuple[str, str]],
+        train_data: list[tuple[str, str]],
         domain: DomainProfile,
     ) -> Agent:
         """
@@ -265,7 +278,9 @@ class LoRAAdaptation(AdaptationStrategy):
         # In production, use:
         # from peft import LoraConfig, get_peft_model
 
-        logger.info(f"LoRA fine-tuning on {len(train_data)} examples for {self.num_epochs} epochs")
+        logger.info(
+            f"LoRA fine-tuning on {len(train_data)} examples for {self.num_epochs} epochs"
+        )
 
         # Simulate training
         for epoch in range(self.num_epochs):
@@ -283,7 +298,7 @@ class LoRAAdaptation(AdaptationStrategy):
         # Return adapted agent (in practice, return agent with LoRA weights)
         return agent
 
-    def get_adaptation_metrics(self) -> Dict[str, Any]:
+    def get_adaptation_metrics(self) -> dict[str, Any]:
         return {
             "adaptation_count": self.adaptation_count,
             "strategy": "lora",
@@ -318,7 +333,7 @@ class MAMLAdapter(AdaptationStrategy):
 
     async def meta_train(
         self,
-        tasks: List[Tuple[DomainProfile, List[FewShotExample]]],
+        tasks: list[tuple[DomainProfile, list[FewShotExample]]],
         base_agent: Agent,
     ) -> None:
         """
@@ -330,7 +345,9 @@ class MAMLAdapter(AdaptationStrategy):
 
         for outer_step in range(self.num_outer_steps):
             # Sample batch of tasks
-            task_batch = np.random.choice(len(tasks), size=min(4, len(tasks)), replace=False)
+            task_batch = np.random.choice(
+                len(tasks), size=min(4, len(tasks)), replace=False
+            )
 
             for task_idx in task_batch:
                 domain, examples = tasks[task_idx]
@@ -338,6 +355,7 @@ class MAMLAdapter(AdaptationStrategy):
                 # Split into support and query sets
                 support_set = examples[: len(examples) // 2]
                 query_set = examples[len(examples) // 2 :]
+                del support_set, query_set
 
                 # Inner loop: adapt to task
                 # (Placeholder - actual implementation would update agent)
@@ -355,12 +373,14 @@ class MAMLAdapter(AdaptationStrategy):
     async def adapt(
         self,
         agent: Agent,
-        examples: List[FewShotExample],
+        examples: list[FewShotExample],
         domain: DomainProfile,
     ) -> Agent:
         """Fast adaptation using meta-learned initialization"""
         if not self.meta_trained:
-            logger.warning("MAML adapter not meta-trained yet. Using standard fine-tuning.")
+            logger.warning(
+                "MAML adapter not meta-trained yet. Using standard fine-tuning."
+            )
 
         logger.info(f"MAML adaptation with {len(examples)} examples")
 
@@ -373,7 +393,7 @@ class MAMLAdapter(AdaptationStrategy):
     async def _inner_loop_adaptation(
         self,
         agent: Agent,
-        examples: List[FewShotExample],
+        examples: list[FewShotExample],
         domain: DomainProfile,
     ) -> Agent:
         """Perform fast adaptation in inner loop"""
@@ -388,7 +408,7 @@ class MAMLAdapter(AdaptationStrategy):
 
         return agent
 
-    def get_adaptation_metrics(self) -> Dict[str, Any]:
+    def get_adaptation_metrics(self) -> dict[str, Any]:
         return {
             "adaptation_count": self.adaptation_count,
             "strategy": "maml",
@@ -408,21 +428,21 @@ class FewShotAdaptationManager:
     def __init__(
         self,
         base_agent: Agent,
-        default_strategy: Optional[AdaptationStrategy] = None,
+        default_strategy: AdaptationStrategy | None = None,
     ):
         self.base_agent = base_agent
         self.default_strategy = default_strategy or PromptBasedAdaptation()
 
-        self.domain_profiles: Dict[str, DomainProfile] = {}
-        self.adapted_agents: Dict[str, Agent] = {}
-        self.domain_examples: Dict[str, List[FewShotExample]] = {}
+        self.domain_profiles: dict[str, DomainProfile] = {}
+        self.adapted_agents: dict[str, Agent] = {}
+        self.domain_examples: dict[str, list[FewShotExample]] = {}
 
-        self.adaptation_history: List[Dict[str, Any]] = []
+        self.adaptation_history: list[dict[str, Any]] = []
 
     def register_domain(
         self,
         domain: DomainProfile,
-        examples: Optional[List[FewShotExample]] = None,
+        examples: list[FewShotExample] | None = None,
     ) -> None:
         """Register a new domain for adaptation"""
         self.domain_profiles[domain.domain_id] = domain
@@ -437,7 +457,7 @@ class FewShotAdaptationManager:
     def add_examples(
         self,
         domain_id: str,
-        examples: List[FewShotExample],
+        examples: list[FewShotExample],
     ) -> None:
         """Add examples to existing domain"""
         if domain_id not in self.domain_profiles:
@@ -453,7 +473,7 @@ class FewShotAdaptationManager:
     async def get_adapted_agent(
         self,
         domain_id: str,
-        strategy: Optional[AdaptationStrategy] = None,
+        strategy: AdaptationStrategy | None = None,
         force_readapt: bool = False,
     ) -> Agent:
         """
@@ -482,7 +502,9 @@ class FewShotAdaptationManager:
 
         logger.info(f"Adapting agent to domain: {domain.name}")
 
-        adapted_agent = await adaptation_strategy.adapt(self.base_agent, examples, domain)
+        adapted_agent = await adaptation_strategy.adapt(
+            self.base_agent, examples, domain
+        )
 
         # Cache adapted agent
         self.adapted_agents[domain_id] = adapted_agent
@@ -503,9 +525,9 @@ class FewShotAdaptationManager:
     async def evaluate_adaptation(
         self,
         domain_id: str,
-        test_examples: List[FewShotExample],
-        reward_function: Optional[RewardFunction] = None,
-    ) -> Dict[str, Any]:
+        test_examples: list[FewShotExample],
+        reward_function: RewardFunction | None = None,
+    ) -> dict[str, Any]:
         """
         Evaluate adapted agent on test examples.
 
@@ -555,7 +577,7 @@ class FewShotAdaptationManager:
             "results": results,
         }
 
-    def get_domain_statistics(self) -> Dict[str, Any]:
+    def get_domain_statistics(self) -> dict[str, Any]:
         """Get statistics about registered domains"""
         return {
             "num_domains": len(self.domain_profiles),
@@ -597,7 +619,9 @@ class FewShotAdaptationManager:
 
         # Use source agent as base for target adaptation
         strategy = PromptBasedAdaptation(max_examples=num_target_examples)
-        transferred_agent = await strategy.adapt(source_agent, target_examples, target_domain)
+        transferred_agent = await strategy.adapt(
+            source_agent, target_examples, target_domain
+        )
 
         logger.info(
             f"Transferred from {source_domain_id} to {target_domain_id} "
@@ -614,18 +638,18 @@ class DomainDetector:
     Enables dynamic agent selection based on input characteristics.
     """
 
-    def __init__(self, domains: Dict[str, DomainProfile]):
+    def __init__(self, domains: dict[str, DomainProfile]):
         self.domains = domains
 
         # Build keyword index
-        self.keyword_index: Dict[str, Set[str]] = {}
+        self.keyword_index: dict[str, set[str]] = {}
         for domain_id, profile in domains.items():
             for keyword in profile.keywords:
                 if keyword not in self.keyword_index:
                     self.keyword_index[keyword] = set()
                 self.keyword_index[keyword].add(domain_id)
 
-    def detect_domain(self, input_text: str) -> Tuple[str, float]:
+    def detect_domain(self, input_text: str) -> tuple[str, float]:
         """
         Detect domain from input text.
 
@@ -636,7 +660,7 @@ class DomainDetector:
         input_lower = input_text.lower()
 
         # Count keyword matches per domain
-        domain_scores: Dict[str, int] = {domain_id: 0 for domain_id in self.domains}
+        domain_scores: dict[str, int] = dict.fromkeys(self.domains, 0)
 
         for keyword, domain_ids in self.keyword_index.items():
             if keyword.lower() in input_lower:

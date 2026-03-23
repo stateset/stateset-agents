@@ -10,7 +10,7 @@ from __future__ import annotations
 import enum
 import traceback
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Type, Union
+from typing import Any
 
 
 class ErrorCode(enum.Enum):
@@ -77,10 +77,10 @@ class ErrorContext:
 
     operation: str
     component: str
-    details: Dict[str, Any] = field(default_factory=dict)
-    traceback_str: Optional[str] = None
+    details: dict[str, Any] = field(default_factory=dict)
+    traceback_str: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "operation": self.operation,
             "component": self.component,
@@ -96,15 +96,13 @@ class StateSetError(Exception):
         self,
         message: str,
         code: ErrorCode = ErrorCode.UNKNOWN,
-        context: Optional[ErrorContext] = None,
-        cause: Optional[BaseException] = None,
+        context: ErrorContext | None = None,
+        cause: BaseException | None = None,
     ):
         super().__init__(message)
         self.message = message
         self.code = code
-        self.context = context or ErrorContext(
-            operation="unknown", component="unknown"
-        )
+        self.context = context or ErrorContext(operation="unknown", component="unknown")
         self.cause = cause
 
     def __str__(self) -> str:
@@ -115,7 +113,7 @@ class StateSetError(Exception):
             parts.append(f"Caused by: {type(self.cause).__name__}: {self.cause}")
         return " | ".join(parts)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "error_code": self.code.value,
             "message": self.message,
@@ -129,9 +127,11 @@ class ConfigurationError(StateSetError):
 
     def __init__(self, message: str, **kwargs):
         super().__init__(
-            message, code=ErrorCode.CFG_INVALID, context=ErrorContext(
+            message,
+            code=ErrorCode.CFG_INVALID,
+            context=ErrorContext(
                 operation="configuration", component="config", details=kwargs
-            )
+            ),
         )
 
 
@@ -142,7 +142,7 @@ class ModelError(StateSetError):
         self,
         message: str,
         code: ErrorCode = ErrorCode.MDL_LOAD_FAILED,
-        model_name: Optional[str] = None,
+        model_name: str | None = None,
         **kwargs,
     ):
         details = {"model_name": model_name, **kwargs}
@@ -162,7 +162,7 @@ class TrainingError(StateSetError):
         self,
         message: str,
         code: ErrorCode = ErrorCode.TRN_STEP_FAILED,
-        step: Optional[int] = None,
+        step: int | None = None,
         **kwargs,
     ):
         details = {"step": step, **kwargs}
@@ -181,14 +181,12 @@ class OutOfMemoryError(TrainingError):
     def __init__(
         self,
         message: str = "Out of memory",
-        allocated_gb: Optional[float] = None,
-        reserved_gb: Optional[float] = None,
+        allocated_gb: float | None = None,
+        reserved_gb: float | None = None,
         **kwargs,
     ):
         details = {"allocated_gb": allocated_gb, "reserved_gb": reserved_gb, **kwargs}
-        super().__init__(
-            message, code=ErrorCode.TRN_OOM, **details
-        )
+        super().__init__(message, code=ErrorCode.TRN_OOM, **details)
 
 
 class EnvironmentError(StateSetError):
@@ -196,9 +194,11 @@ class EnvironmentError(StateSetError):
 
     def __init__(self, message: str, **kwargs):
         super().__init__(
-            message, code=ErrorCode.ENV_STEP_FAILED, context=ErrorContext(
+            message,
+            code=ErrorCode.ENV_STEP_FAILED,
+            context=ErrorContext(
                 operation="environment", component="environment", details=kwargs
-            )
+            ),
         )
 
 
@@ -207,9 +207,11 @@ class DataError(StateSetError):
 
     def __init__(self, message: str, **kwargs):
         super().__init__(
-            message, code=ErrorCode.DAT_LOAD_FAILED, context=ErrorContext(
+            message,
+            code=ErrorCode.DAT_LOAD_FAILED,
+            context=ErrorContext(
                 operation="data_loading", component="data", details=kwargs
-            )
+            ),
         )
 
 
@@ -218,9 +220,11 @@ class RewardError(StateSetError):
 
     def __init__(self, message: str, **kwargs):
         super().__init__(
-            message, code=ErrorCode.RWD_COMPUTE_FAILED, context=ErrorContext(
+            message,
+            code=ErrorCode.RWD_COMPUTE_FAILED,
+            context=ErrorContext(
                 operation="reward_computation", component="reward", details=kwargs
-            )
+            ),
         )
 
 
@@ -231,7 +235,7 @@ class NetworkError(StateSetError):
         self,
         message: str,
         code: ErrorCode = ErrorCode.NET_CONNECTION_FAILED,
-        url: Optional[str] = None,
+        url: str | None = None,
         **kwargs,
     ):
         details = {"url": url, **kwargs}
@@ -247,20 +251,22 @@ class NetworkError(StateSetError):
 class ValidationError(StateSetError):
     """Raised when input validation fails."""
 
-    def __init__(self, message: str, field: Optional[str] = None, **kwargs):
+    def __init__(self, message: str, field: str | None = None, **kwargs):
         details = {"field": field, **kwargs}
         super().__init__(
-            message, code=ErrorCode.VAL_INVALID_INPUT, context=ErrorContext(
+            message,
+            code=ErrorCode.VAL_INVALID_INPUT,
+            context=ErrorContext(
                 operation="validation", component="validator", details=details
-            )
+            ),
         )
 
 
 def wrap_exception(
     exc: BaseException,
-    new_type: Type[StateSetError],
-    message: Optional[str] = None,
-    code: Optional[ErrorCode] = None,
+    new_type: type[StateSetError],
+    message: str | None = None,
+    code: ErrorCode | None = None,
     **context_kwargs,
 ) -> StateSetError:
     """Wrap an exception in a StateSetError with proper chaining.
@@ -283,17 +289,13 @@ def wrap_exception(
         traceback_str=traceback.format_exc(),
     )
 
-    return new_type(
-        msg,
-        code=code or ErrorCode.UNKNOWN,
-        context=context,
-        cause=exc,
-    )
+    result = new_type(msg, code=code or ErrorCode.UNKNOWN)
+    result.cause = exc
+    result.context = context
+    return result
 
 
-def raise_from(
-    new_exc: StateSetError, cause: BaseException
-) -> None:
+def raise_from(new_exc: StateSetError, cause: BaseException) -> None:
     """Raise a new exception from a cause with proper chaining.
 
     Args:

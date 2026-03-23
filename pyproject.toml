@@ -7,8 +7,9 @@ name = "stateset-agents"
 version = "0.7.1"
 description = "Production-ready RL framework for training multi-turn conversational AI agents using GRPO and GSPO"
 readme = "README.md"
-license = {text = "Business Source License 1.1"}
-requires-python = ">=3.8"
+license = "BUSL-1.1"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
 authors = [
     {name = "StateSet Team", email = "team@stateset.ai"},
 ]
@@ -16,19 +17,17 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Framework :: FastAPI",
     "Environment :: GPU :: NVIDIA CUDA",
 ]
 dependencies = [
-    "numpy>=1.21.0,<2.0.0",
+    "numpy>=1.21.0",
     "pydantic>=2.0.0",
     "rich>=13.0.0",
     "typer>=0.9.0",
@@ -39,7 +38,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
+    "pytest>=7.0.0,<9.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "hypothesis>=6.0.0",
@@ -55,7 +54,7 @@ dev = [
     "safety>=2.0.0",
     "semgrep>=1.0.0",
     "torch>=2.0.0",
-    "transformers>=4.30.0,<4.45.0",
+    "transformers>=4.30.0",
     "datasets>=2.0.0",
     "accelerate>=0.20.0",
     "wandb>=0.15.0",
@@ -63,11 +62,15 @@ dev = [
     "trl>=0.7.0",
     "aiohttp>=3.8.0",
     "psutil>=5.9.0",
-    "scikit-learn>=1.3.0,<1.6.0",
+    "scikit-learn>=1.3.0,<2.0.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.23.0",
+    "httpx>=0.25.0,<0.28.0",
+    "requests>=2.31.0",
 ]
 training = [
     "torch>=2.0.0",
-    "transformers>=4.30.0,<4.45.0",
+    "transformers>=4.30.0",
     "datasets>=2.0.0",
     "accelerate>=0.20.0",
     "wandb>=0.15.0",
@@ -75,12 +78,18 @@ training = [
     "trl>=0.7.0",
     "aiohttp>=3.8.0",
     "psutil>=5.9.0",
-    "scikit-learn>=1.3.0,<1.6.0",
+    "scikit-learn>=1.3.0,<2.0.0",
     "gymnasium>=0.28.0",
 ]
 api = [
     "fastapi>=0.110.0",
     "uvicorn>=0.23.0",
+    # Starlette/FastAPI's TestClient is not compatible with httpx>=0.28 yet.
+    "httpx>=0.25.0,<0.28.0",
+    # Used by performance monitoring endpoints.
+    "psutil>=5.9.0",
+    # Used by alerting integrations.
+    "requests>=2.31.0",
 ]
 examples = [
     "openai>=1.0.0",
@@ -98,23 +107,21 @@ hpo = [
     "optuna>=3.0.0",
     "ray[tune]>=2.0.0",
 ]
+auto-research = [
+    "stateset-agents[training]",
+    "optuna>=3.0.0",
+    "pyyaml>=6.0",
+]
+auto-research-llm = [
+    "stateset-agents[auto-research]",
+    "anthropic>=0.5.0",
+    "openai>=1.0.0",
+]
 distributed = [
     "deepspeed>=0.9.0",
 ]
 full = [
-    "torch>=2.0.0",
-    "transformers>=4.30.0,<4.45.0",
-    "datasets>=2.0.0",
-    "accelerate>=0.20.0",
-    "wandb>=0.15.0",
-    "peft>=0.4.0",
-    "trl>=0.7.0",
-    "aiohttp>=3.8.0",
-    "psutil>=5.9.0",
-    "scikit-learn>=1.3.0,<1.6.0",
-    "fastapi>=0.110.0",
-    "uvicorn>=0.23.0",
-    "optuna>=3.0.0",
+    "stateset-agents[training,api,hpo,auto-research]",
 ]
 
 [project.urls]
@@ -138,24 +145,19 @@ exclude = [
     "scripts*",
     "htmlcov*",
     "dist*",
-    # Deprecated shim directories (use stateset_agents.* instead)
-    "core*",
-    "training*",
-    "utils*",
-    "rewards*",
-    "api*",
-    "grpo_agent_framework*",
-    "environments*",
 ]
 
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.package-data]
+"stateset_agents" = ["py.typed"]
+
 
 # Black configuration
 [tool.black]
 line-length = 88
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+target-version = ['py310', 'py311', 'py312', 'py313']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -176,67 +178,15 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 88
-known_first_party = ["stateset_agents", "grpo_agent_framework"]
+known_first_party = ["stateset_agents"]
 known_third_party = ["torch", "transformers", "datasets", "numpy", "wandb"]
-
-# mypy configuration
-[tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-strict_equality = true
-show_error_codes = true
-mypy_path = "stubs"
-
-# Module-specific mypy settings
-[[tool.mypy.overrides]]
-module = [
-    "torch.*",
-    "transformers.*",
-    "datasets.*",
-    "wandb.*",
-    "peft.*",
-    "trl.*",
-    "accelerate.*",
-]
-ignore_missing_imports = true
-
-# pytest configuration
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = [
-    "-ra",
-    "--strict-markers",
-    "--strict-config",
-    "--cov=stateset_agents",
-    "--cov-report=term-missing",
-    "--cov-report=html:htmlcov",
-    "--cov-report=xml",
-]
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests",
-    "slow: Slow running tests",
-    "gpu: Tests requiring GPU",
-]
-asyncio_mode = "auto"
 
 # Coverage configuration
 [tool.coverage.run]
-source = ["stateset_agents", "grpo_agent_framework"]
+source = ["stateset_agents"]
 omit = [
     "*/tests/*",
     "*/test_*.py",
-    "setup.py",
 ]
 
 [tool.coverage.report]
@@ -246,31 +196,33 @@ exclude_lines = [
 
 # Ruff configuration (fast Python linter)
 [tool.ruff]
-target-version = "py38"
+target-version = "py310"
 line-length = 88
+extend-exclude = ["*.ipynb"]
+[tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
     "F",  # pyflakes
-    "I",  # isort
     "B",  # flake8-bugbear
     "C4", # flake8-comprehensions
     "UP", # pyupgrade
 ]
 ignore = [
-    "E501", # line too long, handled by black
-    "B008", # do not perform function calls in argument defaults
-    "C901", # too complex
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"stateset_agents/core/advanced_monitoring.py" = ["E402"]
+"stateset_agents/core/agent.py" = ["E402"]
+"stateset_agents/training/dapo_trainer.py" = ["E402"]
+"stateset_agents/training/gspo_trainer.py" = ["E402"]
+"stateset_agents/training/train.py" = ["E402"]
+"stateset_agents/training/trl_grpo_trainer.py" = ["E402"]
+"stateset_agents/training/vapo_trainer.py" = ["E402"]
+"stateset_agents/utils/wandb_integration.py" = ["E402"]
 "tests/**/*" = ["B011"]  # assert false
-
-[tool.ruff.isort]
-known-first-party = ["stateset_agents", "grpo_agent_framework"]
-
- 
-
-[tool.setuptools.package-data]
-stateset_agents = ["py.typed"]
+"tests/unit/test_trl_grpo_trainer.py" = ["E402"]

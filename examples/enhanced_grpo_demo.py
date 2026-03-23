@@ -2,14 +2,12 @@
 Enhanced GRPO Framework Demonstration
 
 This script demonstrates the comprehensive improvements made to the GRPO Agent Framework,
-including adaptive learning, neural architecture search, multimodal processing, and 
+including adaptive learning, neural architecture search, multimodal processing, and
 intelligent orchestration capabilities.
 """
 
 import asyncio
 import logging
-from datetime import datetime
-from typing import Any, Dict, List
 
 import numpy as np
 import torch
@@ -17,23 +15,7 @@ import torch.nn as nn
 
 # Import enhanced GRPO framework components
 from stateset_agents.core import (  # Core components; Enhanced components; Advanced AI capabilities; Enums and configs
-    AdaptiveLearningController,
-    ConversationEnvironment,
-    CurriculumStrategy,
-    ErrorHandler,
-    ExplorationStrategy,
-    FusionStrategy,
-    IntelligentOrchestrator,
-    ModalityType,
-    MultimodalProcessor,
-    MultiTurnAgent,
-    NeuralArchitectureSearch,
-    OptimizationLevel,
-    OptimizationObjective,
-    OrchestrationMode,
-    PerformanceOptimizer,
     RewardFunction,
-    SearchStrategy,
     create_adaptive_learning_controller,
     create_intelligent_orchestrator,
     create_modality_input,
@@ -117,7 +99,7 @@ async def demo_evaluation_function(model: nn.Module) -> float:
 
     with torch.no_grad():
         input_ids = torch.randint(0, vocab_size, (batch_size, seq_length))
-        outputs = model(input_ids)
+        _ = model(input_ids)
 
         # Return simulated performance score
         performance = np.random.uniform(0.7, 0.95)
@@ -386,10 +368,10 @@ async def main():
 
     try:
         # Demonstrate each major enhancement
-        adaptive_controller = await demonstrate_adaptive_learning()
+        await demonstrate_adaptive_learning()
         print()
 
-        architecture = await demonstrate_neural_architecture_search()
+        await demonstrate_neural_architecture_search()
         print()
 
         (
@@ -401,7 +383,7 @@ async def main():
         orchestration_status, insights = await demonstrate_intelligent_orchestration()
         print()
 
-        integration_summary = await demonstrate_integration_example()
+        await demonstrate_integration_example()
         print()
 
         # Summary

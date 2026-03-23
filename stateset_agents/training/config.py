@@ -7,10 +7,10 @@ and integrate seamlessly with HuggingFace and Weights & Biases.
 
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class TrainingProfile(Enum):
@@ -45,7 +45,7 @@ class TrainingConfig:
     # Batch and generation settings
     per_device_train_batch_size: int = 1
     # Aliases for compatibility with some tests/configs
-    batch_size: Optional[int] = None
+    batch_size: int | None = None
     gradient_accumulation_steps: int = 4
     num_generations: int = 16  # GRPO: trajectories per scenario
     generation_batch_size: int = 4
@@ -58,7 +58,7 @@ class TrainingConfig:
     max_prompt_length: int = 512
     max_completion_length: int = 512
     # Alias used by some tests; not directly consumed by trainer but accepted
-    max_steps_per_episode: Optional[int] = None
+    max_steps_per_episode: int | None = None
 
     # Hardware optimization
     bf16: bool = True
@@ -66,6 +66,7 @@ class TrainingConfig:
     use_cpu: bool = False
     dataloader_num_workers: int = 0
     dataloader_pin_memory: bool = True
+    gradient_checkpointing: bool = False
 
     # Evaluation and checkpointing
     eval_steps: int = 50
@@ -75,17 +76,17 @@ class TrainingConfig:
 
     # Output configuration
     output_dir: str = "./outputs"
-    run_name: Optional[str] = None
+    run_name: str | None = None
     # Backwards-compat alias (some tests/configs use this name).
-    wandb_run_name: Optional[str] = None
+    wandb_run_name: str | None = None
     overwrite_output_dir: bool = True
 
     # Weights & Biases integration
     report_to: str = "wandb"  # "wandb", "tensorboard", "none"
-    wandb_project: Optional[str] = None
-    wandb_entity: Optional[str] = None
-    wandb_tags: Optional[List[str]] = None
-    wandb_notes: Optional[str] = None
+    wandb_project: str | None = None
+    wandb_entity: str | None = None
+    wandb_tags: list[str] | None = None
+    wandb_notes: str | None = None
 
     # Training stability and monitoring
     auto_adjust: bool = True
@@ -102,7 +103,9 @@ class TrainingConfig:
     # Enhanced GRPO parameters from real-world implementation
     beta: float = 0.0  # KL penalty coefficient
     use_reference_model: bool = False  # Whether to use reference model for KL
-    clip_ratio: float = 0.2  # PPO ratio clipping when old log probs are available; else advantage clamp
+    clip_ratio: float = (
+        0.2  # PPO ratio clipping when old log probs are available; else advantage clamp
+    )
     value_clip: float = 0.2  # Value function clipping
     entropy_coef: float = 0.01  # Entropy bonus coefficient
 
@@ -120,7 +123,7 @@ class TrainingConfig:
     task_id_key: str = "task_id"
 
     # Data processing
-    max_examples: Optional[int] = None
+    max_examples: int | None = None
     eval_split_size: float = 0.1
     stratify_by_task: bool = True
     data_format: str = "jsonl"  # "jsonl", "json", "csv"
@@ -135,7 +138,7 @@ class TrainingConfig:
     lora_r: int = 8
     lora_alpha: int = 16
     lora_dropout: float = 0.05
-    lora_target_modules: Optional[List[str]] = None
+    lora_target_modules: list[str] | None = None
 
     # Generation settings for evaluation
     temperature: float = 0.7
@@ -148,8 +151,8 @@ class TrainingConfig:
     vllm_gpu_memory_utilization: float = 0.85  # Fraction of GPU memory for vLLM
     vllm_tensor_parallel_size: int = 1  # Number of GPUs for tensor parallelism
     vllm_enable_prefix_caching: bool = True  # Cache KV for repeated prefixes
-    vllm_max_model_len: Optional[int] = None  # Max sequence length (auto if None)
-    vllm_quantization: Optional[str] = None  # "awq", "gptq", or None
+    vllm_max_model_len: int | None = None  # Max sequence length (auto if None)
+    vllm_quantization: str | None = None  # "awq", "gptq", or None
     vllm_enable_chunked_prefill: bool = True  # Better memory efficiency
 
     # Advanced options
@@ -158,9 +161,9 @@ class TrainingConfig:
     disable_tqdm: bool = False
 
     # Continual learning task schedule (optional)
-    task_schedule: Optional[List[str]] = None
+    task_schedule: list[str] | None = None
     task_switch_steps: int = 0
-    resume_from_checkpoint: Optional[str] = None
+    resume_from_checkpoint: str | None = None
 
     def __post_init__(self):
         # Map compatibility aliases
@@ -172,6 +175,7 @@ class TrainingConfig:
     @classmethod
     def from_profile(cls, profile: TrainingProfile, **overrides) -> "TrainingConfig":
         """Create configuration from predefined profile"""
+        base_config: dict[str, Any]
 
         if profile == TrainingProfile.CONSERVATIVE:
             base_config = {
@@ -230,7 +234,7 @@ class TrainingConfig:
 
         return cls(**base_config)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization"""
         return {
             field.name: getattr(self, field.name)
@@ -238,7 +242,7 @@ class TrainingConfig:
         }
 
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> "TrainingConfig":
+    def from_dict(cls, config_dict: dict[str, Any]) -> "TrainingConfig":
         """Create from dictionary"""
         return cls(**config_dict)
 
@@ -257,12 +261,12 @@ class TrainingConfig:
     @classmethod
     def load(cls, path: str) -> "TrainingConfig":
         """Load configuration from file"""
-        with open(path, "r") as f:
+        with open(path) as f:
             config_dict = json.load(f)
 
         return cls.from_dict(config_dict)
 
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """Validate configuration and return warnings"""
         warnings = []
 
@@ -315,9 +319,7 @@ class TrainingConfig:
                 f"continual_strategy '{self.continual_strategy}' not recognized"
             )
         if self.replay_sampling not in {"uniform", "recent", "reward", "balanced"}:
-            warnings.append(
-                f"replay_sampling '{self.replay_sampling}' not recognized"
-            )
+            warnings.append(f"replay_sampling '{self.replay_sampling}' not recognized")
         if self.replay_ratio < 0:
             warnings.append("replay_ratio must be non-negative")
         if self.replay_ratio > 1.0:
@@ -356,13 +358,13 @@ class TrainingConfig:
         """Get effective batch size"""
         return self.per_device_train_batch_size * self.gradient_accumulation_steps
 
-    def get_total_steps(self, num_episodes: Optional[int] = None) -> int:
+    def get_total_steps(self, num_episodes: int | None = None) -> int:
         """Calculate total training steps"""
         episodes = num_episodes or self.num_episodes
         grad_steps = max(1, int(self.gradient_accumulation_steps or 1))
         return math.ceil(episodes / grad_steps)
 
-    def get_warmup_steps(self, total_steps: Optional[int] = None) -> int:
+    def get_warmup_steps(self, total_steps: int | None = None) -> int:
         """Calculate warmup steps"""
         if total_steps is None:
             total_steps = self.get_total_steps()
@@ -439,7 +441,7 @@ def get_config_for_task(task_type: str, **overrides) -> TrainingConfig:
 
 
 def optimize_config_for_hardware(
-    config: TrainingConfig, gpu_memory_gb: Optional[float] = None, num_gpus: int = 1
+    config: TrainingConfig, gpu_memory_gb: float | None = None, num_gpus: int = 1
 ) -> TrainingConfig:
     """Optimize configuration based on available hardware"""
 

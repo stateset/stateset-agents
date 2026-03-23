@@ -6,8 +6,7 @@ and multimodal input/output handling.
 """
 
 import asyncio
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -139,8 +138,9 @@ class TestProcessedFeatures:
     @pytest.fixture
     def mock_tensor(self):
         """Create a mock tensor for testing."""
-        with patch("core.multimodal_processing.TORCH_AVAILABLE", True):
+        with patch("stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True):
             import torch
+
             return torch.randn(1, 768)
 
     def test_processed_features_creation(self, mock_tensor):
@@ -205,10 +205,13 @@ class TestTextProcessor:
     @pytest.fixture
     def mock_text_processor(self):
         """Create a mock TextProcessor."""
-        with patch("core.multimodal_processing.TORCH_AVAILABLE", True), \
-             patch("core.multimodal_processing.AutoTokenizer"), \
-             patch("core.multimodal_processing.AutoModel"):
+        with patch(
+            "stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True
+        ), patch("stateset_agents.core.multimodal_processing.AutoTokenizer"), patch(
+            "stateset_agents.core.multimodal_processing.AutoModel"
+        ):
             from stateset_agents.core.multimodal_processing import TextProcessor
+
             processor = TextProcessor(model_name="test-model", device="cpu")
             return processor
 
@@ -221,8 +224,11 @@ class TestTextProcessor:
     @pytest.mark.asyncio
     async def test_text_processor_initialize(self, mock_text_processor):
         """Test TextProcessor initialization."""
-        with patch("core.multimodal_processing.AutoTokenizer") as mock_tokenizer, \
-             patch("core.multimodal_processing.AutoModel") as mock_model:
+        with patch(
+            "stateset_agents.core.multimodal_processing.AutoTokenizer"
+        ) as mock_tokenizer, patch(
+            "stateset_agents.core.multimodal_processing.AutoModel"
+        ) as mock_model:
             mock_tokenizer.from_pretrained.return_value = MagicMock()
             mock_model.from_pretrained.return_value = MagicMock()
 
@@ -237,9 +243,11 @@ class TestImageProcessor:
 
     def test_image_processor_interface(self):
         """Test ImageProcessor implements required methods."""
-        with patch("core.multimodal_processing.TORCH_AVAILABLE", True), \
-             patch("core.multimodal_processing.PIL_AVAILABLE", True):
+        with patch(
+            "stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True
+        ), patch("stateset_agents.core.multimodal_processing.PIL_AVAILABLE", True):
             from stateset_agents.core.multimodal_processing import ImageProcessor
+
             processor = ImageProcessor()
 
             assert hasattr(processor, "process")
@@ -252,9 +260,11 @@ class TestAudioProcessor:
 
     def test_audio_processor_interface(self):
         """Test AudioProcessor implements required methods."""
-        with patch("core.multimodal_processing.TORCH_AVAILABLE", True), \
-             patch("core.multimodal_processing.AUDIO_AVAILABLE", True):
+        with patch(
+            "stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True
+        ), patch("stateset_agents.core.multimodal_processing.AUDIO_AVAILABLE", True):
             from stateset_agents.core.multimodal_processing import AudioProcessor
+
             processor = AudioProcessor()
 
             assert hasattr(processor, "process")
@@ -268,11 +278,16 @@ class TestMultimodalProcessor:
     @pytest.fixture
     def multimodal_processor(self):
         """Create a mock MultimodalProcessor."""
-        with patch("core.multimodal_processing.TORCH_AVAILABLE", True), \
-             patch("core.multimodal_processing.get_monitoring_service") as mock_monitoring, \
-             patch("core.multimodal_processing.ErrorHandler"):
+        with patch(
+            "stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True
+        ), patch(
+            "stateset_agents.core.multimodal_processing.get_monitoring_service"
+        ) as mock_monitoring, patch(
+            "stateset_agents.core.multimodal_processing.ErrorHandler"
+        ):
             mock_monitoring.return_value = MagicMock()
             from stateset_agents.core.multimodal_processing import MultimodalProcessor
+
             processor = MultimodalProcessor()
             return processor
 
@@ -316,10 +331,15 @@ class TestCreateMultimodalProcessor:
 
     def test_create_multimodal_processor(self):
         """Test factory function creates processor."""
-        with patch("core.multimodal_processing.TORCH_AVAILABLE", True), \
-             patch("core.multimodal_processing.get_monitoring_service") as mock_monitoring:
+        with patch(
+            "stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True
+        ), patch(
+            "stateset_agents.core.multimodal_processing.get_monitoring_service"
+        ) as mock_monitoring:
             mock_monitoring.return_value = MagicMock()
-            from stateset_agents.core.multimodal_processing import create_multimodal_processor
+            from stateset_agents.core.multimodal_processing import (
+                create_multimodal_processor,
+            )
 
             processor = create_multimodal_processor(["text", "image"])
             assert processor is not None
@@ -422,6 +442,7 @@ class TestAsyncProcessing:
     @pytest.mark.asyncio
     async def test_async_text_processing(self):
         """Test async text processing."""
+
         # Simulate async processing
         async def mock_process(text):
             await asyncio.sleep(0.01)
@@ -433,6 +454,7 @@ class TestAsyncProcessing:
     @pytest.mark.asyncio
     async def test_concurrent_processing(self):
         """Test concurrent multimodal processing."""
+
         async def process_modality(modality_type, delay):
             await asyncio.sleep(delay)
             return f"Processed {modality_type}"

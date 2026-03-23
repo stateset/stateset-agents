@@ -25,9 +25,10 @@ Generation backends:
 - HuggingFace: Standard generation fallback
 """
 
+import importlib
+import importlib.util
 import logging
-
-logger = logging.getLogger(__name__)
+from typing import Any
 
 from .config import TrainingConfig, TrainingProfile, get_config_for_task
 from .continual_learning import (
@@ -35,9 +36,11 @@ from .continual_learning import (
     ContinualLearningManager,
     TrajectoryReplayBuffer,
 )
-from .trainer import GRPOTrainer, MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
-from .train import train, TrainingMode
 from .evaluation import EvaluationConfig, evaluate_agent
+from .train import TrainingMode, train
+from .trainer import GRPOTrainer, MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
+
+logger = logging.getLogger(__name__)
 
 # vLLM backend for fast generation - use lazy import to avoid torchvision issues
 # Don't import at module level, let users import when needed
@@ -46,7 +49,6 @@ VLLM_AVAILABLE = False
 
 try:
     # Just check if vllm_backend module exists without importing it
-    import importlib.util
     spec = importlib.util.find_spec(".vllm_backend", package=__name__)
     if spec is not None:
         VLLM_BACKEND_AVAILABLE = True
@@ -54,9 +56,6 @@ except (ImportError, ValueError):
     pass
 
 # Optional trainer/algorithm availability is computed without importing heavy deps.
-import importlib
-import importlib.util
-from typing import Any, Dict, Tuple
 
 
 def _has_spec(module_name: str) -> bool:
@@ -89,16 +88,35 @@ DECISION_TRANSFORMER_AVAILABLE = _TORCH_AVAILABLE
 SIM_TO_REAL_AVAILABLE = _TORCH_AVAILABLE
 
 
-_OPTIONAL_EXPORTS: Dict[str, Tuple[str, str]] = {
+AUTO_RESEARCH_AVAILABLE = True
+
+_OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
+    # Auto-Research Loop
+    "AutoResearchConfig": (f"{__name__}.auto_research.config", "AutoResearchConfig"),
+    "AutoResearchLoop": (f"{__name__}.auto_research.experiment_loop", "AutoResearchLoop"),
+    "run_auto_research": (f"{__name__}.auto_research.experiment_loop", "run_auto_research"),
+    "ExperimentTracker": (f"{__name__}.auto_research.experiment_tracker", "ExperimentTracker"),
+    "ExperimentRecord": (f"{__name__}.auto_research.experiment_tracker", "ExperimentRecord"),
+    "CheckpointManager": (f"{__name__}.auto_research.checkpoint_manager", "CheckpointManager"),
+    "ExperimentProposer": (f"{__name__}.auto_research.proposer", "ExperimentProposer"),
+    "RandomProposer": (f"{__name__}.auto_research.proposer", "RandomProposer"),
+    "PerturbationProposer": (f"{__name__}.auto_research.proposer", "PerturbationProposer"),
+    "GridProposer": (f"{__name__}.auto_research.proposer", "GridProposer"),
+    "BayesianProposer": (f"{__name__}.auto_research.proposer", "BayesianProposer"),
+    "LLMProposer": (f"{__name__}.auto_research.llm_proposer", "LLMProposer"),
+    "create_proposer": (f"{__name__}.auto_research.proposer", "create_proposer"),
+    "create_auto_research_search_space": (f"{__name__}.auto_research.search_spaces", "create_auto_research_search_space"),
+    "create_quick_search_space": (f"{__name__}.auto_research.search_spaces", "create_quick_search_space"),
+    "get_auto_research_search_space": (f"{__name__}.auto_research.search_spaces", "get_auto_research_search_space"),
     # TRL-based GRPO
     "ModelManager": (f"{__name__}.trl_grpo_trainer", "ModelManager"),
-    "TRLGRPOConfig": (f"{__name__}.trl_grpo_trainer", "TRLGRPOConfig"),
+    "TRLGRPOConfig": (f"{__name__}.trl_grpo_config", "TRLGRPOConfig"),
     "TRLGRPODatasetBuilder": (f"{__name__}.trl_grpo_trainer", "TRLGRPODatasetBuilder"),
     "TRLGRPORewardFunction": (f"{__name__}.trl_grpo_trainer", "TRLGRPORewardFunction"),
     "TRLGRPOTrainerWrapper": (f"{__name__}.trl_grpo_trainer", "TRLGRPOTrainerWrapper"),
-    "train_with_trl_grpo": (f"{__name__}.trl_grpo_trainer", "train_with_trl_grpo"),
+    "train_with_trl_grpo": (f"{__name__}.trl_grpo_entrypoints", "train_with_trl_grpo"),
     "train_customer_service_with_trl": (
-        f"{__name__}.trl_grpo_trainer",
+        f"{__name__}.trl_grpo_entrypoints",
         "train_customer_service_with_trl",
     ),
     # GSPO / GEPO / DAPO / VAPO
@@ -106,16 +124,42 @@ _OPTIONAL_EXPORTS: Dict[str, Tuple[str, str]] = {
     "GSPOTrainer": (f"{__name__}.gspo_trainer", "GSPOTrainer"),
     "GSPO_Trainer": (f"{__name__}.gspo_trainer", "GSPO_Trainer"),
     "train_with_gspo": (f"{__name__}.gspo_trainer", "train_with_gspo"),
+    # Qwen3.5 starter path
+    "QWEN35_08B_BASE_MODEL": (f"{__name__}.qwen3_5_starter", "QWEN35_08B_BASE_MODEL"),
+    "QWEN35_08B_CONFIG_SUFFIXES": (f"{__name__}.qwen3_5_starter", "QWEN35_08B_CONFIG_SUFFIXES"),
+    "QWEN35_08B_DEFAULT_OUTPUT_DIR": (f"{__name__}.qwen3_5_starter", "QWEN35_08B_DEFAULT_OUTPUT_DIR"),
+    "QWEN35_08B_LORA_TARGET_MODULES": (f"{__name__}.qwen3_5_starter", "QWEN35_08B_LORA_TARGET_MODULES"),
+    "QWEN35_08B_POST_TRAINED_MODEL": (f"{__name__}.qwen3_5_starter", "QWEN35_08B_POST_TRAINED_MODEL"),
+    "QWEN35_08B_STARTER_PROFILE_CHOICES": (f"{__name__}.qwen3_5_starter", "QWEN35_08B_STARTER_PROFILE_CHOICES"),
+    "QWEN35_08B_STARTER_PROFILE_DESCRIPTIONS": (f"{__name__}.qwen3_5_starter", "QWEN35_08B_STARTER_PROFILE_DESCRIPTIONS"),
+    "QWEN35_08B_SUPPORTED_VARIANTS": (f"{__name__}.qwen3_5_starter", "QWEN35_08B_SUPPORTED_VARIANTS"),
+    "QWEN35_08B_TASK_CHOICES": (f"{__name__}.qwen3_5_starter", "QWEN35_08B_TASK_CHOICES"),
+    "Qwen35Config": (f"{__name__}.qwen3_5_starter", "Qwen35Config"),
+    "create_qwen3_5_agent_config": (f"{__name__}.qwen3_5_starter", "create_qwen3_5_agent_config"),
+    "create_qwen3_5_preview": (f"{__name__}.qwen3_5_starter", "create_qwen3_5_preview"),
+    "describe_qwen3_5_starter_profiles": (f"{__name__}.qwen3_5_starter", "describe_qwen3_5_starter_profiles"),
+    "finetune_qwen3_5_0_8b": (f"{__name__}.qwen3_5_starter", "finetune_qwen3_5_0_8b"),
+    "get_qwen3_5_config": (f"{__name__}.qwen3_5_starter", "get_qwen3_5_config"),
+    "get_qwen3_5_gspo_config": (f"{__name__}.qwen3_5_starter", "get_qwen3_5_gspo_config"),
+    "get_qwen3_5_gspo_overrides": (f"{__name__}.qwen3_5_starter", "get_qwen3_5_gspo_overrides"),
+    "get_qwen3_5_profile_description": (f"{__name__}.qwen3_5_starter", "get_qwen3_5_profile_description"),
+    "get_qwen3_5_profile_overrides": (f"{__name__}.qwen3_5_starter", "get_qwen3_5_profile_overrides"),
+    "get_qwen3_5_system_prompt": (f"{__name__}.qwen3_5_starter", "get_qwen3_5_system_prompt"),
+    "load_qwen3_5_config_file": (f"{__name__}.qwen3_5_starter", "load_qwen3_5_config_file"),
+    "run_qwen3_5_0_8b_config": (f"{__name__}.qwen3_5_starter", "run_qwen3_5_0_8b_config"),
+    "summarize_qwen3_5_config": (f"{__name__}.qwen3_5_starter", "summarize_qwen3_5_config"),
+    "validate_qwen3_5_config": (f"{__name__}.qwen3_5_starter", "validate_qwen3_5_config"),
+    "write_qwen3_5_config_file": (f"{__name__}.qwen3_5_starter", "write_qwen3_5_config_file"),
     "GEPOConfig": (f"{__name__}.gepo_trainer", "GEPOConfig"),
     "GEPOTrainer": (f"{__name__}.gepo_trainer", "GEPOTrainer"),
     "train_with_gepo": (f"{__name__}.gepo_trainer", "train_with_gepo"),
-    "DAPOConfig": (f"{__name__}.dapo_trainer", "DAPOConfig"),
+    "DAPOConfig": (f"{__name__}.dapo_config", "DAPOConfig"),
     "DAPOTrainer": (f"{__name__}.dapo_trainer", "DAPOTrainer"),
     "DAPORewardShaper": (f"{__name__}.dapo_trainer", "DAPORewardShaper"),
     "DynamicSamplingBuffer": (f"{__name__}.dapo_trainer", "DynamicSamplingBuffer"),
-    "train_with_dapo": (f"{__name__}.dapo_trainer", "train_with_dapo"),
+    "train_with_dapo": (f"{__name__}.dapo_entrypoints", "train_with_dapo"),
     "train_reasoning_with_dapo": (
-        f"{__name__}.dapo_trainer",
+        f"{__name__}.dapo_entrypoints",
         "train_reasoning_with_dapo",
     ),
     "VAPOConfig": (f"{__name__}.vapo_trainer", "VAPOConfig"),
@@ -152,12 +196,18 @@ _OPTIONAL_EXPORTS: Dict[str, Tuple[str, str]] = {
     # Offline RL - CQL/IQL
     "CQLConfig": (f"{__name__}.offline_rl_algorithms", "CQLConfig"),
     "IQLConfig": (f"{__name__}.offline_rl_algorithms", "IQLConfig"),
-    "ConservativeQLearning": (f"{__name__}.offline_rl_algorithms", "ConservativeQLearning"),
+    "ConservativeQLearning": (
+        f"{__name__}.offline_rl_algorithms",
+        "ConservativeQLearning",
+    ),
     "ImplicitQLearning": (f"{__name__}.offline_rl_algorithms", "ImplicitQLearning"),
     "OfflineRLTrainer": (f"{__name__}.offline_rl_algorithms", "OfflineRLTrainer"),
     # Offline RL - BCQ
     "BCQConfig": (f"{__name__}.offline_rl_bcq", "BCQConfig"),
-    "BatchConstrainedQLearning": (f"{__name__}.offline_rl_bcq", "BatchConstrainedQLearning"),
+    "BatchConstrainedQLearning": (
+        f"{__name__}.offline_rl_bcq",
+        "BatchConstrainedQLearning",
+    ),
     "ConversationalVAE": (f"{__name__}.offline_rl_bcq", "ConversationalVAE"),
     "BCQTrainer": (f"{__name__}.offline_rl_bcq", "BCQTrainer"),
     # Offline RL - BEAR
@@ -166,16 +216,28 @@ _OPTIONAL_EXPORTS: Dict[str, Tuple[str, str]] = {
     "MMDKernel": (f"{__name__}.offline_rl_bear", "MMDKernel"),
     "BEARTrainer": (f"{__name__}.offline_rl_bear", "BEARTrainer"),
     # Decision Transformer
-    "DecisionTransformerConfig": (f"{__name__}.decision_transformer", "DecisionTransformerConfig"),
+    "DecisionTransformerConfig": (
+        f"{__name__}.decision_transformer",
+        "DecisionTransformerConfig",
+    ),
     "DecisionTransformer": (f"{__name__}.decision_transformer", "DecisionTransformer"),
-    "DecisionTransformerTrainer": (f"{__name__}.decision_transformer", "DecisionTransformerTrainer"),
-    "ConversationEmbedder": (f"{__name__}.decision_transformer", "ConversationEmbedder"),
+    "DecisionTransformerTrainer": (
+        f"{__name__}.decision_transformer",
+        "DecisionTransformerTrainer",
+    ),
+    "ConversationEmbedder": (
+        f"{__name__}.decision_transformer",
+        "ConversationEmbedder",
+    ),
     # Offline GRPO
     "OfflineGRPOConfig": (f"{__name__}.offline_grpo_trainer", "OfflineGRPOConfig"),
     "OfflineGRPOTrainer": (f"{__name__}.offline_grpo_trainer", "OfflineGRPOTrainer"),
     "OfflineRLAlgorithm": (f"{__name__}.offline_grpo_trainer", "OfflineRLAlgorithm"),
     # Domain Randomization
-    "DomainRandomizationConfig": (f"{__name__}.domain_randomization", "DomainRandomizationConfig"),
+    "DomainRandomizationConfig": (
+        f"{__name__}.domain_randomization",
+        "DomainRandomizationConfig",
+    ),
     "DomainRandomizer": (f"{__name__}.domain_randomization", "DomainRandomizer"),
     "PersonaGenerator": (f"{__name__}.domain_randomization", "PersonaGenerator"),
     "ScenarioGenerator": (f"{__name__}.domain_randomization", "ScenarioGenerator"),
@@ -228,4 +290,30 @@ __all__ = [
     "BEAR_AVAILABLE",
     "DECISION_TRANSFORMER_AVAILABLE",
     "SIM_TO_REAL_AVAILABLE",
+    "AUTO_RESEARCH_AVAILABLE",
+    "QWEN35_08B_BASE_MODEL",
+    "QWEN35_08B_CONFIG_SUFFIXES",
+    "QWEN35_08B_DEFAULT_OUTPUT_DIR",
+    "QWEN35_08B_LORA_TARGET_MODULES",
+    "QWEN35_08B_POST_TRAINED_MODEL",
+    "QWEN35_08B_STARTER_PROFILE_CHOICES",
+    "QWEN35_08B_STARTER_PROFILE_DESCRIPTIONS",
+    "QWEN35_08B_SUPPORTED_VARIANTS",
+    "QWEN35_08B_TASK_CHOICES",
+    "Qwen35Config",
+    "create_qwen3_5_agent_config",
+    "create_qwen3_5_preview",
+    "describe_qwen3_5_starter_profiles",
+    "finetune_qwen3_5_0_8b",
+    "get_qwen3_5_config",
+    "get_qwen3_5_gspo_config",
+    "get_qwen3_5_gspo_overrides",
+    "get_qwen3_5_profile_description",
+    "get_qwen3_5_profile_overrides",
+    "get_qwen3_5_system_prompt",
+    "load_qwen3_5_config_file",
+    "run_qwen3_5_0_8b_config",
+    "summarize_qwen3_5_config",
+    "validate_qwen3_5_config",
+    "write_qwen3_5_config_file",
 ]

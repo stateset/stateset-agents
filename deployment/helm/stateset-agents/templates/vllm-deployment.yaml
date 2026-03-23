@@ -1,0 +1,145 @@
+{{- if .Values.vllm.enabled }}
+{{- $modelsEnabled := or .Values.pvc.enabled .Values.vllm.modelSync.enabled }}
+{{- $sa := include "stateset-agents.serviceAccountName" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stateset-agents.fullname" . }}-vllm
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ include "stateset-agents.fullname" . }}-vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "stateset-agents.fullname" . }}-vllm
+  template:
+    metadata:
+      labels:
+        app: {{ include "stateset-agents.fullname" . }}-vllm
+    spec:
+      automountServiceAccountToken: {{ ternary true false .Values.vllm.modelSync.enabled }}
+      {{- if $sa }}
+      serviceAccountName: {{ $sa }}
+      {{- end }}
+      {{- with .Values.vllm.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.vllm.modelSync.enabled }}
+      initContainers:
+      - name: model-sync
+        image: {{ include "stateset-agents.image" .Values.vllm.modelSync.image }}
+        imagePullPolicy: {{ .Values.vllm.modelSync.image.pullPolicy }}
+        command: ["bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          uri="{{ .Values.vllm.modelSync.gcsUri }}"
+          if [ -z "${uri}" ]; then
+            echo "vllm.modelSync.gcsUri is required when modelSync.enabled=true" >&2
+            exit 2
+          fi
+
+          local_dir="{{ default .Values.vllm.modelPath .Values.vllm.modelSync.localDir }}"
+          mkdir -p "${local_dir}"
+
+          echo "Syncing model artifacts: ${uri} -> ${local_dir}"
+          gcloud storage rsync --recursive "${uri}" "${local_dir}"
+        volumeMounts:
+        - name: models
+          mountPath: /models
+      {{- end }}
+      containers:
+      - name: vllm
+        image: {{ include "stateset-agents.image" .Values.vllm.image }}
+        imagePullPolicy: {{ .Values.vllm.image.pullPolicy }}
+        {{- with .Values.vllm.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: MODEL_ID
+          value: {{ ternary .Values.vllm.modelPath .Values.vllm.modelId .Values.vllm.finetuned | quote }}
+        {{- if $modelsEnabled }}
+        - name: HF_HOME
+          value: "/models/hf"
+        - name: TRANSFORMERS_CACHE
+          value: "/models/hf"
+        {{- end }}
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.vllm.hfSecretName }}
+              key: {{ .Values.vllm.hfSecretKey }}
+        command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+        args:
+        - "--model=$(MODEL_ID)"
+        {{- range .Values.vllm.args }}
+        - {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            cpu: {{ .Values.vllm.resources.requests.cpu | quote }}
+            memory: {{ .Values.vllm.resources.requests.memory | quote }}
+            ephemeral-storage: {{ index .Values.vllm.resources.requests "ephemeral-storage" | quote }}
+            nvidia.com/gpu: {{ index .Values.vllm.resources.requests "nvidia.com/gpu" | quote }}
+          limits:
+            cpu: {{ .Values.vllm.resources.limits.cpu | quote }}
+            memory: {{ .Values.vllm.resources.limits.memory | quote }}
+            ephemeral-storage: {{ index .Values.vllm.resources.limits "ephemeral-storage" | quote }}
+            nvidia.com/gpu: {{ index .Values.vllm.resources.limits "nvidia.com/gpu" | quote }}
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        {{- if $modelsEnabled }}
+        - name: models
+          mountPath: /models
+        {{- end }}
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          failureThreshold: 180
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 5
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      {{- if .Values.pvc.enabled }}
+      - name: models
+        persistentVolumeClaim:
+          claimName: {{ .Values.pvc.name }}
+      {{- else if $modelsEnabled }}
+      - name: models
+        emptyDir: {}
+      {{- end }}
+      {{- with .Values.vllm.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.vllm.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      nodeSelector:
+        cloud.google.com/gke-accelerator: {{ .Values.vllm.gpu.accelerator | quote }}
+        {{- with .Values.vllm.nodeSelectorExtra }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

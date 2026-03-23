@@ -5,99 +5,152 @@ This module integrates TRL's GRPOTrainer with our framework for fine-tuning
 the openai/gpt-oss-120b model using LoRA adapters.
 """
 
+from __future__ import annotations
+
 import asyncio
 import importlib.util
-import json
 import logging
-import os
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 import torch
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
-
-BITSANDBYTES_IMPORT_EXCEPTIONS = (ImportError, OSError, RuntimeError)
-GPU_PROPERTIES_EXCEPTIONS = (AttributeError, OSError, RuntimeError)
-INPUT_GRADS_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
-MODEL_LOAD_EXCEPTIONS = (ImportError, OSError, RuntimeError, TypeError, ValueError)
-VLLM_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
-
 # Import framework components
-from stateset_agents.core.agent import Agent, AgentConfig, MultiTurnAgent
+from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
+from stateset_agents.exceptions import (
+    ATTRIBUTE_VALUE_EXCEPTIONS as INPUT_GRADS_EXCEPTIONS,
+)
+from stateset_agents.exceptions import GPU_EXCEPTIONS as GPU_PROPERTIES_EXCEPTIONS
+from stateset_agents.exceptions import (
+    IMPORT_EXCEPTIONS as BITSANDBYTES_IMPORT_EXCEPTIONS,
+)
+from stateset_agents.exceptions import INFERENCE_EXCEPTIONS as VLLM_EXCEPTIONS
+from stateset_agents.exceptions import MODEL_IO_EXCEPTIONS as MODEL_LOAD_EXCEPTIONS
 from stateset_agents.rewards.multi_objective_reward import MultiObjectiveRewardFunction
-from .config import TrainingConfig, get_config_for_task
 
-# Import additional dependencies
+from .trl_grpo_config import TRLGRPOConfig
+
+logger = logging.getLogger(__name__)
+
 TRL_GRPO_AVAILABLE = False
 GRPOConfig = None
 TRLGRPOTrainer = None
-LengthSampler = None
 
 try:
-    import numpy as np
     import wandb
+except ImportError:  # pragma: no cover - optional dependency
+    wandb = None  # type: ignore
+
+try:
     from datasets import Dataset
+except ImportError:  # pragma: no cover - optional dependency
+    Dataset = None  # type: ignore
+
+try:
     from peft import (
         LoraConfig,
         TaskType,
         get_peft_model,
         prepare_model_for_kbit_training,
     )
-    # TRL >= 0.10 renamed/removed GRPOConfig, handle gracefully
-    try:
-        from trl import GRPOConfig
-        from trl import GRPOTrainer as TRLGRPOTrainer
-        try:
-            from trl.core import LengthSampler
-        except ImportError:
-            # LengthSampler moved or removed in newer TRL versions
-            LengthSampler = None
-        TRL_GRPO_AVAILABLE = True
-    except ImportError as e:
-        logger.warning(f"TRL GRPO components not available: {e}")
-        logger.warning("TRL-based GRPO training disabled. Install trl>=0.7,<0.10 for this feature.")
-except ImportError as e:
-    logger.warning(f"Optional TRL dependencies not available: {e}")
-    logger.warning("Install with: pip install peft datasets trl wandb")
+except ImportError:  # pragma: no cover - optional dependency
+    LoraConfig = None  # type: ignore
+    TaskType = None  # type: ignore
+    get_peft_model = None  # type: ignore
+    prepare_model_for_kbit_training = None  # type: ignore
+
+try:
+    from trl import GRPOConfig as _GRPOConfig
+    from trl import GRPOTrainer as _TRLGRPOTrainer
+
+    GRPOConfig = _GRPOConfig
+    TRLGRPOTrainer = _TRLGRPOTrainer
+    TRL_GRPO_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    pass
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_loaded = False
 AutoModelForCausalLM = None
 AutoTokenizer = None
-TrainingArguments = None
-get_cosine_schedule_with_warmup = None
+
 
 def _load_transformers():
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_loaded, AutoModelForCausalLM, AutoTokenizer
-    global TrainingArguments, get_cosine_schedule_with_warmup
     if _transformers_loaded:
         return True
+    if AutoModelForCausalLM is not None and AutoTokenizer is not None:
+        _transformers_loaded = True
+        return True
     try:
-        from transformers import (
-            AutoModelForCausalLM as _AutoModelForCausalLM,
-            AutoTokenizer as _AutoTokenizer,
-            TrainingArguments as _TrainingArguments,
-            get_cosine_schedule_with_warmup as _get_cosine,
-        )
+        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
+        from transformers import AutoTokenizer as _AutoTokenizer
+
         AutoModelForCausalLM = _AutoModelForCausalLM
         AutoTokenizer = _AutoTokenizer
-        TrainingArguments = _TrainingArguments
-        get_cosine_schedule_with_warmup = _get_cosine
         _transformers_loaded = True
         return True
     except (ImportError, RuntimeError) as e:
         logger.warning(f"Failed to load transformers: {e}")
         return False
+
+
+def _require_transformers() -> None:
+    """Ensure transformers components are available before model loading."""
+    if not _load_transformers():
+        raise ImportError(
+            "transformers is required for TRL GRPO training. "
+            "Install with `pip install stateset-agents[trl]` or `pip install transformers`."
+        )
+
+
+def _require_wandb() -> None:
+    """Ensure Weights & Biases is available before logging."""
+    if wandb is None:
+        raise ImportError(
+            "wandb is required for TRL GRPO logging. "
+            "Install with `pip install stateset-agents[trl]` or `pip install wandb`."
+        )
+
+
+def _require_dataset() -> None:
+    """Ensure datasets is available before dataset construction."""
+    if Dataset is None:
+        raise ImportError(
+            "datasets is required for TRL GRPO training datasets. "
+            "Install with `pip install stateset-agents[trl]` or `pip install datasets`."
+        )
+
+
+def _require_peft() -> None:
+    """Ensure PEFT is available before using LoRA features."""
+    if get_peft_model is None or LoraConfig is None or TaskType is None:
+        raise ImportError(
+            "PEFT is required for TRL GRPO LoRA training. "
+            "Install with `pip install stateset-agents[trl]` or `pip install peft`."
+        )
+
+
+def _require_kbit_training_support() -> None:
+    """Ensure PEFT k-bit helpers are available for quantized training."""
+    if prepare_model_for_kbit_training is None:
+        raise ImportError(
+            "PEFT is required for quantized TRL GRPO training. "
+            "Install with `pip install stateset-agents[trl]` or `pip install peft`."
+        )
+
+
+def _require_trl_grpo() -> None:
+    """Ensure TRL GRPO components are available before trainer creation."""
+    if GRPOConfig is None or TRLGRPOTrainer is None:
+        raise ImportError(
+            "TRL GRPO training requires trl with GRPO support. "
+            "Install a compatible version with `pip install stateset-agents[trl]` or "
+            "`pip install 'trl>=0.7,<0.10'`."
+        )
 
 
 def _enable_input_require_grads(model: Any) -> None:
@@ -114,7 +167,7 @@ def _enable_input_require_grads(model: Any) -> None:
     if hasattr(model, "enable_input_require_grads"):
         try:
             model.enable_input_require_grads()
-            setattr(model, "_stateset_input_grads_enabled", True)
+            model._stateset_input_grads_enabled = True
             return
         except INPUT_GRADS_EXCEPTIONS as e:  # pragma: no cover
             logger.debug("enable_input_require_grads failed: %s", e)
@@ -132,7 +185,7 @@ def _enable_input_require_grads(model: Any) -> None:
             return output
 
         embeddings.register_forward_hook(_require_grads_hook)
-        setattr(model, "_stateset_input_grads_enabled", True)
+        model._stateset_input_grads_enabled = True
     except INPUT_GRADS_EXCEPTIONS as e:  # pragma: no cover
         logger.debug("Failed to register input grad hook: %s", e)
 
@@ -160,115 +213,35 @@ def _require_bitsandbytes() -> None:
             "Otherwise, verify your CUDA/PyTorch/bitsandbytes compatibility."
         ) from exc
 
+
 try:
     from vllm import LLM, SamplingParams
+
     VLLM_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover - optional dependency
+    LLM = None  # type: ignore
+    SamplingParams = None  # type: ignore
     VLLM_AVAILABLE = False
-    logger.warning("vLLM not installed. Install with `pip install vllm` for faster generation.")
-
-
-@dataclass
-class TRLGRPOConfig(TrainingConfig):
-    """Extended configuration for TRL GRPO training"""
-
-    # Model identification
-    model_name: str = "gpt2"
-
-    # TRL GRPO specific parameters
-    beta: float = 0.0  # KL penalty coefficient
-    num_generations: int = 4  # Number of generations per prompt
-    num_iterations: int = 1  # PPO-style iterations (inner loop)
-    mini_batch_size: int = 1  # Mini batch size for GRPO
-
-    # Iterative/Online parameters
-    num_outer_iterations: int = 1  # Number of Generate -> Train cycles
-    generations_per_iteration: int = 100  # Number of prompts to generate per cycle
-
-    # Generation parameters
-    max_prompt_length: int = 256
-    max_completion_length: int = 256
-    temperature: float = 0.7
-    top_p: float = 0.9
-
-    # Model optimization
-    use_lora: bool = True
-    lora_r: int = 16
-    lora_alpha: int = 32
-    lora_dropout: float = 0.05
-    lora_target_modules: Optional[List[str]] = None
-
-    # Memory optimization
-    gradient_checkpointing: bool = True
-    use_8bit: bool = False
-    use_4bit: bool = False
-
-    # Backend
-    use_vllm: bool = False  # Enable vLLM for generation
-
-    @classmethod
-    def from_training_config(cls, config: TrainingConfig, **kwargs) -> "TRLGRPOConfig":
-        """Create TRL GRPO config from standard training config"""
-        config_dict = config.to_dict()
-        config_dict.update(kwargs)
-        return cls(**config_dict)
-
-    def validate(self) -> List[str]:
-        """Validate configuration and return warnings."""
-        warnings = super().validate()
-
-        if self.gradient_checkpointing and self.use_lora:
-            warnings.append(
-                "gradient_checkpointing with LoRA can require input gradients; "
-                "StateSet Agents disables `use_cache` and enables input grads automatically."
-            )
-
-        model_name_lower = self.model_name.lower()
-        if (
-            "qwen" in model_name_lower
-            and any(size in model_name_lower for size in ["3b", "7b"])
-            and not (self.use_4bit or self.use_8bit)
-        ):
-            warnings.append(
-                "Qwen 3B/7B models often require quantization on consumer GPUs; "
-                "consider setting `use_4bit=True` to reduce memory usage."
-            )
-
-        if self.use_4bit or self.use_8bit:
-            if not torch.cuda.is_available():
-                warnings.append(
-                    "4-bit/8-bit quantization requires CUDA; disable `use_4bit/use_8bit` "
-                    "or run on a CUDA-enabled machine."
-                )
-            elif importlib.util.find_spec("bitsandbytes") is None:
-                warnings.append(
-                    "bitsandbytes is required for 4-bit/8-bit quantization. "
-                    "Install with `pip install stateset-agents[trl]` or `pip install bitsandbytes`."
-                )
-            else:
-                try:
-                    import bitsandbytes  # noqa: F401  # type: ignore[import-not-found]
-                except BITSANDBYTES_IMPORT_EXCEPTIONS:
-                    warnings.append(
-                        "bitsandbytes is installed but failed to import. "
-                        "If you just installed it in a notebook, restart the runtime/kernel."
-                    )
-
-        return warnings
 
 
 class TrajectoryGenerator:
     """Handles efficient trajectory generation for iterative training"""
-    
-    def __init__(self, config: TRLGRPOConfig, agent: Agent, environment: ConversationEnvironment):
+
+    def __init__(
+        self, config: TRLGRPOConfig, agent: Agent, environment: ConversationEnvironment
+    ):
         self.config = config
         self.agent = agent
         self.environment = environment
         self.vllm_engine = None
-        
+
         if self.config.use_vllm and VLLM_AVAILABLE:
             self._init_vllm()
-            
+        elif self.config.use_vllm:
+            logger.warning(
+                "use_vllm=True but vllm is not installed; falling back to standard generation."
+            )
+
     def _init_vllm(self):
         """Initialize vLLM engine"""
         logger.info("Initializing vLLM engine for fast generation...")
@@ -277,7 +250,7 @@ class TrajectoryGenerator:
                 model=self.config.model_name,
                 trust_remote_code=True,
                 dtype="float16" if self.config.fp16 else "bfloat16",
-                gpu_memory_utilization=0.6, # Reserve memory for training
+                gpu_memory_utilization=0.6,  # Reserve memory for training
             )
             self.sampling_params = SamplingParams(
                 temperature=self.config.temperature,
@@ -286,20 +259,20 @@ class TrajectoryGenerator:
             )
             logger.info("vLLM engine initialized")
         except VLLM_EXCEPTIONS as e:
-            logger.warning(f"Failed to initialize vLLM: {e}. Falling back to standard generation.")
+            logger.warning(
+                f"Failed to initialize vLLM: {e}. Falling back to standard generation."
+            )
             self.vllm_engine = None
 
-    async def generate_batch(self, num_episodes: int) -> List[MultiTurnTrajectory]:
+    async def generate_batch(self, num_episodes: int) -> list[MultiTurnTrajectory]:
         """Generate a batch of trajectories"""
-        trajectories = []
-        
         # Determine generation method
         if self.vllm_engine:
             return await self._generate_vllm(num_episodes)
         else:
             return await self._generate_standard(num_episodes)
-            
-    async def _generate_standard(self, num_episodes: int) -> List[MultiTurnTrajectory]:
+
+    async def _generate_standard(self, num_episodes: int) -> list[MultiTurnTrajectory]:
         """Generate using standard agent loop"""
         logger.info(f"Generating {num_episodes} trajectories (standard)...")
         trajectories = []
@@ -307,53 +280,57 @@ class TrajectoryGenerator:
             traj = await self.environment.run_episode(self.agent)
             trajectories.append(traj)
         return trajectories
-        
-    async def _generate_vllm(self, num_episodes: int) -> List[MultiTurnTrajectory]:
+
+    async def _generate_vllm(self, num_episodes: int) -> list[MultiTurnTrajectory]:
         """
         Generate using vLLM optimization.
-        
-        Note: This currently only optimizes the *first* turn or requires 
+
+        Note: This currently only optimizes the *first* turn or requires
         the environment to provide a batch of initial prompts.
         For true multi-turn with vLLM, we'd need a more complex loop handling state.
         This implementation assumes a simplified 'prompt -> response' flow for speed.
         """
         logger.info(f"Generating {num_episodes} trajectories (vLLM)...")
-        
+
         # Get prompts from environment scenarios
         prompts = []
         scenarios = []
-        
+
         # Naive sampling from environment scenarios
         for _ in range(num_episodes):
             scenario = self.environment._get_random_scenario()
             scenarios.append(scenario)
             # Format prompt based on agent configuration
             # This mimics what MultiTurnAgent does internally
-            msgs = [{"role": "system", "content": self.config.system_prompt or ""}, 
-                   {"role": "user", "content": scenario.get("context", "")}]
-            
+            msgs = [
+                {"role": "system", "content": self.config.system_prompt or ""},
+                {"role": "user", "content": scenario.get("context", "")},
+            ]
+
             # Simple prompt formatting
-            formatted = f"{msgs[0]['content']}\n\nUser: {msgs[1]['content']}\nAssistant:"
+            formatted = (
+                f"{msgs[0]['content']}\n\nUser: {msgs[1]['content']}\nAssistant:"
+            )
             prompts.append(formatted)
-            
+
         # Run vLLM batch generation
         # Run in a thread to avoid blocking asyncio loop
         outputs = await asyncio.to_thread(
-            self.vllm_engine.generate, 
-            prompts, 
-            self.sampling_params
+            self.vllm_engine.generate, prompts, self.sampling_params
         )
-        
+
         trajectories = []
         for i, output in enumerate(outputs):
             generated_text = output.outputs[0].text
-            
+
             # Construct a synthetic trajectory
             traj = MultiTurnTrajectory()
-            traj.add_turn(ConversationTurn(role="user", content=prompts[i])) # Simplification
+            traj.add_turn(
+                ConversationTurn(role="user", content=prompts[i])
+            )  # Simplification
             traj.add_turn(ConversationTurn(role="assistant", content=generated_text))
             trajectories.append(traj)
-            
+
         return trajectories
 
 
@@ -367,7 +344,7 @@ class ModelManager:
         self.ref_model = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def load_model_and_tokenizer(self) -> Tuple[Any, Any]:
+    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
         """Load model and tokenizer with LoRA if specified"""
         logger.info(f"Loading model: {self.config.model_name}")
 
@@ -394,9 +371,7 @@ class ModelManager:
                     self.config.model_name,
                 )
 
-        # Load transformers lazily
-        if not _load_transformers():
-            raise ImportError("transformers is required but failed to load")
+        _require_transformers()
 
         try:
             # Load tokenizer
@@ -420,9 +395,11 @@ class ModelManager:
             # Add quantization if specified
             if self.config.use_8bit:
                 _require_bitsandbytes()
+                _require_kbit_training_support()
                 model_kwargs["load_in_8bit"] = True
             elif self.config.use_4bit:
                 _require_bitsandbytes()
+                _require_kbit_training_support()
                 model_kwargs["load_in_4bit"] = True
 
             # Load base model
@@ -432,7 +409,9 @@ class ModelManager:
 
             # Enable gradient checkpointing if specified
             if self.config.gradient_checkpointing:
-                if hasattr(base_model, "config") and hasattr(base_model.config, "use_cache"):
+                if hasattr(base_model, "config") and hasattr(
+                    base_model.config, "use_cache"
+                ):
                     base_model.config.use_cache = False
                 if hasattr(base_model, "gradient_checkpointing_enable"):
                     base_model.gradient_checkpointing_enable()
@@ -440,7 +419,9 @@ class ModelManager:
                     logger.warning(
                         "gradient_checkpointing requested but model does not support it"
                     )
-                if self.config.use_lora and not (self.config.use_8bit or self.config.use_4bit):
+                if self.config.use_lora and not (
+                    self.config.use_8bit or self.config.use_4bit
+                ):
                     _enable_input_require_grads(base_model)
 
             # Prepare model for training if using quantization
@@ -449,6 +430,7 @@ class ModelManager:
 
             # Add LoRA adapters
             if self.config.use_lora:
+                _require_peft()
                 # Determine target modules based on model architecture
                 if self.config.lora_target_modules:
                     target_modules = self.config.lora_target_modules
@@ -457,7 +439,10 @@ class ModelManager:
                     target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "dense"]
                 elif "gpt2" in self.config.model_name.lower():
                     target_modules = ["c_attn", "c_proj"]
-                elif "llama" in self.config.model_name.lower() or "qwen" in self.config.model_name.lower():
+                elif (
+                    "llama" in self.config.model_name.lower()
+                    or "qwen" in self.config.model_name.lower()
+                ):
                     target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
                 else:
                     # Default modules
@@ -505,9 +490,10 @@ class TRLGRPODatasetBuilder:
         self.config = config
 
     def build_from_trajectories(
-        self, trajectories: List[MultiTurnTrajectory]
+        self, trajectories: list[MultiTurnTrajectory]
     ) -> Dataset:
         """Build dataset from multi-turn trajectories"""
+        _require_dataset()
 
         formatted_data = []
         for trajectory in trajectories:
@@ -523,8 +509,9 @@ class TRLGRPODatasetBuilder:
 
         return Dataset.from_list(formatted_data)
 
-    def build_from_conversations(self, conversations: List[Dict[str, Any]]) -> Dataset:
+    def build_from_conversations(self, conversations: list[dict[str, Any]]) -> Dataset:
         """Build dataset from conversation data"""
+        _require_dataset()
 
         formatted_data = []
         for conv in conversations:
@@ -561,12 +548,12 @@ class TRLGRPORewardFunction:
         self.environment = environment
 
     async def compute_rewards(
-        self, completions: List[str], prompts: List[str], **kwargs
-    ) -> List[float]:
+        self, completions: list[str], prompts: list[str], **kwargs
+    ) -> list[float]:
         """Compute rewards for generated completions"""
 
         rewards = []
-        for prompt, completion in zip(prompts, completions):
+        for prompt, completion in zip(prompts, completions, strict=False):
             # Parse the prompt to extract the user query
             user_query = self._extract_user_query(prompt)
 
@@ -606,8 +593,9 @@ class TRLGRPOTrainerWrapper:
         tokenizer: Any,
         train_dataset: Dataset,
         reward_function: Callable,
-        ref_model: Optional[Any] = None,
+        ref_model: Any | None = None,
     ):
+        _require_trl_grpo()
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
@@ -675,310 +663,11 @@ class TRLGRPOTrainerWrapper:
         self.tokenizer.save_pretrained(output_dir)
 
 
-async def train_with_trl_grpo(
-    config: TRLGRPOConfig,
-    agent: Agent,
-    environment: ConversationEnvironment,
-    reward_model: MultiObjectiveRewardFunction,
-    train_data: Optional[List[Dict[str, Any]]] = None,
-    eval_data: Optional[List[Dict[str, Any]]] = None,
-) -> Agent:
-    """Main training function using TRL GRPO"""
-
-    logger.info("Initializing TRL GRPO training")
-    logger.info(f"Configuration: {json.dumps(config.to_dict(), indent=2)}")
-
-    # Create output directory
-    os.makedirs(config.output_dir, exist_ok=True)
-
-    # Initialize wandb if configured
-    if config.report_to == "wandb" and config.wandb_project:
-        wandb.init(
-            project=config.wandb_project,
-            name=config.run_name
-            or f"trl-grpo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=config.wandb_tags,
-        )
-
-    # Initialize model manager
-    model_manager = ModelManager(config)
-    model, tokenizer = model_manager.load_model_and_tokenizer()
-
-    # Build dataset
-    dataset_builder = TRLGRPODatasetBuilder(tokenizer, config)
-
-    if train_data:
-        # Use provided training data
-        train_dataset = dataset_builder.build_from_conversations(train_data)
-    else:
-        # Generate trajectories using the environment
-        logger.info("Generating training trajectories...")
-        trajectories = []
-
-        for episode in range(
-            min(100, config.num_episodes)
-        ):  # Generate some initial data
-            trajectory = await environment.run_episode(agent)
-            trajectories.append(trajectory)
-
-        train_dataset = dataset_builder.build_from_trajectories(trajectories)
-
-    logger.info(f"Training dataset size: {len(train_dataset)}")
-
-    # Create reward function wrapper
-    reward_wrapper = TRLGRPORewardFunction(reward_model, agent, environment)
-
-    # Synchronous wrapper for async reward function
-    def sync_reward_function(completions, prompts, **kwargs):
-        """Synchronous wrapper for async reward computation"""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(
-                reward_wrapper.compute_rewards(completions, prompts, **kwargs)
-            )
-        finally:
-            loop.close()
-
-    # Create trainer wrapper
-    trainer = TRLGRPOTrainerWrapper(
-        config=config,
-        model=model,
-        tokenizer=tokenizer,
-        train_dataset=train_dataset,
-        reward_function=sync_reward_function,
-        ref_model=model_manager.ref_model,
-    )
-
-    # Run training
-    trainer.train()
-
-    # Save final model
-    final_model_path = os.path.join(config.output_dir, "final_model")
-    trainer.save_model(final_model_path)
-    logger.info(f"Model saved to {final_model_path}")
-
-    # Update agent with trained model
-    agent.model = trainer.model
-    agent.tokenizer = tokenizer
-
-    # Finish wandb run
-    if config.report_to == "wandb":
-        wandb.finish()
-
-    logger.info("✨ TRL GRPO training completed successfully!")
-    return agent
-
-
-# Convenience functions for common training scenarios
-
-
-async def train_customer_service_with_trl(
-    model_name: str = "openai/gpt-oss-120b",
-    train_data: Optional[List[Dict[str, Any]]] = None,
-    num_episodes: int = 1000,
-    output_dir: str = "./outputs/trl_grpo",
-    **kwargs,
-) -> Agent:
-    """Train a customer service agent using TRL GRPO"""
-
-    # Get base configuration
-    base_config = get_config_for_task("customer_service", model_name=model_name)
-
-    # Create TRL GRPO config
-    config = TRLGRPOConfig.from_training_config(
-        base_config, num_episodes=num_episodes, output_dir=output_dir, **kwargs
-    )
-
-    # Create agent
-    agent_config = AgentConfig(
-        model_name=model_name,
-        system_prompt="You are a helpful and empathetic customer service representative.",
-        **kwargs,
-    )
-    agent = MultiTurnAgent(agent_config)
-    await agent.initialize()
-
-    # Create environment
-    from ..core.environment import CONVERSATION_CONFIGS
-
-    env_config = CONVERSATION_CONFIGS["customer_service"].copy()
-    environment = ConversationEnvironment(**env_config)
-
-    # Create reward model
-    from ..rewards.multi_objective_reward import create_customer_service_reward
-
-    reward_model = create_customer_service_reward()
-
-    # Run training
-    return await train_with_trl_grpo(
-        config=config,
-        agent=agent,
-        environment=environment,
-        reward_model=reward_model,
-        train_data=train_data,
-    )
-
-
-async def train_iterative_grpo(
-    config: TRLGRPOConfig,
-    agent: Agent,
-    environment: ConversationEnvironment,
-    reward_model: MultiObjectiveRewardFunction,
-) -> Agent:
-    """
-    Run iterative (online) GRPO training.
-    
-    Loop:
-    1. Generate trajectories using current policy (supports vLLM)
-    2. Train for N epochs
-    3. Repeat
-    """
-    logger.info(f"Starting Iterative GRPO Training ({config.num_outer_iterations} iterations)")
-    
-    # Initialize WandB once
-    if config.report_to == "wandb" and config.wandb_project:
-        wandb.init(
-            project=config.wandb_project,
-            name=config.run_name or f"iterative-grpo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["iterative", "grpo"] + (config.wandb_tags or []),
-        )
-
-    # Initialize model manager first (load base model)
-    model_manager = ModelManager(config)
-    model, tokenizer = model_manager.load_model_and_tokenizer()
-    
-    # Update agent with loaded model to ensure generation uses correct weights
-    # Note: If vLLM is used, it loads its own model instance.
-    agent.model = model
-    agent.tokenizer = tokenizer
-    
-    # Initialize trajectory generator
-    generator = TrajectoryGenerator(config, agent, environment)
-    
-    # Initialize dataset builder
-    dataset_builder = TRLGRPODatasetBuilder(tokenizer, config)
-    
-    # Initialize Reward Function Wrapper
-    reward_wrapper = TRLGRPORewardFunction(reward_model, agent, environment)
-    
-    def sync_reward_function(completions, prompts, **kwargs):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(
-                reward_wrapper.compute_rewards(completions, prompts, **kwargs)
-            )
-        finally:
-            loop.close()
-
-    # --- Rich Dashboard Setup ---
-    try:
-        from rich.live import Live
-        from rich.layout import Layout
-        from rich.panel import Panel
-        from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
-        from rich.table import Table
-        from rich import box
-        RICH_AVAILABLE = True
-    except ImportError:
-        RICH_AVAILABLE = False
-        
-    if RICH_AVAILABLE:
-        layout = Layout()
-        layout.split_column(
-            Layout(name="header", size=3),
-            Layout(name="main", ratio=1),
-            Layout(name="footer", size=3)
-        )
-        layout["main"].split_row(
-            Layout(name="left"),
-            Layout(name="right"),
-        )
-        
-        status_progress = Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        )
-        task_id = status_progress.add_task("[green]Iterative Training", total=config.num_outer_iterations)
-        
-        metrics_table = Table(title="Training Metrics", box=box.SIMPLE)
-        metrics_table.add_column("Metric", style="cyan")
-        metrics_table.add_column("Value", style="magenta")
-
-    # Context manager for Live display
-    from contextlib import nullcontext
-    live_ctx = Live(layout, refresh_per_second=4) if RICH_AVAILABLE else nullcontext()
-    
-    with live_ctx:
-        for iteration in range(config.num_outer_iterations):
-            current_iter_label = f"Iteration {iteration + 1}/{config.num_outer_iterations}"
-            logger.info(f"=== {current_iter_label} ===")
-            
-            if RICH_AVAILABLE:
-                layout["header"].update(Panel(f"StateSet Agents - GRPO Training\n{current_iter_label}", style="bold white on blue"))
-                layout["left"].update(Panel(status_progress, title="Progress"))
-                layout["right"].update(Panel(metrics_table, title="Metrics"))
-            
-            # Step 1: Generate Data
-            logger.info("Phase 1: Generating Trajectories...")
-            if RICH_AVAILABLE:
-                 status_progress.update(task_id, description=f"{current_iter_label}: Generating Data")
-            
-            trajectories = await generator.generate_batch(config.generations_per_iteration)
-            
-            # Step 2: Build Dataset
-            train_dataset = dataset_builder.build_from_trajectories(trajectories)
-            
-            # Step 3: Train
-            logger.info("Phase 2: Training...")
-            if RICH_AVAILABLE:
-                 status_progress.update(task_id, description=f"{current_iter_label}: Training")
-
-            # Create a new trainer instance for this iteration
-            trainer_wrapper = TRLGRPOTrainerWrapper(
-                config=config,
-                model=agent.model,
-                tokenizer=agent.tokenizer,
-                train_dataset=train_dataset,
-                reward_function=sync_reward_function,
-                ref_model=model_manager.ref_model,
-            )
-            
-            trainer_wrapper.train()
-            
-            # Update agent model with trained weights
-            agent.model = trainer_wrapper.trainer.model
-            
-            # Update Dashboard Metrics (Mocking some values or extracting from trainer logs if available)
-            if RICH_AVAILABLE:
-                metrics_table = Table(title="Training Metrics", box=box.SIMPLE)
-                metrics_table.add_column("Metric", style="cyan")
-                metrics_table.add_column("Value", style="magenta")
-                metrics_table.add_row("Trajectories", str(len(trajectories)))
-                metrics_table.add_row("Dataset Size", str(len(train_dataset)))
-                # In a real scenario, we'd extract the loss/reward from the trainer's history
-                metrics_table.add_row("Last Iteration", str(iteration + 1))
-                layout["right"].update(Panel(metrics_table, title="Metrics"))
-                
-                status_progress.advance(task_id)
-
-            if generator.vllm_engine:
-                logger.warning("Note: vLLM engine weights are not automatically updated in this loop implementation yet.")
-                
-            # Save intermediate checkpoint
-            checkpoint_dir = os.path.join(config.output_dir, f"iter_{iteration}")
-            trainer_wrapper.save_model(checkpoint_dir)
-        
-    logger.info("Iterative training completed.")
-    if config.report_to == "wandb":
-        wandb.finish()
-        
-    return agent
+from .trl_grpo_entrypoints import (
+    train_customer_service_with_trl,
+    train_iterative_grpo,
+    train_with_trl_grpo,
+)
 
 
 # Export main components

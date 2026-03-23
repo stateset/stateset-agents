@@ -2,7 +2,11 @@
 Unit tests for continual learning helpers.
 """
 
-from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory, TrajectoryGroup
+from stateset_agents.core.trajectory import (
+    ConversationTurn,
+    MultiTurnTrajectory,
+    TrajectoryGroup,
+)
 from stateset_agents.training.continual_learning import (
     ContinualLearningConfig,
     ContinualLearningManager,

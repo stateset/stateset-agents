@@ -13,7 +13,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -60,11 +60,11 @@ class AgentMessage:
 
     message_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     sender_id: str = ""
-    receiver_id: Optional[str] = None  # None for broadcast
+    receiver_id: str | None = None  # None for broadcast
     content: str = ""
     message_type: str = "info"  # info, request, response, command
     priority: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=lambda: time.time())
 
     def is_broadcast(self) -> bool:
@@ -81,11 +81,11 @@ class AgentState:
     agent_id: str
     role: AgentRole
     status: str = "idle"  # idle, active, waiting, completed
-    current_task: Optional[str] = None
-    capabilities: Set[str] = field(default_factory=set)
+    current_task: str | None = None
+    capabilities: set[str] = field(default_factory=set)
     workload: float = 0.0  # 0.0 to 1.0
-    performance_history: List[float] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    performance_history: list[float] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -93,11 +93,11 @@ class TeamState:
     """State of the entire agent team"""
 
     team_id: str
-    agents: Dict[str, AgentState]
-    shared_memory: Dict[str, Any] = field(default_factory=dict)
-    message_history: List[AgentMessage] = field(default_factory=list)
-    task_queue: List[Dict[str, Any]] = field(default_factory=list)
-    completed_tasks: List[str] = field(default_factory=list)
+    agents: dict[str, AgentState]
+    shared_memory: dict[str, Any] = field(default_factory=dict)
+    message_history: list[AgentMessage] = field(default_factory=list)
+    task_queue: list[dict[str, Any]] = field(default_factory=list)
+    completed_tasks: list[str] = field(default_factory=list)
     team_reward: float = 0.0
 
 
@@ -110,7 +110,9 @@ class CommunicationChannel(ABC):
         pass
 
     @abstractmethod
-    async def receive(self, agent_id: str, timeout: Optional[float] = None) -> Optional[AgentMessage]:
+    async def receive(
+        self, agent_id: str, timeout: float | None = None
+    ) -> AgentMessage | None:
         """Receive a message for specific agent"""
         pass
 
@@ -124,8 +126,8 @@ class BlackboardChannel(CommunicationChannel):
     """Blackboard-style shared memory communication"""
 
     def __init__(self):
-        self.blackboard: Dict[str, Any] = {}
-        self.message_queues: Dict[str, asyncio.Queue] = {}
+        self.blackboard: dict[str, Any] = {}
+        self.message_queues: dict[str, asyncio.Queue] = {}
         self.broadcast_queue: asyncio.Queue = asyncio.Queue()
         self.lock = asyncio.Lock()
 
@@ -141,11 +143,15 @@ class BlackboardChannel(CommunicationChannel):
             self._ensure_queue(message.receiver_id)
             await self.message_queues[message.receiver_id].put(message)
 
-    async def receive(self, agent_id: str, timeout: Optional[float] = None) -> Optional[AgentMessage]:
+    async def receive(
+        self, agent_id: str, timeout: float | None = None
+    ) -> AgentMessage | None:
         """Receive message for agent"""
         self._ensure_queue(agent_id)
         try:
-            return await asyncio.wait_for(self.message_queues[agent_id].get(), timeout=timeout)
+            return await asyncio.wait_for(
+                self.message_queues[agent_id].get(), timeout=timeout
+            )
         except asyncio.TimeoutError:
             return None
 
@@ -160,12 +166,12 @@ class BlackboardChannel(CommunicationChannel):
         async with self.lock:
             self.blackboard[key] = value
 
-    async def read_shared(self, key: str) -> Optional[Any]:
+    async def read_shared(self, key: str) -> Any | None:
         """Read from shared blackboard"""
         async with self.lock:
             return self.blackboard.get(key)
 
-    def get_all_shared(self) -> Dict[str, Any]:
+    def get_all_shared(self) -> dict[str, Any]:
         """Get all shared memory"""
         return self.blackboard.copy()
 
@@ -176,10 +182,10 @@ class TaskAllocator(ABC):
     @abstractmethod
     async def allocate_task(
         self,
-        task: Dict[str, Any],
-        available_agents: List[AgentState],
+        task: dict[str, Any],
+        available_agents: list[AgentState],
         team_state: TeamState,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Allocate task to an agent, return agent_id"""
         pass
 
@@ -192,16 +198,18 @@ class CapabilityBasedAllocator(TaskAllocator):
 
     async def allocate_task(
         self,
-        task: Dict[str, Any],
-        available_agents: List[AgentState],
+        task: dict[str, Any],
+        available_agents: list[AgentState],
         team_state: TeamState,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Allocate to agent with matching capabilities and lowest workload"""
         required_capabilities = set(task.get("required_capabilities", []))
 
         # Filter agents with matching capabilities
         capable_agents = [
-            agent for agent in available_agents if required_capabilities.issubset(agent.capabilities)
+            agent
+            for agent in available_agents
+            if required_capabilities.issubset(agent.capabilities)
         ]
 
         if not capable_agents:
@@ -226,10 +234,10 @@ class PerformanceBasedAllocator(TaskAllocator):
 
     async def allocate_task(
         self,
-        task: Dict[str, Any],
-        available_agents: List[AgentState],
+        task: dict[str, Any],
+        available_agents: list[AgentState],
         team_state: TeamState,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Allocate to highest performing agent with exploration"""
         if not available_agents:
             return None
@@ -244,7 +252,9 @@ class PerformanceBasedAllocator(TaskAllocator):
         if not agents_with_history:
             return np.random.choice([a.agent_id for a in available_agents])
 
-        best_agent = max(agents_with_history, key=lambda a: np.mean(a.performance_history[-10:]))
+        best_agent = max(
+            agents_with_history, key=lambda a: np.mean(a.performance_history[-10:])
+        )
         return best_agent.agent_id
 
 
@@ -257,11 +267,11 @@ class MultiAgentCoordinator:
 
     def __init__(
         self,
-        agents: Dict[str, Agent],
-        roles: Optional[Dict[str, AgentRole]] = None,
+        agents: dict[str, Agent],
+        roles: dict[str, AgentRole] | None = None,
         communication_protocol: CommunicationProtocol = CommunicationProtocol.BLACKBOARD,
         coordination_strategy: CoordinationStrategy = CoordinationStrategy.COOPERATIVE,
-        task_allocator: Optional[TaskAllocator] = None,
+        task_allocator: TaskAllocator | None = None,
     ):
         """
         Initialize multi-agent coordinator.
@@ -278,9 +288,11 @@ class MultiAgentCoordinator:
         self.task_allocator = task_allocator or CapabilityBasedAllocator()
 
         # Initialize agent states
-        self.agent_states: Dict[str, AgentState] = {}
+        self.agent_states: dict[str, AgentState] = {}
         for agent_id, agent in agents.items():
-            role = roles.get(agent_id, AgentRole.EXECUTOR) if roles else AgentRole.EXECUTOR
+            role = (
+                roles.get(agent_id, AgentRole.EXECUTOR) if roles else AgentRole.EXECUTOR
+            )
             self.agent_states[agent_id] = AgentState(
                 agent_id=agent_id,
                 role=role,
@@ -299,13 +311,13 @@ class MultiAgentCoordinator:
         # Initialize team state
         self.team_state = TeamState(team_id=str(uuid.uuid4()), agents=self.agent_states)
 
-        self.active_tasks: Dict[str, str] = {}  # task_id -> agent_id
+        self.active_tasks: dict[str, str] = {}  # task_id -> agent_id
 
     async def execute_collaborative_task(
         self,
-        task: Dict[str, Any],
+        task: dict[str, Any],
         max_iterations: int = 10,
-    ) -> Tuple[MultiTurnTrajectory, Dict[str, Any]]:
+    ) -> tuple[MultiTurnTrajectory, dict[str, Any]]:
         """
         Execute a task requiring multiple agents.
 
@@ -317,7 +329,9 @@ class MultiAgentCoordinator:
             Trajectory of agent interactions and final results
         """
         task_id = task.get("task_id", str(uuid.uuid4()))
-        trajectory = MultiTurnTrajectory(trajectory_id=task_id, turns=[], total_reward=0.0)
+        trajectory = MultiTurnTrajectory(
+            trajectory_id=task_id, turns=[], total_reward=0.0
+        )
 
         logger.info(f"Starting collaborative task: {task_id}")
 
@@ -343,22 +357,26 @@ class MultiAgentCoordinator:
 
     async def _execute_sequential(
         self,
-        task: Dict[str, Any],
+        task: dict[str, Any],
         trajectory: MultiTurnTrajectory,
         max_iterations: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute task with agents acting sequentially"""
         context = task.get("context", "")
         results = []
 
         for iteration in range(max_iterations):
             # Allocate subtask to an agent
-            available_agents = [a for a in self.agent_states.values() if a.status == "idle"]
+            available_agents = [
+                a for a in self.agent_states.values() if a.status == "idle"
+            ]
 
             if not available_agents:
                 break
 
-            agent_id = await self.task_allocator.allocate_task(task, available_agents, self.team_state)
+            agent_id = await self.task_allocator.allocate_task(
+                task, available_agents, self.team_state
+            )
 
             if not agent_id:
                 logger.warning(f"No agent available for task iteration {iteration}")
@@ -386,7 +404,9 @@ class MultiAgentCoordinator:
                 )
                 trajectory.add_turn(turn, reward=0.0)
 
-                results.append({"agent_id": agent_id, "response": response, "iteration": iteration})
+                results.append(
+                    {"agent_id": agent_id, "response": response, "iteration": iteration}
+                )
 
                 # Update context with agent response
                 context += f"\n{agent_state.role.value}: {response}"
@@ -402,12 +422,14 @@ class MultiAgentCoordinator:
 
     async def _execute_parallel(
         self,
-        task: Dict[str, Any],
+        task: dict[str, Any],
         trajectory: MultiTurnTrajectory,
         max_iterations: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute task with agents acting in parallel"""
-        prompt = f"Task: {task.get('description', '')}\nContext: {task.get('context', '')}"
+        prompt = (
+            f"Task: {task.get('description', '')}\nContext: {task.get('context', '')}"
+        )
 
         # Execute all agents in parallel
         agent_tasks = []
@@ -423,7 +445,7 @@ class MultiAgentCoordinator:
         responses = await asyncio.gather(*agent_tasks, return_exceptions=True)
 
         results = []
-        for agent_id, response in zip(agent_ids, responses):
+        for agent_id, response in zip(agent_ids, responses, strict=False):
             if isinstance(response, Exception):
                 logger.error(f"Agent {agent_id} failed: {response}")
                 continue
@@ -446,12 +468,14 @@ class MultiAgentCoordinator:
 
     async def _execute_consensus(
         self,
-        task: Dict[str, Any],
+        task: dict[str, Any],
         trajectory: MultiTurnTrajectory,
         max_iterations: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute task requiring agent consensus"""
-        prompt = f"Task: {task.get('description', '')}\nContext: {task.get('context', '')}"
+        prompt = (
+            f"Task: {task.get('description', '')}\nContext: {task.get('context', '')}"
+        )
 
         consensus_reached = False
         iteration = 0
@@ -462,7 +486,6 @@ class MultiAgentCoordinator:
             proposals = []
 
             for agent_id, agent in self.agents.items():
-                agent_state = self.agent_states[agent_id]
                 full_prompt = f"{prompt}\n\nPrevious proposals: {agent_proposals}\n\nProvide your proposal:"
 
                 response = await agent.generate_response(full_prompt)
@@ -493,7 +516,7 @@ class MultiAgentCoordinator:
             "proposals": agent_proposals,
         }
 
-    async def _aggregate_responses(self, responses: List[str]) -> str:
+    async def _aggregate_responses(self, responses: list[str]) -> str:
         """Aggregate multiple agent responses"""
         # Simple aggregation - can be made more sophisticated
         if len(responses) == 1:
@@ -502,7 +525,7 @@ class MultiAgentCoordinator:
         # For now, return the longest response (most detailed)
         return max(responses, key=len)
 
-    async def _check_consensus(self, proposals: List[Tuple[str, str]]) -> bool:
+    async def _check_consensus(self, proposals: list[tuple[str, str]]) -> bool:
         """Check if agents have reached consensus"""
         if len(proposals) < 2:
             return True
@@ -521,9 +544,13 @@ class MultiAgentCoordinator:
         await self.comm_channel.send(message)
         self.team_state.message_history.append(message)
 
-    async def broadcast_message(self, sender_id: str, content: str, message_type: str = "info") -> None:
+    async def broadcast_message(
+        self, sender_id: str, content: str, message_type: str = "info"
+    ) -> None:
         """Broadcast message to all agents"""
-        message = AgentMessage(sender_id=sender_id, content=content, message_type=message_type)
+        message = AgentMessage(
+            sender_id=sender_id, content=content, message_type=message_type
+        )
         await self.comm_channel.broadcast(message)
         self.team_state.message_history.append(message)
 
@@ -540,7 +567,7 @@ class MultiAgentCoordinator:
             if len(self.agent_states[agent_id].performance_history) > 100:
                 self.agent_states[agent_id].performance_history.pop(0)
 
-    def get_team_statistics(self) -> Dict[str, Any]:
+    def get_team_statistics(self) -> dict[str, Any]:
         """Get team performance statistics"""
         return {
             "team_id": self.team_state.team_id,
@@ -548,9 +575,14 @@ class MultiAgentCoordinator:
             "completed_tasks": len(self.team_state.completed_tasks),
             "total_messages": len(self.team_state.message_history),
             "team_reward": self.team_state.team_reward,
-            "agent_workloads": {agent_id: state.workload for agent_id, state in self.agent_states.items()},
+            "agent_workloads": {
+                agent_id: state.workload
+                for agent_id, state in self.agent_states.items()
+            },
             "agent_performance": {
-                agent_id: np.mean(state.performance_history[-10:]) if state.performance_history else 0.0
+                agent_id: np.mean(state.performance_history[-10:])
+                if state.performance_history
+                else 0.0
                 for agent_id, state in self.agent_states.items()
             },
         }
@@ -576,9 +608,9 @@ class CooperativeRewardShaping:
     def compute_agent_rewards(
         self,
         team_reward: float,
-        individual_contributions: Dict[str, float],
-        cooperation_metrics: Dict[str, float],
-    ) -> Dict[str, float]:
+        individual_contributions: dict[str, float],
+        cooperation_metrics: dict[str, float],
+    ) -> dict[str, float]:
         """
         Compute rewards for each agent considering team success.
 

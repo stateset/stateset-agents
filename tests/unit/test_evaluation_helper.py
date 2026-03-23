@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from stateset_agents.core.environment import (
     ConversationEnvironment,
@@ -19,7 +19,7 @@ class DummyAgent:
 
 
 async def test_evaluate_agent_returns_metrics_with_concurrency() -> None:
-    scenario: Dict[str, Any] = {
+    scenario: dict[str, Any] = {
         "id": "s1",
         "topic": "demo",
         "context": "Demo",
@@ -46,7 +46,9 @@ async def test_evaluate_agent_falls_back_without_clone() -> None:
             super().__init__(max_turns=1)
             self._in_episode = False
 
-        async def reset(self, scenario: Optional[Dict[str, Any]] = None) -> EnvironmentState:
+        async def reset(
+            self, scenario: dict[str, Any] | None = None
+        ) -> EnvironmentState:
             return EnvironmentState(
                 episode_id="ep1",
                 turn_count=0,

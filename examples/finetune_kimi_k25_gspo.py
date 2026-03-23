@@ -27,10 +27,10 @@ Usage:
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,12 +39,69 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _write_serving_manifest(
+    output_dir: str,
+    model_name: str,
+    *,
+    use_lora: bool,
+    use_vllm: bool,
+    merged_model_dir: str | None = None,
+) -> None:
+    """Write a lightweight manifest to aid vLLM deployment."""
+    manifest = {
+        "model": model_name,
+        "output_dir": output_dir,
+        "use_lora": use_lora,
+        "use_vllm": use_vllm,
+        "merged_model_dir": merged_model_dir,
+        "recommended": {
+            "tensor_parallel_size": 8,
+            "max_model_len": 256000,
+            "trust_remote_code": True,
+        },
+    }
+    path = Path(output_dir) / "serving_manifest.json"
+    path.write_text(json.dumps(manifest, indent=2))
+
+
+def _export_merged_model(
+    *,
+    base_model_name: str,
+    adapter_dir: str,
+    output_dir: str,
+) -> str:
+    """Merge LoRA adapters into base model for vLLM serving."""
+    try:
+        from peft import PeftModel
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+    except ImportError as exc:  # pragma: no cover
+        logger.warning("Missing dependencies for merge export: %s", exc)
+        return ""
+
+    logger.info("Exporting merged model for serving...")
+    model = AutoModelForCausalLM.from_pretrained(
+        base_model_name,
+        torch_dtype="auto",
+        device_map="auto",
+        trust_remote_code=True,
+    )
+    model = PeftModel.from_pretrained(model, adapter_dir)
+    merged = model.merge_and_unload()
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    merged.save_pretrained(output_dir)
+    tokenizer = AutoTokenizer.from_pretrained(base_model_name, trust_remote_code=True)
+    tokenizer.save_pretrained(output_dir)
+    logger.info("Merged model saved to %s", output_dir)
+    return output_dir
+
+
 def get_kimi_k25_config(
     model_name: str,
     task: str,
     use_lora: bool = True,
     use_8bit: bool = False,
     use_4bit: bool = False,
+    use_vllm: bool = False,
     output_dir: str = "./outputs/kimi_k25_gspo",
 ):
     """
@@ -59,10 +116,14 @@ def get_kimi_k25_config(
         use_lora: Use LoRA for efficient fine-tuning (strongly recommended for MoE)
         use_8bit: Use 8-bit quantization
         use_4bit: Use 4-bit quantization
+        use_vllm: Enable vLLM for faster generation
         output_dir: Output directory for checkpoints
     """
-    from stateset_agents.training.gspo_trainer import GSPOConfig
     from stateset_agents.training.config import get_config_for_task
+    from stateset_agents.training.gspo_trainer import GSPOConfig
+
+    if use_4bit and use_8bit:
+        raise ValueError("Choose only one quantization mode: use_4bit or use_8bit")
 
     # Get base config for task
     base_config = get_config_for_task(task, model_name=model_name)
@@ -97,8 +158,9 @@ def get_kimi_k25_config(
             "down_proj",
         ],
         gradient_checkpointing=True,
-        use_4bit=use_4bit if use_4bit else use_8bit,
+        use_4bit=use_4bit,
         use_8bit=use_8bit,
+        use_vllm=use_vllm,
         # Generation settings
         max_prompt_length=2048,
         max_completion_length=2048,
@@ -123,13 +185,15 @@ def get_kimi_k25_config(
 async def finetune_kimi_k25(
     model_name: str,
     task: str = "customer_service",
-    system_prompt: Optional[str] = None,
+    system_prompt: str | None = None,
     use_lora: bool = True,
     use_8bit: bool = False,
     use_4bit: bool = False,
     output_dir: str = "./outputs/kimi_k25_gspo",
+    use_vllm: bool = False,
+    export_merged: bool = False,
     use_wandb: bool = False,
-    wandb_project: Optional[str] = None,
+    wandb_project: str | None = None,
     num_iterations: int = 50,
 ):
     """
@@ -143,6 +207,7 @@ async def finetune_kimi_k25(
         use_8bit: Use 8-bit quantization
         use_4bit: Use 4-bit quantization
         output_dir: Output directory for checkpoints
+        use_vllm: Enable vLLM for faster generation
         use_wandb: Enable Weights & Biases logging
         wandb_project: W&B project name
         num_iterations: Number of outer training iterations
@@ -150,8 +215,8 @@ async def finetune_kimi_k25(
     from stateset_agents import MultiTurnAgent
     from stateset_agents.core.agent import AgentConfig
     from stateset_agents.core.environment import (
-        ConversationEnvironment,
         CONVERSATION_CONFIGS,
+        ConversationEnvironment,
     )
     from stateset_agents.rewards.multi_objective_reward import (
         create_customer_service_reward,
@@ -169,6 +234,8 @@ async def finetune_kimi_k25(
         f"Quantization: {'4-bit' if use_4bit else '8-bit' if use_8bit else 'None'}"
     )
     logger.info(f"Output: {output_dir}")
+    logger.info(f"vLLM: {use_vllm}")
+    logger.info(f"Export merged: {export_merged}")
     logger.info("=" * 80)
 
     # System prompts for different tasks
@@ -189,6 +256,7 @@ async def finetune_kimi_k25(
         model_name=model_name,
         system_prompt=final_system_prompt,
         max_new_tokens=2048,
+        trust_remote_code=True,
     )
     agent = MultiTurnAgent(agent_config)
     await agent.initialize()
@@ -203,9 +271,7 @@ async def finetune_kimi_k25(
         env_config = CONVERSATION_CONFIGS["customer_service"].copy()
 
     environment = ConversationEnvironment(**env_config)
-    logger.info(
-        f"✅ Environment configured with {len(environment.scenarios)} scenarios"
-    )
+    logger.info(f"✅ Environment configured with {len(environment.scenarios)} scenarios")
 
     # Create reward model
     logger.info("Initializing reward model...")
@@ -223,6 +289,7 @@ async def finetune_kimi_k25(
         use_lora=use_lora,
         use_8bit=use_8bit,
         use_4bit=use_4bit,
+        use_vllm=use_vllm,
         output_dir=output_dir,
     )
 
@@ -256,6 +323,22 @@ async def finetune_kimi_k25(
         agent=agent,
         environment=environment,
         reward_model=reward_model,
+    )
+
+    merged_dir = None
+    if export_merged and use_lora:
+        merged_dir = _export_merged_model(
+            base_model_name=model_name,
+            adapter_dir=output_dir,
+            output_dir=os.path.join(output_dir, "merged"),
+        )
+
+    _write_serving_manifest(
+        output_dir,
+        model_name,
+        use_lora=use_lora,
+        use_vllm=use_vllm,
+        merged_model_dir=merged_dir,
     )
 
     logger.info("\n" + "=" * 80)
@@ -353,6 +436,16 @@ Examples:
         help="Use 8-bit quantization",
     )
     parser.add_argument(
+        "--use-vllm",
+        action="store_true",
+        help="Enable vLLM for faster generation during training",
+    )
+    parser.add_argument(
+        "--export-merged",
+        action="store_true",
+        help="Merge LoRA adapters into the base model for vLLM serving",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default="./outputs/kimi_k25_gspo",
@@ -400,6 +493,8 @@ Examples:
             use_4bit=args.use_4bit,
             use_8bit=args.use_8bit,
             output_dir=args.output_dir,
+            use_vllm=args.use_vllm,
+            export_merged=args.export_merged,
             use_wandb=args.wandb,
             wandb_project=args.wandb_project,
             num_iterations=args.iterations,

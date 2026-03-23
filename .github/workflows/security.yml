@@ -1,5 +1,8 @@
 name: Security Scan
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [ main, master, develop ]
@@ -18,12 +21,12 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
+        python-version: "3.12"
     
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-security-${{ hashFiles('**/pyproject.toml') }}
@@ -37,8 +40,8 @@ jobs:
     
     - name: Run Bandit security linter
       run: |
-        bandit -r stateset_agents grpo_agent_framework -f json -o bandit-report.json || true
-        bandit -r stateset_agents grpo_agent_framework -f txt -o bandit-report.txt || true
+        bandit -r stateset_agents -f json -o bandit-report.json || true
+        bandit -r stateset_agents -f txt -o bandit-report.txt || true
     
     - name: Run Safety dependency check
       run: |
@@ -61,7 +64,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Upload security reports
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-reports
         path: |
@@ -97,20 +100,123 @@ jobs:
         echo "✅ Security scanning completed" >> $GITHUB_STEP_SUMMARY
     
     - name: Fail on critical security issues
-      if: contains(github.event_name, 'pull_request')
+      if: github.event_name == 'pull_request'
       run: |
-        # Check for critical security issues
-        if grep -q "CRITICAL\|HIGH" bandit-report.txt 2>/dev/null; then
-          echo "🚨 Critical security issues found in Bandit scan!"
-          exit 1
-        fi
-        
-        if grep -q "vulnerable" safety-report.txt 2>/dev/null; then
-          echo "🚨 Vulnerable dependencies found!"
-          exit 1
-        fi
-        
-        echo "✅ No critical security issues found"
+        python - <<'PY'
+        import json
+        import sys
+        from pathlib import Path
+
+        parse_errors = []
+
+        bandit_issues = []
+        bandit_path = Path("bandit-report.json")
+        if bandit_path.exists():
+            try:
+                bandit_report = json.loads(bandit_path.read_text(encoding="utf-8"))
+                if isinstance(bandit_report, dict):
+                    bandit_results = bandit_report.get("results", [])
+                elif isinstance(bandit_report, list):
+                    bandit_results = bandit_report
+                else:
+                    bandit_results = []
+                bandit_issues = [
+                    item
+                    for item in bandit_results
+                    if isinstance(item, dict)
+                    and str(item.get("issue_severity", "")).upper()
+                    in {"HIGH", "CRITICAL"}
+                ]
+            except (json.JSONDecodeError, OSError):
+                parse_errors.append("bandit-report.json could not be parsed")
+                bandit_issues = []
+
+        safety_issues = []
+        safety_path = Path("safety-report.json")
+        if safety_path.exists():
+            try:
+                payload = json.loads(safety_path.read_text(encoding="utf-8"))
+                if isinstance(payload, list):
+                    safety_issues = payload
+                elif isinstance(payload, dict):
+                    safety_issues = (
+                        payload.get("vulnerabilities")
+                        or payload.get("issues")
+                        or payload.get("dependencies")
+                        or []
+                    )
+            except (json.JSONDecodeError, OSError):
+                parse_errors.append("safety-report.json could not be parsed")
+                safety_issues = []
+
+        semgrep_issues = []
+        semgrep_path = Path("semgrep-report.json")
+        if semgrep_path.exists():
+            try:
+                semgrep_report = json.loads(semgrep_path.read_text(encoding="utf-8"))
+                if isinstance(semgrep_report, dict):
+                    semgrep_results = semgrep_report.get("results", [])
+                elif isinstance(semgrep_report, list):
+                    semgrep_results = semgrep_report
+                else:
+                    semgrep_results = []
+                semgrep_issues = [
+                    item
+                    for item in semgrep_results
+                    if isinstance(item, dict)
+                    if str(
+                        item.get("extra", {}).get("severity", item.get("severity", ""))
+                    ).upper()
+                    in {"HIGH", "CRITICAL"}
+                ]
+            except (json.JSONDecodeError, OSError):
+                parse_errors.append("semgrep-report.json could not be parsed")
+                semgrep_issues = []
+
+        trivy_issues = []
+        trivy_path = Path("trivy-report.json")
+        if trivy_path.exists():
+            try:
+                trivy_report = json.loads(trivy_path.read_text(encoding="utf-8"))
+                trivy_results = []
+                if isinstance(trivy_report, dict):
+                    trivy_results = trivy_report.get("Results", [])
+                elif isinstance(trivy_report, list):
+                    trivy_results = trivy_report
+                for result in trivy_results:
+                    if not isinstance(result, dict):
+                        continue
+                    trivy_issues.extend(
+                        vuln
+                        for vuln in result.get("Vulnerabilities", [])
+                        if isinstance(vuln, dict)
+                        if str(vuln.get("Severity", "")).upper()
+                        in {"HIGH", "CRITICAL"}
+                    )
+            except (json.JSONDecodeError, OSError):
+                parse_errors.append("trivy-report.json could not be parsed")
+                trivy_issues = []
+
+        if parse_errors:
+            print("🚨 Security gate failed on pull_request: security report parsing failed.")
+            for item in parse_errors:
+                print(f"  - {item}")
+            sys.exit(1)
+
+        if bandit_issues or safety_issues or semgrep_issues or trivy_issues:
+            print("🚨 Security gate failed on pull_request: high-severity findings detected.")
+            if bandit_issues:
+                print(f"  - Bandit findings: {len(bandit_issues)}")
+            if safety_issues:
+                print(f"  - Safety findings: {len(safety_issues)}")
+            if semgrep_issues:
+                print(f"  - Semgrep findings: {len(semgrep_issues)}")
+            if trivy_issues:
+                print(f"  - Trivy findings: {len(trivy_issues)}")
+            sys.exit(1)
+
+        print("✅ No critical security findings detected")
+        PY
 
   dependency-review:
     runs-on: ubuntu-latest

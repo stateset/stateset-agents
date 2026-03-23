@@ -6,8 +6,7 @@ for learning from fixed datasets without online interaction.
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -75,9 +74,11 @@ class IQLConfig:
     activation: str = "relu"
 
     # IQL-specific parameters
-    expectile: float = 0.7  # Expectile for value learning (0.5 = mean, >0.5 = upper tail)
+    expectile: float = (
+        0.7  # Expectile for value learning (0.5 = mean, >0.5 = upper tail)
+    )
     temperature: float = 3.0  # Temperature for advantage weighting
-    clip_score: Optional[float] = 100.0  # Clip importance weights
+    clip_score: float | None = 100.0  # Clip importance weights
 
     # Training parameters
     learning_rate: float = 3e-4
@@ -210,7 +211,7 @@ class ConservativeQLearning:
         self,
         state_dim: int,
         action_dim: int,
-        config: Optional[CQLConfig] = None,
+        config: CQLConfig | None = None,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         _require_torch()
@@ -275,7 +276,7 @@ class ConservativeQLearning:
         actions: torch.Tensor,
         q1_values: torch.Tensor,
         q2_values: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute CQL regularization loss.
 
@@ -285,14 +286,22 @@ class ConservativeQLearning:
         batch_size = states.shape[0]
 
         # Sample random actions
-        random_actions = torch.FloatTensor(
-            batch_size * self.config.num_random_actions,
-            self.action_dim,
-        ).uniform_(-1, 1).to(self.device)
+        random_actions = (
+            torch.FloatTensor(
+                batch_size * self.config.num_random_actions,
+                self.action_dim,
+            )
+            .uniform_(-1, 1)
+            .to(self.device)
+        )
 
         # Repeat states for random actions
-        repeated_states = states.unsqueeze(1).repeat(1, self.config.num_random_actions, 1)
-        repeated_states = repeated_states.view(batch_size * self.config.num_random_actions, -1)
+        repeated_states = states.unsqueeze(1).repeat(
+            1, self.config.num_random_actions, 1
+        )
+        repeated_states = repeated_states.view(
+            batch_size * self.config.num_random_actions, -1
+        )
 
         # Q-values for random actions
         q1_random = self.q1(repeated_states, random_actions)
@@ -320,7 +329,7 @@ class ConservativeQLearning:
         rewards: torch.Tensor,
         next_states: torch.Tensor,
         dones: torch.Tensor,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Perform one training step.
 
@@ -361,7 +370,9 @@ class ConservativeQLearning:
         # Total loss
         if self.config.with_lagrange:
             alpha_tensor = torch.exp(self.log_alpha)
-            alpha_loss = -alpha_tensor * (cql_loss.detach() - self.config.lagrange_threshold)
+            alpha_loss = -alpha_tensor * (
+                cql_loss.detach() - self.config.lagrange_threshold
+            )
             self.alpha_optimizer.zero_grad()
             alpha_loss.backward()
             self.alpha_optimizer.step()
@@ -401,10 +412,14 @@ class ConservativeQLearning:
         """Soft update of target networks"""
         tau = self.config.soft_target_tau
 
-        for target_param, param in zip(self.q1_target.parameters(), self.q1.parameters()):
+        for target_param, param in zip(
+            self.q1_target.parameters(), self.q1.parameters(), strict=False
+        ):
             target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
-        for target_param, param in zip(self.q2_target.parameters(), self.q2.parameters()):
+        for target_param, param in zip(
+            self.q2_target.parameters(), self.q2.parameters(), strict=False
+        ):
             target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
     def get_q_value(self, state: torch.Tensor, action: torch.Tensor) -> float:
@@ -430,7 +445,7 @@ class ImplicitQLearning:
         self,
         state_dim: int,
         action_dim: int,
-        config: Optional[IQLConfig] = None,
+        config: IQLConfig | None = None,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         _require_torch()
@@ -480,7 +495,9 @@ class ImplicitQLearning:
             list(self.q1.parameters()) + list(self.q2.parameters()),
             lr=self.config.learning_rate,
         )
-        self.value_optimizer = Adam(self.value_net.parameters(), lr=self.config.learning_rate)
+        self.value_optimizer = Adam(
+            self.value_net.parameters(), lr=self.config.learning_rate
+        )
 
         self.training_step = 0
 
@@ -498,7 +515,7 @@ class ImplicitQLearning:
         """
         diff = target - predicted
         weight = torch.where(diff > 0, expectile, 1 - expectile)
-        return (weight * (diff ** 2)).mean()
+        return (weight * (diff**2)).mean()
 
     def train_step(
         self,
@@ -507,7 +524,7 @@ class ImplicitQLearning:
         rewards: torch.Tensor,
         next_states: torch.Tensor,
         dones: torch.Tensor,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Perform one IQL training step.
 
@@ -528,7 +545,9 @@ class ImplicitQLearning:
 
         self.value_optimizer.zero_grad()
         value_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.value_net.parameters(), self.config.max_grad_norm)
+        torch.nn.utils.clip_grad_norm_(
+            self.value_net.parameters(), self.config.max_grad_norm
+        )
         self.value_optimizer.step()
 
         # Step 2: Update Q-functions
@@ -565,7 +584,9 @@ class ImplicitQLearning:
         """Soft update of target value network"""
         tau = self.config.soft_target_tau
 
-        for target_param, param in zip(self.value_target.parameters(), self.value_net.parameters()):
+        for target_param, param in zip(
+            self.value_target.parameters(), self.value_net.parameters(), strict=False
+        ):
             target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
     def get_advantage(self, state: torch.Tensor, action: torch.Tensor) -> float:
@@ -612,7 +633,7 @@ class OfflineRLTrainer:
         algorithm: str,  # "cql" or "iql"
         state_dim: int,
         action_dim: int,
-        config: Optional[Union[CQLConfig, IQLConfig]] = None,
+        config: CQLConfig | IQLConfig | None = None,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         _require_torch()
@@ -627,14 +648,14 @@ class OfflineRLTrainer:
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}. Choose 'cql' or 'iql'")
 
-        self.training_metrics: List[Dict[str, float]] = []
+        self.training_metrics: list[dict[str, float]] = []
 
     def train(
         self,
-        dataset: Dict[str, np.ndarray],
+        dataset: dict[str, np.ndarray],
         num_epochs: int = 100,
         batch_size: int = 256,
-    ) -> List[Dict[str, float]]:
+    ) -> list[dict[str, float]]:
         """
         Train on offline dataset.
 
@@ -656,7 +677,9 @@ class OfflineRLTrainer:
         dataset_size = states.shape[0]
         num_batches = dataset_size // batch_size
 
-        logger.info(f"Training {self.algorithm.upper()} on {dataset_size} samples for {num_epochs} epochs")
+        logger.info(
+            f"Training {self.algorithm.upper()} on {dataset_size} samples for {num_epochs} epochs"
+        )
 
         for epoch in range(num_epochs):
             # Shuffle data
@@ -664,7 +687,9 @@ class OfflineRLTrainer:
             epoch_metrics = []
 
             for batch_idx in range(num_batches):
-                batch_indices = indices[batch_idx * batch_size : (batch_idx + 1) * batch_size]
+                batch_indices = indices[
+                    batch_idx * batch_size : (batch_idx + 1) * batch_size
+                ]
 
                 batch_states = states[batch_indices]
                 batch_actions = actions[batch_indices]
@@ -684,7 +709,8 @@ class OfflineRLTrainer:
 
             # Average metrics for epoch
             avg_metrics = {
-                key: np.mean([m[key] for m in epoch_metrics]) for key in epoch_metrics[0].keys()
+                key: np.mean([m[key] for m in epoch_metrics])
+                for key in epoch_metrics[0].keys()
             }
             avg_metrics["epoch"] = epoch
 
@@ -693,7 +719,9 @@ class OfflineRLTrainer:
             if epoch % 10 == 0:
                 logger.info(
                     f"Epoch {epoch}/{num_epochs}: "
-                    + ", ".join([f"{k}={v:.4f}" for k, v in avg_metrics.items() if k != "epoch"])
+                    + ", ".join(
+                        [f"{k}={v:.4f}" for k, v in avg_metrics.items() if k != "epoch"]
+                    )
                 )
 
         return self.training_metrics

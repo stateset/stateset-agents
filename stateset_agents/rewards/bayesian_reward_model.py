@@ -6,8 +6,8 @@ Bayesian neural networks, Monte Carlo Dropout, and ensemble methods.
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -92,7 +92,7 @@ class MCDropoutRewardModel(nn.Module):
         layers = []
         in_dim = input_dim
 
-        for i in range(num_layers):
+        for _i in range(num_layers):
             layers.append(nn.Linear(in_dim, hidden_size))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(dropout_rate))
@@ -111,7 +111,7 @@ class MCDropoutRewardModel(nn.Module):
             if module.bias is not None:
                 module.bias.data.zero_()
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass with uncertainty.
 
@@ -128,7 +128,7 @@ class MCDropoutRewardModel(nn.Module):
         self,
         x: torch.Tensor,
         num_samples: int = 20,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Predict with epistemic and aleatoric uncertainty.
 
@@ -222,14 +222,14 @@ class BayesianLinear(nn.Module):
         # KL for weights
         kl_weight = (
             torch.log(self.prior_std / weight_sigma)
-            + (weight_sigma ** 2 + self.weight_mu ** 2) / (2 * self.prior_std ** 2)
+            + (weight_sigma**2 + self.weight_mu**2) / (2 * self.prior_std**2)
             - 0.5
         ).sum()
 
         # KL for bias
         kl_bias = (
             torch.log(self.prior_std / bias_sigma)
-            + (bias_sigma ** 2 + self.bias_mu ** 2) / (2 * self.prior_std ** 2)
+            + (bias_sigma**2 + self.bias_mu**2) / (2 * self.prior_std**2)
             - 0.5
         ).sum()
 
@@ -285,7 +285,7 @@ class VariationalBayesianRewardModel(nn.Module):
         self,
         x: torch.Tensor,
         num_samples: int = 20,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Predict with uncertainty by sampling from weight posterior.
 
@@ -331,7 +331,9 @@ class EnsembleRewardModel:
         # Create ensemble
         self.models = []
         for _ in range(num_models):
-            model = MCDropoutRewardModel(input_dim, hidden_size, num_layers, dropout_rate).to(device)
+            model = MCDropoutRewardModel(
+                input_dim, hidden_size, num_layers, dropout_rate
+            ).to(device)
             self.models.append(model)
 
         self.optimizers = [Adam(model.parameters(), lr=1e-4) for model in self.models]
@@ -340,11 +342,11 @@ class EnsembleRewardModel:
         self,
         inputs: torch.Tensor,
         targets: torch.Tensor,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Train all models in ensemble"""
         losses = []
 
-        for model, optimizer in zip(self.models, self.optimizers):
+        for model, optimizer in zip(self.models, self.optimizers, strict=False):
             optimizer.zero_grad()
 
             # Forward pass
@@ -365,7 +367,7 @@ class EnsembleRewardModel:
         self,
         x: torch.Tensor,
         num_mc_samples: int = 10,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Predict with ensemble uncertainty.
 
@@ -378,7 +380,9 @@ class EnsembleRewardModel:
         all_aleatoric = []
 
         for model in self.models:
-            mean, epistemic, aleatoric = model.predict_with_uncertainty(x, num_mc_samples)
+            mean, epistemic, aleatoric = model.predict_with_uncertainty(
+                x, num_mc_samples
+            )
             all_means.append(mean)
             all_aleatoric.append(aleatoric)
 
@@ -408,7 +412,7 @@ class BayesianRewardFunction(RewardFunction):
     def __init__(
         self,
         input_dim: int = 768,  # Typical embedding size
-        config: Optional[BayesianRewardConfig] = None,
+        config: BayesianRewardConfig | None = None,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         _require_torch()
@@ -433,9 +437,9 @@ class BayesianRewardFunction(RewardFunction):
                 self.config.dropout_rate,
             ).to(device)
 
-        self.calibration_data: List[Tuple[float, float]] = []  # (predicted, actual)
+        self.calibration_data: list[tuple[float, float]] = []  # (predicted, actual)
 
-    async def compute_reward(self, turns: List[ConversationTurn]) -> RewardResult:
+    async def compute_reward(self, turns: list[ConversationTurn]) -> RewardResult:
         """
         Compute reward with uncertainty quantification.
 
@@ -475,23 +479,27 @@ class BayesianRewardFunction(RewardFunction):
             },
             metadata={
                 "high_uncertainty": is_high_uncertainty,
-                "uncertainty_source": "epistemic" if epistemic > aleatoric else "aleatoric",
+                "uncertainty_source": "epistemic"
+                if epistemic > aleatoric
+                else "aleatoric",
                 "confidence": 1.0 / (1.0 + total_uncertainty),  # Normalized confidence
             },
-            explanation=self._generate_explanation(mean, epistemic, aleatoric, is_high_uncertainty),
+            explanation=self._generate_explanation(
+                mean, epistemic, aleatoric, is_high_uncertainty
+            ),
         )
 
     def _predict_with_uncertainty(
         self,
         x: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get prediction with uncertainty"""
         if self.config.use_ensemble:
             return self.model.predict_with_uncertainty(x, self.config.num_samples)
         else:
             return self.model.predict_with_uncertainty(x, self.config.num_samples)
 
-    def _extract_features(self, turns: List[ConversationTurn]) -> np.ndarray:
+    def _extract_features(self, turns: list[ConversationTurn]) -> np.ndarray:
         """
         Extract features from conversation turns.
 
@@ -542,13 +550,15 @@ class BayesianRewardFunction(RewardFunction):
         else:
             return f"Reward: {mean:.2f} (confident prediction)"
 
-    def calibrate(self, predicted: List[float], actual: List[float]) -> Dict[str, float]:
+    def calibrate(
+        self, predicted: list[float], actual: list[float]
+    ) -> dict[str, float]:
         """
         Calibrate uncertainty estimates using actual outcomes.
 
         Returns calibration metrics.
         """
-        self.calibration_data.extend(zip(predicted, actual))
+        self.calibration_data.extend(zip(predicted, actual, strict=False))
 
         # Compute calibration error
         predictions = np.array([p for p, _ in self.calibration_data])
@@ -562,8 +572,8 @@ class BayesianRewardFunction(RewardFunction):
     async def compute_turn_reward(
         self,
         turn: ConversationTurn,
-        context: Dict[str, Any],
-        history: List[ConversationTurn],
+        context: dict[str, Any],
+        history: list[ConversationTurn],
     ) -> RewardResult:
         """Compute reward for single turn"""
         return await self.compute_reward(history + [turn])
@@ -583,7 +593,7 @@ class ActiveLearningSelector:
     ):
         self.uncertainty_threshold = uncertainty_threshold
         self.diversity_weight = diversity_weight
-        self.selected_samples: List[np.ndarray] = []
+        self.selected_samples: list[np.ndarray] = []
 
     def should_query_label(
         self,
@@ -595,27 +605,32 @@ class ActiveLearningSelector:
 
     def select_batch_for_labeling(
         self,
-        candidates: List[Tuple[np.ndarray, RewardResult]],
+        candidates: list[tuple[np.ndarray, RewardResult]],
         batch_size: int = 10,
-    ) -> List[int]:
+    ) -> list[int]:
         """
         Select batch of samples for human labeling.
 
         Balances uncertainty and diversity.
         """
-        uncertainties = np.array([r.breakdown["total_uncertainty"] for _, r in candidates])
+        uncertainties = np.array(
+            [r.breakdown["total_uncertainty"] for _, r in candidates]
+        )
 
         # Compute diversity scores (distance from already selected)
         diversity_scores = np.ones(len(candidates))
         if self.selected_samples:
             for i, (features, _) in enumerate(candidates):
                 min_dist = min(
-                    np.linalg.norm(features - selected) for selected in self.selected_samples
+                    np.linalg.norm(features - selected)
+                    for selected in self.selected_samples
                 )
                 diversity_scores[i] = min_dist
 
         # Combined score
-        scores = (1 - self.diversity_weight) * uncertainties + self.diversity_weight * diversity_scores
+        scores = (
+            1 - self.diversity_weight
+        ) * uncertainties + self.diversity_weight * diversity_scores
 
         # Select top batch_size
         selected_indices = np.argsort(scores)[-batch_size:].tolist()

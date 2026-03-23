@@ -21,7 +21,6 @@ import asyncio
 import gc
 import json
 import logging
-import os
 import statistics
 import sys
 import time
@@ -29,7 +28,8 @@ import tracemalloc
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Optional
+from collections.abc import Callable
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -69,8 +69,8 @@ class BenchmarkResult:
     p95_ms: float
     p99_ms: float
     throughput: float
-    memory_mb: Optional[float] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    memory_mb: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
         return (
@@ -82,7 +82,7 @@ class BenchmarkResult:
             + (f"  Memory: {self.memory_mb:.2f}MB\n" if self.memory_mb else "")
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "iterations": self.iterations,
@@ -112,9 +112,9 @@ class BenchmarkSuite:
     """
 
     name: str
-    results: List[BenchmarkResult] = field(default_factory=list)
+    results: list[BenchmarkResult] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
-    system_info: Dict[str, Any] = field(default_factory=dict)
+    system_info: dict[str, Any] = field(default_factory=dict)
 
     def add_result(self, result: BenchmarkResult) -> None:
         self.results.append(result)
@@ -134,7 +134,7 @@ class BenchmarkSuite:
 
         return "\n".join(lines)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "timestamp": self.timestamp.isoformat(),
@@ -395,12 +395,12 @@ async def benchmark_input_validation(iterations: int = 500) -> BenchmarkResult:
 
 async def benchmark_structured_output(iterations: int = 100) -> BenchmarkResult:
     """Benchmark structured output utilities."""
+
     from stateset_agents.core.structured_output import (
         extract_json_from_response,
-        repair_json_string,
         json_schema_from_type,
+        repair_json_string,
     )
-    from typing import List, Optional
 
     test_responses = [
         '{"name": "test", "value": 42}',
@@ -415,8 +415,8 @@ async def benchmark_structured_output(iterations: int = 100) -> BenchmarkResult:
         response = test_responses[idx % len(test_responses)]
         extracted = extract_json_from_response(response)
         repair_json_string(extracted)
-        json_schema_from_type(List[str])
-        json_schema_from_type(Optional[int])
+        json_schema_from_type(list[str])
+        json_schema_from_type(Optional[int])  # noqa: UP045 - runtime type, not annotation
         idx += 1
 
     return benchmark("Structured Output", run, iterations)
@@ -424,7 +424,7 @@ async def benchmark_structured_output(iterations: int = 100) -> BenchmarkResult:
 
 async def benchmark_function_calling(iterations: int = 100) -> BenchmarkResult:
     """Benchmark function calling utilities."""
-    from stateset_agents.core.function_calling import tool, FunctionDefinition, ToolCall
+    from stateset_agents.core.function_calling import FunctionDefinition, ToolCall, tool
 
     @tool(description="Add numbers")
     def add(a: int, b: int) -> int:
@@ -480,9 +480,9 @@ async def benchmark_memory_system(iterations: int = 100) -> BenchmarkResult:
 async def benchmark_evaluation(iterations: int = 20) -> BenchmarkResult:
     """Benchmark evaluation framework."""
     from stateset_agents.core.evaluation import (
-        RelevanceMetric,
         CoherenceMetric,
         HelpfulnessMetric,
+        RelevanceMetric,
     )
 
     relevance = RelevanceMetric()
@@ -502,14 +502,11 @@ async def benchmark_evaluation(iterations: int = 20) -> BenchmarkResult:
 
 async def benchmark_batch_processing(iterations: int = 10) -> BenchmarkResult:
     """Benchmark batch processing."""
-    from api.streaming import StreamingService, BatchItem
+    from stateset_agents.api.streaming import BatchItem, StreamingService
 
     service = StreamingService()
 
-    items = [
-        BatchItem(id=str(i), message=f"Test message {i}")
-        for i in range(10)
-    ]
+    items = [BatchItem(id=str(i), message=f"Test message {i}") for i in range(10)]
 
     async def run():
         await service.process_batch(items, parallel=4)
@@ -565,7 +562,9 @@ async def run_all_benchmarks() -> BenchmarkSuite:
         try:
             result = await func()
             suite.add_result(result)
-            logger.info(f"  Completed: {result.avg_time_ms:.2f}ms avg, {result.throughput:.2f} ops/sec")
+            logger.info(
+                f"  Completed: {result.avg_time_ms:.2f}ms avg, {result.throughput:.2f} ops/sec"
+            )
         except Exception as e:
             logger.error(f"  Failed: {e}")
             traceback.print_exc()
@@ -577,11 +576,19 @@ def main():
     parser = argparse.ArgumentParser(description="StateSet Agents Benchmark Suite")
     parser.add_argument("--all", action="store_true", help="Run all benchmarks")
     parser.add_argument("--latency", action="store_true", help="Run latency benchmarks")
-    parser.add_argument("--throughput", action="store_true", help="Run throughput benchmarks")
+    parser.add_argument(
+        "--throughput", action="store_true", help="Run throughput benchmarks"
+    )
     parser.add_argument("--memory", action="store_true", help="Run memory benchmarks")
-    parser.add_argument("--report", choices=["json", "html", "both"], default="both",
-                       help="Report format")
-    parser.add_argument("--output", default="benchmark_results", help="Output file prefix")
+    parser.add_argument(
+        "--report",
+        choices=["json", "html", "both"],
+        default="both",
+        help="Report format",
+    )
+    parser.add_argument(
+        "--output", default="benchmark_results", help="Output file prefix"
+    )
 
     args = parser.parse_args()
 
@@ -612,4 +619,5 @@ def main():
 
 if __name__ == "__main__":
     import traceback
+
     main()

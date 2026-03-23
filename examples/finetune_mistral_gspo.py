@@ -34,9 +34,6 @@ Usage:
 import argparse
 import asyncio
 import logging
-import os
-from pathlib import Path
-from typing import Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,8 +56,8 @@ def get_mistral_config(
     GSPO is especially effective for MoE models as it uses sequence-level
     importance ratios which are more stable than token-level ratios.
     """
-    from stateset_agents.training.gspo_trainer import GSPOConfig
     from stateset_agents.training.config import get_config_for_task
+    from stateset_agents.training.gspo_trainer import GSPOConfig
 
     # Get base config for task
     base_config = get_config_for_task(task, model_name=model_name)
@@ -87,7 +84,15 @@ def get_mistral_config(
             lora_r=32,
             lora_alpha=64,
             lora_dropout=0.05,
-            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             gradient_checkpointing=True,
             use_4bit=use_4bit,
             use_8bit=use_8bit,
@@ -116,7 +121,15 @@ def get_mistral_config(
             lora_r=64,
             lora_alpha=128,
             lora_dropout=0.05,
-            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             gradient_checkpointing=True,
             use_4bit=use_4bit if use_4bit else use_8bit,
             use_8bit=use_8bit if not use_4bit else False,
@@ -146,8 +159,13 @@ def get_mistral_config(
             lora_dropout=0.05,
             # Target all attention modules and gate projections
             lora_target_modules=[
-                "q_proj", "k_proj", "v_proj", "o_proj",
-                "w1", "w2", "w3",  # MoE expert weights
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "w1",
+                "w2",
+                "w3",  # MoE expert weights
             ],
             gradient_checkpointing=True,
             use_4bit=True if not use_8bit else False,  # Recommend 4-bit for MoE
@@ -176,8 +194,13 @@ def get_mistral_config(
             lora_alpha=128,
             lora_dropout=0.05,
             lora_target_modules=[
-                "q_proj", "k_proj", "v_proj", "o_proj",
-                "w1", "w2", "w3",
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "w1",
+                "w2",
+                "w3",
             ],
             gradient_checkpointing=True,
             use_4bit=True,  # Always use 4-bit for 8x22B
@@ -200,7 +223,7 @@ async def finetune_mistral(
     use_8bit: bool = False,
     output_dir: str = "./outputs/mistral_gspo",
     use_wandb: bool = False,
-    wandb_project: Optional[str] = None,
+    wandb_project: str | None = None,
 ):
     """
     Fine-tune a Mistral or Mixtral model using GSPO.
@@ -217,7 +240,10 @@ async def finetune_mistral(
     """
     from stateset_agents import MultiTurnAgent
     from stateset_agents.core.agent import AgentConfig
-    from stateset_agents.core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
+    from stateset_agents.core.environment import (
+        CONVERSATION_CONFIGS,
+        ConversationEnvironment,
+    )
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
     from stateset_agents.training.gspo_trainer import train_with_gspo
 
@@ -230,7 +256,9 @@ async def finetune_mistral(
     logger.info(f"Model: {model_name}")
     logger.info(f"Task: {task}")
     logger.info(f"LoRA: {use_lora}")
-    logger.info(f"Quantization: {'4-bit' if use_4bit else '8-bit' if use_8bit else 'None'}")
+    logger.info(
+        f"Quantization: {'4-bit' if use_4bit else '8-bit' if use_8bit else 'None'}"
+    )
     logger.info(f"Output: {output_dir}")
 
     if is_moe:
@@ -286,15 +314,24 @@ async def finetune_mistral(
     # Enable W&B if requested
     if use_wandb:
         gspo_config.report_to = "wandb"
-        gspo_config.wandb_project = wandb_project or f"{'mixtral' if is_moe else 'mistral'}-gspo-{task}"
-        gspo_config.wandb_tags = [model_type.lower(), "gspo", task, model_name.split("/")[-1]]
+        gspo_config.wandb_project = (
+            wandb_project or f"{'mixtral' if is_moe else 'mistral'}-gspo-{task}"
+        )
+        gspo_config.wandb_tags = [
+            model_type.lower(),
+            "gspo",
+            task,
+            model_name.split("/")[-1],
+        ]
         if is_moe:
             gspo_config.wandb_tags.append("moe")
         logger.info(f"W&B enabled: {gspo_config.wandb_project}")
 
     logger.info("GSPO configuration ready")
     logger.info(f"   - Group size: {gspo_config.num_generations}")
-    logger.info(f"   - Clipping: [{gspo_config.clip_range_left}, {gspo_config.clip_range_right}]")
+    logger.info(
+        f"   - Clipping: [{gspo_config.clip_range_left}, {gspo_config.clip_range_right}]"
+    )
     logger.info(f"   - Learning rate: {gspo_config.learning_rate}")
     logger.info(f"   - Iterations: {gspo_config.num_outer_iterations}")
 

@@ -9,15 +9,12 @@ This module provides advanced agent capabilities including:
 - Self-improvement mechanisms
 """
 
-import asyncio
-import hashlib
-import json
+from __future__ import annotations
+
 import logging
-import uuid
-from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
@@ -26,9 +23,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     torch = None  # type: ignore
 
-from ..agent import Agent, AgentConfig, MultiTurnAgent
-from ..reward import RewardFunction, RewardResult
-from ..trajectory import ConversationTurn, MultiTurnTrajectory
+from ..agent import AgentConfig, MultiTurnAgent
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +33,12 @@ class MemoryEntry:
     """Enhanced memory entry with vector embeddings"""
 
     content: str
-    embedding: Optional[np.ndarray] = None
+    embedding: np.ndarray | None = None
     timestamp: datetime = field(default_factory=datetime.now)
     importance: float = 1.0
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     access_count: int = 0
-    last_accessed: Optional[datetime] = None
+    last_accessed: datetime | None = None
 
     def update_access(self):
         """Update access metadata"""
@@ -58,7 +53,7 @@ class ReasoningStep:
     thought: str
     action: str
     confidence: float
-    evidence: List[str] = field(default_factory=list)
+    evidence: list[str] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -67,12 +62,12 @@ class PersonaProfile:
     """Dynamic persona profile"""
 
     name: str
-    traits: Dict[str, float] = field(default_factory=dict)
-    expertise_areas: List[str] = field(default_factory=list)
-    communication_style: Dict[str, Any] = field(default_factory=dict)
+    traits: dict[str, float] = field(default_factory=dict)
+    expertise_areas: list[str] = field(default_factory=list)
+    communication_style: dict[str, Any] = field(default_factory=dict)
     adaptation_rate: float = 0.1
 
-    def adapt(self, feedback: Dict[str, Any]):
+    def adapt(self, feedback: dict[str, Any]):
         """Adapt persona based on feedback"""
         for trait, adjustment in feedback.get("trait_adjustments", {}).items():
             if trait in self.traits:
@@ -92,7 +87,7 @@ class VectorMemory:
     ):
         self.embedding_model = embedding_model
         self.max_entries = max_entries
-        self.entries: List[MemoryEntry] = []
+        self.entries: list[MemoryEntry] = []
         self.tokenizer = None
         self.model = None
         if torch is not None:
@@ -120,7 +115,7 @@ class VectorMemory:
             self.model = None
 
     async def add_entry(
-        self, content: str, context: Dict[str, Any] = None, importance: float = 1.0
+        self, content: str, context: dict[str, Any] = None, importance: float = 1.0
     ):
         """Add a new memory entry"""
         entry = MemoryEntry(
@@ -141,7 +136,7 @@ class VectorMemory:
             )
             self.entries = self.entries[: self.max_entries]
 
-    async def retrieve_relevant(self, query: str, top_k: int = 5) -> List[MemoryEntry]:
+    async def retrieve_relevant(self, query: str, top_k: int = 5) -> list[MemoryEntry]:
         """Retrieve relevant memories based on semantic similarity"""
         if not self.entries or not self.model:
             return []
@@ -199,8 +194,8 @@ class ReasoningEngine:
         }
 
     async def reason(
-        self, query: str, context: Dict[str, Any] = None
-    ) -> List[ReasoningStep]:
+        self, query: str, context: dict[str, Any] = None
+    ) -> list[ReasoningStep]:
         """Perform chain-of-thought reasoning"""
         steps = []
         current_context = context or {}
@@ -243,8 +238,8 @@ class ReasoningEngine:
         query: str,
         reasoning_type: str,
         step_num: int,
-        previous_steps: List[ReasoningStep],
-        context: Dict[str, Any],
+        previous_steps: list[ReasoningStep],
+        context: dict[str, Any],
     ) -> ReasoningStep:
         """Generate a single reasoning step"""
 
@@ -306,9 +301,9 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
     def __init__(
         self,
         config: AgentConfig,
-        memory_system: Optional[VectorMemory] = None,
-        reasoning_engine: Optional[ReasoningEngine] = None,
-        persona: Optional[PersonaProfile] = None,
+        memory_system: VectorMemory | None = None,
+        reasoning_engine: ReasoningEngine | None = None,
+        persona: PersonaProfile | None = None,
         **kwargs,
     ):
         super().__init__(config, **kwargs)
@@ -319,12 +314,12 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
         self.persona = persona or PersonaProfile("Assistant")
 
         # Enhanced state
-        self.reasoning_history: List[List[ReasoningStep]] = []
-        self.performance_metrics: Dict[str, Any] = {}
-        self.self_improvement_data: List[Dict[str, Any]] = []
+        self.reasoning_history: list[list[ReasoningStep]] = []
+        self.performance_metrics: dict[str, Any] = {}
+        self.self_improvement_data: list[dict[str, Any]] = []
 
         # Multi-modal support
-        self.multimodal_processors: Dict[str, Any] = {}
+        self.multimodal_processors: dict[str, Any] = {}
 
     async def initialize(self):
         """Initialize the enhanced agent"""
@@ -336,7 +331,7 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
         logger.info("Enhanced MultiTurnAgent initialized with advanced capabilities")
 
     async def generate_response(
-        self, messages: List[Dict[str, str]], context: Optional[Dict[str, Any]] = None
+        self, messages: list[dict[str, str]], context: dict[str, Any] | None = None
     ) -> str:
         """Generate enhanced response with reasoning and memory"""
 
@@ -400,7 +395,7 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
         query_lower = query.lower()
         return any(indicator in query_lower for indicator in complex_indicators)
 
-    def _adapt_persona(self, context: Dict[str, Any]):
+    def _adapt_persona(self, context: dict[str, Any]):
         """Adapt persona based on context"""
         # Simple adaptation logic
         if context.get("urgency") == "high":
@@ -431,7 +426,7 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
 
         return min(importance, 2.0)
 
-    def _update_performance_metrics(self, response: str, context: Dict[str, Any]):
+    def _update_performance_metrics(self, response: str, context: dict[str, Any]):
         """Update performance tracking"""
         self.performance_metrics["total_responses"] = (
             self.performance_metrics.get("total_responses", 0) + 1
@@ -442,7 +437,7 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
             + len(response.split())
         ) / self.performance_metrics["total_responses"]
 
-    async def self_improve(self, feedback: Dict[str, Any]):
+    async def self_improve(self, feedback: dict[str, Any]):
         """Self-improvement mechanism"""
         self.self_improvement_data.append(
             {
@@ -466,7 +461,7 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
             importance=1.5,
         )
 
-    def get_agent_status(self) -> Dict[str, Any]:
+    def get_agent_status(self) -> dict[str, Any]:
         """Get comprehensive agent status"""
         return {
             "base_config": self.config.__dict__,

@@ -26,8 +26,7 @@ import logging
 from pathlib import Path
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -36,7 +35,6 @@ async def main():
     """Train GRPO agent on MountainCar-v0."""
 
     from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
-    from stateset_agents.core.agent import AgentConfig
     from stateset_agents.training.config import TrainingConfig
     from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
@@ -52,35 +50,32 @@ async def main():
         import gym
 
     gym_env = gym.make("MountainCar-v0")
-    logger.info(f"✓ Created {gym_env.spec.id if hasattr(gym_env, 'spec') else 'MountainCar-v0'}")
+    logger.info(
+        f"✓ Created {gym_env.spec.id if hasattr(gym_env, 'spec') else 'MountainCar-v0'}"
+    )
     logger.info(f"  Action space: {gym_env.action_space} (0=left, 1=nothing, 2=right)")
-    logger.info(f"  Observation space: {gym_env.observation_space} ([position, velocity])")
-    logger.info(f"  Goal: Reach position 0.5 (flag on the right mountain)")
+    logger.info(
+        f"  Observation space: {gym_env.observation_space} ([position, velocity])"
+    )
+    logger.info("  Goal: Reach position 0.5 (flag on the right mountain)")
 
     # 2. Wrap with Adapter (auto-creates MountainCarObservationProcessor!)
     logger.info("\n[2/5] Wrapping environment for framework...")
     env_adapter = GymEnvironmentAdapter(
         gym_env,
         auto_create_processors=True,  # Automatically uses MountainCarObservationProcessor
-        max_steps=200  # MountainCar default
+        max_steps=200,  # MountainCar default
     )
     logger.info(f"✓ Created {env_adapter}")
-    logger.info(f"  Auto-selected: MountainCarObservationProcessor")
+    logger.info("  Auto-selected: MountainCarObservationProcessor")
 
     # 3. Create GymAgent
     logger.info("\n[3/5] Creating GymAgent...")
-    agent_config = AgentConfig(
-        model_name="gpt2",
-        max_new_tokens=5,  # Actions are 0, 1, or 2
-        temperature=0.9,  # Higher exploration for harder task
-        do_sample=True,
-        use_stub_model=False  # Set to True for quick testing
-    )
-
     agent = create_gym_agent(
         model_name="gpt2",
-        use_stub=False,
-        temperature=0.9  # More exploration
+        use_stub=False,  # Set to True for quick testing
+        temperature=0.9,  # More exploration
+        max_new_tokens=5,  # Actions are 0, 1, or 2
     )
 
     logger.info("  Initializing agent...")
@@ -103,10 +98,10 @@ async def main():
         value_loss_coef=0.5,
         entropy_coef=0.02,  # Higher entropy for more exploration
         normalize_advantages=True,
-        log_interval=20
+        log_interval=20,
     )
 
-    logger.info(f"✓ Training configuration:")
+    logger.info("✓ Training configuration:")
     logger.info(f"  Episodes: {training_config.num_episodes}")
     logger.info(f"  Generations per episode: {training_config.num_generations}")
     logger.info(f"  Learning rate: {training_config.learning_rate}")
@@ -120,7 +115,7 @@ async def main():
         agent=agent,
         environment=env_adapter,
         config=training_config,
-        output_dir=Path("outputs/mountaincar_grpo")
+        output_dir=Path("outputs/mountaincar_grpo"),
     )
 
     logger.info("\n🚀 Starting GRPO training on MountainCar-v0...")
@@ -139,26 +134,28 @@ async def main():
     if metrics:
         final_reward = metrics.get("final_average_reward", 0)
         best_reward = metrics.get("best_reward", 0)
-        logger.info(f"\nFinal Results:")
+        logger.info("\nFinal Results:")
         logger.info(f"  Final Average Reward: {final_reward:.2f}")
         logger.info(f"  Best Reward: {best_reward:.2f}")
-        logger.info(f"  Random Baseline: ~-200 (timeout)")
-        logger.info(f"  Good Performance: ~-110 (110 steps to goal)")
-        logger.info(f"  Optimal Performance: ~-90")
+        logger.info("  Random Baseline: ~-200 (timeout)")
+        logger.info("  Good Performance: ~-110 (110 steps to goal)")
+        logger.info("  Optimal Performance: ~-90")
 
         if final_reward > -110:
             logger.info("\n🎉 Excellent! Agent learned to reach the goal efficiently!")
         elif final_reward > -150:
             logger.info("\n📈 Good progress! Agent is learning to build momentum.")
         else:
-            logger.info("\n💡 MountainCar is hard! Try more episodes or higher exploration.")
+            logger.info(
+                "\n💡 MountainCar is hard! Try more episodes or higher exploration."
+            )
 
     # 7. Save model
     logger.info("\n💾 Saving trained model...")
     output_dir = Path("outputs/mountaincar_grpo")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if hasattr(agent.model, 'save_pretrained'):
+    if hasattr(agent.model, "save_pretrained"):
         agent.model.save_pretrained(output_dir / "final_model")
         logger.info(f"✓ Model saved to {output_dir / 'final_model'}")
 

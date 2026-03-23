@@ -24,7 +24,7 @@ pip install httpx python-dotenv
 **Usage:**
 ```bash
 # Start the API server
-python -m api.main
+stateset-agents serve --host 0.0.0.0 --port 8000
 
 # In another terminal, run the example
 python examples/api_client_example.py
@@ -49,7 +49,7 @@ pip install requests python-dotenv
 **Usage:**
 ```bash
 # Start the API server
-python -m api.main
+stateset-agents serve --host 0.0.0.0 --port 8000
 
 # In another terminal, run the example
 python examples/api_client_simple.py
@@ -77,7 +77,7 @@ pip install rich
 **Usage:**
 ```bash
 # Start the API server
-python -m api.main
+stateset-agents serve --host 0.0.0.0 --port 8000
 
 # Run the chatbot with default prompt
 python examples/interactive_chatbot.py
@@ -92,7 +92,7 @@ Before running any examples, you need to start the StateSet Agents API server.
 
 ### Method 1: Using the module directly
 ```bash
-python -m api.main
+uvicorn stateset_agents.api.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### Method 2: Using the CLI
@@ -102,8 +102,14 @@ stateset-agents serve --host 0.0.0.0 --port 8000
 
 ### Method 3: Using Docker
 ```bash
-docker build -t stateset/agents:latest -f deployment/docker/Dockerfile .
-docker run -p 8000:8000 stateset/agents:latest
+docker build -f deployment/docker/Dockerfile --target runtime \
+  -t stateset/stateset-agents-api:latest \
+  .
+docker run -p 8000:8000 \
+  -e API_ENVIRONMENT=development \
+  -e API_REQUIRE_AUTH=false \
+  -e INFERENCE_BACKEND=stub \
+  stateset/stateset-agents-api:latest
 ```
 
 The API will be available at `http://localhost:8000`
@@ -114,21 +120,28 @@ Create a `.env` file in the root directory:
 
 ```bash
 # API Configuration
-API_BASE_URL=http://localhost:8000
+API_ENVIRONMENT=development
+API_REQUIRE_AUTH=false
 API_JWT_SECRET=test_secret_for_development_only_not_for_prod
-API_ENV=development
 
-# Optional: Model configuration
-MODEL_CACHE_DIR=/path/to/model/cache
+# Inference backend (stub by default)
+INFERENCE_BACKEND=stub
+INFERENCE_BACKEND_URL=http://localhost:8001
+INFERENCE_DEFAULT_MODEL=moonshotai/Kimi-K2.5
 ```
 
 ## Key API Endpoints
 
 ### Health & Info
 - `GET /` - API information and available endpoints
-- `GET /health` - Health check with component status
+- `GET /healthz` - Health check with component status
 - `GET /ready` - Readiness probe (for Kubernetes)
 - `GET /live` - Liveness probe (for Kubernetes)
+
+### LLM Inference (Anthropic/OpenAI Compatible)
+- `POST /v1/messages` - Anthropic-style messages endpoint
+- `POST /v1/chat/completions` - OpenAI-style chat completions
+- `GET /v1/models` - OpenAI-style models list
 
 ### Agent Management
 - `POST /agents` - Create a new agent

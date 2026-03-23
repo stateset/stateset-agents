@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 
 @dataclass(init=False)
@@ -23,20 +23,20 @@ class ConversationTurn:
     the standard keyword form `role=..., content=...`.
     """
 
-    role: Optional[str] = None  # "user", "assistant", "system", "tool"
-    content: Optional[str] = None
+    role: str | None = None  # "user", "assistant", "system", "tool"
+    content: str | None = None
     # Compatibility fields
-    user_message: Optional[str] = None
-    assistant_response: Optional[str] = None
-    reward: Optional[float] = None
+    user_message: str | None = None
+    assistant_response: str | None = None
+    reward: float | None = None
 
     timestamp: datetime = field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     turn_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     # For tool calls and responses
-    tool_calls: Optional[List[Dict[str, Any]]] = None
-    tool_results: Optional[List[Dict[str, Any]]] = None
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_results: list[dict[str, Any]] | None = None
 
     def __init__(self, *args, **kwargs):
         # Initialize defaults
@@ -55,7 +55,11 @@ class ConversationTurn:
             if len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], str):
                 valid_roles = {"user", "assistant", "system", "tool"}
                 # (A, B, [float]) — treat as legacy (user_message, assistant_response, reward)
-                if len(args) >= 3 and isinstance(args[2], (int, float)) and not isinstance(args[2], bool):
+                if (
+                    len(args) >= 3
+                    and isinstance(args[2], (int, float))
+                    and not isinstance(args[2], bool)
+                ):
                     role_candidate = args[0].lower()
                     if role_candidate in valid_roles:
                         self.role = role_candidate
@@ -69,9 +73,15 @@ class ConversationTurn:
                         self.content = self.assistant_response
                 else:
                     # (role, content, [reward])
-                    self.role = args[0].lower() if args[0].lower() in valid_roles else args[0]
+                    self.role = (
+                        args[0].lower() if args[0].lower() in valid_roles else args[0]
+                    )
                     self.content = args[1]
-                    if len(args) >= 3 and isinstance(args[2], (int, float)) and not isinstance(args[2], bool):
+                    if (
+                        len(args) >= 3
+                        and isinstance(args[2], (int, float))
+                        and not isinstance(args[2], bool)
+                    ):
                         self.reward = float(args[2])
             else:
                 raise TypeError("Invalid positional arguments for ConversationTurn")
@@ -92,7 +102,7 @@ class ConversationTurn:
             if key in kwargs and kwargs[key] is not None:
                 setattr(self, key, kwargs[key])
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format"""
         data = {
             "role": self.role,
@@ -112,7 +122,7 @@ class ConversationTurn:
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ConversationTurn":
+    def from_dict(cls, data: dict[str, Any]) -> "ConversationTurn":
         """Create from dictionary"""
         data = data.copy()
         if "timestamp" in data and isinstance(data["timestamp"], str):
@@ -130,15 +140,15 @@ class Trajectory:
     response: str = ""
     reward: float = 0.0
     # Explicit list of per-turn records for compatibility with tests
-    turns: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    turns: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
     trajectory_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     # For GRPO training
-    log_probs: Optional[List[float]] = None
-    value_estimates: Optional[List[float]] = None
+    log_probs: list[float] | None = None
+    value_estimates: list[float] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format"""
         return {
             "prompt": self.prompt,
@@ -152,12 +162,12 @@ class Trajectory:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Trajectory":
+    def from_dict(cls, data: dict[str, Any]) -> "Trajectory":
         """Create from dictionary"""
         return cls(**data)
 
     # Compatibility: accept add_turn(dict) used by some tests
-    def add_turn(self, turn: Dict[str, Any]) -> None:
+    def add_turn(self, turn: dict[str, Any]) -> None:
         self.turns.append(turn)
 
     # Convenience helpers used by some training utilities
@@ -169,7 +179,9 @@ class Trajectory:
             if t.get("role") == "user" and t.get("content"):
                 return str(t.get("content"))
         # Fallback: concatenate any user messages
-        user_msgs = [str(t.get("content", "")) for t in self.turns if t.get("role") == "user"]
+        user_msgs = [
+            str(t.get("content", "")) for t in self.turns if t.get("role") == "user"
+        ]
         return " ".join(user_msgs)
 
     def get_last_response(self) -> str:
@@ -180,7 +192,6 @@ class Trajectory:
         return self.response
 
 
-
 @dataclass
 class MultiTurnTrajectory:
     """
@@ -188,22 +199,22 @@ class MultiTurnTrajectory:
     """
 
     trajectory_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    turns: List[ConversationTurn] = field(default_factory=list)
+    turns: list[ConversationTurn] = field(default_factory=list)
     total_reward: float = 0.0
     # Backwards-compat: some tests/configs use `rewards=` instead of `turn_rewards=`.
-    rewards: Optional[List[float]] = None
-    turn_rewards: Optional[List[float]] = None  # Reward for each turn
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    rewards: list[float] | None = None
+    turn_rewards: list[float] | None = None  # Reward for each turn
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # Environment state tracking
-    initial_state: Optional[Dict[str, Any]] = None
-    final_state: Optional[Dict[str, Any]] = None
-    state_history: Optional[List[Dict[str, Any]]] = None
+    initial_state: dict[str, Any] | None = None
+    final_state: dict[str, Any] | None = None
+    state_history: list[dict[str, Any]] | None = None
 
     # Training metadata
     episode_length: int = field(init=False)
-    conversation_quality_score: Optional[float] = None
-    task_completion_score: Optional[float] = None
+    conversation_quality_score: float | None = None
+    task_completion_score: float | None = None
 
     def __post_init__(self):
         self.episode_length = len(self.turns)
@@ -221,28 +232,28 @@ class MultiTurnTrajectory:
         self.rewards = self.turn_rewards
 
     @property
-    def conversation_history(self) -> List[Dict[str, str]]:
+    def conversation_history(self) -> list[dict[str, str]]:
         """Get conversation in standard chat format"""
         return [{"role": turn.role, "content": turn.content} for turn in self.turns]
 
     @property
-    def user_turns(self) -> List[ConversationTurn]:
+    def user_turns(self) -> list[ConversationTurn]:
         """Get only user turns"""
         return [turn for turn in self.turns if turn.role == "user"]
 
     @property
-    def assistant_turns(self) -> List[ConversationTurn]:
+    def assistant_turns(self) -> list[ConversationTurn]:
         """Get only assistant turns"""
         return [turn for turn in self.turns if turn.role == "assistant"]
 
-    def get_turn_by_id(self, turn_id: str) -> Optional[ConversationTurn]:
+    def get_turn_by_id(self, turn_id: str) -> ConversationTurn | None:
         """Get turn by ID"""
         for turn in self.turns:
             if turn.turn_id == turn_id:
                 return turn
         return None
 
-    def add_turn(self, turn: ConversationTurn, reward: Optional[float] = None):
+    def add_turn(self, turn: ConversationTurn, reward: float | None = None):
         """Add a new turn to the trajectory"""
         self.turns.append(turn)
         self.episode_length = len(self.turns)
@@ -253,20 +264,19 @@ class MultiTurnTrajectory:
             self.turn_rewards = []
         self.turn_rewards.append(float(reward))
         self.rewards = self.turn_rewards
-        from decimal import Decimal
 
         self.total_reward = round(
             float(Decimal(str(self.total_reward)) + Decimal(str(reward))), 1
         )
 
-    def get_context_up_to_turn(self, turn_index: int) -> List[Dict[str, str]]:
+    def get_context_up_to_turn(self, turn_index: int) -> list[dict[str, str]]:
         """Get conversation context up to a specific turn"""
         return [
             {"role": turn.role, "content": turn.content}
             for turn in self.turns[:turn_index]
         ]
 
-    def compute_cumulative_reward(self) -> List[float]:
+    def compute_cumulative_reward(self) -> list[float]:
         """Compute cumulative rewards for each turn"""
         if not self.turn_rewards:
             return []
@@ -285,7 +295,7 @@ class MultiTurnTrajectory:
             return 0.0
         return float(self.total_reward) / float(self.episode_length)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format"""
         return {
             "turns": [turn.to_dict() for turn in self.turns],
@@ -302,7 +312,7 @@ class MultiTurnTrajectory:
             "task_completion_score": self.task_completion_score,
         }
 
-    def to_messages(self) -> List[Dict[str, str]]:
+    def to_messages(self) -> list[dict[str, str]]:
         """Return turns in `{role, content}` message format."""
         return [
             {"role": (turn.role or ""), "content": (turn.content or "")}
@@ -310,7 +320,7 @@ class MultiTurnTrajectory:
         ]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MultiTurnTrajectory":
+    def from_dict(cls, data: dict[str, Any]) -> "MultiTurnTrajectory":
         """Create from dictionary"""
         data = data.copy()
         if "turns" in data:
@@ -326,7 +336,7 @@ class MultiTurnTrajectory:
     @classmethod
     def load(cls, filepath: str) -> "MultiTurnTrajectory":
         """Load trajectory from file"""
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             data = json.load(f)
         return cls.from_dict(data)
 
@@ -338,19 +348,23 @@ class TrajectoryGroup:
     """
 
     scenario_id: str = ""
-    trajectories: List[Union[Trajectory, MultiTurnTrajectory]] = field(default_factory=list)
-    scenario_metadata: Dict[str, Any] = field(default_factory=dict)
+    trajectories: list[Trajectory | MultiTurnTrajectory] = field(
+        default_factory=list
+    )
+    scenario_metadata: dict[str, Any] = field(default_factory=dict)
     group_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     @property
-    def rewards(self) -> List[float]:
+    def rewards(self) -> list[float]:
         """Get all rewards in the group"""
         return [
             traj.total_reward if hasattr(traj, "total_reward") else traj.reward
             for traj in self.trajectories
         ]
 
-    def add_trajectory(self, trajectory: Union[Trajectory, MultiTurnTrajectory]) -> None:
+    def add_trajectory(
+        self, trajectory: Trajectory | MultiTurnTrajectory
+    ) -> None:
         """Append a trajectory to the group (compatibility helper)."""
         self.trajectories.append(trajectory)
 
@@ -362,11 +376,15 @@ class TrajectoryGroup:
         rewards = self.rewards
         return np.std(rewards) if len(rewards) > 1 else 0.0
 
-    def compute_advantages(self, baseline_method: str = "group_mean") -> List[float]:
+    def compute_advantages(self, baseline_method: str = "group_mean") -> list[float]:
         """Compute GRPO advantages for this group"""
         import numpy as np
 
-        rewards = np.array(self.rewards)
+        rewards_list = self.rewards
+        if not rewards_list:
+            return []
+
+        rewards = np.array(rewards_list, dtype=float)
 
         if baseline_method == "group_mean":
             baseline = rewards.mean()
@@ -378,7 +396,7 @@ class TrajectoryGroup:
         advantages = rewards - baseline
         return advantages.tolist()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format"""
         return {
             "scenario_id": self.scenario_id,
@@ -388,44 +406,36 @@ class TrajectoryGroup:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TrajectoryGroup":
-        """Create from dictionary."""
-        data = data.copy()
-        trajectories: List[Union[Trajectory, MultiTurnTrajectory]] = []
-        for item in data.get("trajectories", []) or []:
+    def from_dict(cls, data: dict[str, Any]) -> "TrajectoryGroup":
+        """Create a TrajectoryGroup from a serialized dictionary."""
+        data = dict(data or {})
+        raw_trajectories = data.get("trajectories") or []
+
+        trajectories: list[Trajectory | MultiTurnTrajectory] = []
+        for item in raw_trajectories:
             if isinstance(item, (Trajectory, MultiTurnTrajectory)):
                 trajectories.append(item)
                 continue
             if not isinstance(item, dict):
                 continue
-            if "prompt" in item or "response" in item:
+            # Multi-turn trajectories are typically keyed by `turns`.
+            if "turns" in item:
+                trajectories.append(MultiTurnTrajectory.from_dict(item))
+            elif "prompt" in item or "response" in item:
                 trajectories.append(Trajectory.from_dict(item))
             else:
                 trajectories.append(MultiTurnTrajectory.from_dict(item))
-        data["trajectories"] = trajectories
-        return cls(**data)
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TrajectoryGroup":
-        """Create from dictionary"""
-        data = data.copy()
-        if "trajectories" in data:
-            trajectories = []
-            for traj_data in data["trajectories"]:
-                if "turns" in traj_data:
-                    trajectories.append(MultiTurnTrajectory.from_dict(traj_data))
-                else:
-                    trajectories.append(Trajectory.from_dict(traj_data))
-            data["trajectories"] = trajectories
+        data["trajectories"] = trajectories
         return cls(**data)
 
 
 # Utility functions
 def create_trajectory_from_conversation(
-    conversation: List[Dict[str, str]],
+    conversation: list[dict[str, str]],
     total_reward: float,
-    turn_rewards: Optional[List[float]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    turn_rewards: list[float] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> MultiTurnTrajectory:
     """
     Create a MultiTurnTrajectory from a standard conversation format
@@ -446,9 +456,9 @@ def create_trajectory_from_conversation(
 
 
 def conversation_to_single_trajectory(
-    conversation: List[Dict[str, str]],
+    conversation: list[dict[str, str]],
     reward: float,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> Trajectory:
     """
     Convert a conversation to a single trajectory for backwards compatibility

@@ -7,13 +7,14 @@ and recovery strategies for production-ready agent training and deployment.
 
 import asyncio
 import logging
-import pickle
 import time
 import traceback
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any
+from collections.abc import Callable
+
+from .errors import StateSetError
 
 
 class ErrorSeverity(Enum):
@@ -72,24 +73,32 @@ class ErrorContext:
     timestamp: float
     component: str
     operation: str
-    details: Dict[str, Any]
+    details: dict[str, Any]
     stack_trace: str
-    recovery_actions: List[str]
+    recovery_actions: list[str]
 
 
-class GRPOException(Exception):
-    """Base exception for GRPO framework"""
+class GRPOException(StateSetError):
+    """Base exception for GRPO framework.
+
+    Inherits from :class:`~stateset_agents.core.errors.StateSetError` so that
+    ``except StateSetError`` catches GRPO errors too, unifying the two error
+    hierarchies.
+    """
 
     def __init__(
         self,
         message: str,
         category: ErrorCategory = ErrorCategory.SYSTEM,
         severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-        error_code: Optional[ErrorCode] = None,
-        details: Optional[Dict[str, Any]] = None,
-        recovery_actions: Optional[List[str]] = None,
+        error_code: ErrorCode | None = None,
+        details: dict[str, Any] | None = None,
+        recovery_actions: list[str] | None = None,
     ):
-        super().__init__(message)
+        # Call Exception.__init__ directly to avoid StateSetError's
+        # required keyword args while preserving MRO compatibility.
+        Exception.__init__(self, message)
+        self.message = message
         self.category = category
         self.severity = severity
         self.error_code = error_code or DEFAULT_ERROR_CODES.get(
@@ -98,6 +107,14 @@ class GRPOException(Exception):
         self.details = details or {}
         self.recovery_actions = recovery_actions or []
         self.timestamp = time.time()
+        # StateSetError compatibility attributes
+        self.cause: BaseException | None = None
+
+    def __str__(self) -> str:
+        parts = [f"[{self.error_code.value}] {self.message}"]
+        if self.details:
+            parts.append(f"Details: {self.details}")
+        return " | ".join(parts)
 
     def to_context(
         self, component: str = "unknown", operation: str = "unknown"
@@ -175,7 +192,7 @@ class RetryConfig:
         max_delay: float = 60.0,
         exponential_base: float = 2.0,
         jitter: bool = True,
-        retry_on: Optional[List[Type[Exception]]] = None,
+        retry_on: list[type[Exception]] | None = None,
     ):
         self.max_attempts = max_attempts
         self.base_delay = base_delay
@@ -192,7 +209,7 @@ class CircuitBreakerConfig:
         self,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
-        expected_exception: Type[Exception] = Exception,
+        expected_exception: type[Exception] = Exception,
     ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -212,11 +229,11 @@ class CircuitBreaker:
 
     def __init__(
         self,
-        config: Optional[CircuitBreakerConfig] = None,
+        config: CircuitBreakerConfig | None = None,
         *,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
-        expected_exception: Type[Exception] = Exception,
+        expected_exception: type[Exception] = Exception,
     ):
         # Backward/interop support: allow constructing directly from thresholds.
         self.config = config or CircuitBreakerConfig(
@@ -252,7 +269,7 @@ class CircuitBreaker:
                 self.failure_count = 0
             return result
 
-        except self.config.expected_exception as e:
+        except self.config.expected_exception:
             self.failure_count += 1
             self.last_failure_time = time.time()
 
@@ -267,20 +284,20 @@ class ErrorHandler:
 
     def __init__(
         self,
-        logger: Optional[logging.Logger] = None,
+        logger: logging.Logger | None = None,
         max_error_history: int = 10000,
     ):
         self.logger = logger or logging.getLogger(__name__)
-        self.error_history: List[ErrorContext] = []
+        self.error_history: list[ErrorContext] = []
         self._max_error_history = max_error_history
-        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+        self.circuit_breakers: dict[str, CircuitBreaker] = {}
 
     def handle_error(
         self,
         error: Exception,
         component: str,
         operation: str,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> ErrorContext:
         """Handle and log error with rich context"""
 
@@ -314,7 +331,7 @@ class ErrorHandler:
         # Enforce bounded history to prevent memory leaks
         if len(self.error_history) > self._max_error_history:
             # Remove oldest errors, keeping the most recent
-            self.error_history = self.error_history[-self._max_error_history:]
+            self.error_history = self.error_history[-self._max_error_history :]
 
         self._log_error(error_context)
 
@@ -345,11 +362,11 @@ class ErrorHandler:
         """Register a circuit breaker"""
         self.circuit_breakers[name] = CircuitBreaker(config)
 
-    def get_circuit_breaker(self, name: str) -> Optional[CircuitBreaker]:
+    def get_circuit_breaker(self, name: str) -> CircuitBreaker | None:
         """Get circuit breaker by name"""
         return self.circuit_breakers.get(name)
 
-    def get_error_summary(self) -> Dict[str, Any]:
+    def get_error_summary(self) -> dict[str, Any]:
         """Get summary of recent errors"""
         recent_errors = [
             e
@@ -457,12 +474,12 @@ def handle_error(
     error: Exception,
     component: str,
     operation: str,
-    context: Optional[Dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
 ) -> ErrorContext:
     """Handle error using global handler"""
     return _global_error_handler.handle_error(error, component, operation, context)
 
 
-def get_error_summary() -> Dict[str, Any]:
+def get_error_summary() -> dict[str, Any]:
     """Get error summary using global handler"""
     return _global_error_handler.get_error_summary()

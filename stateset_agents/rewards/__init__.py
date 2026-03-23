@@ -8,6 +8,14 @@ This module provides various reward computation strategies:
 - Domain-specific reward templates
 """
 
+from .kimi_k25_reward import (
+    CodeExecutionReward,
+    LongContextReward,
+    MultimodalConsistencyReward,
+    ThinkingModeReward,
+    create_kimi_k25_conversational_reward,
+    create_kimi_k25_customer_service_reward,
+)
 from .llm_reward import RewardResult
 from .multi_objective_reward import (
     MultiObjectiveRewardFunction,
@@ -19,20 +27,18 @@ from .multi_objective_reward import (
 from .ruler_reward import RulerRewardFunction
 from .ruler_reward import RulerRewardFunction as LLMRewardFunction
 from .ruler_reward import create_customer_service_ruler, create_general_ruler
-from .symbolic_physics_reward import (
-    SymbolicPhysicsRewardFunction,
-    SymbolicRewardConfig,
-)
+from .symbolic_physics_reward import SymbolicPhysicsRewardFunction, SymbolicRewardConfig
 
 # LLM-as-Judge for RLAIF
 try:
     from .llm_judge import (
-        LLMJudge,
+        EvaluationCriteria,
         JudgeConfig,
         JudgeProvider,
-        EvaluationCriteria,
+        LLMJudge,
         create_llm_judge_reward,
     )
+
     LLM_JUDGE_AVAILABLE = True
 except ImportError:
     LLM_JUDGE_AVAILABLE = False
@@ -50,14 +56,22 @@ __all__ = [
     "create_general_ruler",
     "SymbolicPhysicsRewardFunction",
     "SymbolicRewardConfig",
+    "ThinkingModeReward",
+    "MultimodalConsistencyReward",
+    "CodeExecutionReward",
+    "LongContextReward",
+    "create_kimi_k25_customer_service_reward",
+    "create_kimi_k25_conversational_reward",
 ]
 
 # Add LLM Judge exports if available
 if LLM_JUDGE_AVAILABLE:
-    __all__.extend([
-        "LLMJudge",
-        "JudgeConfig",
-        "JudgeProvider",
-        "EvaluationCriteria",
-        "create_llm_judge_reward",
-    ])
+    __all__.extend(
+        [
+            "LLMJudge",
+            "JudgeConfig",
+            "JudgeProvider",
+            "EvaluationCriteria",
+            "create_llm_judge_reward",
+        ]
+    )

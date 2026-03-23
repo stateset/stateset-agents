@@ -4,29 +4,31 @@ Integration tests for the complete training pipeline.
 These tests verify that all components work together correctly.
 """
 
-import asyncio
 import sys
-from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 # Block vllm import to avoid torchvision issues
-if 'vllm' not in sys.modules:
-    sys.modules['vllm'] = type(sys)('vllm')  # type: ignore
+if "vllm" not in sys.modules:
+    sys.modules["vllm"] = type(sys)("vllm")  # type: ignore
 
 INTEGRATION_AVAILABLE = True
 try:
     from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
     from stateset_agents.core.environment import ConversationEnvironment
-    from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
+    from stateset_agents.core.reward import (
+        CompositeReward,
+        HelpfulnessReward,
+        SafetyReward,
+    )
     from stateset_agents.training import TrainingConfig, train
-except (ImportError, RuntimeError) as e:
+except (ImportError, RuntimeError):
     INTEGRATION_AVAILABLE = False
 
 pytestmark = pytest.mark.skipif(
     not INTEGRATION_AVAILABLE,
-    reason="Integration modules not available (check transformers/torchvision compatibility)"
+    reason="Integration modules not available (check transformers/torchvision compatibility)",
 )
 
 
@@ -269,24 +271,23 @@ class TestTrainingPipelineIntegration:
     def test_single_turn_import_uses_correct_path(self):
         """Test that SingleTurnGRPOTrainer import in train.py uses stateset_agents path."""
         # Read the train.py source and check the import statement
-        train_path = (
-            "/home/dom/stateset-agents/stateset_agents/training/train.py"
-        )
-        with open(train_path, "r") as f:
+        train_path = "/home/dom/stateset-agents/stateset_agents/training/train.py"
+        with open(train_path) as f:
             source = f.read()
 
         # Check that the import uses the full stateset_agents path
-        assert "from stateset_agents.training.trainer import SingleTurnGRPOTrainer" in source
+        assert (
+            "from stateset_agents.training.trainer import SingleTurnGRPOTrainer"
+            in source
+        )
         # Ensure old incorrect import is not present
-        assert "from stateset_agents.training.trainer import SingleTurnGRPOTrainer" not in source
+        assert "from training.trainer import SingleTurnGRPOTrainer" not in source
 
     def test_train_function_passes_checkpoint_name_correctly(self):
         """Test that train() calls save_checkpoint with checkpoint_name kwarg."""
         # Read the train.py source and check the save_checkpoint call
-        train_path = (
-            "/home/dom/stateset-agents/stateset_agents/training/train.py"
-        )
-        with open(train_path, "r") as f:
+        train_path = "/home/dom/stateset-agents/stateset_agents/training/train.py"
+        with open(train_path) as f:
             source = f.read()
 
         # Verify save_checkpoint is called with checkpoint_name=save_path

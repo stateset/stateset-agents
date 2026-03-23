@@ -6,13 +6,15 @@ This hybrid approach uses offline data to learn value functions and then
 uses those value estimates as baselines for GRPO training.
 """
 
-import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
+from collections.abc import Callable
 
 import numpy as np
+
+from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
 
 try:
     import torch
@@ -25,11 +27,11 @@ except ImportError:
     F = None
     AdamW = None
 
-from .base_trainer import BaseTrainer, BaseTrainerConfig
+from .base_trainer import BaseTrainerConfig
 
 logger = logging.getLogger(__name__)
 
-OFFLINE_DATA_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
+OFFLINE_DATA_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
 
 
 def _require_torch():
@@ -208,7 +210,7 @@ class OfflineGRPOTrainer:
         config: OfflineGRPOConfig,
         model: Any = None,
         tokenizer: Any = None,
-        reward_fn: Optional[Callable] = None,
+        reward_fn: Callable | None = None,
         dataset: Any = None,  # ConversationDataset
         device: str = None,
     ):
@@ -251,17 +253,15 @@ class OfflineGRPOTrainer:
         self.value_optimizer = AdamW(
             self.value_net.parameters(), lr=config.value_learning_rate
         )
-        self.q_optimizer = AdamW(
-            self.q_net.parameters(), lr=config.value_learning_rate
-        )
+        self.q_optimizer = AdamW(self.q_net.parameters(), lr=config.value_learning_rate)
 
         # Embedding cache
-        self._embedding_cache: Dict[str, torch.Tensor] = {}
+        self._embedding_cache: dict[str, torch.Tensor] = {}
 
         # Training state
         self.training_step = 0
         self.value_pretrained = False
-        self.training_metrics: List[Dict[str, float]] = []
+        self.training_metrics: list[dict[str, float]] = []
 
         # Offline RL algorithm instance
         self._offline_learner = None
@@ -271,7 +271,7 @@ class OfflineGRPOTrainer:
         algorithm = OfflineRLAlgorithm(self.config.offline_algorithm.lower())
 
         if algorithm == OfflineRLAlgorithm.CQL:
-            from .offline_rl_algorithms import ConservativeQLearning, CQLConfig
+            from .offline_rl_algorithms import ConservativeQLearning
 
             self._offline_learner = ConservativeQLearning(
                 state_dim=self.config.state_dim,
@@ -280,7 +280,7 @@ class OfflineGRPOTrainer:
             )
 
         elif algorithm == OfflineRLAlgorithm.IQL:
-            from .offline_rl_algorithms import ImplicitQLearning, IQLConfig
+            from .offline_rl_algorithms import ImplicitQLearning
 
             self._offline_learner = ImplicitQLearning(
                 state_dim=self.config.state_dim,
@@ -289,7 +289,7 @@ class OfflineGRPOTrainer:
             )
 
         elif algorithm == OfflineRLAlgorithm.BCQ:
-            from .offline_rl_bcq import BatchConstrainedQLearning, BCQConfig
+            from .offline_rl_bcq import BatchConstrainedQLearning
 
             self._offline_learner = BatchConstrainedQLearning(
                 state_dim=self.config.state_dim,
@@ -298,7 +298,7 @@ class OfflineGRPOTrainer:
             )
 
         elif algorithm == OfflineRLAlgorithm.BEAR:
-            from .offline_rl_bear import ConversationalBEAR, BEARConfig
+            from .offline_rl_bear import ConversationalBEAR
 
             self._offline_learner = ConversationalBEAR(
                 state_dim=self.config.state_dim,
@@ -307,7 +307,10 @@ class OfflineGRPOTrainer:
             )
 
         elif algorithm == OfflineRLAlgorithm.DT:
-            from .decision_transformer import DecisionTransformerTrainer, DecisionTransformerConfig
+            from .decision_transformer import (
+                DecisionTransformerConfig,
+                DecisionTransformerTrainer,
+            )
 
             dt_config = DecisionTransformerConfig(
                 state_dim=self.config.state_dim,
@@ -322,7 +325,7 @@ class OfflineGRPOTrainer:
         self,
         dataset: Any = None,
         num_steps: int = None,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Pre-train value functions on offline dataset.
 
@@ -372,15 +375,19 @@ class OfflineGRPOTrainer:
             batch_actions = torch.FloatTensor(offline_data["actions"][indices]).to(
                 self.device
             )
-            batch_rewards = torch.FloatTensor(offline_data["rewards"][indices]).to(
-                self.device
-            ).unsqueeze(-1)
+            batch_rewards = (
+                torch.FloatTensor(offline_data["rewards"][indices])
+                .to(self.device)
+                .unsqueeze(-1)
+            )
             batch_next_states = torch.FloatTensor(
                 offline_data["next_states"][indices]
             ).to(self.device)
-            batch_dones = torch.FloatTensor(offline_data["dones"][indices]).to(
-                self.device
-            ).unsqueeze(-1)
+            batch_dones = (
+                torch.FloatTensor(offline_data["dones"][indices])
+                .to(self.device)
+                .unsqueeze(-1)
+            )
 
             # Train step
             if hasattr(self._offline_learner, "train_step"):
@@ -394,7 +401,7 @@ class OfflineGRPOTrainer:
                 metrics.append(step_metrics)
 
             # Also train our value networks
-            value_loss = self._train_value_step(
+            self._train_value_step(
                 batch_states,
                 batch_actions,
                 batch_rewards,
@@ -403,8 +410,16 @@ class OfflineGRPOTrainer:
             )
 
             if step % 100 == 0:
-                avg_loss = np.mean([m.get("total_loss", m.get("loss", 0)) for m in metrics[-100:]]) if metrics else 0
-                logger.info(f"Pre-training step {step}/{num_steps}: loss={avg_loss:.4f}")
+                avg_loss = (
+                    np.mean(
+                        [m.get("total_loss", m.get("loss", 0)) for m in metrics[-100:]]
+                    )
+                    if metrics
+                    else 0
+                )
+                logger.info(
+                    f"Pre-training step {step}/{num_steps}: loss={avg_loss:.4f}"
+                )
 
         self.value_pretrained = True
         logger.info("Value function pre-training complete")
@@ -456,7 +471,7 @@ class OfflineGRPOTrainer:
         # Soft update target
         tau = 0.005
         for target_param, param in zip(
-            self.value_target.parameters(), self.value_net.parameters()
+            self.value_target.parameters(), self.value_net.parameters(), strict=False
         ):
             target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
@@ -465,7 +480,7 @@ class OfflineGRPOTrainer:
     def _prepare_simplified_dataset(
         self,
         dataset: Any,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Prepare dataset without embeddings"""
         states = []
         actions = []
@@ -498,8 +513,8 @@ class OfflineGRPOTrainer:
 
     async def train_step(
         self,
-        batch: Dict[str, Any],
-    ) -> Dict[str, float]:
+        batch: dict[str, Any],
+    ) -> dict[str, float]:
         """
         Perform one hybrid GRPO training step.
 
@@ -535,7 +550,11 @@ class OfflineGRPOTrainer:
 
             metrics["offline_value_mean"] = offline_values.mean().item()
             metrics["offline_q_mean"] = offline_q_values.mean().item()
-            metrics["advantage_mean"] = advantages.mean().item() if isinstance(advantages, torch.Tensor) else advantages
+            metrics["advantage_mean"] = (
+                advantages.mean().item()
+                if isinstance(advantages, torch.Tensor)
+                else advantages
+            )
 
         # Blend weights based on training progress
         blend_ratio = self._get_blend_ratio()
@@ -549,7 +568,7 @@ class OfflineGRPOTrainer:
 
     def _compute_hybrid_advantage(
         self,
-        online_rewards: Union[torch.Tensor, float],
+        online_rewards: torch.Tensor | float,
         offline_values: torch.Tensor,
         offline_q_values: torch.Tensor,
     ) -> torch.Tensor:
@@ -603,7 +622,7 @@ class OfflineGRPOTrainer:
             decay_rate = 0.9999
             return max(
                 self.config.offline_weight,
-                (decay_rate ** steps_after_warmup),
+                (decay_rate**steps_after_warmup),
             )
 
         return self.config.offline_weight
@@ -612,7 +631,7 @@ class OfflineGRPOTrainer:
         self,
         num_epochs: int = None,
         dataset: Any = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Full training loop for Offline GRPO.
 
@@ -640,7 +659,7 @@ class OfflineGRPOTrainer:
                 batch_size = self.config.batch_size
                 num_batches = len(dataset) // batch_size
 
-                for batch_idx in range(num_batches):
+                for _batch_idx in range(num_batches):
                     # Simplified batch preparation
                     batch = {
                         "states": np.random.randn(batch_size, self.config.state_dim),

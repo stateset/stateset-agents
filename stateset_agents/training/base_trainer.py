@@ -16,10 +16,9 @@ import importlib.util
 import logging
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Generic
+from dataclasses import dataclass
+from typing import Any, Generic, TypeVar
+from collections.abc import Callable
 
 import torch
 import torch.nn.functional as F
@@ -58,9 +57,10 @@ def _load_transformers():
         from transformers import (
             AutoModelForCausalLM,
             AutoTokenizer,
-            get_cosine_schedule_with_warmup,
             get_constant_schedule,
+            get_cosine_schedule_with_warmup,
         )
+
         _AutoModelForCausalLM = AutoModelForCausalLM
         _AutoTokenizer = AutoTokenizer
         _get_cosine_schedule_with_warmup = get_cosine_schedule_with_warmup
@@ -75,7 +75,13 @@ def _load_transformers():
 def _load_peft():
     """Lazily load PEFT for LoRA support."""
     try:
-        from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
+        from peft import (
+            LoraConfig,
+            TaskType,
+            get_peft_model,
+            prepare_model_for_kbit_training,
+        )
+
         return LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
     except ImportError:
         logger.warning("PEFT not available. LoRA will be disabled.")
@@ -96,7 +102,7 @@ def _enable_input_require_grads(model: Any) -> None:
     if hasattr(model, "enable_input_require_grads"):
         try:
             model.enable_input_require_grads()
-            setattr(model, "_stateset_input_grads_enabled", True)
+            model._stateset_input_grads_enabled = True
             return
         except BASE_TRAINER_EXCEPTIONS as e:  # pragma: no cover
             logger.debug("enable_input_require_grads failed: %s", e)
@@ -114,7 +120,7 @@ def _enable_input_require_grads(model: Any) -> None:
             return output
 
         embeddings.register_forward_hook(_require_grads_hook)
-        setattr(model, "_stateset_input_grads_enabled", True)
+        model._stateset_input_grads_enabled = True
     except BASE_TRAINER_EXCEPTIONS as e:  # pragma: no cover
         logger.debug("Failed to register input grad hook: %s", e)
 
@@ -158,7 +164,8 @@ def _load_vllm_backend():
         return _VLLM_AVAILABLE
 
     try:
-        from .vllm_backend import VLLMConfig, VLLMGenerator, VLLM_AVAILABLE
+        from .vllm_backend import VLLM_AVAILABLE, VLLMConfig, VLLMGenerator
+
         _VLLMConfig = VLLMConfig
         _VLLMGenerator = VLLMGenerator
         _VLLM_AVAILABLE = VLLM_AVAILABLE
@@ -209,7 +216,7 @@ class BaseTrainerConfig:
     lora_r: int = 16
     lora_alpha: int = 32
     lora_dropout: float = 0.05
-    lora_target_modules: Optional[List[str]] = None
+    lora_target_modules: list[str] | None = None
 
     # Memory optimization
     gradient_checkpointing: bool = True
@@ -235,14 +242,14 @@ class BaseTrainerConfig:
     # W&B integration
     report_to: str = "wandb"
     wandb_project: str = "stateset-agents"
-    wandb_run_name: Optional[str] = None
+    wandb_run_name: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
         return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
 
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> "BaseTrainerConfig":
+    def from_dict(cls, config_dict: dict[str, Any]) -> "BaseTrainerConfig":
         """Create config from dictionary."""
         valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
         filtered = {k: v for k, v in config_dict.items() if k in valid_fields}
@@ -269,7 +276,7 @@ class BaseModelManager:
         self.ref_model = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def load_model_and_tokenizer(self) -> Tuple[Any, Any]:
+    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
         """Load model and tokenizer with all configured optimizations."""
         logger.info(f"Loading model: {self.config.model_name}")
 
@@ -295,7 +302,9 @@ class BaseModelManager:
 
         # Enable gradient checkpointing
         if self.config.gradient_checkpointing:
-            if hasattr(base_model, "config") and hasattr(base_model.config, "use_cache"):
+            if hasattr(base_model, "config") and hasattr(
+                base_model.config, "use_cache"
+            ):
                 base_model.config.use_cache = False
             if hasattr(base_model, "gradient_checkpointing_enable"):
                 base_model.gradient_checkpointing_enable()
@@ -303,12 +312,19 @@ class BaseModelManager:
                 logger.warning(
                     "gradient_checkpointing requested but model does not support it"
                 )
-            if self.config.use_lora and not (self.config.use_8bit or self.config.use_4bit):
+            if self.config.use_lora and not (
+                self.config.use_8bit or self.config.use_4bit
+            ):
                 _enable_input_require_grads(base_model)
 
         # Prepare for quantized training
         if self.config.use_8bit or self.config.use_4bit:
-            LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training = _load_peft()
+            (
+                LoraConfig,
+                TaskType,
+                get_peft_model,
+                prepare_model_for_kbit_training,
+            ) = _load_peft()
             if prepare_model_for_kbit_training:
                 base_model = prepare_model_for_kbit_training(base_model)
 
@@ -325,7 +341,7 @@ class BaseModelManager:
         logger.info(f"Model loaded successfully on {self.device}")
         return self.model, self.tokenizer
 
-    def _build_model_kwargs(self) -> Dict[str, Any]:
+    def _build_model_kwargs(self) -> dict[str, Any]:
         """Build kwargs for model loading."""
         kwargs = {
             "torch_dtype": self._get_dtype(),
@@ -374,7 +390,7 @@ class BaseModelManager:
         logger.info("LoRA adapters applied to model")
         return model
 
-    def _get_lora_target_modules(self) -> List[str]:
+    def _get_lora_target_modules(self) -> list[str]:
         """Determine LoRA target modules based on model architecture."""
         if self.config.lora_target_modules:
             return self.config.lora_target_modules
@@ -390,7 +406,7 @@ class BaseModelManager:
         else:
             return ["q_proj", "v_proj"]
 
-    def _load_reference_model(self, model_kwargs: Dict[str, Any]) -> None:
+    def _load_reference_model(self, model_kwargs: dict[str, Any]) -> None:
         """Load frozen reference model for KL penalty."""
         logger.info("Loading reference model for KL penalty...")
         self.ref_model = _AutoModelForCausalLM.from_pretrained(
@@ -432,7 +448,9 @@ class BaseTrajectoryGenerator:
             max_tokens=self.config.max_completion_length,
             temperature=self.config.temperature,
             top_p=self.config.top_p,
-            dtype="float16" if self.config.fp16 else ("bfloat16" if self.config.bf16 else "auto"),
+            dtype="float16"
+            if self.config.fp16
+            else ("bfloat16" if self.config.bf16 else "auto"),
         )
 
         self.vllm_generator = _VLLMGenerator(vllm_config)
@@ -491,7 +509,7 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         self.scheduler = self._create_scheduler()
 
         # Metrics tracking
-        self.metrics_history: Dict[str, List[float]] = {
+        self.metrics_history: dict[str, list[float]] = {
             "policy_loss": [],
             "average_reward": [],
         }
@@ -523,8 +541,8 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
-        response_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        response_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute per-token log probabilities.
 
@@ -568,7 +586,7 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         self,
         current_logits: torch.Tensor,
         reference_logits: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Compute KL divergence between current and reference policies.
@@ -599,7 +617,9 @@ class BaseTrainer(ABC, Generic[ConfigT]):
             self.config.max_grad_norm,
         ).item()
 
-    def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None) -> None:
+    def log_metrics(
+        self, metrics: dict[str, float], step: int | None = None
+    ) -> None:
         """Log metrics to W&B and internal history."""
         step = step or self.global_step
 
@@ -612,6 +632,7 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         # Log to W&B if available
         try:
             import wandb
+
             if wandb.run is not None:
                 wandb.log(metrics, step=step)
         except ImportError:
@@ -622,12 +643,11 @@ class BaseTrainer(ABC, Generic[ConfigT]):
             metrics_str = " | ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
             logger.info(f"Step {step} | {metrics_str}")
 
-    def save_checkpoint(self, path: Optional[str] = None) -> str:
+    def save_checkpoint(self, path: str | None = None) -> str:
         """Save model checkpoint."""
         if path is None:
             path = os.path.join(
-                self.config.output_dir,
-                f"checkpoint-{self.global_step}"
+                self.config.output_dir, f"checkpoint-{self.global_step}"
             )
 
         os.makedirs(path, exist_ok=True)
@@ -637,18 +657,21 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         self.tokenizer.save_pretrained(path)
 
         # Save optimizer and scheduler state
-        torch.save({
-            "optimizer": self.optimizer.state_dict(),
-            "scheduler": self.scheduler.state_dict(),
-            "global_step": self.global_step,
-            "metrics_history": self.metrics_history,
-        }, os.path.join(path, "training_state.pt"))
+        torch.save(
+            {
+                "optimizer": self.optimizer.state_dict(),
+                "scheduler": self.scheduler.state_dict(),
+                "global_step": self.global_step,
+                "metrics_history": self.metrics_history,
+            },
+            os.path.join(path, "training_state.pt"),
+        )
 
         logger.info(f"Checkpoint saved to {path}")
         return path
 
     @abstractmethod
-    async def train_step(self, batch: Any) -> Dict[str, float]:
+    async def train_step(self, batch: Any) -> dict[str, float]:
         """
         Execute a single training step.
 
@@ -657,7 +680,7 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         pass
 
     @abstractmethod
-    async def train(self) -> Dict[str, Any]:
+    async def train(self) -> dict[str, Any]:
         """
         Execute the full training loop.
 
@@ -690,9 +713,9 @@ def normalize_advantages(advantages: torch.Tensor, eps: float = 1e-8) -> torch.T
 
 
 def compute_group_advantages(
-    rewards: List[float],
+    rewards: list[float],
     baseline_type: str = "mean",
-) -> List[float]:
+) -> list[float]:
     """
     Compute group-relative advantages.
 
@@ -704,6 +727,9 @@ def compute_group_advantages(
         List of advantages
     """
     import numpy as np
+
+    if not rewards:
+        return []
 
     rewards_array = np.array(rewards)
 
@@ -720,7 +746,7 @@ def compute_group_advantages(
 
 def create_response_mask(
     input_ids: torch.Tensor,
-    prompt_lengths: List[int],
+    prompt_lengths: list[int],
 ) -> torch.Tensor:
     """
     Create a mask that is 1 for response tokens and 0 for prompt tokens.

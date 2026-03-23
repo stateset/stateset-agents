@@ -26,9 +26,6 @@ Usage:
 import argparse
 import asyncio
 import logging
-import os
-from pathlib import Path
-from typing import Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,8 +48,8 @@ def get_gemma3_config(
     These configurations are optimized for different Gemma 3 model sizes
     and provide stable training with GSPO.
     """
-    from stateset_agents.training.gspo_trainer import GSPOConfig
     from stateset_agents.training.config import get_config_for_task
+    from stateset_agents.training.gspo_trainer import GSPOConfig
 
     # Get base config for task
     base_config = get_config_for_task(task, model_name=model_name)
@@ -106,7 +103,15 @@ def get_gemma3_config(
             lora_r=64,
             lora_alpha=128,
             lora_dropout=0.05,
-            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             gradient_checkpointing=True,
             use_4bit=use_4bit if use_4bit else use_8bit,
             use_8bit=use_8bit if not use_4bit else False,
@@ -133,7 +138,15 @@ def get_gemma3_config(
             lora_r=64,
             lora_alpha=128,
             lora_dropout=0.05,
-            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             gradient_checkpointing=True,
             use_4bit=True,  # Always use quantization for 27B
             max_prompt_length=4096,
@@ -155,7 +168,7 @@ async def finetune_gemma3(
     use_8bit: bool = False,
     output_dir: str = "./outputs/gemma3_gspo",
     use_wandb: bool = False,
-    wandb_project: Optional[str] = None,
+    wandb_project: str | None = None,
 ):
     """
     Fine-tune a Gemma 3 model using GSPO.
@@ -172,7 +185,10 @@ async def finetune_gemma3(
     """
     from stateset_agents import MultiTurnAgent
     from stateset_agents.core.agent import AgentConfig
-    from stateset_agents.core.environment import ConversationEnvironment, CONVERSATION_CONFIGS
+    from stateset_agents.core.environment import (
+        CONVERSATION_CONFIGS,
+        ConversationEnvironment,
+    )
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
     from stateset_agents.training.gspo_trainer import train_with_gspo
 
@@ -182,7 +198,9 @@ async def finetune_gemma3(
     logger.info(f"Model: {model_name}")
     logger.info(f"Task: {task}")
     logger.info(f"LoRA: {use_lora}")
-    logger.info(f"Quantization: {'4-bit' if use_4bit else '8-bit' if use_8bit else 'None'}")
+    logger.info(
+        f"Quantization: {'4-bit' if use_4bit else '8-bit' if use_8bit else 'None'}"
+    )
     logger.info(f"Output: {output_dir}")
     logger.info("=" * 80)
 
@@ -239,7 +257,9 @@ async def finetune_gemma3(
 
     logger.info("✅ GSPO configuration ready")
     logger.info(f"   - Group size: {gspo_config.num_generations}")
-    logger.info(f"   - Clipping: [{gspo_config.clip_range_left}, {gspo_config.clip_range_right}]")
+    logger.info(
+        f"   - Clipping: [{gspo_config.clip_range_left}, {gspo_config.clip_range_right}]"
+    )
     logger.info(f"   - Learning rate: {gspo_config.learning_rate}")
     logger.info(f"   - Iterations: {gspo_config.num_outer_iterations}")
 

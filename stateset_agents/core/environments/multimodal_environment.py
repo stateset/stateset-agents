@@ -5,14 +5,9 @@ This module provides a conversational environment tailored for Kimi-K2.5's
 multimodal capabilities (text + image + video inputs).
 """
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import torch
-from PIL import Image
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +17,7 @@ class MultimodalMessage:
     """A message supporting text, image, and video content"""
 
     role: str
-    content: List[Dict[str, Any]] = field(default_factory=list)
+    content: list[dict[str, Any]] = field(default_factory=list)
 
     def add_text(self, text: str):
         self.content.append({"type": "text", "text": text})
@@ -51,8 +46,8 @@ class MultimodalScenario:
     scenario_id: str
     task_description: str
     user_input: MultimodalMessage
-    expected_response: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    expected_response: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     difficulty: str = "medium"
 
 
@@ -65,22 +60,24 @@ class MultimodalConversationEnvironment:
 
     def __init__(
         self,
-        scenarios: List[MultimodalScenario],
+        scenarios: list[MultimodalScenario],
         max_turns: int = 5,
         enable_vision: bool = True,
         enable_video: bool = True,
     ):
+        if not scenarios:
+            raise ValueError("MultimodalConversationEnvironment requires at least one scenario")
         self.scenarios = scenarios
         self.max_turns = max_turns
         self.enable_vision = enable_vision
         self.enable_video = enable_video
-        self.current_scenario: Optional[MultimodalScenario] = None
+        self.current_scenario: MultimodalScenario | None = None
         self.current_turn = 0
-        self.conversation_history: List[MultimodalMessage] = []
+        self.conversation_history: list[MultimodalMessage] = []
 
     async def reset(
         self,
-        scenario_id: Optional[str] = None,
+        scenario_id: str | None = None,
     ) -> MultimodalMessage:
         """Reset environment for a new conversation"""
         if scenario_id:
@@ -102,12 +99,12 @@ class MultimodalConversationEnvironment:
     async def step(
         self,
         agent_response: str,
-    ) -> tuple[MultimodalMessage, float, bool, Dict[str, Any]]:
+    ) -> tuple[MultimodalMessage | None, float, bool, dict[str, Any]]:
         """
         Execute one conversational turn.
 
         Returns:
-            user_input: The next user input (end turn if done)
+            user_input: The next user input, or None when the episode ends
             reward: Reward signal for this turn
             done: Whether the conversation is complete
             info: Additional information (metrics, state, etc.)
@@ -204,11 +201,18 @@ class MultimodalConversationEnvironment:
         similarity = len(intersection) / len(union)
         return similarity
 
-    def _get_next_user_input(self) -> Optional[MultimodalMessage]:
+    def _get_next_user_input(self) -> MultimodalMessage | None:
         """Get the next user input for multi-turn conversations"""
         # In a real implementation, this would be based on the scenario context
         # For now, return None to end after one turn (single-turn mode)
         return None
+
+
+def _create_text_message(text: str) -> MultimodalMessage:
+    """Create a text-only message."""
+    msg = MultimodalMessage(role="user")
+    msg.add_text(text)
+    return msg
 
 
 # Pre-defined multimodal scenarios
@@ -234,13 +238,6 @@ VISUAL_QA_SCENARIOS = [
         metadata={"modality": "image", "task": "document_analysis"},
     ),
 ]
-
-
-def _create_text_message(text: str) -> MultimodalMessage:
-    """Create a text-only message"""
-    msg = MultimodalMessage(role="user")
-    msg.add_text(text)
-    return msg
 
 
 def create_multimodal_environment(

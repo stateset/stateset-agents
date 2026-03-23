@@ -5,34 +5,31 @@ This module provides comprehensive monitoring, metrics collection, distributed t
 and observability features for production-ready GRPO services.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import statistics
-import threading
 import time
-import traceback
-import uuid
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager, contextmanager
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from functools import wraps
+from collections.abc import Callable
+from typing import Any
 
 import psutil
 
 try:
-    import prometheus_client
     from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Summary
 
     PROMETHEUS_AVAILABLE = True
 except ImportError:
+    CollectorRegistry = Counter = Gauge = Histogram = Summary = None  # type: ignore[assignment]
     PROMETHEUS_AVAILABLE = False
 
 try:
-    import opentelemetry
-    from opentelemetry import metrics, trace
+    from opentelemetry import trace
     from opentelemetry.exporter.jaeger.thrift import JaegerExporter
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -42,6 +39,15 @@ except ImportError:
     OPENTELEMETRY_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+from .advanced_monitoring_models import (
+    Alert,
+    AlertSeverity,
+    MetricPoint,
+    MetricType,
+    TraceSpan,
+)
+from .advanced_monitoring_tracing import DistributedTracer
 
 ADV_MONITORING_EXCEPTIONS = (
     RuntimeError,
@@ -54,90 +60,37 @@ ADV_MONITORING_EXCEPTIONS = (
     asyncio.TimeoutError,
 )
 
-
-class MetricType(Enum):
-    """Types of metrics"""
-
-    COUNTER = "counter"
-    GAUGE = "gauge"
-    HISTOGRAM = "histogram"
-    SUMMARY = "summary"
-
-
-class AlertSeverity(Enum):
-    """Alert severity levels"""
-
-    INFO = "info"
-    WARNING = "warning"
-    ERROR = "error"
-    CRITICAL = "critical"
-
-
-@dataclass
-class MetricPoint:
-    """Individual metric data point"""
-
-    name: str
-    value: float
-    timestamp: float
-    labels: Dict[str, str] = field(default_factory=dict)
-    metric_type: MetricType = MetricType.GAUGE
-
-
-@dataclass
-class Alert:
-    """Alert definition"""
-
-    id: str
-    name: str
-    condition: str
-    severity: AlertSeverity
-    threshold: float
-    duration: float  # seconds
-    enabled: bool = True
-    last_triggered: Optional[float] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class TraceSpan:
-    """Distributed tracing span"""
-
-    trace_id: str
-    span_id: str
-    parent_span_id: Optional[str]
-    operation_name: str
-    start_time: float
-    end_time: Optional[float] = None
-    tags: Dict[str, str] = field(default_factory=dict)
-    logs: List[Dict[str, Any]] = field(default_factory=list)
-    duration: Optional[float] = None
-
-    def finish(self):
-        """Finish the span"""
-        self.end_time = time.time()
-        self.duration = self.end_time - self.start_time
+PROMETHEUS_METRIC_ALIASES = {
+    "grpo.requests.total": "requests_total",
+    "grpo.request.duration": "request_duration",
+    "grpo.request.size": "request_size",
+    "grpo.training.iterations": "training_iterations",
+    "grpo.memory.usage": "memory_usage",
+    "grpo.gpu.utilization": "gpu_utilization",
+    "grpo.error_rate": "error_rate",
+    "grpo.errors.total": "errors_total",
+}
 
 
 class MetricsCollector:
     """Advanced metrics collection and aggregation"""
 
     def __init__(self, retention_period: int = 86400):  # 24 hours
-        self.metrics: Dict[str, deque] = defaultdict(lambda: deque())
+        self.metrics: dict[str, deque] = defaultdict(lambda: deque())
         self.retention_period = retention_period
-        self.aggregated_metrics: Dict[str, Dict[str, float]] = {}
-        self.custom_collectors: List[Callable] = []
+        self.aggregated_metrics: dict[str, dict[str, float]] = {}
+        self.custom_collectors: list[Callable] = []
 
         # Prometheus metrics (if available)
         self.prometheus_registry = None
-        self.prometheus_metrics: Dict[str, Any] = {}
+        self.prometheus_metrics: dict[str, Any] = {}
 
         if PROMETHEUS_AVAILABLE:
             self.prometheus_registry = CollectorRegistry()
             self._setup_prometheus_metrics()
 
         # Cleanup task (lazily initialized)
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_task: asyncio.Task | None = None
 
     def _ensure_cleanup_task(self):
         """Ensure cleanup task is running (lazy initialization)"""
@@ -158,50 +111,74 @@ class MetricsCollector:
         if not PROMETHEUS_AVAILABLE:
             return
 
+        requests_total = Counter(
+            "grpo_requests_total",
+            "Total number of requests",
+            ["method", "endpoint", "status"],
+            registry=self.prometheus_registry,
+        )
+        request_duration = Histogram(
+            "grpo_request_duration_seconds",
+            "Request duration in seconds",
+            ["method", "endpoint"],
+            registry=self.prometheus_registry,
+        )
+        request_size = Summary(
+            "grpo_request_size_bytes",
+            "Request size in bytes",
+            ["method", "endpoint"],
+            registry=self.prometheus_registry,
+        )
+        training_iterations = Counter(
+            "grpo_training_iterations_total",
+            "Total training iterations",
+            ["agent_type", "strategy"],
+            registry=self.prometheus_registry,
+        )
+        memory_usage = Gauge(
+            "grpo_memory_usage_bytes",
+            "Memory usage in bytes",
+            ["component"],
+            registry=self.prometheus_registry,
+        )
+        gpu_utilization = Gauge(
+            "grpo_gpu_utilization_percent",
+            "GPU utilization percentage",
+            ["device"],
+            registry=self.prometheus_registry,
+        )
+        error_rate = Gauge(
+            "grpo_error_rate",
+            "Error rate",
+            ["component", "error_type"],
+            registry=self.prometheus_registry,
+        )
+        errors_total = Counter(
+            "grpo_errors_total",
+            "Total number of errors",
+            ["component", "error_type"],
+            registry=self.prometheus_registry,
+        )
+
         self.prometheus_metrics = {
-            "requests_total": Counter(
-                "grpo_requests_total",
-                "Total number of requests",
-                ["method", "endpoint", "status"],
-                registry=self.prometheus_registry,
-            ),
-            "request_duration": Histogram(
-                "grpo_request_duration_seconds",
-                "Request duration in seconds",
-                ["method", "endpoint"],
-                registry=self.prometheus_registry,
-            ),
-            "training_iterations": Counter(
-                "grpo_training_iterations_total",
-                "Total training iterations",
-                ["agent_type", "strategy"],
-                registry=self.prometheus_registry,
-            ),
-            "memory_usage": Gauge(
-                "grpo_memory_usage_bytes",
-                "Memory usage in bytes",
-                ["component"],
-                registry=self.prometheus_registry,
-            ),
-            "gpu_utilization": Gauge(
-                "grpo_gpu_utilization_percent",
-                "GPU utilization percentage",
-                ["device"],
-                registry=self.prometheus_registry,
-            ),
-            "error_rate": Gauge(
-                "grpo_error_rate",
-                "Error rate",
-                ["component", "error_type"],
-                registry=self.prometheus_registry,
-            ),
+            "requests_total": requests_total,
+            "request_duration": request_duration,
+            "request_size": request_size,
+            "training_iterations": training_iterations,
+            "memory_usage": memory_usage,
+            "gpu_utilization": gpu_utilization,
+            "error_rate": error_rate,
+            "errors_total": errors_total,
         }
+        for alias, target in PROMETHEUS_METRIC_ALIASES.items():
+            if target in self.prometheus_metrics:
+                self.prometheus_metrics[alias] = self.prometheus_metrics[target]
 
     def record_metric(
         self,
         name: str,
         value: float,
-        labels: Dict[str, str] = None,
+        labels: dict[str, str] = None,
         metric_type: MetricType = MetricType.GAUGE,
     ):
         """Record a metric point"""
@@ -221,8 +198,8 @@ class MetricsCollector:
         self.metrics[metric_key].append(metric_point)
 
         # Update Prometheus metrics
-        if PROMETHEUS_AVAILABLE and name in self.prometheus_metrics:
-            prometheus_metric = self.prometheus_metrics[name]
+        prometheus_metric = self.prometheus_metrics.get(name)
+        if PROMETHEUS_AVAILABLE and prometheus_metric is not None:
             label_values = [
                 labels.get(label, "") for label in prometheus_metric._labelnames
             ]
@@ -233,8 +210,10 @@ class MetricsCollector:
                 prometheus_metric.labels(*label_values).set(value)
             elif metric_type == MetricType.HISTOGRAM:
                 prometheus_metric.labels(*label_values).observe(value)
+            elif metric_type == MetricType.SUMMARY:
+                prometheus_metric.labels(*label_values).observe(value)
 
-    def add_custom_collector(self, collector: Callable[[], Dict[str, float]]):
+    def add_custom_collector(self, collector: Callable[[], dict[str, float]]):
         """Add custom metric collector"""
         self.custom_collectors.append(collector)
 
@@ -309,8 +288,8 @@ class MetricsCollector:
                 logger.error(f"Custom collector failed: {e}")
 
     def get_metrics(
-        self, name_pattern: str = None, time_range: Tuple[float, float] = None
-    ) -> Dict[str, List[MetricPoint]]:
+        self, name_pattern: str = None, time_range: tuple[float, float] = None
+    ) -> dict[str, list[MetricPoint]]:
         """Get metrics with optional filtering"""
         current_time = time.time()
         start_time = time_range[0] if time_range else current_time - 3600  # Last hour
@@ -337,7 +316,7 @@ class MetricsCollector:
 
     def aggregate_metrics(
         self, name: str, aggregation: str = "avg", time_window: int = 300
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Aggregate metrics over time window"""
         current_time = time.time()
         start_time = current_time - time_window
@@ -389,7 +368,7 @@ class MetricsCollector:
                 current_time = time.time()
                 cutoff_time = current_time - self.retention_period
 
-                for metric_key, points in self.metrics.items():
+                for _metric_key, points in self.metrics.items():
                     # Remove old points
                     while points and points[0].timestamp < cutoff_time:
                         points.popleft()
@@ -405,13 +384,13 @@ class AlertManager:
 
     def __init__(self, metrics_collector: MetricsCollector):
         self.metrics_collector = metrics_collector
-        self.alerts: Dict[str, Alert] = {}
-        self.active_alerts: Dict[str, Alert] = {}
-        self.alert_history: List[Dict[str, Any]] = []
-        self.notification_handlers: List[Callable] = []
+        self.alerts: dict[str, Alert] = {}
+        self.active_alerts: dict[str, Alert] = {}
+        self.alert_history: list[dict[str, Any]] = []
+        self.notification_handlers: list[Callable] = []
 
         # Alert checking task (lazily initialized)
-        self._alert_task: Optional[asyncio.Task] = None
+        self._alert_task: asyncio.Task | None = None
 
     def _ensure_alert_task(self):
         """Ensure alert checking task is running (lazy initialization)"""
@@ -500,7 +479,7 @@ class AlertManager:
                 metric_name, "avg", int(alert.duration)
             )
 
-            for metric_key, value in recent_metrics.items():
+            for _metric_key, value in recent_metrics.items():
                 if value > threshold:
                     return True
 
@@ -513,158 +492,19 @@ class AlertManager:
                 metric_name, "avg", int(alert.duration)
             )
 
-            for metric_key, value in recent_metrics.items():
+            for _metric_key, value in recent_metrics.items():
                 if value < threshold:
                     return True
 
         return False
 
-    def get_active_alerts(self) -> List[Alert]:
+    def get_active_alerts(self) -> list[Alert]:
         """Get currently active alerts"""
         return list(self.active_alerts.values())
 
-    def get_alert_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_alert_history(self, limit: int = 100) -> list[dict[str, Any]]:
         """Get alert history"""
         return self.alert_history[-limit:]
-
-
-class DistributedTracer:
-    """Distributed tracing implementation"""
-
-    def __init__(self, service_name: str = "grpo-service"):
-        self.service_name = service_name
-        self.active_spans: Dict[str, TraceSpan] = {}
-        self.completed_spans: List[TraceSpan] = []
-        self.tracer = None
-
-        if OPENTELEMETRY_AVAILABLE:
-            self._setup_opentelemetry()
-
-    def _setup_opentelemetry(self):
-        """Setup OpenTelemetry tracing"""
-        try:
-            # Configure tracer provider
-            trace.set_tracer_provider(TracerProvider())
-
-            # Configure Jaeger exporter (if available)
-            jaeger_exporter = JaegerExporter(
-                agent_host_name="localhost",
-                agent_port=6831,
-            )
-
-            span_processor = BatchSpanProcessor(jaeger_exporter)
-            trace.get_tracer_provider().add_span_processor(span_processor)
-
-            self.tracer = trace.get_tracer(self.service_name)
-        except ADV_MONITORING_EXCEPTIONS as e:
-            logger.warning(f"Failed to setup OpenTelemetry: {e}")
-
-    @asynccontextmanager
-    async def trace(
-        self,
-        operation_name: str,
-        parent_span_id: str = None,
-        tags: Dict[str, str] = None,
-    ):
-        """Create a trace span context manager"""
-        span = self.start_span(operation_name, parent_span_id, tags)
-        try:
-            yield span
-        except ADV_MONITORING_EXCEPTIONS as e:
-            span.tags["error"] = True
-            span.tags["error.message"] = str(e)
-            span.logs.append(
-                {
-                    "timestamp": time.time(),
-                    "level": "error",
-                    "message": str(e),
-                    "traceback": traceback.format_exc(),
-                }
-            )
-            raise
-        finally:
-            self.finish_span(span.span_id)
-
-    def start_span(
-        self,
-        operation_name: str,
-        parent_span_id: str = None,
-        tags: Dict[str, str] = None,
-    ) -> TraceSpan:
-        """Start a new trace span"""
-        trace_id = str(uuid.uuid4())
-        span_id = str(uuid.uuid4())
-
-        span = TraceSpan(
-            trace_id=trace_id,
-            span_id=span_id,
-            parent_span_id=parent_span_id,
-            operation_name=operation_name,
-            start_time=time.time(),
-            tags=tags or {},
-        )
-
-        self.active_spans[span_id] = span
-
-        # OpenTelemetry integration
-        if self.tracer:
-            try:
-                otel_span = self.tracer.start_span(operation_name)
-                if tags:
-                    for key, value in tags.items():
-                        otel_span.set_attribute(key, value)
-                span.tags["otel_span_id"] = str(otel_span.get_span_context().span_id)
-            except ADV_MONITORING_EXCEPTIONS as e:
-                logger.error(f"OpenTelemetry span creation failed: {e}")
-
-        return span
-
-    def finish_span(self, span_id: str):
-        """Finish a trace span"""
-        if span_id in self.active_spans:
-            span = self.active_spans[span_id]
-            span.finish()
-
-            self.completed_spans.append(span)
-            del self.active_spans[span_id]
-
-            # Cleanup old spans (keep last 1000)
-            if len(self.completed_spans) > 1000:
-                self.completed_spans = self.completed_spans[-1000:]
-
-    def add_span_log(self, span_id: str, level: str, message: str, **kwargs):
-        """Add log to span"""
-        if span_id in self.active_spans:
-            self.active_spans[span_id].logs.append(
-                {"timestamp": time.time(), "level": level, "message": message, **kwargs}
-            )
-
-    def get_trace_summary(self, trace_id: str) -> Dict[str, Any]:
-        """Get trace summary"""
-        spans = [span for span in self.completed_spans if span.trace_id == trace_id]
-
-        if not spans:
-            return {}
-
-        total_duration = max(span.end_time for span in spans) - min(
-            span.start_time for span in spans
-        )
-
-        return {
-            "trace_id": trace_id,
-            "total_duration": total_duration,
-            "span_count": len(spans),
-            "operations": [span.operation_name for span in spans],
-            "spans": [
-                {
-                    "span_id": span.span_id,
-                    "operation": span.operation_name,
-                    "duration": span.duration,
-                    "tags": span.tags,
-                }
-                for span in spans
-            ],
-        }
 
 
 class AdvancedMonitoringService:
@@ -685,9 +525,25 @@ class AdvancedMonitoringService:
             if enable_alerts and self.metrics_collector
             else None
         )
-        self.tracer = DistributedTracer() if enable_tracing else None
+        self.tracer = (
+            DistributedTracer(
+                opentelemetry_available=OPENTELEMETRY_AVAILABLE,
+                trace_module=trace if OPENTELEMETRY_AVAILABLE else None,
+                jaeger_exporter_cls=JaegerExporter if OPENTELEMETRY_AVAILABLE else None,
+                tracer_provider_cls=TracerProvider
+                if OPENTELEMETRY_AVAILABLE
+                else None,
+                batch_span_processor_cls=BatchSpanProcessor
+                if OPENTELEMETRY_AVAILABLE
+                else None,
+                logger=logger,
+                handled_exceptions=ADV_MONITORING_EXCEPTIONS,
+            )
+            if enable_tracing
+            else None
+        )
 
-        self._monitoring_task: Optional[asyncio.Task] = None
+        self._monitoring_task: asyncio.Task | None = None
         self._start_time = time.time()
 
         if self.metrics_collector:
@@ -753,6 +609,17 @@ class AdvancedMonitoringService:
             )
         )
 
+    async def record_metric(
+        self,
+        name: str,
+        value: float,
+        labels: dict[str, str] = None,
+        metric_type: MetricType = MetricType.GAUGE,
+    ):
+        """Record a metric through the service facade."""
+        if self.metrics_collector:
+            self.metrics_collector.record_metric(name, value, labels, metric_type)
+
     async def _monitoring_loop(self):
         """Main monitoring loop"""
         while True:
@@ -782,7 +649,7 @@ class AdvancedMonitoringService:
             )
 
     def record_training_iteration(
-        self, agent_type: str, strategy: str, metrics: Dict[str, float]
+        self, agent_type: str, strategy: str, metrics: dict[str, float]
     ):
         """Record training iteration metrics"""
         if self.metrics_collector:
@@ -819,7 +686,7 @@ class AdvancedMonitoringService:
         else:
             yield None
 
-    def get_health_summary(self) -> Dict[str, Any]:
+    def get_health_summary(self) -> dict[str, Any]:
         """Get comprehensive health summary"""
         current_time = time.time()
         uptime = current_time - self._start_time
@@ -856,7 +723,7 @@ class AdvancedMonitoringService:
 
         return summary
 
-    def get_metrics_dashboard(self) -> Dict[str, Any]:
+    def get_metrics_dashboard(self) -> dict[str, Any]:
         """Get metrics for dashboard display"""
         if not self.metrics_collector:
             return {}
@@ -892,7 +759,7 @@ class AdvancedMonitoringService:
 
 
 # Global monitoring instance
-_monitoring_service: Optional[AdvancedMonitoringService] = None
+_monitoring_service: AdvancedMonitoringService | None = None
 
 
 def get_monitoring_service() -> AdvancedMonitoringService:
@@ -933,12 +800,13 @@ def monitor_async_function(operation_name: str = None):
     def decorator(func):
         name = operation_name or f"{func.__module__}.{func.__name__}"
 
+        @wraps(func)
         async def wrapper(*args, **kwargs):
             monitoring = get_monitoring_service()
             start_time = time.time()
 
             if monitoring.tracer:
-                async with monitoring.tracer.trace(name) as span:
+                async with monitoring.tracer.trace(name):
                     try:
                         result = await func(*args, **kwargs)
                         return result
@@ -982,6 +850,7 @@ def monitor_function(operation_name: str = None):
     def decorator(func):
         name = operation_name or f"{func.__module__}.{func.__name__}"
 
+        @wraps(func)
         def wrapper(*args, **kwargs):
             monitoring = get_monitoring_service()
             start_time = time.time()
@@ -1037,3 +906,23 @@ if __name__ == "__main__":
         print("Dashboard:", json.dumps(dashboard, indent=2))
 
     asyncio.run(main())
+
+
+__all__ = [
+    "ADV_MONITORING_EXCEPTIONS",
+    "Alert",
+    "AlertManager",
+    "AlertSeverity",
+    "AdvancedMonitoringService",
+    "DistributedTracer",
+    "MetricPoint",
+    "MetricType",
+    "MetricsCollector",
+    "OPENTELEMETRY_AVAILABLE",
+    "PROMETHEUS_AVAILABLE",
+    "TraceSpan",
+    "get_monitoring_service",
+    "monitor_async_function",
+    "monitor_function",
+    "monitor_operation",
+]

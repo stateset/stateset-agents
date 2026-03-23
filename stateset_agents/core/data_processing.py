@@ -5,19 +5,21 @@ This module provides utilities for loading, validating, and preprocessing
 conversational data for GRPO training, inspired by real-world implementations.
 """
 
-import json
+from __future__ import annotations
+
 import importlib.util
+import json
 import logging
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
+
+from .trajectory import ConversationTurn
 
 _SKLEARN_LAZY = object()
 train_test_split = _SKLEARN_LAZY  # type: ignore[assignment]
 _SKLEARN_AVAILABLE = importlib.util.find_spec("sklearn") is not None
-
-from .trajectory import ConversationTurn, MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +29,10 @@ class ConversationExample:
     """Data structure for conversation training examples"""
 
     query: str
-    expected_response: Optional[str] = None
-    task_type: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    conversation_history: List[ConversationTurn] = field(default_factory=list)
+    expected_response: str | None = None
+    task_type: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    conversation_history: list[ConversationTurn] = field(default_factory=list)
 
 
 class DataLoader:
@@ -38,9 +40,9 @@ class DataLoader:
 
     def __init__(
         self,
-        max_examples: Optional[int] = None,
+        max_examples: int | None = None,
         validation_split: float = 0.1,
-        stratify_by: Optional[str] = None,
+        stratify_by: str | None = None,
         random_seed: int = 42,
     ):
         self.max_examples = max_examples
@@ -49,7 +51,7 @@ class DataLoader:
         self.random_seed = random_seed
         random.seed(random_seed)
 
-    def load_jsonl(self, file_path: Union[str, Path]) -> List[Dict[str, Any]]:
+    def load_jsonl(self, file_path: str | Path) -> list[dict[str, Any]]:
         """Load conversations from JSONL file"""
         file_path = Path(file_path)
         data = []
@@ -59,7 +61,7 @@ class DataLoader:
             return self._get_fallback_data()
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 for line_num, line in enumerate(f, 1):
                     if not line.strip():
                         continue
@@ -86,7 +88,7 @@ class DataLoader:
         logger.info(f"Loaded {len(data)} conversations from {file_path}")
         return data
 
-    def validate_conversation(self, conv: Dict[str, Any]) -> bool:
+    def validate_conversation(self, conv: dict[str, Any]) -> bool:
         """Validate conversation structure"""
         if not isinstance(conv, dict) or "messages" not in conv:
             return False
@@ -107,8 +109,8 @@ class DataLoader:
         return True
 
     def extract_examples(
-        self, conversations: List[Dict[str, Any]], classify_task: bool = True
-    ) -> List[ConversationExample]:
+        self, conversations: list[dict[str, Any]], classify_task: bool = True
+    ) -> list[ConversationExample]:
         """Extract training examples from conversations"""
         examples = []
 
@@ -175,7 +177,6 @@ class DataLoader:
     def classify_task_type(self, query: str, response: str) -> str:
         """Classify the type of conversational task"""
         query_lower = query.lower()
-        response_lower = response.lower()
 
         # Common task type patterns
         task_patterns = {
@@ -208,10 +209,10 @@ class DataLoader:
 
     def split_train_eval(
         self,
-        examples: List[ConversationExample],
-        eval_size: Optional[float] = None,
+        examples: list[ConversationExample],
+        eval_size: float | None = None,
         stratify: bool = True,
-    ) -> Tuple[List[ConversationExample], List[ConversationExample]]:
+    ) -> tuple[list[ConversationExample], list[ConversationExample]]:
         """Split examples into train and eval sets"""
         eval_size = eval_size or self.validation_split
 
@@ -258,10 +259,10 @@ class DataLoader:
 
     def _split_train_eval_fallback(
         self,
-        examples: List[ConversationExample],
+        examples: list[ConversationExample],
         eval_size: float,
         stratify: bool,
-    ) -> Tuple[List[ConversationExample], List[ConversationExample]]:
+    ) -> tuple[list[ConversationExample], list[ConversationExample]]:
         """Split examples without sklearn.
 
         Uses a deterministic shuffle based on `random_seed` and optionally performs
@@ -269,7 +270,9 @@ class DataLoader:
         """
         rng = random.Random(self.random_seed)
 
-        def split_bucket(items: List[ConversationExample]) -> Tuple[List[ConversationExample], List[ConversationExample]]:
+        def split_bucket(
+            items: list[ConversationExample],
+        ) -> tuple[list[ConversationExample], list[ConversationExample]]:
             bucket = items.copy()
             rng.shuffle(bucket)
             split_idx = int(round(len(bucket) * (1.0 - float(eval_size))))
@@ -277,13 +280,13 @@ class DataLoader:
             return bucket[:split_idx], bucket[split_idx:]
 
         if stratify and self.stratify_by == "task_type":
-            buckets: Dict[str, List[ConversationExample]] = {}
+            buckets: dict[str, list[ConversationExample]] = {}
             for ex in examples:
                 key = ex.task_type or "unknown"
                 buckets.setdefault(key, []).append(ex)
 
-            train_examples: List[ConversationExample] = []
-            eval_examples: List[ConversationExample] = []
+            train_examples: list[ConversationExample] = []
+            eval_examples: list[ConversationExample] = []
             for bucket_examples in buckets.values():
                 train_bucket, eval_bucket = split_bucket(bucket_examples)
                 train_examples.extend(train_bucket)
@@ -295,7 +298,7 @@ class DataLoader:
 
         return split_bucket(examples)
 
-    def _get_fallback_data(self) -> List[Dict[str, Any]]:
+    def _get_fallback_data(self) -> list[dict[str, Any]]:
         """Return fallback sample data for testing"""
         return [
             {
@@ -347,7 +350,9 @@ def _get_train_test_split():
             train_test_split = None  # type: ignore[assignment]
             return None
         try:
-            from sklearn.model_selection import train_test_split as _tts  # type: ignore[import-not-found]
+            from sklearn.model_selection import (
+                train_test_split as _tts,  # type: ignore[import-not-found]
+            )
 
             train_test_split = _tts  # type: ignore[assignment]
         except ImportError:  # pragma: no cover - optional dependency
@@ -363,8 +368,8 @@ class DataProcessor:
         self.tokenizer = tokenizer
 
     def prepare_for_grpo(
-        self, examples: List[ConversationExample], include_expected: bool = False
-    ) -> List[Dict[str, Any]]:
+        self, examples: list[ConversationExample], include_expected: bool = False
+    ) -> list[dict[str, Any]]:
         """Prepare examples for GRPO training format"""
 
         formatted_data = []
@@ -388,7 +393,7 @@ class DataProcessor:
         return formatted_data
 
     def format_prompt(
-        self, query: str, history: Optional[List[ConversationTurn]] = None
+        self, query: str, history: list[ConversationTurn] | None = None
     ) -> str:
         """Format query and history into a prompt"""
         if self.tokenizer and hasattr(self.tokenizer, "apply_chat_template"):
@@ -429,11 +434,11 @@ class DataProcessor:
 
 
 def load_and_prepare_data(
-    data_path: Union[str, Path],
-    max_examples: Optional[int] = None,
+    data_path: str | Path,
+    max_examples: int | None = None,
     validation_split: float = 0.1,
     tokenizer=None,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Load and prepare data for training"""
 
     # Initialize data loader

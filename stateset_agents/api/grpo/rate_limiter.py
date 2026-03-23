@@ -7,17 +7,17 @@ This consolidates the duplicate rate limiting implementations.
 
 import time
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from dataclasses import dataclass
 
 
 @dataclass
 class RateLimitResult:
     """Result of a rate limit check."""
+
     allowed: bool
     remaining: int
     reset_at: float
-    retry_after: Optional[int] = None
+    retry_after: int | None = None
 
 
 class UnifiedRateLimiter:
@@ -36,7 +36,12 @@ class UnifiedRateLimiter:
             window_seconds: Size of the sliding window in seconds.
         """
         self.window_seconds = window_seconds
-        self._windows: Dict[str, deque] = defaultdict(deque)
+        self._windows: dict[str, deque] = defaultdict(deque)
+
+    @property
+    def windows(self) -> dict[str, deque]:
+        """Expose internal windows for compatibility with legacy tests."""
+        return self._windows
 
     def check(self, key: str, limit: int) -> RateLimitResult:
         """
@@ -91,7 +96,7 @@ class UnifiedRateLimiter:
         """
         return self.check(key, limit).allowed
 
-    def is_allowed(self, key: str, limit: int) -> Tuple[bool, int]:
+    def is_allowed(self, key: str, limit: int) -> tuple[bool, int]:
         """
         Check if allowed and return remaining count (middleware interface).
 
@@ -158,7 +163,7 @@ class UnifiedRateLimiter:
 
         return cleaned
 
-    def stats(self) -> Dict[str, int]:
+    def stats(self) -> dict[str, int]:
         """
         Get rate limiter statistics.
 
@@ -176,7 +181,7 @@ class UnifiedRateLimiter:
 
 
 # Global singleton instance
-_rate_limiter: Optional[UnifiedRateLimiter] = None
+_rate_limiter: UnifiedRateLimiter | None = None
 
 
 def get_rate_limiter(window_seconds: int = 60) -> UnifiedRateLimiter:
@@ -190,7 +195,7 @@ def get_rate_limiter(window_seconds: int = 60) -> UnifiedRateLimiter:
         The global UnifiedRateLimiter instance.
     """
     global _rate_limiter
-    if _rate_limiter is None:
+    if _rate_limiter is None or _rate_limiter.window_seconds != window_seconds:
         _rate_limiter = UnifiedRateLimiter(window_seconds)
     return _rate_limiter
 

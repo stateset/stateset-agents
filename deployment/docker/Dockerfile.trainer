@@ -1,0 +1,66 @@
+# syntax=docker/dockerfile:1
+
+# Trainer image for running StateSet Agents fine-tuning jobs on Kubernetes.
+#
+# Notes:
+# - For GPU training, use a CUDA-enabled base image that already includes a
+#   compatible CUDA build of PyTorch (recommended). The default BASE_IMAGE here
+#   is intentionally a reasonable guess; pin this in production.
+# - The Kubernetes Job/Helm templates typically override the command to run a
+#   specific example script (e.g. `examples/finetune_kimi_k25_gspo.py`).
+
+ARG BASE_IMAGE=pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+
+FROM ${BASE_IMAGE} AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Minimal OS deps (git for HF/transformers edge cases).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user for runtime.
+RUN groupadd -r -g 10001 stateset && \
+    useradd -r -u 10001 -g 10001 -m -d /home/stateset stateset
+
+
+FROM base AS builder
+
+ARG STATESET_EXTRAS="training,trl"
+
+# Reuse the CUDA-enabled PyTorch that ships with the base image. This avoids
+# pip downloading a CPU-only torch wheel into the venv (slow + wrong for GPUs).
+RUN python -m venv /opt/venv --system-site-packages
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install the package (and its extras) into an isolated venv.
+COPY pyproject.toml setup.py README.md ./
+COPY stateset_agents/ ./stateset_agents/
+COPY grpo_agent_framework/ ./grpo_agent_framework/
+COPY examples/ ./examples/
+
+RUN pip install --no-cache-dir ".[${STATESET_EXTRAS}]"
+
+
+FROM base AS runtime
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app"
+
+COPY --from=builder /opt/venv /opt/venv
+
+# Some utilities are intentionally used from source via PYTHONPATH.
+COPY --chown=10001:10001 grpo_agent_framework/ ./grpo_agent_framework/
+COPY --chown=10001:10001 examples/ ./examples/
+
+USER 10001:10001
+
+CMD ["python", "-c", "import stateset_agents; print('stateset-agents trainer image ready')"]

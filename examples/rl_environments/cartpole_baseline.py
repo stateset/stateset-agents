@@ -14,18 +14,17 @@ Usage:
 
 import asyncio
 import logging
+
 import numpy as np
-from typing import List
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
-def run_random_policy(num_episodes: int = 100) -> List[float]:
+def run_random_policy(num_episodes: int = 100) -> list[float]:
     """
     Run random policy on CartPole.
 
@@ -63,7 +62,9 @@ def run_random_policy(num_episodes: int = 100) -> List[float]:
 
         if (episode + 1) % 20 == 0:
             avg = np.mean(rewards[-20:])
-            logger.info(f"  Episode {episode + 1}/{num_episodes}, Avg reward (last 20): {avg:.2f}")
+            logger.info(
+                f"  Episode {episode + 1}/{num_episodes}, Avg reward (last 20): {avg:.2f}"
+            )
 
     env.close()
 
@@ -74,7 +75,7 @@ def run_random_policy(num_episodes: int = 100) -> List[float]:
     return rewards
 
 
-def run_heuristic_policy(num_episodes: int = 100) -> List[float]:
+def run_heuristic_policy(num_episodes: int = 100) -> list[float]:
     """
     Run simple heuristic policy on CartPole.
 
@@ -117,7 +118,9 @@ def run_heuristic_policy(num_episodes: int = 100) -> List[float]:
 
         if (episode + 1) % 20 == 0:
             avg = np.mean(rewards[-20:])
-            logger.info(f"  Episode {episode + 1}/{num_episodes}, Avg reward (last 20): {avg:.2f}")
+            logger.info(
+                f"  Episode {episode + 1}/{num_episodes}, Avg reward (last 20): {avg:.2f}"
+            )
 
     env.close()
 
@@ -128,7 +131,7 @@ def run_heuristic_policy(num_episodes: int = 100) -> List[float]:
     return rewards
 
 
-async def run_grpo_policy(num_episodes: int = 100) -> List[float]:
+async def run_grpo_policy(num_episodes: int = 100) -> list[float]:
     """
     Run trained GRPO agent on CartPole.
 
@@ -137,8 +140,9 @@ async def run_grpo_policy(num_episodes: int = 100) -> List[float]:
 
     Expected performance after training: 150-400 average reward.
     """
-    from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
     from pathlib import Path
+
+    from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
 
     logger.info("\n[3/3] Running GRPO Agent...")
 
@@ -172,7 +176,6 @@ async def run_grpo_policy(num_episodes: int = 100) -> List[float]:
         state = await env.reset()
         episode_reward = 0
         done = False
-        turns = []
 
         # Get initial prompt
         system_prompt = await env.get_initial_prompt()
@@ -190,6 +193,7 @@ async def run_grpo_policy(num_episodes: int = 100) -> List[float]:
 
             # Create action turn
             from stateset_agents.core.trajectory import ConversationTurn
+
             action_turn = ConversationTurn(role="assistant", content=response)
 
             # Step environment
@@ -200,7 +204,9 @@ async def run_grpo_policy(num_episodes: int = 100) -> List[float]:
 
         if (episode + 1) % 20 == 0:
             avg = np.mean(rewards[-20:])
-            logger.info(f"  Episode {episode + 1}/{num_episodes}, Avg reward (last 20): {avg:.2f}")
+            logger.info(
+                f"  Episode {episode + 1}/{num_episodes}, Avg reward (last 20): {avg:.2f}"
+            )
 
     env.close()
 
@@ -226,14 +232,23 @@ def plot_comparison(random_rewards, heuristic_rewards, grpo_rewards):
         # Moving averages
         window = 20
         if len(random_rewards) >= window:
-            plt.plot(np.convolve(random_rewards, np.ones(window)/window, mode='valid'),
-                    label="Random (MA)", linewidth=2)
+            plt.plot(
+                np.convolve(random_rewards, np.ones(window) / window, mode="valid"),
+                label="Random (MA)",
+                linewidth=2,
+            )
         if len(heuristic_rewards) >= window:
-            plt.plot(np.convolve(heuristic_rewards, np.ones(window)/window, mode='valid'),
-                    label="Heuristic (MA)", linewidth=2)
+            plt.plot(
+                np.convolve(heuristic_rewards, np.ones(window) / window, mode="valid"),
+                label="Heuristic (MA)",
+                linewidth=2,
+            )
         if len(grpo_rewards) >= window:
-            plt.plot(np.convolve(grpo_rewards, np.ones(window)/window, mode='valid'),
-                    label="GRPO (MA)", linewidth=2)
+            plt.plot(
+                np.convolve(grpo_rewards, np.ones(window) / window, mode="valid"),
+                label="GRPO (MA)",
+                linewidth=2,
+            )
 
         plt.xlabel("Episode")
         plt.ylabel("Reward")
@@ -242,8 +257,10 @@ def plot_comparison(random_rewards, heuristic_rewards, grpo_rewards):
         plt.grid(True, alpha=0.3)
 
         plt.subplot(1, 2, 2)
-        plt.boxplot([random_rewards, heuristic_rewards, grpo_rewards],
-                   labels=["Random", "Heuristic", "GRPO"])
+        plt.boxplot(
+            [random_rewards, heuristic_rewards, grpo_rewards],
+            labels=["Random", "Heuristic", "GRPO"],
+        )
         plt.ylabel("Reward")
         plt.title("Reward Distribution")
         plt.grid(True, alpha=0.3)
@@ -253,7 +270,9 @@ def plot_comparison(random_rewards, heuristic_rewards, grpo_rewards):
         logger.info("\n📊 Plot saved to: cartpole_baseline_comparison.png")
 
     except ImportError:
-        logger.info("\n💡 Install matplotlib to generate comparison plots: pip install matplotlib")
+        logger.info(
+            "\n💡 Install matplotlib to generate comparison plots: pip install matplotlib"
+        )
 
 
 async def main():
@@ -273,10 +292,16 @@ async def main():
     logger.info("\n" + "=" * 60)
     logger.info("Summary")
     logger.info("=" * 60)
-    logger.info(f"Random Policy:     {np.mean(random_rewards):.2f} ± {np.std(random_rewards):.2f}")
-    logger.info(f"Heuristic Policy:  {np.mean(heuristic_rewards):.2f} ± {np.std(heuristic_rewards):.2f}")
-    logger.info(f"GRPO Agent:        {np.mean(grpo_rewards):.2f} ± {np.std(grpo_rewards):.2f}")
-    logger.info(f"Optimal:           500.00 (episode length limit)")
+    logger.info(
+        f"Random Policy:     {np.mean(random_rewards):.2f} ± {np.std(random_rewards):.2f}"
+    )
+    logger.info(
+        f"Heuristic Policy:  {np.mean(heuristic_rewards):.2f} ± {np.std(heuristic_rewards):.2f}"
+    )
+    logger.info(
+        f"GRPO Agent:        {np.mean(grpo_rewards):.2f} ± {np.std(grpo_rewards):.2f}"
+    )
+    logger.info("Optimal:           500.00 (episode length limit)")
 
     # Analysis
     logger.info("\n" + "=" * 60)
@@ -286,14 +311,18 @@ async def main():
     if np.mean(grpo_rewards) > np.mean(random_rewards) * 1.5:
         logger.info("✅ GRPO is significantly better than random!")
     else:
-        logger.info("⚠️  GRPO not significantly better than random. More training needed.")
+        logger.info(
+            "⚠️  GRPO not significantly better than random. More training needed."
+        )
 
     if np.mean(grpo_rewards) > np.mean(heuristic_rewards):
         logger.info("✅ GRPO beats the heuristic! Strong learning!")
     elif np.mean(grpo_rewards) > np.mean(heuristic_rewards) * 0.7:
         logger.info("📈 GRPO approaching heuristic performance. Good progress!")
     else:
-        logger.info("💡 GRPO below heuristic. Try more training or tune hyperparameters.")
+        logger.info(
+            "💡 GRPO below heuristic. Try more training or tune hyperparameters."
+        )
 
     # Plot
     plot_comparison(random_rewards, heuristic_rewards, grpo_rewards)

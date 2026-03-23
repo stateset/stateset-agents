@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any
+from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +42,13 @@ async def _maybe_await(result: Any) -> Any:
     return result
 
 
-async def _call(func: Any, args: Tuple[Any, ...]) -> Any:
+async def _call(func: Any, args: tuple[Any, ...]) -> Any:
     if asyncio.iscoroutinefunction(func):
         return await func(*args)
     return await _maybe_await(func(*args))
 
 
-async def _try_call_variants(func: Any, variants: Iterable[Tuple[Any, ...]]) -> None:
+async def _try_call_variants(func: Any, variants: Iterable[tuple[Any, ...]]) -> None:
     variants_list = list(variants)
     for args in variants_list:
         try:
@@ -61,7 +62,7 @@ async def _try_call_variants(func: Any, variants: Iterable[Tuple[Any, ...]]) -> 
         await _call(func, variants_list[0])
 
 
-async def _dispatch_callable(callback: Any, event: str, data: Dict[str, Any]) -> None:
+async def _dispatch_callable(callback: Any, event: str, data: dict[str, Any]) -> None:
     if not callable(callback):
         return
 
@@ -72,7 +73,7 @@ async def _dispatch_callable(callback: Any, event: str, data: Dict[str, Any]) ->
                 (event, data),
                 (event,),
                 (data,),
-                tuple(),
+                (),
             ),
         )
     except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover - callbacks are best-effort
@@ -93,7 +94,9 @@ async def notify_training_start(
         )
         if callable(method):
             try:
-                await _try_call_variants(method, variants=((trainer, config), (config,), tuple()))
+                await _try_call_variants(
+                    method, variants=((trainer, config), (config,), ())
+                )
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
                 logger.debug("Callback %r on_train_start failed: %s", callback, exc)
                 continue
@@ -104,7 +107,7 @@ async def notify_episode_end(
     callbacks: Iterable[Any],
     *,
     episode: int,
-    metrics: Dict[str, Any],
+    metrics: dict[str, Any],
 ) -> None:
     """Emit an episode end signal to callbacks."""
     payload = {"episode": episode, **metrics}
@@ -112,7 +115,9 @@ async def notify_episode_end(
         method = getattr(callback, "on_episode_end", None)
         if callable(method):
             try:
-                await _try_call_variants(method, variants=((episode, metrics), (metrics,), tuple()))
+                await _try_call_variants(
+                    method, variants=((episode, metrics), (metrics,), ())
+                )
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
                 logger.debug("Callback %r on_episode_end failed: %s", callback, exc)
                 continue
@@ -123,7 +128,7 @@ async def notify_step_end(
     callbacks: Iterable[Any],
     *,
     step: int,
-    metrics: Dict[str, Any],
+    metrics: dict[str, Any],
 ) -> None:
     """Emit a training step end signal to callbacks."""
     payload = {"step": step, **metrics}
@@ -131,7 +136,9 @@ async def notify_step_end(
         method = getattr(callback, "on_step_end", None)
         if callable(method):
             try:
-                await _try_call_variants(method, variants=((step, metrics), (metrics,), tuple()))
+                await _try_call_variants(
+                    method, variants=((step, metrics), (metrics,), ())
+                )
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
                 logger.debug("Callback %r on_step_end failed: %s", callback, exc)
                 continue
@@ -141,7 +148,7 @@ async def notify_step_end(
 async def notify_evaluation_end(
     callbacks: Iterable[Any],
     *,
-    metrics: Dict[str, Any],
+    metrics: dict[str, Any],
 ) -> None:
     """Emit an evaluation end signal to callbacks."""
     payload = dict(metrics)
@@ -151,7 +158,7 @@ async def notify_evaluation_end(
         )
         if callable(method):
             try:
-                await _try_call_variants(method, variants=((metrics,), tuple()))
+                await _try_call_variants(method, variants=((metrics,), ()))
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
                 logger.debug("Callback %r on_evaluation_end failed: %s", callback, exc)
                 continue
@@ -161,7 +168,7 @@ async def notify_evaluation_end(
 async def notify_training_end(
     callbacks: Iterable[Any],
     *,
-    metrics: Dict[str, Any],
+    metrics: dict[str, Any],
 ) -> None:
     """Emit a training end signal to callbacks."""
     payload = dict(metrics)
@@ -171,7 +178,7 @@ async def notify_training_end(
         )
         if callable(method):
             try:
-                await _try_call_variants(method, variants=((metrics,), tuple()))
+                await _try_call_variants(method, variants=((metrics,), ()))
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
                 logger.debug("Callback %r on_train_end failed: %s", callback, exc)
                 continue
@@ -193,9 +200,11 @@ async def notify_checkpoint_saved(
             try:
                 await _try_call_variants(
                     method,
-                    variants=((path, step, is_best), (payload,), tuple()),
+                    variants=((path, step, is_best), (payload,), ()),
                 )
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
-                logger.debug("Callback %r on_checkpoint_saved failed: %s", callback, exc)
+                logger.debug(
+                    "Callback %r on_checkpoint_saved failed: %s", callback, exc
+                )
                 continue
         await _dispatch_callable(callback, CHECKPOINT_SAVED_EVENT, payload)

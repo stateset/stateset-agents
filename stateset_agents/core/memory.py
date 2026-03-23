@@ -26,16 +26,16 @@ Example:
 
 import asyncio
 import hashlib
-import json
 import logging
 import re
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any
+from collections.abc import Awaitable
 
 logger = logging.getLogger(__name__)
 
@@ -96,14 +96,14 @@ class MemoryEntry:
     memory_type: MemoryType
     timestamp: datetime = field(default_factory=datetime.now)
     importance: float = 0.5
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    embedding: Optional[List[float]] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    embedding: list[float] | None = None
 
     def decay_importance(self, factor: float = 0.95) -> None:
         """Decay importance over time."""
         self.importance *= factor
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "id": self.id,
@@ -133,7 +133,7 @@ class Entity:
     mentions: int = 1
     first_seen: datetime = field(default_factory=datetime.now)
     last_seen: datetime = field(default_factory=datetime.now)
-    context: List[str] = field(default_factory=list)
+    context: list[str] = field(default_factory=list)
 
     def update(self, context: str) -> None:
         """Update entity with new mention."""
@@ -160,9 +160,9 @@ class ConversationSummary:
 
     id: str
     summary: str
-    turn_range: Tuple[int, int]
-    key_points: List[str] = field(default_factory=list)
-    entities_mentioned: List[str] = field(default_factory=list)
+    turn_range: tuple[int, int]
+    key_points: list[str] = field(default_factory=list)
+    entities_mentioned: list[str] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -179,14 +179,14 @@ class ContextWindow:
         total_tokens: Estimated total tokens
     """
 
-    messages: List[Dict[str, str]]
-    summary: Optional[str] = None
-    entities: Dict[str, List[str]] = field(default_factory=dict)
-    facts: List[str] = field(default_factory=list)
-    working_memory: Dict[str, Any] = field(default_factory=dict)
+    messages: list[dict[str, str]]
+    summary: str | None = None
+    entities: dict[str, list[str]] = field(default_factory=dict)
+    facts: list[str] = field(default_factory=list)
+    working_memory: dict[str, Any] = field(default_factory=dict)
     total_tokens: int = 0
 
-    def to_messages(self, include_summary: bool = True) -> List[Dict[str, str]]:
+    def to_messages(self, include_summary: bool = True) -> list[dict[str, str]]:
         """Convert to message format for LLM."""
         result = []
 
@@ -203,10 +203,12 @@ class ContextWindow:
             if self.facts:
                 context_parts.append(f"Key facts: {'; '.join(self.facts[:5])}")
 
-            result.append({
-                "role": "system",
-                "content": "\n".join(context_parts),
-            })
+            result.append(
+                {
+                    "role": "system",
+                    "content": "\n".join(context_parts),
+                }
+            )
 
         result.extend(self.messages)
         return result
@@ -232,12 +234,10 @@ class EntityExtractor:
     NAME_PATTERN = r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b"
 
     def __init__(self):
-        self._compiled_patterns = {
-            k: re.compile(v) for k, v in self.PATTERNS.items()
-        }
+        self._compiled_patterns = {k: re.compile(v) for k, v in self.PATTERNS.items()}
         self._name_pattern = re.compile(self.NAME_PATTERN)
 
-    def extract(self, text: str) -> Dict[str, List[str]]:
+    def extract(self, text: str) -> dict[str, list[str]]:
         """Extract entities from text.
 
         Args:
@@ -246,7 +246,7 @@ class EntityExtractor:
         Returns:
             Dictionary mapping entity types to lists of extracted values
         """
-        entities: Dict[str, List[str]] = defaultdict(list)
+        entities: dict[str, list[str]] = defaultdict(list)
 
         # Extract using patterns
         for entity_type, pattern in self._compiled_patterns.items():
@@ -257,19 +257,45 @@ class EntityExtractor:
         # Extract potential names (simple heuristic)
         # Filter out common words that might be capitalized
         common_words = {
-            "I", "The", "This", "That", "What", "When", "Where", "How",
-            "Why", "Hello", "Hi", "Yes", "No", "Please", "Thank", "Thanks",
-            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
-            "Saturday", "Sunday", "January", "February", "March", "April",
-            "May", "June", "July", "August", "September", "October",
-            "November", "December",
+            "I",
+            "The",
+            "This",
+            "That",
+            "What",
+            "When",
+            "Where",
+            "How",
+            "Why",
+            "Hello",
+            "Hi",
+            "Yes",
+            "No",
+            "Please",
+            "Thank",
+            "Thanks",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
         }
 
         names = self._name_pattern.findall(text)
-        filtered_names = [
-            n for n in names
-            if n not in common_words and len(n) > 1
-        ]
+        filtered_names = [n for n in names if n not in common_words and len(n) > 1]
         if filtered_names:
             entities["person"].extend(set(filtered_names))
 
@@ -295,7 +321,7 @@ class FactExtractor:
     def __init__(self):
         self._patterns = [re.compile(p, re.IGNORECASE) for p in self.FACT_INDICATORS]
 
-    def extract(self, text: str, role: str = "user") -> List[str]:
+    def extract(self, text: str, role: str = "user") -> list[str]:
         """Extract facts from text.
 
         Args:
@@ -326,7 +352,7 @@ class MemoryStore(ABC):
         pass
 
     @abstractmethod
-    async def load(self, key: str) -> Optional[MemoryEntry]:
+    async def load(self, key: str) -> MemoryEntry | None:
         """Load a memory entry."""
         pass
 
@@ -334,9 +360,9 @@ class MemoryStore(ABC):
     async def search(
         self,
         query: str,
-        memory_type: Optional[MemoryType] = None,
+        memory_type: MemoryType | None = None,
         top_k: int = 5,
-    ) -> List[MemoryEntry]:
+    ) -> list[MemoryEntry]:
         """Search for relevant memories."""
         pass
 
@@ -355,20 +381,20 @@ class InMemoryStore(MemoryStore):
     """In-memory storage backend."""
 
     def __init__(self):
-        self._store: Dict[str, MemoryEntry] = {}
+        self._store: dict[str, MemoryEntry] = {}
 
     async def save(self, key: str, entry: MemoryEntry) -> None:
         self._store[key] = entry
 
-    async def load(self, key: str) -> Optional[MemoryEntry]:
+    async def load(self, key: str) -> MemoryEntry | None:
         return self._store.get(key)
 
     async def search(
         self,
         query: str,
-        memory_type: Optional[MemoryType] = None,
+        memory_type: MemoryType | None = None,
         top_k: int = 5,
-    ) -> List[MemoryEntry]:
+    ) -> list[MemoryEntry]:
         """Simple keyword-based search."""
         query_lower = query.lower()
         results = []
@@ -411,8 +437,8 @@ class ConversationMemory:
 
     def __init__(
         self,
-        config: Optional[MemoryConfig] = None,
-        conversation_id: Optional[str] = None,
+        config: MemoryConfig | None = None,
+        conversation_id: str | None = None,
     ):
         """Initialize conversation memory.
 
@@ -424,11 +450,11 @@ class ConversationMemory:
         self.conversation_id = conversation_id or self._generate_id()
 
         # Memory stores
-        self._short_term: List[Dict[str, Any]] = []
-        self._entities: Dict[str, Entity] = {}
-        self._facts: List[str] = []
-        self._summaries: List[ConversationSummary] = []
-        self._working_memory: Dict[str, Any] = {}
+        self._short_term: list[dict[str, Any]] = []
+        self._entities: dict[str, Entity] = {}
+        self._facts: list[str] = []
+        self._summaries: list[ConversationSummary] = []
+        self._working_memory: dict[str, Any] = {}
 
         # Long-term store
         self._store = InMemoryStore()
@@ -443,9 +469,7 @@ class ConversationMemory:
 
     def _generate_id(self) -> str:
         """Generate unique conversation ID."""
-        return hashlib.md5(
-            f"{time.time()}-{id(self)}".encode()
-        ).hexdigest()[:12]
+        return hashlib.md5(f"{time.time()}-{id(self)}".encode()).hexdigest()[:12]
 
     def _estimate_tokens(self, text: str) -> int:
         """Estimate token count (roughly 4 chars per token)."""
@@ -466,7 +490,7 @@ class ConversationMemory:
 
     def add_turn(
         self,
-        message: Dict[str, str],
+        message: dict[str, str],
         importance: float = 0.5,
         extract_info: bool = True,
     ) -> None:
@@ -537,16 +561,18 @@ class ConversationMemory:
 
         # By token count
         total_tokens = sum(
-            self._estimate_tokens(t.get("content", ""))
-            for t in self._short_term
+            self._estimate_tokens(t.get("content", "")) for t in self._short_term
         )
-        while total_tokens > self.config.max_short_term_tokens and len(self._short_term) > 1:
+        while (
+            total_tokens > self.config.max_short_term_tokens
+            and len(self._short_term) > 1
+        ):
             removed = self._short_term.pop(0)
             total_tokens -= self._estimate_tokens(removed.get("content", ""))
             if removed.get("importance", 0) > 0.3:
                 self._schedule_background(self._save_to_long_term(removed))
 
-    async def _save_to_long_term(self, turn: Dict[str, Any]) -> None:
+    async def _save_to_long_term(self, turn: dict[str, Any]) -> None:
         """Save a turn to long-term memory."""
         entry = MemoryEntry(
             id=f"turn_{turn.get('turn_number', 0)}",
@@ -579,7 +605,8 @@ class ConversationMemory:
 
         # Get entities mentioned
         entities_in_range = [
-            e.name for e in self._entities.values()
+            e.name
+            for e in self._entities.values()
             if any(
                 turn.get("turn_number", 0) >= self._last_summarization
                 for turn in turns_to_summarize
@@ -598,7 +625,7 @@ class ConversationMemory:
 
     def get_context_for_generation(
         self,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         include_summary: bool = True,
         include_entities: bool = True,
         include_facts: bool = True,
@@ -624,10 +651,13 @@ class ConversationMemory:
             turn_tokens = self._estimate_tokens(turn.get("content", ""))
             if total_tokens + turn_tokens > max_tokens:
                 break
-            messages.insert(0, {
-                "role": turn.get("role", "user"),
-                "content": turn.get("content", ""),
-            })
+            messages.insert(
+                0,
+                {
+                    "role": turn.get("role", "user"),
+                    "content": turn.get("content", ""),
+                },
+            )
             total_tokens += turn_tokens
 
         # Build summary from older summaries
@@ -636,9 +666,9 @@ class ConversationMemory:
             summary = self._summaries[-1].summary
 
         # Format entities
-        entities: Dict[str, List[str]] = defaultdict(list)
+        entities: dict[str, list[str]] = defaultdict(list)
         if include_entities:
-            for key, entity in self._entities.items():
+            for _key, entity in self._entities.items():
                 entities[entity.entity_type].append(entity.name)
 
         # Get recent facts
@@ -680,7 +710,7 @@ class ConversationMemory:
         """Clear all working memory."""
         self._working_memory.clear()
 
-    def get_entities(self, entity_type: Optional[str] = None) -> List[Entity]:
+    def get_entities(self, entity_type: str | None = None) -> list[Entity]:
         """Get extracted entities.
 
         Args:
@@ -694,16 +724,16 @@ class ConversationMemory:
             entities = [e for e in entities if e.entity_type == entity_type]
         return sorted(entities, key=lambda e: e.mentions, reverse=True)
 
-    def get_facts(self) -> List[str]:
+    def get_facts(self) -> list[str]:
         """Get extracted facts."""
         return self._facts.copy()
 
     async def search_memory(
         self,
         query: str,
-        memory_type: Optional[MemoryType] = None,
-        top_k: Optional[int] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: MemoryType | None = None,
+        top_k: int | None = None,
+    ) -> list[MemoryEntry]:
         """Search long-term memory.
 
         Args:
@@ -717,7 +747,7 @@ class ConversationMemory:
         top_k = top_k or self.config.retrieval_top_k
         return await self._store.search(query, memory_type, top_k)
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get memory statistics.
 
         Returns:
@@ -732,8 +762,7 @@ class ConversationMemory:
             "summary_count": len(self._summaries),
             "working_memory_keys": list(self._working_memory.keys()),
             "estimated_tokens": sum(
-                self._estimate_tokens(t.get("content", ""))
-                for t in self._short_term
+                self._estimate_tokens(t.get("content", "")) for t in self._short_term
             ),
         }
 
@@ -748,7 +777,7 @@ class ConversationMemory:
         self._turn_count = 0
         self._last_summarization = 0
 
-    def export(self) -> Dict[str, Any]:
+    def export(self) -> dict[str, Any]:
         """Export memory state for persistence.
 
         Returns:
@@ -762,8 +791,10 @@ class ConversationMemory:
                 "enable_summarization": self.config.enable_summarization,
             },
             "short_term": self._short_term,
-            "entities": {k: v.to_dict() if hasattr(v, 'to_dict') else str(v)
-                       for k, v in self._entities.items()},
+            "entities": {
+                k: v.to_dict() if hasattr(v, "to_dict") else str(v)
+                for k, v in self._entities.items()
+            },
             "facts": self._facts,
             "summaries": [
                 {
@@ -779,7 +810,7 @@ class ConversationMemory:
         }
 
     @classmethod
-    def from_export(cls, data: Dict[str, Any]) -> "ConversationMemory":
+    def from_export(cls, data: dict[str, Any]) -> "ConversationMemory":
         """Create memory from exported state.
 
         Args:
@@ -800,7 +831,9 @@ class ConversationMemory:
 
 
 # Convenience function to create memory with agent
-def create_memory_enhanced_agent(agent_class, config, memory_config: Optional[MemoryConfig] = None):
+def create_memory_enhanced_agent(
+    agent_class, config, memory_config: MemoryConfig | None = None
+):
     """Create an agent with enhanced memory capabilities.
 
     Args:
@@ -811,6 +844,7 @@ def create_memory_enhanced_agent(agent_class, config, memory_config: Optional[Me
     Returns:
         Agent instance with memory
     """
+
     class MemoryEnhancedAgent(agent_class):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -818,8 +852,12 @@ def create_memory_enhanced_agent(agent_class, config, memory_config: Optional[Me
 
         async def generate_response(self, messages, context=None):
             # Add messages to memory
-            for msg in messages if isinstance(messages, list) else [{"role": "user", "content": messages}]:
-                if msg not in [m for m in self.memory._short_term]:
+            for msg in (
+                messages
+                if isinstance(messages, list)
+                else [{"role": "user", "content": messages}]
+            ):
+                if msg not in self.memory._short_term:
                     self.memory.add_turn(msg)
 
             # Get context with memory

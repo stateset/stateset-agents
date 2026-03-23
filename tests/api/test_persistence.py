@@ -8,34 +8,32 @@ Comprehensive tests for database persistence including:
 - Unit of Work pattern
 """
 
-import asyncio
 import os
 import tempfile
 from datetime import datetime
-from typing import Dict, Any
 
 import pytest
 
-from api.persistence import (
-    BaseEntity,
+from stateset_agents.api.persistence import (
     Agent,
-    Conversation,
-    TrainingJob,
     APIKey,
+    BaseEntity,
+    Conversation,
+    DatabaseBackend,
+    DatabaseConfig,
     InMemoryRepository,
     SQLiteRepository,
+    TrainingJob,
     UnitOfWork,
-    DatabaseConfig,
-    DatabaseBackend,
-    init_database,
-    get_database,
     close_database,
+    get_database,
+    init_database,
 )
-
 
 # ============================================================================
 # Entity Model Tests
 # ============================================================================
+
 
 class TestBaseEntity:
     """Tests for BaseEntity class."""
@@ -191,6 +189,7 @@ class TestAPIKeyEntity:
 # In-Memory Repository Tests
 # ============================================================================
 
+
 class TestInMemoryRepository:
     """Tests for in-memory repository."""
 
@@ -333,6 +332,7 @@ class TestInMemoryRepository:
 # SQLite Repository Tests
 # ============================================================================
 
+
 class TestSQLiteRepository:
     """Tests for SQLite repository."""
 
@@ -405,6 +405,7 @@ class TestSQLiteRepository:
 # Unit of Work Tests
 # ============================================================================
 
+
 class TestUnitOfWork:
     """Tests for Unit of Work pattern."""
 
@@ -471,6 +472,7 @@ class TestUnitOfWork:
 # Database Configuration Tests
 # ============================================================================
 
+
 class TestDatabaseConfig:
     """Tests for database configuration."""
 
@@ -500,6 +502,7 @@ class TestDatabaseConfig:
 # ============================================================================
 # Global Database Instance Tests
 # ============================================================================
+
 
 class TestGlobalDatabase:
     """Tests for global database instance."""

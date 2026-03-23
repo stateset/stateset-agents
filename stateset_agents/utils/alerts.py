@@ -10,7 +10,6 @@ import functools
 import json
 import logging
 import smtplib
-import time
 import uuid
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -18,7 +17,8 @@ from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any
+from collections.abc import Callable
 
 import requests
 
@@ -41,7 +41,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-SLACK_EXCEPTIONS: Tuple[Type[BaseException], ...] = ()
+SLACK_EXCEPTIONS: tuple[type[BaseException], ...] = ()
 if HAS_SLACK and slack_sdk is not None:
     slack_errors = []
     for name in ("SlackApiError", "SlackClientError", "SlackRequestError"):
@@ -50,11 +50,11 @@ if HAS_SLACK and slack_sdk is not None:
             slack_errors.append(exc)
     SLACK_EXCEPTIONS = tuple(slack_errors)
 
-AIOHTTP_EXCEPTIONS: Tuple[Type[BaseException], ...] = ()
+AIOHTTP_EXCEPTIONS: tuple[type[BaseException], ...] = ()
 if HAS_AIOHTTP and aiohttp is not None:
     AIOHTTP_EXCEPTIONS = (aiohttp.ClientError,)
 
-NOTIFICATION_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+NOTIFICATION_EXCEPTIONS: tuple[type[BaseException], ...] = (
     SLACK_EXCEPTIONS
     + AIOHTTP_EXCEPTIONS
     + (
@@ -110,14 +110,14 @@ class AlertRule:
     """Alert rule definition"""
 
     name: str
-    condition: Callable[[Dict[str, Any]], bool]
+    condition: Callable[[dict[str, Any]], bool]
     severity: AlertSeverity
     message: str
-    labels: Dict[str, str] = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=dict)
     cooldown_minutes: int = 15
     repeat_interval_minutes: int = 60
     auto_resolve: bool = True
-    resolve_condition: Optional[Callable[[Dict[str, Any]], bool]] = None
+    resolve_condition: Callable[[dict[str, Any]], bool] | None = None
     enabled: bool = True
 
     def __post_init__(self):
@@ -134,16 +134,16 @@ class Alert:
     rule_name: str
     severity: AlertSeverity
     message: str
-    labels: Dict[str, str] = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=dict)
     status: AlertStatus = AlertStatus.PENDING
     created_at: datetime = field(default_factory=datetime.now)
-    fired_at: Optional[datetime] = None
-    resolved_at: Optional[datetime] = None
-    last_notification_at: Optional[datetime] = None
+    fired_at: datetime | None = None
+    resolved_at: datetime | None = None
+    last_notification_at: datetime | None = None
     notification_count: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert alert to dictionary"""
         return {
             "id": self.id,
@@ -172,12 +172,12 @@ class NotificationConfig:
     """Notification configuration"""
 
     channel: NotificationChannel
-    config: Dict[str, Any]
+    config: dict[str, Any]
     enabled: bool = True
-    severity_filter: List[AlertSeverity] = field(
+    severity_filter: list[AlertSeverity] = field(
         default_factory=lambda: list(AlertSeverity)
     )
-    label_filters: Dict[str, str] = field(default_factory=dict)
+    label_filters: dict[str, str] = field(default_factory=dict)
 
 
 class NotificationHandler:
@@ -433,11 +433,11 @@ class AlertManager:
     """Advanced alert manager"""
 
     def __init__(self):
-        self.alert_rules: Dict[str, AlertRule] = {}
-        self.active_alerts: Dict[str, Alert] = {}
+        self.alert_rules: dict[str, AlertRule] = {}
+        self.active_alerts: dict[str, Alert] = {}
         self.alert_history: deque = deque(maxlen=1000)
-        self.notification_handlers: List[NotificationHandler] = []
-        self.silenced_rules: Dict[str, datetime] = {}
+        self.notification_handlers: list[NotificationHandler] = []
+        self.silenced_rules: dict[str, datetime] = {}
         self.statistics = {
             "total_alerts": 0,
             "alerts_by_severity": defaultdict(int),
@@ -481,7 +481,7 @@ class AlertManager:
 
         return True
 
-    async def evaluate_rules(self, metrics: Dict[str, Any]):
+    async def evaluate_rules(self, metrics: dict[str, Any]):
         """Evaluate all alert rules against metrics"""
         for rule_name, rule in self.alert_rules.items():
             if not rule.enabled:
@@ -500,7 +500,7 @@ class AlertManager:
             except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
                 logger.error("Error evaluating alert rule %s: %s", rule_name, e)
 
-    async def _handle_alert_trigger(self, rule: AlertRule, metrics: Dict[str, Any]):
+    async def _handle_alert_trigger(self, rule: AlertRule, metrics: dict[str, Any]):
         """Handle alert trigger"""
         existing_alert = self.active_alerts.get(rule.name)
 
@@ -532,7 +532,7 @@ class AlertManager:
             # Send notifications
             await self._send_notifications(alert)
 
-    async def _handle_alert_resolve(self, rule: AlertRule, metrics: Dict[str, Any]):
+    async def _handle_alert_resolve(self, rule: AlertRule, metrics: dict[str, Any]):
         """Handle alert resolution"""
         if not rule.auto_resolve:
             return
@@ -579,11 +579,11 @@ class AlertManager:
         alert.last_notification_at = datetime.now()
         alert.notification_count += 1
 
-    def get_active_alerts(self) -> List[Alert]:
+    def get_active_alerts(self) -> list[Alert]:
         """Get all active alerts"""
         return list(self.active_alerts.values())
 
-    def get_alert_by_id(self, alert_id: str) -> Optional[Alert]:
+    def get_alert_by_id(self, alert_id: str) -> Alert | None:
         """Get alert by ID"""
         for alert in self.active_alerts.values():
             if alert.id == alert_id:
@@ -595,13 +595,13 @@ class AlertManager:
 
         return None
 
-    def get_alerts_by_severity(self, severity: AlertSeverity) -> List[Alert]:
+    def get_alerts_by_severity(self, severity: AlertSeverity) -> list[Alert]:
         """Get alerts by severity"""
         return [
             alert for alert in self.active_alerts.values() if alert.severity == severity
         ]
 
-    def get_alert_statistics(self) -> Dict[str, Any]:
+    def get_alert_statistics(self) -> dict[str, Any]:
         """Get alert statistics"""
         active_alerts = self.get_active_alerts()
 
@@ -623,7 +623,7 @@ class AlertManager:
             "enabled_rules": len([r for r in self.alert_rules.values() if r.enabled]),
         }
 
-    def export_alert_config(self) -> Dict[str, Any]:
+    def export_alert_config(self) -> dict[str, Any]:
         """Export alert configuration"""
         return {
             "alert_rules": [
@@ -653,7 +653,7 @@ class AlertManager:
         }
 
 
-def create_default_alert_rules() -> List[AlertRule]:
+def create_default_alert_rules() -> list[AlertRule]:
     """Create default alert rules for common scenarios"""
     rules = []
 
@@ -761,8 +761,8 @@ def setup_email_notifications(
     username: str,
     password: str,
     from_email: str,
-    to_emails: List[str],
-    severity_filter: List[AlertSeverity] = None,
+    to_emails: list[str],
+    severity_filter: list[AlertSeverity] = None,
 ) -> EmailNotificationHandler:
     """Setup email notifications"""
     config = NotificationConfig(
@@ -782,7 +782,7 @@ def setup_email_notifications(
 
 
 def setup_slack_notifications(
-    token: str, channel: str, severity_filter: List[AlertSeverity] = None
+    token: str, channel: str, severity_filter: list[AlertSeverity] = None
 ) -> SlackNotificationHandler:
     """Setup Slack notifications"""
     config = NotificationConfig(
@@ -796,8 +796,8 @@ def setup_slack_notifications(
 
 def setup_webhook_notifications(
     url: str,
-    headers: Dict[str, str] = None,
-    severity_filter: List[AlertSeverity] = None,
+    headers: dict[str, str] = None,
+    severity_filter: list[AlertSeverity] = None,
 ) -> WebhookNotificationHandler:
     """Setup webhook notifications"""
     config = NotificationConfig(
@@ -810,7 +810,7 @@ def setup_webhook_notifications(
 
 
 def setup_pagerduty_notifications(
-    routing_key: str, severity_filter: List[AlertSeverity] = None
+    routing_key: str, severity_filter: list[AlertSeverity] = None
 ) -> PagerDutyNotificationHandler:
     """Setup PagerDuty notifications"""
     config = NotificationConfig(

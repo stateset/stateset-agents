@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
+from typing import Any, Generic, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,10 @@ T = TypeVar("T")
 # Configuration
 # ============================================================================
 
+
 class DatabaseBackend(str, Enum):
     """Supported database backends."""
+
     MEMORY = "memory"
     SQLITE = "sqlite"
     POSTGRESQL = "postgresql"
@@ -37,8 +39,9 @@ class DatabaseBackend(str, Enum):
 @dataclass
 class DatabaseConfig:
     """Database configuration settings."""
+
     backend: DatabaseBackend = DatabaseBackend.MEMORY
-    connection_url: Optional[str] = None
+    connection_url: str | None = None
     pool_size: int = 5
     max_overflow: int = 10
     pool_timeout: int = 30
@@ -50,7 +53,11 @@ class DatabaseConfig:
     def from_env(cls) -> "DatabaseConfig":
         """Create config from environment variables."""
         backend_str = os.getenv("DB_BACKEND", "memory").lower()
-        backend = DatabaseBackend(backend_str) if backend_str in [e.value for e in DatabaseBackend] else DatabaseBackend.MEMORY
+        backend = (
+            DatabaseBackend(backend_str)
+            if backend_str in [e.value for e in DatabaseBackend]
+            else DatabaseBackend.MEMORY
+        )
 
         return cls(
             backend=backend,
@@ -67,14 +74,16 @@ class DatabaseConfig:
 # Base Models
 # ============================================================================
 
+
 @dataclass
 class BaseEntity:
     """Base class for all persistent entities."""
+
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         result = {}
         for key, value in self.__dict__.items():
@@ -87,7 +96,7 @@ class BaseEntity:
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "BaseEntity":
+    def from_dict(cls, data: dict[str, Any]) -> "BaseEntity":
         """Create from dictionary."""
         if "created_at" in data and isinstance(data["created_at"], str):
             data["created_at"] = datetime.fromisoformat(data["created_at"])
@@ -99,13 +108,14 @@ class BaseEntity:
 @dataclass
 class Agent(BaseEntity):
     """Agent entity."""
+
     name: str = ""
     model_name: str = "gpt-4"
-    system_prompt: Optional[str] = None
+    system_prompt: str | None = None
     temperature: float = 0.7
     max_tokens: int = 2048
     status: str = "active"
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
     total_tokens_used: int = 0
     total_conversations: int = 0
 
@@ -113,48 +123,52 @@ class Agent(BaseEntity):
 @dataclass
 class Conversation(BaseEntity):
     """Conversation entity."""
+
     agent_id: str = ""
-    user_id: Optional[str] = None
+    user_id: str | None = None
     status: str = "active"
-    messages: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    messages: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
     total_tokens: int = 0
-    last_message_at: Optional[datetime] = None
+    last_message_at: datetime | None = None
 
 
 @dataclass
 class TrainingJob(BaseEntity):
     """Training job entity."""
-    agent_id: Optional[str] = None
+
+    agent_id: str | None = None
     status: str = "pending"
     strategy: str = "computational"
-    prompts: List[str] = field(default_factory=list)
+    prompts: list[str] = field(default_factory=list)
     num_iterations: int = 1
     current_iteration: int = 0
     total_trajectories: int = 0
     average_reward: float = 0.0
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    error: Optional[str] = None
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    metrics: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
 
 @dataclass
 class APIKey(BaseEntity):
     """API key entity."""
+
     key_hash: str = ""
     name: str = ""
-    user_id: Optional[str] = None
-    roles: List[str] = field(default_factory=lambda: ["user"])
+    user_id: str | None = None
+    roles: list[str] = field(default_factory=lambda: ["user"])
     rate_limit: int = 60
     is_active: bool = True
-    last_used_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
+    last_used_at: datetime | None = None
+    expires_at: datetime | None = None
 
 
 # ============================================================================
 # Repository Interface
 # ============================================================================
+
 
 class Repository(ABC, Generic[T]):
     """Abstract repository interface for data access."""
@@ -165,7 +179,7 @@ class Repository(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    async def get(self, id: str) -> Optional[T]:
+    async def get(self, id: str) -> T | None:
         """Get entity by ID."""
         pass
 
@@ -184,13 +198,13 @@ class Repository(ABC, Generic[T]):
         self,
         limit: int = 100,
         offset: int = 0,
-        filters: Optional[Dict[str, Any]] = None,
-    ) -> List[T]:
+        filters: dict[str, Any] | None = None,
+    ) -> list[T]:
         """List entities with pagination and filtering."""
         pass
 
     @abstractmethod
-    async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
+    async def count(self, filters: dict[str, Any] | None = None) -> int:
         """Count entities matching filters."""
         pass
 
@@ -199,12 +213,13 @@ class Repository(ABC, Generic[T]):
 # In-Memory Implementation
 # ============================================================================
 
+
 class InMemoryRepository(Repository[T]):
     """In-memory repository implementation for development/testing."""
 
-    def __init__(self, entity_class: Type[T]):
+    def __init__(self, entity_class: type[T]):
         self._entity_class = entity_class
-        self._data: Dict[str, T] = {}
+        self._data: dict[str, T] = {}
         self._lock = asyncio.Lock()
 
     async def create(self, entity: T) -> T:
@@ -215,7 +230,7 @@ class InMemoryRepository(Repository[T]):
             self._data[entity.id] = entity
             return entity
 
-    async def get(self, id: str) -> Optional[T]:
+    async def get(self, id: str) -> T | None:
         """Get entity by ID."""
         return self._data.get(id)
 
@@ -240,8 +255,8 @@ class InMemoryRepository(Repository[T]):
         self,
         limit: int = 100,
         offset: int = 0,
-        filters: Optional[Dict[str, Any]] = None,
-    ) -> List[T]:
+        filters: dict[str, Any] | None = None,
+    ) -> list[T]:
         """List entities with pagination and filtering."""
         items = list(self._data.values())
 
@@ -254,9 +269,9 @@ class InMemoryRepository(Repository[T]):
         items.sort(key=lambda x: x.created_at, reverse=True)
 
         # Apply pagination
-        return items[offset:offset + limit]
+        return items[offset : offset + limit]
 
-    async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
+    async def count(self, filters: dict[str, Any] | None = None) -> int:
         """Count entities matching filters."""
         if not filters:
             return len(self._data)
@@ -276,10 +291,11 @@ class InMemoryRepository(Repository[T]):
 # SQLite Implementation
 # ============================================================================
 
+
 class SQLiteRepository(Repository[T]):
     """SQLite repository implementation for single-instance deployments."""
 
-    def __init__(self, entity_class: Type[T], db_path: str = "stateset.db"):
+    def __init__(self, entity_class: type[T], db_path: str = "stateset.db"):
         self._entity_class = entity_class
         self._db_path = db_path
         self._table_name = entity_class.__name__.lower() + "s"
@@ -329,9 +345,13 @@ class SQLiteRepository(Repository[T]):
 
     def _require_initialized(self) -> None:
         if not self._initialized:
-            raise RuntimeError("SQLiteRepository is not connected. Call connect() first.")
+            raise RuntimeError(
+                "SQLiteRepository is not connected. Call connect() first."
+            )
 
-    def _create_sync(self, entity_id: str, data_json: str, created_at: str, updated_at: str) -> None:
+    def _create_sync(
+        self, entity_id: str, data_json: str, created_at: str, updated_at: str
+    ) -> None:
         self._require_initialized()
         connection = sqlite3.connect(self._db_path, timeout=30)
         try:
@@ -356,7 +376,7 @@ class SQLiteRepository(Repository[T]):
         )
         return entity
 
-    def _get_data_sync(self, id: str) -> Optional[str]:
+    def _get_data_sync(self, id: str) -> str | None:
         self._require_initialized()
         connection = sqlite3.connect(self._db_path, timeout=30)
         cursor = connection.execute(
@@ -372,7 +392,7 @@ class SQLiteRepository(Repository[T]):
             return row[0]
         return None
 
-    async def get(self, id: str) -> Optional[T]:
+    async def get(self, id: str) -> T | None:
         """Get entity by ID."""
         await self.connect()
         data_json = self._get_data_sync(id)
@@ -422,7 +442,7 @@ class SQLiteRepository(Repository[T]):
         await self.connect()
         return self._delete_sync(id)
 
-    def _list_data_sync(self, limit: int, offset: int) -> List[str]:
+    def _list_data_sync(self, limit: int, offset: int) -> list[str]:
         self._require_initialized()
         connection = sqlite3.connect(self._db_path, timeout=30)
         cursor = connection.execute(
@@ -441,8 +461,8 @@ class SQLiteRepository(Repository[T]):
         self,
         limit: int = 100,
         offset: int = 0,
-        filters: Optional[Dict[str, Any]] = None,
-    ) -> List[T]:
+        filters: dict[str, Any] | None = None,
+    ) -> list[T]:
         """List entities with pagination."""
         await self.connect()
         data_rows = self._list_data_sync(limit, offset)
@@ -466,7 +486,7 @@ class SQLiteRepository(Repository[T]):
             connection.close()
         return int(row[0]) if row else 0
 
-    async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
+    async def count(self, filters: dict[str, Any] | None = None) -> int:
         """Count entities."""
         # SQLite doesn't apply filters at query time in this simple implementation.
         # For filtered counts, re-use list() then count in memory.
@@ -486,6 +506,7 @@ class SQLiteRepository(Repository[T]):
 # Unit of Work Pattern
 # ============================================================================
 
+
 class UnitOfWork:
     """
     Unit of Work pattern for managing database transactions.
@@ -495,10 +516,10 @@ class UnitOfWork:
 
     def __init__(self, config: DatabaseConfig):
         self.config = config
-        self._agents: Optional[Repository[Agent]] = None
-        self._conversations: Optional[Repository[Conversation]] = None
-        self._training_jobs: Optional[Repository[TrainingJob]] = None
-        self._api_keys: Optional[Repository[APIKey]] = None
+        self._agents: Repository[Agent] | None = None
+        self._conversations: Repository[Conversation] | None = None
+        self._training_jobs: Repository[TrainingJob] | None = None
+        self._api_keys: Repository[APIKey] | None = None
 
     async def __aenter__(self) -> "UnitOfWork":
         """Enter context manager."""
@@ -536,7 +557,12 @@ class UnitOfWork:
 
     async def close(self) -> None:
         """Close all connections."""
-        for repo in [self._agents, self._conversations, self._training_jobs, self._api_keys]:
+        for repo in [
+            self._agents,
+            self._conversations,
+            self._training_jobs,
+            self._api_keys,
+        ]:
             if hasattr(repo, "close"):
                 await repo.close()
 
@@ -573,10 +599,10 @@ class UnitOfWork:
 # Global Database Instance
 # ============================================================================
 
-_database: Optional[UnitOfWork] = None
+_database: UnitOfWork | None = None
 
 
-async def init_database(config: Optional[DatabaseConfig] = None) -> UnitOfWork:
+async def init_database(config: DatabaseConfig | None = None) -> UnitOfWork:
     """Initialize the global database instance."""
     global _database
     config = config or DatabaseConfig.from_env()
@@ -585,7 +611,7 @@ async def init_database(config: Optional[DatabaseConfig] = None) -> UnitOfWork:
     return _database
 
 
-def get_database() -> Optional[UnitOfWork]:
+def get_database() -> UnitOfWork | None:
     """Get the global database instance."""
     return _database
 

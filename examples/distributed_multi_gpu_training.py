@@ -43,7 +43,6 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import torch
 import torch.distributed as dist
@@ -54,14 +53,16 @@ from stateset_agents import MultiTurnAgent
 from stateset_agents.core.agent import AgentConfig
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import (
-    CompositeReward,
     create_customer_service_reward,
     create_domain_reward,
 )
 
 try:
-    from stateset_agents.training.distributed_trainer import DistributedGRPOTrainer, DistributedConfig
     from stateset_agents.training.config import TrainingConfig
+    from stateset_agents.training.distributed_trainer import (
+        DistributedConfig,
+        DistributedGRPOTrainer,
+    )
     from stateset_agents.utils.monitoring import MonitoringService
 except ImportError:
     print("Error: This example requires a full installation from source.")
@@ -70,8 +71,7 @@ except ImportError:
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -85,25 +85,25 @@ CUSTOMER_SERVICE_SCENARIOS = [
         "topic": "refund_request",
         "user_goal": "Get a refund for delayed order",
         "context": "Order #12345, delayed by 2 weeks, high-value customer",
-        "difficulty": "medium"
+        "difficulty": "medium",
     },
     {
         "topic": "technical_issue",
         "user_goal": "Resolve login problem",
         "context": "Account locked after multiple failed attempts",
-        "difficulty": "easy"
+        "difficulty": "easy",
     },
     {
         "topic": "product_inquiry",
         "user_goal": "Learn about premium features",
         "context": "Existing customer considering upgrade",
-        "difficulty": "medium"
+        "difficulty": "medium",
     },
     {
         "topic": "complaint_handling",
         "user_goal": "Express dissatisfaction with service",
         "context": "Multiple support tickets unresolved",
-        "difficulty": "hard"
+        "difficulty": "hard",
     },
 ]
 
@@ -112,19 +112,19 @@ TECHNICAL_SUPPORT_SCENARIOS = [
         "topic": "debugging",
         "user_goal": "Fix memory leak in Python app",
         "context": "Application crashes after 24 hours",
-        "difficulty": "hard"
+        "difficulty": "hard",
     },
     {
         "topic": "installation",
         "user_goal": "Install package with dependencies",
         "context": "Complex dependency conflicts",
-        "difficulty": "medium"
+        "difficulty": "medium",
     },
     {
         "topic": "api_usage",
         "user_goal": "Understand API authentication",
         "context": "Getting 401 errors consistently",
-        "difficulty": "easy"
+        "difficulty": "easy",
     },
 ]
 
@@ -133,18 +133,18 @@ SALES_SCENARIOS = [
         "topic": "lead_qualification",
         "user_goal": "Determine if prospect is a good fit",
         "context": "Enterprise customer with complex needs",
-        "difficulty": "medium"
+        "difficulty": "medium",
     },
     {
         "topic": "product_demo",
         "user_goal": "Showcase key features",
         "context": "Technical decision maker, time-constrained",
-        "difficulty": "medium"
+        "difficulty": "medium",
     },
 ]
 
 
-def get_scenarios(task: str) -> List[Dict]:
+def get_scenarios(task: str) -> list[dict]:
     """Get task-specific training scenarios"""
     scenarios_map = {
         "customer_service": CUSTOMER_SERVICE_SCENARIOS,
@@ -157,6 +157,7 @@ def get_scenarios(task: str) -> List[Dict]:
 # ============================================================================
 # Distributed Training Setup
 # ============================================================================
+
 
 def setup_process(rank: int, world_size: int, backend: str = "nccl"):
     """
@@ -195,11 +196,8 @@ def cleanup_process():
 # Training Function (runs on each process)
 # ============================================================================
 
-async def train_distributed(
-    rank: int,
-    world_size: int,
-    args: argparse.Namespace
-):
+
+async def train_distributed(rank: int, world_size: int, args: argparse.Namespace):
     """
     Main training function that runs on each distributed process
 
@@ -208,11 +206,11 @@ async def train_distributed(
         world_size: Total number of processes
         args: Command line arguments
     """
-    is_master = (rank == 0)
+    is_master = rank == 0
 
     # Setup distributed environment
     backend = "gloo" if args.cpu else "nccl"
-    device = setup_process(rank, world_size, backend)
+    setup_process(rank, world_size, backend)
 
     if is_master:
         logger.info("=" * 80)
@@ -254,7 +252,9 @@ async def train_distributed(
         scenarios = get_scenarios(args.task)
 
         if is_master:
-            logger.info(f"[Rank {rank}] Creating environment with {len(scenarios)} scenarios...")
+            logger.info(
+                f"[Rank {rank}] Creating environment with {len(scenarios)} scenarios..."
+            )
 
         # Create task-specific reward function
         if args.task == "customer_service":
@@ -273,7 +273,8 @@ async def train_distributed(
         # ====================================================================
 
         training_config = TrainingConfig(
-            num_episodes=args.num_episodes // world_size,  # Divide episodes across processes
+            num_episodes=args.num_episodes
+            // world_size,  # Divide episodes across processes
             batch_size=args.batch_size,
             learning_rate=args.learning_rate,
             max_grad_norm=1.0,
@@ -375,6 +376,7 @@ async def train_distributed(
 # Process Launcher
 # ============================================================================
 
+
 def run_distributed_training(args: argparse.Namespace):
     """
     Launch distributed training processes
@@ -392,7 +394,9 @@ def run_distributed_training(args: argparse.Namespace):
 
     if world_size == 1:
         logger.warning("Only 1 GPU/process detected. Running in single-process mode.")
-        logger.warning("For true distributed training, use multiple GPUs or --world-size > 1")
+        logger.warning(
+            "For true distributed training, use multiple GPUs or --world-size > 1"
+        )
 
     logger.info(f"Launching distributed training with world_size={world_size}")
 
@@ -417,24 +421,22 @@ def run_distributed_training(args: argparse.Namespace):
 # Main Entry Point
 # ============================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Distributed Multi-GPU Training for StateSet Agents",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
 
     # Model arguments
     parser.add_argument(
-        "--model",
-        type=str,
-        default="gpt2",
-        help="Model name or path (default: gpt2)"
+        "--model", type=str, default="gpt2", help="Model name or path (default: gpt2)"
     )
     parser.add_argument(
         "--use-lora",
         action="store_true",
-        help="Use LoRA for parameter-efficient training"
+        help="Use LoRA for parameter-efficient training",
     )
 
     # Task arguments
@@ -443,7 +445,7 @@ def main():
         type=str,
         default="customer_service",
         choices=["customer_service", "technical_support", "sales"],
-        help="Training task (default: customer_service)"
+        help="Training task (default: customer_service)",
     )
 
     # Training arguments
@@ -451,31 +453,28 @@ def main():
         "--num-episodes",
         type=int,
         default=100,
-        help="Total number of training episodes (default: 100)"
+        help="Total number of training episodes (default: 100)",
     )
     parser.add_argument(
         "--num-epochs",
         type=int,
         default=3,
-        help="Number of training epochs (default: 3)"
+        help="Number of training epochs (default: 3)",
     )
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=8,
-        help="Batch size per GPU (default: 8)"
+        "--batch-size", type=int, default=8, help="Batch size per GPU (default: 8)"
     )
     parser.add_argument(
         "--learning-rate",
         type=float,
         default=5e-5,
-        help="Learning rate (default: 5e-5)"
+        help="Learning rate (default: 5e-5)",
     )
     parser.add_argument(
         "--grad-accumulation",
         type=int,
         default=1,
-        help="Gradient accumulation steps (default: 1)"
+        help="Gradient accumulation steps (default: 1)",
     )
 
     # Distributed arguments
@@ -483,29 +482,27 @@ def main():
         "--world-size",
         type=int,
         default=None,
-        help="Number of processes (default: auto-detect GPU count)"
+        help="Number of processes (default: auto-detect GPU count)",
     )
     parser.add_argument(
-        "--cpu",
-        action="store_true",
-        help="Force CPU training (useful for testing)"
+        "--cpu", action="store_true", help="Force CPU training (useful for testing)"
     )
 
     # Optimization arguments
     parser.add_argument(
         "--no-mixed-precision",
         action="store_true",
-        help="Disable mixed precision training"
+        help="Disable mixed precision training",
     )
     parser.add_argument(
         "--checkpoint-activations",
         action="store_true",
-        help="Enable gradient checkpointing for memory efficiency"
+        help="Enable gradient checkpointing for memory efficiency",
     )
     parser.add_argument(
         "--cpu-offload",
         action="store_true",
-        help="Offload optimizer states to CPU (saves GPU memory)"
+        help="Offload optimizer states to CPU (saves GPU memory)",
     )
 
     # Logging and checkpointing
@@ -513,24 +510,22 @@ def main():
         "--checkpoint-dir",
         type=str,
         default="./checkpoints/distributed",
-        help="Directory for saving checkpoints (default: ./checkpoints/distributed)"
+        help="Directory for saving checkpoints (default: ./checkpoints/distributed)",
     )
     parser.add_argument(
         "--save-interval",
         type=int,
         default=1,
-        help="Save checkpoint every N epochs (default: 1)"
+        help="Save checkpoint every N epochs (default: 1)",
     )
     parser.add_argument(
         "--wandb-project",
         type=str,
         default="stateset-agents-distributed",
-        help="W&B project name (default: stateset-agents-distributed)"
+        help="W&B project name (default: stateset-agents-distributed)",
     )
     parser.add_argument(
-        "--no-monitoring",
-        action="store_true",
-        help="Disable monitoring service"
+        "--no-monitoring", action="store_true", help="Disable monitoring service"
     )
 
     args = parser.parse_args()

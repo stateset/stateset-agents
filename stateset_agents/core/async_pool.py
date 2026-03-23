@@ -9,29 +9,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 import time
-import traceback
 import weakref
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
+from contextlib import AbstractAsyncContextManager
 from typing import (
     Any,
-    AsyncContextManager,
-    Awaitable,
-    Callable,
-    Dict,
     Generic,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Type,
     TypeVar,
-    Union,
 )
+from collections.abc import Awaitable
 
 from .error_handling import ErrorCode, ResourceException
 
@@ -44,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-POOL_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+POOL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     ResourceException,
     RuntimeError,
     ValueError,
@@ -52,7 +41,7 @@ POOL_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
     OSError,
     asyncio.TimeoutError,
 )
-RESOURCE_CLEANUP_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+RESOURCE_CLEANUP_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     RuntimeError,
     ValueError,
@@ -117,7 +106,7 @@ class ResourceInfo:
     last_used: float
     use_count: int
     state: ResourceState
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class PooledResource(Generic[T]):
@@ -127,8 +116,8 @@ class PooledResource(Generic[T]):
         self,
         resource: T,
         resource_id: str,
-        pool: "AsyncResourcePool",
-        created_at: Optional[float] = None,
+        pool: AsyncResourcePool,
+        created_at: float | None = None,
     ):
         self.resource = resource
         self.info = ResourceInfo(
@@ -205,6 +194,7 @@ class AsyncResourceFactory(Generic[T]):
 
 
 if aiohttp is not None:
+
     class HTTPSessionFactory(AsyncResourceFactory[aiohttp.ClientSession]):  # type: ignore[name-defined]
         """Factory for HTTP client sessions."""
 
@@ -225,7 +215,9 @@ if aiohttp is not None:
             """Close HTTP session."""
             if not session.closed:
                 await session.close()
+
 else:
+
     class HTTPSessionFactory(AsyncResourceFactory[Any]):
         """Placeholder factory when aiohttp is not installed."""
 
@@ -266,12 +258,12 @@ class AsyncResourcePool(Generic[T]):
         self.acquire_timeout = acquire_timeout
         self.name = name
 
-        self._pool: List[PooledResource[T]] = []
+        self._pool: list[PooledResource[T]] = []
         self._available = asyncio.Queue()
         self._lock = asyncio.Lock()
         self._state = PoolState.INITIALIZING
         self._stats = PoolStats()
-        self._health_check_task: Optional[asyncio.Task] = None
+        self._health_check_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
         self._resource_counter = 0
 
@@ -279,7 +271,7 @@ class AsyncResourcePool(Generic[T]):
         """Initialize the pool"""
         logger.info(f"Initializing pool {self.name} with min_size={self.min_size}")
 
-        created: List[PooledResource[T]] = []
+        created: list[PooledResource[T]] = []
         try:
             async with self._lock:
                 # Create minimum number of resources
@@ -310,7 +302,7 @@ class AsyncResourcePool(Generic[T]):
 
     async def _create_resource(
         self, raise_on_fail: bool = False
-    ) -> Optional[PooledResource[T]]:
+    ) -> PooledResource[T] | None:
         """Create a new pooled resource"""
         try:
             self._resource_counter += 1
@@ -334,7 +326,7 @@ class AsyncResourcePool(Generic[T]):
             return None
 
     @asynccontextmanager
-    async def acquire(self, timeout: Optional[float] = None) -> AsyncContextManager[T]:
+    async def acquire(self, timeout: float | None = None) -> AbstractAsyncContextManager[T]:
         """Acquire a resource from the pool"""
         if self._state != PoolState.READY:
             raise RuntimeError(f"Pool {self.name} is not ready (state: {self._state})")
@@ -360,11 +352,13 @@ class AsyncResourcePool(Generic[T]):
                             self._stats.total_connections += 1
                             self._stats.pool_misses += 1
                         else:
-                            raise RuntimeError("Failed to create new resource")
+                            raise RuntimeError(
+                                "Failed to create new resource"
+                            ) from None
                     else:
                         raise RuntimeError(
                             f"Pool {self.name} exhausted (timeout after {timeout}s)"
-                        )
+                        ) from None
 
             # Validate resource
             if not await self.factory.validate_resource(pooled_resource.resource):
@@ -430,7 +424,7 @@ class AsyncResourcePool(Generic[T]):
                     # Remove failed resource
                     await self._remove_resource(pooled_resource)
 
-        except POOL_EXCEPTIONS as e:
+        except POOL_EXCEPTIONS:
             async with self._lock:
                 self._stats.failed_requests += 1
             raise
@@ -467,7 +461,6 @@ class AsyncResourcePool(Generic[T]):
 
     async def _perform_health_check(self) -> None:
         """Perform health check on pool resources"""
-        current_time = time.time()
         resources_to_remove = []
 
         async with self._lock:
@@ -615,9 +608,9 @@ class AsyncTaskManager:
         self.task_timeout = task_timeout
         self.cleanup_interval = cleanup_interval
 
-        self._active_tasks: Set[asyncio.Task] = set()
+        self._active_tasks: set[asyncio.Task] = set()
         self._semaphore = asyncio.Semaphore(max_concurrent_tasks)
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
     async def start(self) -> None:
@@ -628,7 +621,7 @@ class AsyncTaskManager:
         )
 
     async def submit_task(
-        self, coro: Awaitable[T], timeout: Optional[float] = None
+        self, coro: Awaitable[T], timeout: float | None = None
     ) -> T:
         """Submit a task for execution"""
         timeout = timeout or self.task_timeout
@@ -649,8 +642,8 @@ class AsyncTaskManager:
                 raise
 
     async def submit_batch(
-        self, coros: List[Awaitable[T]], return_exceptions: bool = False
-    ) -> List[Union[T, Exception]]:
+        self, coros: list[Awaitable[T]], return_exceptions: bool = False
+    ) -> list[T | Exception]:
         """Submit a batch of tasks"""
         tasks = [self.submit_task(coro) for coro in coros]
 
@@ -676,7 +669,7 @@ class AsyncTaskManager:
             except POOL_EXCEPTIONS as e:
                 logger.error(f"Cleanup loop error: {e}")
 
-    def get_status(self) -> Dict[str, int]:
+    def get_status(self) -> dict[str, int]:
         """Get task manager status"""
         return {
             "active_tasks": len(self._active_tasks),
@@ -728,8 +721,8 @@ class AsyncTaskManager:
 
 
 # Global instances for convenience
-_http_pool: Optional[AsyncResourcePool[aiohttp.ClientSession]] = None
-_task_manager: Optional[AsyncTaskManager] = None
+_http_pool: AsyncResourcePool[aiohttp.ClientSession] | None = None
+_task_manager: AsyncTaskManager | None = None
 
 
 async def get_http_pool() -> AsyncResourcePool[aiohttp.ClientSession]:

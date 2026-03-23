@@ -5,35 +5,37 @@ These tests verify the implementations of state-of-the-art RL algorithms
 for training large language models.
 """
 
-import asyncio
-import json
 import os
 import tempfile
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import torch
-import torch.nn as nn
 
 # Skip tests if training modules not available
 try:
-    from stateset_agents.training.gepo_trainer import GEPOConfig, GEPOTrainer, train_with_gepo
     from stateset_agents.training.dapo_trainer import (
         DAPOConfig,
-        DAPOTrainer,
         DAPORewardShaper,
+        DAPOTrainer,
         DynamicSamplingBuffer,
         train_with_dapo,
     )
+    from stateset_agents.training.gepo_trainer import (
+        GEPOConfig,
+        GEPOTrainer,
+        train_with_gepo,
+    )
     from stateset_agents.training.vapo_trainer import (
+        LengthAdaptiveGAE,
+        ValueHead,
         VAPOConfig,
         VAPOTrainer,
-        ValueHead,
-        LengthAdaptiveGAE,
         train_with_vapo,
     )
+
     TRAINERS_AVAILABLE = True
-except (ImportError, RuntimeError) as e:
+except (ImportError, RuntimeError):
     TRAINERS_AVAILABLE = False
     # Create dummy classes for type hints
     GEPOConfig = None
@@ -52,7 +54,7 @@ except (ImportError, RuntimeError) as e:
 
 pytestmark = pytest.mark.skipif(
     not TRAINERS_AVAILABLE,
-    reason="Advanced trainers not available (check transformers/torchvision compatibility)"
+    reason="Advanced trainers not available (check transformers/torchvision compatibility)",
 )
 
 
@@ -78,6 +80,7 @@ def mock_model(device):
     # Make parameters() return a fresh iterator each time
     def fresh_params():
         return iter([param])
+
     model.parameters = fresh_params
     model.device = device
 
@@ -86,7 +89,9 @@ def mock_model(device):
     model.config.hidden_size = 768
 
     # Mock forward pass
-    def mock_forward(input_ids, attention_mask=None, output_hidden_states=False, **kwargs):
+    def mock_forward(
+        input_ids, attention_mask=None, output_hidden_states=False, **kwargs
+    ):
         batch_size, seq_len = input_ids.shape
         vocab_size = 1000
 
@@ -108,10 +113,13 @@ def mock_model(device):
     def mock_generate(input_ids, attention_mask=None, max_new_tokens=50, **kwargs):
         batch_size, prompt_len = input_ids.shape
         response_len = min(max_new_tokens, 20)  # Shorter for tests
-        output_ids = torch.cat([
-            input_ids,
-            torch.randint(0, 1000, (batch_size, response_len), device=device)
-        ], dim=1)
+        output_ids = torch.cat(
+            [
+                input_ids,
+                torch.randint(0, 1000, (batch_size, response_len), device=device),
+            ],
+            dim=1,
+        )
         return output_ids
 
     model.generate = mock_generate
@@ -133,7 +141,9 @@ def mock_tokenizer():
     tokenizer.eos_token = "</s>"
     tokenizer.eos_token_id = 1
 
-    def mock_encode(text, return_tensors=None, truncation=True, max_length=512, **kwargs):
+    def mock_encode(
+        text, return_tensors=None, truncation=True, max_length=512, **kwargs
+    ):
         # Return mock tokenization
         tokens = MagicMock()
         seq_len = min(len(text.split()) * 2, max_length)
@@ -158,6 +168,7 @@ def mock_tokenizer():
 @pytest.fixture
 def simple_reward_fn():
     """Simple reward function for testing"""
+
     def reward_fn(prompt: str, response: str) -> float:
         # Reward based on response length and content
         if len(response) > 50:
@@ -166,15 +177,18 @@ def simple_reward_fn():
             return 0.5
         else:
             return 0.2
+
     return reward_fn
 
 
 @pytest.fixture
 def simple_verifier_fn():
     """Simple verifier function for testing"""
+
     def verifier_fn(prompt: str, response: str) -> bool:
         # Simple check - response contains certain keywords
         return "answer" in response.lower() or len(response) > 30
+
     return verifier_fn
 
 
@@ -232,7 +246,9 @@ class TestGEPOTrainer:
             max_completion_length=32,
         )
 
-    def test_trainer_initialization(self, gepo_config, mock_model, mock_tokenizer, simple_reward_fn, device):
+    def test_trainer_initialization(
+        self, gepo_config, mock_model, mock_tokenizer, simple_reward_fn, device
+    ):
         """Test GEPO trainer initialization"""
         trainer = GEPOTrainer(
             config=gepo_config,
@@ -246,7 +262,9 @@ class TestGEPOTrainer:
         assert trainer.tokenizer == mock_tokenizer
         assert trainer.global_step == 0
 
-    def test_compute_gepo_coefficient(self, gepo_config, mock_model, mock_tokenizer, simple_reward_fn, device):
+    def test_compute_gepo_coefficient(
+        self, gepo_config, mock_model, mock_tokenizer, simple_reward_fn, device
+    ):
         """Test GEPO coefficient computation"""
         trainer = GEPOTrainer(
             config=gepo_config,
@@ -265,7 +283,9 @@ class TestGEPOTrainer:
         # Coefficients should be close to 1 when distributions are similar
         assert torch.all(coefs > 0)
 
-    def test_compute_group_advantages(self, gepo_config, mock_model, mock_tokenizer, simple_reward_fn, device):
+    def test_compute_group_advantages(
+        self, gepo_config, mock_model, mock_tokenizer, simple_reward_fn, device
+    ):
         """Test group advantage computation"""
         trainer = GEPOTrainer(
             config=gepo_config,
@@ -399,7 +419,9 @@ class TestDAPOTrainer:
             use_overlong_shaping=True,
         )
 
-    def test_trainer_initialization(self, dapo_config, mock_model, mock_tokenizer, simple_reward_fn):
+    def test_trainer_initialization(
+        self, dapo_config, mock_model, mock_tokenizer, simple_reward_fn
+    ):
         """Test DAPO trainer initialization"""
         trainer = DAPOTrainer(
             config=dapo_config,
@@ -511,7 +533,9 @@ class TestVAPOTrainer:
             max_completion_length=32,
         )
 
-    def test_trainer_initialization(self, vapo_config, mock_model, mock_tokenizer, simple_reward_fn, device):
+    def test_trainer_initialization(
+        self, vapo_config, mock_model, mock_tokenizer, simple_reward_fn, device
+    ):
         """Test VAPO trainer initialization"""
         trainer = VAPOTrainer(
             config=vapo_config,
@@ -542,7 +566,9 @@ class TestTrainerSaveLoad:
         with tempfile.TemporaryDirectory() as tmpdir:
             yield tmpdir
 
-    def test_gepo_save_checkpoint(self, temp_dir, mock_model, mock_tokenizer, simple_reward_fn):
+    def test_gepo_save_checkpoint(
+        self, temp_dir, mock_model, mock_tokenizer, simple_reward_fn
+    ):
         """Test GEPO checkpoint saving"""
         config = GEPOConfig(model_name="test", group_size=4)
         trainer = GEPOTrainer(
@@ -559,7 +585,9 @@ class TestTrainerSaveLoad:
         assert os.path.exists(os.path.join(checkpoint_dir, "training_state.pt"))
         assert os.path.exists(os.path.join(checkpoint_dir, "gepo_config.json"))
 
-    def test_dapo_save_checkpoint(self, temp_dir, mock_model, mock_tokenizer, simple_reward_fn):
+    def test_dapo_save_checkpoint(
+        self, temp_dir, mock_model, mock_tokenizer, simple_reward_fn
+    ):
         """Test DAPO checkpoint saving"""
         config = DAPOConfig(model_name="test", group_size=4)
         trainer = DAPOTrainer(
@@ -576,7 +604,9 @@ class TestTrainerSaveLoad:
         assert os.path.exists(os.path.join(checkpoint_dir, "training_state.pt"))
         assert os.path.exists(os.path.join(checkpoint_dir, "dapo_config.json"))
 
-    def test_vapo_save_checkpoint(self, temp_dir, mock_model, mock_tokenizer, simple_reward_fn, device):
+    def test_vapo_save_checkpoint(
+        self, temp_dir, mock_model, mock_tokenizer, simple_reward_fn, device
+    ):
         """Test VAPO checkpoint saving"""
         config = VAPOConfig(model_name="test", group_size=4)
         trainer = VAPOTrainer(

@@ -4,23 +4,25 @@ API endpoint tests for the FastAPI service.
 These tests verify the REST API functionality.
 """
 
-import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 import httpx
+import pytest
 
 # Ensure environment is set for API
 os.environ.setdefault("API_ENVIRONMENT", "development")
-os.environ.setdefault("API_JWT_SECRET", "test-secret-key-for-testing-purposes-only-minimum-32-chars")
+os.environ.setdefault(
+    "API_JWT_SECRET", "test-secret-key-for-testing-purposes-only-minimum-32-chars"
+)
 os.environ.setdefault("API_CORS_ORIGINS", "*")
 os.environ.setdefault("API_REQUIRE_AUTH", "false")
 os.environ.setdefault("API_RATE_LIMIT_ENABLED", "false")
 
 # Import API components (these may not exist yet, but we'll create mocks)
 try:
-    from api.main import create_app
+    from stateset_agents.api.main import create_app
+
     app = create_app()
     API_AVAILABLE = True
 except ImportError:
@@ -86,7 +88,7 @@ class TestAPIEndpoints:
 
         # Mock the agent response
         with patch(
-            "stateset_agents.api.ultimate_grpo_service.MultiTurnAgent"
+            "stateset_agents.api.services.agent_service.MultiTurnAgent"
         ) as mock_agent_class:
             mock_agent = MagicMock()
             mock_agent.generate_response = AsyncMock(
@@ -201,7 +203,7 @@ class TestAPIErrorHandling:
 
         # Mock agent to raise an exception
         with patch(
-            "stateset_agents.api.ultimate_grpo_service.MultiTurnAgent"
+            "stateset_agents.api.services.agent_service.MultiTurnAgent"
         ) as mock_agent_class:
             mock_agent = MagicMock()
             mock_agent.generate_response = AsyncMock(

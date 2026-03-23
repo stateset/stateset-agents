@@ -6,22 +6,21 @@ Simple in-memory caching for frequently accessed endpoints.
 
 import hashlib
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional, TypeVar
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from functools import wraps
+from typing import Any, ParamSpec, TypeVar, cast
 
-from .constants import (
-    HEALTH_CACHE_TTL_SECONDS,
-    METRICS_CACHE_TTL_SECONDS,
-)
+from .constants import HEALTH_CACHE_TTL_SECONDS, METRICS_CACHE_TTL_SECONDS
 
-
+P = ParamSpec("P")
 T = TypeVar("T")
 
 
 @dataclass
 class CacheEntry:
     """A single cache entry with TTL."""
+
     value: Any
     expires_at: float
 
@@ -38,11 +37,11 @@ class SimpleCache:
     """
 
     def __init__(self):
-        self._cache: Dict[str, CacheEntry] = {}
+        self._cache: dict[str, CacheEntry] = {}
         self._hits: int = 0
         self._misses: int = 0
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """
         Get a value from cache.
 
@@ -86,8 +85,7 @@ class SimpleCache:
         """
         now = time.monotonic()
         expired_keys = [
-            key for key, entry in self._cache.items()
-            if entry.expires_at < now
+            key for key, entry in self._cache.items() if entry.expires_at < now
         ]
 
         for key in expired_keys:
@@ -95,7 +93,7 @@ class SimpleCache:
 
         return len(expired_keys)
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Get cache statistics."""
         total = self._hits + self._misses
         hit_rate = self._hits / total if total > 0 else 0.0
@@ -117,7 +115,9 @@ def get_cache() -> SimpleCache:
     return _cache
 
 
-def cached(ttl_seconds: float, key_prefix: str = ""):
+def cached(
+    ttl_seconds: float, key_prefix: str = "",
+) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
     """
     Decorator to cache function results.
 
@@ -130,22 +130,24 @@ def cached(ttl_seconds: float, key_prefix: str = ""):
         async def get_metrics():
             ...
     """
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+
+    def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
         @wraps(func)
-        async def wrapper(*args, **kwargs) -> T:
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             # Generate cache key
             cache_key = f"{key_prefix}:{func.__name__}"
             if args:
                 cache_key += ":" + hashlib.md5(repr(args).encode()).hexdigest()[:8]
             if kwargs:
-                cache_key += ":" + hashlib.md5(
-                    repr(sorted(kwargs.items())).encode()
-                ).hexdigest()[:8]
+                cache_key += (
+                    ":"
+                    + hashlib.md5(repr(sorted(kwargs.items())).encode()).hexdigest()[:8]
+                )
 
             # Try to get from cache
             cached_value = _cache.get(cache_key)
             if cached_value is not None:
-                return cached_value
+                return cast(T, cached_value)
 
             # Call function and cache result
             result = await func(*args, **kwargs)
@@ -154,6 +156,7 @@ def cached(ttl_seconds: float, key_prefix: str = ""):
             return result
 
         return wrapper
+
     return decorator
 
 
@@ -165,20 +168,22 @@ def cached_sync(ttl_seconds: float, key_prefix: str = ""):
         ttl_seconds: Time-to-live for cached results.
         key_prefix: Prefix for cache keys.
     """
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+
+    def decorator(func: Callable[P, T]) -> Callable[P, T]:
         @wraps(func)
-        def wrapper(*args, **kwargs) -> T:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             cache_key = f"{key_prefix}:{func.__name__}"
             if args:
                 cache_key += ":" + hashlib.md5(repr(args).encode()).hexdigest()[:8]
             if kwargs:
-                cache_key += ":" + hashlib.md5(
-                    repr(sorted(kwargs.items())).encode()
-                ).hexdigest()[:8]
+                cache_key += (
+                    ":"
+                    + hashlib.md5(repr(sorted(kwargs.items())).encode()).hexdigest()[:8]
+                )
 
             cached_value = _cache.get(cache_key)
             if cached_value is not None:
-                return cached_value
+                return cast(T, cached_value)
 
             result = func(*args, **kwargs)
             _cache.set(cache_key, result, ttl_seconds)
@@ -186,6 +191,7 @@ def cached_sync(ttl_seconds: float, key_prefix: str = ""):
             return result
 
         return wrapper
+
     return decorator
 
 

@@ -4,7 +4,7 @@ Diagnostics monitor for training
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class DiagnosticsMonitor:
         self.episode_count = 0
         self.total_rewards = []
 
-    def __call__(self, event: str, data: Optional[Dict[str, Any]] = None):
+    def __call__(self, event: str, data: dict[str, Any] | None = None):
         """Callback for training events"""
         if event == "episode_end":
             self.episode_count += 1

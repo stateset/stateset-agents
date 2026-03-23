@@ -11,13 +11,14 @@ import logging
 import multiprocessing as mp
 import statistics
 import time
+import traceback
 import tracemalloc
 import uuid
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 import psutil
@@ -28,10 +29,7 @@ from ..core.computational_engine import ComputationalGRPOEngine
 from ..core.environment import Environment
 from ..core.multiturn_agent import DialogueDatabase, MultiTurnAgent
 from ..core.reward import RewardFunction, RewardResult
-from ..rewards.multi_objective_reward import (
-    MultiObjectiveRewardFunction,
-    create_customer_service_reward,
-)
+from ..rewards.multi_objective_reward import create_customer_service_reward
 from ..training.neural_reward_trainer import create_neural_reward_function
 from ..utils.cache import CacheService
 from ..utils.monitoring import MonitoringService
@@ -51,9 +49,9 @@ class BenchmarkResult:
     cpu_usage: float
     success_rate: float
     error_count: int
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "component": self.component,
@@ -80,7 +78,7 @@ class BenchmarkConfig:
     cpu_profiling: bool = True
     detailed_metrics: bool = True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "iterations": self.iterations,
@@ -97,7 +95,7 @@ class BenchmarkRunner:
     """Main benchmark runner with comprehensive metrics collection"""
 
     def __init__(self):
-        self.results: List[BenchmarkResult] = []
+        self.results: list[BenchmarkResult] = []
         self.monitoring = MonitoringService()
         self.cache = CacheService()
 
@@ -116,7 +114,6 @@ class BenchmarkRunner:
 
         # Get initial system metrics
         initial_memory = self.process.memory_info().rss / 1024 / 1024  # MB
-        initial_cpu = self.process.cpu_percent()
 
         start_time = time.time()
 
@@ -287,7 +284,7 @@ class BenchmarkRunner:
 
         return benchmark_result
 
-    async def run_agent_benchmarks(self) -> List[BenchmarkResult]:
+    async def run_agent_benchmarks(self) -> list[BenchmarkResult]:
         """Run benchmarks for agent components"""
         logger.info("🤖 Running Agent Benchmarks")
 
@@ -356,7 +353,7 @@ class BenchmarkRunner:
 
         return results
 
-    async def _benchmark_variable_prompts(self, agent: Agent) -> Dict[str, Any]:
+    async def _benchmark_variable_prompts(self, agent: Agent) -> dict[str, Any]:
         """Benchmark agent with variable prompt lengths"""
         prompts = [
             "Hi",
@@ -385,7 +382,7 @@ class BenchmarkRunner:
             "average_duration": statistics.mean(r["duration"] for r in results),
         }
 
-    async def run_multiturn_benchmarks(self) -> List[BenchmarkResult]:
+    async def run_multiturn_benchmarks(self) -> list[BenchmarkResult]:
         """Run benchmarks for multi-turn conversation components"""
         logger.info("💬 Running Multi-turn Conversation Benchmarks")
 
@@ -472,7 +469,7 @@ class BenchmarkRunner:
 
     async def _benchmark_conversation_startup(
         self, agent: MultiTurnAgent
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark conversation startup time"""
         context = await agent.start_conversation(
             user_id=f"benchmark_user_{uuid.uuid4()}",
@@ -486,7 +483,7 @@ class BenchmarkRunner:
 
     async def _benchmark_multiturn_dialogue(
         self, agent: MultiTurnAgent
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark multi-turn dialogue performance"""
         context = await agent.start_conversation(user_id="benchmark_user")
 
@@ -516,7 +513,7 @@ class BenchmarkRunner:
 
     async def _benchmark_concurrent_conversations(
         self, agent: MultiTurnAgent
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark concurrent conversation handling"""
         # Start multiple conversations
         contexts = []
@@ -540,7 +537,7 @@ class BenchmarkRunner:
 
     async def _benchmark_dialogue_search(
         self, dialogue_db: DialogueDatabase
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark dialogue database search performance"""
         queries = [
             "order help",
@@ -559,7 +556,7 @@ class BenchmarkRunner:
             "search_successful": True,
         }
 
-    async def run_reward_benchmarks(self) -> List[BenchmarkResult]:
+    async def run_reward_benchmarks(self) -> list[BenchmarkResult]:
         """Run benchmarks for reward system components"""
         logger.info("🎯 Running Reward System Benchmarks")
 
@@ -632,8 +629,8 @@ class BenchmarkRunner:
         return results
 
     async def _benchmark_reward_computation(
-        self, reward_func: RewardFunction, sample_turns: List[List[Dict]]
-    ) -> Dict[str, Any]:
+        self, reward_func: RewardFunction, sample_turns: list[list[dict]]
+    ) -> dict[str, Any]:
         """Benchmark reward computation performance"""
         turns = sample_turns[np.random.randint(0, len(sample_turns))]
 
@@ -646,8 +643,8 @@ class BenchmarkRunner:
         }
 
     async def _benchmark_reward_scalability(
-        self, reward_func: RewardFunction, sample_turns: List[List[Dict]]
-    ) -> Dict[str, Any]:
+        self, reward_func: RewardFunction, sample_turns: list[list[dict]]
+    ) -> dict[str, Any]:
         """Benchmark reward system scalability"""
         # Process multiple turn sets
         results = []
@@ -661,7 +658,7 @@ class BenchmarkRunner:
             "score_variance": statistics.variance(results) if len(results) > 1 else 0,
         }
 
-    async def run_computational_engine_benchmarks(self) -> List[BenchmarkResult]:
+    async def run_computational_engine_benchmarks(self) -> list[BenchmarkResult]:
         """Run benchmarks for computational engine"""
         logger.info("⚡ Running Computational Engine Benchmarks")
 
@@ -679,11 +676,11 @@ class BenchmarkRunner:
                 super().__init__()
                 self.step_count = 0
 
-            async def reset(self) -> Dict[str, Any]:
+            async def reset(self) -> dict[str, Any]:
                 self.step_count = 0
                 return {"step": 0}
 
-            async def step(self, action: str) -> Dict[str, Any]:
+            async def step(self, action: str) -> dict[str, Any]:
                 self.step_count += 1
                 return {"step": self.step_count, "reward": 0.5, "done": False}
 
@@ -748,7 +745,7 @@ class BenchmarkRunner:
 
     async def _benchmark_trajectory_generation(
         self, engine: ComputationalGRPOEngine
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark trajectory generation performance"""
         prompts = [f"Test prompt {i}" for i in range(5)]
 
@@ -762,7 +759,7 @@ class BenchmarkRunner:
 
     async def _benchmark_training_iteration(
         self, engine: ComputationalGRPOEngine
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark training iteration performance"""
         prompts = ["Training prompt 1", "Training prompt 2", "Training prompt 3"]
 
@@ -777,7 +774,7 @@ class BenchmarkRunner:
 
     async def _benchmark_computational_scaling(
         self, engine: ComputationalGRPOEngine
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark computational scaling performance"""
         initial_workers = engine.num_workers
 
@@ -794,7 +791,7 @@ class BenchmarkRunner:
             "scale_factor": scale_result["scale_factor"],
         }
 
-    async def run_system_benchmarks(self) -> List[BenchmarkResult]:
+    async def run_system_benchmarks(self) -> list[BenchmarkResult]:
         """Run system-level benchmarks"""
         logger.info("🖥️ Running System-level Benchmarks")
 
@@ -837,7 +834,7 @@ class BenchmarkRunner:
 
         return results
 
-    async def _benchmark_memory_usage(self) -> Dict[str, Any]:
+    async def _benchmark_memory_usage(self) -> dict[str, Any]:
         """Benchmark memory usage patterns"""
         # Create temporary data structures
         temp_data = {f"key_{i}": f"value_{i}" * 100 for i in range(1000)}
@@ -851,21 +848,21 @@ class BenchmarkRunner:
             "processed_items": len(processed),
         }
 
-    async def _benchmark_cpu_usage(self) -> Dict[str, Any]:
+    async def _benchmark_cpu_usage(self) -> dict[str, Any]:
         """Benchmark CPU usage patterns"""
         # CPU-intensive task
         result = sum(i * i for i in range(10000))
 
         return {"computation_result": result, "cpu_test_successful": True}
 
-    async def _benchmark_io_performance(self) -> Dict[str, Any]:
+    async def _benchmark_io_performance(self) -> dict[str, Any]:
         """Benchmark I/O performance"""
         # Simulate I/O operations
         await asyncio.sleep(0.01)  # Simulate disk I/O
 
         return {"io_operations_simulated": 1, "io_test_successful": True}
 
-    async def run_all_benchmarks(self) -> Dict[str, Any]:
+    async def run_all_benchmarks(self) -> dict[str, Any]:
         """Run all benchmark suites"""
         logger.info("🚀 Running Complete Benchmark Suite")
 
@@ -902,8 +899,8 @@ class BenchmarkRunner:
         }
 
     def generate_benchmark_summary(
-        self, all_results: Dict[str, List[BenchmarkResult]], total_time: float
-    ) -> Dict[str, Any]:
+        self, all_results: dict[str, list[BenchmarkResult]], total_time: float
+    ) -> dict[str, Any]:
         """Generate comprehensive benchmark summary"""
 
         # Aggregate metrics
@@ -951,7 +948,7 @@ class BenchmarkRunner:
 
         return summary
 
-    def _get_top_performers(self, benchmarks: List[BenchmarkResult]) -> Dict[str, Any]:
+    def _get_top_performers(self, benchmarks: list[BenchmarkResult]) -> dict[str, Any]:
         """Identify top performing benchmarks"""
         if not benchmarks:
             return {}
@@ -983,7 +980,7 @@ class BenchmarkRunner:
             },
         }
 
-    def _identify_improvements(self, benchmarks: List[BenchmarkResult]) -> List[str]:
+    def _identify_improvements(self, benchmarks: list[BenchmarkResult]) -> list[str]:
         """Identify areas for improvement"""
         improvements = []
 
@@ -1012,7 +1009,7 @@ class BenchmarkRunner:
 
         return improvements
 
-    def _generate_recommendations(self, benchmarks: List[BenchmarkResult]) -> List[str]:
+    def _generate_recommendations(self, benchmarks: list[BenchmarkResult]) -> list[str]:
         """Generate performance recommendations"""
         recommendations = []
 

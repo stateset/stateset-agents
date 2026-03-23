@@ -6,23 +6,22 @@ trajectory data rather than using hand-crafted features, embodying the
 principles of the "Bitter Lesson" - computation over human knowledge.
 """
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
-import json
 import logging
 import uuid
-from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
 try:
     import torch
     import torch.nn as nn
-    import torch.nn.functional as F
     import torch.optim as optim
     from torch.utils.data import DataLoader, Dataset
 
@@ -63,9 +62,9 @@ class TrajectoryData:
     learned_reward: float
     computational_cost: float
     timestamp: datetime
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "prompt": self.prompt,
@@ -78,7 +77,7 @@ class TrajectoryData:
         }
 
     @classmethod
-    def from_trajectory(cls, trajectory: Trajectory, reward: float) -> "TrajectoryData":
+    def from_trajectory(cls, trajectory: Trajectory, reward: float) -> TrajectoryData:
         """Create from framework Trajectory object"""
         return cls(
             id=str(uuid.uuid4()),
@@ -96,7 +95,7 @@ class TrajectoryData:
 class TrajectoryDataset(Dataset):
     """PyTorch Dataset for trajectory data"""
 
-    def __init__(self, trajectories: List[TrajectoryData], tokenizer=None):
+    def __init__(self, trajectories: list[TrajectoryData], tokenizer=None):
         self.trajectories = trajectories
         self.tokenizer = tokenizer
 
@@ -165,7 +164,7 @@ class NeuralRewardModel(nn.Module):
 
         # Hidden layers
         layers = []
-        for i in range(num_layers):
+        for _i in range(num_layers):
             layers.extend(
                 [
                     nn.Linear(hidden_dim, hidden_dim),
@@ -253,15 +252,15 @@ class NeuralRewardTrainer:
 
     def __init__(
         self,
-        model: Optional[NeuralRewardModel] = None,
+        model: NeuralRewardModel | None = None,
         learning_rate: float = 1e-4,
         batch_size: int = 32,
-        per_device_train_batch_size: Optional[int] = None,
+        per_device_train_batch_size: int | None = None,
         max_epochs: int = 100,
         patience: int = 10,
         device: str = "cpu",
-        cache_service: Optional[CacheService] = None,
-        monitoring_service: Optional[MonitoringService] = None,
+        cache_service: CacheService | None = None,
+        monitoring_service: MonitoringService | None = None,
     ):
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch is required for NeuralRewardTrainer")
@@ -298,16 +297,16 @@ class NeuralRewardTrainer:
         """Add trajectory to replay buffer"""
         self.replay_buffer.append(trajectory_data)
 
-    def add_trajectories(self, trajectories: List[TrajectoryData]):
+    def add_trajectories(self, trajectories: list[TrajectoryData]):
         """Add multiple trajectories to replay buffer"""
         self.replay_buffer.extend(trajectories)
 
     def train(
         self,
-        train_trajectories: List[TrajectoryData],
-        val_trajectories: Optional[List[TrajectoryData]] = None,
+        train_trajectories: list[TrajectoryData],
+        val_trajectories: list[TrajectoryData] | None = None,
         verbose: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Train the neural reward model
 
@@ -438,7 +437,7 @@ class NeuralRewardTrainer:
 
         return total_loss / len(val_loader)
 
-    def train_from_replay_buffer(self, sample_size: int = 1000) -> Dict[str, Any]:
+    def train_from_replay_buffer(self, sample_size: int = 1000) -> dict[str, Any]:
         """Train from replay buffer"""
         if len(self.replay_buffer) < sample_size:
             sample_size = len(self.replay_buffer)
@@ -486,7 +485,7 @@ class NeuralRewardTrainer:
         self.val_losses = checkpoint.get("val_losses", [])
         self.best_val_loss = checkpoint.get("best_val_loss", float("inf"))
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get training metrics"""
         return {
             "replay_buffer_size": len(self.replay_buffer),
@@ -505,8 +504,8 @@ class NeuralRewardFunction(RewardFunction):
 
     def __init__(
         self,
-        model: Optional[NeuralRewardModel] = None,
-        trainer: Optional[NeuralRewardTrainer] = None,
+        model: NeuralRewardModel | None = None,
+        trainer: NeuralRewardTrainer | None = None,
         weight: float = 1.0,
         update_frequency: int = 100,
         min_trajectories: int = 50,
@@ -526,7 +525,7 @@ class NeuralRewardFunction(RewardFunction):
         self.last_update_performance = {}
 
     async def compute_reward(
-        self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
+        self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """
         Compute reward using neural model
@@ -596,9 +595,9 @@ class NeuralRewardFunction(RewardFunction):
 
     def add_trajectory_feedback(
         self,
-        turns: List[Dict[str, Any]],
+        turns: list[dict[str, Any]],
         reward: float,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ):
         """Add trajectory feedback for model training"""
         prompt = self._extract_prompt(turns)
@@ -617,21 +616,21 @@ class NeuralRewardFunction(RewardFunction):
 
         self.trainer.add_trajectory(trajectory_data)
 
-    def _extract_prompt(self, turns: List[Dict[str, Any]]) -> str:
+    def _extract_prompt(self, turns: list[dict[str, Any]]) -> str:
         """Extract prompt from conversation turns"""
         user_turns = [t for t in turns if t.get("role") == "user"]
         if user_turns:
             return user_turns[0].get("content", "")
         return ""
 
-    def _extract_response(self, turns: List[Dict[str, Any]]) -> str:
+    def _extract_response(self, turns: list[dict[str, Any]]) -> str:
         """Extract response from conversation turns"""
         assistant_turns = [t for t in turns if t.get("role") == "assistant"]
         if assistant_turns:
             return assistant_turns[-1].get("content", "")
         return ""
 
-    def get_model_info(self) -> Dict[str, Any]:
+    def get_model_info(self) -> dict[str, Any]:
         """Get neural model information"""
         return {
             "model_type": "neural_reward",

@@ -1,0 +1,8 @@
+/* Minimal overrides for sphinx_rtd_theme. */
+
+/* Improve code block wrapping for long commands. */
+.wy-nav-content pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+

@@ -14,14 +14,21 @@ import pickle
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
+from typing import Any, Generic, TypeVar
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
-CACHE_EXCEPTIONS = (ConnectionError, OSError, RuntimeError, TimeoutError, TypeError, ValueError)
+CACHE_EXCEPTIONS = (
+    ConnectionError,
+    OSError,
+    RuntimeError,
+    TimeoutError,
+    TypeError,
+    ValueError,
+)
 
 T = TypeVar("T")
 
@@ -39,8 +46,10 @@ def _json_default_serializer(obj: Any) -> Any:
 # Cache Configuration
 # ============================================================================
 
+
 class CacheBackend(str, Enum):
     """Available cache backends."""
+
     MEMORY = "memory"
     REDIS = "redis"
     HYBRID = "hybrid"  # Redis primary, memory fallback
@@ -49,9 +58,10 @@ class CacheBackend(str, Enum):
 @dataclass
 class CacheConfig:
     """Cache configuration settings."""
+
     backend: CacheBackend = CacheBackend.MEMORY
-    redis_url: Optional[str] = None
-    redis_password: Optional[str] = None
+    redis_url: str | None = None
+    redis_password: str | None = None
     redis_db: int = 0
     default_ttl_seconds: int = 300
     max_memory_items: int = 10000
@@ -88,7 +98,9 @@ class CacheConfig:
         try:
             backend = CacheBackend(backend_str)
         except ValueError:
-            logger.warning("Unknown CACHE_BACKEND '%s', defaulting to memory", backend_str)
+            logger.warning(
+                "Unknown CACHE_BACKEND '%s', defaulting to memory", backend_str
+            )
             backend = CacheBackend.MEMORY
 
         serializer = os.getenv("CACHE_SERIALIZER", "json").lower()
@@ -115,7 +127,8 @@ class CacheConfig:
             key_prefix=os.getenv("CACHE_KEY_PREFIX", "stateset:"),
             serializer=serializer,
             allow_pickle=allow_pickle,
-            compression_enabled=os.getenv("CACHE_COMPRESSION", "false").lower() == "true",
+            compression_enabled=os.getenv("CACHE_COMPRESSION", "false").lower()
+            == "true",
         )
 
 
@@ -123,9 +136,11 @@ class CacheConfig:
 # Cache Statistics
 # ============================================================================
 
+
 @dataclass
 class CacheStats:
     """Cache performance statistics."""
+
     hits: int = 0
     misses: int = 0
     sets: int = 0
@@ -134,7 +149,7 @@ class CacheStats:
     bytes_read: int = 0
     bytes_written: int = 0
     avg_latency_ms: float = 0.0
-    _latencies: List[float] = field(default_factory=list)
+    _latencies: list[float] = field(default_factory=list)
 
     @property
     def hit_rate(self) -> float:
@@ -149,7 +164,7 @@ class CacheStats:
             self._latencies = self._latencies[-1000:]
         self.avg_latency_ms = sum(self._latencies) / len(self._latencies)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "hits": self.hits,
@@ -168,16 +183,17 @@ class CacheStats:
 # Abstract Cache Interface
 # ============================================================================
 
+
 class CacheInterface(ABC, Generic[T]):
     """Abstract interface for cache implementations."""
 
     @abstractmethod
-    async def get(self, key: str) -> Optional[T]:
+    async def get(self, key: str) -> T | None:
         """Get a value from cache."""
         pass
 
     @abstractmethod
-    async def set(self, key: str, value: T, ttl: Optional[int] = None) -> bool:
+    async def set(self, key: str, value: T, ttl: int | None = None) -> bool:
         """Set a value in cache."""
         pass
 
@@ -216,9 +232,11 @@ class CacheInterface(ABC, Generic[T]):
 # Memory Cache Implementation
 # ============================================================================
 
+
 @dataclass
 class MemoryCacheEntry:
     """Entry in the memory cache."""
+
     value: Any
     expires_at: float
     created_at: float = field(default_factory=time.time)
@@ -239,11 +257,11 @@ class MemoryCache(CacheInterface):
 
     def __init__(self, config: CacheConfig):
         self.config = config
-        self._cache: Dict[str, MemoryCacheEntry] = {}
+        self._cache: dict[str, MemoryCacheEntry] = {}
         self._stats = CacheStats()
         self._lock = asyncio.Lock()
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Get a value from cache."""
         start = time.monotonic()
         prefixed_key = f"{self.config.key_prefix}{key}"
@@ -267,7 +285,7 @@ class MemoryCache(CacheInterface):
 
             return entry.value
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Set a value in cache."""
         start = time.monotonic()
         prefixed_key = f"{self.config.key_prefix}{key}"
@@ -368,7 +386,7 @@ class MemoryCache(CacheInterface):
         # Sort by access_count (ascending) and created_at (ascending)
         sorted_keys = sorted(
             self._cache.keys(),
-            key=lambda k: (self._cache[k].access_count, self._cache[k].created_at)
+            key=lambda k: (self._cache[k].access_count, self._cache[k].created_at),
         )
 
         # Remove 10% of entries
@@ -395,6 +413,7 @@ class MemoryCache(CacheInterface):
 # ============================================================================
 # Redis Cache Implementation
 # ============================================================================
+
 
 class RedisCache(CacheInterface):
     """
@@ -441,12 +460,18 @@ class RedisCache(CacheInterface):
         except ImportError:
             logger.error("redis package not installed. Install with: pip install redis")
             return False
+        except asyncio.CancelledError:
+            raise
         except CACHE_EXCEPTIONS as e:
             logger.error(f"Failed to connect to Redis: {e}")
             self._connected = False
             return False
+        except Exception as e:
+            logger.error(f"Failed to connect to Redis: {e}")
+            self._connected = False
+            return False
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Get a value from Redis."""
         if not self._connected:
             return None
@@ -475,7 +500,7 @@ class RedisCache(CacheInterface):
             self._stats.errors += 1
             return None
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Set a value in Redis."""
         if not self._connected:
             return False
@@ -618,17 +643,23 @@ class RedisCache(CacheInterface):
             else:
                 data = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
                 # Compress if large
-                if self.config.compression_enabled and len(data) > self.config.compression_threshold:
+                if (
+                    self.config.compression_enabled
+                    and len(data) > self.config.compression_threshold
+                ):
                     import zlib
+
                     data = b"ZLIB:" + zlib.compress(data)
                 return data
-        data = json.dumps(
-            value, default=_json_default_serializer
-        ).encode("utf-8")
+        data = json.dumps(value, default=_json_default_serializer).encode("utf-8")
 
         # Compress if large
-        if self.config.compression_enabled and len(data) > self.config.compression_threshold:
+        if (
+            self.config.compression_enabled
+            and len(data) > self.config.compression_threshold
+        ):
             import zlib
+
             data = b"ZLIB:" + zlib.compress(data)
 
         return data
@@ -637,6 +668,7 @@ class RedisCache(CacheInterface):
         """Deserialize value from storage."""
         if data.startswith(b"ZLIB:"):
             import zlib
+
             data = zlib.decompress(data[5:])
 
         if self.config.serializer == "pickle":
@@ -659,6 +691,7 @@ class RedisCache(CacheInterface):
 # Hybrid Cache (Redis + Memory Fallback)
 # ============================================================================
 
+
 class HybridCache(CacheInterface):
     """
     Hybrid cache with Redis as primary and memory as fallback.
@@ -680,7 +713,7 @@ class HybridCache(CacheInterface):
             logger.warning("Redis unavailable, using memory cache only")
         return True
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Get from Redis first, then memory."""
         if self._use_redis and await self._redis.health_check():
             value = await self._redis.get(key)
@@ -691,7 +724,7 @@ class HybridCache(CacheInterface):
 
         return await self._memory.get(key)
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Set in both Redis and memory."""
         memory_ok = await self._memory.set(key, value, ttl)
 
@@ -763,7 +796,8 @@ class HybridCache(CacheInterface):
             errors=memory_stats.errors + redis_stats.errors,
             bytes_read=memory_stats.bytes_read + redis_stats.bytes_read,
             bytes_written=memory_stats.bytes_written + redis_stats.bytes_written,
-            avg_latency_ms=(memory_stats.avg_latency_ms + redis_stats.avg_latency_ms) / 2,
+            avg_latency_ms=(memory_stats.avg_latency_ms + redis_stats.avg_latency_ms)
+            / 2,
         )
 
 
@@ -771,7 +805,8 @@ class HybridCache(CacheInterface):
 # Cache Factory
 # ============================================================================
 
-async def create_cache(config: Optional[CacheConfig] = None) -> CacheInterface:
+
+async def create_cache(config: CacheConfig | None = None) -> CacheInterface:
     """
     Factory function to create appropriate cache instance.
 
@@ -801,10 +836,11 @@ async def create_cache(config: Optional[CacheConfig] = None) -> CacheInterface:
 # Caching Decorators
 # ============================================================================
 
+
 def cached(
     ttl_seconds: int = 300,
     key_prefix: str = "",
-    key_builder: Optional[Callable[..., str]] = None,
+    key_builder: Callable[..., str] | None = None,
     cache_none: bool = False,
 ):
     """
@@ -821,6 +857,7 @@ def cached(
         async def get_user(user_id: str) -> User:
             ...
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
@@ -838,7 +875,11 @@ def cached(
                 if args:
                     key_parts.append(hashlib.md5(str(args).encode()).hexdigest()[:8])
                 if kwargs:
-                    key_parts.append(hashlib.md5(str(sorted(kwargs.items())).encode()).hexdigest()[:8])
+                    key_parts.append(
+                        hashlib.md5(str(sorted(kwargs.items())).encode()).hexdigest()[
+                            :8
+                        ]
+                    )
                 cache_key = ":".join(filter(None, key_parts))
 
             # Try to get from cache
@@ -856,6 +897,7 @@ def cached(
             return result
 
         return wrapper
+
     return decorator
 
 
@@ -871,6 +913,7 @@ def cache_invalidate(key_pattern: str):
         async def update_user(user_id: str, data: dict):
             ...
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
@@ -887,6 +930,7 @@ def cache_invalidate(key_pattern: str):
             return result
 
         return wrapper
+
     return decorator
 
 
@@ -894,17 +938,17 @@ def cache_invalidate(key_pattern: str):
 # Global Cache Instance
 # ============================================================================
 
-_cache_instance: Optional[CacheInterface] = None
+_cache_instance: CacheInterface | None = None
 
 
-async def init_cache(config: Optional[CacheConfig] = None) -> CacheInterface:
+async def init_cache(config: CacheConfig | None = None) -> CacheInterface:
     """Initialize the global cache instance."""
     global _cache_instance
     _cache_instance = await create_cache(config)
     return _cache_instance
 
 
-def get_cache() -> Optional[CacheInterface]:
+def get_cache() -> CacheInterface | None:
     """Get the global cache instance."""
     return _cache_instance
 

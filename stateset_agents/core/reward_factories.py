@@ -7,7 +7,7 @@ This module provides:
 - Adaptive reward creation utilities
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .basic_rewards import (
     ConcisenessReward,
@@ -34,15 +34,15 @@ class SimilarityAwareReward(RewardFunction):
     def __init__(
         self,
         weight: float = 1.0,
-        expected_responses_map: Optional[Dict[str, str]] = None,
-        base_reward_fn: Optional[RewardFunction] = None,
+        expected_responses_map: dict[str, str] | None = None,
+        base_reward_fn: RewardFunction | None = None,
     ):
         super().__init__(weight, RewardType.IMMEDIATE, "SimilarityAwareReward")
         self.expected_responses_map = expected_responses_map or {}
         self.base_reward_fn = base_reward_fn
 
     async def compute_reward(
-        self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """Compute reward with similarity consideration"""
 
@@ -122,7 +122,7 @@ def create_customer_service_reward() -> CompositeReward:
     )
 
 
-def create_task_agent_reward(task_criteria: Dict[str, Any]) -> CompositeReward:
+def create_task_agent_reward(task_criteria: dict[str, Any]) -> CompositeReward:
     """Create reward function for task-oriented agent"""
     return CompositeReward(
         [
@@ -148,7 +148,7 @@ def create_tutoring_reward() -> CompositeReward:
 def create_domain_reward(
     domain: str,
     weight: float = 1.0,
-    expected_responses: Optional[Dict[str, str]] = None,
+    expected_responses: dict[str, str] | None = None,
     **kwargs,
 ) -> RewardFunction:
     """Create a domain-specific reward function"""
@@ -157,7 +157,13 @@ def create_domain_reward(
 
     if domain_lower in ["customer_service", "support", "cs"]:
         return CustomerServiceReward(weight, expected_responses)
-    elif domain_lower in ["technical", "tech_support", "technical_support", "it", "it_support"]:
+    elif domain_lower in [
+        "technical",
+        "tech_support",
+        "technical_support",
+        "it",
+        "it_support",
+    ]:
         return TechnicalSupportReward(weight)
     elif domain_lower in ["sales", "marketing", "product", "sales_assistant"]:
         return SalesAssistantReward(weight)
@@ -167,8 +173,8 @@ def create_domain_reward(
 
 
 def create_adaptive_reward(
-    base_rewards: List[RewardFunction],
-    expected_responses: Optional[Dict[str, str]] = None,
+    base_rewards: list[RewardFunction],
+    expected_responses: dict[str, str] | None = None,
     similarity_weight: float = 0.3,
 ) -> CompositeReward:
     """Create an adaptive reward that combines base rewards with similarity matching"""

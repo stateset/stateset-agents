@@ -17,17 +17,14 @@ submodules:
 
 from __future__ import annotations
 
-# Backwards-compatible globals.
-# Some unit tests and legacy integrations patch `training.trainer.torch/np`.
-try:  # pragma: no cover - optional dependency
-    import torch  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover
-    torch = None  # type: ignore[assignment]
+import warnings
 
-try:  # pragma: no cover - optional dependency
-    import numpy as np  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover
-    np = None  # type: ignore[assignment]
+# Re-export loss computation functions
+from .loss_computation import compute_enhanced_grpo_loss, compute_grpo_loss
+from .multi_turn_trainer import GRPOTrainer, MultiTurnGRPOTrainer
+
+# Re-export trainers
+from .single_turn_trainer import SingleTurnGRPOTrainer
 
 # Re-export utility functions
 from .trainer_utils import (
@@ -38,38 +35,40 @@ from .trainer_utils import (
     require_transformers,
 )
 
-# Re-export trainers
-from .single_turn_trainer import SingleTurnGRPOTrainer
-from .multi_turn_trainer import GRPOTrainer, MultiTurnGRPOTrainer
+# ---- Deprecated re-exports ------------------------------------------------
+# These core types should be imported from their canonical modules instead of
+# from training.trainer.  We keep them accessible via __getattr__ so existing
+# code doesn't break, but emit a DeprecationWarning on first access.
 
-# Re-export loss computation functions
-from .loss_computation import compute_enhanced_grpo_loss, compute_grpo_loss
+_DEPRECATED_ALIASES = {
+    "Agent": "stateset_agents.core.agent",
+    "MultiTurnAgent": "stateset_agents.core.agent",
+    "AgentConfig": "stateset_agents.core.agent",
+    "Environment": "stateset_agents.core.environment",
+    "MultiTurnTrajectory": "stateset_agents.core.trajectory",
+    "TrajectoryGroup": "stateset_agents.core.trajectory",
+    "ConversationTurn": "stateset_agents.core.trajectory",
+    "RewardFunction": "stateset_agents.core.reward",
+    "CompositeReward": "stateset_agents.core.reward",
+    "WandBLogger": "stateset_agents.utils.wandb_integration",
+}
 
-# Re-export core dependencies for type hints
-from stateset_agents.core import agent as core_agent
-from stateset_agents.core import environment as core_environment
-from stateset_agents.core import reward as core_reward
-from stateset_agents.core import trajectory as core_trajectory
 
-Agent = core_agent.Agent
-MultiTurnAgent = core_agent.MultiTurnAgent
-AgentConfig = core_agent.AgentConfig
+def __getattr__(name: str):
+    if name in _DEPRECATED_ALIASES:
+        canonical = _DEPRECATED_ALIASES[name]
+        warnings.warn(
+            f"Importing {name} from stateset_agents.training.trainer is deprecated. "
+            f"Use 'from {canonical} import {name}' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        import importlib
 
-Environment = core_environment.Environment
+        mod = importlib.import_module(canonical)
+        return getattr(mod, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-MultiTurnTrajectory = core_trajectory.MultiTurnTrajectory
-TrajectoryGroup = core_trajectory.TrajectoryGroup
-ConversationTurn = core_trajectory.ConversationTurn
-
-RewardFunction = core_reward.RewardFunction
-CompositeReward = core_reward.CompositeReward
-
-try:
-    from stateset_agents.utils.wandb_integration import WandBLogger as _WandBLogger
-except ImportError:  # pragma: no cover - optional dependency
-    _WandBLogger = None  # type: ignore[assignment]
-
-WandBLogger = _WandBLogger  # type: ignore[assignment]
 
 __all__ = [
     # Trainers
@@ -85,15 +84,4 @@ __all__ = [
     "get_torch",
     "get_functional",
     "get_amp",
-    # Core types
-    "Agent",
-    "MultiTurnAgent",
-    "AgentConfig",
-    "Environment",
-    "MultiTurnTrajectory",
-    "TrajectoryGroup",
-    "ConversationTurn",
-    "RewardFunction",
-    "CompositeReward",
-    "WandBLogger",
 ]

@@ -1,0 +1,9 @@
+api:
+  env:
+    # Map the public model name to the internal vLLM model ID (a local path).
+    INFERENCE_MODEL_MAP: '{"moonshotai/Kimi-K2.5":"/models/kimi-k25/merged"}'
+
+vllm:
+  finetuned: true
+  modelPath: "/models/kimi-k25/merged"
+

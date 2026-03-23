@@ -7,15 +7,10 @@ Tests for memory management and evaluation framework:
 - Streaming services
 """
 
-import asyncio
-import json
-import pytest
-from datetime import datetime
-from typing import List, Optional
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -36,8 +31,8 @@ class TestMemoryConfig:
         config = MemoryConfig()
         assert config.max_short_term_turns == 20
         assert config.max_short_term_tokens == 4000
-        assert config.enable_entity_extraction == True
-        assert config.enable_fact_extraction == True
+        assert config.enable_entity_extraction is True
+        assert config.enable_fact_extraction is True
 
     def test_memory_config_custom(self):
         """Test custom memory configuration."""
@@ -50,7 +45,7 @@ class TestMemoryConfig:
         )
         assert config.max_short_term_turns == 50
         assert config.max_short_term_tokens == 8000
-        assert config.enable_entity_extraction == False
+        assert config.enable_entity_extraction is False
 
 
 class TestMemoryEntry:
@@ -476,7 +471,7 @@ class TestStreamingService:
     @pytest.mark.asyncio
     async def test_stream_event_creation(self):
         """Test creating stream events."""
-        from api.streaming import StreamEvent, StreamEventType
+        from stateset_agents.api.streaming import StreamEvent, StreamEventType
 
         event = StreamEvent(
             event_type=StreamEventType.TOKEN,
@@ -490,7 +485,7 @@ class TestStreamingService:
     @pytest.mark.asyncio
     async def test_stream_event_to_sse(self):
         """Test converting event to SSE format."""
-        from api.streaming import StreamEvent, StreamEventType
+        from stateset_agents.api.streaming import StreamEvent, StreamEventType
 
         event = StreamEvent(
             event_type=StreamEventType.TOKEN,
@@ -506,7 +501,7 @@ class TestStreamingService:
     @pytest.mark.asyncio
     async def test_stream_event_to_dict(self):
         """Test converting event to dict."""
-        from api.streaming import StreamEvent, StreamEventType
+        from stateset_agents.api.streaming import StreamEvent, StreamEventType
 
         event = StreamEvent(
             event_type=StreamEventType.CHUNK,
@@ -520,7 +515,7 @@ class TestStreamingService:
     @pytest.mark.asyncio
     async def test_streaming_service_mock_response(self):
         """Test streaming service with mock agent."""
-        from api.streaming import StreamingService, StreamEventType
+        from stateset_agents.api.streaming import StreamEventType, StreamingService
 
         service = StreamingService(agent=None)
 
@@ -537,7 +532,7 @@ class TestStreamingService:
     @pytest.mark.asyncio
     async def test_batch_item_creation(self):
         """Test creating batch items."""
-        from api.streaming import BatchItem
+        from stateset_agents.api.streaming import BatchItem
 
         item = BatchItem(
             id="item_1",
@@ -552,7 +547,7 @@ class TestStreamingService:
     @pytest.mark.asyncio
     async def test_batch_processing(self):
         """Test batch processing."""
-        from api.streaming import StreamingService, BatchItem
+        from stateset_agents.api.streaming import BatchItem, StreamingService
 
         service = StreamingService(agent=None)
 
@@ -570,7 +565,7 @@ class TestStreamingService:
     @pytest.mark.asyncio
     async def test_batch_with_progress(self):
         """Test batch processing with progress callback."""
-        from api.streaming import StreamingService, BatchItem
+        from stateset_agents.api.streaming import BatchItem, StreamingService
 
         service = StreamingService(agent=None)
 
@@ -591,7 +586,7 @@ class TestStreamingService:
     @pytest.mark.asyncio
     async def test_batch_response_model(self):
         """Test BatchResponse model."""
-        from api.streaming import BatchResponse, BatchItemResult
+        from stateset_agents.api.streaming import BatchResponse
 
         result = BatchResponse(
             batch_id="batch_123",
@@ -609,7 +604,7 @@ class TestStreamingService:
     @pytest.mark.asyncio
     async def test_streaming_batch_progress(self):
         """Test streaming batch progress events."""
-        from api.streaming import StreamingService, BatchItem, StreamEventType
+        from stateset_agents.api.streaming import BatchItem, StreamEventType, StreamingService
 
         service = StreamingService(agent=None)
 
@@ -632,14 +627,14 @@ class TestStreamingRequest:
 
     def test_streaming_request_defaults(self):
         """Test default streaming request values."""
-        from api.streaming import StreamingRequest
+        from stateset_agents.api.streaming import StreamingRequest
 
         request = StreamingRequest(message="Hello")
 
         assert request.message == "Hello"
         assert request.temperature == 0.7
         assert request.max_tokens == 512
-        assert request.stream_tokens == True
+        assert request.stream_tokens is True
 
 
 class TestStreamEventType:
@@ -647,7 +642,7 @@ class TestStreamEventType:
 
     def test_event_type_values(self):
         """Test all event type values."""
-        from api.streaming import StreamEventType
+        from stateset_agents.api.streaming import StreamEventType
 
         assert StreamEventType.TOKEN.value == "token"
         assert StreamEventType.CHUNK.value == "chunk"
@@ -668,7 +663,7 @@ class TestMemoryEvaluationIntegration:
     @pytest.mark.asyncio
     async def test_streaming_complete_workflow(self):
         """Test complete streaming workflow."""
-        from api.streaming import StreamingService, StreamEventType
+        from stateset_agents.api.streaming import StreamEventType, StreamingService
 
         service = StreamingService(agent=None)
 

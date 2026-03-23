@@ -4,13 +4,7 @@ Unit tests for core agent functionality.
 These tests focus on individual components in isolation.
 """
 
-import asyncio
-from typing import Any, Dict, List
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import numpy as np
 import pytest
-import torch
 
 from stateset_agents.core.agent import (
     Agent,
@@ -57,52 +51,29 @@ class TestAgent:
     """Test Agent base class functionality."""
 
     @pytest.fixture
-    def mock_model(self):
-        """Create a mock model for testing."""
-        model = MagicMock()
-        tokenizer = MagicMock()
-        tokenizer.encode.return_value = [1, 2, 3]
-        tokenizer.decode.return_value = "Hello world"
-        return model, tokenizer
-
-    @pytest.fixture
     def agent_config(self):
         """Create a test agent configuration."""
         return AgentConfig(model_name="gpt2", max_new_tokens=50, temperature=0.7)
 
-    @patch("stateset_agents.core.agent.AutoModelForCausalLM")
-    @patch("stateset_agents.core.agent.AutoTokenizer")
-    def test_agent_initialization(self, mock_tokenizer, mock_model, agent_config):
-        """Test agent initialization."""
-        mock_model.from_pretrained.return_value = MagicMock()
-        mock_tokenizer.from_pretrained.return_value = MagicMock()
-
+    def test_agent_initialization_deferred(self, agent_config):
+        """Test that Agent defers model loading until initialize() is called."""
         agent = Agent(agent_config)
-
-        # Should not initialize model immediately
         assert agent.model is None
         assert agent.tokenizer is None
 
     @pytest.mark.asyncio
-    @patch("stateset_agents.core.agent.AutoModelForCausalLM")
-    @patch("stateset_agents.core.agent.AutoTokenizer")
-    async def test_agent_async_initialization(
-        self, mock_tokenizer, mock_model, agent_config
-    ):
-        """Test async agent initialization."""
-        mock_model_instance = MagicMock()
-        mock_tokenizer_instance = MagicMock()
-        mock_tokenizer_instance.pad_token_id = None
-        mock_tokenizer_instance.eos_token_id = 2
-
-        mock_model.from_pretrained.return_value = mock_model_instance
-        mock_tokenizer.from_pretrained.return_value = mock_tokenizer_instance
-
-        agent = Agent(agent_config)
+    async def test_agent_stub_initialization(self):
+        """Test Agent initializes correctly with the stub backend."""
+        config = AgentConfig(
+            model_name="stub://test",
+            use_stub_model=True,
+            max_new_tokens=50,
+        )
+        agent = Agent(config)
         await agent.initialize()
 
-        assert agent.model == mock_model_instance
-        assert agent.tokenizer == mock_tokenizer_instance
+        assert agent.model is not None
+        assert agent.tokenizer is not None
         assert agent.generation_config is not None
 
     @pytest.mark.asyncio
@@ -115,65 +86,32 @@ class TestAgent:
 
 
 class TestMultiTurnAgent:
-    """Test MultiTurnAgent functionality."""
+    """Test MultiTurnAgent functionality using the real stub backend."""
 
     @pytest.fixture
-    def multiturn_agent_config(self):
-        """Create a test MultiTurnAgent configuration."""
+    def config(self):
         return AgentConfig(
-            model_name="gpt2",
+            model_name="stub://test",
+            use_stub_model=True,
             max_new_tokens=100,
             temperature=0.8,
             use_chat_template=True,
         )
 
     @pytest.mark.asyncio
-    @patch("stateset_agents.core.agent.AutoModelForCausalLM")
-    @patch("stateset_agents.core.agent.AutoTokenizer")
-    async def test_multiturn_agent_initialization(
-        self, mock_tokenizer, mock_model, multiturn_agent_config
-    ):
-        """Test MultiTurnAgent initialization."""
-        mock_model_instance = MagicMock()
-        mock_tokenizer_instance = MagicMock()
-        mock_tokenizer_instance.pad_token_id = None
-        mock_tokenizer_instance.eos_token_id = 2
-        mock_tokenizer_instance.apply_chat_template.return_value = [1, 2, 3, 4, 5]
-
-        mock_model.from_pretrained.return_value = mock_model_instance
-        mock_tokenizer.from_pretrained.return_value = mock_tokenizer_instance
-
-        agent = MultiTurnAgent(multiturn_agent_config)
+    async def test_initialization_sets_up_model(self, config):
+        """Test that initialization creates a usable model and tokenizer."""
+        agent = MultiTurnAgent(config)
         await agent.initialize()
 
-        assert agent.model == mock_model_instance
-        assert agent.tokenizer == mock_tokenizer_instance
+        assert agent.model is not None
+        assert agent.tokenizer is not None
         assert len(agent.conversation_history) == 0
 
     @pytest.mark.asyncio
-    @patch("stateset_agents.core.agent.AutoModelForCausalLM")
-    @patch("stateset_agents.core.agent.AutoTokenizer")
-    async def test_multiturn_agent_generate_response(
-        self, mock_tokenizer, mock_model, multiturn_agent_config
-    ):
-        """Test MultiTurnAgent response generation."""
-        # Setup mocks
-        mock_model_instance = MagicMock()
-        mock_tokenizer_instance = MagicMock()
-        mock_tokenizer_instance.pad_token_id = None
-        mock_tokenizer_instance.eos_token_id = 2
-        mock_tokenizer_instance.apply_chat_template.return_value = [1, 2, 3]
-        mock_tokenizer_instance.decode.return_value = "Assistant response"
-
-        # Mock the model generate method
-        mock_output = MagicMock()
-        mock_output.tolist.return_value = [1, 2, 3, 4, 5]
-        mock_model_instance.generate.return_value = mock_output
-
-        mock_model.from_pretrained.return_value = mock_model_instance
-        mock_tokenizer.from_pretrained.return_value = mock_tokenizer_instance
-
-        agent = MultiTurnAgent(multiturn_agent_config)
+    async def test_generate_response_returns_string_and_updates_history(self, config):
+        """Test real response generation with the stub backend."""
+        agent = MultiTurnAgent(config)
         await agent.initialize()
 
         messages = [
@@ -183,46 +121,63 @@ class TestMultiTurnAgent:
 
         response = await agent.generate_response(messages)
 
-        assert isinstance(response, str)
+        assert len(response) > 0
         assert len(agent.conversation_history) == 1
         assert agent.conversation_history[0]["role"] == "assistant"
+        assert agent.conversation_history[0]["content"] == response
 
     @pytest.mark.asyncio
-    async def test_multiturn_agent_stub_backend(self, multiturn_agent_config):
-        multiturn_agent_config.use_stub_model = True
-        multiturn_agent_config.stub_responses = ["Stub backend active"]
-        multiturn_agent_config.model_name = "stub://unit-test"
-
-        agent = MultiTurnAgent(multiturn_agent_config)
+    async def test_stub_backend_uses_configured_responses(self):
+        """Test that custom stub responses are actually returned."""
+        config = AgentConfig(
+            model_name="stub://unit-test",
+            use_stub_model=True,
+            stub_responses=["Custom response alpha"],
+        )
+        agent = MultiTurnAgent(config)
         await agent.initialize()
 
-        messages = [{"role": "user", "content": "Ping"}]
-        response = await agent.generate_response(messages)
-
-        assert response.startswith("Stub backend active")
+        response = await agent.generate_response("Ping")
+        assert "Custom response alpha" in response
 
     @pytest.mark.asyncio
-    async def test_multiturn_agent_planning_manager_init(self, multiturn_agent_config):
-        multiturn_agent_config.use_stub_model = True
-        multiturn_agent_config.model_name = "stub://planning"
-        multiturn_agent_config.enable_planning = True
-
-        agent = MultiTurnAgent(multiturn_agent_config)
+    async def test_planning_manager_initialized_when_enabled(self):
+        """Test that planning manager is created when planning is enabled."""
+        config = AgentConfig(
+            model_name="stub://planning",
+            use_stub_model=True,
+            enable_planning=True,
+        )
+        agent = MultiTurnAgent(config)
         await agent.initialize()
 
         assert agent.planning_manager is not None
 
     @pytest.mark.asyncio
-    async def test_multiturn_agent_accepts_string_prompt(self, multiturn_agent_config):
-        multiturn_agent_config.use_stub_model = True
-        agent = MultiTurnAgent(multiturn_agent_config)
+    async def test_string_prompt_converted_to_messages(self, config):
+        """Test that a bare string prompt is auto-wrapped into messages."""
+        agent = MultiTurnAgent(config)
         await agent.initialize()
+
         response = await agent.generate_response("Hello there")
-        assert isinstance(response, str)
+        assert len(response) > 0
         assert agent.conversation_history[0]["role"] == "assistant"
 
     @pytest.mark.asyncio
+    async def test_multi_turn_conversation_accumulates_history(self, config):
+        """Test that successive calls build up conversation history."""
+        agent = MultiTurnAgent(config)
+        await agent.initialize()
+
+        await agent.generate_response("First message")
+        await agent.generate_response("Second message")
+
+        assert len(agent.conversation_history) == 2
+        assert agent.turn_count == 2
+
+    @pytest.mark.asyncio
     async def test_streaming_updates_history(self):
+        """Test that streaming generation updates conversation history."""
         config = AgentConfig(
             model_name="stub://stream",
             use_stub_model=True,
@@ -234,9 +189,13 @@ class TestMultiTurnAgent:
         async for token in agent.generate_response_stream("Hello"):
             tokens.append(token)
 
+        assert len(tokens) > 0
         assert len(agent.conversation_history) == 1
         assert agent.conversation_history[0]["role"] == "assistant"
         assert agent.turn_count == 1
+        # Reassembled text should match what was streamed
+        streamed_text = "".join(tokens)
+        assert len(streamed_text) > 0
 
 
 class TestConversationTurn:

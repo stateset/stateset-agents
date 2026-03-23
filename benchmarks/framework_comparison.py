@@ -24,9 +24,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import numpy as np
+from typing import Any
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -47,7 +45,7 @@ class FrameworkResult:
     final_reward: float
     features_score: int  # 0-100
     ease_of_use: int  # 0-100
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class FrameworkBenchmark:
@@ -86,8 +84,9 @@ class FrameworkBenchmark:
             {"topic": "refund", "context": "Order delayed"},
             {"topic": "shipping", "context": "Track package"},
         ]
-        environment = ConversationEnvironment(scenarios=scenarios, max_turns=6)
-        reward_fn = create_customer_service_reward()
+        # Keep the "what user would write" example without introducing unused locals.
+        ConversationEnvironment(scenarios=scenarios, max_turns=6)
+        create_customer_service_reward()
 
         setup_time = (time.time() - setup_start) / 60  # Convert to minutes
 
@@ -147,7 +146,7 @@ class FrameworkBenchmark:
         # Measure training speed (simulated, slightly slower than StateSet)
         train_start = time.time()
 
-        for i in range(num_samples // 10):
+        for _i in range(num_samples // 10):
             await asyncio.sleep(0.001)  # Simulate training
 
         train_time = time.time() - train_start
@@ -196,7 +195,7 @@ class FrameworkBenchmark:
         # Measure training speed (simulated, slower for conversational AI)
         train_start = time.time()
 
-        for i in range(num_samples // 10):
+        for _i in range(num_samples // 10):
             await asyncio.sleep(0.0012)  # Simulate training
 
         train_time = time.time() - train_start
@@ -234,9 +233,6 @@ class FrameworkBenchmark:
         """Benchmark custom implementation (simulated)"""
         logger.info("Benchmarking Custom Implementation...")
 
-        # Measure setup time (very long for custom)
-        setup_start = time.time()
-
         # Custom implementation takes weeks to build
         await asyncio.sleep(0.2)
 
@@ -245,7 +241,7 @@ class FrameworkBenchmark:
         # Measure training speed (simulated, less optimized)
         train_start = time.time()
 
-        for i in range(num_samples // 10):
+        for _i in range(num_samples // 10):
             await asyncio.sleep(0.0015)  # Less optimized
 
         train_time = time.time() - train_start
@@ -307,7 +303,9 @@ class FrameworkBenchmark:
             ]
         )
 
-        for result in sorted(self.results, key=lambda r: r.features_score, reverse=True):
+        for result in sorted(
+            self.results, key=lambda r: r.features_score, reverse=True
+        ):
             meta = result.metadata
             lines.append(
                 f"| **{result.framework}** | {result.features_score}/100 | "
@@ -382,9 +380,7 @@ class FrameworkBenchmark:
         # Rank by memory (lower is better)
         ranked = sorted(self.results, key=lambda r: r.memory_usage)
         for i, result in enumerate(ranked, 1):
-            lines.append(
-                f"{i}. **{result.framework}** - {result.memory_usage:.1f} GB"
-            )
+            lines.append(f"{i}. **{result.framework}** - {result.memory_usage:.1f} GB")
 
         lines.extend(
             [

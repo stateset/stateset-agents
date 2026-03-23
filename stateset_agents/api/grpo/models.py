@@ -7,9 +7,9 @@ Pydantic models for the GRPO service API with input sanitization.
 import html
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .config import get_grpo_config
 
@@ -55,7 +55,7 @@ def sanitize_html(value: str) -> str:
 class GRPOTrainingRequest(BaseModel):
     """Request model for GRPO training."""
 
-    prompts: List[str] = Field(
+    prompts: list[str] = Field(
         ...,
         description="Training prompts (1-8 prompts)",
         min_length=1,
@@ -69,7 +69,7 @@ class GRPOTrainingRequest(BaseModel):
         ge=1,
         description="Number of training iterations",
     )
-    parallel_batch_size: Optional[int] = Field(
+    parallel_batch_size: int | None = Field(
         None,
         ge=1,
         description="Batch size for parallel training",
@@ -82,18 +82,18 @@ class GRPOTrainingRequest(BaseModel):
         False,
         description="Enable RULER LLM judges",
     )
-    distributed_config: Optional[Dict[str, Any]] = Field(
+    distributed_config: dict[str, Any] | None = Field(
         None,
         description="Configuration for distributed training",
     )
-    idempotency_key: Optional[str] = Field(
+    idempotency_key: str | None = Field(
         None,
         description="Unique key for request deduplication",
     )
 
     @field_validator("prompts")
     @classmethod
-    def validate_prompts(cls, prompts: List[str]) -> List[str]:
+    def validate_prompts(cls, prompts: list[str]) -> list[str]:
         """Validate, sanitize, and clean prompts."""
         config = get_grpo_config()
 
@@ -119,7 +119,7 @@ class GRPOTrainingRequest(BaseModel):
 
     @field_validator("idempotency_key")
     @classmethod
-    def validate_idempotency_key(cls, key: Optional[str]) -> Optional[str]:
+    def validate_idempotency_key(cls, key: str | None) -> str | None:
         """Validate and sanitize idempotency key."""
         if key is None:
             return None
@@ -139,9 +139,7 @@ class GRPOTrainingRequest(BaseModel):
         """Validate iteration count."""
         config = get_grpo_config()
         if iterations > config.max_iterations:
-            raise ValueError(
-                f"num_iterations cannot exceed {config.max_iterations}"
-            )
+            raise ValueError(f"num_iterations cannot exceed {config.max_iterations}")
         return iterations
 
     @field_validator("strategy")
@@ -150,13 +148,11 @@ class GRPOTrainingRequest(BaseModel):
         """Validate training strategy."""
         allowed = {"computational", "distributed", "grpo", "gspo"}
         if strategy not in allowed:
-            raise ValueError(
-                f"strategy must be one of: {', '.join(sorted(allowed))}"
-            )
+            raise ValueError(f"strategy must be one of: {', '.join(sorted(allowed))}")
         return strategy
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "prompts": ["What is machine learning?", "Explain neural networks"],
                 "strategy": "computational",
@@ -164,6 +160,7 @@ class GRPOTrainingRequest(BaseModel):
                 "use_neural_rewards": True,
             }
         }
+    )
 
 
 class TrainingMetrics(BaseModel):
@@ -173,8 +170,8 @@ class TrainingMetrics(BaseModel):
     total_trajectories: int = 0
     average_reward: float = 0.0
     computation_used: float = 0.0
-    loss: Optional[float] = None
-    learning_rate: Optional[float] = None
+    loss: float | None = None
+    learning_rate: float | None = None
 
 
 class GRPOTrainingResponse(BaseModel):
@@ -186,17 +183,17 @@ class GRPOTrainingResponse(BaseModel):
     total_trajectories: int = Field(0, description="Total trajectories generated")
     average_reward: float = Field(0.0, description="Average reward")
     computation_used: float = Field(0.0, description="Total computation used")
-    metrics: Dict[str, Any] = Field(
+    metrics: dict[str, Any] = Field(
         default_factory=dict,
         description="Detailed metrics",
     )
-    error: Optional[str] = Field(None, description="Error message if failed")
-    started_at: Optional[datetime] = Field(None, description="Job start time")
-    completed_at: Optional[datetime] = Field(None, description="Job completion time")
-    request_id: Optional[str] = Field(None, description="Original request ID")
+    error: str | None = Field(None, description="Error message if failed")
+    started_at: datetime | None = Field(None, description="Job start time")
+    completed_at: datetime | None = Field(None, description="Job completion time")
+    request_id: str | None = Field(None, description="Original request ID")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "job_id": "550e8400-e29b-41d4-a716-446655440000",
                 "status": "running",
@@ -208,19 +205,20 @@ class GRPOTrainingResponse(BaseModel):
                 "started_at": "2024-01-15T10:30:00.000Z",
             }
         }
+    )
 
 
 class GRPOConversationRequest(BaseModel):
     """Request model for GRPO conversations."""
 
     message: str = Field(..., description="User message")
-    conversation_id: Optional[str] = Field(
+    conversation_id: str | None = Field(
         None,
         description="Existing conversation ID to continue",
     )
     strategy: str = Field("default", description="Response generation strategy")
-    user_id: Optional[str] = Field(None, description="User identifier")
-    context: Optional[Dict[str, Any]] = Field(
+    user_id: str | None = Field(None, description="User identifier")
+    context: dict[str, Any] | None = Field(
         None,
         description="Additional context",
     )
@@ -238,14 +236,12 @@ class GRPOConversationRequest(BaseModel):
             raise ValueError("message cannot be empty")
 
         if len(cleaned) > config.max_message_length:
-            raise ValueError(
-                f"message exceeds {config.max_message_length} characters"
-            )
+            raise ValueError(f"message exceeds {config.max_message_length} characters")
 
         return cleaned
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "message": "Can you outline the next steps?",
                 "conversation_id": "conv_123",
@@ -258,10 +254,11 @@ class GRPOConversationRequest(BaseModel):
                 "temperature": 0.7,
             }
         }
+    )
 
     @field_validator("conversation_id")
     @classmethod
-    def validate_conversation_id(cls, conv_id: Optional[str]) -> Optional[str]:
+    def validate_conversation_id(cls, conv_id: str | None) -> str | None:
         """Validate and sanitize conversation ID."""
         if conv_id is None:
             return None
@@ -275,7 +272,7 @@ class GRPOConversationRequest(BaseModel):
 
     @field_validator("user_id")
     @classmethod
-    def validate_user_id(cls, user_id: Optional[str]) -> Optional[str]:
+    def validate_user_id(cls, user_id: str | None) -> str | None:
         """Validate and sanitize user ID."""
         if user_id is None:
             return None
@@ -297,35 +294,25 @@ class GRPOConversationRequest(BaseModel):
             raise ValueError(f"strategy must be one of: {', '.join(sorted(allowed))}")
         return cleaned
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "message": "Hello, how can you help me?",
-                "strategy": "default",
-                "max_tokens": 256,
-                "temperature": 0.7,
-            }
-        }
-
 
 class GRPOConversationResponse(BaseModel):
     """Response model for GRPO conversations."""
 
     conversation_id: str = Field(..., description="Conversation identifier")
     response: str = Field(..., description="Agent's response")
-    context: Dict[str, Any] = Field(
+    context: dict[str, Any] = Field(
         default_factory=dict,
         description="Conversation context",
     )
-    metadata: Dict[str, Any] = Field(
+    metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Additional metadata",
     )
     tokens_used: int = Field(0, description="Tokens used in response")
     processing_time_ms: float = Field(0.0, description="Processing time")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "conversation_id": "conv_550e8400",
                 "response": "Hello! I'm here to help you with any questions.",
@@ -335,6 +322,7 @@ class GRPOConversationResponse(BaseModel):
                 "processing_time_ms": 234.5,
             }
         }
+    )
 
 
 class GRPOScaleRequest(BaseModel):
@@ -350,18 +338,19 @@ class GRPOScaleRequest(BaseModel):
         False,
         description="Apply scaling to all engines",
     )
-    target_engines: Optional[List[str]] = Field(
+    target_engines: list[str] | None = Field(
         None,
         description="Specific engine IDs to scale",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "scale_factor": 2.0,
                 "apply_to_all": True,
             }
         }
+    )
 
 
 class GRPOScaleResponse(BaseModel):
@@ -369,7 +358,7 @@ class GRPOScaleResponse(BaseModel):
 
     message: str = Field(..., description="Status message")
     scale_factor: float = Field(..., description="Applied scale factor")
-    results: Dict[str, Any] = Field(
+    results: dict[str, Any] = Field(
         default_factory=dict,
         description="Results by engine",
     )
@@ -384,7 +373,7 @@ class GRPOHealthResponse(BaseModel):
         description="Response timestamp",
     )
     version: str = Field("2.0.0", description="API version")
-    services: Dict[str, bool] = Field(
+    services: dict[str, bool] = Field(
         default_factory=dict,
         description="Service availability",
     )
@@ -393,18 +382,18 @@ class GRPOHealthResponse(BaseModel):
 class GRPOMetricsResponse(BaseModel):
     """Metrics response."""
 
-    system: Dict[str, Any] = Field(default_factory=dict, description="System metrics")
-    training_jobs: Dict[str, Any] = Field(
+    system: dict[str, Any] = Field(default_factory=dict, description="System metrics")
+    training_jobs: dict[str, Any] = Field(
         default_factory=dict,
         description="Training job metrics",
     )
-    engines: Dict[str, Any] = Field(default_factory=dict, description="Engine metrics")
-    conversations: Dict[str, Any] = Field(
+    engines: dict[str, Any] = Field(default_factory=dict, description="Engine metrics")
+    conversations: dict[str, Any] = Field(
         default_factory=dict,
         description="Conversation metrics",
     )
-    api: Dict[str, Any] = Field(default_factory=dict, description="API metrics")
-    rate_limit: Dict[str, Any] = Field(
+    api: dict[str, Any] = Field(default_factory=dict, description="API metrics")
+    rate_limit: dict[str, Any] = Field(
         default_factory=dict,
         description="Rate limit info",
     )
@@ -418,21 +407,21 @@ class GRPOMetricsResponse(BaseModel):
 class BatchTrainingItem(BaseModel):
     """Single item in a batch training request."""
 
-    prompts: List[str] = Field(
+    prompts: list[str] = Field(
         ...,
         description="Training prompts for this item",
         min_length=1,
     )
     strategy: str = Field("computational", description="Training strategy")
     num_iterations: int = Field(1, ge=1, le=50, description="Iterations")
-    idempotency_key: Optional[str] = Field(
+    idempotency_key: str | None = Field(
         None,
         description="Unique key for this item",
     )
 
     @field_validator("prompts")
     @classmethod
-    def validate_prompts(cls, prompts: List[str]) -> List[str]:
+    def validate_prompts(cls, prompts: list[str]) -> list[str]:
         """Validate and sanitize prompts."""
         cleaned = [sanitize_string(p) for p in prompts if p]
         cleaned = [p for p in cleaned if p]
@@ -446,7 +435,7 @@ class BatchTrainingItem(BaseModel):
 class BatchTrainingRequest(BaseModel):
     """Request model for batch training operations."""
 
-    items: List[BatchTrainingItem] = Field(
+    items: list[BatchTrainingItem] = Field(
         ...,
         description="Training items to process",
         min_length=1,
@@ -467,8 +456,8 @@ class BatchTrainingRequest(BaseModel):
         description="Stop on first failure",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "items": [
                     {
@@ -486,15 +475,16 @@ class BatchTrainingRequest(BaseModel):
                 "max_concurrent": 10,
             }
         }
+    )
 
 
 class BatchItemResult(BaseModel):
     """Result of a single batch item."""
 
     index: int = Field(..., description="Item index in request")
-    job_id: Optional[str] = Field(None, description="Created job ID")
+    job_id: str | None = Field(None, description="Created job ID")
     status: str = Field(..., description="Item status")
-    error: Optional[str] = Field(None, description="Error message if failed")
+    error: str | None = Field(None, description="Error message if failed")
 
 
 class BatchTrainingResponse(BaseModel):
@@ -504,13 +494,13 @@ class BatchTrainingResponse(BaseModel):
     total_items: int = Field(..., description="Total items in batch")
     accepted: int = Field(0, description="Items accepted for processing")
     rejected: int = Field(0, description="Items rejected")
-    results: List[BatchItemResult] = Field(
+    results: list[BatchItemResult] = Field(
         default_factory=list,
         description="Results per item",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "batch_id": "batch_550e8400",
                 "total_items": 5,
@@ -522,12 +512,13 @@ class BatchTrainingResponse(BaseModel):
                 ],
             }
         }
+    )
 
 
 class BatchJobStatusRequest(BaseModel):
     """Request for batch job status."""
 
-    job_ids: List[str] = Field(
+    job_ids: list[str] = Field(
         ...,
         description="Job IDs to query",
         min_length=1,
@@ -536,7 +527,7 @@ class BatchJobStatusRequest(BaseModel):
 
     @field_validator("job_ids")
     @classmethod
-    def validate_job_ids(cls, job_ids: List[str]) -> List[str]:
+    def validate_job_ids(cls, job_ids: list[str]) -> list[str]:
         """Validate job IDs."""
         cleaned = [sanitize_string(j) for j in job_ids if j]
         cleaned = [j for j in cleaned if j]
@@ -548,11 +539,11 @@ class BatchJobStatusRequest(BaseModel):
 class BatchJobStatusResponse(BaseModel):
     """Response for batch job status."""
 
-    jobs: Dict[str, GRPOTrainingResponse] = Field(
+    jobs: dict[str, GRPOTrainingResponse] = Field(
         default_factory=dict,
         description="Job statuses by ID",
     )
-    not_found: List[str] = Field(
+    not_found: list[str] = Field(
         default_factory=list,
         description="Job IDs not found",
     )
@@ -561,7 +552,7 @@ class BatchJobStatusResponse(BaseModel):
 class BatchCancelRequest(BaseModel):
     """Request to cancel multiple jobs."""
 
-    job_ids: List[str] = Field(
+    job_ids: list[str] = Field(
         ...,
         description="Job IDs to cancel",
         min_length=1,
@@ -570,7 +561,7 @@ class BatchCancelRequest(BaseModel):
 
     @field_validator("job_ids")
     @classmethod
-    def validate_job_ids(cls, job_ids: List[str]) -> List[str]:
+    def validate_job_ids(cls, job_ids: list[str]) -> list[str]:
         """Validate job IDs."""
         cleaned = [sanitize_string(j) for j in job_ids if j]
         return [j for j in cleaned if j]
@@ -579,15 +570,15 @@ class BatchCancelRequest(BaseModel):
 class BatchCancelResponse(BaseModel):
     """Response for batch cancel operation."""
 
-    cancelled: List[str] = Field(
+    cancelled: list[str] = Field(
         default_factory=list,
         description="Successfully cancelled job IDs",
     )
-    not_found: List[str] = Field(
+    not_found: list[str] = Field(
         default_factory=list,
         description="Job IDs not found",
     )
-    already_completed: List[str] = Field(
+    already_completed: list[str] = Field(
         default_factory=list,
         description="Jobs already completed",
     )

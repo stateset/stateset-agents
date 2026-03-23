@@ -2,20 +2,20 @@
 Type stubs for transformers library.
 """
 
-from typing import Any, Dict, List, Optional, Protocol, Union
+from typing import Any
 
 import torch
 
 class PreTrainedTokenizer:
     """Stub for PreTrainedTokenizer."""
 
-    pad_token_id: Optional[int]
-    eos_token_id: Optional[int]
+    pad_token_id: int | None
+    eos_token_id: int | None
 
-    def encode(self, text: str, **kwargs) -> List[int]: ...
-    def decode(self, tokens: List[int], **kwargs) -> str: ...
-    def apply_chat_template(self, messages: List[Dict[str, str]], **kwargs) -> str: ...
-    def __call__(self, text: str, **kwargs) -> Dict[str, Any]: ...
+    def encode(self, text: str, **kwargs) -> list[int]: ...
+    def decode(self, tokens: list[int], **kwargs) -> str: ...
+    def apply_chat_template(self, messages: list[dict[str, str]], **kwargs) -> str: ...
+    def __call__(self, text: str, **kwargs) -> dict[str, Any]: ...
 
 class PreTrainedTokenizerFast(PreTrainedTokenizer):
     """Stub for PreTrainedTokenizerFast."""
@@ -50,8 +50,8 @@ class GenerationConfig:
     top_k: int
     do_sample: bool
     repetition_penalty: float
-    pad_token_id: Optional[int]
-    eos_token_id: Optional[int]
+    pad_token_id: int | None
+    eos_token_id: int | None
 
 class StoppingCriteria:
     """Stub for StoppingCriteria."""
@@ -61,7 +61,7 @@ class StoppingCriteria:
 class StoppingCriteriaList:
     """Stub for StoppingCriteriaList."""
 
-    def __init__(self, criteria: List[StoppingCriteria]): ...
+    def __init__(self, criteria: list[StoppingCriteria]): ...
 
 class get_cosine_schedule_with_warmup:
     """Stub for get_cosine_schedule_with_warmup."""

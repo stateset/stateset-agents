@@ -6,26 +6,34 @@ context management, tool usage, and sophisticated dialogue strategies.
 """
 
 import asyncio
-import hashlib
-import json
 import logging
 import uuid
-from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Type, Union
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from stateset_agents.utils.cache import CacheService
 
 from .agent import Agent
 from .long_term_planning import PlanningConfig, PlanningManager
-from .environment import Environment
-from .reward import RewardFunction, RewardResult
-from .trajectory import Trajectory
+from .multiturn_analysis import (
+    analyze_user_input,
+    compress_conversation_context,
+    create_conversation_summary,
+    evaluate_context_coherence,
+    evaluate_goal_achievement,
+    extract_document_reference,
+    extract_technical_terms,
+)
+from .multiturn_context import (
+    ConversationContext,
+    DialogueDatabase,
+    apply_context_update,
+)
+from .reward import RewardFunction
 
 logger = logging.getLogger(__name__)
 
-MULTITURN_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+MULTITURN_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     ValueError,
     TypeError,
@@ -34,7 +42,7 @@ MULTITURN_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
     OSError,
     asyncio.TimeoutError,
 )
-BACKEND_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+BACKEND_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     ValueError,
     TypeError,
@@ -42,7 +50,7 @@ BACKEND_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
     OSError,
     asyncio.TimeoutError,
 )
-TOOL_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+TOOL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     ValueError,
     TypeError,
@@ -50,93 +58,6 @@ TOOL_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
     OSError,
     asyncio.TimeoutError,
 )
-
-
-@dataclass
-class ConversationContext:
-    """Context for multi-turn conversations"""
-
-    conversation_id: str
-    user_id: Optional[str] = None
-    topic: Optional[str] = None
-    intent: Optional[str] = None
-    entities: Dict[str, Any] = field(default_factory=dict)
-    history: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    started_at: datetime = field(default_factory=datetime.now)
-
-    def add_turn(self, turn: Dict[str, Any]):
-        """Add a turn to the conversation history"""
-        turn_with_timestamp = {**turn, "timestamp": datetime.now().isoformat()}
-        self.history.append(turn_with_timestamp)
-
-    def get_recent_history(self, max_turns: int = 10) -> List[Dict[str, Any]]:
-        """Get recent conversation history"""
-        return self.history[-max_turns:]
-
-    def get_context_summary(self) -> Dict[str, Any]:
-        """Get a summary of the conversation context"""
-        return {
-            "conversation_id": self.conversation_id,
-            "user_id": self.user_id,
-            "topic": self.topic,
-            "intent": self.intent,
-            "entities": self.entities,
-            "turn_count": len(self.history),
-            "started_at": self.started_at.isoformat(),
-        }
-
-
-class DialogueDatabase:
-    """Simple searchable database of dialogue examples"""
-
-    def __init__(self, dialogues: List[Dict[str, Any]]):
-        self.dialogues = dialogues
-        self.index = self._build_index()
-
-    def _build_index(self) -> Dict[str, List[int]]:
-        """Build a simple keyword index"""
-        index = {}
-        for i, dialogue in enumerate(self.dialogues):
-            content = dialogue.get("content", "").lower()
-            words = content.split()
-
-            for word in words:
-                if word not in index:
-                    index[word] = []
-                index[word].append(i)
-
-        return index
-
-    def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
-        """Search for relevant dialogues"""
-        query_words = query.lower().split()
-
-        # Score dialogues based on word matches
-        scores = {}
-        for word in query_words:
-            if word in self.index:
-                for dialogue_idx in self.index[word]:
-                    scores[dialogue_idx] = scores.get(dialogue_idx, 0) + 1
-
-        # Sort by score and return top results
-        sorted_dialogues = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-
-        results = []
-        for dialogue_idx, score in sorted_dialogues[:top_k]:
-            dialogue = self.dialogues[dialogue_idx].copy()
-            dialogue["relevance_score"] = score
-            results.append(dialogue)
-
-        return results
-
-    def get_dialogue_by_id(self, dialogue_id: str) -> Optional[Dict[str, Any]]:
-        """Get a specific dialogue by ID"""
-        for dialogue in self.dialogues:
-            if dialogue.get("id") == dialogue_id:
-                return dialogue
-        return None
-
 
 class MultiTurnAgent(Agent):
     """
@@ -146,13 +67,13 @@ class MultiTurnAgent(Agent):
 
     def __init__(
         self,
-        model_config: Dict[str, Any],
+        model_config: dict[str, Any],
         max_context_length: int = 2048,
         max_conversation_turns: int = 20,
         context_compression_threshold: float = 0.8,
-        dialogue_database: Optional[DialogueDatabase] = None,
-        cache_service: Optional[CacheService] = None,
-        planning_manager: Optional[PlanningManager] = None,
+        dialogue_database: DialogueDatabase | None = None,
+        cache_service: CacheService | None = None,
+        planning_manager: PlanningManager | None = None,
         **kwargs,
     ):
         super().__init__(model_config, **kwargs)
@@ -177,7 +98,7 @@ class MultiTurnAgent(Agent):
         self.planning_manager = planning_manager
 
         # Active conversations
-        self.active_conversations: Dict[str, ConversationContext] = {}
+        self.active_conversations: dict[str, ConversationContext] = {}
 
         # Conversation strategies
         self.strategies = {
@@ -193,11 +114,11 @@ class MultiTurnAgent(Agent):
 
         # Response generation backend controls (pluggable)
         self._use_hf_backend: bool = bool(kwargs.get("use_hf_backend", False))
-        self._hf_backend_config: Dict[str, Any] = dict(kwargs.get("hf_backend_config", {}) or {})
+        self._hf_backend_config: dict[str, Any] = dict(
+            kwargs.get("hf_backend_config", {}) or {}
+        )
         self._hf_agent = None  # Lazy-initialized HF-backed agent
-        self.response_backend: Optional[
-            Callable[[Union[str, List[Dict[str, Any]]]], Union[str, Awaitable[str]]]
-        ] = kwargs.get("response_backend")
+        self.response_backend: Callable[[str | list[dict[str, Any]]], str | Awaitable[str]] | None = kwargs.get("response_backend")
 
     def register_tool(self, name: str, tool_func: callable):
         """Register a tool for the agent to use"""
@@ -205,8 +126,8 @@ class MultiTurnAgent(Agent):
 
     async def generate_response(
         self,
-        messages_or_prompt: Union[str, List[Dict[str, Any]]],
-        context: Optional[Dict[str, Any]] = None,
+        messages_or_prompt: str | list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
     ) -> str:
         """Generate a response using pluggable backends.
 
@@ -216,10 +137,7 @@ class MultiTurnAgent(Agent):
         3) Lightweight heuristic response (fast default for tests)
         """
         messages_for_backend = messages_or_prompt
-        if (
-            self.planning_manager is not None
-            and isinstance(messages_or_prompt, list)
-        ):
+        if self.planning_manager is not None and isinstance(messages_or_prompt, list):
             plan_message = self.planning_manager.build_plan_message(
                 messages_or_prompt, context=context or {}
             )
@@ -257,13 +175,15 @@ class MultiTurnAgent(Agent):
 
     def register_response_backend(
         self,
-        backend: Callable[[Union[str, List[Dict[str, Any]]]], Union[str, Awaitable[str]]],
+        backend: Callable[
+            [str | list[dict[str, Any]]], str | Awaitable[str]
+        ],
     ) -> None:
         """Register a custom response backend callable."""
         self.response_backend = backend
 
     def _generate_heuristic(
-        self, messages_or_prompt: Union[str, List[Dict[str, Any]]]
+        self, messages_or_prompt: str | list[dict[str, Any]]
     ) -> str:
         """Fast deterministic response useful for tests and simple flows."""
         if isinstance(messages_or_prompt, str):
@@ -289,7 +209,7 @@ class MultiTurnAgent(Agent):
         return base
 
     async def _generate_with_hf_backend(
-        self, messages_or_prompt: Union[str, List[Dict[str, Any]]]
+        self, messages_or_prompt: str | list[dict[str, Any]]
     ) -> str:
         """Generate using the HF-backed agent from `core.agent` (lazy)."""
         if self._hf_agent is None:
@@ -319,8 +239,8 @@ class MultiTurnAgent(Agent):
 
     async def start_conversation(
         self,
-        user_id: Optional[str] = None,
-        initial_context: Optional[Dict[str, Any]] = None,
+        user_id: str | None = None,
+        initial_context: dict[str, Any] | None = None,
     ) -> ConversationContext:
         """Start a new conversation"""
         conversation_id = str(uuid.uuid4())
@@ -340,46 +260,10 @@ class MultiTurnAgent(Agent):
     def _apply_context_update(
         self,
         context: ConversationContext,
-        update: Optional[Dict[str, Any]],
+        update: dict[str, Any] | None,
     ) -> None:
         """Merge context updates into the active conversation context."""
-        if not update:
-            return
-
-        update_dict = dict(update)
-        if "user_id" in update_dict and update_dict["user_id"]:
-            context.user_id = update_dict["user_id"]
-        if "topic" in update_dict and update_dict["topic"]:
-            context.topic = update_dict["topic"]
-        if "intent" in update_dict and update_dict["intent"]:
-            context.intent = update_dict["intent"]
-
-        entities = update_dict.get("entities")
-        if isinstance(entities, dict):
-            context.entities.update(entities)
-
-        history = update_dict.get("history")
-        if isinstance(history, list):
-            context.history.extend(history)
-
-        metadata = update_dict.get("metadata")
-        if isinstance(metadata, dict):
-            context.metadata.update(metadata)
-
-        skip_keys = {
-            "conversation_id",
-            "started_at",
-            "user_id",
-            "topic",
-            "intent",
-            "entities",
-            "history",
-            "metadata",
-        }
-        for key, value in update_dict.items():
-            if key in skip_keys:
-                continue
-            context.metadata[key] = value
+        apply_context_update(context, update)
 
     async def continue_conversation(
         self,
@@ -387,8 +271,8 @@ class MultiTurnAgent(Agent):
         user_message: str,
         strategy: str = "default",
         max_turns: int = 5,
-        context_update: Optional[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
+        context_update: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """Continue an existing conversation, applying any context updates."""
         if conversation_id not in self.active_conversations:
             raise ValueError(f"Conversation {conversation_id} not found")
@@ -415,7 +299,7 @@ class MultiTurnAgent(Agent):
         user_message: str,
         strategy: str = "default",
         use_tools: bool = True,
-        context_update: Optional[Dict[str, Any]] = None,
+        context_update: dict[str, Any] | None = None,
     ) -> str:
         """Generate a single response in a multi-turn conversation."""
         if conversation_id not in self.active_conversations:
@@ -442,6 +326,7 @@ class MultiTurnAgent(Agent):
         if use_tools:
             response = await self._apply_tools(context, response)
 
+        context.add_turn({"role": "assistant", "content": response})
         return response
 
     async def _default_strategy(self, context: ConversationContext) -> str:
@@ -526,7 +411,7 @@ class MultiTurnAgent(Agent):
 
         return response
 
-    def _build_planning_context(self, context: ConversationContext) -> Dict[str, Any]:
+    def _build_planning_context(self, context: ConversationContext) -> dict[str, Any]:
         plan_context = dict(context.metadata) if context.metadata else {}
         plan_update = plan_context.pop("plan_update", None)
         if plan_update is not None:
@@ -551,9 +436,9 @@ class MultiTurnAgent(Agent):
 
     def _get_plan_summary(
         self,
-        history: List[Dict[str, Any]],
+        history: list[dict[str, Any]],
         context: ConversationContext,
-    ) -> Optional[str]:
+    ) -> str | None:
         if self.planning_manager is None:
             return None
 
@@ -565,7 +450,7 @@ class MultiTurnAgent(Agent):
         return None
 
     def _build_prompt(
-        self, history: List[Dict[str, Any]], context: ConversationContext
+        self, history: list[dict[str, Any]], context: ConversationContext
     ) -> str:
         """Build prompt from conversation history"""
         prompt_parts = []
@@ -714,76 +599,11 @@ class MultiTurnAgent(Agent):
         self, context: ConversationContext, user_message: str
     ):
         """Analyze user input for intent and entities"""
-        # Simple intent detection
-        if any(
-            word in user_message.lower()
-            for word in ["help", "problem", "issue", "error"]
-        ):
-            context.intent = "support"
-        elif any(
-            word in user_message.lower()
-            for word in ["buy", "purchase", "price", "cost"]
-        ):
-            context.intent = "sales"
-        elif any(
-            word in user_message.lower() for word in ["learn", "how", "what", "explain"]
-        ):
-            context.intent = "education"
+        analyze_user_input(context, user_message)
 
-        # Simple entity extraction
-        entities = {}
-
-        # Extract numbers
-        import re
-
-        numbers = re.findall(r"\d+", user_message)
-        if numbers:
-            entities["numbers"] = numbers
-
-        # Extract email addresses
-        emails = re.findall(
-            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", user_message
-        )
-        if emails:
-            entities["emails"] = emails
-
-        # Update context
-        context.entities.update(entities)
-
-    def _extract_technical_terms(self, text: str) -> List[str]:
+    def _extract_technical_terms(self, text: str) -> list[str]:
         """Extract technical terms from text"""
-        technical_keywords = [
-            "api",
-            "database",
-            "server",
-            "client",
-            "http",
-            "ssl",
-            "tcp",
-            "ip",
-            "json",
-            "xml",
-            "rest",
-            "soap",
-            "auth",
-            "token",
-            "session",
-            "cache",
-            "queue",
-            "load",
-            "performance",
-            "latency",
-            "throughput",
-        ]
-
-        terms = []
-        text_lower = text.lower()
-
-        for term in technical_keywords:
-            if term in text_lower:
-                terms.append(term)
-
-        return terms
+        return extract_technical_terms(text)
 
     async def _apply_tools(self, context: ConversationContext, response: str) -> str:
         """Apply tools based on response content"""
@@ -813,74 +633,24 @@ class MultiTurnAgent(Agent):
 
         return response
 
-    def _extract_document_reference(self, text: str) -> Optional[str]:
+    def _extract_document_reference(self, text: str) -> str | None:
         """Extract document reference from text"""
-        # Simple pattern matching for document IDs
-        import re
-
-        # Look for patterns like "doc_123", "document-456", etc.
-        pattern = r"(?:doc|document)[-_]?(\w+)"
-        matches = re.findall(pattern, text.lower())
-
-        return matches[0] if matches else None
+        return extract_document_reference(text)
 
     async def _compress_context(self, context: ConversationContext):
         """Compress conversation context to manage memory"""
-        if len(context.history) <= self.max_conversation_turns:
-            return
+        compress_conversation_context(context, self.max_conversation_turns)
 
-        # Keep first few turns (conversation start)
-        keep_start = 2
-
-        # Keep last few turns (recent context)
-        keep_end = self.max_conversation_turns - keep_start - 1
-
-        # Create summary of middle turns
-        middle_turns = context.history[keep_start:-keep_end]
-
-        if middle_turns:
-            # Create a summary
-            summary = self._create_conversation_summary(middle_turns)
-
-            # Replace middle turns with summary
-            context.history = (
-                context.history[:keep_start]
-                + [
-                    {
-                        "role": "system",
-                        "content": f"[Summary of previous turns: {summary}]",
-                    }
-                ]
-                + context.history[-keep_end:]
-            )
-
-    def _create_conversation_summary(self, turns: List[Dict[str, Any]]) -> str:
+    def _create_conversation_summary(self, turns: list[dict[str, Any]]) -> str:
         """Create a summary of conversation turns"""
-        user_messages = [
-            turn["content"] for turn in turns if turn.get("role") == "user"
-        ]
-        assistant_messages = [
-            turn["content"] for turn in turns if turn.get("role") == "assistant"
-        ]
-
-        summary_parts = []
-
-        if user_messages:
-            summary_parts.append(f"User discussed: {', '.join(user_messages[:3])}...")
-
-        if assistant_messages:
-            summary_parts.append(
-                f"Assistant provided: {', '.join(assistant_messages[:3])}..."
-            )
-
-        return " ".join(summary_parts)
+        return create_conversation_summary(turns)
 
     async def compute_multiturn_rewards(
         self,
         conversation_id: str,
-        reward_functions: List[RewardFunction],
-        ground_truth: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[float, Dict[str, float]]:
+        reward_functions: list[RewardFunction],
+        ground_truth: dict[str, Any] | None = None,
+    ) -> tuple[float, dict[str, float]]:
         """Compute rewards for multi-turn conversation"""
         if conversation_id not in self.active_conversations:
             raise ValueError(f"Conversation {conversation_id} not found")
@@ -920,62 +690,15 @@ class MultiTurnAgent(Agent):
 
     def _evaluate_context_coherence(self, context: ConversationContext) -> float:
         """Evaluate how coherent the conversation context is"""
-        if len(context.history) < 2:
-            return 1.0
-
-        # Simple coherence check based on topic consistency
-        topics = []
-        for turn in context.history:
-            if turn.get("role") == "user":
-                content = turn.get("content", "").lower()
-                # Extract potential topics (simplified)
-                words = content.split()
-                topics.extend(words)
-
-        if not topics:
-            return 0.5
-
-        # Check topic consistency
-        unique_topics = set(topics)
-        topic_consistency = len(unique_topics) / len(topics)
-
-        return max(0.0, 1.0 - topic_consistency)
+        return evaluate_context_coherence(context)
 
     def _evaluate_goal_achievement(
-        self, context: ConversationContext, ground_truth: Optional[Dict[str, Any]]
+        self, context: ConversationContext, ground_truth: dict[str, Any] | None
     ) -> float:
         """Evaluate if conversation achieved its goal"""
-        if not ground_truth:
-            return 0.5  # Neutral if no ground truth
+        return evaluate_goal_achievement(context, ground_truth)
 
-        expected_outcome = ground_truth.get("expected_outcome", "")
-        if not expected_outcome:
-            return 0.5
-
-        # Check if last assistant response matches expected outcome
-        assistant_responses = [
-            turn["content"]
-            for turn in context.history
-            if turn.get("role") == "assistant"
-        ]
-
-        if not assistant_responses:
-            return 0.0
-
-        last_response = assistant_responses[-1].lower()
-        expected_lower = expected_outcome.lower()
-
-        # Simple keyword matching
-        expected_words = set(expected_lower.split())
-        response_words = set(last_response.split())
-
-        overlap = expected_words & response_words
-        if expected_words:
-            return len(overlap) / len(expected_words)
-
-        return 0.0
-
-    def end_conversation(self, conversation_id: str) -> Optional[ConversationContext]:
+    def end_conversation(self, conversation_id: str) -> ConversationContext | None:
         """End a conversation and return its context"""
         if conversation_id in self.active_conversations:
             context = self.active_conversations.pop(conversation_id)
@@ -985,13 +708,13 @@ class MultiTurnAgent(Agent):
             return context
         return None
 
-    def get_active_conversations(self) -> List[str]:
+    def get_active_conversations(self) -> list[str]:
         """Get list of active conversation IDs"""
         return list(self.active_conversations.keys())
 
     def get_conversation_summary(
         self, conversation_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get summary of a conversation"""
         if conversation_id in self.active_conversations:
             context = self.active_conversations[conversation_id]
@@ -1009,3 +732,10 @@ class MultiTurnAgent(Agent):
                     }
             return summary
         return None
+
+
+__all__ = [
+    "ConversationContext",
+    "DialogueDatabase",
+    "MultiTurnAgent",
+]

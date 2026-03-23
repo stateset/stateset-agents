@@ -4,15 +4,16 @@ Unit tests for Kimi-K2.5 integration
 These tests verify the configuration and setup functions work correctly.
 """
 
+from unittest.mock import Mock, patch
+
 import pytest
-import torch
-from unittest.mock import Mock, patch, MagicMock
+
 from examples.kimi_k25_config import (
+    KIMI_K25_MODEL_SPECS,
+    KIMI_K25_SUPPORTED_VARIANTS,
     get_kimi_k25_config,
     get_kimi_k25_conversational_config,
     get_kimi_k25_vision_config,
-    KIMI_K25_SUPPORTED_VARIANTS,
-    KIMI_K25_MODEL_SPECS,
 )
 
 
@@ -67,7 +68,7 @@ class TestKimiK25Config:
         assert config.max_completion_length == 4096  # Longer for vision
         assert config.max_prompt_length == 8192
         assert "vision" in config.wandb_tags
-        assert temperature == 1.0  # Higher for vision
+        assert config.temperature == 1.0  # Higher for vision
 
     def test_custom_overrides(self):
         """Test that custom overrides are applied."""
@@ -107,7 +108,6 @@ class TestKimiK25Training:
         mock_env_instance = Mock()
         mock_env.return_value = mock_env_instance
 
-        mock_model = Mock()
         mock_tokenizer = Mock()
         mock_tokenizer.pad_token_id = 0
 

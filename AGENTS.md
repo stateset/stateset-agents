@@ -1,11 +1,13 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `core/`: Core primitives (agents, environments, rewards, trajectories, data processing). Start here for framework changes (e.g., `core/agent.py`, `core/reward.py`).
-- `training/`: Trainers, configs, and training loops (e.g., `trainer.py`, `config.py`).
-- `rewards/`: Advanced/domain reward functions (e.g., `multi_objective_reward.py`).
-- `utils/`: Logging, monitoring, observability, W&B integration.
-- `api/`: Experimental FastAPI service (`ultimate_grpo_service.py`).
+- `stateset_agents/`: Canonical, packaged source (this is what ships to PyPI).
+  - `stateset_agents/core/`: Core primitives (agents, environments, rewards, trajectories, data processing).
+  - `stateset_agents/training/`: Trainers, configs, and training loops.
+  - `stateset_agents/rewards/`: Advanced/domain reward functions.
+  - `stateset_agents/utils/`: Logging, monitoring, observability, W&B integration.
+  - `stateset_agents/api/`: FastAPI gateway (includes `/v1/messages` and OpenAI-compat endpoints).
+- `api/`, `core/`, `training/`, `rewards/`, `environments/`: Deprecated shim modules used in-repo only for backwards compatibility/tests. Prefer `stateset_agents.*`.
 - `examples/`: Runnable demos and quick starts.
 - `tests/` + `test_integration.py`: Unit and integration tests.
 - `scripts/`, `deployment/`, `benchmarks/`: Utilities for training, deployment, and performance.
@@ -13,11 +15,13 @@
 ## Build, Test, and Development Commands
 - Setup (Python 3.8+):
   - `python -m venv .venv && source .venv/bin/activate`
-  - `pip install -e ".[dev]"`
+  - `pip install -e ".[dev,api]"`
 - Run tests: `pytest -q` (use `-k` to filter; async tests use `pytest-asyncio`).
-- Format & lint: `black . && isort . && flake8 . && mypy .`
+- Format & lint: `ruff check . && black . && isort .`
+- Type check (CI-gated surface): `mypy --config-file mypy.ini`
+- Type check (full package, WIP): `python scripts/check_types.py --all`
 - Run an example: `python examples/quick_start.py`
-- API (optional deps): `python api/ultimate_grpo_service.py` (requires `fastapi` and `uvicorn`).
+- API (optional deps): `python -m stateset_agents.api.main` (requires `fastapi` and `uvicorn`).
 
 ## Coding Style & Naming Conventions
 - Indentation: 4 spaces; line length 88–100 preferred.
@@ -40,4 +44,3 @@
 - Do not hardcode secrets (e.g., model keys, W&B). Use environment variables (e.g., `WANDB_API_KEY`).
 - Large-model/TRL features are optional; gate heavy dependencies and provide fallbacks when possible.
 - When adding new agents/rewards, place core abstractions in `core/` and specialized variants in `rewards/`; include minimal docs and tests.
-

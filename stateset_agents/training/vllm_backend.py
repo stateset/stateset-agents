@@ -35,8 +35,8 @@ Reference:
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Any, Optional
 
 import torch
 
@@ -55,6 +55,7 @@ VLLM_EXCEPTIONS = (
 try:
     from vllm import LLM, SamplingParams
     from vllm.outputs import RequestOutput
+
     VLLM_AVAILABLE = True
     logger.info("vLLM is available - high-performance generation enabled")
 except ImportError:
@@ -74,14 +75,14 @@ class VLLMConfig:
 
     # Model configuration
     model_name: str = "gpt2"
-    tokenizer_name: Optional[str] = None  # Defaults to model_name
-    revision: Optional[str] = None
+    tokenizer_name: str | None = None  # Defaults to model_name
+    revision: str | None = None
 
     # Hardware configuration
     tensor_parallel_size: int = 1  # Number of GPUs for tensor parallelism
     pipeline_parallel_size: int = 1  # Number of GPUs for pipeline parallelism
     gpu_memory_utilization: float = 0.85  # Fraction of GPU memory to use
-    max_model_len: Optional[int] = None  # Max sequence length (auto-detect if None)
+    max_model_len: int | None = None  # Max sequence length (auto-detect if None)
 
     # Generation defaults
     max_tokens: int = 512
@@ -93,25 +94,25 @@ class VLLMConfig:
     enable_prefix_caching: bool = True  # Cache KV for repeated prefixes
     enable_chunked_prefill: bool = True  # Better memory efficiency
     max_num_seqs: int = 256  # Max concurrent sequences
-    max_num_batched_tokens: Optional[int] = None  # Auto-compute if None
+    max_num_batched_tokens: int | None = None  # Auto-compute if None
 
     # Quantization
-    quantization: Optional[str] = None  # "awq", "gptq", "squeezellm", None
+    quantization: str | None = None  # "awq", "gptq", "squeezellm", None
     dtype: str = "auto"  # "auto", "float16", "bfloat16", "float32"
 
     # LoRA support
     enable_lora: bool = False
     max_loras: int = 1
     max_lora_rank: int = 64
-    lora_modules: Optional[List[Dict[str, Any]]] = None
+    lora_modules: list[dict[str, Any]] | None = None
 
     # Seed for reproducibility
-    seed: Optional[int] = None
+    seed: int | None = None
 
     # Trust remote code (for custom models)
     trust_remote_code: bool = True
 
-    def to_vllm_kwargs(self) -> Dict[str, Any]:
+    def to_vllm_kwargs(self) -> dict[str, Any]:
         """Convert to vLLM LLM constructor kwargs"""
         kwargs = {
             "model": self.model_name,
@@ -152,12 +153,13 @@ class VLLMConfig:
 @dataclass
 class GenerationResult:
     """Result from a single generation"""
+
     prompt: str
     response: str
     full_text: str
-    prompt_token_ids: List[int]
-    response_token_ids: List[int]
-    token_logprobs: List[float]  # Log prob for each response token
+    prompt_token_ids: list[int]
+    response_token_ids: list[int]
+    token_logprobs: list[float]  # Log prob for each response token
     cumulative_logprob: float  # Sum of token log probs
     sequence_length: int
     finish_reason: str  # "stop", "length", "abort"
@@ -173,13 +175,15 @@ class GenerationResult:
     def perplexity(self) -> float:
         """Perplexity of the generation"""
         import math
+
         return math.exp(-self.mean_logprob)
 
 
 @dataclass
 class BatchGenerationResult:
     """Results from a batch generation"""
-    results: List[GenerationResult]
+
+    results: list[GenerationResult]
     total_tokens_generated: int
     generation_time_seconds: float
     tokens_per_second: float
@@ -195,7 +199,7 @@ class VLLMGenerator:
 
     def __init__(self, config: VLLMConfig):
         self.config = config
-        self.engine: Optional[LLM] = None
+        self.engine: LLM | None = None
         self.tokenizer = None
         self._initialized = False
 
@@ -212,7 +216,9 @@ class VLLMGenerator:
         try:
             logger.info(f"Initializing vLLM engine for {self.config.model_name}...")
             logger.info(f"  Tensor parallel size: {self.config.tensor_parallel_size}")
-            logger.info(f"  GPU memory utilization: {self.config.gpu_memory_utilization}")
+            logger.info(
+                f"  GPU memory utilization: {self.config.gpu_memory_utilization}"
+            )
             logger.info(f"  Prefix caching: {self.config.enable_prefix_caching}")
 
             # Initialize vLLM engine
@@ -237,13 +243,13 @@ class VLLMGenerator:
 
     def create_sampling_params(
         self,
-        temperature: Optional[float] = None,
-        top_p: Optional[float] = None,
-        top_k: Optional[int] = None,
-        max_tokens: Optional[int] = None,
-        stop: Optional[List[str]] = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        top_k: int | None = None,
+        max_tokens: int | None = None,
+        stop: list[str] | None = None,
         logprobs: int = 1,  # Number of log probs to return per token
-        prompt_logprobs: Optional[int] = None,  # Log probs for prompt tokens
+        prompt_logprobs: int | None = None,  # Log probs for prompt tokens
         **kwargs,
     ) -> "SamplingParams":
         """Create vLLM SamplingParams with defaults from config"""
@@ -251,7 +257,9 @@ class VLLMGenerator:
             raise RuntimeError("vLLM not available")
 
         return SamplingParams(
-            temperature=temperature if temperature is not None else self.config.temperature,
+            temperature=temperature
+            if temperature is not None
+            else self.config.temperature,
             top_p=top_p if top_p is not None else self.config.top_p,
             top_k=top_k if top_k is not None else self.config.top_k,
             max_tokens=max_tokens if max_tokens is not None else self.config.max_tokens,
@@ -263,10 +271,10 @@ class VLLMGenerator:
 
     def generate_sync(
         self,
-        prompts: Union[str, List[str]],
+        prompts: str | list[str],
         sampling_params: Optional["SamplingParams"] = None,
         **kwargs,
-    ) -> List[GenerationResult]:
+    ) -> list[GenerationResult]:
         """
         Synchronous generation with log probabilities.
 
@@ -279,7 +287,9 @@ class VLLMGenerator:
             List of GenerationResult objects with responses and log probs
         """
         if not self.is_available:
-            raise RuntimeError("vLLM not initialized. Call initialize() first or use fallback.")
+            raise RuntimeError(
+                "vLLM not initialized. Call initialize() first or use fallback."
+            )
 
         # Normalize to list
         if isinstance(prompts, str):
@@ -290,7 +300,7 @@ class VLLMGenerator:
             sampling_params = self.create_sampling_params(**kwargs)
 
         # Generate with vLLM
-        outputs: List[RequestOutput] = self.engine.generate(prompts, sampling_params)
+        outputs: list[RequestOutput] = self.engine.generate(prompts, sampling_params)
 
         # Process outputs
         results = []
@@ -309,9 +319,18 @@ class VLLMGenerator:
                     if logprob_dict is not None:
                         # Get the log prob of the actual sampled token
                         # logprob_dict maps token_id -> LogProb object
-                        sampled_token_id = response_token_ids[len(token_logprobs)] if len(token_logprobs) < len(response_token_ids) else None
-                        if sampled_token_id is not None and sampled_token_id in logprob_dict:
-                            token_logprobs.append(logprob_dict[sampled_token_id].logprob)
+                        sampled_token_id = (
+                            response_token_ids[len(token_logprobs)]
+                            if len(token_logprobs) < len(response_token_ids)
+                            else None
+                        )
+                        if (
+                            sampled_token_id is not None
+                            and sampled_token_id in logprob_dict
+                        ):
+                            token_logprobs.append(
+                                logprob_dict[sampled_token_id].logprob
+                            )
                         elif logprob_dict:
                             # Fallback: get the first logprob
                             first_key = next(iter(logprob_dict))
@@ -341,10 +360,10 @@ class VLLMGenerator:
 
     async def generate(
         self,
-        prompts: Union[str, List[str]],
+        prompts: str | list[str],
         sampling_params: Optional["SamplingParams"] = None,
         **kwargs,
-    ) -> List[GenerationResult]:
+    ) -> list[GenerationResult]:
         """
         Async generation with log probabilities.
 
@@ -352,17 +371,16 @@ class VLLMGenerator:
         """
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
-            None,
-            lambda: self.generate_sync(prompts, sampling_params, **kwargs)
+            None, lambda: self.generate_sync(prompts, sampling_params, **kwargs)
         )
 
     async def generate_groups(
         self,
-        prompts: List[str],
+        prompts: list[str],
         num_generations_per_prompt: int,
         sampling_params: Optional["SamplingParams"] = None,
         **kwargs,
-    ) -> Dict[str, List[GenerationResult]]:
+    ) -> dict[str, list[GenerationResult]]:
         """
         Generate multiple responses per prompt (for GRPO/GSPO group generation).
 
@@ -390,7 +408,7 @@ class VLLMGenerator:
         all_results = await self.generate(expanded_prompts, sampling_params, **kwargs)
 
         # Group results by prompt
-        grouped_results: Dict[str, List[GenerationResult]] = {p: [] for p in prompts}
+        grouped_results: dict[str, list[GenerationResult]] = {p: [] for p in prompts}
         for i, result in enumerate(all_results):
             prompt_idx = i // num_generations_per_prompt
             original_prompt = prompts[prompt_idx]
@@ -400,9 +418,9 @@ class VLLMGenerator:
 
     def compute_log_probs_for_sequences(
         self,
-        prompts: List[str],
-        responses: List[str],
-    ) -> List[Tuple[float, List[float]]]:
+        prompts: list[str],
+        responses: list[str],
+    ) -> list[tuple[float, list[float]]]:
         """
         Compute log probabilities for given prompt-response pairs.
 
@@ -420,7 +438,7 @@ class VLLMGenerator:
             raise RuntimeError("vLLM not initialized")
 
         # Combine prompts and responses
-        full_sequences = [p + r for p, r in zip(prompts, responses)]
+        full_sequences = [p + r for p, r in zip(prompts, responses, strict=False)]
 
         # Use prompt_logprobs to get log probs for the full sequence
         sampling_params = self.create_sampling_params(
@@ -470,7 +488,7 @@ class VLLMGenerator:
             raise RuntimeError("LoRA not enabled in config. Set enable_lora=True.")
 
         # vLLM LoRA loading
-        from vllm.lora.request import LoRARequest
+
         # Note: Actual LoRA loading depends on vLLM version
         logger.info(f"Adding LoRA adapter: {adapter_name} from {adapter_path}")
 
@@ -501,7 +519,7 @@ class HuggingFaceGeneratorFallback:
     Provides the same interface as VLLMGenerator but with HF generation.
     """
 
-    def __init__(self, model_name: str, device: Optional[str] = None):
+    def __init__(self, model_name: str, device: str | None = None):
         self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = None
@@ -548,12 +566,12 @@ class HuggingFaceGeneratorFallback:
 
     async def generate(
         self,
-        prompts: Union[str, List[str]],
+        prompts: str | list[str],
         temperature: float = 0.7,
         top_p: float = 0.9,
         max_tokens: int = 512,
         **kwargs,
-    ) -> List[GenerationResult]:
+    ) -> list[GenerationResult]:
         """Generate responses using HuggingFace"""
         if not self.is_available:
             raise RuntimeError("HuggingFace model not initialized")
@@ -587,12 +605,15 @@ class HuggingFaceGeneratorFallback:
 
             generated_ids = outputs.sequences[0]
             response_ids = generated_ids[prompt_length:]
-            response_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
+            response_text = self.tokenizer.decode(
+                response_ids, skip_special_tokens=True
+            )
 
             # Compute log probs from scores
             token_logprobs = []
             if outputs.scores:
                 import torch.nn.functional as F
+
                 for i, score in enumerate(outputs.scores):
                     if i < len(response_ids):
                         log_probs = F.log_softmax(score[0], dim=-1)
@@ -618,12 +639,12 @@ class HuggingFaceGeneratorFallback:
 
     async def generate_groups(
         self,
-        prompts: List[str],
+        prompts: list[str],
         num_generations_per_prompt: int,
         **kwargs,
-    ) -> Dict[str, List[GenerationResult]]:
+    ) -> dict[str, list[GenerationResult]]:
         """Generate multiple responses per prompt"""
-        grouped_results: Dict[str, List[GenerationResult]] = {p: [] for p in prompts}
+        grouped_results: dict[str, list[GenerationResult]] = {p: [] for p in prompts}
 
         for prompt in prompts:
             for _ in range(num_generations_per_prompt):
@@ -649,9 +670,9 @@ class HuggingFaceGeneratorFallback:
 
 
 def create_generator(
-    config: Union[VLLMConfig, Dict[str, Any], str],
+    config: VLLMConfig | dict[str, Any] | str,
     prefer_vllm: bool = True,
-) -> Union[VLLMGenerator, HuggingFaceGeneratorFallback]:
+) -> VLLMGenerator | HuggingFaceGeneratorFallback:
     """
     Factory function to create the appropriate generator.
 
@@ -677,10 +698,10 @@ def create_generator(
 # Convenience function for quick generation
 async def quick_generate(
     model_name: str,
-    prompts: Union[str, List[str]],
+    prompts: str | list[str],
     num_generations: int = 1,
     **kwargs,
-) -> Union[List[GenerationResult], Dict[str, List[GenerationResult]]]:
+) -> list[GenerationResult] | dict[str, list[GenerationResult]]:
     """
     Quick generation utility for one-off use.
 

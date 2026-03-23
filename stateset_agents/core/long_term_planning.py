@@ -11,7 +11,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
 
 class PlanStatus(str, Enum):
@@ -30,10 +31,10 @@ class PlanStep:
     description: str
     status: PlanStatus = PlanStatus.PENDING
     step_id: str = ""
-    notes: Optional[str] = None
+    notes: str | None = None
     updated_at: datetime = field(default_factory=datetime.now)
 
-    def mark(self, status: PlanStatus, notes: Optional[str] = None) -> None:
+    def mark(self, status: PlanStatus, notes: str | None = None) -> None:
         self.status = status
         if notes:
             self.notes = notes
@@ -45,10 +46,10 @@ class Plan:
     """Plan with ordered steps for a goal."""
 
     goal: str
-    steps: List[PlanStep] = field(default_factory=list)
+    steps: list[PlanStep] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def ensure_active(self) -> None:
         for step in self.steps:
@@ -73,10 +74,10 @@ class Plan:
 
     def update_step(
         self,
-        step_id: Optional[str] = None,
-        step_index: Optional[int] = None,
-        status: Optional[PlanStatus] = None,
-        notes: Optional[str] = None,
+        step_id: str | None = None,
+        step_index: int | None = None,
+        status: PlanStatus | None = None,
+        notes: str | None = None,
     ) -> None:
         step = None
         if step_id:
@@ -115,7 +116,7 @@ class Plan:
         completed = [s for s in self.steps if s.status == PlanStatus.DONE]
         active_or_pending = [s for s in self.steps if s.status != PlanStatus.DONE]
 
-        display_steps: List[PlanStep] = []
+        display_steps: list[PlanStep] = []
         if keep_completed > 0:
             display_steps.extend(completed[-keep_completed:])
         display_steps.extend(active_or_pending)
@@ -183,18 +184,18 @@ class PlanningManager:
 
     def __init__(
         self,
-        config: Optional[PlanningConfig] = None,
-        planner: Optional[Any] = None,
-        goal_extractor: Optional[Callable[[List[Dict[str, str]], Dict[str, Any]], Optional[str]]] = None,
+        config: PlanningConfig | None = None,
+        planner: Any | None = None,
+        goal_extractor: Callable[[list[dict[str, str]], dict[str, Any]], str | None] | None = None,
     ):
         self.config = config or PlanningConfig()
         self.planner = planner or HeuristicPlanner()
         self.goal_extractor = goal_extractor or _default_goal_extractor
-        self._plans: Dict[str, Plan] = {}
-        self._turn_counters: Dict[str, int] = {}
-        self._last_updates: Dict[str, int] = {}
+        self._plans: dict[str, Plan] = {}
+        self._turn_counters: dict[str, int] = {}
+        self._last_updates: dict[str, int] = {}
 
-    def get_plan(self, conversation_id: str) -> Optional[Plan]:
+    def get_plan(self, conversation_id: str) -> Plan | None:
         return self._plans.get(conversation_id)
 
     def clear_conversation(self, conversation_id: str) -> None:
@@ -205,9 +206,9 @@ class PlanningManager:
 
     def build_plan_message(
         self,
-        messages: List[Dict[str, str]],
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Optional[Dict[str, str]]:
+        messages: list[dict[str, str]],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, str] | None:
         if not self.config.enabled or not self.config.include_plan_in_context:
             return None
 
@@ -248,7 +249,7 @@ class PlanningManager:
     def apply_update(
         self,
         conversation_id: str,
-        update: Dict[str, Any],
+        update: dict[str, Any],
     ) -> None:
         plan = self._plans.get(conversation_id)
         if plan is None:
@@ -282,10 +283,10 @@ class PlanningManager:
     def _ensure_plan(
         self,
         conversation_id: str,
-        messages: List[Dict[str, str]],
-        context: Dict[str, Any],
-        current_plan: Optional[Plan],
-    ) -> Optional[Plan]:
+        messages: list[dict[str, str]],
+        context: dict[str, Any],
+        current_plan: Plan | None,
+    ) -> Plan | None:
         update = context.get("plan_update")
         if isinstance(update, dict):
             self.apply_update(conversation_id, update)
@@ -311,9 +312,9 @@ class PlanningManager:
 
 
 def _default_goal_extractor(
-    messages: List[Dict[str, str]],
-    context: Dict[str, Any],
-) -> Optional[str]:
+    messages: list[dict[str, str]],
+    context: dict[str, Any],
+) -> str | None:
     explicit = _extract_explicit_goal(context)
     if explicit:
         return explicit
@@ -326,7 +327,7 @@ def _default_goal_extractor(
     return None
 
 
-def _extract_explicit_goal(context: Dict[str, Any]) -> Optional[str]:
+def _extract_explicit_goal(context: dict[str, Any]) -> str | None:
     explicit = context.get("plan_goal")
     if isinstance(explicit, str) and explicit.strip():
         return explicit.strip()
@@ -345,12 +346,14 @@ def _extract_explicit_goal(context: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _split_goal_into_steps(goal: str, max_steps: int) -> List[str]:
+def _split_goal_into_steps(goal: str, max_steps: int) -> list[str]:
     cleaned = goal.strip()
     if not cleaned:
         return []
 
-    parts = re.split(r"\.\s+|;|,|\band\b|\bthen\b|\bnext\b", cleaned, flags=re.IGNORECASE)
+    parts = re.split(
+        r"\.\s+|;|,|\band\b|\bthen\b|\bnext\b", cleaned, flags=re.IGNORECASE
+    )
     steps = [part.strip() for part in parts if part.strip()]
 
     if not steps:

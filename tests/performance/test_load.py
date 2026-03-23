@@ -14,10 +14,8 @@ import gc
 import statistics
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Callable, List, Optional
-from unittest.mock import MagicMock, patch
+from collections.abc import Callable
 
 import pytest
 
@@ -28,9 +26,11 @@ pytestmark = pytest.mark.performance
 # Test Configuration
 # ============================================================================
 
+
 @dataclass
 class PerformanceThresholds:
     """Performance test thresholds."""
+
     max_avg_latency_ms: float = 100.0
     max_p95_latency_ms: float = 200.0
     max_p99_latency_ms: float = 500.0
@@ -45,27 +45,36 @@ THRESHOLDS = PerformanceThresholds()
 # Performance Measurement Utilities
 # ============================================================================
 
+
 @dataclass
 class PerformanceResult:
     """Result of a performance test."""
+
     name: str
     total_requests: int
     successful_requests: int
     failed_requests: int
     total_time_seconds: float
-    latencies_ms: List[float]
-    errors: List[str]
+    latencies_ms: list[float]
+    errors: list[str]
 
     @property
     def success_rate(self) -> float:
         """Calculate success rate percentage."""
-        return (self.successful_requests / self.total_requests * 100
-                if self.total_requests > 0 else 0.0)
+        return (
+            self.successful_requests / self.total_requests * 100
+            if self.total_requests > 0
+            else 0.0
+        )
 
     @property
     def throughput_rps(self) -> float:
         """Calculate requests per second."""
-        return self.total_requests / self.total_time_seconds if self.total_time_seconds > 0 else 0.0
+        return (
+            self.total_requests / self.total_time_seconds
+            if self.total_time_seconds > 0
+            else 0.0
+        )
 
     @property
     def avg_latency_ms(self) -> float:
@@ -129,8 +138,8 @@ async def run_load_test(
     Returns:
         PerformanceResult with test metrics
     """
-    latencies: List[float] = []
-    errors: List[str] = []
+    latencies: list[float] = []
+    errors: list[str] = []
     successful = 0
     failed = 0
 
@@ -168,13 +177,14 @@ async def run_load_test(
 # Cache Performance Tests
 # ============================================================================
 
+
 class TestCachePerformance:
     """Performance tests for caching systems."""
 
     @pytest.mark.asyncio
     async def test_memory_cache_read_performance(self):
         """Test memory cache read performance."""
-        from api.cache import SimpleCache
+        from stateset_agents.api.cache import SimpleCache
 
         cache = SimpleCache()
 
@@ -184,6 +194,7 @@ class TestCachePerformance:
 
         async def read_operation():
             import random
+
             key = f"key{random.randint(0, 999)}"
             cache.get(key)
 
@@ -194,7 +205,7 @@ class TestCachePerformance:
             concurrency=100,
         )
 
-        print(f"\nMemory Cache Read Performance:")
+        print("\nMemory Cache Read Performance:")
         print(f"  Throughput: {result.throughput_rps:.2f} ops/sec")
         print(f"  Avg Latency: {result.avg_latency_ms:.4f} ms")
         print(f"  P95 Latency: {result.p95_latency_ms:.4f} ms")
@@ -205,7 +216,7 @@ class TestCachePerformance:
     @pytest.mark.asyncio
     async def test_memory_cache_write_performance(self):
         """Test memory cache write performance."""
-        from api.cache import SimpleCache
+        from stateset_agents.api.cache import SimpleCache
 
         cache = SimpleCache()
         counter = 0
@@ -222,7 +233,7 @@ class TestCachePerformance:
             concurrency=50,
         )
 
-        print(f"\nMemory Cache Write Performance:")
+        print("\nMemory Cache Write Performance:")
         print(f"  Throughput: {result.throughput_rps:.2f} ops/sec")
         print(f"  Avg Latency: {result.avg_latency_ms:.4f} ms")
 
@@ -231,7 +242,7 @@ class TestCachePerformance:
     @pytest.mark.asyncio
     async def test_distributed_cache_performance(self):
         """Test distributed cache performance."""
-        from api.distributed_cache import MemoryCache, CacheConfig
+        from stateset_agents.api.distributed_cache import CacheConfig, MemoryCache
 
         config = CacheConfig(max_memory_items=10000)
         cache = MemoryCache(config)
@@ -242,6 +253,7 @@ class TestCachePerformance:
 
         async def mixed_operation():
             import random
+
             key = f"key{random.randint(0, 999)}"
             if random.random() < 0.8:  # 80% reads
                 await cache.get(key)
@@ -255,7 +267,7 @@ class TestCachePerformance:
             concurrency=50,
         )
 
-        print(f"\nDistributed Cache Mixed Operations:")
+        print("\nDistributed Cache Mixed Operations:")
         print(f"  Throughput: {result.throughput_rps:.2f} ops/sec")
         print(f"  Avg Latency: {result.avg_latency_ms:.4f} ms")
 
@@ -266,12 +278,13 @@ class TestCachePerformance:
 # Input Validation Performance Tests
 # ============================================================================
 
+
 class TestValidationPerformance:
     """Performance tests for input validation."""
 
     def test_string_validation_performance(self):
         """Test string validation performance."""
-        from api.security import InputValidator
+        from stateset_agents.api.security import InputValidator
 
         test_string = "This is a test string for validation. " * 50
         iterations = 10000
@@ -284,7 +297,7 @@ class TestValidationPerformance:
         ops_per_sec = iterations / elapsed
         avg_latency_us = (elapsed / iterations) * 1_000_000
 
-        print(f"\nString Validation (no injection check):")
+        print("\nString Validation (no injection check):")
         print(f"  {ops_per_sec:.0f} ops/sec")
         print(f"  {avg_latency_us:.2f} μs avg")
 
@@ -292,7 +305,7 @@ class TestValidationPerformance:
 
     def test_injection_detection_performance(self):
         """Test prompt injection detection performance."""
-        from api.security import InputValidator
+        from stateset_agents.api.security import InputValidator
 
         test_string = "Please help me with this coding task. I want to learn Python."
         iterations = 5000
@@ -305,7 +318,7 @@ class TestValidationPerformance:
         ops_per_sec = iterations / elapsed
         avg_latency_us = (elapsed / iterations) * 1_000_000
 
-        print(f"\nPrompt Injection Detection:")
+        print("\nPrompt Injection Detection:")
         print(f"  {ops_per_sec:.0f} ops/sec")
         print(f"  {avg_latency_us:.2f} μs avg")
 
@@ -313,7 +326,7 @@ class TestValidationPerformance:
 
     def test_message_validation_performance(self):
         """Test message list validation performance."""
-        from api.security import InputValidator
+        from stateset_agents.api.security import InputValidator
 
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
@@ -331,7 +344,7 @@ class TestValidationPerformance:
         ops_per_sec = iterations / elapsed
         avg_latency_us = (elapsed / iterations) * 1_000_000
 
-        print(f"\nMessage Validation (4 messages):")
+        print("\nMessage Validation (4 messages):")
         print(f"  {ops_per_sec:.0f} ops/sec")
         print(f"  {avg_latency_us:.2f} μs avg")
 
@@ -342,12 +355,13 @@ class TestValidationPerformance:
 # Middleware Performance Tests
 # ============================================================================
 
+
 class TestMiddlewarePerformance:
     """Performance tests for middleware components."""
 
     def test_rate_limiter_performance(self):
         """Test rate limiter performance."""
-        from api.middleware import SlidingWindowRateLimiter
+        from stateset_agents.api.middleware import SlidingWindowRateLimiter
 
         limiter = SlidingWindowRateLimiter(window_seconds=60)
         iterations = 50000
@@ -360,7 +374,7 @@ class TestMiddlewarePerformance:
         ops_per_sec = iterations / elapsed
         avg_latency_us = (elapsed / iterations) * 1_000_000
 
-        print(f"\nRate Limiter Check:")
+        print("\nRate Limiter Check:")
         print(f"  {ops_per_sec:.0f} ops/sec")
         print(f"  {avg_latency_us:.2f} μs avg")
 
@@ -368,7 +382,7 @@ class TestMiddlewarePerformance:
 
     def test_metrics_recording_performance(self):
         """Test metrics recording performance."""
-        from api.middleware import APIMetrics
+        from stateset_agents.api.middleware import APIMetrics
 
         metrics = APIMetrics()
         iterations = 100000
@@ -386,7 +400,7 @@ class TestMiddlewarePerformance:
         ops_per_sec = iterations / elapsed
         avg_latency_us = (elapsed / iterations) * 1_000_000
 
-        print(f"\nMetrics Recording:")
+        print("\nMetrics Recording:")
         print(f"  {ops_per_sec:.0f} ops/sec")
         print(f"  {avg_latency_us:.2f} μs avg")
 
@@ -397,13 +411,14 @@ class TestMiddlewarePerformance:
 # Resilience Pattern Performance Tests
 # ============================================================================
 
+
 class TestResiliencePerformance:
     """Performance tests for resilience patterns."""
 
     @pytest.mark.asyncio
     async def test_circuit_breaker_performance(self):
         """Test circuit breaker overhead."""
-        from api.resilience import CircuitBreaker, CircuitBreakerConfig
+        from stateset_agents.api.resilience import CircuitBreaker, CircuitBreakerConfig
 
         config = CircuitBreakerConfig(failure_threshold=5)
         breaker = CircuitBreaker("test", config)
@@ -429,7 +444,7 @@ class TestResiliencePerformance:
 
         overhead_percent = ((with_breaker - without_breaker) / without_breaker) * 100
 
-        print(f"\nCircuit Breaker Overhead:")
+        print("\nCircuit Breaker Overhead:")
         print(f"  With breaker: {with_breaker*1000:.2f} ms for 1000 calls")
         print(f"  Without breaker: {without_breaker*1000:.2f} ms for 1000 calls")
         print(f"  Overhead: {overhead_percent:.1f}%")
@@ -439,7 +454,7 @@ class TestResiliencePerformance:
     @pytest.mark.asyncio
     async def test_bulkhead_performance(self):
         """Test bulkhead concurrency limiting."""
-        from api.resilience import Bulkhead, BulkheadConfig
+        from stateset_agents.api.resilience import Bulkhead, BulkheadConfig
 
         config = BulkheadConfig(max_concurrent=10, max_waiting=100)
         bulkhead = Bulkhead("test", config)
@@ -455,7 +470,7 @@ class TestResiliencePerformance:
             concurrency=20,
         )
 
-        print(f"\nBulkhead Performance:")
+        print("\nBulkhead Performance:")
         print(f"  Throughput: {result.throughput_rps:.2f} ops/sec")
         print(f"  Success Rate: {result.success_rate:.2f}%")
 
@@ -466,12 +481,13 @@ class TestResiliencePerformance:
 # Memory Usage Tests
 # ============================================================================
 
+
 class TestMemoryUsage:
     """Tests for memory usage and leaks."""
 
     def test_cache_memory_bounded(self):
         """Test that cache memory is bounded."""
-        from api.cache import SimpleCache
+        from stateset_agents.api.cache import SimpleCache
 
         cache = SimpleCache()
 
@@ -490,16 +506,17 @@ class TestMemoryUsage:
         # Memory should be bounded
         memory_increase_mb = (after_inserts - baseline) / (1024 * 1024)
 
-        print(f"\nCache Memory Usage:")
+        print("\nCache Memory Usage:")
         print(f"  Baseline: {baseline / 1024:.2f} KB")
         print(f"  After 10k inserts: {after_inserts / 1024:.2f} KB")
+        print(f"  Increase: {memory_increase_mb:.2f} MB")
 
         # Note: This is a basic check - dict size doesn't include value sizes
 
     @pytest.mark.asyncio
     async def test_no_memory_leak_in_rate_limiter(self):
         """Test that rate limiter doesn't leak memory."""
-        from api.middleware import SlidingWindowRateLimiter
+        from stateset_agents.api.middleware import SlidingWindowRateLimiter
 
         limiter = SlidingWindowRateLimiter(window_seconds=1)
 
@@ -507,7 +524,7 @@ class TestMemoryUsage:
         baseline_objects = len(gc.get_objects())
 
         # Simulate many users over time
-        for round_num in range(10):
+        for _round_num in range(10):
             for user in range(1000):
                 limiter.is_allowed(f"user{user}", limit=10)
             await asyncio.sleep(0.1)
@@ -517,7 +534,7 @@ class TestMemoryUsage:
 
         object_increase = final_objects - baseline_objects
 
-        print(f"\nRate Limiter Memory (object count):")
+        print("\nRate Limiter Memory (object count):")
         print(f"  Baseline: {baseline_objects}")
         print(f"  Final: {final_objects}")
         print(f"  Increase: {object_increase}")
@@ -530,19 +547,21 @@ class TestMemoryUsage:
 # Stress Tests
 # ============================================================================
 
+
 class TestStress:
     """Stress tests for edge cases."""
 
     @pytest.mark.asyncio
     async def test_high_concurrency_cache(self):
         """Test cache under high concurrency."""
-        from api.distributed_cache import MemoryCache, CacheConfig
+        from stateset_agents.api.distributed_cache import CacheConfig, MemoryCache
 
         config = CacheConfig(max_memory_items=1000)
         cache = MemoryCache(config)
 
         async def stress_operation():
             import random
+
             key = f"stress{random.randint(0, 100)}"
             if random.random() < 0.5:
                 await cache.get(key)
@@ -556,7 +575,7 @@ class TestStress:
             concurrency=200,
         )
 
-        print(f"\nHigh Concurrency Cache Stress:")
+        print("\nHigh Concurrency Cache Stress:")
         print(f"  Total Requests: {result.total_requests}")
         print(f"  Success Rate: {result.success_rate:.2f}%")
         print(f"  Throughput: {result.throughput_rps:.2f} ops/sec")
@@ -565,7 +584,7 @@ class TestStress:
 
     def test_large_payload_validation(self):
         """Test validation with large payloads."""
-        from api.security import InputValidator
+        from stateset_agents.api.security import InputValidator
 
         # Test with increasingly large strings
         sizes = [1000, 10000, 50000, 100000]

@@ -17,17 +17,25 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
-from .base import HPOBackend, HPOCallback, HPOResult, HPOSummary, SearchDimension, SearchSpaceType
+from .base import (
+    HPOBackend,
+    HPOCallback,
+    HPOResult,
+    HPOSummary,
+    SearchDimension,
+    SearchSpaceType,
+)
 
 try:
     import ray  # type: ignore
     from ray import tune  # type: ignore
     from ray.tune.schedulers import (  # type: ignore
         ASHAScheduler,
-        HyperBandScheduler,
         FIFOScheduler,
+        HyperBandScheduler,
     )
     from ray.tune.search.basic_variant import BasicVariantGenerator  # type: ignore
     from ray.tune.search.bayesopt import BayesOptSearch  # type: ignore
@@ -81,15 +89,15 @@ class RayTuneBackend(HPOBackend):
         search_space,
         objective_metric: str = "reward",
         direction: str = "maximize",
-        callbacks: Optional[List[HPOCallback]] = None,
-        output_dir: Optional[Path] = None,
-        study_name: Optional[str] = None,
+        callbacks: list[HPOCallback] | None = None,
+        output_dir: Path | None = None,
+        study_name: str | None = None,
         scheduler: str = "asha",
         search_alg: str = "bayesopt",
         max_concurrent: int = 4,
         cpu_per_trial: int = 4,
         gpu_per_trial: float = 0.0,
-        ray_init_kwargs: Optional[Dict[str, Any]] = None,
+        ray_init_kwargs: dict[str, Any] | None = None,
     ):
         super().__init__(search_space, objective_metric, direction, callbacks)
         self.output_dir = Path(output_dir or "./hpo_results")
@@ -114,9 +122,12 @@ class RayTuneBackend(HPOBackend):
             return tune.choice(dim.choices)
         raise ValueError(f"Unsupported search space type for Ray Tune: {dim.type}")
 
-    def _convert_search_space(self) -> Dict[str, Any]:
+    def _convert_search_space(self) -> dict[str, Any]:
         """Convert SearchSpace to Ray Tune param_space."""
-        return {dim.name: self._convert_dimension(dim) for dim in self.search_space.dimensions}
+        return {
+            dim.name: self._convert_dimension(dim)
+            for dim in self.search_space.dimensions
+        }
 
     def _create_scheduler(self):
         _require_ray()
@@ -126,7 +137,9 @@ class RayTuneBackend(HPOBackend):
             return HyperBandScheduler(metric=self.objective_metric, mode=self._mode())
         if self.scheduler_name == "fifo":
             return FIFOScheduler()
-        logger.warning(f"Unknown scheduler '{self.scheduler_name}', defaulting to ASHA.")
+        logger.warning(
+            f"Unknown scheduler '{self.scheduler_name}', defaulting to ASHA."
+        )
         return ASHAScheduler(metric=self.objective_metric, mode=self._mode())
 
     def _create_search_alg(self):
@@ -137,26 +150,30 @@ class RayTuneBackend(HPOBackend):
             return BasicVariantGenerator()
         if self.search_alg_name == "grid":
             return BasicVariantGenerator()
-        logger.warning(f"Unknown search_alg '{self.search_alg_name}', defaulting to random.")
+        logger.warning(
+            f"Unknown search_alg '{self.search_alg_name}', defaulting to random."
+        )
         return BasicVariantGenerator()
 
     def _mode(self) -> str:
         return "max" if self.direction == "maximize" else "min"
 
-    async def suggest_params(self, trial_id: str) -> Dict[str, Any]:
+    async def suggest_params(self, trial_id: str) -> dict[str, Any]:
         raise NotImplementedError("Ray Tune suggests params internally via optimize().")
 
     async def report_result(self, result: HPOResult) -> None:
         self.results.append(result)
 
-    async def should_prune(self, trial_id: str, intermediate_metrics: Dict[str, float]) -> bool:
+    async def should_prune(
+        self, trial_id: str, intermediate_metrics: dict[str, float]
+    ) -> bool:
         return False
 
     async def optimize(
         self,
-        objective_fn: Callable[[Dict[str, Any]], float],
+        objective_fn: Callable[[dict[str, Any]], float],
         n_trials: int = 100,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> HPOSummary:
         """Run Ray Tune optimization."""
         _require_ray()
@@ -172,12 +189,12 @@ class RayTuneBackend(HPOBackend):
         self._notify_hpo_start(n_trials)
         start_time = time.time()
 
-        def trainable(config: Dict[str, Any]) -> None:
+        def trainable(config: dict[str, Any]) -> None:
             trial_id = tune.get_trial_id() if tune else "unknown"
             self._notify_trial_start(trial_id, config)
             trial_start = time.time()
             status = "success"
-            metrics: Dict[str, float] = {}
+            metrics: dict[str, float] = {}
             try:
                 metric_value = float(_resolve_async_value(objective_fn(config)))
                 metrics[self.objective_metric] = metric_value
@@ -229,7 +246,9 @@ class RayTuneBackend(HPOBackend):
         result_grid = tuner.fit()
         total_time = time.time() - start_time
 
-        best_result = result_grid.get_best_result(metric=self.objective_metric, mode=self._mode())
+        best_result = result_grid.get_best_result(
+            metric=self.objective_metric, mode=self._mode()
+        )
         best_params = best_result.config
         best_metric = best_result.metrics.get(self.objective_metric, float("-inf"))
 

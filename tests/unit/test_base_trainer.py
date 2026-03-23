@@ -4,10 +4,11 @@ Unit tests for the Base Trainer module.
 Tests the shared infrastructure used by all RL trainers (GSPO, VAPO, DAPO, etc.).
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 import torch
 import torch.nn as nn
-from unittest.mock import MagicMock, patch, AsyncMock
 
 
 class TestBaseTrainerConfig:
@@ -123,7 +124,7 @@ class TestComputeGroupAdvantages:
         # Mean is 0.5
         expected = [-0.3, -0.1, 0.1, 0.3]
 
-        for a, e in zip(advantages, expected):
+        for a, e in zip(advantages, expected, strict=False):
             assert abs(a - e) < 1e-6
 
     def test_median_baseline(self):
@@ -136,7 +137,7 @@ class TestComputeGroupAdvantages:
         # Median is 0.5
         expected = [-0.4, -0.2, 0.2, 0.4]
 
-        for a, e in zip(advantages, expected):
+        for a, e in zip(advantages, expected, strict=False):
             assert abs(a - e) < 1e-6
 
     def test_invalid_baseline(self):
@@ -191,7 +192,10 @@ class TestBaseModelManager:
 
     def test_get_dtype_fp16(self):
         """Test dtype selection for FP16."""
-        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import (
+            BaseModelManager,
+            BaseTrainerConfig,
+        )
 
         config = BaseTrainerConfig(fp16=True, bf16=False)
         manager = BaseModelManager(config)
@@ -201,7 +205,10 @@ class TestBaseModelManager:
 
     def test_get_dtype_bf16(self):
         """Test dtype selection for BF16."""
-        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import (
+            BaseModelManager,
+            BaseTrainerConfig,
+        )
 
         config = BaseTrainerConfig(fp16=False, bf16=True)
         manager = BaseModelManager(config)
@@ -211,7 +218,10 @@ class TestBaseModelManager:
 
     def test_get_dtype_fp32(self):
         """Test dtype selection for FP32."""
-        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import (
+            BaseModelManager,
+            BaseTrainerConfig,
+        )
 
         config = BaseTrainerConfig(fp16=False, bf16=False)
         manager = BaseModelManager(config)
@@ -221,7 +231,10 @@ class TestBaseModelManager:
 
     def test_lora_target_modules_gpt2(self):
         """Test LoRA target modules for GPT-2."""
-        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import (
+            BaseModelManager,
+            BaseTrainerConfig,
+        )
 
         config = BaseTrainerConfig(model_name="gpt2")
         manager = BaseModelManager(config)
@@ -232,7 +245,10 @@ class TestBaseModelManager:
 
     def test_lora_target_modules_llama(self):
         """Test LoRA target modules for LLaMA."""
-        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import (
+            BaseModelManager,
+            BaseTrainerConfig,
+        )
 
         config = BaseTrainerConfig(model_name="meta-llama/Llama-2-7b")
         manager = BaseModelManager(config)
@@ -245,7 +261,10 @@ class TestBaseModelManager:
 
     def test_lora_target_modules_custom(self):
         """Test custom LoRA target modules."""
-        from stateset_agents.training.base_trainer import BaseModelManager, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import (
+            BaseModelManager,
+            BaseTrainerConfig,
+        )
 
         config = BaseTrainerConfig(
             model_name="custom-model",
@@ -262,7 +281,10 @@ class TestBaseTrajectoryGenerator:
 
     def test_initialization_without_vllm(self):
         """Test initialization when vLLM is disabled."""
-        from stateset_agents.training.base_trainer import BaseTrajectoryGenerator, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import (
+            BaseTrainerConfig,
+            BaseTrajectoryGenerator,
+        )
 
         config = BaseTrainerConfig(use_vllm=False)
         generator = BaseTrajectoryGenerator(config)
@@ -272,7 +294,10 @@ class TestBaseTrajectoryGenerator:
 
     def test_using_vllm_property(self):
         """Test using_vllm property."""
-        from stateset_agents.training.base_trainer import BaseTrajectoryGenerator, BaseTrainerConfig
+        from stateset_agents.training.base_trainer import (
+            BaseTrainerConfig,
+            BaseTrajectoryGenerator,
+        )
 
         config = BaseTrainerConfig(use_vllm=False)
         generator = BaseTrajectoryGenerator(config)
@@ -293,13 +318,12 @@ class TestBaseTrainerMethods:
         """Test token log probability computation."""
         # Create minimal test setup
         input_ids = torch.randint(0, 100, (2, 10))
-        attention_mask = torch.ones_like(input_ids)
 
         # Mock logits output
         batch_size, seq_len = input_ids.shape
         vocab_size = 100
 
-        with patch.object(mock_model, 'forward') as mock_forward:
+        with patch.object(mock_model, "forward") as mock_forward:
             mock_output = MagicMock()
             mock_output.logits = torch.randn(batch_size, seq_len, vocab_size)
             mock_forward.return_value = mock_output
@@ -328,9 +352,7 @@ class TestBaseTrainerMethods:
         reference_probs = torch.nn.functional.softmax(reference_logits, dim=-1)
 
         kl = torch.nn.functional.kl_div(
-            current_log_probs,
-            reference_probs,
-            reduction="none"
+            current_log_probs, reference_probs, reduction="none"
         ).sum(dim=-1)
 
         assert kl.shape == (batch_size, seq_len)
@@ -352,7 +374,7 @@ class TestBaseTrainerMethods:
         for p in mock_model.parameters():
             if p.grad is not None:
                 total_norm += p.grad.norm().item() ** 2
-        total_norm = total_norm ** 0.5
+        total_norm = total_norm**0.5
 
         # After clipping, total norm should be close to max_norm
         assert total_norm <= max_norm * 1.1  # Allow small tolerance

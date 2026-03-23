@@ -5,24 +5,21 @@ This module provides sophisticated training orchestration with dynamic resource 
 fault tolerance, experiment tracking, and intelligent scheduling capabilities.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import pickle
 import shutil
-import threading
 import time
 import uuid
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
+from collections.abc import Callable
 
 try:
     import torch
-    import torch.distributed as dist
 
     TORCH_AVAILABLE = True
 except ImportError:
@@ -50,10 +47,26 @@ except ImportError:  # pragma: no cover
     psutil = None  # type: ignore[assignment]
     PSUTIL_AVAILABLE = False
 
-from stateset_agents.core.advanced_monitoring import get_monitoring_service, monitor_async_function
+from stateset_agents.core.advanced_monitoring import (
+    get_monitoring_service,
+    monitor_async_function,
+)
 from stateset_agents.core.enhanced_state_management import get_state_service
-from stateset_agents.core.error_handling import ErrorHandler, GRPOException, RetryConfig, retry_async
-from stateset_agents.core.performance_optimizer import OptimizationLevel, PerformanceOptimizer
+from stateset_agents.core.error_handling import ErrorHandler, RetryConfig, retry_async
+from stateset_agents.core.performance_optimizer import (
+    OptimizationLevel,
+    PerformanceOptimizer,
+)
+from .advanced_training_models import (
+    ResourceRequirement,
+    ResourceType,
+    SchedulingStrategy,
+    TrainingConfig,
+    TrainingJob,
+    TrainingStatus,
+    deserialize_training_job,
+    serialize_training_job,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,147 +83,15 @@ TRAINING_ORCH_EXCEPTIONS = (
 )
 
 
-class TrainingStatus(Enum):
-    """Training job status"""
-
-    PENDING = "pending"
-    QUEUED = "queued"
-    RUNNING = "running"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-class ResourceType(Enum):
-    """Resource types for training"""
-
-    CPU = "cpu"
-    GPU = "gpu"
-    MEMORY = "memory"
-    STORAGE = "storage"
-    NETWORK = "network"
-
-
-class SchedulingStrategy(Enum):
-    """Job scheduling strategies"""
-
-    FIFO = "fifo"  # First In, First Out
-    PRIORITY = "priority"  # Priority-based
-    FAIR_SHARE = "fair_share"  # Fair resource sharing
-    SHORTEST_JOB_FIRST = "shortest_job_first"  # Shortest estimated time first
-    RESOURCE_AWARE = "resource_aware"  # Resource utilization aware
-
-
-@dataclass
-class ResourceRequirement:
-    """Resource requirement specification"""
-
-    resource_type: ResourceType
-    amount: float
-    min_amount: Optional[float] = None
-    max_amount: Optional[float] = None
-    priority: int = 1  # 1 = low, 5 = high
-
-
-@dataclass
-class TrainingConfig:
-    """Comprehensive training configuration"""
-
-    # Basic configuration
-    experiment_name: str
-    agent_type: str
-    model_config: Dict[str, Any]
-    training_data: Union[str, List[str]]  # Path or list of paths
-
-    # Training parameters
-    num_epochs: int = 10
-    batch_size: int = 32
-    learning_rate: float = 1e-4
-    optimizer: str = "adamw"
-    scheduler: str = "cosine"
-
-    # GRPO specific
-    grpo_epsilon: float = 0.2
-    grpo_value_loss_coef: float = 0.5
-    grpo_entropy_coef: float = 0.01
-
-    # Resource requirements
-    resource_requirements: List[ResourceRequirement] = field(default_factory=list)
-    max_runtime: Optional[int] = None  # Maximum runtime in seconds
-
-    # Fault tolerance
-    enable_checkpointing: bool = True
-    checkpoint_frequency: int = 100  # Steps between checkpoints
-    max_retries: int = 3
-
-    # Monitoring and logging
-    enable_wandb: bool = True
-    enable_mlflow: bool = False
-    log_frequency: int = 10
-
-    # Advanced features
-    enable_early_stopping: bool = True
-    early_stopping_patience: int = 5
-    enable_model_pruning: bool = False
-    enable_quantization: bool = False
-
-
-@dataclass
-class TrainingJob:
-    """Training job definition"""
-
-    job_id: str
-    config: TrainingConfig
-    status: TrainingStatus = TrainingStatus.PENDING
-    created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
-    priority: int = 1
-    user_id: Optional[str] = None
-
-    # Runtime information
-    assigned_resources: Dict[str, Any] = field(default_factory=dict)
-    worker_nodes: List[str] = field(default_factory=list)
-    checkpoint_path: Optional[str] = None
-
-    # Progress tracking
-    current_epoch: int = 0
-    current_step: int = 0
-    metrics: Dict[str, List[float]] = field(default_factory=dict)
-
-    # Error handling
-    retry_count: int = 0
-    last_error: Optional[str] = None
-
-    @property
-    def runtime(self) -> Optional[float]:
-        """Get job runtime in seconds"""
-        if self.started_at is None:
-            return None
-        end_time = self.completed_at or time.time()
-        return end_time - self.started_at
-
-    @property
-    def estimated_completion(self) -> Optional[float]:
-        """Estimate completion time based on progress"""
-        if self.current_epoch == 0 or self.runtime is None:
-            return None
-
-        epochs_remaining = self.config.num_epochs - self.current_epoch
-        time_per_epoch = self.runtime / self.current_epoch
-        return time.time() + (epochs_remaining * time_per_epoch)
-
-
 class ResourceManager:
     """Dynamic resource allocation and management"""
 
     def __init__(self):
-        self.available_resources: Dict[ResourceType, float] = {}
-        self.allocated_resources: Dict[
-            str, Dict[ResourceType, float]
+        self.available_resources: dict[ResourceType, float] = {}
+        self.allocated_resources: dict[
+            str, dict[ResourceType, float]
         ] = {}  # job_id -> resources
-        self.resource_locks: Dict[ResourceType, asyncio.Lock] = {}
+        self.resource_locks: dict[ResourceType, asyncio.Lock] = {}
 
         # Initialize locks
         for resource_type in ResourceType:
@@ -222,30 +103,29 @@ class ResourceManager:
     def _detect_resources(self):
         """Detect available system resources"""
         try:
-            import psutil
+            if PSUTIL_AVAILABLE and psutil is not None:
+                self.available_resources[ResourceType.CPU] = float(
+                    psutil.cpu_count() or 0.0
+                )
 
-            # CPU cores
-            self.available_resources[ResourceType.CPU] = psutil.cpu_count()
+                memory_gb = psutil.virtual_memory().total / (1024**3)
+                self.available_resources[ResourceType.MEMORY] = memory_gb
 
-            # Memory in GB
-            memory_gb = psutil.virtual_memory().total / (1024**3)
-            self.available_resources[ResourceType.MEMORY] = memory_gb
+                disk_gb = psutil.disk_usage("/").free / (1024**3)
+                self.available_resources[ResourceType.STORAGE] = disk_gb
 
-            # Storage in GB (available space)
-            disk_gb = psutil.disk_usage("/").free / (1024**3)
-            self.available_resources[ResourceType.STORAGE] = disk_gb
+                self.available_resources[ResourceType.NETWORK] = 1000.0
+            else:
+                raise RuntimeError("psutil unavailable")
 
-            # Network bandwidth (simplified)
-            self.available_resources[ResourceType.NETWORK] = 1000.0  # Mbps
-
-            # GPU detection
             if TORCH_AVAILABLE and torch.cuda.is_available():
-                self.available_resources[ResourceType.GPU] = torch.cuda.device_count()
+                self.available_resources[ResourceType.GPU] = float(
+                    torch.cuda.device_count()
+                )
             else:
                 self.available_resources[ResourceType.GPU] = 0.0
 
-        except ImportError:
-            # Fallback values
+        except TRAINING_ORCH_EXCEPTIONS:
             self.available_resources = {
                 ResourceType.CPU: 4.0,
                 ResourceType.GPU: 0.0,
@@ -254,7 +134,7 @@ class ResourceManager:
                 ResourceType.NETWORK: 100.0,
             }
 
-    async def can_allocate(self, requirements: List[ResourceRequirement]) -> bool:
+    async def can_allocate(self, requirements: list[ResourceRequirement]) -> bool:
         """Check if resources can be allocated"""
         for req in requirements:
             async with self.resource_locks[req.resource_type]:
@@ -270,7 +150,7 @@ class ResourceManager:
         return True
 
     async def allocate_resources(
-        self, job_id: str, requirements: List[ResourceRequirement]
+        self, job_id: str, requirements: list[ResourceRequirement]
     ) -> bool:
         """Allocate resources for a job"""
         # Check availability first
@@ -291,7 +171,7 @@ class ResourceManager:
         if job_id in self.allocated_resources:
             del self.allocated_resources[job_id]
 
-    def get_resource_utilization(self) -> Dict[ResourceType, float]:
+    def get_resource_utilization(self) -> dict[ResourceType, float]:
         """Get current resource utilization"""
         utilization = {}
 
@@ -317,9 +197,9 @@ class JobScheduler:
         self, strategy: SchedulingStrategy = SchedulingStrategy.RESOURCE_AWARE
     ):
         self.strategy = strategy
-        self.job_queue: List[TrainingJob] = []
-        self.running_jobs: Dict[str, TrainingJob] = {}
-        self.completed_jobs: Dict[str, TrainingJob] = {}
+        self.job_queue: list[TrainingJob] = []
+        self.running_jobs: dict[str, TrainingJob] = {}
+        self.completed_jobs: dict[str, TrainingJob] = {}
         self.queue_lock = asyncio.Lock()
 
     async def submit_job(self, job: TrainingJob):
@@ -331,7 +211,7 @@ class JobScheduler:
 
     async def get_next_job(
         self, resource_manager: ResourceManager
-    ) -> Optional[TrainingJob]:
+    ) -> TrainingJob | None:
         """Get the next job to run"""
         async with self.queue_lock:
             for i, job in enumerate(self.job_queue):
@@ -371,7 +251,7 @@ class JobScheduler:
 
         return False
 
-    def get_queue_status(self) -> Dict[str, Any]:
+    def get_queue_status(self) -> dict[str, Any]:
         """Get scheduler status"""
         return {
             "queued_jobs": len(self.job_queue),
@@ -387,7 +267,7 @@ class ExperimentTracker:
     def __init__(self, enable_wandb: bool = True, enable_mlflow: bool = False):
         self.enable_wandb = enable_wandb and WANDB_AVAILABLE
         self.enable_mlflow = enable_mlflow and MLFLOW_AVAILABLE
-        self.experiments: Dict[str, Dict[str, Any]] = {}
+        self.experiments: dict[str, dict[str, Any]] = {}
 
     async def start_experiment(self, job: TrainingJob) -> str:
         """Start tracking an experiment"""
@@ -425,7 +305,7 @@ class ExperimentTracker:
         return experiment_id
 
     async def log_metrics(
-        self, experiment_id: str, metrics: Dict[str, float], step: int
+        self, experiment_id: str, metrics: dict[str, float], step: int
     ):
         """Log metrics for an experiment"""
         if experiment_id not in self.experiments:
@@ -479,7 +359,7 @@ class ExperimentTracker:
                 logger.error(f"Failed to log artifact to MLflow: {e}")
 
     async def finish_experiment(
-        self, experiment_id: str, final_metrics: Dict[str, float] = None
+        self, experiment_id: str, final_metrics: dict[str, float] = None
     ):
         """Finish tracking an experiment"""
         if experiment_id not in self.experiments:
@@ -515,7 +395,7 @@ class TrainingWorker:
 
     def __init__(self, worker_id: str):
         self.worker_id = worker_id
-        self.current_job: Optional[TrainingJob] = None
+        self.current_job: TrainingJob | None = None
         self.error_handler = ErrorHandler()
         self.performance_optimizer = PerformanceOptimizer(OptimizationLevel.BALANCED)
         self.monitoring = get_monitoring_service()
@@ -525,7 +405,7 @@ class TrainingWorker:
         self,
         job: TrainingJob,
         experiment_tracker: ExperimentTracker,
-        checkpoint_callback: Optional[Callable] = None,
+        checkpoint_callback: Callable | None = None,
     ) -> bool:
         """Execute a training job"""
         self.current_job = job
@@ -728,7 +608,7 @@ class TrainingWorker:
         job: TrainingJob,
         experiment_tracker: ExperimentTracker,
         experiment_id: str,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Train for one epoch"""
 
         # Simulate training steps
@@ -806,7 +686,7 @@ class TrainingWorker:
 
         logger.info(f"Model saved: {model_path}")
 
-    def _compute_final_metrics(self, job: TrainingJob) -> Dict[str, float]:
+    def _compute_final_metrics(self, job: TrainingJob) -> dict[str, float]:
         """Compute final training metrics"""
         return {
             "final_epoch": job.current_epoch,
@@ -836,8 +716,9 @@ class AdvancedTrainingOrchestrator:
         self._background_tasks_enabled = start_background_tasks
 
         # Worker management
-        self.workers: Dict[str, TrainingWorker] = {}
-        self.worker_tasks: Dict[str, asyncio.Task] = {}
+        self.workers: dict[str, TrainingWorker] = {}
+        self.worker_tasks: dict[str, asyncio.Task] = {}
+        self.worker_jobs: dict[str, TrainingJob] = {}
 
         # State management
         self.state_service = get_state_service()
@@ -878,7 +759,7 @@ class AdvancedTrainingOrchestrator:
 
         # Store job in state
         await self.state_service.state_manager.set(
-            f"training_job:{job_id}", job.__dict__
+            f"training_job:{job_id}", serialize_training_job(job)
         )
 
         # Submit to scheduler
@@ -887,7 +768,7 @@ class AdvancedTrainingOrchestrator:
         logger.info(f"Training job submitted: {job_id}")
         return job_id
 
-    async def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
+    async def get_job_status(self, job_id: str) -> dict[str, Any] | None:
         """Get training job status"""
         self._start_background_tasks()
         job_data = await self.state_service.state_manager.get(f"training_job:{job_id}")
@@ -895,7 +776,7 @@ class AdvancedTrainingOrchestrator:
             return None
 
         # Convert back to TrainingJob object for runtime calculation
-        job = TrainingJob(**job_data)
+        job = deserialize_training_job(job_data)
 
         return {
             "job_id": job_id,
@@ -924,14 +805,15 @@ class AdvancedTrainingOrchestrator:
                 f"training_job:{job_id}"
             )
             if job_data:
-                job_data["status"] = TrainingStatus.CANCELLED.value
+                job = deserialize_training_job(job_data)
+                job.status = TrainingStatus.CANCELLED
                 await self.state_service.state_manager.set(
-                    f"training_job:{job_id}", job_data
+                    f"training_job:{job_id}", serialize_training_job(job)
                 )
 
         return success
 
-    async def get_system_status(self) -> Dict[str, Any]:
+    async def get_system_status(self) -> dict[str, Any]:
         """Get orchestrator system status"""
         self._start_background_tasks()
         resource_utilization = self.resource_manager.get_resource_utilization()
@@ -988,9 +870,17 @@ class AdvancedTrainingOrchestrator:
         """Start a training job"""
         worker_id = f"worker_{job.job_id}"
         worker = TrainingWorker(worker_id)
+        job.status = TrainingStatus.RUNNING
+        if job.started_at is None:
+            job.started_at = time.time()
 
         self.workers[worker_id] = worker
+        self.worker_jobs[worker_id] = job
         self.scheduler.running_jobs[job.job_id] = job
+
+        await self.state_service.state_manager.set(
+            f"training_job:{job.job_id}", serialize_training_job(job)
+        )
 
         # Create and start worker task
         task = asyncio.create_task(worker.execute_job(job, self.experiment_tracker))
@@ -1007,9 +897,8 @@ class AdvancedTrainingOrchestrator:
                 completed_workers.append(worker_id)
 
                 # Get job and deallocate resources
-                worker = self.workers[worker_id]
-                if worker.current_job:
-                    job = worker.current_job
+                job = self.worker_jobs.get(worker_id)
+                if job is not None:
                     await self.resource_manager.deallocate_resources(job.job_id)
 
                     # Move job to completed
@@ -1019,13 +908,14 @@ class AdvancedTrainingOrchestrator:
 
                     # Update job in state
                     await self.state_service.state_manager.set(
-                        f"training_job:{job.job_id}", job.__dict__
+                        f"training_job:{job.job_id}", serialize_training_job(job)
                     )
 
         # Remove completed workers
         for worker_id in completed_workers:
             del self.workers[worker_id]
             del self.worker_tasks[worker_id]
+            self.worker_jobs.pop(worker_id, None)
 
     async def _monitoring_loop(self):
         """Background monitoring loop"""
@@ -1076,7 +966,7 @@ class AdvancedTrainingOrchestrator:
 
 
 # Global orchestrator instance
-_orchestrator: Optional[AdvancedTrainingOrchestrator] = None
+_orchestrator: AdvancedTrainingOrchestrator | None = None
 
 
 def get_training_orchestrator() -> AdvancedTrainingOrchestrator:

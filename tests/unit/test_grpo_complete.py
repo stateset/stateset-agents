@@ -9,21 +9,32 @@ Tests cover:
 - KL divergence regularization
 """
 
-import asyncio
+from unittest.mock import Mock
+
+import numpy as np
 import pytest
 import torch
-import numpy as np
-from unittest.mock import Mock, patch, MagicMock
 
 # Import framework components
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.computational_engine import (
+    ComputationalGRPOEngine,
+    ComputationalTrajectory,
+)
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import create_customer_service_reward
-from stateset_agents.core.trajectory import MultiTurnTrajectory, ConversationTurn, TrajectoryGroup
-from stateset_agents.core.value_function import ValueFunction, ValueHead, create_value_function
-from stateset_agents.core.computational_engine import ComputationalGRPOEngine, ComputationalTrajectory
-from stateset_agents.training.trainer import MultiTurnGRPOTrainer
+from stateset_agents.core.trajectory import (
+    ConversationTurn,
+    MultiTurnTrajectory,
+    TrajectoryGroup,
+)
+from stateset_agents.core.value_function import (
+    ValueFunction,
+    ValueHead,
+    create_value_function,
+)
 from stateset_agents.training.config import TrainingConfig
+from stateset_agents.training.trainer import MultiTurnGRPOTrainer
 
 
 class TestValueFunction:
@@ -59,7 +70,7 @@ class TestValueFunction:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model, gamma=0.99, gae_lambda=0.95)
 
@@ -72,14 +83,16 @@ class TestValueFunction:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = ValueFunction(mock_model)
 
         # Test rewards
         group_rewards = [0.8, 0.5, 0.9, 0.6, 0.7]
 
-        advantages = value_fn.compute_grpo_advantages(group_rewards, baseline_type="group_mean")
+        advantages = value_fn.compute_grpo_advantages(
+            group_rewards, baseline_type="group_mean"
+        )
 
         # Check shape
         assert len(advantages) == len(group_rewards)
@@ -96,10 +109,12 @@ class TestValueFunction:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         # Disable normalization to test raw GAE math
-        value_fn = ValueFunction(mock_model, gamma=0.99, gae_lambda=0.95, normalize_advantages=False)
+        value_fn = ValueFunction(
+            mock_model, gamma=0.99, gae_lambda=0.95, normalize_advantages=False
+        )
 
         # Create test data
         rewards = [1.0, 0.5, 0.8, 0.3]
@@ -119,7 +134,7 @@ class TestValueFunction:
         mock_model = Mock()
         mock_model.config = Mock()
         mock_model.config.hidden_size = 768
-        mock_model.device = torch.device('cpu')
+        mock_model.device = torch.device("cpu")
 
         value_fn = create_value_function(mock_model, gamma=0.95, gae_lambda=0.90)
 
@@ -242,7 +257,9 @@ class TestGRPOTrainer:
         agent = MultiTurnAgent(config)
         await agent.initialize()
 
-        env = ConversationEnvironment(scenarios=[{"topic": "test", "context": "test"}], max_turns=2)
+        env = ConversationEnvironment(
+            scenarios=[{"topic": "test", "context": "test"}], max_turns=2
+        )
         reward_fn = create_customer_service_reward()
 
         # Test group_mean baseline
@@ -289,7 +306,9 @@ class TestGRPOTrainer:
 
         await trainer.initialize()
 
-        trajectory_groups = await trainer.generate_trajectories(scenarios, num_generations=2)
+        trajectory_groups = await trainer.generate_trajectories(
+            scenarios, num_generations=2
+        )
 
         assert len(trajectory_groups) > 0
         assert all(len(g.trajectories) > 0 for g in trajectory_groups)
@@ -301,7 +320,9 @@ class TestGRPOTrainer:
         agent = MultiTurnAgent(config)
         await agent.initialize()
 
-        env = ConversationEnvironment(scenarios=[{"topic": "test", "context": "test"}], max_turns=2)
+        env = ConversationEnvironment(
+            scenarios=[{"topic": "test", "context": "test"}], max_turns=2
+        )
         reward_fn = create_customer_service_reward()
 
         # Enable reference model and KL penalty
@@ -337,7 +358,9 @@ class TestGRPOTrainer:
         agent = MultiTurnAgent(config)
         await agent.initialize()
 
-        env = ConversationEnvironment(scenarios=[{"topic": "test", "context": "test"}], max_turns=2)
+        env = ConversationEnvironment(
+            scenarios=[{"topic": "test", "context": "test"}], max_turns=2
+        )
         reward_fn = create_customer_service_reward()
 
         train_config = TrainingConfig(
@@ -375,7 +398,9 @@ class TestPolicyGradientComputation:
         agent = MultiTurnAgent(config)
         await agent.initialize()
 
-        env = ConversationEnvironment(scenarios=[{"topic": "test", "context": "test"}], max_turns=2)
+        env = ConversationEnvironment(
+            scenarios=[{"topic": "test", "context": "test"}], max_turns=2
+        )
         reward_fn = create_customer_service_reward()
 
         train_config = TrainingConfig()
@@ -405,7 +430,9 @@ class TestPolicyGradientComputation:
         agent = MultiTurnAgent(config)
         await agent.initialize()
 
-        env = ConversationEnvironment(scenarios=[{"topic": "test", "context": "test"}], max_turns=2)
+        env = ConversationEnvironment(
+            scenarios=[{"topic": "test", "context": "test"}], max_turns=2
+        )
         reward_fn = create_customer_service_reward()
 
         # Set explicit clip ratio
@@ -470,7 +497,9 @@ class TestIntegration:
         await trainer.initialize()
 
         # Generate trajectories
-        trajectory_groups = await trainer.generate_trajectories(scenarios, num_generations=2)
+        trajectory_groups = await trainer.generate_trajectories(
+            scenarios, num_generations=2
+        )
 
         assert len(trajectory_groups) > 0
 

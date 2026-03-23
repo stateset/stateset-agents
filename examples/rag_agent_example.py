@@ -25,10 +25,9 @@ import argparse
 import asyncio
 import hashlib
 import logging
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 
@@ -54,8 +53,8 @@ class Document:
 
     id: str
     content: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    embedding: Optional[List[float]] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    embedding: list[float] | None = None
 
     @classmethod
     def from_text(cls, text: str, source: str = "unknown") -> "Document":
@@ -82,17 +81,17 @@ class RetrievalResult:
 class VectorStore:
     """Abstract vector store interface for RAG retrieval."""
 
-    async def add_documents(self, documents: List[Document]) -> None:
+    async def add_documents(self, documents: list[Document]) -> None:
         """Add documents to the vector store."""
         raise NotImplementedError
 
     async def search(
-        self, query: str, top_k: int = 5, filter_metadata: Optional[Dict] = None
-    ) -> List[RetrievalResult]:
+        self, query: str, top_k: int = 5, filter_metadata: dict | None = None
+    ) -> list[RetrievalResult]:
         """Search for similar documents."""
         raise NotImplementedError
 
-    async def delete(self, document_ids: List[str]) -> None:
+    async def delete(self, document_ids: list[str]) -> None:
         """Delete documents by ID."""
         raise NotImplementedError
 
@@ -104,7 +103,7 @@ class ChromaVectorStore(VectorStore):
         self,
         collection_name: str = "rag_documents",
         embedding_model: str = "all-MiniLM-L6-v2",
-        persist_directory: Optional[str] = None,
+        persist_directory: str | None = None,
     ):
         """Initialize ChromaDB vector store.
 
@@ -116,10 +115,10 @@ class ChromaVectorStore(VectorStore):
         try:
             import chromadb
             from chromadb.utils import embedding_functions
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "ChromaDB is required for RAG. Install with: pip install chromadb"
-            )
+            ) from err
 
         self.embedding_model = embedding_model
 
@@ -146,7 +145,7 @@ class ChromaVectorStore(VectorStore):
             f"with {self.collection.count()} documents"
         )
 
-    async def add_documents(self, documents: List[Document]) -> None:
+    async def add_documents(self, documents: list[Document]) -> None:
         """Add documents to ChromaDB."""
         if not documents:
             return
@@ -164,8 +163,8 @@ class ChromaVectorStore(VectorStore):
         logger.info(f"Added {len(documents)} documents to vector store")
 
     async def search(
-        self, query: str, top_k: int = 5, filter_metadata: Optional[Dict] = None
-    ) -> List[RetrievalResult]:
+        self, query: str, top_k: int = 5, filter_metadata: dict | None = None
+    ) -> list[RetrievalResult]:
         """Search ChromaDB for similar documents."""
         results = self.collection.query(
             query_texts=[query],
@@ -180,7 +179,7 @@ class ChromaVectorStore(VectorStore):
                 results["ids"][0],
                 results["documents"][0],
                 results["metadatas"][0],
-                results["distances"][0],
+                results["distances"][0], strict=False,
             )
         ):
             # Convert distance to similarity score (cosine distance to similarity)
@@ -196,7 +195,7 @@ class ChromaVectorStore(VectorStore):
 
         return retrieval_results
 
-    async def delete(self, document_ids: List[str]) -> None:
+    async def delete(self, document_ids: list[str]) -> None:
         """Delete documents from ChromaDB."""
         self.collection.delete(ids=document_ids)
 
@@ -216,21 +215,21 @@ class FAISSVectorStore(VectorStore):
         try:
             import faiss
             from sentence_transformers import SentenceTransformer
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "FAISS and sentence-transformers required. "
                 "Install with: pip install faiss-cpu sentence-transformers"
-            )
+            ) from err
 
         self.model = SentenceTransformer(embedding_model)
         self.dimension = self.model.get_sentence_embedding_dimension()
         self.index = faiss.IndexFlatIP(self.dimension)  # Inner product for cosine
-        self.documents: Dict[int, Document] = {}
+        self.documents: dict[int, Document] = {}
         self._next_id = 0
 
         logger.info(f"Initialized FAISS index with dimension {self.dimension}")
 
-    async def add_documents(self, documents: List[Document]) -> None:
+    async def add_documents(self, documents: list[Document]) -> None:
         """Add documents to FAISS index."""
         import numpy as np
 
@@ -252,8 +251,8 @@ class FAISSVectorStore(VectorStore):
         logger.info(f"Added {len(documents)} documents to FAISS index")
 
     async def search(
-        self, query: str, top_k: int = 5, filter_metadata: Optional[Dict] = None
-    ) -> List[RetrievalResult]:
+        self, query: str, top_k: int = 5, filter_metadata: dict | None = None
+    ) -> list[RetrievalResult]:
         """Search FAISS index for similar documents."""
         import numpy as np
 
@@ -266,7 +265,7 @@ class FAISSVectorStore(VectorStore):
         )
 
         results = []
-        for rank, (score, idx) in enumerate(zip(scores[0], indices[0])):
+        for rank, (score, idx) in enumerate(zip(scores[0], indices[0], strict=False)):
             if idx == -1:
                 continue
 
@@ -285,7 +284,7 @@ class FAISSVectorStore(VectorStore):
 
         return results
 
-    async def delete(self, document_ids: List[str]) -> None:
+    async def delete(self, document_ids: list[str]) -> None:
         """Delete documents (not efficiently supported in FAISS)."""
         logger.warning("FAISS deletion requires index rebuild - not implemented")
 
@@ -300,7 +299,7 @@ def chunk_text(
     chunk_size: int = 500,
     chunk_overlap: int = 50,
     separator: str = "\n\n",
-) -> List[str]:
+) -> list[str]:
     """Split text into overlapping chunks for better retrieval.
 
     Args:
@@ -357,7 +356,11 @@ def chunk_text(
         overlapped_chunks = [chunks[0]]
         for i in range(1, len(chunks)):
             prev_chunk = chunks[i - 1]
-            overlap_text = prev_chunk[-chunk_overlap:] if len(prev_chunk) > chunk_overlap else prev_chunk
+            overlap_text = (
+                prev_chunk[-chunk_overlap:]
+                if len(prev_chunk) > chunk_overlap
+                else prev_chunk
+            )
             overlapped_chunks.append(overlap_text + " " + chunks[i])
         chunks = overlapped_chunks
 
@@ -366,9 +369,9 @@ def chunk_text(
 
 def load_documents_from_directory(
     directory: str,
-    extensions: List[str] = [".txt", ".md", ".py"],
+    extensions: list[str] | None = None,
     chunk_size: int = 500,
-) -> List[Document]:
+) -> list[Document]:
     """Load and chunk documents from a directory.
 
     Args:
@@ -379,6 +382,9 @@ def load_documents_from_directory(
     Returns:
         List of Document objects
     """
+    if extensions is None:
+        extensions = [".txt", ".md", ".py"]
+
     documents = []
     directory = Path(directory)
 
@@ -478,8 +484,8 @@ Context will be provided in <context> tags before each question."""
         self.include_sources = include_sources
 
     async def retrieve(
-        self, query: str, filter_metadata: Optional[Dict] = None
-    ) -> List[RetrievalResult]:
+        self, query: str, filter_metadata: dict | None = None
+    ) -> list[RetrievalResult]:
         """Retrieve relevant documents for a query.
 
         Args:
@@ -505,7 +511,7 @@ Context will be provided in <context> tags before each question."""
 
         return filtered
 
-    def _format_context(self, results: List[RetrievalResult]) -> str:
+    def _format_context(self, results: list[RetrievalResult]) -> str:
         """Format retrieved documents as context for the LLM."""
         if not results:
             return "<context>\nNo relevant documents found.\n</context>"
@@ -520,7 +526,7 @@ Context will be provided in <context> tags before each question."""
 
         return "\n".join(context_parts)
 
-    def _format_sources(self, results: List[RetrievalResult]) -> List[Dict[str, Any]]:
+    def _format_sources(self, results: list[RetrievalResult]) -> list[dict[str, Any]]:
         """Format source citations."""
         sources = []
         seen = set()
@@ -529,22 +535,24 @@ Context will be provided in <context> tags before each question."""
             source = result.document.metadata.get("source", "unknown")
             if source not in seen:
                 seen.add(source)
-                sources.append({
-                    "source": source,
-                    "relevance_score": round(result.score, 3),
-                    "excerpt": result.document.content[:200] + "..."
-                    if len(result.document.content) > 200
-                    else result.document.content,
-                })
+                sources.append(
+                    {
+                        "source": source,
+                        "relevance_score": round(result.score, 3),
+                        "excerpt": result.document.content[:200] + "..."
+                        if len(result.document.content) > 200
+                        else result.document.content,
+                    }
+                )
 
         return sources
 
     async def query(
         self,
         question: str,
-        filter_metadata: Optional[Dict] = None,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        filter_metadata: dict | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Answer a question using RAG.
 
         Args:
@@ -578,7 +586,7 @@ Context will be provided in <context> tags before each question."""
 
         return result
 
-    async def ingest_documents(self, documents: List[Document]) -> int:
+    async def ingest_documents(self, documents: list[Document]) -> int:
         """Add documents to the knowledge base.
 
         Args:
@@ -743,7 +751,9 @@ async def main():
             if result.get("sources"):
                 print("\nSOURCES:")
                 for source in result["sources"]:
-                    print(f"  - {source['source']} (relevance: {source['relevance_score']})")
+                    print(
+                        f"  - {source['source']} (relevance: {source['relevance_score']})"
+                    )
 
         except KeyboardInterrupt:
             break

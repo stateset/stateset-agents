@@ -7,7 +7,6 @@ jobs on RunPod cloud infrastructure with dynamic resource scaling.
 
 import asyncio
 import base64
-import io
 import json
 import logging
 import os
@@ -15,10 +14,7 @@ import tarfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-import requests
+from typing import Any
 
 try:
     import runpod
@@ -49,8 +45,8 @@ class RunPodConfig:
     volume_size: int = 100  # GB
 
     # Environment
-    environment_variables: Dict[str, str] = field(default_factory=dict)
-    ports: List[str] = field(default_factory=lambda: ["8888/http", "6006/http"])
+    environment_variables: dict[str, str] = field(default_factory=dict)
+    ports: list[str] = field(default_factory=lambda: ["8888/http", "6006/http"])
 
     # Scaling
     min_pods: int = 1
@@ -61,7 +57,7 @@ class RunPodConfig:
     deployment_timeout: int = 600  # seconds
     max_retries: int = 3
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "api_key": "***",  # Don't expose API key
             "endpoint_id": self.endpoint_id,
@@ -85,13 +81,13 @@ class DeploymentStatus:
 
     deployment_id: str
     status: str
-    pods: List[Dict[str, Any]] = field(default_factory=list)
+    pods: list[dict[str, Any]] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    logs: List[str] = field(default_factory=list)
+    metrics: dict[str, Any] = field(default_factory=dict)
+    logs: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "deployment_id": self.deployment_id,
             "status": self.status,
@@ -111,7 +107,7 @@ class RunPodDeploymentManager:
     def __init__(
         self,
         config: RunPodConfig,
-        monitoring_service: Optional[MonitoringService] = None,
+        monitoring_service: MonitoringService | None = None,
     ):
         if not RUNPOD_AVAILABLE:
             raise ImportError(
@@ -125,8 +121,8 @@ class RunPodDeploymentManager:
         runpod.api_key = self.config.api_key
 
         # Deployment tracking
-        self.deployments: Dict[str, DeploymentStatus] = {}
-        self.active_pods: Dict[str, Dict[str, Any]] = {}
+        self.deployments: dict[str, DeploymentStatus] = {}
+        self.active_pods: dict[str, dict[str, Any]] = {}
 
         # Metrics
         self.deployment_count = 0
@@ -136,8 +132,8 @@ class RunPodDeploymentManager:
         self,
         training_config: TrainingConfig,
         distributed_config: DistributedConfig,
-        code_bundle: Optional[str] = None,
-        requirements: Optional[List[str]] = None,
+        code_bundle: str | None = None,
+        requirements: list[str] | None = None,
     ) -> str:
         """
         Deploy a GRPO training job to RunPod
@@ -193,9 +189,9 @@ class RunPodDeploymentManager:
         self,
         training_config: TrainingConfig,
         distributed_config: DistributedConfig,
-        code_bundle: Optional[str] = None,
-        requirements: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        code_bundle: str | None = None,
+        requirements: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Prepare deployment configuration"""
 
         # Environment variables
@@ -231,8 +227,8 @@ class RunPodDeploymentManager:
         }
 
     async def _launch_pods(
-        self, deployment_config: Dict[str, Any], num_pods: int
-    ) -> List[Dict[str, Any]]:
+        self, deployment_config: dict[str, Any], num_pods: int
+    ) -> list[dict[str, Any]]:
         """Launch RunPod instances"""
         pods = []
 
@@ -256,7 +252,7 @@ class RunPodDeploymentManager:
 
         return pods
 
-    async def _launch_single_pod(self, pod_config: Dict[str, Any]) -> Dict[str, Any]:
+    async def _launch_single_pod(self, pod_config: dict[str, Any]) -> dict[str, Any]:
         """Launch a single RunPod instance"""
         for attempt in range(self.config.max_retries):
             try:
@@ -356,7 +352,7 @@ class RunPodDeploymentManager:
 
             await asyncio.sleep(30)  # Check every 30 seconds
 
-    async def _collect_pod_metrics(self, pod_id: str) -> Optional[Dict[str, Any]]:
+    async def _collect_pod_metrics(self, pod_id: str) -> dict[str, Any] | None:
         """Collect metrics from a pod"""
         try:
             pod = runpod.get_pod(pod_id)
@@ -405,7 +401,7 @@ class RunPodDeploymentManager:
 
     async def scale_deployment(
         self, deployment_id: str, target_pods: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Scale deployment up or down"""
         if deployment_id not in self.deployments:
             raise ValueError(f"Deployment {deployment_id} not found")
@@ -437,7 +433,7 @@ class RunPodDeploymentManager:
 
     async def _scale_up(
         self, deployment: DeploymentStatus, num_pods: int
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Scale up deployment"""
         # Get base configuration from existing pods
         if not deployment.pods:
@@ -454,7 +450,7 @@ class RunPodDeploymentManager:
         }
 
         new_pods = []
-        for i in range(num_pods):
+        for _i in range(num_pods):
             pod = await self._launch_single_pod(base_config)
             new_pods.append(pod)
 
@@ -471,14 +467,14 @@ class RunPodDeploymentManager:
             except Exception as e:
                 logger.error(f"Failed to terminate pod {pod['id']}: {e}")
 
-    async def get_deployment_status(self, deployment_id: str) -> Dict[str, Any]:
+    async def get_deployment_status(self, deployment_id: str) -> dict[str, Any]:
         """Get deployment status"""
         if deployment_id not in self.deployments:
             raise ValueError(f"Deployment {deployment_id} not found")
 
         return self.deployments[deployment_id].to_dict()
 
-    async def get_deployment_logs(self, deployment_id: str) -> List[str]:
+    async def get_deployment_logs(self, deployment_id: str) -> list[str]:
         """Get deployment logs"""
         if deployment_id not in self.deployments:
             raise ValueError(f"Deployment {deployment_id} not found")
@@ -495,7 +491,7 @@ class RunPodDeploymentManager:
 
         return all_logs
 
-    async def terminate_deployment(self, deployment_id: str) -> Dict[str, Any]:
+    async def terminate_deployment(self, deployment_id: str) -> dict[str, Any]:
         """Terminate a deployment"""
         if deployment_id not in self.deployments:
             raise ValueError(f"Deployment {deployment_id} not found")
@@ -521,7 +517,7 @@ class RunPodDeploymentManager:
             "terminated_pods": terminated_pods,
         }
 
-    def get_cost_summary(self) -> Dict[str, Any]:
+    def get_cost_summary(self) -> dict[str, Any]:
         """Get cost summary for all deployments"""
         total_cost = 0.0
         active_deployments = 0
@@ -544,7 +540,7 @@ class RunPodDeploymentManager:
 
 
 # Utility functions
-def create_code_bundle(source_dir: str, output_path: Optional[str] = None) -> str:
+def create_code_bundle(source_dir: str, output_path: str | None = None) -> str:
     """Create a code bundle for deployment"""
     if output_path is None:
         output_path = (
@@ -580,9 +576,9 @@ def get_runpod_config_from_env() -> RunPodConfig:
 async def deploy_grpo_training(
     training_config: TrainingConfig,
     distributed_config: DistributedConfig,
-    runpod_config: Optional[RunPodConfig] = None,
-    source_dir: Optional[str] = None,
-    requirements: Optional[List[str]] = None,
+    runpod_config: RunPodConfig | None = None,
+    source_dir: str | None = None,
+    requirements: list[str] | None = None,
 ) -> str:
     """
     Convenience function to deploy GRPO training to RunPod

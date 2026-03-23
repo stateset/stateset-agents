@@ -5,7 +5,6 @@ Tests cover multi-turn conversation training, trajectory handling,
 and GRPO-specific training components.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -28,11 +27,13 @@ class TestMultiTurnGRPOTrainer:
         """Create a mock environment."""
         env = MagicMock()
         env.reset = AsyncMock(return_value={"state": "initial"})
-        env.step = AsyncMock(return_value={
-            "state": {"step": 1},
-            "reward": 0.5,
-            "done": False,
-        })
+        env.step = AsyncMock(
+            return_value={
+                "state": {"step": 1},
+                "reward": 0.5,
+                "done": False,
+            }
+        )
         return env
 
     @pytest.fixture
@@ -60,6 +61,7 @@ class TestMultiTurnGRPOTrainer:
     def trainer(self, mock_agent, mock_environment, mock_reward_fn, mock_config):
         """Create a MultiTurnGRPOTrainer for testing."""
         from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
+
         return MultiTurnGRPOTrainer(
             agent=mock_agent,
             environment=mock_environment,
@@ -92,8 +94,11 @@ class TestMultiTurnGRPOTrainer:
     @pytest.mark.asyncio
     async def test_trainer_initialize(self, trainer, mock_agent):
         """Test trainer initialization."""
-        with patch("training.multi_turn_trainer.require_torch") as mock_torch, \
-             patch("training.multi_turn_trainer.require_transformers"):
+        with patch(
+            "stateset_agents.training.multi_turn_trainer.require_torch"
+        ) as mock_torch, patch(
+            "stateset_agents.training.multi_turn_trainer.require_transformers"
+        ):
             mock_torch.return_value = MagicMock()
 
             # Mock optimizer setup
@@ -138,6 +143,38 @@ class TestMultiTurnGRPOTrainer:
             state["scheduler_state_dict"]
         )
 
+    @pytest.mark.asyncio
+    async def test_trainer_save_checkpoint_without_optimizer(self, tmp_path):
+        """Checkpoint saves should still work before optimizer setup."""
+        from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
+
+        agent = MagicMock()
+        agent.model = MagicMock()
+        agent.tokenizer = MagicMock()
+
+        config = MagicMock()
+        config.output_dir = str(tmp_path)
+
+        trainer = MultiTurnGRPOTrainer(
+            agent=agent,
+            environment=MagicMock(),
+            config=config,
+        )
+
+        with patch(
+            "stateset_agents.training.multi_turn_trainer.require_torch"
+        ) as mock_torch, patch(
+            "stateset_agents.training.multi_turn_trainer.notify_checkpoint_saved",
+            new=AsyncMock(),
+        ):
+            torch_module = MagicMock()
+            mock_torch.return_value = torch_module
+
+            await trainer.save_checkpoint(checkpoint_name="checkpoint")
+
+        saved_state = torch_module.save.call_args.args[0]
+        assert "optimizer_state_dict" not in saved_state
+
 
 class TestTrainerOptimizer:
     """Test trainer optimizer setup."""
@@ -149,9 +186,9 @@ class TestTrainerOptimizer:
 
         mock_agent = MagicMock()
         mock_agent.model = MagicMock()
-        mock_agent.model.parameters = MagicMock(return_value=[
-            MagicMock(requires_grad=True)
-        ])
+        mock_agent.model.parameters = MagicMock(
+            return_value=[MagicMock(requires_grad=True)]
+        )
 
         config = MagicMock()
         config.learning_rate = 1e-4
@@ -174,7 +211,10 @@ class TestTrajectoryHandling:
 
     def test_multi_turn_trajectory_creation(self):
         """Test creating multi-turn trajectories."""
-        from stateset_agents.core.trajectory import MultiTurnTrajectory, ConversationTurn
+        from stateset_agents.core.trajectory import (
+            ConversationTurn,
+            MultiTurnTrajectory,
+        )
 
         trajectory = MultiTurnTrajectory(trajectory_id="test_123")
 
@@ -198,7 +238,10 @@ class TestTrajectoryHandling:
 
     def test_trajectory_average_reward(self):
         """Test trajectory average reward calculation."""
-        from stateset_agents.core.trajectory import MultiTurnTrajectory, ConversationTurn
+        from stateset_agents.core.trajectory import (
+            ConversationTurn,
+            MultiTurnTrajectory,
+        )
 
         trajectory = MultiTurnTrajectory()
         trajectory.add_turn(ConversationTurn("msg1", "resp1", 0.5))
@@ -211,6 +254,7 @@ class TestTrajectoryHandling:
 def test_multi_turn_trainer_uses_environment_scenarios():
     """Trainer should prefer environment scenarios when available."""
     from types import SimpleNamespace
+
     from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
     env = MagicMock()
@@ -243,6 +287,7 @@ def test_multi_turn_trainer_uses_environment_scenarios():
 def test_multi_turn_trainer_stratifies_eval_by_task():
     """Eval split should include each task when stratify_by_task is enabled."""
     from types import SimpleNamespace
+
     from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
     env = MagicMock()
@@ -279,7 +324,7 @@ class TestTrajectoryGroup:
 
     def test_trajectory_group_creation(self):
         """Test creating trajectory groups."""
-        from stateset_agents.core.trajectory import TrajectoryGroup, MultiTurnTrajectory
+        from stateset_agents.core.trajectory import MultiTurnTrajectory, TrajectoryGroup
 
         group = TrajectoryGroup()
 
@@ -292,7 +337,11 @@ class TestTrajectoryGroup:
 
     def test_group_reward_statistics(self):
         """Test computing group reward statistics."""
-        from stateset_agents.core.trajectory import TrajectoryGroup, MultiTurnTrajectory, ConversationTurn
+        from stateset_agents.core.trajectory import (
+            ConversationTurn,
+            MultiTurnTrajectory,
+            TrajectoryGroup,
+        )
 
         group = TrajectoryGroup()
 
@@ -316,7 +365,10 @@ class TestGRPOLossComputation:
 
     def test_grpo_loss_import(self):
         """Test GRPO loss functions can be imported."""
-        from stateset_agents.training.loss_computation import compute_grpo_loss, compute_enhanced_grpo_loss
+        from stateset_agents.training.loss_computation import (
+            compute_enhanced_grpo_loss,
+            compute_grpo_loss,
+        )
 
         assert compute_grpo_loss is not None
         assert compute_enhanced_grpo_loss is not None
@@ -500,7 +552,9 @@ class TestTrainingMetrics:
         # Update running mean
         new_reward = 0.8
         trainer._global_reward_count += 1
-        trainer._global_reward_mean += (new_reward - trainer._global_reward_mean) / trainer._global_reward_count
+        trainer._global_reward_mean += (
+            new_reward - trainer._global_reward_mean
+        ) / trainer._global_reward_count
 
         assert trainer._global_reward_mean == 0.8
         assert trainer._global_reward_count == 1

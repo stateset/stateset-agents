@@ -12,19 +12,17 @@ EXCLUDED_ROOTS = {
     "dist",
     "htmlcov",
     "target",
-    "core",
-    "training",
-    "utils",
-    "rewards",
-    "environments",
-    "api",
-    "grpo_agent_framework",
 }
 EXCLUDED_ANYWHERE = {"__pycache__"}
 
 
 def test_no_deprecated_shim_imports() -> None:
-    roots = [Path("stateset_agents"), Path("tests"), Path("examples"), Path("benchmarks")]
+    roots = [
+        Path("stateset_agents"),
+        Path("tests"),
+        Path("examples"),
+        Path("benchmarks"),
+    ]
     offenders = []
 
     for root in roots:

@@ -16,36 +16,24 @@ Run this to see the full power of the enhanced framework!
 import asyncio
 import logging
 import time
-from typing import Any, Dict, List
 
 import numpy as np
 
 from stateset_agents.core.enhanced.advanced_evaluation import (
     AdvancedEvaluator,
-    AutomatedTestSuite,
-    ComparativeAnalyzer,
-    create_evaluation_config,
     quick_agent_comparison,
 )
 from stateset_agents.core.enhanced.advanced_rl_algorithms import (
-    AdvancedRLOrchestrator,
-    create_a2c_trainer,
     create_advanced_rl_orchestrator,
-    create_dpo_trainer,
-    create_ppo_trainer,
 )
 
 # Enhanced framework imports
 from stateset_agents.core.enhanced.enhanced_agent import (
-    EnhancedMultiTurnAgent,
-    PersonaProfile,
-    ReasoningEngine,
-    VectorMemory,
     create_domain_specific_agent,
     create_enhanced_agent,
 )
-from stateset_agents.core.environment import ConversationEnvironment, TaskEnvironment
-from stateset_agents.core.reward import create_domain_reward, create_helpful_agent_reward
+from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.reward import create_domain_reward
 
 # Set up logging
 logging.basicConfig(
@@ -207,6 +195,12 @@ class EnhancedFrameworkDemo:
                 {"total_reward": 0.9, "turns": []},
             ]
         }
+        logger.info(
+            "Prepared %d trajectories for %s using %s",
+            len(training_data["trajectories"]),
+            environment.__class__.__name__,
+            orchestrator.__class__.__name__,
+        )
 
         # The orchestrator would automatically select the best algorithm
         logger.info(
@@ -261,7 +255,7 @@ class EnhancedFrameworkDemo:
         try:
             # This might cause an error with very long input
             long_message = [{"role": "user", "content": "Test " * 10000}]
-            response = await agent.generate_response(long_message)
+            await agent.generate_response(long_message)
             logger.info("✅ Agent handled long input gracefully")
         except Exception as e:
             logger.info(f"✅ Agent handled error gracefully: {type(e).__name__}")
@@ -277,6 +271,7 @@ class EnhancedFrameworkDemo:
         # Simulate 5 concurrent requests
         tasks = [simulate_request(i) for i in range(5)]
         responses = await asyncio.gather(*tasks)
+        logger.info("Received %s responses", len(responses))
 
         concurrent_time = time.time() - start_time
         logger.info(f"✅ Handled 5 concurrent requests in {concurrent_time:.2f} seconds")
@@ -299,7 +294,6 @@ class EnhancedFrameworkDemo:
         logger.info("\n⚡ Running Performance Benchmark...")
 
         agent = self.agents["enhanced_general"]
-        environment = self.environments["customer_service"]
 
         # Measure response times
         response_times = []
@@ -309,7 +303,7 @@ class EnhancedFrameworkDemo:
             messages = [{"role": "user", "content": f"Performance test question {i}"}]
 
             start_time = time.time()
-            response = await agent.generate_response(messages)
+            await agent.generate_response(messages)
             end_time = time.time()
 
             response_times.append(end_time - start_time)

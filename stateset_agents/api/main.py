@@ -1,72 +1,141 @@
-from contextlib import asynccontextmanager
 import logging
 import time
+import os
+from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer
 
 from .config import get_config
-from .routers import agents, training, metrics, v1
-from .middleware import setup_middleware
 from .errors import setup_exception_handlers
-from .openapi import setup_openapi, add_documentation_routes
+from .middleware import setup_middleware
+from .openapi import add_documentation_routes, setup_openapi
 from .resilience import HealthChecker, HealthStatus, get_all_circuit_stats
+from .routers import agents, messages, metrics, openai, training, training_lab, v1
+from .services.inference_service import InferenceConfig, InferenceService
 
 logger = logging.getLogger(__name__)
 
 API_LIFESPAN_EXCEPTIONS = (ImportError, OSError, RuntimeError, ValueError)
 
+
+class LazyApp:
+    """ASGI-compatible proxy that creates the FastAPI app on first use."""
+
+    def __init__(self) -> None:
+        self._app: FastAPI | None = None
+
+    def _get_app(self) -> FastAPI:
+        if self._app is None:
+            self._app = create_app()
+        return self._app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        await self._get_app()(scope, receive, send)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._get_app(), name)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager with resource initialization."""
     config = getattr(app.state, "config", get_config())
+    strict_startup = (
+        os.getenv("STATESET_AGENTS_STRICT_STARTUP", "false").lower() in {"1", "true", "on", "yes"}
+        or config.is_production()
+    )
     health_checker = getattr(app.state, "health_checker", HealthChecker())
     app.state.health_checker = health_checker
+    inference_service = getattr(app.state, "inference_service", None)
+    if inference_service is None:
+        inference_service = InferenceService(InferenceConfig.from_env())
+        app.state.inference_service = inference_service
 
     logger.info("Starting StateSet Agents API v%s", config.api_version)
 
     # Initialize distributed cache (optional)
+    close_cache_fn = None
     try:
-        from .distributed_cache import init_cache, close_cache, CacheConfig
+        from .distributed_cache import CacheConfig
+        from .distributed_cache import close_cache as _close_cache
+        from .distributed_cache import init_cache
+
         cache_config = CacheConfig.from_env()
         await init_cache(cache_config)
+        close_cache_fn = _close_cache
         logger.info("Cache initialized with backend: %s", cache_config.backend.value)
     except API_LIFESPAN_EXCEPTIONS as e:
+        if strict_startup:
+            logger.error("Cache initialization failed during startup: %s", e)
+            raise
         logger.warning("Cache initialization skipped: %s", e)
 
     # Initialize database (optional)
+    close_database_fn = None
     try:
-        from .persistence import init_database, close_database, DatabaseConfig
+        from .persistence import DatabaseConfig
+        from .persistence import close_database as _close_database
+        from .persistence import init_database
+
         db_config = DatabaseConfig.from_env()
         await init_database(db_config)
+        close_database_fn = _close_database
         logger.info("Database initialized with backend: %s", db_config.backend.value)
     except API_LIFESPAN_EXCEPTIONS as e:
+        if strict_startup:
+            logger.error("Database initialization failed during startup: %s", e)
+            raise
         logger.warning("Database initialization skipped: %s", e)
+
+    # Initialize agent service
+    from .services.agent_service import AgentService
+    from stateset_agents.utils.security import SecurityMonitor as _SecurityMonitor
+
+    agent_service = getattr(app.state, "agent_service", None)
+    if agent_service is None:
+        agent_service = AgentService(_SecurityMonitor())
+        app.state.agent_service = agent_service
+
+    # Initialize training service
+    from .services.training_service import TrainingService
+
+    training_service = getattr(app.state, "training_service", None)
+    if training_service is None:
+        training_service = TrainingService()
+        app.state.training_service = training_service
 
     # Register health checks
     health_checker.add_check("api", lambda: True)
+    if inference_service is not None:
+        health_checker.add_check("inference_backend", inference_service.check_health)
 
     yield
 
     # Cleanup resources
     logger.info("Shutting down StateSet Agents API")
 
-    try:
-        from .distributed_cache import close_cache
-        await close_cache()
-    except API_LIFESPAN_EXCEPTIONS:
-        pass
+    if close_cache_fn is not None:
+        try:
+            await close_cache_fn()
+        except API_LIFESPAN_EXCEPTIONS:
+            pass
 
-    try:
-        from .persistence import close_database
-        await close_database()
-    except API_LIFESPAN_EXCEPTIONS:
-        pass
+    if close_database_fn is not None:
+        try:
+            await close_database_fn()
+        except API_LIFESPAN_EXCEPTIONS:
+            pass
+
+    if inference_service is not None:
+        try:
+            await inference_service.aclose()
+        except API_LIFESPAN_EXCEPTIONS:
+            pass
 
 
 def create_app() -> FastAPI:
@@ -77,12 +146,12 @@ def create_app() -> FastAPI:
         title=config.title,
         description="""
         ## StateSet Agents API
-        
-        A comprehensive REST API for training and deploying AI agents using 
+
+        A comprehensive REST API for training and deploying AI agents using
         reinforcement learning techniques.
-        
+
         ### Features
-        
+
         - 🤖 **Agent Management**: Create and manage AI agents
         - 💬 **Conversations**: Interactive conversations with agents
         - 🎯 **Training**: Train agents using reinforcement learning
@@ -96,6 +165,8 @@ def create_app() -> FastAPI:
     app.state.config = config
     app.state.health_checker = health_checker
     app.state.started_at = time.time()
+    if not getattr(app.state, "inference_service", None):
+        app.state.inference_service = InferenceService(InferenceConfig.from_env())
 
     # Middleware
     app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -107,7 +178,7 @@ def create_app() -> FastAPI:
         allow_headers=config.cors.allowed_headers,
         max_age=config.cors.max_age,
     )
-    
+
     # Advanced Middleware (Rate Limiting, Security Headers, etc.)
     setup_middleware(app)
 
@@ -117,6 +188,9 @@ def create_app() -> FastAPI:
     app.include_router(training.router)
     app.include_router(metrics.router)
     app.include_router(v1.router)
+    app.include_router(messages.router)
+    app.include_router(openai.router)
+    app.include_router(training_lab.router)
 
     # Compatibility aliases for legacy tests/clients
     app.add_api_route(
@@ -141,7 +215,7 @@ def create_app() -> FastAPI:
         description="Welcome endpoint with API information and available endpoints.",
         tags=["health"],
     )
-    async def root() -> Dict[str, Any]:
+    async def root() -> dict[str, Any]:
         """Get API information."""
         return {
             "message": "Welcome to StateSet Agents API",
@@ -154,6 +228,8 @@ def create_app() -> FastAPI:
                 "conversations": "/conversations",
                 "training": "/training",
                 "metrics": "/metrics",
+                "messages": "/v1/messages",
+                "chat_completions": "/v1/chat/completions",
             },
         }
 
@@ -164,8 +240,9 @@ def create_app() -> FastAPI:
         description="Check if the API is ready to receive traffic.",
         tags=["health"],
     )
-    async def readiness_check() -> Dict[str, Any]:
+    async def readiness_check() -> Any:
         """Kubernetes readiness probe endpoint."""
+        await health_checker.check_all()
         overall_status = health_checker.overall_status
 
         if overall_status == HealthStatus.UNHEALTHY:
@@ -183,7 +260,7 @@ def create_app() -> FastAPI:
         description="Check if the API is alive.",
         tags=["health"],
     )
-    async def liveness_check() -> Dict[str, Any]:
+    async def liveness_check() -> dict[str, Any]:
         """Kubernetes liveness probe endpoint."""
         return {"status": "alive", "timestamp": datetime.utcnow().isoformat() + "Z"}
 
@@ -194,7 +271,7 @@ def create_app() -> FastAPI:
         description="Get the status of all circuit breakers.",
         tags=["metrics"],
     )
-    async def circuit_status() -> Dict[str, Any]:
+    async def circuit_status() -> dict[str, Any]:
         """Get circuit breaker status for monitoring."""
         return {
             "circuits": get_all_circuit_stats(),
@@ -203,12 +280,15 @@ def create_app() -> FastAPI:
 
     return app
 
-app = create_app()
+
+app = LazyApp()
 
 if __name__ == "__main__":
     import uvicorn
+
+    config = get_config()
     uvicorn.run(
-        "api.main:app",
+        "stateset_agents.api.main:app",
         host=config.host,
         port=config.port,
         reload=not config.is_production(),

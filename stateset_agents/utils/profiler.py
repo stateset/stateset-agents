@@ -11,7 +11,7 @@ import logging
 import pstats
 import time
 from functools import wraps
-from typing import Any, Callable, Optional
+from collections.abc import Callable
 
 import psutil
 import torch

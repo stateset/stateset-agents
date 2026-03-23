@@ -8,11 +8,10 @@ Reference: Chen et al. "Decision Transformer: Reinforcement Learning
 via Sequence Modeling" (NeurIPS 2021)
 """
 
-import asyncio
 import logging
 import math
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -124,7 +123,7 @@ class ConversationEmbedder(nn.Module):
             nn.Linear(output_dim, output_dim),
         )
 
-    def forward(self, texts: List[str]) -> torch.Tensor:
+    def forward(self, texts: list[str]) -> torch.Tensor:
         """
         Embed a batch of texts.
 
@@ -149,7 +148,7 @@ class ConversationEmbedder(nn.Module):
 
     def embed_trajectory(
         self,
-        turns: List[Dict[str, str]],
+        turns: list[dict[str, str]],
     ) -> torch.Tensor:
         """
         Embed all turns in a trajectory.
@@ -296,9 +295,7 @@ class DecisionTransformer(nn.Module):
         self.embed_return = nn.Linear(1, config.n_embd)
         self.embed_state = nn.Linear(config.state_dim, config.n_embd)
         self.embed_action = nn.Linear(config.action_dim, config.n_embd)
-        self.embed_timestep = nn.Embedding(
-            config.max_episode_length, config.n_embd
-        )
+        self.embed_timestep = nn.Embedding(config.max_episode_length, config.n_embd)
 
         # Layer norm for embeddings
         self.embed_ln = nn.LayerNorm(config.n_embd)
@@ -350,8 +347,8 @@ class DecisionTransformer(nn.Module):
         actions: torch.Tensor,
         returns_to_go: torch.Tensor,
         timesteps: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        attention_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass through Decision Transformer.
 
@@ -456,7 +453,9 @@ class DecisionTransformerTrainer:
     def __init__(
         self,
         config: DecisionTransformerConfig,
-        device: str = "cuda" if torch is not None and torch.cuda.is_available() else "cpu",
+        device: str = "cuda"
+        if torch is not None and torch.cuda.is_available()
+        else "cpu",
     ):
         _require_torch()
 
@@ -492,12 +491,12 @@ class DecisionTransformerTrainer:
         self.scheduler = LambdaLR(self.optimizer, lr_lambda)
 
         self.training_step = 0
-        self.training_metrics: List[Dict[str, float]] = []
+        self.training_metrics: list[dict[str, float]] = []
 
     def _prepare_batch(
         self,
-        trajectories: List[Dict[str, Any]],
-    ) -> Tuple[torch.Tensor, ...]:
+        trajectories: list[dict[str, Any]],
+    ) -> tuple[torch.Tensor, ...]:
         """
         Prepare a batch of trajectories for training.
 
@@ -522,7 +521,9 @@ class DecisionTransformerTrainer:
             batch_size, max_len, self.config.action_dim, device=self.device
         )
         returns_to_go = torch.zeros(batch_size, max_len, 1, device=self.device)
-        timesteps = torch.zeros(batch_size, max_len, dtype=torch.long, device=self.device)
+        timesteps = torch.zeros(
+            batch_size, max_len, dtype=torch.long, device=self.device
+        )
         mask = torch.zeros(batch_size, max_len, device=self.device)
 
         for i, traj in enumerate(trajectories):
@@ -546,8 +547,8 @@ class DecisionTransformerTrainer:
 
     def train_step(
         self,
-        trajectories: List[Dict[str, Any]],
-    ) -> Dict[str, float]:
+        trajectories: list[dict[str, Any]],
+    ) -> dict[str, float]:
         """
         Perform one training step.
 
@@ -576,7 +577,11 @@ class DecisionTransformerTrainer:
         # Optional auxiliary losses
         state_loss = F.mse_loss(state_preds[:, :-1], states[:, 1:], reduction="none")
         state_mask = mask[:, 1:].unsqueeze(-1)
-        state_loss = (state_loss * state_mask).sum() / state_mask.sum() if state_mask.sum() > 0 else torch.tensor(0.0)
+        state_loss = (
+            (state_loss * state_mask).sum() / state_mask.sum()
+            if state_mask.sum() > 0
+            else torch.tensor(0.0)
+        )
 
         # Total loss
         loss = action_loss + 0.1 * state_loss
@@ -595,7 +600,9 @@ class DecisionTransformerTrainer:
         metrics = {
             "loss": loss.item(),
             "action_loss": action_loss.item(),
-            "state_loss": state_loss.item() if isinstance(state_loss, torch.Tensor) else state_loss,
+            "state_loss": state_loss.item()
+            if isinstance(state_loss, torch.Tensor)
+            else state_loss,
             "lr": self.scheduler.get_last_lr()[0],
             "training_step": self.training_step,
         }
@@ -605,8 +612,8 @@ class DecisionTransformerTrainer:
     async def train(
         self,
         dataset: Any,  # ConversationDataset
-        num_epochs: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        num_epochs: int | None = None,
+    ) -> dict[str, Any]:
         """
         Train Decision Transformer on conversation dataset.
 
@@ -636,7 +643,9 @@ class DecisionTransformerTrainer:
 
             for batch_idx in range(num_batches):
                 batch_indices = indices[
-                    batch_idx * self.config.batch_size : (batch_idx + 1) * self.config.batch_size
+                    batch_idx
+                    * self.config.batch_size : (batch_idx + 1)
+                    * self.config.batch_size
                 ]
                 batch = [training_data[i] for i in batch_indices]
 
@@ -667,7 +676,7 @@ class DecisionTransformerTrainer:
     def _prepare_dataset(
         self,
         dataset: Any,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Convert ConversationDataset to training format"""
         training_data = []
 
@@ -678,7 +687,7 @@ class DecisionTransformerTrainer:
                 actions = []
 
                 state_history = ""
-                for i, turn in enumerate(traj.turns):
+                for _i, turn in enumerate(traj.turns):
                     if turn.role in ("user", "system"):
                         state_history += f"{turn.role}: {turn.content}\n"
                         with torch.no_grad():
@@ -706,23 +715,29 @@ class DecisionTransformerTrainer:
             if traj.returns_to_go:
                 rtg = traj.returns_to_go[:min_len]
             else:
-                rtg = traj.compute_returns_to_go(self.config.discount_factor)[:min_len] if hasattr(traj, 'compute_returns_to_go') else [0.0] * min_len
+                rtg = (
+                    traj.compute_returns_to_go(self.config.discount_factor)[:min_len]
+                    if hasattr(traj, "compute_returns_to_go")
+                    else [0.0] * min_len
+                )
 
-            training_data.append({
-                "states": np.array(states),
-                "actions": np.array(actions),
-                "returns_to_go": np.array(rtg),
-                "timesteps": np.arange(min_len),
-            })
+            training_data.append(
+                {
+                    "states": np.array(states),
+                    "actions": np.array(actions),
+                    "returns_to_go": np.array(rtg),
+                    "timesteps": np.arange(min_len),
+                }
+            )
 
         return training_data
 
     def generate_response(
         self,
-        history: List[Dict[str, str]],
+        history: list[dict[str, str]],
         target_return: float,
-        past_actions: Optional[List[torch.Tensor]] = None,
-        past_returns: Optional[List[float]] = None,
+        past_actions: list[torch.Tensor] | None = None,
+        past_returns: list[float] | None = None,
     ) -> torch.Tensor:
         """
         Generate a response embedding conditioned on target return.
@@ -757,14 +772,12 @@ class DecisionTransformerTrainer:
             actions = torch.zeros(
                 1, context_len, self.config.action_dim, device=self.device
             )
-            returns_to_go = torch.zeros(
-                1, context_len, 1, device=self.device
-            )
+            returns_to_go = torch.zeros(1, context_len, 1, device=self.device)
             timesteps = torch.arange(context_len, device=self.device).unsqueeze(0)
 
             # Fill in past context
             if past_actions:
-                for i, (act, ret) in enumerate(zip(past_actions, past_returns or [])):
+                for i, (act, ret) in enumerate(zip(past_actions, past_returns or [], strict=False)):
                     actions[0, i] = act
                     if past_returns:
                         returns_to_go[0, i, 0] = ret

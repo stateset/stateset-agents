@@ -1,0 +1,72 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kimi-k25-training
+  namespace: stateset-agents
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: kimi-k25-training
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: trainer
+        image: stateset/stateset-agents-trainer:0.7.1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+        command: ["bash", "-lc"]
+        args:
+        - >
+          python examples/finetune_kimi_k25_gspo.py
+          --model moonshotai/Kimi-K2.5
+          --task customer_service
+          --use-lora
+          --use-vllm
+          --export-merged
+          --output-dir /models/kimi-k25
+        env:
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: hf_token
+        - name: HF_HOME
+          value: /models/hf
+        - name: TRANSFORMERS_CACHE
+          value: /models/hf
+        - name: WANDB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wandb-secret
+              key: api_key
+              optional: true
+        resources:
+          requests:
+            cpu: "10"
+            memory: "600Gi"
+            ephemeral-storage: "500Gi"
+            nvidia.com/gpu: "8"
+          limits:
+            cpu: "10"
+            memory: "600Gi"
+            ephemeral-storage: "500Gi"
+            nvidia.com/gpu: "8"
+        volumeMounts:
+        - name: models
+          mountPath: /models
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: stateset-models-pvc
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-tesla-a100

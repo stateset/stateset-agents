@@ -12,12 +12,12 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import torch
 import torch.distributed as dist
 import torch.distributed.checkpoint as dist_checkpoint
-from accelerate import Accelerator, DistributedType
+from accelerate import Accelerator
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.fully_sharded_data_parallel import (
     BackwardPrefetch,
@@ -59,7 +59,7 @@ class DistributedConfig:
     fsdp_mixed_precision: bool = True
 
     # DeepSpeed specific
-    deepspeed_config: Optional[Dict[str, Any]] = None
+    deepspeed_config: dict[str, Any] | None = None
 
     # Communication optimization
     gradient_as_bucket_view: bool = True
@@ -80,9 +80,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         self,
         agent: MultiTurnAgent,
         environment: Environment,
-        reward_fn: Optional[RewardFunction] = None,
-        config: Optional[TrainingConfig] = None,
-        distributed_config: Optional[DistributedConfig] = None,
+        reward_fn: RewardFunction | None = None,
+        config: TrainingConfig | None = None,
+        distributed_config: DistributedConfig | None = None,
         **kwargs,
     ):
         self.distributed_config = distributed_config or DistributedConfig()
@@ -220,7 +220,7 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         )
         logger.info("Model wrapped with Accelerate")
 
-    async def training_step(self, trajectory_groups: List[Any]) -> Dict[str, Any]:
+    async def training_step(self, trajectory_groups: list[Any]) -> dict[str, Any]:
         """Execute distributed training step"""
 
         if self.distributed_config.strategy == "accelerate":
@@ -236,7 +236,7 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
 
         return metrics
 
-    def _sync_metrics(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+    def _sync_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
         """Synchronize metrics across all processes"""
 
         synced_metrics = {}
@@ -251,7 +251,7 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         return synced_metrics
 
     async def save_checkpoint(
-        self, is_best: bool = False, checkpoint_name: Optional[str] = None
+        self, is_best: bool = False, checkpoint_name: str | None = None
     ):
         """Save distributed checkpoint"""
 
@@ -266,7 +266,7 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
             await super().save_checkpoint(is_best, checkpoint_name)
 
     async def _save_distributed_checkpoint(
-        self, is_best: bool = False, checkpoint_name: Optional[str] = None
+        self, is_best: bool = False, checkpoint_name: str | None = None
     ):
         """Save checkpoint in distributed manner"""
 
@@ -324,7 +324,7 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
 
 
 def get_distributed_config(
-    num_gpus: Optional[int] = None, strategy: str = "ddp", **kwargs
+    num_gpus: int | None = None, strategy: str = "ddp", **kwargs
 ) -> DistributedConfig:
     """Create distributed configuration based on available resources"""
 
@@ -346,7 +346,7 @@ def get_distributed_config(
     return config
 
 
-def get_default_deepspeed_config(num_gpus: int) -> Dict[str, Any]:
+def get_default_deepspeed_config(num_gpus: int) -> dict[str, Any]:
     """Get default DeepSpeed configuration"""
 
     return {
@@ -379,7 +379,7 @@ async def train_distributed(
     agent: MultiTurnAgent,
     environment: Environment,
     config: TrainingConfig,
-    num_gpus: Optional[int] = None,
+    num_gpus: int | None = None,
     strategy: str = "ddp",
     **kwargs,
 ) -> MultiTurnAgent:

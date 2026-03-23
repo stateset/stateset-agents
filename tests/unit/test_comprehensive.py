@@ -6,29 +6,35 @@ into the framework, ensuring production-ready quality.
 """
 
 import asyncio
-import json
 import random
 import sys
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
 
 # Block vllm import to avoid torchvision issues
-if 'vllm' not in sys.modules:
-    sys.modules['vllm'] = type(sys)('vllm')  # type: ignore
+if "vllm" not in sys.modules:
+    sys.modules["vllm"] = type(sys)("vllm")  # type: ignore
 
 # Try imports - skip tests if not available
 IMPORTS_AVAILABLE = True
 try:
     # Core components
     from stateset_agents.core.agent import Agent
-    from stateset_agents.core.computational_engine import ComputationalGRPOEngine, ComputationalTrajectory
+    from stateset_agents.core.computational_engine import (
+        ComputationalGRPOEngine,
+        ComputationalTrajectory,
+    )
     from stateset_agents.core.environment import Environment
-    from stateset_agents.core.multiturn_agent import ConversationContext, DialogueDatabase, MultiTurnAgent
+    from stateset_agents.core.multiturn_agent import (
+        ConversationContext,
+        DialogueDatabase,
+        MultiTurnAgent,
+    )
     from stateset_agents.core.reward import RewardFunction, RewardResult
     from stateset_agents.core.trajectory import Trajectory
     from stateset_agents.rewards.multi_objective_reward import (
@@ -37,24 +43,18 @@ try:
         MultiObjectiveRewardFunction,
         ProfessionalismRewardComponent,
     )
-
-    # Reward components
-    from stateset_agents.rewards.ruler_reward import RulerRewardFunction
     from stateset_agents.training.config import TrainingConfig
-    from stateset_agents.training.neural_reward_trainer import NeuralRewardFunction, NeuralRewardTrainer
-
-    # Training components
-    from stateset_agents.training.trainer import GRPOTrainer
+    from stateset_agents.training.neural_reward_trainer import NeuralRewardTrainer
 
     # Utils
     from stateset_agents.utils.cache import CacheService
     from stateset_agents.utils.monitoring import MonitoringService
-except (ImportError, RuntimeError) as e:
+except (ImportError, RuntimeError):
     IMPORTS_AVAILABLE = False
 
 pytestmark = pytest.mark.skipif(
     not IMPORTS_AVAILABLE,
-    reason="Required modules not available (check transformers/torchvision compatibility)"
+    reason="Required modules not available (check transformers/torchvision compatibility)",
 )
 
 
@@ -65,10 +65,10 @@ def _set_deterministic_seed():
     np.random.seed(42)
 
 
-class TestAgent(Agent):
+class DummyAgent(Agent):
     """Test implementation of Agent"""
 
-    def __init__(self, model_config: Dict[str, Any]):
+    def __init__(self, model_config: dict[str, Any]):
         super().__init__(model_config)
         self.responses = [
             "Thank you for your question. I'm here to help you with that.",
@@ -82,23 +82,23 @@ class TestAgent(Agent):
         self.response_index += 1
         return response
 
-    async def update_from_feedback(self, training_data: List[Dict[str, Any]]):
+    async def update_from_feedback(self, training_data: list[dict[str, Any]]):
         # Simulate learning from feedback
         pass
 
 
-class TestEnvironment(Environment):
+class DummyEnvironment(Environment):
     """Test implementation of Environment"""
 
     def __init__(self):
         super().__init__()
         self.state = {"step": 0}
 
-    async def reset(self) -> Dict[str, Any]:
+    async def reset(self) -> dict[str, Any]:
         self.state = {"step": 0}
         return self.state
 
-    async def step(self, action: str) -> Dict[str, Any]:
+    async def step(self, action: str) -> dict[str, Any]:
         self.state["step"] += 1
         return {
             "state": self.state,
@@ -110,14 +110,14 @@ class TestEnvironment(Environment):
         return 0.5 + np.random.normal(0, 0.1)
 
 
-class TestRewardFunction(RewardFunction):
+class DummyRewardFunction(RewardFunction):
     """Test implementation of RewardFunction"""
 
     def __init__(self, weight: float = 1.0):
         super().__init__(weight=weight)
 
     async def compute_reward(
-        self, turns: List[Dict[str, Any]], context: Dict[str, Any] = None
+        self, turns: list[dict[str, Any]], context: dict[str, Any] = None
     ) -> RewardResult:
         # Simple test reward based on response length
         if not turns:
@@ -142,19 +142,19 @@ class TestRewardFunction(RewardFunction):
 @pytest.fixture
 def test_agent():
     """Create a test agent"""
-    return TestAgent({"model_type": "test"})
+    return DummyAgent({"model_type": "test"})
 
 
 @pytest.fixture
 def test_environment():
     """Create a test environment"""
-    return TestEnvironment()
+    return DummyEnvironment()
 
 
 @pytest.fixture
 def test_reward_function():
     """Create a test reward function"""
-    return TestRewardFunction()
+    return DummyRewardFunction()
 
 
 @pytest.fixture
@@ -381,7 +381,7 @@ class TestMultiTurnAgent:
             initial_context={"goal": "Ship a release"}
         )
 
-        captured: Dict[str, Any] = {}
+        captured: dict[str, Any] = {}
 
         async def _capture_prompt(prompt, context=None):
             captured["prompt"] = prompt
@@ -632,7 +632,7 @@ class TestIntegration:
         # Run training iterations
         prompts = ["Test prompt 1", "Test prompt 2", "Test prompt 3"]
 
-        for i in range(3):
+        for _i in range(3):
             results = await engine.train_iteration(prompts)
 
             assert "iteration_time" in results

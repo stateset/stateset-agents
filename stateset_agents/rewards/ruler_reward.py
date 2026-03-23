@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from .llm_reward import RulerRewardFunction as _LLMRulerRewardFunction
 
@@ -24,7 +24,7 @@ class RulerConfig:
 
     model: str = "openai/gpt-4"
     rubric_type: str = "default"
-    custom_rubric: Optional[str] = None
+    custom_rubric: str | None = None
     temperature: float = 0.0
     max_tokens: int = 256
     weight: float = 1.0
@@ -39,7 +39,7 @@ class RulerRewardFunction(_LLMRulerRewardFunction):
     supported by ``rewards.llm_reward.RulerRewardFunction``.
     """
 
-    def __init__(self, config: Optional[RulerConfig] = None, **kwargs: Any):
+    def __init__(self, config: RulerConfig | None = None, **kwargs: Any):
         if config is not None:
             warnings.warn(
                 "Passing RulerConfig is deprecated; instantiate "
@@ -75,7 +75,9 @@ def create_general_ruler(
     model: str = "openai/gpt-4", weight: float = 1.0, **kwargs: Any
 ) -> RulerRewardFunction:
     """Create a general-purpose RULER judge."""
-    return RulerRewardFunction(model=model, rubric_type="default", weight=weight, **kwargs)
+    return RulerRewardFunction(
+        model=model, rubric_type="default", weight=weight, **kwargs
+    )
 
 
 def create_technical_support_ruler(
@@ -92,7 +94,11 @@ def create_custom_ruler(
 ) -> RulerRewardFunction:
     """Create a RULER judge with a custom rubric."""
     return RulerRewardFunction(
-        model=model, custom_rubric=rubric, rubric_type="default", weight=weight, **kwargs
+        model=model,
+        custom_rubric=rubric,
+        rubric_type="default",
+        weight=weight,
+        **kwargs,
     )
 
 

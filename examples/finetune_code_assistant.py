@@ -43,11 +43,9 @@ import asyncio
 import logging
 import os
 import re
-import subprocess
 import tempfile
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,9 +58,11 @@ logger = logging.getLogger(__name__)
 # Code Quality Reward Functions
 # =============================================================================
 
+
 @dataclass
 class CodeRewardConfig:
     """Configuration for code reward computation"""
+
     # Weights for different reward components
     correctness_weight: float = 0.4
     style_weight: float = 0.2
@@ -93,7 +93,9 @@ class CodeStyleReward:
     def __init__(self, config: CodeRewardConfig = None):
         self.config = config or CodeRewardConfig()
 
-    def compute_reward(self, code: str, language: str = "python") -> Tuple[float, Dict[str, float]]:
+    def compute_reward(
+        self, code: str, language: str = "python"
+    ) -> tuple[float, dict[str, float]]:
         """Compute style-based reward for code"""
         breakdown = {}
 
@@ -126,19 +128,19 @@ class CodeStyleReward:
         score = 1.0
 
         # Check for snake_case in function/variable names
-        func_pattern = r'def\s+([a-zA-Z_][a-zA-Z0-9_]*)'
+        func_pattern = r"def\s+([a-zA-Z_][a-zA-Z0-9_]*)"
         functions = re.findall(func_pattern, code)
 
         for func in functions:
-            if not re.match(r'^[a-z_][a-z0-9_]*$', func):
+            if not re.match(r"^[a-z_][a-z0-9_]*$", func):
                 score -= 0.1
 
         # Check for PascalCase in class names
-        class_pattern = r'class\s+([a-zA-Z_][a-zA-Z0-9_]*)'
+        class_pattern = r"class\s+([a-zA-Z_][a-zA-Z0-9_]*)"
         classes = re.findall(class_pattern, code)
 
         for cls in classes:
-            if not re.match(r'^[A-Z][a-zA-Z0-9]*$', cls):
+            if not re.match(r"^[A-Z][a-zA-Z0-9]*$", cls):
                 score -= 0.1
 
         return max(0.0, score)
@@ -148,7 +150,7 @@ class CodeStyleReward:
         score = 1.0
 
         # Check function length
-        func_pattern = r'def\s+\w+.*?(?=\ndef|\nclass|\Z)'
+        func_pattern = r"def\s+\w+.*?(?=\ndef|\nclass|\Z)"
         functions = re.findall(func_pattern, code, re.DOTALL)
 
         for func in functions:
@@ -173,7 +175,7 @@ class CodeStyleReward:
 
     def _check_docstrings(self, code: str) -> float:
         """Check for presence and quality of docstrings"""
-        func_pattern = r'def\s+(\w+)[^:]*:'
+        func_pattern = r"def\s+(\w+)[^:]*:"
         functions = re.findall(func_pattern, code)
 
         if not functions:
@@ -199,14 +201,13 @@ class CodeStyleReward:
 
     def _check_comments(self, code: str) -> float:
         """Check for presence of comments"""
-        lines = [l.strip() for l in code.split("\n") if l.strip()]
+        lines = [line.strip() for line in code.split("\n") if line.strip()]
         if not lines:
             return 0.5
 
-        comment_patterns = [r'#', r'//', r'/\*', r'\*/', r'"""', r"'''"]
+        comment_patterns = [r"#", r"//", r"/\*", r"\*/", r'"""', r"'''"]
         comment_lines = sum(
-            1 for line in lines
-            if any(re.search(p, line) for p in comment_patterns)
+            1 for line in lines if any(re.search(p, line) for p in comment_patterns)
         )
 
         ratio = comment_lines / len(lines)
@@ -233,9 +234,9 @@ class CodeExecutionReward:
     async def compute_reward(
         self,
         code: str,
-        test_cases: List[Dict[str, Any]],
+        test_cases: list[dict[str, Any]],
         language: str = "python",
-    ) -> Tuple[float, Dict[str, Any]]:
+    ) -> tuple[float, dict[str, Any]]:
         """
         Execute code and compute reward based on test results.
 
@@ -259,9 +260,7 @@ class CodeExecutionReward:
 
         for test in test_cases:
             try:
-                result = await self._execute_code(
-                    code, test.get("input", ""), language
-                )
+                result = await self._execute_code(code, test.get("input", ""), language)
 
                 expected = str(test.get("expected", "")).strip()
                 actual = str(result.get("output", "")).strip()
@@ -287,7 +286,7 @@ class CodeExecutionReward:
         code: str,
         input_data: str,
         language: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute code in a sandbox"""
 
         if language == "python":
@@ -295,18 +294,19 @@ class CodeExecutionReward:
         else:
             raise ValueError(f"Unsupported language: {language}")
 
-    async def _execute_python(self, code: str, input_data: str) -> Dict[str, Any]:
+    async def _execute_python(self, code: str, input_data: str) -> dict[str, Any]:
         """Execute Python code"""
 
         # Create temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
             temp_path = f.name
 
         try:
             # Run with timeout
             process = await asyncio.create_subprocess_exec(
-                'python', temp_path,
+                "python",
+                temp_path,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -315,7 +315,7 @@ class CodeExecutionReward:
             try:
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(input_data.encode() if input_data else None),
-                    timeout=self.config.execution_timeout
+                    timeout=self.config.execution_timeout,
                 )
 
                 return {
@@ -348,9 +348,9 @@ class CompositeCodeReward:
         self,
         prompt: str,
         code: str,
-        test_cases: Optional[List[Dict[str, Any]]] = None,
+        test_cases: list[dict[str, Any]] | None = None,
         language: str = "python",
-    ) -> Tuple[float, Dict[str, Any]]:
+    ) -> tuple[float, dict[str, Any]]:
         """Compute combined reward"""
         breakdown = {}
 
@@ -367,8 +367,8 @@ class CompositeCodeReward:
 
             # Weighted combination
             reward = (
-                self.config.correctness_weight * exec_score +
-                self.config.style_weight * style_score
+                self.config.correctness_weight * exec_score
+                + self.config.style_weight * style_score
             )
         else:
             # Style only
@@ -382,6 +382,7 @@ class CompositeCodeReward:
 # Training Configuration
 # =============================================================================
 
+
 def get_code_model_config(
     model_name: str,
     language: str = "python",
@@ -391,7 +392,6 @@ def get_code_model_config(
 ):
     """Get optimized GSPO configuration for code models"""
     from stateset_agents.training.gspo_trainer import GSPOConfig
-    from stateset_agents.training.config import TrainingConfig
 
     model_lower = model_name.lower()
 
@@ -438,7 +438,15 @@ def get_code_model_config(
             lora_r=64,
             lora_alpha=128,
             lora_dropout=0.05,
-            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             gradient_checkpointing=True,
             use_4bit=use_4bit,
             max_prompt_length=2048,
@@ -464,7 +472,15 @@ def get_code_model_config(
             lora_r=64,
             lora_alpha=128,
             lora_dropout=0.05,
-            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             gradient_checkpointing=True,
             use_4bit=True,
             max_prompt_length=4096,
@@ -482,7 +498,8 @@ def get_code_model_config(
 # Training Data
 # =============================================================================
 
-def get_code_training_scenarios(language: str = "python") -> List[Dict[str, Any]]:
+
+def get_code_training_scenarios(language: str = "python") -> list[dict[str, Any]]:
     """Get training scenarios for code generation"""
 
     if language == "python":
@@ -569,6 +586,7 @@ def get_code_training_scenarios(language: str = "python") -> List[Dict[str, Any]
 # Main Training Function
 # =============================================================================
 
+
 async def finetune_code_assistant(
     model_name: str,
     language: str = "python",
@@ -577,7 +595,7 @@ async def finetune_code_assistant(
     use_execution: bool = False,
     output_dir: str = "./outputs/code_assistant",
     use_wandb: bool = False,
-    wandb_project: Optional[str] = None,
+    wandb_project: str | None = None,
 ):
     """
     Fine-tune a code generation model using GSPO.
@@ -664,7 +682,11 @@ When writing code, always:
                     break
 
             # Get test cases from scenario if available
-            test_cases = metadata.get("scenario", {}).get("test_cases", []) if self.use_execution else None
+            test_cases = (
+                metadata.get("scenario", {}).get("test_cases", [])
+                if self.use_execution
+                else None
+            )
 
             reward, breakdown = await self.reward_fn.compute_reward(
                 prompt=metadata.get("scenario", {}).get("prompt", ""),
@@ -696,7 +718,11 @@ When writing code, always:
     if use_wandb:
         gspo_config.report_to = "wandb"
         gspo_config.wandb_project = wandb_project or f"code-assistant-{language}"
-        gspo_config.wandb_tags = ["code-generation", language, model_name.split("/")[-1]]
+        gspo_config.wandb_tags = [
+            "code-generation",
+            language,
+            model_name.split("/")[-1],
+        ]
         logger.info(f"W&B enabled: {gspo_config.wandb_project}")
 
     logger.info("GSPO configuration ready")

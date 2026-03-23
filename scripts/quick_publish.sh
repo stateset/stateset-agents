@@ -13,6 +13,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Helper functions
+PYTHON_BIN=""
+
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -40,7 +42,7 @@ check_directory() {
 
 # Get current version
 get_current_version() {
-    python -c "import stateset_agents; print(stateset_agents.__version__)"
+    awk -F'=' '/__version__/{gsub(/[[:space:]"'\''"'"'"']/, "", $2); print $2; exit}' stateset_agents/__init__.py
 }
 
 # Validate version format
@@ -56,24 +58,72 @@ validate_version() {
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
-    
+
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_BIN="python3"
+    elif command -v python >/dev/null 2>&1; then
+        PYTHON_BIN="python"
+    else
+        log_error "Python is required but not installed"
+        exit 1
+    fi
+
     # Check if required tools are installed
-    command -v python >/dev/null 2>&1 || { log_error "Python is required but not installed"; exit 1; }
-    command -v pip >/dev/null 2>&1 || { log_error "pip is required but not installed"; exit 1; }
+    "$PYTHON_BIN" -m pip --version >/dev/null 2>&1 || { log_error "pip is required but not installed for $PYTHON_BIN"; exit 1; }
     command -v git >/dev/null 2>&1 || { log_error "git is required but not installed"; exit 1; }
+    command -v ruff >/dev/null 2>&1 || { log_error "ruff is required but not installed. Run: pip install ruff"; exit 1; }
+    command -v black >/dev/null 2>&1 || { log_error "black is required but not installed. Run: pip install black"; exit 1; }
+    command -v isort >/dev/null 2>&1 || { log_error "isort is required but not installed. Run: pip install isort"; exit 1; }
+    command -v mypy >/dev/null 2>&1 || { log_error "mypy is required but not installed. Run: pip install mypy"; exit 1; }
+    command -v pytest >/dev/null 2>&1 || { log_error "pytest is required but not installed. Run: pip install pytest"; exit 1; }
+    command -v bandit >/dev/null 2>&1 || { log_error "bandit is required but not installed. Run: pip install bandit"; exit 1; }
+    command -v safety >/dev/null 2>&1 || { log_error "safety is required but not installed. Run: pip install safety"; exit 1; }
     
     # Check if build tools are installed
-    python -c "import build" 2>/dev/null || { log_error "build package not installed. Run: pip install build"; exit 1; }
-    python -c "import twine" 2>/dev/null || { log_error "twine package not installed. Run: pip install twine"; exit 1; }
+    "$PYTHON_BIN" -c "import build" 2>/dev/null || { log_error "build package not installed. Run: pip install build"; exit 1; }
+    "$PYTHON_BIN" -c "import twine" 2>/dev/null || { log_error "twine package not installed. Run: pip install twine"; exit 1; }
     
     log_success "Prerequisites check passed"
+}
+
+require_release_branch() {
+    if [ "$SKIP_RELEASE_BRANCH_CHECK" = "1" ]; then
+        log_warning "Skipping release branch check (SKIP_RELEASE_BRANCH_CHECK=1)"
+        return
+    fi
+
+    local branch
+    branch="$(git rev-parse --abbrev-ref HEAD)"
+    if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then
+        log_error "Release checks require a local branch (detached HEAD detected)."
+        exit 1
+    fi
+
+    case "$branch" in
+        main|master|release/*)
+            ;;
+        *)
+            log_error "Refusing to publish from branch '$branch'."
+            log_error "Use main/master/release/* or set SKIP_RELEASE_BRANCH_CHECK=1 for one-off operations."
+            exit 1
+            ;;
+    esac
 }
 
 # Build package
 build_package() {
     log_info "Building package..."
-    python -m build
+    "$PYTHON_BIN" -m build
     log_success "Package built successfully"
+}
+
+run_publish_readiness() {
+    log_info "Running publish readiness checks before publishing..."
+    if [ ! -f "scripts/publish_readiness.sh" ]; then
+        log_error "Missing scripts/publish_readiness.sh"
+        exit 1
+    fi
+    bash scripts/publish_readiness.sh
 }
 
 # Test package
@@ -88,10 +138,10 @@ test_package() {
     fi
     
     # Test installation
-    pip install --force-reinstall --quiet "$WHEEL_FILE"
+    "$PYTHON_BIN" -m pip install --force-reinstall --quiet "$WHEEL_FILE"
     
     # Test import
-    python -c "import stateset_agents; print(f'✅ Package imported successfully: v{stateset_agents.__version__}')"
+    "$PYTHON_BIN" -c "import stateset_agents; print(f'✅ Package imported successfully: v{stateset_agents.__version__}')"
     
     log_success "Package test passed"
 }
@@ -105,7 +155,7 @@ publish_test() {
         log_warning "Set TEST_PYPI_API_TOKEN environment variable for automated publishing"
     fi
     
-    python -m twine upload --repository testpypi dist/*
+    "$PYTHON_BIN" -m twine upload --skip-existing --repository testpypi dist/*
     log_success "Published to TestPyPI"
     
     log_info "Test installation:"
@@ -131,7 +181,7 @@ publish_production() {
         exit 0
     fi
     
-    python -m twine upload dist/*
+    "$PYTHON_BIN" -m twine upload --skip-existing dist/*
     log_success "Published to PyPI"
     
     log_info "Installation:"
@@ -169,11 +219,11 @@ show_menu() {
     echo "Choose an option:"
     echo "1) Build package only"
     echo "2) Build and test package"
-    echo "3) Publish to TestPyPI"
-    echo "4) Publish to PyPI (Production)"
-    echo "5) Full release (build + test + TestPyPI)"
-    echo "6) Production release (build + test + PyPI + git tag)"
-    echo "7) Quick test cycle (build + test + TestPyPI)"
+    echo "3) Publish to TestPyPI (readiness + branch checks included)"
+    echo "4) Publish to PyPI (Production + readiness + branch checks)"
+    echo "5) Run publish readiness checks only"
+    echo "6) Production release (readiness checks + PyPI + git tag + branch checks)"
+    echo "7) Quick test cycle (readiness + build + package test + TestPyPI)"
     echo "8) Show current status"
     echo "9) Exit"
     echo
@@ -202,6 +252,36 @@ show_status() {
     else
         echo "❌ PyPI token not configured"
     fi
+
+    echo
+    if [ -f "publish-readiness-summary.json" ]; then
+        echo "Latest publish-readiness summary:"
+        "$PYTHON_BIN" - <<'PY'
+import json
+from json import JSONDecodeError
+from pathlib import Path
+
+try:
+    payload = json.loads(
+        Path("publish-readiness-summary.json").read_text(encoding="utf-8")
+    )
+except (OSError, JSONDecodeError) as exc:
+    print(f"  summary unavailable: {exc}")
+    payload = {}
+
+status = payload.get("status", "unknown")
+failed_step = payload.get("failed_step")
+detail = payload.get("failure_detail")
+
+print(f"  status: {status}")
+if failed_step:
+    print(f"  failed_step: {failed_step}")
+if detail:
+    print(f"  detail: {detail}")
+PY
+    else
+        echo "  publish-readiness summary: not available"
+    fi
     
     echo
 }
@@ -224,27 +304,28 @@ main() {
                 test_package
                 ;;
             3)
-                build_package
-                test_package
+                require_release_branch
+                run_publish_readiness
                 publish_test
                 ;;
             4)
-                build_package
-                test_package
+                require_release_branch
+                run_publish_readiness
                 publish_production
                 ;;
             5)
-                build_package
-                test_package
-                publish_test
+                require_release_branch
+                run_publish_readiness
                 ;;
             6)
-                build_package
-                test_package
+                require_release_branch
+                run_publish_readiness
                 publish_production
                 create_git_tag "$(get_current_version)"
                 ;;
             7)
+                require_release_branch
+                run_publish_readiness
                 build_package
                 test_package
                 publish_test

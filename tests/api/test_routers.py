@@ -5,24 +5,22 @@ Comprehensive tests for all API endpoints including agents, conversations,
 training, and metrics routers.
 """
 
-import pytest
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 
-from api.routers.agents import router as agents_router, conversation_router
-from api.routers.training import router as training_router
-from api.routers.metrics import router as metrics_router
-from api.errors import setup_exception_handlers
-from api.dependencies import AuthenticatedUser
-
+from stateset_agents.api.dependencies import AuthenticatedUser
+from stateset_agents.api.errors import setup_exception_handlers
+from stateset_agents.api.routers.agents import conversation_router
+from stateset_agents.api.routers.agents import router as agents_router
+from stateset_agents.api.routers.metrics import router as metrics_router
+from stateset_agents.api.routers.training import router as training_router
 from tests.api.asgi_client import SyncASGIClient
-
 
 # ============================================================================
 # Test Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_user():
@@ -38,6 +36,7 @@ def mock_user():
 @pytest.fixture
 def mock_auth(mock_user):
     """Mock authentication dependency."""
+
     async def override_get_current_user():
         return mock_user
 
@@ -59,8 +58,12 @@ def app(mock_auth):
     setup_exception_handlers(app)
 
     # Override authentication
-    from api.dependencies import get_current_user
+    from stateset_agents.api.dependencies import get_current_user, get_training_service
+    from stateset_agents.api.services.training_service import TrainingService
+
     app.dependency_overrides[get_current_user] = mock_auth
+    _training_svc = TrainingService()
+    app.dependency_overrides[get_training_service] = lambda: _training_svc
 
     return app
 
@@ -75,6 +78,7 @@ def client(app):
 # ============================================================================
 # Agent Router Tests
 # ============================================================================
+
 
 class TestAgentEndpoints:
     """Tests for agent management endpoints."""
@@ -179,9 +183,7 @@ class TestConversationEndpoints:
         response = client.post(
             "/conversations",
             json={
-                "messages": [
-                    {"role": "user", "content": "Hello!"}
-                ],
+                "messages": [{"role": "user", "content": "Hello!"}],
             },
         )
 
@@ -219,9 +221,7 @@ class TestConversationEndpoints:
         response = client.post(
             "/conversations",
             json={
-                "messages": [
-                    {"role": "invalid", "content": "test"}
-                ],
+                "messages": [{"role": "invalid", "content": "test"}],
             },
         )
 
@@ -253,6 +253,7 @@ class TestConversationEndpoints:
 # Training Router Tests
 # ============================================================================
 
+
 class TestTrainingEndpoints:
     """Tests for training job endpoints."""
 
@@ -262,9 +263,7 @@ class TestTrainingEndpoints:
             "/training",
             json={
                 "agent_config": {"model_name": "gpt2"},
-                "environment_scenarios": [
-                    {"id": "test", "topic": "test"}
-                ],
+                "environment_scenarios": [{"id": "test", "topic": "test"}],
                 "reward_config": {"weight": 1.0},
                 "num_episodes": 10,
             },
@@ -281,9 +280,7 @@ class TestTrainingEndpoints:
             "/training",
             json={
                 "agent_config": {"model_name": "gpt2"},
-                "environment_scenarios": [
-                    {"id": "test", "topic": "test"}
-                ],
+                "environment_scenarios": [{"id": "test", "topic": "test"}],
                 "reward_config": {"weight": 1.0},
                 "num_episodes": 10,
                 "resume_from_checkpoint": "./outputs/checkpoint-10",
@@ -341,6 +338,7 @@ class TestTrainingEndpoints:
 # Metrics Router Tests
 # ============================================================================
 
+
 class TestMetricsEndpoints:
     """Tests for metrics and health endpoints."""
 
@@ -367,6 +365,7 @@ class TestMetricsEndpoints:
 # ============================================================================
 # Error Response Tests
 # ============================================================================
+
 
 class TestErrorResponses:
     """Tests for error response formatting."""
@@ -399,6 +398,7 @@ class TestErrorResponses:
 # ============================================================================
 # Pagination Tests
 # ============================================================================
+
 
 class TestPagination:
     """Tests for pagination behavior."""
@@ -437,11 +437,20 @@ class TestPagination:
 # Authentication Tests
 # ============================================================================
 
+
 class TestAuthentication:
     """Tests for authentication handling."""
 
-    def test_unauthenticated_request(self):
+    def test_unauthenticated_request(self, monkeypatch):
         """Test request without authentication."""
+        # The global test env disables auth by default (see tests/conftest.py).
+        # For this test, explicitly enable auth and reload config.
+        from stateset_agents.api import config as api_config
+
+        prev_config = api_config._config
+        monkeypatch.setenv("API_REQUIRE_AUTH", "true")
+        api_config.reload_config()
+
         # Create app without auth override
         app = FastAPI()
         app.include_router(agents_router)
@@ -450,7 +459,10 @@ class TestAuthentication:
         with SyncASGIClient(app) as client:
             response = client.get("/agents")
 
-        assert response.status_code == 401
+        try:
+            assert response.status_code == 401
+        finally:
+            api_config._config = prev_config
 
     def test_authenticated_request(self, client):
         """Test request with authentication."""

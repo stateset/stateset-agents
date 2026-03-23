@@ -5,12 +5,8 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to publish'
-        required: true
-        default: 'patch'
       environment:
-        description: 'Publish environment'
+        description: 'Publish environment (workflow_dispatch only)'
         required: true
         default: 'testpypi'
         options:
@@ -21,7 +17,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: 
-      name: ${{ github.event.inputs.environment || 'testpypi' }}
+      name: ${{ github.event_name == 'release' && 'pypi' || github.event.inputs.environment }}
     
     steps:
     - uses: actions/checkout@v4
@@ -29,12 +25,12 @@ jobs:
         fetch-depth: 0
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.11"
     
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-publish-${{ hashFiles('**/pyproject.toml') }}
@@ -42,100 +38,68 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        pip install -e ".[dev,api]"
+        pip install bandit safety
         pip install build twine
-    
-    - name: Get version
-      id: version
+
+    - name: Run publish readiness checks
       run: |
-        if [ "${{ github.event.inputs.version }}" = "patch" ]; then
-          # Auto-increment patch version
-          CURRENT_VERSION=$(python3 -c "import re; f=open('stateset_agents/__init__.py'); c=f.read(); f.close(); m=re.search(r'__version__s*=s*[\"']([^\"']+)[\"']', c); print(m.group(1) if m else '0.0.0')")
-          IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
-          PATCH_VERSION=$((VERSION_PARTS[2] + 1))
-          NEW_VERSION="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.$PATCH_VERSION"
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        make publish-readiness
+
+    - name: Show publish readiness summary
+      if: always()
+      run: |
+        if [ -f publish-readiness-summary.json ]; then
+          cat publish-readiness-summary.json
         else
-          echo "new_version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          echo "publish-readiness-summary.json not generated"
+        fi
+
+    - name: Ensure publish readiness artifacts exist for upload
+      if: always()
+      run: |
+        touch bandit-report.json
+        touch safety-report.json
+        touch coverage.xml
+        touch publish-readiness-summary.json
+
+    - name: Upload publish readiness artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: publish-readiness-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+          coverage.xml
+          publish-readiness-summary.json
+    
+    - name: Verify Version Matches Release Tag
+      if: github.event_name == 'release'
+      run: |
+        TAG="${{ github.event.release.tag_name }}"
+        TAG="${TAG#v}"
+        PKG_VERSION="$(python - <<'PY'\nimport sys\n\ntry:\n    import tomllib\nexcept ModuleNotFoundError:  # pragma: no cover\n    import tomli as tomllib\n\nwith open('pyproject.toml', 'rb') as f:\n    data = tomllib.load(f)\nversion = data.get('project', {}).get('version')\nif not version:\n    print('missing_version')\n    sys.exit(2)\nprint(version)\nPY\n)"
+        if [ "${PKG_VERSION}" != "${TAG}" ]; then
+          echo "Version mismatch: tag=${TAG} pyproject=${PKG_VERSION}"
+          exit 1
         fi
     
-    - name: Update version
-      run: |
-        python scripts/publish.py --version ${{ steps.version.outputs.new_version }}
-    
-    - name: Build package
-      run: python -m build
-    
-    - name: Test package
-      run: |
-        pip install dist/*.whl
-        python -c "import stateset_agents; print('✅ Package import successful')"
-    
     - name: Publish to TestPyPI
-      if: github.event.inputs.environment == 'testpypi' || github.event_name == 'release'
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'testpypi'
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
       run: |
-        twine upload --skip-existing --repository testpypi dist/*
+        python -m twine upload --skip-existing --repository testpypi dist/*
     
     - name: Publish to PyPI
-      if: github.event.inputs.environment == 'pypi'
+      if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'pypi')
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
-        twine upload --skip-existing dist/*
-    
-    - name: Create Git tag
-      if: github.event.inputs.environment == 'pypi'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add .
-        if git diff --cached --quiet; then
-          echo "No changes to commit"
-        else
-          git commit -m "Release v${{ steps.version.outputs.new_version }}"
-        fi
-        git tag -f "v${{ steps.version.outputs.new_version }}"
-        git push origin "v${{ steps.version.outputs.new_version }}" --force
-    
-    - name: Create GitHub release
-      if: github.event.inputs.environment == 'pypi'
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: v${{ steps.version.outputs.new_version }}
-        release_name: Release v${{ steps.version.outputs.new_version }}
-        body: |
-          ## What's Changed
-          
-          ### 🚀 New Features
-          - [Add new features here]
-          
-          ### 🐛 Bug Fixes
-          - [Add bug fixes here]
-          
-          ### 📚 Documentation
-          - [Add documentation updates here]
-          
-          ### 🔧 Technical Changes
-          - [Add technical changes here]
-          
-          ## Installation
-          
-          ```bash
-          pip install stateset-agents==${{ steps.version.outputs.new_version }}
-          ```
-          
-          ## Docker
-          
-          ```bash
-          docker pull stateset/agents:v${{ steps.version.outputs.new_version }}
-          ```
-        draft: false
-        prerelease: false
+        python -m twine upload --skip-existing dist/*
 
   docker-publish:
     runs-on: ubuntu-latest
@@ -155,10 +119,10 @@ jobs:
         password: ${{ secrets.DOCKER_PASSWORD }}
     
     - name: Extract metadata
-      id: meta
+      id: meta_api
       uses: docker/metadata-action@v5
       with:
-        images: stateset/agents
+        images: stateset/stateset-agents-api
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -167,26 +131,39 @@ jobs:
           type=semver,pattern={{major}}
           type=raw,value=latest,enable={{is_default_branch}}
     
-    - name: Build and push Docker image
+    - name: Build and push gateway image
       uses: docker/build-push-action@v5
       with:
         context: .
         file: ./deployment/docker/Dockerfile
+        target: runtime
         push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
+        tags: ${{ steps.meta_api.outputs.tags }}
+        labels: ${{ steps.meta_api.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-    
-    - name: Build and push GPU Docker image
+
+    - name: Extract metadata (trainer)
+      id: meta_trainer
+      uses: docker/metadata-action@v5
+      with:
+        images: stateset/stateset-agents-trainer
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push trainer image
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./deployment/docker/Dockerfile
-        target: gpu-production
+        file: ./deployment/docker/Dockerfile.trainer
         push: true
-        tags: ${{ steps.meta.outputs.tags }}-gpu
-        labels: ${{ steps.meta.outputs.labels }}
+        tags: ${{ steps.meta_trainer.outputs.tags }}
+        labels: ${{ steps.meta_trainer.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
@@ -199,7 +176,7 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.11"
     

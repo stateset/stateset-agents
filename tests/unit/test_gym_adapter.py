@@ -4,9 +4,10 @@ Unit tests for Gym/Gymnasium integration.
 Tests the gym adapter, processors, mappers, and agents.
 """
 
-import pytest
+from unittest.mock import Mock
+
 import numpy as np
-from unittest.mock import Mock, AsyncMock, MagicMock
+import pytest
 
 
 # Test Observation Processors
@@ -32,8 +33,7 @@ class TestObservationProcessors:
         from stateset_agents.core.gym.processors import VectorObservationProcessor
 
         processor = VectorObservationProcessor(
-            feature_names=["x", "y", "z"],
-            precision=1
+            feature_names=["x", "y", "z"], precision=1
         )
         obs = np.array([1.0, 2.0, 3.0])
 
@@ -122,10 +122,7 @@ class TestActionMappers:
         """Test parsing named actions."""
         from stateset_agents.core.gym.mappers import DiscreteActionMapper
 
-        mapper = DiscreteActionMapper(
-            n_actions=2,
-            action_names=["LEFT", "RIGHT"]
-        )
+        mapper = DiscreteActionMapper(n_actions=2, action_names=["LEFT", "RIGHT"])
 
         assert mapper.parse_action("LEFT") == 0
         assert mapper.parse_action("RIGHT") == 1
@@ -187,7 +184,7 @@ class TestActionMappers:
         mapper = ContinuousActionMapper(
             action_dim=2,
             action_low=np.array([-1.0, -1.0]),
-            action_high=np.array([1.0, 1.0])
+            action_high=np.array([1.0, 1.0]),
         )
 
         # Out of bounds should be clipped
@@ -216,10 +213,7 @@ class TestGymEnvironmentAdapter:
         mock_env.action_space.n = 2
         mock_env.observation_space = Mock()
 
-        adapter = GymEnvironmentAdapter(
-            mock_env,
-            auto_create_processors=True
-        )
+        adapter = GymEnvironmentAdapter(mock_env, auto_create_processors=True)
 
         assert adapter is not None
         assert adapter.gym_env == mock_env
@@ -230,8 +224,8 @@ class TestGymEnvironmentAdapter:
     async def test_adapter_reset(self):
         """Test environment reset."""
         from stateset_agents.core.gym.adapter import GymEnvironmentAdapter
-        from stateset_agents.core.gym.processors import CartPoleObservationProcessor
         from stateset_agents.core.gym.mappers import DiscreteActionMapper
+        from stateset_agents.core.gym.processors import CartPoleObservationProcessor
 
         # Mock gym environment
         mock_env = Mock()
@@ -242,7 +236,7 @@ class TestGymEnvironmentAdapter:
         adapter = GymEnvironmentAdapter(
             mock_env,
             observation_processor=CartPoleObservationProcessor(),
-            action_mapper=DiscreteActionMapper(n_actions=2)
+            action_mapper=DiscreteActionMapper(n_actions=2),
         )
 
         state = await adapter.reset()
@@ -256,27 +250,28 @@ class TestGymEnvironmentAdapter:
     async def test_adapter_step(self):
         """Test environment step execution."""
         from stateset_agents.core.gym.adapter import GymEnvironmentAdapter
-        from stateset_agents.core.gym.processors import CartPoleObservationProcessor
         from stateset_agents.core.gym.mappers import DiscreteActionMapper
+        from stateset_agents.core.gym.processors import CartPoleObservationProcessor
         from stateset_agents.core.trajectory import ConversationTurn
-        from stateset_agents.core.environment import EnvironmentState, EpisodeStatus
 
         # Mock gym environment
         mock_env = Mock()
         mock_env.spec = Mock()
         mock_env.spec.id = "CartPole-v1"
         mock_env.reset = Mock(return_value=(np.array([0.0, 0.0, 0.0, 0.0]), {}))
-        mock_env.step = Mock(return_value=(
-            np.array([0.1, 0.1, 0.1, 0.1]),  # obs
-            1.0,  # reward
-            False,  # done
-            {}  # info
-        ))
+        mock_env.step = Mock(
+            return_value=(
+                np.array([0.1, 0.1, 0.1, 0.1]),  # obs
+                1.0,  # reward
+                False,  # done
+                {},  # info
+            )
+        )
 
         adapter = GymEnvironmentAdapter(
             mock_env,
             observation_processor=CartPoleObservationProcessor(),
-            action_mapper=DiscreteActionMapper(n_actions=2)
+            action_mapper=DiscreteActionMapper(n_actions=2),
         )
 
         # Reset first
@@ -302,24 +297,24 @@ class TestGymAgent:
         from stateset_agents.core.gym.agents import create_gym_agent
 
         agent = create_gym_agent(
-            model_name="gpt2",
-            use_stub=True,  # Use stub for testing
-            temperature=0.7
+            model_name="gpt2", use_stub=True, temperature=0.7  # Use stub for testing
         )
 
         assert agent is not None
-        assert agent.config.max_new_tokens <= 20  # Should be optimized for short generation
+        assert (
+            agent.config.max_new_tokens <= 20
+        )  # Should be optimized for short generation
 
     @pytest.mark.asyncio
     async def test_gym_agent_initialization(self):
         """Test GymAgent initialization."""
-        from stateset_agents.core.gym.agents import GymAgent
         from stateset_agents.core.agent import AgentConfig
+        from stateset_agents.core.gym.agents import GymAgent
 
         config = AgentConfig(
             model_name="gpt2",
             use_stub_model=True,  # Use stub for testing
-            max_new_tokens=10
+            max_new_tokens=10,
         )
 
         agent = GymAgent(config)

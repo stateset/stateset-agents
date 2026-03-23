@@ -7,29 +7,21 @@ metrics collection, log correlation, and performance monitoring.
 
 import asyncio
 import functools
-import json
 import threading
-import time
 import uuid
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any
 
 # Optional imports for enhanced functionality
 try:
-    from opentelemetry import baggage, metrics, trace
+    from opentelemetry import metrics, trace
     from opentelemetry.exporter.jaeger.thrift import JaegerExporter
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-    from opentelemetry.instrumentation.asyncio import AsyncIOInstrumentor
-    from opentelemetry.instrumentation.requests import RequestsInstrumentor
     from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import (
-        ConsoleMetricExporter,
-        PeriodicExportingMetricReader,
-    )
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
@@ -44,7 +36,7 @@ try:
 except ImportError:
     HAS_STRUCTLOG = False
 
-TRACE_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+TRACE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     ValueError,
     TypeError,
@@ -78,10 +70,10 @@ class SpanContext:
 
     trace_id: str
     span_id: str
-    parent_span_id: Optional[str] = None
-    baggage: Dict[str, str] = field(default_factory=dict)
+    parent_span_id: str | None = None
+    baggage: dict[str, str] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return {
             "trace_id": self.trace_id,
@@ -97,22 +89,22 @@ class Span:
 
     trace_id: str
     span_id: str
-    parent_span_id: Optional[str]
+    parent_span_id: str | None
     operation_name: str
     kind: SpanKind
     start_time: datetime
-    end_time: Optional[datetime] = None
-    duration_ms: Optional[float] = None
-    tags: Dict[str, Any] = field(default_factory=dict)
-    logs: List[Dict[str, Any]] = field(default_factory=list)
+    end_time: datetime | None = None
+    duration_ms: float | None = None
+    tags: dict[str, Any] = field(default_factory=dict)
+    logs: list[dict[str, Any]] = field(default_factory=list)
     status: str = "ok"
-    error: Optional[str] = None
+    error: str | None = None
 
     def __post_init__(self):
         if self.end_time and self.start_time:
             self.duration_ms = (self.end_time - self.start_time).total_seconds() * 1000
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return {
             "trace_id": self.trace_id,
@@ -135,10 +127,10 @@ class TraceData:
     """Complete trace data"""
 
     trace_id: str
-    spans: List[Span] = field(default_factory=list)
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    duration_ms: Optional[float] = None
+    spans: list[Span] = field(default_factory=list)
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    duration_ms: float | None = None
 
     def __post_init__(self):
         if self.spans:
@@ -150,7 +142,7 @@ class TraceData:
                     self.end_time - self.start_time
                 ).total_seconds() * 1000
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return {
             "trace_id": self.trace_id,
@@ -175,7 +167,7 @@ class ObservabilityTracer:
     ):
         self.service_name = service_name
         self.trace_level = trace_level
-        self.active_spans: Dict[str, Span] = {}
+        self.active_spans: dict[str, Span] = {}
         self.completed_traces: deque = deque(maxlen=1000)
         self.current_context = threading.local()
 
@@ -234,7 +226,7 @@ class ObservabilityTracer:
         """Generate trace and span IDs"""
         return str(uuid.uuid4()), str(uuid.uuid4())
 
-    def _get_current_span(self) -> Optional[Span]:
+    def _get_current_span(self) -> Span | None:
         """Get current active span"""
         if not hasattr(self.current_context, "span_stack"):
             return None
@@ -251,7 +243,7 @@ class ObservabilityTracer:
 
         self.current_context.span_stack.append(span)
 
-    def _pop_span(self) -> Optional[Span]:
+    def _pop_span(self) -> Span | None:
         """Pop span from context stack"""
         if not hasattr(self.current_context, "span_stack"):
             return None
@@ -265,8 +257,8 @@ class ObservabilityTracer:
         self,
         operation_name: str,
         kind: SpanKind = SpanKind.INTERNAL,
-        parent_context: Optional[SpanContext] = None,
-        tags: Dict[str, Any] = None,
+        parent_context: SpanContext | None = None,
+        tags: dict[str, Any] = None,
     ) -> Span:
         """Start a new span"""
         current_span = self._get_current_span()
@@ -308,7 +300,7 @@ class ObservabilityTracer:
 
         return span
 
-    def finish_span(self, span: Span, error: Optional[Exception] = None):
+    def finish_span(self, span: Span, error: Exception | None = None):
         """Finish a span"""
         span.end_time = datetime.now()
         span.duration_ms = (span.end_time - span.start_time).total_seconds() * 1000
@@ -375,17 +367,17 @@ class ObservabilityTracer:
         }
         span.logs.append(log_entry)
 
-    def get_current_trace_id(self) -> Optional[str]:
+    def get_current_trace_id(self) -> str | None:
         """Get current trace ID"""
         current_span = self._get_current_span()
         return current_span.trace_id if current_span else None
 
-    def get_current_span_id(self) -> Optional[str]:
+    def get_current_span_id(self) -> str | None:
         """Get current span ID"""
         current_span = self._get_current_span()
         return current_span.span_id if current_span else None
 
-    def get_span_context(self) -> Optional[SpanContext]:
+    def get_span_context(self) -> SpanContext | None:
         """Get current span context"""
         current_span = self._get_current_span()
         if not current_span:
@@ -402,7 +394,7 @@ class ObservabilityTracer:
         self,
         operation_name: str,
         kind: SpanKind = SpanKind.INTERNAL,
-        tags: Dict[str, Any] = None,
+        tags: dict[str, Any] = None,
     ):
         """Context manager for tracing"""
         span = self.start_span(operation_name, kind, tags=tags)
@@ -420,7 +412,7 @@ class ObservabilityTracer:
         self,
         operation_name: str,
         kind: SpanKind = SpanKind.INTERNAL,
-        tags: Dict[str, Any] = None,
+        tags: dict[str, Any] = None,
     ):
         """Async context manager for tracing"""
         span = self.start_span(operation_name, kind, tags=tags)
@@ -433,7 +425,7 @@ class ObservabilityTracer:
         else:
             self.finish_span(span)
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get tracer metrics"""
         return {
             "total_spans": self.metrics["total_spans"],
@@ -520,7 +512,7 @@ class ObservabilityManager:
 
         self.logger = structlog.get_logger(self.service_name)
 
-    def trace_api_request(self, method: str, path: str, user_id: Optional[str] = None):
+    def trace_api_request(self, method: str, path: str, user_id: str | None = None):
         """Trace API request"""
         if not self.tracer:
             return contextmanager(lambda: (yield))()
@@ -547,7 +539,7 @@ class ObservabilityManager:
             f"Training Iteration {iteration}", SpanKind.INTERNAL, tags
         )
 
-    def trace_conversation(self, conversation_id: str, user_id: Optional[str] = None):
+    def trace_conversation(self, conversation_id: str, user_id: str | None = None):
         """Trace conversation"""
         if not self.tracer:
             return contextmanager(lambda: (yield))()
@@ -595,18 +587,18 @@ class ObservabilityManager:
                 -1000:
             ]
 
-    def get_performance_summary(self) -> Dict[str, Any]:
+    def get_performance_summary(self) -> dict[str, Any]:
         """Get performance summary"""
         summary = {}
 
-        for category, metrics in self.performance_metrics.items():
-            if not metrics:
+        for category, metric_entries in self.performance_metrics.items():
+            if not metric_entries:
                 continue
 
-            durations = [m["duration_ms"] for m in metrics]
+            durations = [m["duration_ms"] for m in metric_entries]
 
             summary[category] = {
-                "total_operations": len(metrics),
+                "total_operations": len(metric_entries),
                 "average_duration_ms": sum(durations) / len(durations),
                 "min_duration_ms": min(durations),
                 "max_duration_ms": max(durations),
@@ -620,14 +612,14 @@ class ObservabilityManager:
 
         return summary
 
-    def get_trace_statistics(self) -> Dict[str, Any]:
+    def get_trace_statistics(self) -> dict[str, Any]:
         """Get trace statistics"""
         if not self.tracer:
             return {"tracing": "disabled"}
 
         return self.tracer.get_metrics()
 
-    def get_observability_summary(self) -> Dict[str, Any]:
+    def get_observability_summary(self) -> dict[str, Any]:
         """Get comprehensive observability summary"""
         return {
             "service_name": self.service_name,
@@ -645,7 +637,7 @@ class ObservabilityManager:
 
 
 # Global observability instance
-_global_observability: Optional[ObservabilityManager] = None
+_global_observability: ObservabilityManager | None = None
 
 
 def get_observability() -> ObservabilityManager:
@@ -680,9 +672,9 @@ def setup_observability(
 
 
 def trace_function(
-    operation_name: Optional[str] = None,
+    operation_name: str | None = None,
     kind: SpanKind = SpanKind.INTERNAL,
-    tags: Dict[str, Any] = None,
+    tags: dict[str, Any] = None,
 ):
     """Decorator for tracing functions"""
 

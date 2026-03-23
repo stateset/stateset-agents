@@ -1,0 +1,82 @@
+{{- if .Values.trainingJob.enabled }}
+{{- $trainResources := default .Values.vllm.resources .Values.trainingJob.resources }}
+{{- $trainAccelerator := default .Values.vllm.gpu.accelerator .Values.trainingJob.gpu.accelerator }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "stateset-agents.fullname" . }}-training
+  namespace: {{ .Values.global.namespace }}
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: {{ include "stateset-agents.fullname" . }}-training
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      {{- $sa := include "stateset-agents.serviceAccountName" . }}
+      {{- if $sa }}
+      serviceAccountName: {{ $sa }}
+      {{- end }}
+      {{- with .Values.trainingJob.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: trainer
+        image: {{ include "stateset-agents.image" .Values.trainingJob.image }}
+        imagePullPolicy: {{ .Values.trainingJob.image.pullPolicy }}
+        {{- with .Values.trainingJob.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        command: {{ toJson .Values.trainingJob.command }}
+        env:
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.trainingJob.hfSecretName }}
+              key: {{ .Values.trainingJob.hfSecretKey }}
+        - name: HF_HOME
+          value: "/models/hf"
+        - name: TRANSFORMERS_CACHE
+          value: "/models/hf"
+        - name: WANDB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.trainingJob.wandbSecretName }}
+              key: {{ .Values.trainingJob.wandbSecretKey }}
+              optional: true
+        resources:
+          requests:
+            cpu: {{ $trainResources.requests.cpu | quote }}
+            memory: {{ $trainResources.requests.memory | quote }}
+            ephemeral-storage: {{ index $trainResources.requests "ephemeral-storage" | quote }}
+            nvidia.com/gpu: {{ index $trainResources.requests "nvidia.com/gpu" | quote }}
+          limits:
+            cpu: {{ $trainResources.limits.cpu | quote }}
+            memory: {{ $trainResources.limits.memory | quote }}
+            ephemeral-storage: {{ index $trainResources.limits "ephemeral-storage" | quote }}
+            nvidia.com/gpu: {{ index $trainResources.limits "nvidia.com/gpu" | quote }}
+        volumeMounts:
+        - name: models
+          mountPath: /models
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: {{ .Values.pvc.name }}
+      {{- with .Values.trainingJob.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.trainingJob.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      nodeSelector:
+        cloud.google.com/gke-accelerator: {{ $trainAccelerator | quote }}
+        {{- with .Values.trainingJob.nodeSelectorExtra }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

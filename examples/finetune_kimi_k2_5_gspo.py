@@ -20,9 +20,6 @@ Usage:
 import argparse
 import asyncio
 import logging
-import os
-from pathlib import Path
-from typing import Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,8 +42,8 @@ def get_kimi_k2_5_config(
     Kimi-K2.5 is a 1T parameter MoE model with 32B activated parameters.
     These configurations are optimized for the MoE architecture.
     """
-    from stateset_agents.training.gspo_trainer import GSPOConfig
     from stateset_agents.training.config import get_config_for_task
+    from stateset_agents.training.gspo_trainer import GSPOConfig
 
     # Get base config for task
     base_config = get_config_for_task(task, model_name=model_name)
@@ -102,7 +99,7 @@ async def finetune_kimi_k2_5(
     use_8bit: bool = False,
     output_dir: str = "./outputs/kimi_k2_5_gspo",
     use_wandb: bool = False,
-    wandb_project: Optional[str] = None,
+    wandb_project: str | None = None,
 ):
     """
     Fine-tune a Kimi-K2.5 model using GSPO.
@@ -120,8 +117,8 @@ async def finetune_kimi_k2_5(
     from stateset_agents import MultiTurnAgent
     from stateset_agents.core.agent import AgentConfig
     from stateset_agents.core.environment import (
-        ConversationEnvironment,
         CONVERSATION_CONFIGS,
+        ConversationEnvironment,
     )
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
     from stateset_agents.training.gspo_trainer import train_with_gspo
@@ -164,9 +161,7 @@ async def finetune_kimi_k2_5(
         env_config = CONVERSATION_CONFIGS["customer_service"].copy()
 
     environment = ConversationEnvironment(**env_config)
-    logger.info(
-        f"✅ Environment configured with {len(environment.scenarios)} scenarios"
-    )
+    logger.info(f"✅ Environment configured with {len(environment.scenarios)} scenarios")
 
     # Create reward model
     logger.info("Initializing reward model...")

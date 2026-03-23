@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -45,7 +45,7 @@ class AlgorithmResult:
     training_time: float  # seconds
     memory_usage: float  # GB
     sample_efficiency: float  # reward per 1000 samples
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class AlgorithmBenchmark:
@@ -68,8 +68,8 @@ class AlgorithmBenchmark:
         from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
         from stateset_agents.core.environment import ConversationEnvironment
         from stateset_agents.core.reward import create_customer_service_reward
-        from stateset_agents.training.trainer import MultiTurnGRPOTrainer
         from stateset_agents.training.config import TrainingConfig
+        from stateset_agents.training.trainer import MultiTurnGRPOTrainer
 
         # Create components
         agent_config = AgentConfig(
@@ -170,7 +170,7 @@ class AlgorithmBenchmark:
         from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
         from stateset_agents.core.environment import ConversationEnvironment
         from stateset_agents.core.reward import create_customer_service_reward
-        from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
+        from stateset_agents.training.gspo_trainer import GSPOConfig
 
         # Create components
         agent_config = AgentConfig(
@@ -187,11 +187,11 @@ class AlgorithmBenchmark:
             {"topic": "billing", "context": "Invoice question"},
             {"topic": "cancellation", "context": "Cancel subscription"},
         ]
-        environment = ConversationEnvironment(scenarios=scenarios, max_turns=6)
-
-        reward_fn = create_customer_service_reward()
-
-        config = GSPOConfig(
+        # In a real benchmark, these would be used to drive an actual training loop.
+        # This file uses a simulated reward curve to keep benchmarks fast and deterministic.
+        ConversationEnvironment(scenarios=scenarios, max_turns=6)
+        create_customer_service_reward()
+        GSPOConfig(
             num_outer_iterations=num_episodes,
             num_generations=8,
             learning_rate=5e-6,
@@ -209,8 +209,8 @@ class AlgorithmBenchmark:
         # GSPO typically converges faster than GRPO
         for episode in range(num_episodes):
             # Simulated reward with GSPO characteristics
-            reward = 0.45 + (0.42 * (1 - np.exp(-episode / 250))) + np.random.normal(
-                0, 0.04
+            reward = (
+                0.45 + (0.42 * (1 - np.exp(-episode / 250))) + np.random.normal(0, 0.04)
             )
             rewards.append(reward)
 
@@ -269,8 +269,8 @@ class AlgorithmBenchmark:
 
         # PPO typically takes longer to converge on conversational tasks
         for episode in range(num_episodes):
-            reward = 0.40 + (0.42 * (1 - np.exp(-episode / 350))) + np.random.normal(
-                0, 0.08
+            reward = (
+                0.40 + (0.42 * (1 - np.exp(-episode / 350))) + np.random.normal(0, 0.08)
             )
             rewards.append(reward)
 
@@ -301,7 +301,11 @@ class AlgorithmBenchmark:
             training_time=training_time,
             memory_usage=0.0,
             sample_efficiency=sample_efficiency,
-            metadata={"model": model_name, "episodes": num_episodes, "rewards": rewards},
+            metadata={
+                "model": model_name,
+                "episodes": num_episodes,
+                "rewards": rewards,
+            },
         )
 
         self.results.append(result)
@@ -323,8 +327,8 @@ class AlgorithmBenchmark:
 
         # DPO is sample-efficient early but plateaus
         for episode in range(num_episodes):
-            reward = 0.55 + (0.25 * (1 - np.exp(-episode / 450))) + np.random.normal(
-                0, 0.03
+            reward = (
+                0.55 + (0.25 * (1 - np.exp(-episode / 450))) + np.random.normal(0, 0.03)
             )
             rewards.append(reward)
 
@@ -355,7 +359,11 @@ class AlgorithmBenchmark:
             training_time=training_time,
             memory_usage=0.0,
             sample_efficiency=sample_efficiency,
-            metadata={"model": model_name, "episodes": num_episodes, "rewards": rewards},
+            metadata={
+                "model": model_name,
+                "episodes": num_episodes,
+                "rewards": rewards,
+            },
         )
 
         self.results.append(result)

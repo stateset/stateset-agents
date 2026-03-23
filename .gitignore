@@ -39,13 +39,19 @@ htmlcov/
 .nox/
 .coverage
 .coverage.*
+.coverage_html/
 .cache
 nosetests.xml
 coverage.xml
+coverage.*.xml
+junit.xml
+pytest.xml
+reports/
 *.cover
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.ruff_cache/
 
 # Translations
 *.mo
@@ -93,6 +99,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+*.env
+!.env.example
+!.env.template
 
 # Spyder project settings
 .spyderproject
@@ -136,12 +145,93 @@ models/
 *.pth
 *.bin
 
+# Security scan outputs
+bandit-report.json
+bandit-report.txt
+safety-report.json
+safety-report.txt
+publish-readiness-summary.json
+semgrep-report.json
+semgrep-report.txt
+trivy-report.json
+trivy-report.txt
+
 # Logs
 logs/
 *.log
+coverage/
+benchmarks/*.log
+benchmark_results/
+hpo_results/
 
-# Wandb
+# Python package/typing artifacts
+*.egg-info/
+
+# Runtime / tool state
+.venv/
+.pdm-python
+.tox/
+.nox/
+
+# Frontend and JS tooling
+node_modules/
+.next/
+.vite/
+.turbo/
+
+# Local agent / CLI caches
+.claude/
+
+# Local environment variants
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Local credentials and secrets
+secrets/
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.key
+*.crt
+*.pub
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*.service-account.json
+*service_account*.json
+*credentials*.json
+
+# ML / data artifacts
+*.safetensors
+*.onnx
+*.ckpt
+*.h5
+*.keras
+*.gguf
+*.jsonl
+*.npz
+*.npy
+*.pkl
+*.parquet
+*.ptl
+*.hdf5
+
+# Training/runtime output directories
 wandb/
+artifact/
+artifacts/
+outputs/
+results/
+runs/
+runs/*
+tensorboard/
+tensorboard_logs/
+tensorboard-logs/
 
 # Temporary files
 tmp/
@@ -154,6 +244,11 @@ secrets/
 *.pem
 *.crt
 
+# ML tooling cache
+.hf/
+.huggingface/
+mlruns/
+
 # Database
 *.db
 *.sqlite
@@ -162,6 +257,3 @@ secrets/
 # Cache directories
 .cache/
 .parquet_cache/
-
-# Training outputs
-outputs/

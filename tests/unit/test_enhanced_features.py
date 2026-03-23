@@ -9,9 +9,6 @@ Tests for v0.3.0 improvements:
 """
 
 import asyncio
-import logging
-from typing import Any, Dict, List
-from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -19,7 +16,6 @@ from stateset_agents.core.async_pool import (
     AsyncResourceFactory,
     AsyncResourcePool,
     AsyncTaskManager,
-    HTTPSessionFactory,
     PooledResource,
     PoolStats,
 )
@@ -37,14 +33,11 @@ from stateset_agents.core.error_handling import (
     RetryConfig,
     TrainingException,
     ValidationException,
-    get_error_summary,
-    handle_error,
     retry_async,
 )
 from stateset_agents.core.performance_optimizer import (
     BatchOptimizer,
     ComputeConfig,
-    DataConfig,
     MemoryConfig,
     MemoryMonitor,
     ModelOptimizer,
@@ -56,13 +49,9 @@ from stateset_agents.core.type_system import (
     ConfigValidator,
     DeviceType,
     ModelConfig,
-    ModelSize,
-    TrainingConfig,
-    TrainingStage,
     TypeSafeSerializer,
     TypeValidator,
     create_typed_config,
-    ensure_type_safety,
 )
 
 
@@ -139,13 +128,13 @@ class TestErrorHandling:
         cb = CircuitBreaker(config)
 
         def failing_function():
-            raise Exception("Always fails")
+            raise RuntimeError("Always fails")
 
         # First failures should pass through
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             cb.call(failing_function)
 
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             cb.call(failing_function)
 
         # Circuit should now be open
@@ -208,7 +197,15 @@ class TestPerformanceOptimization:
 
         assert optimizer.config.use_mixed_precision
         assert not optimizer.config.compile_model
-        assert optimizer.scaler is not None  # Should be initialized for mixed precision
+        # GradScaler is only meaningful when CUDA is available. On CPU-only
+        # environments, we intentionally keep scaler unset to avoid misleading
+        # behavior and deprecation noise.
+        import torch
+
+        if torch.cuda.is_available():
+            assert optimizer.scaler is not None
+        else:
+            assert optimizer.scaler is None
 
 
 class TestTypeSystem:
@@ -225,12 +222,12 @@ class TestTypeSystem:
         assert validator.validate_type({"a": 1}, dict)
 
         # Test complex types
-        assert validator.validate_type([1, 2, 3], List[int])
-        assert validator.validate_type({"key": "value"}, Dict[str, str])
+        assert validator.validate_type([1, 2, 3], list[int])
+        assert validator.validate_type({"key": "value"}, dict[str, str])
 
         # Test invalid types
         assert not validator.validate_type("hello", int)
-        assert not validator.validate_type([1, 2, "3"], List[int])
+        assert not validator.validate_type([1, 2, "3"], list[int])
 
     def test_config_validator(self):
         """Test configuration validation"""
@@ -460,9 +457,7 @@ class TestIntegration:
 
         # Test that all new components can be imported together
         from stateset_agents import (
-            AsyncResourcePool,
             ErrorHandler,
-            ModelConfig,
             OptimizationLevel,
             PerformanceOptimizer,
             TypeValidator,

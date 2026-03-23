@@ -8,7 +8,7 @@ domains and training stages.
 import logging
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -27,9 +27,9 @@ class RewardStatistics:
     min: float = 0.0
     max: float = 1.0
     count: int = 0
-    percentiles: Dict[int, float] = field(default_factory=dict)
+    percentiles: dict[int, float] = field(default_factory=dict)
 
-    def update(self, values: List[float]):
+    def update(self, values: list[float]):
         """Update statistics with new values"""
         if not values:
             return
@@ -56,7 +56,7 @@ class RewardNormalizer:
         method: str = "z_score",
         target_mean: float = 0.0,
         target_std: float = 1.0,
-        clip_range: Optional[Tuple[float, float]] = None,
+        clip_range: tuple[float, float] | None = None,
         buffer_size: int = 10000,
     ):
         """
@@ -110,7 +110,9 @@ class RewardNormalizer:
         elif self.method == "min_max":
             # Min-max normalization to [0, 1]
             if self.stats.max > self.stats.min:
-                normalized = (reward - self.stats.min) / (self.stats.max - self.stats.min)
+                normalized = (reward - self.stats.min) / (
+                    self.stats.max - self.stats.min
+                )
             else:
                 normalized = 0.5
 
@@ -146,7 +148,7 @@ class CalibratedRewardFunction(RewardFunction):
     def __init__(
         self,
         base_reward_fn: RewardFunction,
-        normalizer: Optional[RewardNormalizer] = None,
+        normalizer: RewardNormalizer | None = None,
         auto_calibrate: bool = True,
         calibration_interval: int = 100,
     ):
@@ -174,8 +176,8 @@ class CalibratedRewardFunction(RewardFunction):
 
     async def compute_reward(
         self,
-        turns: List[ConversationTurn],
-        context: Optional[Dict[str, Any]] = None,
+        turns: list[ConversationTurn],
+        context: dict[str, Any] | None = None,
     ) -> RewardResult:
         """Compute calibrated reward"""
         # Get base reward
@@ -216,7 +218,7 @@ class MultiRewardCalibrator:
     Calibrates multiple reward functions to have consistent scales
     """
 
-    def __init__(self, reward_functions: List[RewardFunction]):
+    def __init__(self, reward_functions: list[RewardFunction]):
         """
         Args:
             reward_functions: List of reward functions to calibrate
@@ -228,9 +230,9 @@ class MultiRewardCalibrator:
 
     async def calibrate(
         self,
-        episodes: List[List[ConversationTurn]],
-        contexts: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, RewardStatistics]:
+        episodes: list[list[ConversationTurn]],
+        contexts: list[dict[str, Any]] | None = None,
+    ) -> dict[str, RewardStatistics]:
         """
         Calibrate reward functions on a set of episodes
 
@@ -250,7 +252,7 @@ class MultiRewardCalibrator:
         for rf in self.reward_functions:
             logger.info(f"  Processing {rf.name}...")
 
-            for turns, context in zip(episodes, contexts):
+            for turns, context in zip(episodes, contexts, strict=False):
                 result = await rf.compute_reward(turns, context)
                 self.normalizers[rf.name].add_reward(result.score)
 
@@ -270,7 +272,7 @@ class MultiRewardCalibrator:
         logger.info("✓ Calibration complete")
         return statistics
 
-    def get_calibrated_functions(self) -> List[CalibratedRewardFunction]:
+    def get_calibrated_functions(self) -> list[CalibratedRewardFunction]:
         """Get calibrated versions of all reward functions"""
         calibrated = []
         for rf in self.reward_functions:
@@ -343,7 +345,7 @@ class AdaptiveRewardScaler:
         # Clip scale to valid range
         self.scale = np.clip(self.scale, self.min_scale, self.max_scale)
 
-    def get_statistics(self) -> Dict[str, float]:
+    def get_statistics(self) -> dict[str, float]:
         """Get current scaling statistics"""
         if not self.reward_history:
             return {}
@@ -362,10 +364,10 @@ class AdaptiveRewardScaler:
 
 
 def calibrate_reward_functions(
-    reward_functions: List[RewardFunction],
-    calibration_episodes: List[List[ConversationTurn]],
-    contexts: Optional[List[Dict[str, Any]]] = None,
-) -> List[CalibratedRewardFunction]:
+    reward_functions: list[RewardFunction],
+    calibration_episodes: list[list[ConversationTurn]],
+    contexts: list[dict[str, Any]] | None = None,
+) -> list[CalibratedRewardFunction]:
     """
     Calibrate a list of reward functions
 

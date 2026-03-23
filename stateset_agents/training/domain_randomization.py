@@ -9,7 +9,7 @@ scenario variation, and curriculum learning.
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
@@ -26,9 +26,9 @@ class UserPersona:
     """
 
     name: str
-    traits: Dict[str, float] = field(default_factory=dict)
+    traits: dict[str, float] = field(default_factory=dict)
     vocabulary_style: str = "neutral"  # formal, casual, technical, emotional
-    response_patterns: List[str] = field(default_factory=list)
+    response_patterns: list[str] = field(default_factory=list)
     emotion_model: str = "neutral"  # frustrated, happy, confused, impatient
     expertise_level: float = 0.5  # 0-1, domain expertise
     patience_level: float = 0.5  # 0-1, conversation patience
@@ -83,7 +83,7 @@ class DomainRandomizationConfig:
 
     # Persona randomization
     num_personas: int = 100
-    persona_traits: List[str] = field(
+    persona_traits: list[str] = field(
         default_factory=lambda: [
             "patience",
             "expertise",
@@ -94,14 +94,14 @@ class DomainRandomizationConfig:
             "detail_orientation",
         ]
     )
-    trait_ranges: Dict[str, Tuple[float, float]] = field(default_factory=dict)
+    trait_ranges: dict[str, tuple[float, float]] = field(default_factory=dict)
 
     # Topic randomization
-    topics: List[str] = field(default_factory=list)
-    topic_weights: Optional[Dict[str, float]] = None
+    topics: list[str] = field(default_factory=list)
+    topic_weights: dict[str, float] | None = None
 
     # Style randomization
-    styles: List[str] = field(
+    styles: list[str] = field(
         default_factory=lambda: [
             "formal",
             "casual",
@@ -111,10 +111,10 @@ class DomainRandomizationConfig:
             "verbose",
         ]
     )
-    style_weights: Optional[Dict[str, float]] = None
+    style_weights: dict[str, float] | None = None
 
     # Emotion randomization
-    emotions: List[str] = field(
+    emotions: list[str] = field(
         default_factory=lambda: [
             "neutral",
             "frustrated",
@@ -125,7 +125,7 @@ class DomainRandomizationConfig:
             "skeptical",
         ]
     )
-    emotion_weights: Optional[Dict[str, float]] = None
+    emotion_weights: dict[str, float] | None = None
 
     # Difficulty curriculum
     use_curriculum: bool = True
@@ -140,7 +140,7 @@ class DomainRandomizationConfig:
     truncation_probability: float = 0.05
 
     # Seed for reproducibility
-    seed: Optional[int] = None
+    seed: int | None = None
 
 
 # Pre-defined persona templates
@@ -214,7 +214,7 @@ class PersonaGenerator:
     def __init__(
         self,
         config: DomainRandomizationConfig,
-        templates: Optional[Dict[str, UserPersona]] = None,
+        templates: dict[str, UserPersona] | None = None,
     ):
         self.config = config
         self.templates = templates or PERSONA_TEMPLATES
@@ -224,7 +224,7 @@ class PersonaGenerator:
             np.random.seed(config.seed)
 
         # Pre-generate persona pool
-        self._persona_pool: List[UserPersona] = []
+        self._persona_pool: list[UserPersona] = []
 
     def generate_random_persona(self) -> UserPersona:
         """Generate a random persona with varied traits"""
@@ -255,8 +255,20 @@ class PersonaGenerator:
 
         # Generate name
         names = [
-            "Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Quinn",
-            "Avery", "Reese", "Parker", "Drew", "Jamie", "Sam", "Charlie",
+            "Alex",
+            "Jordan",
+            "Taylor",
+            "Morgan",
+            "Casey",
+            "Riley",
+            "Quinn",
+            "Avery",
+            "Reese",
+            "Parker",
+            "Drew",
+            "Jamie",
+            "Sam",
+            "Charlie",
         ]
         name = f"{random.choice(names)}_{random.randint(1000, 9999)}"
 
@@ -271,14 +283,14 @@ class PersonaGenerator:
             formality=0.7 if style == "formal" else 0.3 if style == "casual" else 0.5,
         )
 
-    def generate_persona_batch(self, n: int) -> List[UserPersona]:
+    def generate_persona_batch(self, n: int) -> list[UserPersona]:
         """Generate a batch of random personas"""
         return [self.generate_random_persona() for _ in range(n)]
 
     def from_template(
         self,
         template_name: str,
-        variations: Optional[Dict[str, float]] = None,
+        variations: dict[str, float] | None = None,
     ) -> UserPersona:
         """Create persona from template with optional variations"""
         if template_name not in self.templates:
@@ -329,8 +341,10 @@ class PersonaGenerator:
             traits=traits,
             vocabulary_style=style,
             emotion_model=emotion,
-            expertise_level=(1 - alpha) * persona1.expertise_level + alpha * persona2.expertise_level,
-            patience_level=(1 - alpha) * persona1.patience_level + alpha * persona2.patience_level,
+            expertise_level=(1 - alpha) * persona1.expertise_level
+            + alpha * persona2.expertise_level,
+            patience_level=(1 - alpha) * persona1.patience_level
+            + alpha * persona2.patience_level,
             verbosity=(1 - alpha) * persona1.verbosity + alpha * persona2.verbosity,
             formality=(1 - alpha) * persona1.formality + alpha * persona2.formality,
         )
@@ -353,7 +367,9 @@ class PersonaGenerator:
 
         # Higher difficulty = more emotional variety
         if difficulty > 0.7:
-            persona.emotion_model = random.choice(["frustrated", "impatient", "skeptical"])
+            persona.emotion_model = random.choice(
+                ["frustrated", "impatient", "skeptical"]
+            )
         elif difficulty > 0.4:
             persona.emotion_model = random.choice(["neutral", "confused", "curious"])
         else:
@@ -373,7 +389,7 @@ class ScenarioGenerator:
     def __init__(
         self,
         config: DomainRandomizationConfig,
-        custom_scenarios: Optional[List[Dict[str, Any]]] = None,
+        custom_scenarios: list[dict[str, Any]] | None = None,
     ):
         self.config = config
         self.custom_scenarios = custom_scenarios or []
@@ -383,9 +399,9 @@ class ScenarioGenerator:
 
     def generate_scenario(
         self,
-        difficulty: Optional[float] = None,
-        topic: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        difficulty: float | None = None,
+        topic: str | None = None,
+    ) -> dict[str, Any]:
         """
         Generate a random conversation scenario.
 
@@ -476,7 +492,7 @@ class ScenarioGenerator:
         else:
             return random.choice(complex_goals)
 
-    def _generate_constraints(self, difficulty: float) -> Dict[str, Any]:
+    def _generate_constraints(self, difficulty: float) -> dict[str, Any]:
         """Generate scenario constraints"""
         constraints = {
             "time_pressure": difficulty > 0.6,
@@ -487,7 +503,7 @@ class ScenarioGenerator:
         }
         return constraints
 
-    def _generate_success_criteria(self, topic: str) -> List[str]:
+    def _generate_success_criteria(self, topic: str) -> list[str]:
         """Generate success criteria for the scenario"""
         common_criteria = [
             "User's question is answered",
@@ -514,7 +530,7 @@ class ScenarioGenerator:
         additional = int(difficulty * 15)
         return base_turns + additional
 
-    def curriculum_sample(self, step: int) -> Dict[str, Any]:
+    def curriculum_sample(self, step: int) -> dict[str, Any]:
         """
         Sample a scenario using curriculum learning.
 
@@ -527,13 +543,13 @@ class ScenarioGenerator:
         progress = min(step / self.config.curriculum_steps, 1.0)
 
         if self.config.curriculum_schedule == "linear":
-            difficulty = (
-                self.config.initial_difficulty
-                + progress * (self.config.max_difficulty - self.config.initial_difficulty)
+            difficulty = self.config.initial_difficulty + progress * (
+                self.config.max_difficulty - self.config.initial_difficulty
             )
         elif self.config.curriculum_schedule == "exponential":
             difficulty = self.config.initial_difficulty * (
-                (self.config.max_difficulty / self.config.initial_difficulty) ** progress
+                (self.config.max_difficulty / self.config.initial_difficulty)
+                ** progress
             )
         elif self.config.curriculum_schedule == "cosine":
             difficulty = self.config.initial_difficulty + 0.5 * (
@@ -561,8 +577,8 @@ class DomainRandomizer:
 
     def randomize_scenario(
         self,
-        base_scenario: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        base_scenario: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Apply randomization to a scenario.
 
@@ -632,20 +648,26 @@ class DomainRandomizer:
         pos = random.randint(1, len(text) - 2)
 
         if typo_type == "swap" and pos < len(text) - 1:
-            text = text[:pos] + text[pos + 1] + text[pos] + text[pos + 2:]
+            text = text[:pos] + text[pos + 1] + text[pos] + text[pos + 2 :]
         elif typo_type == "delete":
-            text = text[:pos] + text[pos + 1:]
+            text = text[:pos] + text[pos + 1 :]
         elif typo_type == "duplicate":
             text = text[:pos] + text[pos] + text[pos:]
         elif typo_type == "replace":
             keyboard_neighbors = {
-                "a": "sq", "s": "awd", "d": "sfe", "f": "dgr",
-                "q": "wa", "w": "qes", "e": "wrd", "r": "etf",
+                "a": "sq",
+                "s": "awd",
+                "d": "sfe",
+                "f": "dgr",
+                "q": "wa",
+                "w": "qes",
+                "e": "wrd",
+                "r": "etf",
             }
             char = text[pos].lower()
             if char in keyboard_neighbors:
                 replacement = random.choice(keyboard_neighbors[char])
-                text = text[:pos] + replacement + text[pos + 1:]
+                text = text[:pos] + replacement + text[pos + 1 :]
 
         return text
 
@@ -665,7 +687,7 @@ class DomainRandomizer:
 
         return text[:truncate_pos] + "..."
 
-    def get_curriculum_parameters(self, step: int) -> Dict[str, Any]:
+    def get_curriculum_parameters(self, step: int) -> dict[str, Any]:
         """Get current curriculum parameters"""
         self._step = step
         scenario = self.scenario_generator.curriculum_sample(step)

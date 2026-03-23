@@ -32,17 +32,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
     Any,
-    Callable,
-    Dict,
-    List,
     Literal,
-    Optional,
-    Type,
     Union,
     get_args,
     get_origin,
     get_type_hints,
 )
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -81,12 +77,12 @@ class FunctionParameter:
     type: str
     description: str = ""
     required: bool = True
-    enum: Optional[List[Any]] = None
+    enum: list[Any] | None = None
     default: Any = None
 
-    def to_json_schema(self) -> Dict[str, Any]:
+    def to_json_schema(self) -> dict[str, Any]:
         """Convert to JSON Schema format."""
-        schema: Dict[str, Any] = {"type": self.type}
+        schema: dict[str, Any] = {"type": self.type}
         if self.description:
             schema["description"] = self.description
         if self.enum:
@@ -110,11 +106,11 @@ class FunctionDefinition:
 
     name: str
     description: str
-    parameters: Dict[str, Any]
-    handler: Optional[Callable] = None
+    parameters: dict[str, Any]
+    handler: Callable | None = None
     strict: bool = False
 
-    def to_openai_format(self) -> Dict[str, Any]:
+    def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI API tool format."""
         return {
             "type": "function",
@@ -139,7 +135,7 @@ class ToolCall:
 
     id: str
     type: Literal["function"] = "function"
-    function: Dict[str, str] = field(default_factory=dict)
+    function: dict[str, str] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -151,7 +147,7 @@ class ToolCall:
         """Get raw arguments string."""
         return self.function.get("arguments", "{}")
 
-    def parsed_arguments(self) -> Dict[str, Any]:
+    def parsed_arguments(self) -> dict[str, Any]:
         """Parse arguments as JSON."""
         try:
             return json.loads(self.arguments)
@@ -173,7 +169,7 @@ class ToolResult:
     content: str
     is_error: bool = False
 
-    def to_message(self) -> Dict[str, Any]:
+    def to_message(self) -> dict[str, Any]:
         """Convert to OpenAI message format."""
         return {
             "role": "tool",
@@ -182,7 +178,7 @@ class ToolResult:
         }
 
 
-def _python_type_to_json_schema(python_type: Type) -> Dict[str, Any]:
+def _python_type_to_json_schema(python_type: type) -> dict[str, Any]:
     """Convert Python type annotation to JSON Schema."""
     origin = get_origin(python_type)
     args = get_args(python_type)
@@ -223,7 +219,7 @@ def _python_type_to_json_schema(python_type: Type) -> Dict[str, Any]:
 
 
 def tool(
-    name: Optional[str] = None,
+    name: str | None = None,
     description: str = "",
     strict: bool = False,
 ) -> Callable:
@@ -261,8 +257,8 @@ def tool(
         sig = inspect.signature(func)
 
         # Build parameters schema
-        properties: Dict[str, Any] = {}
-        required: List[str] = []
+        properties: dict[str, Any] = {}
+        required: list[str] = []
 
         # Parse docstring for parameter descriptions
         param_descriptions = _parse_docstring_params(func.__doc__ or "")
@@ -306,7 +302,7 @@ def tool(
     return decorator
 
 
-def _parse_docstring_params(docstring: str) -> Dict[str, str]:
+def _parse_docstring_params(docstring: str) -> dict[str, str]:
     """Extract parameter descriptions from docstring.
 
     Supports Google-style and NumPy-style docstrings.
@@ -345,12 +341,12 @@ class FunctionCallingMixin:
     tool/function calling with automatic execution.
     """
 
-    _tools: Dict[str, FunctionDefinition]
+    _tools: dict[str, FunctionDefinition]
     _tool_choice: ToolChoiceMode
 
     def __init_tools__(
         self,
-        tools: Optional[List[Union[FunctionDefinition, Callable, Dict[str, Any]]]] = None,
+        tools: list[FunctionDefinition | Callable | dict[str, Any]] | None = None,
         tool_choice: ToolChoiceMode = ToolChoiceMode.AUTO,
     ) -> None:
         """Initialize function calling capabilities.
@@ -369,7 +365,7 @@ class FunctionCallingMixin:
                 self.register_tool(t)
 
     def register_tool(
-        self, tool: Union[FunctionDefinition, Callable, Dict[str, Any]]
+        self, tool: FunctionDefinition | Callable | dict[str, Any]
     ) -> None:
         """Register a tool for use by the agent.
 
@@ -397,7 +393,7 @@ class FunctionCallingMixin:
         """Wrap a plain callable as a FunctionDefinition."""
         return tool()(func)
 
-    def _parse_tool_dict(self, tool_dict: Dict[str, Any]) -> FunctionDefinition:
+    def _parse_tool_dict(self, tool_dict: dict[str, Any]) -> FunctionDefinition:
         """Parse OpenAI-format tool dict into FunctionDefinition."""
         if tool_dict.get("type") == "function":
             func_info = tool_dict["function"]
@@ -407,11 +403,13 @@ class FunctionCallingMixin:
         return FunctionDefinition(
             name=func_info["name"],
             description=func_info.get("description", ""),
-            parameters=func_info.get("parameters", {"type": "object", "properties": {}}),
+            parameters=func_info.get(
+                "parameters", {"type": "object", "properties": {}}
+            ),
             strict=func_info.get("strict", False),
         )
 
-    def get_tools_openai_format(self) -> List[Dict[str, Any]]:
+    def get_tools_openai_format(self) -> list[dict[str, Any]]:
         """Get all tools in OpenAI API format."""
         return [t.to_openai_format() for t in self._tools.values()]
 
@@ -445,7 +443,7 @@ After receiving tool results, provide your final response to the user.
 If you don't need to use any tools, respond normally without the tool_calls wrapper.
 """
 
-    def _parse_tool_calls(self, response: str) -> List[ToolCall]:
+    def _parse_tool_calls(self, response: str) -> list[ToolCall]:
         """Extract tool calls from model response."""
         tool_calls = []
 
@@ -532,7 +530,7 @@ If you don't need to use any tools, respond normally without the tool_calls wrap
                 is_error=True,
             )
 
-    async def execute_tool_calls(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
+    async def execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
         """Execute multiple tool calls in parallel.
 
         Args:
@@ -552,7 +550,7 @@ def create_function_calling_agent_class():
     Returns:
         FunctionCallingAgent class combining MultiTurnAgent with function calling
     """
-    from .agent import MultiTurnAgent, AgentConfig
+    from .agent import AgentConfig, MultiTurnAgent
 
     class FunctionCallingAgent(MultiTurnAgent, FunctionCallingMixin):
         """Agent with OpenAI-compatible function calling.
@@ -576,7 +574,7 @@ def create_function_calling_agent_class():
         def __init__(
             self,
             config: AgentConfig,
-            tools: Optional[List[Union[FunctionDefinition, Callable, Dict[str, Any]]]] = None,
+            tools: list[FunctionDefinition | Callable | dict[str, Any]] | None = None,
             tool_choice: ToolChoiceMode = ToolChoiceMode.AUTO,
             **kwargs,
         ):
@@ -585,9 +583,9 @@ def create_function_calling_agent_class():
 
         async def chat_with_tools(
             self,
-            messages: Union[str, List[Dict[str, str]]],
-            context: Optional[Dict[str, Any]] = None,
-            tool_choice: Optional[ToolChoiceMode] = None,
+            messages: str | list[dict[str, str]],
+            context: dict[str, Any] | None = None,
+            tool_choice: ToolChoiceMode | None = None,
             max_tool_rounds: int = 5,
         ) -> str:
             """Chat with automatic tool execution.
@@ -622,7 +620,7 @@ def create_function_calling_agent_class():
                 else:
                     messages.insert(0, {"role": "system", "content": tool_prompt})
 
-            for round_num in range(max_tool_rounds):
+            for _round_num in range(max_tool_rounds):
                 # Generate response
                 response = await self.generate_response(messages, context)
 
@@ -637,14 +635,16 @@ def create_function_calling_agent_class():
                 results = await self.execute_tool_calls(tool_calls)
 
                 # Add assistant message with tool calls
-                messages.append({
-                    "role": "assistant",
-                    "content": response,
-                    "tool_calls": [
-                        {"id": tc.id, "type": tc.type, "function": tc.function}
-                        for tc in tool_calls
-                    ],
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": response,
+                        "tool_calls": [
+                            {"id": tc.id, "type": tc.type, "function": tc.function}
+                            for tc in tool_calls
+                        ],
+                    }
+                )
 
                 # Add tool results
                 for result in results:

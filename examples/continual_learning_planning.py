@@ -87,9 +87,7 @@ async def main() -> None:
         "conversation_id": "demo-trip",
         "plan_update": {"action": "advance"},
     }
-    followup_messages = [
-        {"role": "user", "content": "Great. What should we do next?"}
-    ]
+    followup_messages = [{"role": "user", "content": "Great. What should we do next?"}]
     followup = await trained_agent.generate_response(
         followup_messages, context=update_context
     )

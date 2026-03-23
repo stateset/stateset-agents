@@ -10,16 +10,17 @@ Covers:
 - Error handling
 """
 
+
 import pytest
-from unittest.mock import Mock, AsyncMock
+
 from stateset_agents.core.reward import (
-    RewardResult,
-    RewardFunction,
-    HelpfulnessReward,
-    SafetyReward,
+    CompositeReward,
     CorrectnessReward,
     EngagementReward,
-    CompositeReward,
+    HelpfulnessReward,
+    RewardFunction,
+    RewardResult,
+    SafetyReward,
     create_customer_service_reward,
     create_helpful_agent_reward,
     create_tutoring_reward,
@@ -35,7 +36,7 @@ class TestRewardResultExtended:
         result = RewardResult(
             score=0.8,
             components={"helpfulness": 0.9, "safety": 0.7},
-            metadata={"model": "gpt-4", "tokens": 100}
+            metadata={"model": "gpt-4", "tokens": 100},
         )
         assert result.score == 0.8
         assert result.metadata["model"] == "gpt-4"
@@ -46,7 +47,7 @@ class TestRewardResultExtended:
         result = RewardResult(
             score=0.75,
             components={"empathy": 0.8, "clarity": 0.7},
-            metadata={"timestamp": "2024-01-01"}
+            metadata={"timestamp": "2024-01-01"},
         )
         data = result.to_dict()
         assert data["score"] == 0.75
@@ -58,7 +59,7 @@ class TestRewardResultExtended:
         data = {
             "score": 0.6,
             "components": {"speed": 0.7, "accuracy": 0.5},
-            "metadata": {"version": "1.0"}
+            "metadata": {"version": "1.0"},
         }
         result = RewardResult.from_dict(data)
         assert result.score == 0.6
@@ -75,9 +76,15 @@ class TestHelpfulnessRewardExtended:
 
         turns = [
             ConversationTurn(role="user", content="I need help with my order"),
-            ConversationTurn(role="assistant", content="I'd be happy to help! Can you provide your order number?"),
+            ConversationTurn(
+                role="assistant",
+                content="I'd be happy to help! Can you provide your order number?",
+            ),
             ConversationTurn(role="user", content="It's #12345"),
-            ConversationTurn(role="assistant", content="Thank you! I've located your order. It will arrive tomorrow."),
+            ConversationTurn(
+                role="assistant",
+                content="Thank you! I've located your order. It will arrive tomorrow.",
+            ),
         ]
 
         result = await reward.compute_reward(turns, {})
@@ -113,7 +120,10 @@ class TestSafetyRewardExtended:
         # Test with neutral content
         safe_turns = [
             ConversationTurn(role="user", content="How do I reset my password?"),
-            ConversationTurn(role="assistant", content="Click the 'Forgot Password' link on the login page."),
+            ConversationTurn(
+                role="assistant",
+                content="Click the 'Forgot Password' link on the login page.",
+            ),
         ]
         safe_result = await reward.compute_reward(safe_turns, {})
         assert safe_result.score > 0.5  # Should be relatively safe
@@ -181,9 +191,15 @@ class TestEngagementReward:
 
         turns = [
             ConversationTurn(role="user", content="Tell me about your product"),
-            ConversationTurn(role="assistant", content="Our product is amazing! Let me explain..."),
-            ConversationTurn(role="user", content="That sounds interesting, tell me more"),
-            ConversationTurn(role="assistant", content="Sure! Here are the key features..."),
+            ConversationTurn(
+                role="assistant", content="Our product is amazing! Let me explain..."
+            ),
+            ConversationTurn(
+                role="user", content="That sounds interesting, tell me more"
+            ),
+            ConversationTurn(
+                role="assistant", content="Sure! Here are the key features..."
+            ),
         ]
 
         result = await reward.compute_reward(turns, {})
@@ -212,7 +228,10 @@ class TestEngagementReward:
 
         turns = [
             ConversationTurn(role="user", content="I need help"),
-            ConversationTurn(role="assistant", content="I'm here to help! What do you need assistance with?"),
+            ConversationTurn(
+                role="assistant",
+                content="I'm here to help! What do you need assistance with?",
+            ),
         ]
 
         result = await reward.compute_reward(turns, {})
@@ -236,7 +255,10 @@ class TestCompositeRewardExtended:
 
         turns = [
             ConversationTurn(role="user", content="Help me understand your policy"),
-            ConversationTurn(role="assistant", content="Our policy covers X, Y, and Z. What specific aspect would you like to know more about?"),
+            ConversationTurn(
+                role="assistant",
+                content="Our policy covers X, Y, and Z. What specific aspect would you like to know more about?",
+            ),
         ]
 
         result = await composite.compute_reward(turns, {})
@@ -295,7 +317,10 @@ class TestRewardFactories:
         # Test with sample conversation
         turns = [
             ConversationTurn(role="user", content="I have a problem with my account"),
-            ConversationTurn(role="assistant", content="I'm sorry to hear that. Let me help you resolve this issue."),
+            ConversationTurn(
+                role="assistant",
+                content="I'm sorry to hear that. Let me help you resolve this issue.",
+            ),
         ]
 
         result = await reward.compute_reward(turns, {})
@@ -311,7 +336,9 @@ class TestRewardFactories:
 
         turns = [
             ConversationTurn(role="user", content="How do I install the software?"),
-            ConversationTurn(role="assistant", content="Here are the step-by-step instructions..."),
+            ConversationTurn(
+                role="assistant", content="Here are the step-by-step instructions..."
+            ),
         ]
 
         result = await reward.compute_reward(turns, {})
@@ -325,8 +352,13 @@ class TestRewardFactories:
         assert isinstance(reward, CompositeReward)
 
         turns = [
-            ConversationTurn(role="user", content="Can you explain how photosynthesis works?"),
-            ConversationTurn(role="assistant", content="Photosynthesis is the process by which plants..."),
+            ConversationTurn(
+                role="user", content="Can you explain how photosynthesis works?"
+            ),
+            ConversationTurn(
+                role="assistant",
+                content="Photosynthesis is the process by which plants...",
+            ),
         ]
 
         result = await reward.compute_reward(turns, {})
@@ -352,21 +384,25 @@ class TestCustomRewardFunction:
                 if not assistant_turns:
                     return RewardResult(score=0.0)
 
-                avg_length = sum(len(t.content) for t in assistant_turns) / len(assistant_turns)
+                avg_length = sum(len(t.content) for t in assistant_turns) / len(
+                    assistant_turns
+                )
                 # Normalize to 0-1 range (assuming 100 chars is ideal)
                 score = min(avg_length / 100.0, 1.0)
 
                 return RewardResult(
                     score=score,
                     components={"length": score},
-                    metadata={"avg_length": avg_length}
+                    metadata={"avg_length": avg_length},
                 )
 
         reward = LengthReward(weight=1.0)
 
         turns = [
             ConversationTurn(role="user", content="Hello"),
-            ConversationTurn(role="assistant", content="Hello! How can I help you today?"),
+            ConversationTurn(
+                role="assistant", content="Hello! How can I help you today?"
+            ),
         ]
 
         result = await reward.compute_reward(turns, {})

@@ -5,18 +5,26 @@ This module provides tools for profiling, benchmarking, and monitoring
 the performance of agents, training, and inference operations.
 """
 
-import gc
+from __future__ import annotations
+
 import logging
-import threading
 import time
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
+from collections.abc import Callable
 
 import psutil
-import torch
+
+try:
+    import torch
+
+    TORCH_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    torch = None
+    TORCH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -27,26 +35,26 @@ class PerformanceMetrics:
 
     operation_name: str
     start_time: float
-    end_time: Optional[float] = None
-    duration: Optional[float] = None
+    end_time: float | None = None
+    duration: float | None = None
 
     # Memory metrics
-    memory_start: Optional[float] = None  # MB
-    memory_end: Optional[float] = None  # MB
-    memory_peak: Optional[float] = None  # MB
-    memory_delta: Optional[float] = None  # MB
+    memory_start: float | None = None  # MB
+    memory_end: float | None = None  # MB
+    memory_peak: float | None = None  # MB
+    memory_delta: float | None = None  # MB
 
     # CPU metrics
-    cpu_percent_start: Optional[float] = None
-    cpu_percent_end: Optional[float] = None
+    cpu_percent_start: float | None = None
+    cpu_percent_end: float | None = None
 
     # GPU metrics (if available)
-    gpu_memory_start: Optional[float] = None  # MB
-    gpu_memory_end: Optional[float] = None  # MB
-    gpu_memory_peak: Optional[float] = None  # MB
+    gpu_memory_start: float | None = None  # MB
+    gpu_memory_end: float | None = None  # MB
+    gpu_memory_peak: float | None = None  # MB
 
     # Additional metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class PerformanceMonitor:
@@ -54,8 +62,8 @@ class PerformanceMonitor:
 
     def __init__(self):
         self.process = psutil.Process()
-        self._metrics_history: List[PerformanceMetrics] = []
-        self._active_operations: Dict[str, PerformanceMetrics] = {}
+        self._metrics_history: list[PerformanceMetrics] = []
+        self._active_operations: dict[str, PerformanceMetrics] = {}
 
     def start_operation(self, name: str, **metadata) -> str:
         """Start monitoring an operation."""
@@ -103,13 +111,13 @@ class PerformanceMonitor:
         """Get current memory usage in MB."""
         return self.process.memory_info().rss / 1024 / 1024
 
-    def _get_gpu_memory_usage(self) -> Optional[float]:
+    def _get_gpu_memory_usage(self) -> float | None:
         """Get current GPU memory usage in MB."""
-        if torch.cuda.is_available():
+        if TORCH_AVAILABLE and torch.cuda.is_available():
             return torch.cuda.memory_allocated() / 1024 / 1024
         return None
 
-    def get_metrics_summary(self) -> Dict[str, Any]:
+    def get_metrics_summary(self) -> dict[str, Any]:
         """Get summary of all collected metrics."""
         if not self._metrics_history:
             return {"total_operations": 0}
@@ -204,7 +212,7 @@ class MemoryProfiler:
         """Context manager to profile memory usage."""
         start_mem = self.process.memory_info().rss / 1024 / 1024
         start_gpu_mem = None
-        if torch.cuda.is_available():
+        if TORCH_AVAILABLE and torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
             start_gpu_mem = torch.cuda.memory_allocated() / 1024 / 1024
 
@@ -214,7 +222,7 @@ class MemoryProfiler:
             end_mem = self.process.memory_info().rss / 1024 / 1024
             end_gpu_mem = None
             peak_gpu_mem = None
-            if torch.cuda.is_available():
+            if TORCH_AVAILABLE and torch.cuda.is_available():
                 end_gpu_mem = torch.cuda.memory_allocated() / 1024 / 1024
                 peak_gpu_mem = torch.cuda.max_memory_allocated() / 1024 / 1024
 
@@ -224,7 +232,7 @@ class MemoryProfiler:
                 f"(Δ{end_mem - start_mem:.1f}MB)"
             )
 
-            if torch.cuda.is_available():
+            if TORCH_AVAILABLE and torch.cuda.is_available():
                 logger.info(
                     f"GPU Memory: {start_gpu_mem:.1f}MB -> {end_gpu_mem:.1f}MB "
                     f"(Peak: {peak_gpu_mem:.1f}MB)"
@@ -239,7 +247,7 @@ class BenchmarkRunner:
         self.benchmark_runs = benchmark_runs
         self.monitor = PerformanceMonitor()
 
-    def benchmark_function(self, func: Callable, *args, **kwargs) -> Dict[str, Any]:
+    def benchmark_function(self, func: Callable, *args, **kwargs) -> dict[str, Any]:
         """Benchmark a function."""
         func_name = f"{func.__module__}.{func.__name__}"
 
@@ -280,7 +288,7 @@ class BenchmarkRunner:
 
 def benchmark_async_function(
     func: Callable, *args, warmup_runs: int = 3, benchmark_runs: int = 10, **kwargs
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Benchmark an async function."""
     import asyncio
 
@@ -336,6 +344,6 @@ def end_monitoring(operation_id: str) -> PerformanceMetrics:
     return _global_monitor.end_operation(operation_id)
 
 
-def get_performance_summary() -> Dict[str, Any]:
+def get_performance_summary() -> dict[str, Any]:
     """Get performance summary."""
     return _global_monitor.get_metrics_summary()

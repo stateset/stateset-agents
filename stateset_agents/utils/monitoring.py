@@ -6,7 +6,6 @@ alerting, health checks, and integration with external monitoring systems.
 """
 
 import asyncio
-import json
 import logging
 import statistics
 import threading
@@ -15,9 +14,10 @@ import uuid
 from collections import defaultdict, deque
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any
+from collections.abc import Callable
 
 # Optional imports for enhanced functionality
 try:
@@ -29,24 +29,43 @@ except ImportError:
     HAS_PSUTIL = False
 
 try:
-    from prometheus_client import Counter, Gauge, Histogram, Summary, start_http_server
+    from prometheus_client import REGISTRY, Counter, Gauge, Histogram, start_http_server
 
     HAS_PROMETHEUS = True
 except ImportError:
     HAS_PROMETHEUS = False
 
-try:
-    import numpy as np
 
-    HAS_NUMPY = True
-except ImportError:
-    HAS_NUMPY = False
+def _prometheus_get_or_create(
+    metric_cls: Any, name: str, documentation: str, **kwargs: Any
+) -> Any:
+    """
+    Create a Prometheus metric or reuse an existing one if already registered.
 
-PSUTIL_EXCEPTIONS: Tuple[Type[BaseException], ...] = ()
+    `prometheus_client` uses a process-global default registry. In tests and
+    multi-service processes we may instantiate monitoring helpers multiple times.
+    Registering the same metric twice raises ValueError, so we reuse the existing
+    collector when present.
+    """
+    if not HAS_PROMETHEUS:  # pragma: no cover
+        raise RuntimeError("Prometheus client not installed")
+
+    try:
+        return metric_cls(name, documentation, **kwargs)
+    except ValueError:
+        # Registry keys include a base name without `_total` for Counters.
+        base_name = name[:-6] if name.endswith("_total") else name
+        collector = REGISTRY._names_to_collectors.get(base_name) or REGISTRY._names_to_collectors.get(name)  # type: ignore[attr-defined]
+        if collector is None or not isinstance(collector, metric_cls):
+            raise
+        return collector
+
+
+PSUTIL_EXCEPTIONS: tuple[type[BaseException], ...] = ()
 if HAS_PSUTIL and psutil is not None:
     PSUTIL_EXCEPTIONS = (psutil.Error,)
 
-MONITORING_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+MONITORING_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     ValueError,
     TypeError,
@@ -80,11 +99,11 @@ class Metric:
     name: str
     type: MetricType
     value: float
-    labels: Dict[str, str] = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
     help_text: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return {
             "name": self.name,
@@ -104,12 +123,12 @@ class Alert:
     name: str
     severity: AlertSeverity
     message: str
-    labels: Dict[str, str] = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
     resolved: bool = False
-    resolved_at: Optional[datetime] = None
+    resolved_at: datetime | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return {
             "id": self.id,
@@ -132,7 +151,7 @@ class HealthCheck:
     timeout: float = 5.0
     critical: bool = False
 
-    async def run(self) -> Dict[str, Any]:
+    async def run(self) -> dict[str, Any]:
         """Run the health check"""
         start_time = time.time()
 
@@ -181,8 +200,8 @@ class MetricsCollector:
 
     def __init__(self, enable_prometheus: bool = True):
         self.enable_prometheus = enable_prometheus and HAS_PROMETHEUS
-        self.metrics: Dict[str, List[Metric]] = defaultdict(list)
-        self.prometheus_metrics: Dict[str, Any] = {}
+        self.metrics: dict[str, list[Metric]] = defaultdict(list)
+        self.prometheus_metrics: dict[str, Any] = {}
 
         # Thread lock for protecting shared state
         self._lock = threading.RLock()
@@ -219,42 +238,47 @@ class MetricsCollector:
             return
 
         # Request metrics
-        self.prometheus_metrics["requests_total"] = Counter(
+        self.prometheus_metrics["requests_total"] = _prometheus_get_or_create(
+            Counter,
             "grpo_requests_total",
             "Total number of requests",
-            ["method", "endpoint", "status"],
+            labelnames=["method", "endpoint", "status"],
         )
 
-        self.prometheus_metrics["request_duration"] = Histogram(
+        self.prometheus_metrics["request_duration"] = _prometheus_get_or_create(
+            Histogram,
             "grpo_request_duration_seconds",
             "Request duration in seconds",
-            ["method", "endpoint"],
+            labelnames=["method", "endpoint"],
         )
 
         # System metrics
-        self.prometheus_metrics["cpu_usage"] = Gauge(
-            "grpo_cpu_usage_percent", "CPU usage percentage"
+        self.prometheus_metrics["cpu_usage"] = _prometheus_get_or_create(
+            Gauge, "grpo_cpu_usage_percent", "CPU usage percentage"
         )
 
-        self.prometheus_metrics["memory_usage"] = Gauge(
-            "grpo_memory_usage_bytes", "Memory usage in bytes"
+        self.prometheus_metrics["memory_usage"] = _prometheus_get_or_create(
+            Gauge, "grpo_memory_usage_bytes", "Memory usage in bytes"
         )
 
         # Application metrics
-        self.prometheus_metrics["active_conversations"] = Gauge(
-            "grpo_active_conversations", "Number of active conversations"
+        self.prometheus_metrics["active_conversations"] = _prometheus_get_or_create(
+            Gauge, "grpo_active_conversations", "Number of active conversations"
         )
 
-        self.prometheus_metrics["training_iterations"] = Counter(
-            "grpo_training_iterations_total", "Total training iterations"
+        self.prometheus_metrics["training_iterations"] = _prometheus_get_or_create(
+            Counter, "grpo_training_iterations_total", "Total training iterations"
         )
 
-        self.prometheus_metrics["reward_score"] = Histogram(
-            "grpo_reward_score", "Reward scores distribution"
+        self.prometheus_metrics["reward_score"] = _prometheus_get_or_create(
+            Histogram, "grpo_reward_score", "Reward scores distribution"
         )
 
-        self.prometheus_metrics["errors_total"] = Counter(
-            "grpo_errors_total", "Total number of errors", ["error_type"]
+        self.prometheus_metrics["errors_total"] = _prometheus_get_or_create(
+            Counter,
+            "grpo_errors_total",
+            "Total number of errors",
+            labelnames=["error_type"],
         )
 
     def _start_system_monitoring(self):
@@ -298,7 +322,7 @@ class MetricsCollector:
                         self.prometheus_metrics["cpu_usage"].set(cpu_percent)
                         self.prometheus_metrics["memory_usage"].set(memory.used)
 
-                except (MONITORING_EXCEPTIONS + PSUTIL_EXCEPTIONS) as e:
+                except MONITORING_EXCEPTIONS + PSUTIL_EXCEPTIONS as e:
                     monitoring_logger.warning(f"Error collecting system metrics: {e}")
 
                 time.sleep(30)  # Collect every 30 seconds
@@ -323,7 +347,7 @@ class MetricsCollector:
                 prom_metric.observe(metric.value)
 
     def increment_counter(
-        self, name: str, value: float = 1.0, labels: Dict[str, str] = None
+        self, name: str, value: float = 1.0, labels: dict[str, str] = None
     ):
         """Increment a counter metric"""
         metric = Metric(
@@ -331,21 +355,21 @@ class MetricsCollector:
         )
         self.record_metric(metric)
 
-    def set_gauge(self, name: str, value: float, labels: Dict[str, str] = None):
+    def set_gauge(self, name: str, value: float, labels: dict[str, str] = None):
         """Set a gauge metric"""
         metric = Metric(
             name=name, type=MetricType.GAUGE, value=value, labels=labels or {}
         )
         self.record_metric(metric)
 
-    def observe_histogram(self, name: str, value: float, labels: Dict[str, str] = None):
+    def observe_histogram(self, name: str, value: float, labels: dict[str, str] = None):
         """Observe a histogram metric"""
         metric = Metric(
             name=name, type=MetricType.HISTOGRAM, value=value, labels=labels or {}
         )
         self.record_metric(metric)
 
-    def get_metrics_summary(self) -> Dict[str, Any]:
+    def get_metrics_summary(self) -> dict[str, Any]:
         """Get summary of all metrics"""
         summary = {
             "timestamp": datetime.now().isoformat(),
@@ -428,18 +452,18 @@ class AlertManager:
 
     def __init__(self):
         self.alerts: deque = deque(maxlen=10000)  # Bounded to prevent memory leak
-        self.alert_rules: List[Dict[str, Any]] = []
-        self.notification_handlers: List[Callable] = []
+        self.alert_rules: list[dict[str, Any]] = []
+        self.notification_handlers: list[Callable] = []
         self._lock = threading.RLock()
         self._logger = logging.getLogger(__name__ + ".AlertManager")
 
     def add_alert_rule(
         self,
         name: str,
-        condition: Callable[[Dict[str, Any]], bool],
+        condition: Callable[[dict[str, Any]], bool],
         severity: AlertSeverity,
         message: str,
-        labels: Dict[str, str] = None,
+        labels: dict[str, str] = None,
     ):
         """Add an alert rule"""
         rule = {
@@ -455,7 +479,7 @@ class AlertManager:
         """Add a notification handler"""
         self.notification_handlers.append(handler)
 
-    def check_alerts(self, metrics: Dict[str, Any]):
+    def check_alerts(self, metrics: dict[str, Any]):
         """Check all alert rules against current metrics (thread-safe)"""
         # Take a snapshot of rules to avoid holding lock during condition evaluation
         with self._lock:
@@ -511,13 +535,15 @@ class AlertManager:
                             self._logger.warning(f"Notification handler error: {e}")
 
             except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
-                self._logger.warning(f"Error checking alert rule {rule.get('name')}: {e}")
+                self._logger.warning(
+                    f"Error checking alert rule {rule.get('name')}: {e}"
+                )
 
-    def get_active_alerts(self) -> List[Alert]:
+    def get_active_alerts(self) -> list[Alert]:
         """Get all active (unresolved) alerts"""
         return [a for a in self.alerts if not a.resolved]
 
-    def get_alert_summary(self) -> Dict[str, Any]:
+    def get_alert_summary(self) -> dict[str, Any]:
         """Get alert summary"""
         active_alerts = self.get_active_alerts()
 
@@ -538,13 +564,13 @@ class HealthChecker:
     """Manages health checks"""
 
     def __init__(self):
-        self.health_checks: List[HealthCheck] = []
+        self.health_checks: list[HealthCheck] = []
 
     def add_health_check(self, health_check: HealthCheck):
         """Add a health check"""
         self.health_checks.append(health_check)
 
-    async def run_all_checks(self) -> Dict[str, Any]:
+    async def run_all_checks(self) -> dict[str, Any]:
         """Run all health checks"""
         results = []
 
@@ -586,7 +612,8 @@ class MonitoringService:
     def __init__(
         self,
         enable_prometheus: bool = True,
-        prometheus_port: int = 8000,
+        # Default to a non-API port to avoid clashing with the gateway's 8000.
+        prometheus_port: int = 8001,
         enable_health_checks: bool = True,
         enable_alerts: bool = True,
     ):
@@ -607,7 +634,9 @@ class MonitoringService:
         if enable_prometheus and HAS_PROMETHEUS:
             try:
                 start_http_server(prometheus_port)
-                self._logger.info(f"Prometheus metrics server started on port {prometheus_port}")
+                self._logger.info(
+                    f"Prometheus metrics server started on port {prometheus_port}"
+                )
             except (OSError, ValueError, RuntimeError) as e:
                 self._logger.error(f"Failed to start Prometheus server: {e}")
 
@@ -766,14 +795,14 @@ class MonitoringService:
 
             raise
 
-    async def log_metric(self, name: str, value: float, labels: Dict[str, str] = None):
+    async def log_metric(self, name: str, value: float, labels: dict[str, str] = None):
         """Log a custom metric"""
         metric = Metric(
             name=name, type=MetricType.GAUGE, value=value, labels=labels or {}
         )
         self.metrics_collector.record_metric(metric)
 
-    async def log_event(self, event_type: str, metadata: Dict[str, Any]):
+    async def log_event(self, event_type: str, metadata: dict[str, Any]):
         """Log an event"""
         self.metrics_collector.increment_counter(
             "events_total", labels={"event_type": event_type}
@@ -782,25 +811,25 @@ class MonitoringService:
         # Could also send to external systems like Elasticsearch
         print(f"Event logged: {event_type} - {metadata}")
 
-    async def get_metrics(self) -> Dict[str, Any]:
+    async def get_metrics(self) -> dict[str, Any]:
         """Get all metrics"""
         return self.metrics_collector.get_metrics_summary()
 
-    async def get_health_status(self) -> Dict[str, Any]:
+    async def get_health_status(self) -> dict[str, Any]:
         """Get health status"""
         if not self.health_checker:
             return {"status": "health_checks_disabled"}
 
         return await self.health_checker.run_all_checks()
 
-    async def get_alerts(self) -> Dict[str, Any]:
+    async def get_alerts(self) -> dict[str, Any]:
         """Get alert summary"""
         if not self.alert_manager:
             return {"alerts": "disabled"}
 
         return self.alert_manager.get_alert_summary()
 
-    async def get_dashboard_data(self) -> Dict[str, Any]:
+    async def get_dashboard_data(self) -> dict[str, Any]:
         """Get comprehensive dashboard data"""
         return {
             "timestamp": datetime.now().isoformat(),
@@ -811,7 +840,7 @@ class MonitoringService:
 
 
 # Global monitoring instance
-_global_monitoring: Optional[MonitoringService] = None
+_global_monitoring: MonitoringService | None = None
 
 
 def get_monitoring_service() -> MonitoringService:

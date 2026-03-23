@@ -5,8 +5,8 @@ Comprehensive tests for all new 10/10 features:
 - Few-Shot Adaptation
 """
 
-import pytest
 import numpy as np
+import pytest
 
 # Track availability
 FEATURES_AVAILABLE = True
@@ -16,10 +16,10 @@ try:
     import torch
 
     from stateset_agents.training.offline_rl_algorithms import (
-        CQLConfig,
-        IQLConfig,
         ConservativeQLearning,
+        CQLConfig,
         ImplicitQLearning,
+        IQLConfig,
         OfflineRLTrainer,
     )
 
@@ -30,31 +30,31 @@ except (ImportError, RuntimeError):
 
 # Test Bayesian Reward imports
 try:
-    from stateset_agents.rewards.bayesian_reward_model import (
-        BayesianRewardConfig,
-        BayesianRewardFunction,
-        ActiveLearningSelector,
-    )
     from stateset_agents.core.reward import RewardResult
     from stateset_agents.core.trajectory import ConversationTurn
+    from stateset_agents.rewards.bayesian_reward_model import (
+        ActiveLearningSelector,
+        BayesianRewardConfig,
+        BayesianRewardFunction,
+    )
 except (ImportError, RuntimeError):
     FEATURES_AVAILABLE = False
 
 # Test Few-Shot Adaptation imports
 try:
     from stateset_agents.core.few_shot_adaptation import (
-        FewShotExample,
-        DomainProfile,
-        PromptBasedAdaptation,
-        FewShotAdaptationManager,
         DomainDetector,
+        DomainProfile,
+        FewShotAdaptationManager,
+        FewShotExample,
+        PromptBasedAdaptation,
     )
 except (ImportError, RuntimeError):
     FEATURES_AVAILABLE = False
 
 pytestmark = pytest.mark.skipif(
     not FEATURES_AVAILABLE,
-    reason="New feature modules not available (check dependencies)"
+    reason="New feature modules not available (check dependencies)",
 )
 
 
@@ -454,7 +454,9 @@ class TestFewShotAdaptation:
         assert confidence > 0
 
         # Test coding detection
-        domain_id, confidence = detector.detect_domain("Write a Python function to sort")
+        domain_id, confidence = detector.detect_domain(
+            "Write a Python function to sort"
+        )
         assert domain_id == "coding"
         assert confidence > 0
 

@@ -17,16 +17,16 @@ Reference: https://arxiv.org/abs/1707.06347
 
 import asyncio
 import logging
-import math
 import os
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Any
+from collections.abc import Callable
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from .config import TrainingConfig
 
 # Configure logging
 logging.basicConfig(
@@ -35,9 +35,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REWARD_FN_EXCEPTIONS = (RuntimeError, TypeError, ValueError)
-
-# Import framework components
-from .config import TrainingConfig
 
 try:
     import numpy as np
@@ -61,11 +58,10 @@ def _load_transformers_ppo():
         return True
 
     try:
-        from transformers import (
-            AutoModelForCausalLM as _AutoModelForCausalLM,
-            AutoTokenizer as _AutoTokenizer,
-            get_cosine_schedule_with_warmup as _get_cosine,
-        )
+        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
+        from transformers import AutoTokenizer as _AutoTokenizer
+        from transformers import get_cosine_schedule_with_warmup as _get_cosine
+
         AutoModelForCausalLM = _AutoModelForCausalLM
         AutoTokenizer = _AutoTokenizer
         get_cosine_schedule_with_warmup = _get_cosine
@@ -95,7 +91,7 @@ class PPOConfig(TrainingConfig):
 
     # KL penalty (optional, use 0 to disable)
     beta: float = 0.0  # KL penalty coefficient
-    target_kl: Optional[float] = None  # Target KL for early stopping
+    target_kl: float | None = None  # Target KL for early stopping
     use_adaptive_kl: bool = False  # Adaptive KL penalty
 
     # Training parameters
@@ -208,7 +204,7 @@ def compute_gae(
     values: torch.Tensor,
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Compute Generalized Advantage Estimation.
 
@@ -272,7 +268,7 @@ class PPOTrainer:
         model: Any,
         tokenizer: Any,
         reward_fn: Callable[[str, str], float],
-        ref_model: Optional[Any] = None,
+        ref_model: Any | None = None,
     ):
         # Ensure transformers is loaded
         _load_transformers_ppo()
@@ -374,7 +370,7 @@ class PPOTrainer:
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute per-token log probabilities.
 
@@ -407,7 +403,7 @@ class PPOTrainer:
         self,
         current_log_probs: torch.Tensor,
         reference_log_probs: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Compute KL divergence between current and reference policy."""
         kl = current_log_probs - reference_log_probs
@@ -423,8 +419,8 @@ class PPOTrainer:
         log_probs: torch.Tensor,
         old_log_probs: torch.Tensor,
         advantages: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute PPO clipped surrogate loss.
 
@@ -476,7 +472,7 @@ class PPOTrainer:
         values: torch.Tensor,
         old_values: torch.Tensor,
         returns: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Compute clipped value loss.
@@ -509,10 +505,10 @@ class PPOTrainer:
 
     async def train_step(
         self,
-        prompts: List[str],
-        completions: List[str],
-        rewards: List[float],
-    ) -> Dict[str, float]:
+        prompts: list[str],
+        completions: list[str],
+        rewards: list[float],
+    ) -> dict[str, float]:
         """
         Execute one PPO training step.
 
@@ -528,13 +524,14 @@ class PPOTrainer:
         self.value_head.train()
 
         # Tokenize inputs
-        full_texts = [p + c for p, c in zip(prompts, completions)]
+        full_texts = [p + c for p, c in zip(prompts, completions, strict=False)]
         encodings = self.tokenizer(
             full_texts,
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=self.config.max_prompt_length + self.config.max_completion_length,
+            max_length=self.config.max_prompt_length
+            + self.config.max_completion_length,
         )
 
         input_ids = encodings["input_ids"].to(self.device)
@@ -595,13 +592,13 @@ class PPOTrainer:
             )
 
             # Value loss
-            vf_loss = self.value_loss(
-                values, old_values, returns, response_mask_shift
-            )
+            vf_loss = self.value_loss(values, old_values, returns, response_mask_shift)
 
             # Entropy bonus
             if response_mask_shift is not None:
-                entropy_bonus = (entropy * response_mask_shift).sum() / response_mask_shift.sum().clamp(min=1)
+                entropy_bonus = (
+                    entropy * response_mask_shift
+                ).sum() / response_mask_shift.sum().clamp(min=1)
             else:
                 entropy_bonus = entropy.mean()
 
@@ -615,14 +612,18 @@ class PPOTrainer:
             # KL penalty
             if self.config.beta > 0 and self.ref_model is not None:
                 with torch.no_grad():
-                    ref_outputs = self.ref_model(input_ids=input_ids, attention_mask=attention_mask)
+                    ref_outputs = self.ref_model(
+                        input_ids=input_ids, attention_mask=attention_mask
+                    )
                     ref_logits = ref_outputs.logits[:, :-1, :]
                     ref_log_probs = F.log_softmax(ref_logits, dim=-1)
                     ref_token_log_probs = ref_log_probs.gather(
                         dim=-1, index=input_ids[:, 1:].unsqueeze(-1)
                     ).squeeze(-1)
 
-                kl = self.compute_kl_divergence(log_probs, ref_token_log_probs, response_mask_shift)
+                kl = self.compute_kl_divergence(
+                    log_probs, ref_token_log_probs, response_mask_shift
+                )
 
                 kl_coef = self.config.beta
                 if self.kl_controller:
@@ -681,9 +682,9 @@ class PPOTrainer:
 
     async def train(
         self,
-        prompts: List[str],
-        num_episodes: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        prompts: list[str],
+        num_episodes: int | None = None,
+    ) -> dict[str, Any]:
         """
         Run full PPO training loop.
 
@@ -700,14 +701,14 @@ class PPOTrainer:
 
         for episode in range(num_episodes):
             # Sample prompts for this episode
-            episode_prompts = prompts[:self.config.num_generations]
+            episode_prompts = prompts[: self.config.num_generations]
 
             # Generate completions (simplified - would use model generation in practice)
             completions = ["This is a sample completion."] * len(episode_prompts)
 
             # Compute rewards
             rewards = []
-            for p, c in zip(episode_prompts, completions):
+            for p, c in zip(episode_prompts, completions, strict=False):
                 try:
                     if asyncio.iscoroutinefunction(self.reward_fn):
                         reward = await self.reward_fn(p, c)
@@ -735,7 +736,7 @@ class PPOTrainer:
             "total_episodes": num_episodes,
         }
 
-    def save_checkpoint(self, path: Optional[str] = None) -> str:
+    def save_checkpoint(self, path: str | None = None) -> str:
         """Save model checkpoint."""
         if path is None:
             path = os.path.join(
@@ -756,15 +757,18 @@ class PPOTrainer:
         )
 
         # Save training state
-        torch.save({
-            "policy_optimizer": self.policy_optimizer.state_dict(),
-            "value_optimizer": self.value_optimizer.state_dict(),
-            "policy_scheduler": self.policy_scheduler.state_dict(),
-            "value_scheduler": self.value_scheduler.state_dict(),
-            "global_step": self.global_step,
-            "metrics_history": self.metrics_history,
-            "config": self.config,
-        }, os.path.join(path, "training_state.pt"))
+        torch.save(
+            {
+                "policy_optimizer": self.policy_optimizer.state_dict(),
+                "value_optimizer": self.value_optimizer.state_dict(),
+                "policy_scheduler": self.policy_scheduler.state_dict(),
+                "value_scheduler": self.value_scheduler.state_dict(),
+                "global_step": self.global_step,
+                "metrics_history": self.metrics_history,
+                "config": self.config,
+            },
+            os.path.join(path, "training_state.pt"),
+        )
 
         logger.info(f"Checkpoint saved to {path}")
         return path
@@ -773,11 +777,11 @@ class PPOTrainer:
 # Convenience function for quick training
 async def train_ppo(
     model_name: str,
-    prompts: List[str],
+    prompts: list[str],
     reward_fn: Callable[[str, str], float],
     num_episodes: int = 100,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Quick PPO training with minimal configuration.
 

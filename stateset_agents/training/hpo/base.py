@@ -8,16 +8,18 @@ This module provides the foundational abstractions for HPO in StateSet Agents:
 - HPOCallback: Hooks for HPO events
 """
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol, Union
-import json
 from pathlib import Path
+from typing import Any, Protocol
+from collections.abc import Callable
 
 
 class SearchSpaceType(str, Enum):
     """Types of hyperparameter search distributions."""
+
     FLOAT = "float"
     INT = "int"
     CATEGORICAL = "categorical"
@@ -39,20 +41,27 @@ class SearchDimension:
         log_scale: Whether to use log scale for numeric parameters
         default: Default value (optional)
     """
+
     name: str
     type: SearchSpaceType
-    low: Optional[float] = None
-    high: Optional[float] = None
-    choices: Optional[List[Any]] = None
+    low: float | None = None
+    high: float | None = None
+    choices: list[Any] | None = None
     log_scale: bool = False
-    default: Optional[Any] = None
+    default: Any | None = None
 
     def __post_init__(self):
         """Validate the search dimension configuration."""
-        if self.type in [SearchSpaceType.FLOAT, SearchSpaceType.INT,
-                        SearchSpaceType.UNIFORM, SearchSpaceType.LOGUNIFORM]:
+        if self.type in [
+            SearchSpaceType.FLOAT,
+            SearchSpaceType.INT,
+            SearchSpaceType.UNIFORM,
+            SearchSpaceType.LOGUNIFORM,
+        ]:
             if self.low is None or self.high is None:
-                raise ValueError(f"Numeric parameter {self.name} requires low and high bounds")
+                raise ValueError(
+                    f"Numeric parameter {self.name} requires low and high bounds"
+                )
         elif self.type in [SearchSpaceType.CATEGORICAL, SearchSpaceType.CHOICE]:
             if not self.choices:
                 raise ValueError(f"Categorical parameter {self.name} requires choices")
@@ -70,16 +79,17 @@ class SearchSpace:
         ...                     choices=["adam", "adamw", "sgd"])
         ... ])
     """
-    dimensions: List[SearchDimension]
 
-    def get_dimension(self, name: str) -> Optional[SearchDimension]:
+    dimensions: list[SearchDimension]
+
+    def get_dimension(self, name: str) -> SearchDimension | None:
         """Get a dimension by name."""
         for dim in self.dimensions:
             if dim.name == name:
                 return dim
         return None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""
         return {
             "dimensions": [
@@ -90,26 +100,28 @@ class SearchSpace:
                     "high": dim.high,
                     "choices": dim.choices,
                     "log_scale": dim.log_scale,
-                    "default": dim.default
+                    "default": dim.default,
                 }
                 for dim in self.dimensions
             ]
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SearchSpace":
+    def from_dict(cls, data: dict[str, Any]) -> "SearchSpace":
         """Create from dictionary representation."""
         dimensions = []
         for dim_data in data["dimensions"]:
-            dimensions.append(SearchDimension(
-                name=dim_data["name"],
-                type=SearchSpaceType(dim_data["type"]),
-                low=dim_data.get("low"),
-                high=dim_data.get("high"),
-                choices=dim_data.get("choices"),
-                log_scale=dim_data.get("log_scale", False),
-                default=dim_data.get("default")
-            ))
+            dimensions.append(
+                SearchDimension(
+                    name=dim_data["name"],
+                    type=SearchSpaceType(dim_data["type"]),
+                    low=dim_data.get("low"),
+                    high=dim_data.get("high"),
+                    choices=dim_data.get("choices"),
+                    log_scale=dim_data.get("log_scale", False),
+                    default=dim_data.get("default"),
+                )
+            )
         return cls(dimensions)
 
 
@@ -127,16 +139,17 @@ class HPOResult:
         checkpoint_path: Path to saved checkpoint (if any)
         metadata: Additional metadata
     """
+
     trial_id: str
-    params: Dict[str, Any]
-    metrics: Dict[str, float]
+    params: dict[str, Any]
+    metrics: dict[str, float]
     best_metric: float
     training_time: float
     status: str = "success"
-    checkpoint_path: Optional[Path] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    checkpoint_path: Path | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""
         return {
             "trial_id": self.trial_id,
@@ -145,13 +158,15 @@ class HPOResult:
             "best_metric": self.best_metric,
             "training_time": self.training_time,
             "status": self.status,
-            "checkpoint_path": str(self.checkpoint_path) if self.checkpoint_path else None,
-            "metadata": self.metadata
+            "checkpoint_path": str(self.checkpoint_path)
+            if self.checkpoint_path
+            else None,
+            "metadata": self.metadata,
         }
 
     def save(self, path: Path):
         """Save result to JSON file."""
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
 
 
@@ -170,7 +185,8 @@ class HPOSummary:
         total_time: Total time spent (seconds)
         all_results: All trial results
     """
-    best_params: Dict[str, Any]
+
+    best_params: dict[str, Any]
     best_metric: float
     best_trial_id: str
     total_trials: int
@@ -178,9 +194,9 @@ class HPOSummary:
     failed_trials: int = 0
     pruned_trials: int = 0
     total_time: float = 0.0
-    all_results: List[HPOResult] = field(default_factory=list)
+    all_results: list[HPOResult] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""
         return {
             "best_params": self.best_params,
@@ -191,34 +207,36 @@ class HPOSummary:
             "failed_trials": self.failed_trials,
             "pruned_trials": self.pruned_trials,
             "total_time": self.total_time,
-            "all_results": [r.to_dict() for r in self.all_results]
+            "all_results": [r.to_dict() for r in self.all_results],
         }
 
     def save(self, path: Path):
         """Save summary to JSON file."""
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
 
     def print_summary(self):
         """Print a formatted summary to console."""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("HPO RUN SUMMARY")
-        print("="*60)
+        print("=" * 60)
         print(f"Best Trial ID: {self.best_trial_id}")
         print(f"Best Metric: {self.best_metric:.4f}")
-        print(f"\nBest Hyperparameters:")
+        print("\nBest Hyperparameters:")
         for param, value in self.best_params.items():
             print(f"  {param}: {value}")
-        print(f"\nTrials: {self.total_trials} total, {self.successful_trials} successful, "
-              f"{self.failed_trials} failed, {self.pruned_trials} pruned")
+        print(
+            f"\nTrials: {self.total_trials} total, {self.successful_trials} successful, "
+            f"{self.failed_trials} failed, {self.pruned_trials} pruned"
+        )
         print(f"Total Time: {self.total_time:.2f}s")
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
 
 
 class HPOCallback(Protocol):
     """Protocol for HPO callbacks."""
 
-    def on_trial_start(self, trial_id: str, params: Dict[str, Any]) -> None:
+    def on_trial_start(self, trial_id: str, params: dict[str, Any]) -> None:
         """Called when a trial starts."""
         ...
 
@@ -247,7 +265,7 @@ class HPOBackend(ABC):
         search_space: SearchSpace,
         objective_metric: str = "reward",
         direction: str = "maximize",
-        callbacks: Optional[List[HPOCallback]] = None
+        callbacks: list[HPOCallback] | None = None,
     ):
         """Initialize the HPO backend.
 
@@ -261,10 +279,10 @@ class HPOBackend(ABC):
         self.objective_metric = objective_metric
         self.direction = direction
         self.callbacks = callbacks or []
-        self.results: List[HPOResult] = []
+        self.results: list[HPOResult] = []
 
     @abstractmethod
-    async def suggest_params(self, trial_id: str) -> Dict[str, Any]:
+    async def suggest_params(self, trial_id: str) -> dict[str, Any]:
         """Suggest hyperparameters for a new trial.
 
         Args:
@@ -285,7 +303,9 @@ class HPOBackend(ABC):
         pass
 
     @abstractmethod
-    async def should_prune(self, trial_id: str, intermediate_metrics: Dict[str, float]) -> bool:
+    async def should_prune(
+        self, trial_id: str, intermediate_metrics: dict[str, float]
+    ) -> bool:
         """Determine if a trial should be pruned early.
 
         Args:
@@ -300,9 +320,9 @@ class HPOBackend(ABC):
     @abstractmethod
     async def optimize(
         self,
-        objective_fn: Callable[[Dict[str, Any]], float],
+        objective_fn: Callable[[dict[str, Any]], float],
         n_trials: int = 100,
-        timeout: Optional[float] = None
+        timeout: float | None = None,
     ) -> HPOSummary:
         """Run the HPO optimization.
 
@@ -316,7 +336,7 @@ class HPOBackend(ABC):
         """
         pass
 
-    def _notify_trial_start(self, trial_id: str, params: Dict[str, Any]):
+    def _notify_trial_start(self, trial_id: str, params: dict[str, Any]):
         """Notify callbacks of trial start."""
         for callback in self.callbacks:
             callback.on_trial_start(trial_id, params)
@@ -338,5 +358,5 @@ class HPOBackend(ABC):
 
 
 # Type aliases for convenience
-ObjectiveFunction = Callable[[Dict[str, Any]], float]
-AsyncObjectiveFunction = Callable[[Dict[str, Any]], Any]  # Returns awaitable
+ObjectiveFunction = Callable[[dict[str, Any]], float]
+AsyncObjectiveFunction = Callable[[dict[str, Any]], Any]  # Returns awaitable

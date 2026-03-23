@@ -5,11 +5,10 @@ Enhanced OpenAPI schema customization, documentation, and examples
 for professional API documentation.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
-
 
 # ============================================================================
 # API Documentation Metadata
@@ -240,7 +239,8 @@ SECURITY_SCHEMES = {
 # Custom OpenAPI Schema Generator
 # ============================================================================
 
-def custom_openapi_schema(app: FastAPI) -> Dict[str, Any]:
+
+def custom_openapi_schema(app: FastAPI) -> dict[str, Any]:
     """
     Generate custom OpenAPI schema with enhanced documentation.
 
@@ -313,7 +313,7 @@ def custom_openapi_schema(app: FastAPI) -> Dict[str, Any]:
     return app.openapi_schema
 
 
-def _enhance_paths(schema: Dict[str, Any]) -> None:
+def _enhance_paths(schema: dict[str, Any]) -> None:
     """Enhance path definitions with additional metadata."""
     paths = schema.get("paths", {})
 
@@ -347,23 +347,25 @@ def _generate_operation_id(path: str, method: str) -> str:
     return f"{method}_root"
 
 
-def _generate_code_samples(path: str, method: str) -> List[Dict[str, str]]:
+def _generate_code_samples(path: str, method: str) -> list[dict[str, str]]:
     """Generate code samples for different languages."""
     samples = []
 
     # Python example
-    python_sample = f'''import requests
+    python_sample = f"""import requests
 
 response = requests.{method}(
     "https://api.stateset.io{path}",
     headers={{"Authorization": "Bearer YOUR_TOKEN"}}
 )
-print(response.json())'''
+print(response.json())"""
 
-    samples.append({
-        "lang": "Python",
-        "source": python_sample,
-    })
+    samples.append(
+        {
+            "lang": "Python",
+            "source": python_sample,
+        }
+    )
 
     # cURL example
     curl_sample = f'''curl -X {method.upper()} \\
@@ -371,13 +373,15 @@ print(response.json())'''
   -H "Authorization: Bearer YOUR_TOKEN" \\
   -H "Content-Type: application/json"'''
 
-    samples.append({
-        "lang": "cURL",
-        "source": curl_sample,
-    })
+    samples.append(
+        {
+            "lang": "cURL",
+            "source": curl_sample,
+        }
+    )
 
     # JavaScript example
-    js_sample = f'''const response = await fetch("https://api.stateset.io{path}", {{
+    js_sample = f"""const response = await fetch("https://api.stateset.io{path}", {{
   method: "{method.upper()}",
   headers: {{
     "Authorization": "Bearer YOUR_TOKEN",
@@ -385,17 +389,19 @@ print(response.json())'''
   }}
 }});
 const data = await response.json();
-console.log(data);'''
+console.log(data);"""
 
-    samples.append({
-        "lang": "JavaScript",
-        "source": js_sample,
-    })
+    samples.append(
+        {
+            "lang": "JavaScript",
+            "source": js_sample,
+        }
+    )
 
     return samples
 
 
-def _enhance_responses(operation: Dict[str, Any]) -> None:
+def _enhance_responses(operation: dict[str, Any]) -> None:
     """Enhance response definitions with examples and descriptions."""
     responses = operation.get("responses", {})
 
@@ -440,6 +446,7 @@ def setup_openapi(app: FastAPI) -> None:
 # ============================================================================
 # API Documentation Endpoints
 # ============================================================================
+
 
 def add_documentation_routes(app: FastAPI) -> None:
     """Add additional documentation routes."""

@@ -11,32 +11,34 @@ Optuna is a state-of-the-art HPO framework with:
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
-import logging
+from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
 
 from .base import (
     HPOBackend,
     HPOCallback,
     HPOResult,
     HPOSummary,
-    SearchSpace,
     SearchDimension,
+    SearchSpace,
     SearchSpaceType,
 )
 
 # Optional import - gracefully handle if not installed
 try:
     import optuna
-    from optuna.pruners import MedianPruner, HyperbandPruner, PercentilePruner
-    from optuna.samplers import TPESampler, RandomSampler, CmaEsSampler
+    from optuna.pruners import HyperbandPruner, MedianPruner, PercentilePruner
+    from optuna.samplers import CmaEsSampler, RandomSampler, TPESampler
     from optuna.visualization import (
         plot_optimization_history,
-        plot_param_importances,
         plot_parallel_coordinate,
+        plot_param_importances,
     )
+
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
@@ -114,9 +116,9 @@ class OptunaBackend(HPOBackend):
         search_space: SearchSpace,
         objective_metric: str = "reward",
         direction: str = "maximize",
-        callbacks: Optional[List[HPOCallback]] = None,
-        study_name: Optional[str] = None,
-        storage: Optional[str] = None,
+        callbacks: list[HPOCallback] | None = None,
+        study_name: str | None = None,
+        storage: str | None = None,
         sampler: str = "tpe",
         pruner: str = "median",
         n_startup_trials: int = 10,
@@ -159,15 +161,13 @@ class OptunaBackend(HPOBackend):
         if OPTUNA_AVAILABLE:
             self.sampler = self._create_sampler()
             self.pruner = self._create_pruner()
-        self.study: Optional[optuna.Study] = None
+        self.study: optuna.Study | None = None
 
     def _create_sampler(self) -> optuna.samplers.BaseSampler:
         """Create the Optuna sampler."""
         if self.sampler_name == "tpe":
             return TPESampler(
-                n_startup_trials=self.n_startup_trials,
-                multivariate=True,
-                seed=42
+                n_startup_trials=self.n_startup_trials, multivariate=True, seed=42
             )
         elif self.sampler_name == "random":
             return RandomSampler(seed=42)
@@ -182,18 +182,15 @@ class OptunaBackend(HPOBackend):
             return MedianPruner(
                 n_startup_trials=self.n_startup_trials,
                 n_warmup_steps=self.n_warmup_steps,
-                interval_steps=self.pruning_interval
+                interval_steps=self.pruning_interval,
             )
         elif self.pruner_name == "hyperband":
-            return HyperbandPruner(
-                min_resource=self.n_warmup_steps,
-                reduction_factor=3
-            )
+            return HyperbandPruner(min_resource=self.n_warmup_steps, reduction_factor=3)
         elif self.pruner_name == "percentile":
             return PercentilePruner(
                 percentile=25.0,
                 n_startup_trials=self.n_startup_trials,
-                n_warmup_steps=self.n_warmup_steps
+                n_warmup_steps=self.n_warmup_steps,
             )
         elif self.pruner_name == "none":
             return optuna.pruners.NopPruner()
@@ -211,38 +208,25 @@ class OptunaBackend(HPOBackend):
             sampler=self.sampler,
             pruner=self.pruner,
             direction=direction,
-            load_if_exists=self.load_if_exists
+            load_if_exists=self.load_if_exists,
         )
 
     def _suggest_param(self, trial: optuna.Trial, dim: SearchDimension) -> Any:
         """Suggest a parameter value for a search dimension."""
         if dim.type == SearchSpaceType.FLOAT or dim.type == SearchSpaceType.UNIFORM:
-            return trial.suggest_float(
-                dim.name,
-                dim.low,
-                dim.high,
-                log=False
-            )
+            return trial.suggest_float(dim.name, dim.low, dim.high, log=False)
         elif dim.type == SearchSpaceType.LOGUNIFORM:
-            return trial.suggest_float(
-                dim.name,
-                dim.low,
-                dim.high,
-                log=True
-            )
+            return trial.suggest_float(dim.name, dim.low, dim.high, log=True)
         elif dim.type == SearchSpaceType.INT:
             return trial.suggest_int(
-                dim.name,
-                int(dim.low),
-                int(dim.high),
-                log=dim.log_scale
+                dim.name, int(dim.low), int(dim.high), log=dim.log_scale
             )
         elif dim.type in [SearchSpaceType.CATEGORICAL, SearchSpaceType.CHOICE]:
             return trial.suggest_categorical(dim.name, dim.choices)
         else:
             raise ValueError(f"Unknown search space type: {dim.type}")
 
-    async def suggest_params(self, trial_id: str) -> Dict[str, Any]:
+    async def suggest_params(self, trial_id: str) -> dict[str, Any]:
         """Suggest hyperparameters for a new trial.
 
         Args:
@@ -264,9 +248,7 @@ class OptunaBackend(HPOBackend):
         self.results.append(result)
 
     async def should_prune(
-        self,
-        trial_id: str,
-        intermediate_metrics: Dict[str, float]
+        self, trial_id: str, intermediate_metrics: dict[str, float]
     ) -> bool:
         """Determine if a trial should be pruned.
 
@@ -275,9 +257,7 @@ class OptunaBackend(HPOBackend):
         return False
 
     def _objective_wrapper(
-        self,
-        trial: optuna.Trial,
-        objective_fn: Callable[[Dict[str, Any]], float]
+        self, trial: optuna.Trial, objective_fn: Callable[[dict[str, Any]], float]
     ) -> float:
         """Wrapper that converts Optuna trial to params dict."""
         # Suggest parameters based on search space
@@ -304,7 +284,7 @@ class OptunaBackend(HPOBackend):
                 metrics={self.objective_metric: metric_value},
                 best_metric=metric_value,
                 training_time=training_time,
-                status="success"
+                status="success",
             )
 
             # Store result
@@ -326,9 +306,11 @@ class OptunaBackend(HPOBackend):
                 trial_id=trial_id,
                 params=params,
                 metrics={},
-                best_metric=float('-inf') if self.direction == "maximize" else float('inf'),
+                best_metric=float("-inf")
+                if self.direction == "maximize"
+                else float("inf"),
                 training_time=training_time,
-                status="pruned"
+                status="pruned",
             )
             self.results.append(result)
             self._notify_trial_end(result)
@@ -341,10 +323,12 @@ class OptunaBackend(HPOBackend):
                 trial_id=trial_id,
                 params=params,
                 metrics={},
-                best_metric=float('-inf') if self.direction == "maximize" else float('inf'),
+                best_metric=float("-inf")
+                if self.direction == "maximize"
+                else float("inf"),
                 training_time=training_time,
                 status="failed",
-                metadata={"error": str(e)}
+                metadata={"error": str(e)},
             )
             self.results.append(result)
             self._notify_trial_end(result)
@@ -352,9 +336,9 @@ class OptunaBackend(HPOBackend):
 
     async def optimize(
         self,
-        objective_fn: Callable[[Dict[str, Any]], float],
+        objective_fn: Callable[[dict[str, Any]], float],
         n_trials: int = 100,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> HPOSummary:
         """Run the HPO optimization using Optuna.
 
@@ -422,7 +406,7 @@ class OptunaBackend(HPOBackend):
             failed_trials=failed_trials,
             pruned_trials=pruned_trials,
             total_time=total_time,
-            all_results=self.results
+            all_results=self.results,
         )
 
         # Notify callbacks
@@ -432,7 +416,7 @@ class OptunaBackend(HPOBackend):
 
         return summary
 
-    def plot_optimization_history(self, save_path: Optional[Path] = None):
+    def plot_optimization_history(self, save_path: Path | None = None):
         """Plot optimization history.
 
         Args:
@@ -446,7 +430,7 @@ class OptunaBackend(HPOBackend):
             fig.write_image(str(save_path))
         return fig
 
-    def plot_param_importances(self, save_path: Optional[Path] = None):
+    def plot_param_importances(self, save_path: Path | None = None):
         """Plot hyperparameter importances.
 
         Args:
@@ -460,7 +444,7 @@ class OptunaBackend(HPOBackend):
             fig.write_image(str(save_path))
         return fig
 
-    def plot_parallel_coordinate(self, save_path: Optional[Path] = None):
+    def plot_parallel_coordinate(self, save_path: Path | None = None):
         """Plot parallel coordinate plot of trials.
 
         Args:

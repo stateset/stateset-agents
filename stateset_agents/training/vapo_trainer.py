@@ -16,43 +16,39 @@ for long chain-of-thought reasoning. It achieves state-of-the-art results
 Reference: https://arxiv.org/abs/2504.05118
 """
 
-import asyncio
 import json
 import logging
 import os
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import Any
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+from .vapo_config import VAPOConfig
+
 logger = logging.getLogger(__name__)
 
-# Import framework components
-from .config import TrainingConfig, get_config_for_task
+try:
+    import wandb
+except ImportError:  # pragma: no cover - optional dependency
+    wandb = None  # type: ignore
 
 try:
-    import numpy as np
-    import wandb
-    from datasets import Dataset
-    from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
-except ImportError as e:
-    logger.error(f"Missing required dependency: {e}")
-    logger.error("Please install: pip install peft datasets wandb")
-    raise
+    from peft import LoraConfig, TaskType, get_peft_model
+except ImportError:  # pragma: no cover - optional dependency
+    LoraConfig = None  # type: ignore
+    TaskType = None  # type: ignore
+    get_peft_model = None  # type: ignore
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_vapo_loaded = False
 AutoModelForCausalLM = None
 AutoTokenizer = None
 get_cosine_schedule_with_warmup = None
+
 
 def _load_transformers_vapo():
     """Lazily load transformers to avoid import-time errors."""
@@ -65,11 +61,10 @@ def _load_transformers_vapo():
         _transformers_vapo_loaded = True
         return True
     try:
-        from transformers import (
-            AutoModelForCausalLM as _AutoModelForCausalLM,
-            AutoTokenizer as _AutoTokenizer,
-            get_cosine_schedule_with_warmup as _get_cosine,
-        )
+        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
+        from transformers import AutoTokenizer as _AutoTokenizer
+        from transformers import get_cosine_schedule_with_warmup as _get_cosine
+
         AutoModelForCausalLM = _AutoModelForCausalLM
         AutoTokenizer = _AutoTokenizer
         get_cosine_schedule_with_warmup = _get_cosine
@@ -80,78 +75,31 @@ def _load_transformers_vapo():
         return False
 
 
-@dataclass
-class VAPOConfig(TrainingConfig):
-    """
-    Configuration for VAPO training.
+def _require_transformers_vapo() -> None:
+    """Ensure transformers components are available before model loading."""
+    if not _load_transformers_vapo():
+        raise ImportError(
+            "transformers is required for VAPO training. "
+            "Install with `pip install stateset-agents[training]` or `pip install transformers`."
+        )
 
-    VAPO uses value-based RL with seven key modifications for stable
-    long-CoT reasoning training.
-    """
 
-    # Model
-    model_name: str = "gpt2"
+def _require_peft() -> None:
+    """Ensure PEFT is available before using LoRA features."""
+    if get_peft_model is None or LoraConfig is None or TaskType is None:
+        raise ImportError(
+            "PEFT is required for VAPO LoRA training. "
+            "Install with `pip install stateset-agents[training]` or `pip install peft`."
+        )
 
-    # Iterative training (legacy alias)
-    num_iterations: int = 1
 
-    # Generation parameters
-    max_prompt_length: int = 256
-    max_completion_length: int = 512
-    temperature: float = 0.7
-    top_p: float = 0.9
-
-    # Model optimization
-    use_lora: bool = True
-    lora_r: int = 16
-    lora_alpha: int = 32
-    lora_dropout: float = 0.05
-
-    # Value network parameters
-    value_hidden_size: int = 1024
-    value_num_layers: int = 2
-    value_warmup_steps: int = 50  # Steps to pretrain value network
-
-    # Decoupled GAE parameters
-    lambda_critic: float = 1.0  # GAE lambda for value network (unbiased)
-    lambda_policy_alpha: float = 0.05  # Alpha for length-adaptive lambda
-
-    # Asymmetric clipping (Clip-Higher)
-    clip_eps_low: float = 0.2
-    clip_eps_high: float = 0.28
-
-    # Token-level loss
-    use_token_level_loss: bool = True
-
-    # Positive example LM loss
-    use_positive_lm_loss: bool = True
-    positive_lm_weight: float = 0.1  # mu weight for NLL loss
-
-    # Group sampling
-    group_size: int = 16  # Samples per prompt
-    num_prompts_per_batch: int = 512
-
-    # Learning rates (separate for actor and critic)
-    actor_learning_rate: float = 1e-6
-    critic_learning_rate: float = 2e-6
-
-    # Mini-batch
-    mini_batch_size: int = 512
-
-    # Value loss coefficient
-    value_loss_coef: float = 0.5
-
-    # Entropy bonus (usually small or 0 for reasoning)
-    entropy_coef: float = 0.0
-
-    @classmethod
-    def from_training_config(cls, config: TrainingConfig, **kwargs) -> "VAPOConfig":
-        """Create VAPO config from standard training config"""
-        config_dict = config.to_dict()
-        config_dict.update(kwargs)
-        if "group_size" in kwargs:
-            config_dict["num_generations"] = kwargs["group_size"]
-        return cls(**config_dict)
+def _require_wandb() -> None:
+    """Ensure Weights & Biases is available before logging."""
+    if wandb is None:
+        raise ImportError(
+            "wandb is required for VAPO logging. "
+            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
+        )
 
 
 class VAPOModelManager:
@@ -163,9 +111,10 @@ class VAPOModelManager:
         self.tokenizer = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def load_model_and_tokenizer(self) -> Tuple[Any, Any]:
+    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
         """Load model and tokenizer with optional LoRA"""
         logger.info(f"Loading model: {self.config.model_name}")
+        _require_transformers_vapo()
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -178,9 +127,9 @@ class VAPOModelManager:
 
         # Model loading kwargs
         model_kwargs = {
-            "torch_dtype": torch.float16 if self.config.fp16 else (
-                torch.bfloat16 if self.config.bf16 else torch.float32
-            ),
+            "torch_dtype": torch.float16
+            if self.config.fp16
+            else (torch.bfloat16 if self.config.bf16 else torch.float32),
             "device_map": "auto" if torch.cuda.is_available() else None,
             "trust_remote_code": True,
         }
@@ -192,6 +141,7 @@ class VAPOModelManager:
 
         # Add LoRA adapters if configured
         if self.config.use_lora:
+            _require_peft()
             lora_config = LoraConfig(
                 r=self.config.lora_r,
                 lora_alpha=self.config.lora_alpha,
@@ -229,12 +179,14 @@ class ValueHead(nn.Module):
         layers = []
         in_size = hidden_size
 
-        for i in range(num_layers - 1):
-            layers.extend([
-                nn.Linear(in_size, value_hidden_size),
-                nn.GELU(),
-                nn.Dropout(dropout),
-            ])
+        for _i in range(num_layers - 1):
+            layers.extend(
+                [
+                    nn.Linear(in_size, value_hidden_size),
+                    nn.GELU(),
+                    nn.Dropout(dropout),
+                ]
+            )
             in_size = value_hidden_size
 
         # Final layer outputs scalar value
@@ -294,7 +246,7 @@ class LengthAdaptiveGAE:
         values: torch.Tensor,
         dones: torch.Tensor,
         lambda_value: float,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute Generalized Advantage Estimation.
 
@@ -321,7 +273,11 @@ class LengthAdaptiveGAE:
             else:
                 next_value = values[:, t + 1]
 
-            delta = rewards[:, t] + self.gamma * next_value * (1 - dones[:, t]) - values[:, t]
+            delta = (
+                rewards[:, t]
+                + self.gamma * next_value * (1 - dones[:, t])
+                - values[:, t]
+            )
             last_gae = delta + self.gamma * lambda_value * (1 - dones[:, t]) * last_gae
             advantages[:, t] = last_gae
 
@@ -335,7 +291,7 @@ class LengthAdaptiveGAE:
         values: torch.Tensor,
         dones: torch.Tensor,
         sequence_lengths: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Compute decoupled GAE for VAPO.
 
@@ -366,9 +322,9 @@ class LengthAdaptiveGAE:
             lambda_policy = self.compute_lambda_policy(seq_len)
 
             # Compute per-sample GAE with adaptive lambda
-            single_rewards = rewards[i:i+1]
-            single_values = values[i:i+1]
-            single_dones = dones[i:i+1]
+            single_rewards = rewards[i : i + 1]
+            single_values = values[i : i + 1]
+            single_dones = dones[i : i + 1]
 
             adv, _ = self.compute_gae(
                 single_rewards, single_values, single_dones, lambda_policy
@@ -401,7 +357,7 @@ class VAPOTrainer:
         model: Any,
         tokenizer: Any,
         reward_fn: Callable[[str, str], float],
-        verifier_fn: Optional[Callable[[str, str], bool]] = None,
+        verifier_fn: Callable[[str, str], bool] | None = None,
     ):
         # Ensure transformers is loaded for scheduler
         _load_transformers_vapo()
@@ -535,7 +491,7 @@ class VAPOTrainer:
     async def generate_group_responses(
         self,
         prompt: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Generate a group of responses for VAPO"""
         responses = []
 
@@ -573,29 +529,33 @@ class VAPOTrainer:
                     full_ids[prompt_length:], skip_special_tokens=True
                 )
 
-                responses.append({
-                    "response": response_text,
-                    "input_ids": full_ids,
-                    "attention_mask": torch.ones_like(full_ids),
-                    "response_mask": response_mask,
-                    "sequence_length": response_length,
-                    "prompt_length": prompt_length,
-                })
+                responses.append(
+                    {
+                        "response": response_text,
+                        "input_ids": full_ids,
+                        "attention_mask": torch.ones_like(full_ids),
+                        "response_mask": response_mask,
+                        "sequence_length": response_length,
+                        "prompt_length": prompt_length,
+                    }
+                )
 
         self.model.train()
         return responses
 
     async def warmup_value_network(
         self,
-        prompts: List[str],
-    ) -> Dict[str, float]:
+        prompts: list[str],
+    ) -> dict[str, float]:
         """
         Pretrain value network with Monte-Carlo returns.
 
         This mitigates value initialization bias by training the value
         network to predict actual returns before joint training.
         """
-        logger.info(f"Starting value network warmup ({self.config.value_warmup_steps} steps)")
+        logger.info(
+            f"Starting value network warmup ({self.config.value_warmup_steps} steps)"
+        )
 
         total_value_loss = 0.0
         explained_variances = []
@@ -620,8 +580,12 @@ class VAPOTrainer:
             max_len = max(len(r["input_ids"]) for r in responses)
             batch_size = len(responses)
 
-            batch_input_ids = torch.zeros(batch_size, max_len, dtype=torch.long, device=self.device)
-            batch_attention_mask = torch.zeros(batch_size, max_len, dtype=torch.long, device=self.device)
+            batch_input_ids = torch.zeros(
+                batch_size, max_len, dtype=torch.long, device=self.device
+            )
+            batch_attention_mask = torch.zeros(
+                batch_size, max_len, dtype=torch.long, device=self.device
+            )
             batch_response_mask = torch.zeros(batch_size, max_len, device=self.device)
 
             for i, resp in enumerate(responses):
@@ -637,21 +601,23 @@ class VAPOTrainer:
 
             # Compute values
             with torch.no_grad():
-                hidden_states = self.get_hidden_states(batch_input_ids, batch_attention_mask)
+                hidden_states = self.get_hidden_states(
+                    batch_input_ids, batch_attention_mask
+                )
 
             values = self.value_head(hidden_states).squeeze(-1)
 
             # Value loss (MSE)
             value_loss = F.mse_loss(
-                values * batch_response_mask,
-                mc_returns,
-                reduction="sum"
+                values * batch_response_mask, mc_returns, reduction="sum"
             ) / batch_response_mask.sum().clamp(min=1)
 
             # Update value network
             self.critic_optimizer.zero_grad()
             value_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.value_head.parameters(), self.config.max_grad_norm)
+            torch.nn.utils.clip_grad_norm_(
+                self.value_head.parameters(), self.config.max_grad_norm
+            )
             self.critic_optimizer.step()
 
             total_value_loss += value_loss.item()
@@ -666,16 +632,22 @@ class VAPOTrainer:
 
             if (step + 1) % 10 == 0:
                 avg_loss = total_value_loss / (step + 1)
-                avg_ev = np.mean(explained_variances[-10:]) if explained_variances else 0
-                logger.info(f"Value warmup step {step + 1}/{self.config.value_warmup_steps} | "
-                           f"Loss: {avg_loss:.4f} | EV: {avg_ev:.4f}")
+                avg_ev = (
+                    np.mean(explained_variances[-10:]) if explained_variances else 0
+                )
+                logger.info(
+                    f"Value warmup step {step + 1}/{self.config.value_warmup_steps} | "
+                    f"Loss: {avg_loss:.4f} | EV: {avg_ev:.4f}"
+                )
 
         self.value_warmup_complete = True
         logger.info("Value network warmup complete")
 
         return {
             "warmup_value_loss": total_value_loss / self.config.value_warmup_steps,
-            "warmup_explained_variance": np.mean(explained_variances) if explained_variances else 0,
+            "warmup_explained_variance": np.mean(explained_variances)
+            if explained_variances
+            else 0,
         }
 
     def compute_vapo_losses(
@@ -688,7 +660,7 @@ class VAPOTrainer:
         returns: torch.Tensor,
         response_mask: torch.Tensor,
         positive_mask: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Compute VAPO losses:
         1. Policy loss with Clip-Higher and token-level normalization
@@ -745,7 +717,9 @@ class VAPOTrainer:
         if self.config.use_positive_lm_loss and positive_mask.sum() > 0:
             # NLL loss on correct samples
             positive_log_probs = current_log_probs * positive_mask
-            positive_lm_loss = -positive_log_probs.sum() / positive_mask.sum().clamp(min=1)
+            positive_lm_loss = -positive_log_probs.sum() / positive_mask.sum().clamp(
+                min=1
+            )
         else:
             positive_lm_loss = torch.tensor(0.0, device=self.device)
 
@@ -753,8 +727,8 @@ class VAPOTrainer:
 
     async def train_step(
         self,
-        prompts: List[str],
-    ) -> Dict[str, float]:
+        prompts: list[str],
+    ) -> dict[str, float]:
         """
         Execute one VAPO training step.
 
@@ -778,7 +752,7 @@ class VAPOTrainer:
         all_accuracies = []
         all_explained_variances = []
 
-        for prompt in prompts[:self.config.per_device_train_batch_size]:
+        for prompt in prompts[: self.config.per_device_train_batch_size]:
             # Generate group responses
             responses = await self.generate_group_responses(prompt)
 
@@ -807,8 +781,12 @@ class VAPOTrainer:
             max_len = max(len(r["input_ids"]) for r in responses)
             batch_size = len(responses)
 
-            batch_input_ids = torch.zeros(batch_size, max_len, dtype=torch.long, device=self.device)
-            batch_attention_mask = torch.zeros(batch_size, max_len, dtype=torch.long, device=self.device)
+            batch_input_ids = torch.zeros(
+                batch_size, max_len, dtype=torch.long, device=self.device
+            )
+            batch_attention_mask = torch.zeros(
+                batch_size, max_len, dtype=torch.long, device=self.device
+            )
             batch_response_mask = torch.zeros(batch_size, max_len, device=self.device)
             sequence_lengths = torch.zeros(batch_size, device=self.device)
 
@@ -829,7 +807,9 @@ class VAPOTrainer:
 
             # Get old log probs and values
             with torch.no_grad():
-                old_log_probs = self.compute_token_log_probs(batch_input_ids, batch_attention_mask)
+                old_log_probs = self.compute_token_log_probs(
+                    batch_input_ids, batch_attention_mask
+                )
                 old_values = self.compute_values(batch_input_ids, batch_attention_mask)
 
             # Create reward tensor (same reward at each response token)
@@ -845,17 +825,25 @@ class VAPOTrainer:
                     dones[i, last_idx] = 1.0
 
             # Compute decoupled GAE
-            critic_advantages, policy_advantages, returns = self.gae_computer.compute_decoupled_gae(
+            (
+                critic_advantages,
+                policy_advantages,
+                returns,
+            ) = self.gae_computer.compute_decoupled_gae(
                 reward_sequence, old_values, dones, sequence_lengths
             )
 
             # Normalize advantages
             policy_adv_masked = policy_advantages[batch_response_mask > 0]
             if len(policy_adv_masked) > 1:
-                policy_advantages = (policy_advantages - policy_adv_masked.mean()) / (policy_adv_masked.std() + 1e-8)
+                policy_advantages = (policy_advantages - policy_adv_masked.mean()) / (
+                    policy_adv_masked.std() + 1e-8
+                )
 
             # Compute current log probs and values
-            current_log_probs = self.compute_token_log_probs(batch_input_ids, batch_attention_mask)
+            current_log_probs = self.compute_token_log_probs(
+                batch_input_ids, batch_attention_mask
+            )
             current_values = self.compute_values(batch_input_ids, batch_attention_mask)
 
             # Shift masks for loss computation
@@ -889,8 +877,12 @@ class VAPOTrainer:
             self.critic_optimizer.zero_grad()
             total_loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
-            torch.nn.utils.clip_grad_norm_(self.value_head.parameters(), self.config.max_grad_norm)
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.config.max_grad_norm
+            )
+            torch.nn.utils.clip_grad_norm_(
+                self.value_head.parameters(), self.config.max_grad_norm
+            )
 
             self.actor_optimizer.step()
             self.critic_optimizer.step()
@@ -919,17 +911,27 @@ class VAPOTrainer:
         metrics = {
             "policy_loss": np.mean(all_policy_losses) if all_policy_losses else 0.0,
             "value_loss": np.mean(all_value_losses) if all_value_losses else 0.0,
-            "positive_lm_loss": np.mean(all_positive_lm_losses) if all_positive_lm_losses else 0.0,
+            "positive_lm_loss": np.mean(all_positive_lm_losses)
+            if all_positive_lm_losses
+            else 0.0,
             "average_reward": np.mean(all_rewards) if all_rewards else 0.0,
             "accuracy": np.mean(all_accuracies) if all_accuracies else 0.0,
-            "explained_variance": np.mean(all_explained_variances) if all_explained_variances else 0.0,
+            "explained_variance": np.mean(all_explained_variances)
+            if all_explained_variances
+            else 0.0,
             "actor_lr": self.actor_scheduler.get_last_lr()[0],
             "critic_lr": self.critic_scheduler.get_last_lr()[0],
             "global_step": self.global_step,
         }
 
         # Store metrics
-        for key in ["policy_loss", "value_loss", "average_reward", "accuracy", "explained_variance"]:
+        for key in [
+            "policy_loss",
+            "value_loss",
+            "average_reward",
+            "accuracy",
+            "explained_variance",
+        ]:
             if key in self.metrics_history:
                 self.metrics_history[key].append(metrics[key])
 
@@ -944,8 +946,7 @@ class VAPOTrainer:
 
         # Save value head
         torch.save(
-            self.value_head.state_dict(),
-            os.path.join(output_dir, "value_head.pt")
+            self.value_head.state_dict(), os.path.join(output_dir, "value_head.pt")
         )
 
         # Save training state
@@ -972,7 +973,9 @@ class VAPOTrainer:
         # Load value head
         value_head_path = os.path.join(checkpoint_dir, "value_head.pt")
         if os.path.exists(value_head_path):
-            self.value_head.load_state_dict(torch.load(value_head_path, map_location=self.device))
+            self.value_head.load_state_dict(
+                torch.load(value_head_path, map_location=self.device)
+            )
 
         # Load training state
         state_path = os.path.join(checkpoint_dir, "training_state.pt")
@@ -989,119 +992,7 @@ class VAPOTrainer:
         logger.info(f"Checkpoint loaded from {checkpoint_dir}")
 
 
-async def train_with_vapo(
-    model_name: str,
-    reward_fn: Callable[[str, str], float],
-    train_prompts: List[str],
-    config: Optional[VAPOConfig] = None,
-    verifier_fn: Optional[Callable[[str, str], bool]] = None,
-    output_dir: str = "./outputs/vapo",
-    use_wandb: bool = False,
-    wandb_project: Optional[str] = None,
-) -> Tuple[Any, Any, Dict[str, List[float]]]:
-    """
-    Train a model using VAPO algorithm.
-
-    VAPO is the current SOTA for long-CoT reasoning (60.4 on AIME 2024).
-
-    Args:
-        model_name: HuggingFace model name or path
-        reward_fn: Function (prompt, response) -> reward
-        train_prompts: List of training prompts
-        config: VAPO configuration
-        verifier_fn: Optional binary verifier (prompt, response) -> correct
-        output_dir: Directory to save checkpoints
-        use_wandb: Whether to log to Weights & Biases
-        wandb_project: W&B project name
-
-    Returns:
-        Tuple of (model, tokenizer, metrics_history)
-    """
-    logger.info("=" * 60)
-    logger.info("VAPO Training - Value-Augmented Policy Optimization")
-    logger.info("=" * 60)
-    logger.info("SOTA: 60.4 on AIME 2024")
-    logger.info("Key: Value warmup + Decoupled GAE + Length-adaptive lambda")
-
-    if config is None:
-        config = VAPOConfig(
-            model_name=model_name,
-            output_dir=output_dir,
-        )
-
-    # Initialize W&B
-    if use_wandb and wandb_project:
-        wandb.init(
-            project=wandb_project,
-            name=f"vapo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["vapo", "rl-training", "value-based", "reasoning"],
-        )
-
-    # Load model
-    logger.info(f"Loading model: {model_name}")
-    model_manager = VAPOModelManager(config)
-    model, tokenizer = model_manager.load_model_and_tokenizer()
-
-    # Create trainer
-    trainer = VAPOTrainer(
-        config=config,
-        model=model,
-        tokenizer=tokenizer,
-        reward_fn=reward_fn,
-        verifier_fn=verifier_fn,
-    )
-
-    # Training loop
-    logger.info(f"Starting training with {len(train_prompts)} prompts")
-    logger.info(f"Value warmup steps: {config.value_warmup_steps}")
-    logger.info(f"Group size: {config.group_size}")
-
-    os.makedirs(output_dir, exist_ok=True)
-
-    for iteration in range(config.num_episodes):
-        # Sample batch
-        batch_size = min(config.per_device_train_batch_size, len(train_prompts))
-        batch_indices = np.random.choice(len(train_prompts), batch_size, replace=False)
-        batch_prompts = [train_prompts[i] for i in batch_indices]
-
-        # Train step
-        metrics = await trainer.train_step(batch_prompts)
-
-        # Log
-        if iteration % config.logging_steps == 0:
-            if "warmup_value_loss" in metrics:
-                logger.info(f"Value warmup | Loss: {metrics['warmup_value_loss']:.4f}")
-            else:
-                logger.info(
-                    f"Iter {iteration}/{config.num_episodes} | "
-                    f"Policy: {metrics['policy_loss']:.4f} | "
-                    f"Value: {metrics['value_loss']:.4f} | "
-                    f"Reward: {metrics['average_reward']:.4f} | "
-                    f"Acc: {metrics['accuracy']:.2%} | "
-                    f"EV: {metrics['explained_variance']:.4f}"
-                )
-
-            if use_wandb:
-                wandb.log(metrics, step=iteration)
-
-        # Save checkpoint
-        if (iteration + 1) % config.save_steps == 0:
-            checkpoint_dir = os.path.join(output_dir, f"checkpoint-{iteration + 1}")
-            trainer.save_checkpoint(checkpoint_dir)
-
-    # Save final model
-    final_dir = os.path.join(output_dir, "final")
-    trainer.save_checkpoint(final_dir)
-
-    if use_wandb:
-        wandb.finish()
-
-    logger.info("=" * 60)
-    logger.info("VAPO Training Complete!")
-    logger.info("=" * 60)
-
-    return model, tokenizer, trainer.metrics_history
+from .vapo_entrypoints import train_with_vapo
 
 
 # Export

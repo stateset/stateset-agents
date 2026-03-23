@@ -5,53 +5,73 @@ API endpoints for training job management.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from ..schemas import TrainingRequest, TrainingResponse, ErrorResponse
-from ..models import PaginatedResponse, TrainingStatus
-from ..services.training_service import TrainingService
-from ..dependencies import require_role, get_current_user, AuthenticatedUser
-from ..errors import (
-    TrainingJobNotFoundError,
-    TrainingConfigError,
-    InternalError,
+from ..dependencies import (
+    AuthenticatedUser,
+    get_current_user,
+    get_training_service,
+    require_role,
 )
+from ..errors import InternalError, TrainingConfigError, TrainingJobNotFoundError
+from ..models import PaginatedResponse
+from ..schemas import ErrorResponse, TrainingRequest, TrainingResponse
+from ..services.training_service import TrainingService
 
 router = APIRouter(prefix="/training", tags=["training"])
-training_service = TrainingService()
 
-TRAINING_API_EXCEPTIONS = (AttributeError, KeyError, RuntimeError, TypeError, ValueError)
+TRAINING_API_EXCEPTIONS = (
+    AttributeError,
+    KeyError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
+
+
+def _is_admin_user(user: AuthenticatedUser) -> bool:
+    return "admin" in user.roles
 
 
 # ============================================================================
 # Response Models
 # ============================================================================
 
+
 class TrainingJobDetail(BaseModel):
     """Detailed training job information."""
+
     training_id: str = Field(..., description="Training job identifier")
     status: str = Field(..., description="Current status")
     created_at: datetime = Field(..., description="Creation timestamp")
-    started_at: Optional[datetime] = Field(None, description="Start timestamp")
-    completed_at: Optional[datetime] = Field(None, description="Completion timestamp")
+    started_at: datetime | None = Field(None, description="Start timestamp")
+    completed_at: datetime | None = Field(None, description="Completion timestamp")
     progress: float = Field(0.0, ge=0.0, le=100.0, description="Progress percentage")
     current_episode: int = Field(0, description="Current training episode")
     total_episodes: int = Field(0, description="Total episodes")
-    metrics: Dict[str, Any] = Field(default_factory=dict, description="Training metrics")
-    error: Optional[str] = Field(None, description="Error message if failed")
-    config: Dict[str, Any] = Field(default_factory=dict, description="Training configuration")
+    metrics: dict[str, Any] = Field(
+        default_factory=dict, description="Training metrics"
+    )
+    error: str | None = Field(None, description="Error message if failed")
+    config: dict[str, Any] = Field(
+        default_factory=dict, description="Training configuration"
+    )
 
 
 class TrainingJobListResponse(PaginatedResponse):
     """Paginated list of training jobs."""
-    items: List[TrainingJobDetail] = Field(default_factory=list, description="List of training jobs")
+
+    items: list[TrainingJobDetail] = Field(
+        default_factory=list, description="List of training jobs"
+    )
 
 
 class TrainingCancelResponse(BaseModel):
     """Response for training cancellation."""
+
     training_id: str = Field(..., description="Training job identifier")
     status: str = Field(..., description="New status (cancelled)")
     message: str = Field(..., description="Status message")
@@ -61,6 +81,7 @@ class TrainingCancelResponse(BaseModel):
 # Training Endpoints
 # ============================================================================
 
+
 @router.post(
     "",
     response_model=TrainingResponse,
@@ -68,7 +89,10 @@ class TrainingCancelResponse(BaseModel):
     summary="Start Training",
     description="Start a new training job with the specified configuration.",
     responses={
-        202: {"description": "Training started successfully", "model": TrainingResponse},
+        202: {
+            "description": "Training started successfully",
+            "model": TrainingResponse,
+        },
         400: {"description": "Invalid configuration", "model": ErrorResponse},
         401: {"description": "Authentication required", "model": ErrorResponse},
         403: {"description": "Insufficient permissions", "model": ErrorResponse},
@@ -77,6 +101,7 @@ class TrainingCancelResponse(BaseModel):
 )
 async def start_training(
     request: TrainingRequest,
+    svc: TrainingService = Depends(get_training_service),
     user: AuthenticatedUser = Depends(require_role("trainer")),
 ) -> TrainingResponse:
     """
@@ -106,7 +131,7 @@ async def start_training(
                 detail="environment_scenarios must contain at least one scenario",
             )
 
-        training_id = await training_service.start_training(request)
+        training_id = await svc.start_training(request, user_id=user.user_id)
 
         return TrainingResponse(
             training_id=training_id,
@@ -120,9 +145,9 @@ async def start_training(
     except HTTPException:
         raise
     except ValueError as e:
-        raise TrainingConfigError(str(e))
+        raise TrainingConfigError(str(e)) from e
     except TRAINING_API_EXCEPTIONS as e:
-        raise InternalError("Failed to start training", internal_error=e)
+        raise InternalError("Failed to start training", internal_error=e) from e
 
 
 @router.get(
@@ -138,7 +163,8 @@ async def start_training(
 async def list_training_jobs(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    status: Optional[str] = Query(None, description="Filter by status"),
+    status: str | None = Query(None, description="Filter by status"),
+    svc: TrainingService = Depends(get_training_service),
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> TrainingJobListResponse:
     """
@@ -154,7 +180,11 @@ async def list_training_jobs(
         Paginated list of training job details.
     """
     # Get all jobs from service
-    all_jobs = list(training_service.jobs.items())
+    all_jobs = [
+        (jid, j)
+        for jid, j in list(svc.jobs.items())
+        if _is_admin_user(user) or j.get("user_id") in (None, user.user_id)
+    ]
 
     # Apply status filter if provided
     if status:
@@ -210,6 +240,7 @@ async def list_training_jobs(
 )
 async def get_training_status(
     training_id: str,
+    svc: TrainingService = Depends(get_training_service),
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> TrainingJobDetail:
     """
@@ -225,7 +256,7 @@ async def get_training_status(
     Raises:
         TrainingJobNotFoundError: If the training job doesn't exist.
     """
-    job = training_service.get_training_status(training_id)
+    job = svc.get_training_status(training_id, user_id=user.user_id)
 
     if not job:
         raise TrainingJobNotFoundError(training_id)
@@ -259,6 +290,7 @@ async def get_training_status(
 )
 async def cancel_training(
     training_id: str,
+    svc: TrainingService = Depends(get_training_service),
     user: AuthenticatedUser = Depends(require_role("trainer")),
 ) -> TrainingCancelResponse:
     """
@@ -276,15 +308,13 @@ async def cancel_training(
     Raises:
         TrainingJobNotFoundError: If the training job doesn't exist.
     """
-    job = training_service.get_training_status(training_id)
+    job = svc.get_training_status(training_id, user_id=user.user_id)
 
     if not job:
         raise TrainingJobNotFoundError(training_id)
 
-    # Mark as cancelled
-    if training_id in training_service.jobs:
-        training_service.jobs[training_id]["status"] = "cancelled"
-        training_service.jobs[training_id]["completed_at"] = datetime.utcnow()
+    if not svc.cancel_training(training_id, user_id=user.user_id):
+        raise TrainingJobNotFoundError(training_id)
 
     return TrainingCancelResponse(
         training_id=training_id,

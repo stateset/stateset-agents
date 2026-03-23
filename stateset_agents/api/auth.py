@@ -9,15 +9,15 @@ import hmac
 import logging
 import secrets
 import time
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any
 
-from fastapi import Depends, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Request
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
 from .config import get_config
-from .errors import UnauthorizedError, ForbiddenError
+from .errors import ForbiddenError, UnauthorizedError
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,12 @@ security_scheme = HTTPBearer(auto_error=False)
 # Models
 # ============================================================================
 
+
 class TokenPayload(BaseModel):
     """JWT token payload."""
+
     sub: str = Field(..., description="Subject (user ID)")
-    roles: List[str] = Field(default_factory=list, description="User roles")
+    roles: list[str] = Field(default_factory=list, description="User roles")
     exp: int = Field(..., description="Expiration timestamp")
     iat: int = Field(..., description="Issued at timestamp")
     jti: str = Field(..., description="JWT ID for revocation")
@@ -42,15 +44,35 @@ class TokenPayload(BaseModel):
 
 class AuthenticatedUser(BaseModel):
     """Authenticated user context."""
+
     user_id: str = Field(..., description="User identifier")
-    roles: List[str] = Field(default_factory=list, description="User roles")
-    api_key: Optional[str] = Field(None, description="API key used (masked)")
-    auth_method: str = Field(..., description="Authentication method used")
+    roles: list[str] = Field(default_factory=list, description="User roles")
+    api_key: str | None = Field(None, description="API key used (masked)")
+    auth_method: str = Field("none", description="Authentication method used")
+    email: str | None = Field(None, description="User email address")
+    name: str | None = Field(None, description="User display name")
+    metadata: dict[str, Any] | None = Field(None, description="Extra user metadata")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AuthenticatedUser":
+        """Create AuthenticatedUser from dictionary."""
+        known = {f.alias or name for name, f in cls.model_fields.items()}
+        extra = {k: v for k, v in data.items() if k not in known and k != "sub"}
+        return cls(
+            user_id=data.get("user_id", data.get("sub", "anonymous")),
+            roles=data.get("roles", []),
+            api_key=data.get("api_key"),
+            auth_method=data.get("auth_method", "none"),
+            email=data.get("email"),
+            name=data.get("name"),
+            metadata=extra or None,
+        )
 
 
 # ============================================================================
 # JWT Implementation (without external dependencies)
 # ============================================================================
+
 
 class JWTHandler:
     """Simple JWT handler using HMAC-SHA256."""
@@ -62,17 +84,19 @@ class JWTHandler:
     def _base64url_encode(self, data: bytes) -> str:
         """Base64 URL-safe encoding without padding."""
         import base64
+
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
     def _base64url_decode(self, data: str) -> bytes:
         """Base64 URL-safe decoding with padding restoration."""
         import base64
+
         padding = 4 - len(data) % 4
         if padding != 4:
             data += "=" * padding
         return base64.urlsafe_b64decode(data)
 
-    def encode(self, payload: Dict[str, Any]) -> str:
+    def encode(self, payload: dict[str, Any]) -> str:
         """Encode a JWT token."""
         import json
 
@@ -89,7 +113,7 @@ class JWTHandler:
 
         return f"{header_b64}.{payload_b64}.{signature_b64}"
 
-    def decode(self, token: str) -> Optional[Dict[str, Any]]:
+    def decode(self, token: str) -> dict[str, Any] | None:
         """Decode and verify a JWT token."""
         import json
 
@@ -102,7 +126,9 @@ class JWTHandler:
 
             # Verify signature
             message = f"{header_b64}.{payload_b64}"
-            expected_signature = hmac.new(self.secret, message.encode(), hashlib.sha256).digest()
+            expected_signature = hmac.new(
+                self.secret, message.encode(), hashlib.sha256
+            ).digest()
             actual_signature = self._base64url_decode(signature_b64)
 
             if not hmac.compare_digest(expected_signature, actual_signature):
@@ -118,7 +144,7 @@ class JWTHandler:
                 logger.warning("JWT token expired")
                 return None
 
-            return payload
+            return dict(payload)
 
         except JWT_EXCEPTIONS as e:
             logger.warning(f"JWT decode error: {e}")
@@ -126,7 +152,7 @@ class JWTHandler:
 
 
 # Global JWT handler (initialized lazily)
-_jwt_handler: Optional[JWTHandler] = None
+_jwt_handler: JWTHandler | None = None
 
 
 def get_jwt_handler() -> JWTHandler:
@@ -144,10 +170,11 @@ def get_jwt_handler() -> JWTHandler:
 # Token Generation
 # ============================================================================
 
+
 def generate_token(
     user_id: str,
-    roles: List[str],
-    expiry_hours: Optional[int] = None,
+    roles: list[str],
+    expiry_hours: int | None = None,
 ) -> str:
     """Generate a JWT token for a user."""
     config = get_config()
@@ -176,20 +203,27 @@ def generate_api_key() -> str:
 # Authentication Functions
 # ============================================================================
 
-def _extract_bearer_token(request: Request) -> Optional[str]:
+
+def _derive_api_user_id(api_key: str) -> str:
+    """Derive a stable user id from API key material."""
+    digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+    return f"api_key:{digest}"
+
+
+def _extract_bearer_token(request: Request) -> str | None:
     """Extract bearer token from Authorization header."""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.lower().startswith("bearer "):
-        return auth_header.split(" ", 1)[1].strip()
+        return str(auth_header.split(" ", 1)[1].strip())
     return None
 
 
-def _extract_api_key(request: Request) -> Optional[str]:
+def _extract_api_key(request: Request) -> str | None:
     """Extract API key from headers."""
     # Check X-API-Key header first
     api_key = request.headers.get("X-API-Key")
     if api_key:
-        return api_key.strip()
+        return str(api_key.strip())
 
     # Fall back to Authorization header
     return _extract_bearer_token(request)
@@ -227,7 +261,17 @@ def authenticate_request(request: Request) -> AuthenticatedUser:
     if api_key:
         if api_key in config.security.api_keys:
             roles = config.security.api_keys[api_key]
-            user_id = request.headers.get("X-User-ID", "api-key-user")
+            provided_user_id = request.headers.get("X-User-ID")
+            if provided_user_id:
+                logger.debug(
+                    "Ignoring untrusted X-User-ID header for API-key authenticated request",
+                    extra={
+                        "client_ip": request.client.host if request.client else "unknown",
+                        "path": str(request.url.path),
+                        "provided_user_id": provided_user_id,
+                    },
+                )
+            user_id = _derive_api_user_id(api_key)
 
             logger.debug(
                 "Authenticated via API key",
@@ -235,7 +279,7 @@ def authenticate_request(request: Request) -> AuthenticatedUser:
                     "user_id": user_id,
                     "api_key": _mask_api_key(api_key),
                     "roles": roles,
-                }
+                },
             )
 
             return AuthenticatedUser(
@@ -261,12 +305,14 @@ def authenticate_request(request: Request) -> AuthenticatedUser:
             extra={
                 "client_ip": request.client.host if request.client else "unknown",
                 "path": request.url.path,
-            }
+            },
         )
         raise UnauthorizedError("Invalid API key or token")
 
     # No credentials provided
-    raise UnauthorizedError("Authentication required. Provide an API key or bearer token.")
+    raise UnauthorizedError(
+        "Authentication required. Provide an API key or bearer token."
+    )
 
 
 def require_roles(*required_roles: str):
@@ -278,6 +324,7 @@ def require_roles(*required_roles: str):
         async def admin_endpoint(user: AuthenticatedUser = Depends(require_roles("admin"))):
             ...
     """
+
     async def role_checker(request: Request) -> AuthenticatedUser:
         user = authenticate_request(request)
 
@@ -290,7 +337,7 @@ def require_roles(*required_roles: str):
                     "user_roles": user.roles,
                     "required_roles": required_roles,
                     "path": request.url.path,
-                }
+                },
             )
             raise ForbiddenError(
                 f"Insufficient permissions. Required role: {' or '.join(required_roles)}"
@@ -305,6 +352,7 @@ def require_roles(*required_roles: str):
 # FastAPI Dependencies
 # ============================================================================
 
+
 async def get_current_user(request: Request) -> AuthenticatedUser:
     """
     FastAPI dependency to get the current authenticated user.
@@ -314,10 +362,14 @@ async def get_current_user(request: Request) -> AuthenticatedUser:
         async def get_profile(user: AuthenticatedUser = Depends(get_current_user)):
             return {"user_id": user.user_id}
     """
-    return authenticate_request(request)
+    # Delegate to the shared dependency implementation so lockouts and
+    # auth-failure tracking behave consistently across all routers.
+    from .dependencies import get_current_user as _get_current_user
+
+    return await _get_current_user(request)
 
 
-async def get_optional_user(request: Request) -> Optional[AuthenticatedUser]:
+async def get_optional_user(request: Request) -> AuthenticatedUser | None:
     """
     FastAPI dependency for optional authentication.
 
@@ -330,10 +382,9 @@ async def get_optional_user(request: Request) -> Optional[AuthenticatedUser]:
                 return {"message": f"Hello, {user.user_id}"}
             return {"message": "Hello, anonymous"}
     """
-    try:
-        return authenticate_request(request)
-    except UnauthorizedError:
-        return None
+    from .dependencies import get_optional_user as _get_optional_user
+
+    return await _get_optional_user(request)
 
 
 # Commonly used role dependencies
@@ -346,8 +397,10 @@ require_user = require_roles("admin", "trainer", "user")
 # Request Context
 # ============================================================================
 
+
 class RequestContext(BaseModel):
     """Full request context including auth and tracing."""
+
     request_id: str
     user: AuthenticatedUser
     client_ip: str
@@ -363,7 +416,7 @@ async def get_request_context(request: Request) -> RequestContext:
         async def train(ctx: RequestContext = Depends(get_request_context)):
             logger.info(f"Training started by {ctx.user.user_id}")
     """
-    user = authenticate_request(request)
+    user = await get_current_user(request)
     request_id = getattr(request.state, "request_id", "unknown")
     client_ip = request.client.host if request.client else "unknown"
 

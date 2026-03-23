@@ -9,23 +9,19 @@ This module provides intelligent adaptive learning capabilities including:
 """
 
 import asyncio
-import json
 import logging
 import math
 import random
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
-import torch
-import torch.nn as nn
 
 from .advanced_monitoring import get_monitoring_service, monitor_async_function
-from .error_handling import ErrorHandler, RetryConfig, retry_async
-from .performance_optimizer import PerformanceOptimizer
+from .error_handling import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +107,7 @@ class CurriculumController:
         self.progression_threshold = progression_threshold
         self.regression_threshold = regression_threshold
 
-        self.progress_history: Dict[str, LearningProgress] = {}
+        self.progress_history: dict[str, LearningProgress] = {}
         self.difficulty_history: deque = deque(maxlen=100)
 
     async def should_progress_difficulty(self, task_id: str) -> bool:
@@ -218,11 +214,11 @@ class ExplorationController:
         self.min_epsilon = min_epsilon
         self.decay_rate = decay_rate
 
-        self.action_counts: Dict[str, int] = defaultdict(int)
-        self.action_rewards: Dict[str, List[float]] = defaultdict(list)
-        self.curiosity_scores: Dict[str, float] = defaultdict(float)
+        self.action_counts: dict[str, int] = defaultdict(int)
+        self.action_rewards: dict[str, list[float]] = defaultdict(list)
+        self.curiosity_scores: dict[str, float] = defaultdict(float)
 
-    async def should_explore(self, state: Any, available_actions: List[str]) -> bool:
+    async def should_explore(self, state: Any, available_actions: list[str]) -> bool:
         """Determine whether to explore or exploit"""
         if self.strategy == ExplorationStrategy.EPSILON_GREEDY:
             return random.random() < self.epsilon
@@ -239,7 +235,7 @@ class ExplorationController:
         else:
             return random.random() < self.epsilon
 
-    async def select_exploration_action(self, available_actions: List[str]) -> str:
+    async def select_exploration_action(self, available_actions: list[str]) -> str:
         """Select action for exploration"""
         if self.strategy == ExplorationStrategy.UCB:
             return await self._ucb_action_selection(available_actions)
@@ -260,7 +256,7 @@ class ExplorationController:
         # Decay epsilon
         self.epsilon = max(self.min_epsilon, self.epsilon * self.decay_rate)
 
-    async def _ucb_exploration_decision(self, available_actions: List[str]) -> bool:
+    async def _ucb_exploration_decision(self, available_actions: list[str]) -> bool:
         """UCB-based exploration decision"""
         total_counts = sum(self.action_counts.values())
         if total_counts < len(available_actions):
@@ -284,7 +280,7 @@ class ExplorationController:
         return self.action_counts[best_action] < total_counts * 0.1
 
     async def _curiosity_driven_decision(
-        self, state: Any, available_actions: List[str]
+        self, state: Any, available_actions: list[str]
     ) -> bool:
         """Curiosity-driven exploration decision"""
         # Calculate state novelty (simplified)
@@ -296,7 +292,7 @@ class ExplorationController:
         return random.random() < exploration_probability
 
     async def _information_gain_decision(
-        self, state: Any, available_actions: List[str]
+        self, state: Any, available_actions: list[str]
     ) -> bool:
         """Information gain-based exploration decision"""
         # Simplified information gain calculation
@@ -316,7 +312,7 @@ class ExplorationController:
         exploration_probability = entropy / max_entropy
         return random.random() < exploration_probability
 
-    async def _ucb_action_selection(self, available_actions: List[str]) -> str:
+    async def _ucb_action_selection(self, available_actions: list[str]) -> str:
         """Select action using UCB"""
         total_counts = sum(self.action_counts.values())
         if total_counts == 0:
@@ -335,7 +331,7 @@ class ExplorationController:
 
         return available_actions[np.argmax(ucb_values)]
 
-    async def _curiosity_action_selection(self, available_actions: List[str]) -> str:
+    async def _curiosity_action_selection(self, available_actions: list[str]) -> str:
         """Select action based on curiosity"""
         # Select action with highest curiosity potential
         curiosity_scores = [
@@ -358,13 +354,13 @@ class HyperparameterOptimizer:
     """Adaptive hyperparameter optimization"""
 
     def __init__(self):
-        self.parameter_history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=50))
+        self.parameter_history: dict[str, deque] = defaultdict(lambda: deque(maxlen=50))
         self.performance_history: deque = deque(maxlen=50)
         self.optimization_step = 0
 
     async def optimize_parameters(
-        self, current_params: Dict[str, float], recent_performance: float
-    ) -> Dict[str, float]:
+        self, current_params: dict[str, float], recent_performance: float
+    ) -> dict[str, float]:
         """Optimize hyperparameters based on recent performance"""
         self.performance_history.append(recent_performance)
         self.optimization_step += 1
@@ -457,11 +453,11 @@ class AdaptiveLearningController:
         self,
         task_id: str,
         state: Any,
-        available_actions: List[str],
+        available_actions: list[str],
         reward: float,
         success: bool,
-        current_hyperparams: Dict[str, float],
-    ) -> Tuple[float, bool, str, Dict[str, float]]:
+        current_hyperparams: dict[str, float],
+    ) -> tuple[float, bool, str, dict[str, float]]:
         """Perform one adaptive learning step"""
         try:
             # Update curriculum
@@ -552,7 +548,7 @@ class AdaptiveLearningController:
                 f"adaptive_learning.{metric_name}", value, {"task_id": task_id}
             )
 
-    async def get_learning_insights(self) -> Dict[str, Any]:
+    async def get_learning_insights(self) -> dict[str, Any]:
         """Get insights about the learning process"""
         insights = {
             "curriculum_insights": {

@@ -8,10 +8,9 @@ Extends MultiTurnAgent with gym-specific optimizations.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from ..agent import MultiTurnAgent, AgentConfig
-
+from ..agent import AgentConfig, MultiTurnAgent
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +46,9 @@ class GymAgent(MultiTurnAgent):
 
     def __init__(
         self,
-        config: Optional[AgentConfig] = None,
-        action_space_info: Optional[Dict[str, Any]] = None,
-        **kwargs
+        config: AgentConfig | None = None,
+        action_space_info: dict[str, Any] | None = None,
+        **kwargs,
     ):
         # Apply gym-specific defaults if config not fully specified
         if config is None:
@@ -74,9 +73,9 @@ class GymAgent(MultiTurnAgent):
 
     async def generate_response(
         self,
-        messages: List[Dict[str, str]],
-        context: Optional[Dict[str, Any]] = None,
-        **kwargs
+        messages: list[dict[str, str]],
+        context: dict[str, Any] | None = None,
+        **kwargs,
     ) -> str:
         """
         Generate action for gym environment.
@@ -125,7 +124,7 @@ class GymAgent(MultiTurnAgent):
         """
         return f"Current state:\n{observation_text}\n\nYour action:"
 
-    def get_optimized_config_for_gym(self) -> Dict[str, Any]:
+    def get_optimized_config_for_gym(self) -> dict[str, Any]:
         """
         Get recommended config settings for gym environments.
 
@@ -151,10 +150,7 @@ class GymAgent(MultiTurnAgent):
 
 # Convenience function for creating pre-configured gym agents
 def create_gym_agent(
-    model_name: str = "gpt2",
-    use_stub: bool = False,
-    temperature: float = 0.8,
-    **kwargs
+    model_name: str = "gpt2", use_stub: bool = False, temperature: float = 0.8, **kwargs
 ) -> GymAgent:
     """
     Create a GymAgent with sensible defaults for gym environments.
@@ -178,7 +174,7 @@ def create_gym_agent(
         temperature=temperature,
         do_sample=True,
         use_stub_model=use_stub,
-        **kwargs
+        **kwargs,
     )
 
     return GymAgent(config)

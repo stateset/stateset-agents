@@ -22,8 +22,7 @@ from pathlib import Path
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,6 @@ async def main():
 
     # Import framework components
     from stateset_agents.core.gym import GymEnvironmentAdapter, create_gym_agent
-    from stateset_agents.core.agent import AgentConfig
     from stateset_agents.training.config import TrainingConfig
     from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
@@ -49,7 +47,9 @@ async def main():
         import gym
 
     gym_env = gym.make("CartPole-v1")
-    logger.info(f"✓ Created {gym_env.spec.id if hasattr(gym_env, 'spec') else 'CartPole-v1'}")
+    logger.info(
+        f"✓ Created {gym_env.spec.id if hasattr(gym_env, 'spec') else 'CartPole-v1'}"
+    )
     logger.info(f"  Action space: {gym_env.action_space}")
     logger.info(f"  Observation space: {gym_env.observation_space}")
 
@@ -58,24 +58,17 @@ async def main():
     env_adapter = GymEnvironmentAdapter(
         gym_env,
         auto_create_processors=True,  # Automatically creates CartPoleObservationProcessor
-        max_steps=500
+        max_steps=500,
     )
     logger.info(f"✓ Created {env_adapter}")
 
     # 3. Create GymAgent
     logger.info("\n[3/5] Creating GymAgent...")
-    agent_config = AgentConfig(
-        model_name="gpt2",  # Small, fast model
-        max_new_tokens=5,  # Very short for CartPole actions (0 or 1)
-        temperature=0.8,  # Moderate exploration
-        do_sample=True,  # Enable sampling for exploration
-        use_stub_model=False  # Set to True for quick testing
-    )
-
     agent = create_gym_agent(
         model_name="gpt2",
-        use_stub=False,
-        temperature=0.8
+        use_stub=False,  # Set to True for quick testing
+        temperature=0.8,  # Moderate exploration
+        max_new_tokens=5,  # Very short for CartPole actions (0 or 1)
     )
 
     logger.info("  Initializing agent...")
@@ -98,10 +91,10 @@ async def main():
         value_loss_coef=0.5,
         entropy_coef=0.01,  # Small entropy bonus for exploration
         normalize_advantages=True,
-        log_interval=10  # Log every 10 episodes
+        log_interval=10,  # Log every 10 episodes
     )
 
-    logger.info(f"✓ Training configuration:")
+    logger.info("✓ Training configuration:")
     logger.info(f"  Episodes: {training_config.num_episodes}")
     logger.info(f"  Generations per episode: {training_config.num_generations}")
     logger.info(f"  Learning rate: {training_config.learning_rate}")
@@ -115,7 +108,7 @@ async def main():
         agent=agent,
         environment=env_adapter,
         config=training_config,
-        output_dir=Path("outputs/cartpole_grpo")
+        output_dir=Path("outputs/cartpole_grpo"),
     )
 
     logger.info("\n🚀 Starting GRPO training on CartPole-v1...")
@@ -133,11 +126,11 @@ async def main():
     if metrics:
         final_reward = metrics.get("final_average_reward", 0)
         best_reward = metrics.get("best_reward", 0)
-        logger.info(f"\nFinal Results:")
+        logger.info("\nFinal Results:")
         logger.info(f"  Final Average Reward: {final_reward:.2f}")
         logger.info(f"  Best Reward: {best_reward:.2f}")
-        logger.info(f"  Random Baseline: ~22")
-        logger.info(f"  Optimal Performance: 500")
+        logger.info("  Random Baseline: ~22")
+        logger.info("  Optimal Performance: 500")
 
         if final_reward > 100:
             logger.info("\n🎉 Great! Agent is learning to balance the pole!")
@@ -151,7 +144,7 @@ async def main():
     output_dir = Path("outputs/cartpole_grpo")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if hasattr(agent.model, 'save_pretrained'):
+    if hasattr(agent.model, "save_pretrained"):
         agent.model.save_pretrained(output_dir / "final_model")
         logger.info(f"✓ Model saved to {output_dir / 'final_model'}")
 

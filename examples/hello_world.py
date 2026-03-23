@@ -19,11 +19,10 @@ import asyncio
 
 # These imports work right after `pip install stateset-agents`
 from stateset_agents import (
-    MultiTurnAgent,
-    ConversationEnvironment,
-    HelpfulnessReward,
-    SafetyReward,
     CompositeReward,
+    HelpfulnessReward,
+    MultiTurnAgent,
+    SafetyReward,
 )
 from stateset_agents.core.agent import AgentConfig
 
@@ -95,10 +94,12 @@ async def main():
             turns.append(ConversationTurn(role=msg["role"], content=msg["content"]))
 
     # Evaluate with composite reward
-    reward_fn = CompositeReward([
-        HelpfulnessReward(weight=0.7),
-        SafetyReward(weight=0.3),
-    ])
+    reward_fn = CompositeReward(
+        [
+            HelpfulnessReward(weight=0.7),
+            SafetyReward(weight=0.3),
+        ]
+    )
 
     result = await reward_fn.compute_reward(turns)
     print(f"   Total reward score: {result.score:.3f}")

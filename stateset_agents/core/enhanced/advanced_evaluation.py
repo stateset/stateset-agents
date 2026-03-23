@@ -16,21 +16,12 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import seaborn as sns
-from scipy import stats
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
-from sklearn.model_selection import train_test_split
 
 from ..agent import Agent
 from ..environment import Environment
-from ..reward import RewardFunction, RewardResult
-from ..trajectory import MultiTurnTrajectory, TrajectoryGroup
 from .enhanced_agent import EnhancedMultiTurnAgent
 
 logger = logging.getLogger(__name__)
@@ -78,11 +69,11 @@ class EvaluationMetrics:
     adaptability_score: float = 0.0
 
     # Statistical measures
-    confidence_interval: Tuple[float, float] = (0.0, 0.0)
+    confidence_interval: tuple[float, float] = (0.0, 0.0)
     standard_deviation: float = 0.0
     sample_size: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return {
             "performance": {
@@ -128,11 +119,11 @@ class EvaluationResult:
     algorithm: str
     timestamp: datetime
     metrics: EvaluationMetrics
-    test_cases: List[Dict[str, Any]]
-    comparative_analysis: Dict[str, Any] = field(default_factory=dict)
-    recommendations: List[str] = field(default_factory=list)
+    test_cases: list[dict[str, Any]]
+    comparative_analysis: dict[str, Any] = field(default_factory=dict)
+    recommendations: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return {
             "agent_name": self.agent_name,
@@ -152,7 +143,7 @@ class AutomatedTestSuite:
         self.test_cases = self._load_test_cases()
         self.baseline_results = {}
 
-    def _load_test_cases(self) -> List[Dict[str, Any]]:
+    def _load_test_cases(self) -> list[dict[str, Any]]:
         """Load comprehensive test cases"""
         return [
             # Basic functionality tests
@@ -249,8 +240,8 @@ class AutomatedTestSuite:
         ]
 
     async def run_test_suite(
-        self, agent: Agent, environment: Optional[Environment] = None, num_runs: int = 3
-    ) -> Dict[str, Any]:
+        self, agent: Agent, environment: Environment | None = None, num_runs: int = 3
+    ) -> dict[str, Any]:
         """Run the complete test suite"""
 
         logger.info(f"Running automated test suite with {num_runs} runs per test...")
@@ -280,9 +271,9 @@ class AutomatedTestSuite:
     async def _run_single_test(
         self,
         agent: Agent,
-        test_case: Dict[str, Any],
-        environment: Optional[Environment],
-    ) -> Dict[str, Any]:
+        test_case: dict[str, Any],
+        environment: Environment | None,
+    ) -> dict[str, Any]:
         """Run a single test case"""
 
         start_time = time.time()
@@ -314,8 +305,8 @@ class AutomatedTestSuite:
             return {"error": str(e), "execution_time": execution_time, "passed": False}
 
     async def _evaluate_response(
-        self, response: str, test_case: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, response: str, test_case: dict[str, Any]
+    ) -> dict[str, Any]:
         """Evaluate a response against test case expectations"""
 
         evaluation = {"overall_score": 0.0, "characteristics_matched": [], "issues": []}
@@ -360,8 +351,8 @@ class AutomatedTestSuite:
         return evaluation
 
     def _summarize_test_results(
-        self, test_results: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, test_results: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Summarize results from multiple test runs"""
 
         passed_count = sum(1 for r in test_results if r.get("passed", False))
@@ -391,8 +382,8 @@ class ComparativeAnalyzer:
         self.baselines[name] = metrics
 
     def compare_algorithms(
-        self, results: List[EvaluationResult], metric_groups: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        self, results: list[EvaluationResult], metric_groups: list[str] | None = None
+    ) -> dict[str, Any]:
         """Compare multiple algorithm results"""
 
         if not results:
@@ -417,8 +408,8 @@ class ComparativeAnalyzer:
         return comparison
 
     def _compare_metric_group(
-        self, results: List[EvaluationResult], group: str
-    ) -> Dict[str, Any]:
+        self, results: list[EvaluationResult], group: str
+    ) -> dict[str, Any]:
         """Compare results within a metric group"""
 
         group_comparison = {}
@@ -447,7 +438,7 @@ class ComparativeAnalyzer:
 
         return group_comparison
 
-    def _rank_algorithms(self, results: List[EvaluationResult]) -> List[Dict[str, Any]]:
+    def _rank_algorithms(self, results: list[EvaluationResult]) -> list[dict[str, Any]]:
         """Rank algorithms based on overall performance"""
 
         rankings = []
@@ -535,7 +526,7 @@ class ContinuousMonitor:
 
     async def _quick_evaluation(
         self, agent: Agent, environment: Environment
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Quick evaluation for monitoring"""
 
         # Simple test case
@@ -563,7 +554,7 @@ class ContinuousMonitor:
 
         return metrics
 
-    def _check_alerts(self, metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _check_alerts(self, metrics: dict[str, Any]) -> list[dict[str, Any]]:
         """Check for performance alerts"""
 
         alerts = []
@@ -594,7 +585,7 @@ class ContinuousMonitor:
 
         return alerts
 
-    async def _handle_alerts(self, alerts: List[Dict[str, Any]]):
+    async def _handle_alerts(self, alerts: list[dict[str, Any]]):
         """Handle triggered alerts"""
 
         for alert in alerts:
@@ -618,10 +609,10 @@ class AdvancedEvaluator:
 
     async def comprehensive_evaluation(
         self,
-        agents: List[Agent],
+        agents: list[Agent],
         environment: Environment,
-        evaluation_config: Dict[str, Any] = None,
-    ) -> List[EvaluationResult]:
+        evaluation_config: dict[str, Any] = None,
+    ) -> list[EvaluationResult]:
         """Run comprehensive evaluation across multiple agents"""
 
         if evaluation_config is None:
@@ -687,7 +678,7 @@ class AdvancedEvaluator:
         return results
 
     async def _calculate_comprehensive_metrics(
-        self, agent: Agent, test_results: Dict[str, Any], environment: Environment
+        self, agent: Agent, test_results: dict[str, Any], environment: Environment
     ) -> EvaluationMetrics:
         """Calculate comprehensive evaluation metrics"""
 
@@ -733,7 +724,6 @@ class AdvancedEvaluator:
 
         # Calculate confidence interval
         if metrics.sample_size > 1:
-            confidence_level = 0.95
             z_score = 1.96  # for 95% confidence
             margin_of_error = z_score * (
                 metrics.standard_deviation / np.sqrt(metrics.sample_size)
@@ -746,8 +736,8 @@ class AdvancedEvaluator:
         return metrics
 
     def _generate_recommendations(
-        self, result: EvaluationResult, comparison: Dict[str, Any]
-    ) -> List[str]:
+        self, result: EvaluationResult, comparison: dict[str, Any]
+    ) -> list[str]:
         """Generate recommendations based on evaluation results"""
 
         recommendations = []
@@ -788,7 +778,7 @@ class AdvancedEvaluator:
 
     def generate_evaluation_report(
         self,
-        results: List[EvaluationResult],
+        results: list[EvaluationResult],
         output_path: str = "evaluation_report.json",
     ):
         """Generate comprehensive evaluation report"""
@@ -820,7 +810,7 @@ class AdvancedEvaluator:
 # Utility functions
 
 
-def create_evaluation_config(**kwargs) -> Dict[str, Any]:
+def create_evaluation_config(**kwargs) -> dict[str, Any]:
     """Create evaluation configuration"""
     default_config = {
         "num_test_runs": 3,
@@ -833,8 +823,8 @@ def create_evaluation_config(**kwargs) -> Dict[str, Any]:
 
 
 async def quick_agent_comparison(
-    agents: List[Agent], environment: Environment, num_tests: int = 5
-) -> Dict[str, Any]:
+    agents: list[Agent], environment: Environment, num_tests: int = 5
+) -> dict[str, Any]:
     """Quick comparison of multiple agents"""
 
     evaluator = AdvancedEvaluator()

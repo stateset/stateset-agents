@@ -7,11 +7,12 @@ Provides structured logging with request ID context.
 import contextvars
 import logging
 import sys
+from collections.abc import MutableMapping
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Context variable for request ID
-request_id_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+request_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "request_id", default=None
 )
 
@@ -89,7 +90,7 @@ class StructuredFormatter(logging.Formatter):
         """Format as JSON."""
         import json
 
-        log_data: Dict[str, Any] = {
+        log_data: dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
             "level": record.levelname,
             "logger": record.name,
@@ -168,7 +169,7 @@ def set_request_id(request_id: str) -> contextvars.Token:
     return request_id_ctx.set(request_id)
 
 
-def get_request_id() -> Optional[str]:
+def get_request_id() -> str | None:
     """
     Get the current request ID.
 
@@ -195,13 +196,13 @@ class LoggerAdapter(logging.LoggerAdapter):
     Use this adapter when you need to add extra context to logs.
     """
 
-    def __init__(self, logger: logging.Logger, extra: Optional[Dict[str, Any]] = None):
+    def __init__(self, logger: logging.Logger, extra: dict[str, Any] | None = None):
         """Initialize adapter with optional extra fields."""
         super().__init__(logger, extra or {})
 
     def process(
-        self, msg: str, kwargs: Dict[str, Any]
-    ) -> tuple:
+        self, msg: str, kwargs: MutableMapping[str, Any]
+    ) -> tuple[str, MutableMapping[str, Any]]:
         """Process log message and add context."""
         extra = kwargs.get("extra", {})
         extra["request_id"] = get_request_id()

@@ -12,7 +12,8 @@ import asyncio
 import logging
 import random
 from dataclasses import dataclass, replace
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -42,15 +43,15 @@ class EvaluationConfig:
 
     num_episodes: int = 10
     num_generations: int = 1
-    max_turns: Optional[int] = None
-    seed: Optional[int] = 42
+    max_turns: int | None = None
+    seed: int | None = 42
     concurrency: int = 4  # Default to parallel evaluation for better performance
 
 
 async def _compute_reward(
     reward_fn: Any,
-    turns: List[ConversationTurn],
-    context: Optional[Dict[str, Any]],
+    turns: list[ConversationTurn],
+    context: dict[str, Any] | None,
 ) -> float:
     if reward_fn is None:
         return 0.0
@@ -76,10 +77,10 @@ async def evaluate_agent(
     *,
     agent: Any,
     environment: Environment,
-    scenarios: Optional[Sequence[Dict[str, Any]]] = None,
-    reward_fn: Optional[Any] = None,
-    config: Optional[EvaluationConfig] = None,
-) -> Dict[str, float]:
+    scenarios: Sequence[dict[str, Any]] | None = None,
+    reward_fn: Any | None = None,
+    config: EvaluationConfig | None = None,
+) -> dict[str, float]:
     """Evaluate an agent over a set of scenarios.
 
     Notes:
@@ -114,10 +115,10 @@ async def evaluate_agent(
         random.seed(cfg.seed)
         np.random.seed(cfg.seed)
 
-    scenario_list: List[Dict[str, Any]] = list(scenarios or [])
+    scenario_list: list[dict[str, Any]] = list(scenarios or [])
 
-    async def _run_one(episode_idx: int) -> Optional[List[Dict[str, Any]]]:
-        scenario: Optional[Dict[str, Any]] = None
+    async def _run_one(episode_idx: int) -> list[dict[str, Any]] | None:
+        scenario: dict[str, Any] | None = None
         if scenario_list:
             scenario = scenario_list[episode_idx % len(scenario_list)]
 
@@ -130,18 +131,24 @@ async def evaluate_agent(
                 # Fall back to sequential evaluation when clone is unavailable.
                 env = environment
                 uses_shared_env = True
-            except EVAL_ENV_EXCEPTIONS as exc:  # pragma: no cover - defensive for custom envs
-                logger.warning("Environment clone() failed; using shared instance: %s", exc)
+            except (
+                EVAL_ENV_EXCEPTIONS
+            ) as exc:  # pragma: no cover - defensive for custom envs
+                logger.warning(
+                    "Environment clone() failed; using shared instance: %s", exc
+                )
                 env = environment
                 uses_shared_env = True
 
         async def agent_fn(history: Any, context: Any) -> Any:
             generate = getattr(agent, "generate_response", None)
             if generate is None or not callable(generate):
-                raise TypeError("agent must implement generate_response(history, context)")
+                raise TypeError(
+                    "agent must implement generate_response(history, context)"
+                )
             return await generate(history, context)
 
-        samples: List[Dict[str, Any]] = []
+        samples: list[dict[str, Any]] = []
         for _ in range(max(1, cfg.num_generations)):
             try:
                 if uses_shared_env:
@@ -180,14 +187,16 @@ async def evaluate_agent(
     else:
         sem = asyncio.Semaphore(cfg.concurrency)
 
-        async def _run_guarded(i: int) -> Optional[Dict[str, Any]]:
+        async def _run_guarded(i: int) -> dict[str, Any] | None:
             async with sem:
                 return await _run_one(i)
 
-        results = await asyncio.gather(*[_run_guarded(i) for i in range(cfg.num_episodes)])
+        results = await asyncio.gather(
+            *[_run_guarded(i) for i in range(cfg.num_episodes)]
+        )
 
-    rewards: List[float] = []
-    lengths: List[float] = []
+    rewards: list[float] = []
+    lengths: list[float] = []
     for per_episode in results:
         if not per_episode:
             continue
@@ -205,7 +214,9 @@ async def evaluate_agent(
         }
 
     rewards_arr = np.array(rewards, dtype=float)
-    lengths_arr = np.array(lengths, dtype=float) if lengths else np.array([0.0], dtype=float)
+    lengths_arr = (
+        np.array(lengths, dtype=float) if lengths else np.array([0.0], dtype=float)
+    )
 
     return {
         "eval_reward": float(rewards_arr.mean()),

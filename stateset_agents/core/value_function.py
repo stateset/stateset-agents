@@ -5,10 +5,10 @@ This module provides value function implementations for computing advantages
 using Generalized Advantage Estimation (GAE) in GRPO training.
 """
 
-import logging
-from typing import Any, Dict, List, Optional, Tuple
+from __future__ import annotations
 
-import numpy as np
+import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,7 @@ try:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
+
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
@@ -35,60 +36,70 @@ def _require_torch() -> Any:
     return torch
 
 
-class ValueHead(nn.Module):
-    """
-    Value function head that can be attached to a language model.
+if TORCH_AVAILABLE:
 
-    This implements a simple MLP that takes the last hidden state
-    and outputs a scalar value prediction.
-    """
-
-    def __init__(
-        self,
-        hidden_size: int,
-        dropout: float = 0.1,
-        use_layer_norm: bool = True,
-    ):
+    class ValueHead(nn.Module):
         """
-        Args:
-            hidden_size: Size of the model's hidden states
-            dropout: Dropout probability
-            use_layer_norm: Whether to use layer normalization
+        Value function head that can be attached to a language model.
+
+        This implements a simple MLP that takes the last hidden state
+        and outputs a scalar value prediction.
         """
-        super().__init__()
-        _require_torch()
 
-        self.dropout = nn.Dropout(dropout)
+        def __init__(
+            self,
+            hidden_size: int,
+            dropout: float = 0.1,
+            use_layer_norm: bool = True,
+        ):
+            """
+            Args:
+                hidden_size: Size of the model's hidden states
+                dropout: Dropout probability
+                use_layer_norm: Whether to use layer normalization
+            """
+            super().__init__()
+            _require_torch()
 
-        # Value head layers
-        if use_layer_norm:
-            self.norm = nn.LayerNorm(hidden_size)
-        else:
-            self.norm = nn.Identity()
+            self.dropout = nn.Dropout(dropout)
 
-        self.value_head = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_size // 2, 1),
-        )
+            # Value head layers
+            if use_layer_norm:
+                self.norm = nn.LayerNorm(hidden_size)
+            else:
+                self.norm = nn.Identity()
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """
-        Compute value prediction from hidden states.
+            self.value_head = nn.Sequential(
+                nn.Linear(hidden_size, hidden_size // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_size // 2, 1),
+            )
 
-        Args:
-            hidden_states: Hidden states from the model [batch_size, seq_len, hidden_size]
+        def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+            """
+            Compute value prediction from hidden states.
 
-        Returns:
-            Value predictions [batch_size, seq_len, 1]
-        """
-        # Apply normalization and dropout
-        hidden_states = self.norm(hidden_states)
-        hidden_states = self.dropout(hidden_states)
+            Args:
+                hidden_states: Hidden states from the model [batch_size, seq_len, hidden_size]
 
-        # Compute value
-        return self.value_head(hidden_states)
+            Returns:
+                Value predictions [batch_size, seq_len, 1]
+            """
+            # Apply normalization and dropout
+            hidden_states = self.norm(hidden_states)
+            hidden_states = self.dropout(hidden_states)
+
+            # Compute value
+            return self.value_head(hidden_states)
+
+else:
+
+    class ValueHead:  # type: ignore[no-redef]
+        """Stub ValueHead when PyTorch is not available."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            _require_torch()
 
 
 class ValueFunction:
@@ -102,7 +113,7 @@ class ValueFunction:
     def __init__(
         self,
         model: Any,
-        value_head: Optional[ValueHead] = None,
+        value_head: ValueHead | None = None,
         gamma: float = 0.99,
         gae_lambda: float = 0.95,
         normalize_advantages: bool = True,
@@ -128,7 +139,7 @@ class ValueFunction:
             self.value_head = ValueHead(hidden_size)
 
             # Move to same device as model
-            if hasattr(model, 'device'):
+            if hasattr(model, "device"):
                 self.value_head = self.value_head.to(model.device)
         else:
             self.value_head = value_head
@@ -153,11 +164,11 @@ class ValueFunction:
             config = model_dict.get("config")
         else:
             try:
-                config = getattr(self.model, "config")
+                config = self.model.config
             except AttributeError:
                 config = None
 
-        candidates: List[Any] = []
+        candidates: list[Any] = []
         if config is not None:
             config_dict = getattr(config, "__dict__", {})
             if isinstance(config_dict, dict):
@@ -186,7 +197,7 @@ class ValueFunction:
     def compute_values(
         self,
         input_ids: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Compute value predictions for input sequences.
@@ -202,7 +213,7 @@ class ValueFunction:
 
         with torch.no_grad():
             # Get hidden states from model
-            if hasattr(self.model, 'model'):
+            if hasattr(self.model, "model"):
                 # For transformers models
                 outputs = self.model.model(
                     input_ids=input_ids,
@@ -216,7 +227,11 @@ class ValueFunction:
                     input_ids=input_ids,
                     attention_mask=attention_mask,
                 )
-                hidden_states = outputs.last_hidden_state if hasattr(outputs, 'last_hidden_state') else outputs[0]
+                hidden_states = (
+                    outputs.last_hidden_state
+                    if hasattr(outputs, "last_hidden_state")
+                    else outputs[0]
+                )
 
         # Compute values
         values = self.value_head(hidden_states).squeeze(-1)
@@ -225,10 +240,10 @@ class ValueFunction:
 
     def compute_gae(
         self,
-        rewards: List[float],
+        rewards: list[float],
         values: torch.Tensor,
-        dones: Optional[List[bool]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        dones: list[bool] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute Generalized Advantage Estimation (GAE).
 
@@ -245,7 +260,9 @@ class ValueFunction:
         if dones is None:
             dones = [False] * (len(rewards) - 1) + [True]
 
-        rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=values.device)
+        rewards_tensor = torch.tensor(
+            rewards, dtype=torch.float32, device=values.device
+        )
         dones_tensor = torch.tensor(dones, dtype=torch.float32, device=values.device)
 
         # Compute advantages using GAE
@@ -259,10 +276,17 @@ class ValueFunction:
                 next_value = values[t + 1]
 
             # TD error: δ_t = r_t + γ * V(s_{t+1}) - V(s_t)
-            delta = rewards_tensor[t] + self.gamma * next_value * (1 - dones_tensor[t]) - values[t]
+            delta = (
+                rewards_tensor[t]
+                + self.gamma * next_value * (1 - dones_tensor[t])
+                - values[t]
+            )
 
             # GAE: A_t = δ_t + γλ * A_{t+1}
-            advantages[t] = delta + self.gamma * self.gae_lambda * (1 - dones_tensor[t]) * last_advantage
+            advantages[t] = (
+                delta
+                + self.gamma * self.gae_lambda * (1 - dones_tensor[t]) * last_advantage
+            )
             last_advantage = advantages[t]
 
         # Store unnormalized advantages for returns calculation
@@ -279,7 +303,7 @@ class ValueFunction:
 
     def compute_grpo_advantages(
         self,
-        group_rewards: List[float],
+        group_rewards: list[float],
         baseline_type: str = "group_mean",
     ) -> torch.Tensor:
         """
@@ -343,10 +367,10 @@ class ValueFunction:
 
         self.value_head.train()
 
-        for epoch in range(num_epochs):
+        for _epoch in range(num_epochs):
             # Get hidden states
             with torch.no_grad():
-                if hasattr(self.model, 'model'):
+                if hasattr(self.model, "model"):
                     outputs = self.model.model(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
@@ -358,7 +382,11 @@ class ValueFunction:
                         input_ids=input_ids,
                         attention_mask=attention_mask,
                     )
-                    hidden_states = outputs.last_hidden_state if hasattr(outputs, 'last_hidden_state') else outputs[0]
+                    hidden_states = (
+                        outputs.last_hidden_state
+                        if hasattr(outputs, "last_hidden_state")
+                        else outputs[0]
+                    )
 
             # Compute value predictions
             value_preds = self.value_head(hidden_states).squeeze(-1)
@@ -389,30 +417,30 @@ class ValueFunction:
     def save(self, path: str):
         """Save value function state"""
         _require_torch()
-        torch.save({
-            'value_head_state_dict': self.value_head.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'gamma': self.gamma,
-            'gae_lambda': self.gae_lambda,
-        }, path)
+        torch.save(
+            {
+                "value_head_state_dict": self.value_head.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "gamma": self.gamma,
+                "gae_lambda": self.gae_lambda,
+            },
+            path,
+        )
         logger.info(f"Value function saved to {path}")
 
     def load(self, path: str):
         """Load value function state"""
         _require_torch()
         checkpoint = torch.load(path)
-        self.value_head.load_state_dict(checkpoint['value_head_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.gamma = checkpoint['gamma']
-        self.gae_lambda = checkpoint['gae_lambda']
+        self.value_head.load_state_dict(checkpoint["value_head_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.gamma = checkpoint["gamma"]
+        self.gae_lambda = checkpoint["gae_lambda"]
         logger.info(f"Value function loaded from {path}")
 
 
 def create_value_function(
-    model: Any,
-    gamma: float = 0.99,
-    gae_lambda: float = 0.95,
-    **kwargs
+    model: Any, gamma: float = 0.99, gae_lambda: float = 0.95, **kwargs
 ) -> ValueFunction:
     """
     Convenience function to create a value function.
@@ -426,9 +454,4 @@ def create_value_function(
     Returns:
         ValueFunction instance
     """
-    return ValueFunction(
-        model=model,
-        gamma=gamma,
-        gae_lambda=gae_lambda,
-        **kwargs
-    )
+    return ValueFunction(model=model, gamma=gamma, gae_lambda=gae_lambda, **kwargs)

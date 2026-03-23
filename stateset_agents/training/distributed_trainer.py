@@ -6,13 +6,12 @@ proper rank handling, memory optimization, and fault tolerance.
 """
 
 import asyncio
-import json
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import torch
 import torch.distributed as dist
@@ -21,7 +20,6 @@ import torch.multiprocessing as mp
 try:
     from torch.distributed.elastic.multiprocessing.errors import record
     from torch.nn.parallel import DistributedDataParallel as DDP
-    from torch.utils.data.distributed import DistributedSampler
 
     DISTRIBUTED_AVAILABLE = True
 except ImportError:
@@ -40,7 +38,6 @@ from stateset_agents.core.reward import RewardFunction
 from stateset_agents.utils.monitoring import MonitoringService
 
 from .config import TrainingConfig
-from .trainer import GRPOTrainer
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +70,7 @@ class DistributedConfig:
     activation_checkpointing: bool = False
     mixed_precision: bool = True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "backend": self.backend,
             "init_method": self.init_method,
@@ -105,7 +102,7 @@ class DistributedGRPOTrainer:
         reward_function: RewardFunction,
         training_config: TrainingConfig,
         distributed_config: DistributedConfig,
-        monitoring_service: Optional[MonitoringService] = None,
+        monitoring_service: MonitoringService | None = None,
     ):
         if not DISTRIBUTED_AVAILABLE:
             raise ImportError("PyTorch distributed training is not available")
@@ -223,7 +220,7 @@ class DistributedGRPOTrainer:
         else:
             wandb.watch(self.model)
 
-    async def train(self) -> Dict[str, Any]:
+    async def train(self) -> dict[str, Any]:
         """
         Main training loop with distributed coordination
         """
@@ -257,7 +254,7 @@ class DistributedGRPOTrainer:
 
         return self.training_metrics
 
-    async def _train_epoch(self) -> Dict[str, Any]:
+    async def _train_epoch(self) -> dict[str, Any]:
         """Train for one epoch"""
         self.model.train()
         epoch_metrics = {
@@ -320,7 +317,7 @@ class DistributedGRPOTrainer:
 
         return epoch_metrics
 
-    async def _generate_training_data(self) -> List[Dict[str, Any]]:
+    async def _generate_training_data(self) -> list[dict[str, Any]]:
         """Generate training data for the epoch"""
         # This should be implemented based on your specific training data requirements
         # For now, return placeholder data
@@ -329,7 +326,7 @@ class DistributedGRPOTrainer:
             for i in range(self.training_config.batch_size)
         ]
 
-    def _distribute_data(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _distribute_data(self, data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Distribute training data across processes"""
         # Simple round-robin distribution
         local_data = []
@@ -339,8 +336,8 @@ class DistributedGRPOTrainer:
         return local_data
 
     async def _training_step(
-        self, batch: Dict[str, Any]
-    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        self, batch: dict[str, Any]
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Execute one training step"""
         # Generate trajectories
         trajectories = await self._generate_trajectories(batch)
@@ -360,25 +357,25 @@ class DistributedGRPOTrainer:
         return loss, step_metrics
 
     async def _generate_trajectories(
-        self, batch: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, batch: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Generate trajectories for the batch"""
         # Placeholder implementation
         return [{"prompt": batch["prompt"], "response": batch["response"]}]
 
-    async def _compute_rewards(self, trajectories: List[Dict[str, Any]]) -> List[float]:
+    async def _compute_rewards(self, trajectories: list[dict[str, Any]]) -> list[float]:
         """Compute rewards for trajectories"""
         # Placeholder implementation
         return [0.5 for _ in trajectories]
 
     def _compute_grpo_loss(
-        self, trajectories: List[Dict[str, Any]], rewards: List[float]
+        self, trajectories: list[dict[str, Any]], rewards: list[float]
     ) -> torch.Tensor:
         """Compute GRPO loss"""
         # Placeholder implementation
         return torch.tensor(0.0, device=self.device, requires_grad=True)
 
-    def _reduce_metrics(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+    def _reduce_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
         """Reduce metrics across all processes"""
         # Gather metrics from all processes
         gathered_metrics = [None] * self.distributed_config.world_size
@@ -403,7 +400,7 @@ class DistributedGRPOTrainer:
         else:
             return metrics
 
-    async def _log_metrics(self, metrics: Dict[str, Any], epoch: int):
+    async def _log_metrics(self, metrics: dict[str, Any], epoch: int):
         """Log metrics to monitoring services"""
         # Log to wandb
         if WANDB_AVAILABLE and self.is_master:
@@ -475,7 +472,7 @@ def run_distributed_training(
     reward_function: RewardFunction,
     training_config: TrainingConfig,
     distributed_config: DistributedConfig,
-    monitoring_service: Optional[MonitoringService] = None,
+    monitoring_service: MonitoringService | None = None,
 ):
     """
     Entry point for distributed training process
@@ -514,8 +511,8 @@ def launch_distributed_training(
     reward_function: RewardFunction,
     training_config: TrainingConfig,
     distributed_config: DistributedConfig,
-    monitoring_service: Optional[MonitoringService] = None,
-) -> Dict[str, Any]:
+    monitoring_service: MonitoringService | None = None,
+) -> dict[str, Any]:
     """
     Launch distributed training across multiple GPUs
     """
@@ -554,7 +551,7 @@ def launch_distributed_training(
 
 # Utility functions
 def get_optimal_distributed_config(
-    num_gpus: Optional[int] = None, memory_per_gpu: Optional[float] = None
+    num_gpus: int | None = None, memory_per_gpu: float | None = None
 ) -> DistributedConfig:
     """Get optimal distributed configuration for available hardware"""
     if num_gpus is None:

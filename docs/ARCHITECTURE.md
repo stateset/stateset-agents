@@ -104,9 +104,10 @@ stateset-agents/
 │   └── neural_reward_trainer.py   # Learned reward models
 │
 ├── api/                           # REST API services
-│   ├── ultimate_grpo_service.py   # Complete FastAPI service (1000+ lines)
-│   ├── enhanced_api_service.py
-│   └── enhanced_grpo_gateway.py
+│   ├── main.py                    # FastAPI app and router assembly
+│   ├── routers/                   # Endpoint routers
+│   ├── security.py                # Authentication and threat monitoring
+│   └── dependencies.py            # Shared FastAPI dependencies
 │
 ├── rewards/                       # Multi-objective reward system
 │   ├── llm_reward.py              # LLM-based rewards
@@ -779,7 +780,7 @@ Scenarios → Environment → Agent → Trajectories → Rewards → Training
 ### FastAPI Service Structure
 
 ```python
-# api/ultimate_grpo_service.py
+# stateset_agents/api/main.py
 
 from fastapi import FastAPI, WebSocket
 from stateset_agents import MultiTurnAgent
@@ -830,17 +831,17 @@ async def train_agent(config: TrainingConfig):
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: stateset-agents
+  name: stateset-agents-api
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: stateset-agents
+      app: stateset-agents-api
   template:
     spec:
       containers:
       - name: api
-        image: stateset/agents:latest
+        image: stateset/stateset-agents-api:latest
         resources:
           requests:
             memory: "4Gi"
@@ -848,10 +849,9 @@ spec:
           limits:
             memory: "8Gi"
             cpu: "4"
-            nvidia.com/gpu: "1"
         livenessProbe:
           httpGet:
-            path: /health
+            path: /healthz
             port: 8000
           initialDelaySeconds: 30
           periodSeconds: 10

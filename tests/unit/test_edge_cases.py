@@ -16,15 +16,10 @@ Categories covered:
 
 import asyncio
 import math
-import sys
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import torch
 import torch.nn as nn
-
 
 # =============================================================================
 # AGENT EDGE CASES
@@ -38,6 +33,7 @@ class TestAgentEdgeCases:
     def mock_agent_config(self):
         """Create a mock agent config."""
         from stateset_agents.core.agent import AgentConfig
+
         return AgentConfig(
             model_name="stub://test",
             use_stub_model=True,
@@ -105,7 +101,7 @@ class TestAgentEdgeCases:
         # Missing role
         messages = [{"content": "Hello"}]
         try:
-            response = await agent.generate_response(messages)
+            await agent.generate_response(messages)
             # Should either work or raise graceful error
         except (KeyError, ValueError):
             pass  # Expected behavior
@@ -113,7 +109,7 @@ class TestAgentEdgeCases:
         # Missing content
         messages = [{"role": "user"}]
         try:
-            response = await agent.generate_response(messages)
+            await agent.generate_response(messages)
         except (KeyError, ValueError):
             pass
 
@@ -155,7 +151,7 @@ class TestRewardEdgeCases:
 
         # Should handle empty gracefully
         assert result is not None
-        assert hasattr(result, 'score')
+        assert hasattr(result, "score")
 
     @pytest.mark.asyncio
     async def test_single_turn(self):
@@ -172,14 +168,20 @@ class TestRewardEdgeCases:
     @pytest.mark.asyncio
     async def test_extreme_weights(self):
         """Test composite reward with extreme weights."""
-        from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
+        from stateset_agents.core.reward import (
+            CompositeReward,
+            HelpfulnessReward,
+            SafetyReward,
+        )
         from stateset_agents.core.trajectory import ConversationTurn
 
         # Very large weights
-        reward = CompositeReward([
-            HelpfulnessReward(weight=1e10),
-            SafetyReward(weight=1e-10),
-        ])
+        reward = CompositeReward(
+            [
+                HelpfulnessReward(weight=1e10),
+                SafetyReward(weight=1e-10),
+            ]
+        )
 
         turns = [
             ConversationTurn(role="user", content="Help me"),
@@ -196,9 +198,11 @@ class TestRewardEdgeCases:
         from stateset_agents.core.reward import CompositeReward, HelpfulnessReward
         from stateset_agents.core.trajectory import ConversationTurn
 
-        reward = CompositeReward([
-            HelpfulnessReward(weight=0.0),
-        ])
+        reward = CompositeReward(
+            [
+                HelpfulnessReward(weight=0.0),
+            ]
+        )
 
         turns = [
             ConversationTurn(role="user", content="Test"),
@@ -215,9 +219,11 @@ class TestRewardEdgeCases:
         from stateset_agents.core.trajectory import ConversationTurn
 
         # Negative weight should work (penalty)
-        reward = CompositeReward([
-            HelpfulnessReward(weight=-1.0),
-        ])
+        reward = CompositeReward(
+            [
+                HelpfulnessReward(weight=-1.0),
+            ]
+        )
 
         turns = [
             ConversationTurn(role="user", content="Test"),
@@ -287,7 +293,10 @@ class TestTrajectoryEdgeCases:
 
     def test_mismatched_rewards_turns(self):
         """Test trajectory with mismatched rewards/turns count."""
-        from stateset_agents.core.trajectory import MultiTurnTrajectory, ConversationTurn
+        from stateset_agents.core.trajectory import (
+            ConversationTurn,
+            MultiTurnTrajectory,
+        )
 
         turns = [
             ConversationTurn(role="user", content="Hi"),
@@ -309,7 +318,10 @@ class TestTrajectoryEdgeCases:
 
     def test_trajectory_serialization_special_chars(self):
         """Test trajectory serialization with special characters."""
-        from stateset_agents.core.trajectory import MultiTurnTrajectory, ConversationTurn
+        from stateset_agents.core.trajectory import (
+            ConversationTurn,
+            MultiTurnTrajectory,
+        )
 
         turns = [
             ConversationTurn(role="user", content='Test "quotes" and \\slashes'),
@@ -330,13 +342,18 @@ class TestTrajectoryEdgeCases:
 
     def test_very_long_trajectory(self):
         """Test trajectory with many turns."""
-        from stateset_agents.core.trajectory import MultiTurnTrajectory, ConversationTurn
+        from stateset_agents.core.trajectory import (
+            ConversationTurn,
+            MultiTurnTrajectory,
+        )
 
         # Create 1000 turn trajectory
         turns = []
         for i in range(500):
             turns.append(ConversationTurn(role="user", content=f"User message {i}"))
-            turns.append(ConversationTurn(role="assistant", content=f"Assistant response {i}"))
+            turns.append(
+                ConversationTurn(role="assistant", content=f"Assistant response {i}")
+            )
 
         rewards = [0.5] * 1000
 
@@ -459,7 +476,7 @@ class TestEnvironmentEdgeCases:
 
         # Should handle gracefully (may raise or return None)
         try:
-            state = await env.reset()
+            await env.reset()
         except (IndexError, ValueError):
             pass  # Expected if no scenarios
 
@@ -614,7 +631,9 @@ class TestMemoryEdgeCases:
         model = nn.Linear(100, 100)
         optimizer = torch.optim.Adam(model.parameters())
 
-        initial_memory = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
+        initial_memory = (
+            torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
+        )
 
         for _ in range(100):
             x = torch.randn(32, 100)
@@ -642,6 +661,7 @@ class TestAsyncEdgeCases:
     @pytest.mark.asyncio
     async def test_rapid_sequential_calls(self):
         """Test rapid sequential async calls."""
+
         async def dummy_async():
             await asyncio.sleep(0.001)
             return True
@@ -655,6 +675,7 @@ class TestAsyncEdgeCases:
     @pytest.mark.asyncio
     async def test_timeout_handling(self):
         """Test timeout handling in async operations."""
+
         async def slow_operation():
             await asyncio.sleep(10)
             return "done"
@@ -665,6 +686,7 @@ class TestAsyncEdgeCases:
     @pytest.mark.asyncio
     async def test_cancelled_task(self):
         """Test handling of cancelled tasks."""
+
         async def cancellable():
             await asyncio.sleep(10)
 

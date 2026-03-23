@@ -6,58 +6,79 @@ API endpoints for system health, metrics, and observability.
 
 import time
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from ..schemas import MetricsResponse, HealthResponse, ErrorResponse
-from ..dependencies import require_role, get_security_monitor, AuthenticatedUser
-from ..cache import get_cache, HEALTH_CACHE_TTL_SECONDS, METRICS_CACHE_TTL_SECONDS
-from ..constants import API_VERSION
+from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
 from stateset_agents.utils.performance_monitor import get_global_monitor
 from stateset_agents.utils.security import SecurityMonitor
 
+from ..cache import HEALTH_CACHE_TTL_SECONDS, METRICS_CACHE_TTL_SECONDS, get_cache
+from ..constants import API_VERSION
+from ..dependencies import AuthenticatedUser, get_security_monitor, require_role
+from ..schemas import ErrorResponse
+
 router = APIRouter(tags=["observability"])
 
-METRICS_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
+METRICS_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
 
 # Track service start time for uptime calculation
 _service_start_time = time.monotonic()
+
+try:  # Optional dependency
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    HAS_PROMETHEUS = True
+except ImportError:  # pragma: no cover
+    HAS_PROMETHEUS = False
 
 
 # ============================================================================
 # Response Models
 # ============================================================================
 
+
 class ComponentHealthDetail(BaseModel):
     """Detailed component health information."""
+
     name: str = Field(..., description="Component name")
     status: str = Field(..., description="Health status (healthy, degraded, unhealthy)")
     latency_ms: float = Field(0.0, description="Component response latency in ms")
-    details: Dict[str, Any] = Field(default_factory=dict, description="Additional details")
+    details: dict[str, Any] = Field(
+        default_factory=dict, description="Additional details"
+    )
 
 
 class DetailedHealthResponse(BaseModel):
     """Detailed health check response."""
+
     status: str = Field(..., description="Overall service status")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Response timestamp")
+    timestamp: datetime = Field(
+        default_factory=datetime.utcnow, description="Response timestamp"
+    )
     version: str = Field(..., description="API version")
     uptime_seconds: float = Field(..., description="Service uptime in seconds")
-    components: List[ComponentHealthDetail] = Field(
+    components: list[ComponentHealthDetail] = Field(
         default_factory=list, description="Individual component health"
     )
-    checks: Dict[str, bool] = Field(default_factory=dict, description="Health check results")
+    checks: dict[str, bool] = Field(
+        default_factory=dict, description="Health check results"
+    )
 
 
 class RouterHealthResponse(BaseModel):
     """Health response used by the public `/health` router endpoint."""
 
     status: str = Field(..., description="Overall service status")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Response timestamp")
+    timestamp: datetime = Field(
+        default_factory=datetime.utcnow, description="Response timestamp"
+    )
     version: str = Field(..., description="API version")
     uptime: float = Field(..., description="Service uptime in seconds")
-    components: Dict[str, str] = Field(
+    components: dict[str, str] = Field(
         default_factory=dict,
         description="Component statuses keyed by component name",
     )
@@ -65,17 +86,29 @@ class RouterHealthResponse(BaseModel):
 
 class DetailedMetricsResponse(BaseModel):
     """Detailed metrics response."""
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Metrics timestamp")
-    system_metrics: Dict[str, Any] = Field(default_factory=dict, description="System metrics")
-    api_metrics: Dict[str, Any] = Field(default_factory=dict, description="API metrics")
-    performance_metrics: Dict[str, Any] = Field(default_factory=dict, description="Performance metrics")
-    security_metrics: Dict[str, Any] = Field(default_factory=dict, description="Security metrics")
-    cache_metrics: Dict[str, Any] = Field(default_factory=dict, description="Cache metrics")
+
+    timestamp: datetime = Field(
+        default_factory=datetime.utcnow, description="Metrics timestamp"
+    )
+    system_metrics: dict[str, Any] = Field(
+        default_factory=dict, description="System metrics"
+    )
+    api_metrics: dict[str, Any] = Field(default_factory=dict, description="API metrics")
+    performance_metrics: dict[str, Any] = Field(
+        default_factory=dict, description="Performance metrics"
+    )
+    security_metrics: dict[str, Any] = Field(
+        default_factory=dict, description="Security metrics"
+    )
+    cache_metrics: dict[str, Any] = Field(
+        default_factory=dict, description="Cache metrics"
+    )
 
 
 # ============================================================================
 # Health Endpoints
 # ============================================================================
+
 
 @router.get(
     "/health",
@@ -145,7 +178,7 @@ async def health_check() -> RouterHealthResponse:
         200: {"description": "Service is alive"},
     },
 )
-async def healthz() -> Dict[str, str]:
+async def healthz() -> dict[str, str]:
     """
     Simple health probe for Kubernetes.
 
@@ -154,38 +187,29 @@ async def healthz() -> Dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get(
-    "/ready",
-    summary="Readiness Probe",
-    description="Check if the service is ready to accept traffic.",
-    responses={
-        200: {"description": "Service is ready"},
-        503: {"description": "Service is not ready"},
-    },
-)
-async def readiness() -> Dict[str, Any]:
-    """
-    Readiness probe for Kubernetes.
-
-    Checks if all dependencies are available.
-    """
-    # Would check database connections, external services, etc.
-    ready = True
-
-    return {
-        "status": "ready" if ready else "not_ready",
-        "checks": {
-            "dependencies_available": ready,
-        },
-    }
-
-
 # ============================================================================
 # Metrics Endpoints
 # ============================================================================
 
+
 @router.get(
     "/metrics",
+    summary="Prometheus Metrics",
+    description="Prometheus text exposition format metrics.",
+    responses={
+        200: {"description": "Prometheus metrics"},
+        404: {"description": "Prometheus not installed"},
+    },
+)
+async def prometheus_metrics() -> PlainTextResponse:
+    """Expose Prometheus-format metrics for scraping."""
+    if not HAS_PROMETHEUS:  # pragma: no cover
+        raise HTTPException(status_code=404, detail="Prometheus client not installed")
+    return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@router.get(
+    "/metrics/json",
     response_model=DetailedMetricsResponse,
     summary="Get Metrics",
     description="Get comprehensive system and performance metrics. Requires admin role.",
@@ -229,10 +253,12 @@ async def get_metrics(
 
     # Get middleware metrics
     from ..middleware import get_metrics as get_api_metrics
+
     api_metrics_data = get_api_metrics().get_summary()
 
     # Get security metrics
     from ..security import get_api_security_monitor
+
     security_monitor = get_api_security_monitor()
     security_stats = security_monitor.get_stats()
 
@@ -284,7 +310,7 @@ async def get_metrics(
 )
 async def get_security_metrics(
     user: AuthenticatedUser = Depends(require_role("admin")),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get detailed security metrics.
 
@@ -294,6 +320,7 @@ async def get_security_metrics(
     - Authentication statistics
     """
     from ..security import get_api_security_monitor
+
     security_monitor = get_api_security_monitor()
 
     return {
@@ -323,7 +350,7 @@ async def get_security_metrics(
 )
 async def get_cache_metrics(
     user: AuthenticatedUser = Depends(require_role("admin")),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get cache statistics.
 

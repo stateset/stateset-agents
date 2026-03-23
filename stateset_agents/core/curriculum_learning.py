@@ -5,16 +5,16 @@ This module implements curriculum learning strategies that progressively increas
 task difficulty during training, leading to better convergence and performance.
 """
 
-import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 
-from .environment import Environment, EnvironmentState
+from .environment import Environment
 from .trajectory import MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
@@ -47,12 +47,12 @@ class CurriculumStage:
 
     stage_id: str
     difficulty_level: float  # 0.0 (easiest) to 1.0 (hardest)
-    task_config: Dict[str, Any]
+    task_config: dict[str, Any]
     success_threshold: float = 0.7  # Required success rate to advance
     min_episodes: int = 100  # Minimum episodes before considering advancement
     max_episodes: int = 1000  # Maximum episodes before forced advancement
     description: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -61,10 +61,12 @@ class CurriculumProgress:
 
     current_stage_idx: int = 0
     episodes_in_stage: int = 0
-    stage_rewards: List[float] = field(default_factory=list)
+    stage_rewards: list[float] = field(default_factory=list)
     stage_success_rate: float = 0.0
     total_episodes: int = 0
-    advancement_history: List[Tuple[int, int, float]] = field(default_factory=list)  # (stage, episode, performance)
+    advancement_history: list[tuple[int, int, float]] = field(
+        default_factory=list
+    )  # (stage, episode, performance)
 
 
 class CurriculumScheduler(ABC):
@@ -75,7 +77,7 @@ class CurriculumScheduler(ABC):
         self,
         current_stage: CurriculumStage,
         progress: CurriculumProgress,
-        recent_trajectories: List[MultiTurnTrajectory],
+        recent_trajectories: list[MultiTurnTrajectory],
     ) -> bool:
         """Determine if agent should advance to next stage"""
         pass
@@ -107,16 +109,20 @@ class PerformanceBasedScheduler(CurriculumScheduler):
         self,
         current_stage: CurriculumStage,
         progress: CurriculumProgress,
-        recent_trajectories: List[MultiTurnTrajectory],
+        recent_trajectories: list[MultiTurnTrajectory],
     ) -> bool:
         """Advance if performance exceeds threshold"""
         # Must meet minimum episode requirement
-        if progress.episodes_in_stage < max(self.min_episodes, current_stage.min_episodes):
+        if progress.episodes_in_stage < max(
+            self.min_episodes, current_stage.min_episodes
+        ):
             return False
 
         # Force advancement if max episodes reached
         if progress.episodes_in_stage >= current_stage.max_episodes:
-            logger.info(f"Forcing advancement after {progress.episodes_in_stage} episodes")
+            logger.info(
+                f"Forcing advancement after {progress.episodes_in_stage} episodes"
+            )
             return True
 
         # Check recent performance
@@ -179,7 +185,7 @@ class AdaptiveScheduler(CurriculumScheduler):
         self,
         current_stage: CurriculumStage,
         progress: CurriculumProgress,
-        recent_trajectories: List[MultiTurnTrajectory],
+        recent_trajectories: list[MultiTurnTrajectory],
     ) -> bool:
         """Advance when learning plateaus and performance is adequate"""
         if progress.episodes_in_stage < current_stage.min_episodes:
@@ -246,9 +252,9 @@ class CurriculumLearning:
 
     def __init__(
         self,
-        stages: List[CurriculumStage],
-        scheduler: Optional[CurriculumScheduler] = None,
-        environment_factory: Optional[Callable[[Dict[str, Any]], Environment]] = None,
+        stages: list[CurriculumStage],
+        scheduler: CurriculumScheduler | None = None,
+        environment_factory: Callable[[dict[str, Any]], Environment] | None = None,
         auto_generate_stages: bool = False,
         num_stages: int = 5,
     ):
@@ -273,10 +279,10 @@ class CurriculumLearning:
         self.scheduler = scheduler or PerformanceBasedScheduler()
         self.environment_factory = environment_factory
         self.progress = CurriculumProgress()
-        self.recent_trajectories: List[MultiTurnTrajectory] = []
+        self.recent_trajectories: list[MultiTurnTrajectory] = []
         self.trajectory_window_size = 100
 
-    def _generate_default_stages(self, num_stages: int) -> List[CurriculumStage]:
+    def _generate_default_stages(self, num_stages: int) -> list[CurriculumStage]:
         """Generate default curriculum stages"""
         stages = []
         for i in range(num_stages):
@@ -303,7 +309,7 @@ class CurriculumLearning:
         """Get the current curriculum stage"""
         return self.stages[self.progress.current_stage_idx]
 
-    def get_current_config(self) -> Dict[str, Any]:
+    def get_current_config(self) -> dict[str, Any]:
         """Get current task configuration with difficulty adjustments"""
         stage = self.get_current_stage()
         config = stage.task_config.copy()
@@ -332,7 +338,9 @@ class CurriculumLearning:
 
         # Check if should advance
         current_stage = self.get_current_stage()
-        if self.scheduler.should_advance(current_stage, self.progress, self.recent_trajectories):
+        if self.scheduler.should_advance(
+            current_stage, self.progress, self.recent_trajectories
+        ):
             self._advance_stage()
 
     def _advance_stage(self) -> None:
@@ -346,7 +354,11 @@ class CurriculumLearning:
 
         # Record advancement
         self.progress.advancement_history.append(
-            (old_stage_idx, self.progress.total_episodes, self.progress.stage_success_rate)
+            (
+                old_stage_idx,
+                self.progress.total_episodes,
+                self.progress.stage_success_rate,
+            )
         )
 
         # Advance
@@ -369,7 +381,7 @@ class CurriculumLearning:
             and self.progress.episodes_in_stage >= self.get_current_stage().min_episodes
         )
 
-    def get_environment(self) -> Optional[Environment]:
+    def get_environment(self) -> Environment | None:
         """Get environment configured for current stage"""
         if self.environment_factory is None:
             return None
@@ -377,7 +389,7 @@ class CurriculumLearning:
         config = self.get_current_config()
         return self.environment_factory(config)
 
-    def get_progress_summary(self) -> Dict[str, Any]:
+    def get_progress_summary(self) -> dict[str, Any]:
         """Get summary of curriculum progress"""
         stage = self.get_current_stage()
         return {
@@ -455,7 +467,9 @@ class TaskDifficultyController:
             adjustment = (performance_score - 0.5) * self.adjustment_rate * 0.5
 
         self.current_difficulty += adjustment
-        self.current_difficulty = np.clip(self.current_difficulty, self.min_difficulty, self.max_difficulty)
+        self.current_difficulty = np.clip(
+            self.current_difficulty, self.min_difficulty, self.max_difficulty
+        )
 
         return self.current_difficulty
 
@@ -463,6 +477,8 @@ class TaskDifficultyController:
         """Get current difficulty level"""
         return self.current_difficulty
 
-    def reset(self, difficulty: Optional[float] = None) -> None:
+    def reset(self, difficulty: float | None = None) -> None:
         """Reset to base or specified difficulty"""
-        self.current_difficulty = difficulty if difficulty is not None else self.base_difficulty
+        self.current_difficulty = (
+            difficulty if difficulty is not None else self.base_difficulty
+        )

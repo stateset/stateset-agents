@@ -13,17 +13,16 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from .constants import (
+    AUTH_LOCKOUT_DURATION_SECONDS,
+    ERROR_MSG_PROMPT_INJECTION,
+    MAX_AUTH_FAILURES_BEFORE_LOCKOUT,
     MAX_JSON_NESTING_DEPTH,
     MAX_MESSAGE_LENGTH,
-    MAX_PROMPT_LENGTH,
-    MAX_AUTH_FAILURES_BEFORE_LOCKOUT,
-    AUTH_LOCKOUT_DURATION_SECONDS,
     PROMPT_INJECTION_PATTERNS,
     SUSPICIOUS_PATTERNS,
-    ERROR_MSG_PROMPT_INJECTION,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,8 +32,10 @@ logger = logging.getLogger(__name__)
 # Security Enums
 # ============================================================================
 
+
 class ThreatLevel(str, Enum):
     """Threat level classification."""
+
     NONE = "none"
     LOW = "low"
     MEDIUM = "medium"
@@ -44,6 +45,7 @@ class ThreatLevel(str, Enum):
 
 class SecurityEventType(str, Enum):
     """Types of security events."""
+
     PROMPT_INJECTION_ATTEMPT = "prompt_injection_attempt"
     SUSPICIOUS_PATTERN = "suspicious_pattern"
     AUTH_FAILURE = "auth_failure"
@@ -57,27 +59,30 @@ class SecurityEventType(str, Enum):
 # Security Event Tracking
 # ============================================================================
 
+
 @dataclass
 class SecurityEvent:
     """Security event record."""
+
     event_type: SecurityEventType
     threat_level: ThreatLevel
     timestamp: float
     client_ip: str
     path: str
-    details: Dict[str, Any]
-    request_id: Optional[str] = None
-    user_id: Optional[str] = None
+    details: dict[str, Any]
+    request_id: str | None = None
+    user_id: str | None = None
     blocked: bool = False
 
 
 @dataclass
 class AuthFailureTracker:
     """Track authentication failures per IP/user."""
-    failures: Dict[str, List[float]] = field(default_factory=dict)
-    lockouts: Dict[str, float] = field(default_factory=dict)
 
-    def record_failure(self, key: str) -> Tuple[bool, int]:
+    failures: dict[str, list[float]] = field(default_factory=dict)
+    lockouts: dict[str, float] = field(default_factory=dict)
+
+    def record_failure(self, key: str) -> tuple[bool, int]:
         """
         Record an auth failure and check if lockout should be applied.
 
@@ -99,8 +104,7 @@ class AuthFailureTracker:
         # Clean old failures (older than lockout duration)
         if key in self.failures:
             self.failures[key] = [
-                f for f in self.failures[key]
-                if now - f < AUTH_LOCKOUT_DURATION_SECONDS
+                f for f in self.failures[key] if now - f < AUTH_LOCKOUT_DURATION_SECONDS
             ]
         else:
             self.failures[key] = []
@@ -145,6 +149,7 @@ class AuthFailureTracker:
 # Input Validation
 # ============================================================================
 
+
 class InputValidator:
     """
     Comprehensive input validation with prompt injection detection.
@@ -154,8 +159,8 @@ class InputValidator:
     """
 
     # Compiled regex patterns for efficiency
-    _injection_patterns: List[re.Pattern] = []
-    _suspicious_patterns: List[re.Pattern] = []
+    _injection_patterns: list[re.Pattern] = []
+    _suspicious_patterns: list[re.Pattern] = []
     _patterns_compiled: bool = False
 
     @classmethod
@@ -169,17 +174,14 @@ class InputValidator:
             for pattern in PROMPT_INJECTION_PATTERNS
         ]
         cls._suspicious_patterns = [
-            re.compile(pattern, re.IGNORECASE)
-            for pattern in SUSPICIOUS_PATTERNS
+            re.compile(pattern, re.IGNORECASE) for pattern in SUSPICIOUS_PATTERNS
         ]
         cls._patterns_compiled = True
 
     @classmethod
     def detect_prompt_injection(
-        cls,
-        text: str,
-        strict: bool = True
-    ) -> Tuple[bool, ThreatLevel, List[str]]:
+        cls, text: str, strict: bool = True
+    ) -> tuple[bool, ThreatLevel, list[str]]:
         """
         Detect potential prompt injection attempts in text.
 
@@ -195,7 +197,7 @@ class InputValidator:
         if not text:
             return False, ThreatLevel.NONE, []
 
-        matched_patterns: List[str] = []
+        matched_patterns: list[str] = []
         threat_level = ThreatLevel.NONE
 
         # Check for definite injection patterns
@@ -224,7 +226,7 @@ class InputValidator:
         field_name: str = "input",
         allow_empty: bool = False,
         check_injection: bool = True,
-    ) -> Tuple[str, Optional[SecurityEvent]]:
+    ) -> tuple[str, SecurityEvent | None]:
         """
         Validate a string input with security checks.
 
@@ -276,7 +278,9 @@ class InputValidator:
                     details={
                         "field": field_name,
                         "matched_patterns": patterns,
-                        "content_hash": hashlib.sha256(cleaned.encode()).hexdigest()[:16],
+                        "content_hash": hashlib.sha256(cleaned.encode()).hexdigest()[
+                            :16
+                        ],
                     },
                     blocked=True,
                 )
@@ -302,10 +306,10 @@ class InputValidator:
     @classmethod
     def validate_messages(
         cls,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         max_messages: int = 100,
         max_content_length: int = MAX_MESSAGE_LENGTH,
-    ) -> Tuple[List[Dict[str, Any]], List[SecurityEvent]]:
+    ) -> tuple[list[dict[str, Any]], list[SecurityEvent]]:
         """
         Validate a list of conversation messages.
 
@@ -326,8 +330,8 @@ class InputValidator:
         if len(messages) > max_messages:
             raise ValueError(f"Maximum {max_messages} messages allowed")
 
-        security_events: List[SecurityEvent] = []
-        validated: List[Dict[str, Any]] = []
+        security_events: list[SecurityEvent] = []
+        validated: list[dict[str, Any]] = []
 
         valid_roles = {"system", "user", "assistant"}
 
@@ -359,11 +363,13 @@ class InputValidator:
             if event:
                 security_events.append(event)
 
-            validated.append({
-                "role": role,
-                "content": content,
-                **{k: v for k, v in msg.items() if k not in ("role", "content")}
-            })
+            validated.append(
+                {
+                    "role": role,
+                    "content": content,
+                    **{k: v for k, v in msg.items() if k not in ("role", "content")},
+                }
+            )
 
         return validated, security_events
 
@@ -398,6 +404,7 @@ class InputValidator:
 # CSRF Protection
 # ============================================================================
 
+
 class CSRFProtection:
     """
     CSRF token generation and validation.
@@ -417,8 +424,8 @@ class CSRFProtection:
     @classmethod
     def validate_token(
         cls,
-        header_token: Optional[str],
-        cookie_token: Optional[str],
+        header_token: str | None,
+        cookie_token: str | None,
     ) -> bool:
         """
         Validate CSRF token using double-submit pattern.
@@ -441,6 +448,7 @@ class CSRFProtection:
 # Security Monitor (API-specific)
 # ============================================================================
 
+
 class APISecurityMonitor:
     """
     API-specific security monitoring and event logging.
@@ -450,12 +458,12 @@ class APISecurityMonitor:
     """
 
     def __init__(self, max_events: int = 10000):
-        self.events: List[SecurityEvent] = []
+        self.events: list[SecurityEvent] = []
         self.max_events = max_events
         self.auth_tracker = AuthFailureTracker()
-        self._event_counts: Dict[SecurityEventType, int] = {
-            event_type: 0 for event_type in SecurityEventType
-        }
+        self._event_counts: dict[SecurityEventType, int] = dict.fromkeys(
+            SecurityEventType, 0
+        )
 
     def log_event(self, event: SecurityEvent) -> None:
         """Log a security event."""
@@ -464,7 +472,7 @@ class APISecurityMonitor:
 
         # Trim old events if needed
         if len(self.events) > self.max_events:
-            self.events = self.events[-self.max_events:]
+            self.events = self.events[-self.max_events :]
 
         # Log based on threat level
         log_msg = (
@@ -485,9 +493,9 @@ class APISecurityMonitor:
         client_ip: str,
         path: str,
         content_preview: str,
-        patterns: List[str],
-        request_id: Optional[str] = None,
-        user_id: Optional[str] = None,
+        patterns: list[str],
+        request_id: str | None = None,
+        user_id: str | None = None,
     ) -> None:
         """Log a prompt injection attempt."""
         event = SecurityEvent(
@@ -497,7 +505,9 @@ class APISecurityMonitor:
             client_ip=client_ip,
             path=path,
             details={
-                "content_preview": content_preview[:100] + "..." if len(content_preview) > 100 else content_preview,
+                "content_preview": content_preview[:100] + "..."
+                if len(content_preview) > 100
+                else content_preview,
                 "matched_patterns": patterns,
             },
             request_id=request_id,
@@ -511,8 +521,8 @@ class APISecurityMonitor:
         client_ip: str,
         path: str,
         reason: str,
-        request_id: Optional[str] = None,
-    ) -> Tuple[bool, int]:
+        request_id: str | None = None,
+    ) -> tuple[bool, int]:
         """
         Log an authentication failure and check for lockout.
 
@@ -539,7 +549,7 @@ class APISecurityMonitor:
 
         return is_locked, remaining
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get security statistics."""
         now = time.time()
         last_hour = [e for e in self.events if now - e.timestamp < 3600]
@@ -551,14 +561,15 @@ class APISecurityMonitor:
             "blocked_events": sum(1 for e in self.events if e.blocked),
             "active_lockouts": len(self.auth_tracker.lockouts),
             "high_threat_events": sum(
-                1 for e in last_hour
+                1
+                for e in last_hour
                 if e.threat_level in (ThreatLevel.HIGH, ThreatLevel.CRITICAL)
             ),
         }
 
 
 # Global security monitor instance
-_security_monitor: Optional[APISecurityMonitor] = None
+_security_monitor: APISecurityMonitor | None = None
 
 
 def get_api_security_monitor() -> APISecurityMonitor:

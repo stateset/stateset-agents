@@ -12,9 +12,10 @@ Covers:
 """
 
 import pytest
+
 from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.core.reward import HelpfulnessReward
+from stateset_agents.core.trajectory import ConversationTurn
 
 
 class TestConversationEnvironmentBasics:
@@ -55,9 +56,7 @@ class TestConversationEnvironmentBasics:
         reward_fn = HelpfulnessReward()
 
         env = ConversationEnvironment(
-            scenarios=scenarios,
-            max_turns=5,
-            reward_function=reward_fn
+            scenarios=scenarios, max_turns=5, reward_function=reward_fn
         )
 
         assert env.reward_function is reward_fn
@@ -204,7 +203,7 @@ class TestEnvironmentScenarioHandling:
                 "context": "Customer is unhappy with product quality",
                 "initial_message": "I'm very disappointed with my purchase",
                 "expected_tone": "empathetic",
-                "difficulty": "high"
+                "difficulty": "high",
             },
             {
                 "id": "simple_query",
@@ -212,8 +211,8 @@ class TestEnvironmentScenarioHandling:
                 "context": "Customer needs basic information",
                 "initial_message": "What are your business hours?",
                 "expected_tone": "friendly",
-                "difficulty": "low"
-            }
+                "difficulty": "low",
+            },
         ]
 
         env = ConversationEnvironment(scenarios=scenarios, max_turns=5)
@@ -224,10 +223,7 @@ class TestEnvironmentScenarioHandling:
     @pytest.mark.asyncio
     async def test_random_scenario_selection(self):
         """Test that environment randomly selects scenarios"""
-        scenarios = [
-            {"id": f"s{i}", "topic": f"topic{i}"}
-            for i in range(10)
-        ]
+        scenarios = [{"id": f"s{i}", "topic": f"topic{i}"} for i in range(10)]
 
         env = ConversationEnvironment(scenarios=scenarios, max_turns=3)
 
@@ -247,7 +243,11 @@ class TestEnvironmentRunEpisodeSignatures:
     @pytest.mark.asyncio
     async def test_run_episode_legacy_signature_with_string_response(self):
         """Legacy (state, env_response, reward, done) tuples should be parsed safely."""
-        from stateset_agents.core.environment import Environment, EnvironmentState, EpisodeStatus
+        from stateset_agents.core.environment import (
+            Environment,
+            EnvironmentState,
+            EpisodeStatus,
+        )
 
         class LegacyEnv(Environment):
             async def reset(self, scenario=None):
@@ -276,12 +276,23 @@ class TestEnvironmentRunEpisodeSignatures:
 
     @pytest.mark.asyncio
     async def test_run_episode_new_signature_with_final_reward(self):
-        """New (state, reward, done, info) tuples should include final rewards in turn totals."""
-        from stateset_agents.core.environment import Environment, EnvironmentState, EpisodeStatus
-        from stateset_agents.core.reward_base import RewardFunction, RewardResult
+        """Final rewards should be applied when RewardType is cumulative."""
+        from stateset_agents.core.environment import (
+            Environment,
+            EnvironmentState,
+            EpisodeStatus,
+        )
+        from stateset_agents.core.reward_base import (
+            RewardFunction,
+            RewardResult,
+            RewardType,
+        )
         from stateset_agents.core.trajectory import ConversationTurn
 
         class FixedReward(RewardFunction):
+            def __init__(self):
+                super().__init__(reward_type=RewardType.CUMULATIVE)
+
             async def compute_reward(self, turns, context=None):
                 return RewardResult(score=0.5)
 
@@ -311,6 +322,54 @@ class TestEnvironmentRunEpisodeSignatures:
         assert trajectory.total_reward == 1.5
         assert trajectory.turn_rewards == [1.5]
         assert len(trajectory.turns) == 2
+
+    @pytest.mark.asyncio
+    async def test_run_episode_immediate_reward_skips_final_reward(self):
+        """Immediate rewards should not be double-counted at episode end."""
+        from stateset_agents.core.environment import (
+            Environment,
+            EnvironmentState,
+            EpisodeStatus,
+        )
+        from stateset_agents.core.reward_base import (
+            RewardFunction,
+            RewardResult,
+            RewardType,
+        )
+        from stateset_agents.core.trajectory import ConversationTurn
+
+        class ImmediateReward(RewardFunction):
+            def __init__(self):
+                super().__init__(reward_type=RewardType.IMMEDIATE)
+
+            async def compute_reward(self, turns, context=None):
+                return RewardResult(score=0.5)
+
+        class NewEnv(Environment):
+            async def reset(self, scenario=None):
+                return EnvironmentState(
+                    episode_id="new",
+                    turn_count=0,
+                    status=EpisodeStatus.ONGOING,
+                    context={"scenario": scenario or {}},
+                )
+
+            async def step(self, state, action):
+                new_state = state.copy()
+                new_state.turn_count += 1
+                new_state.status = EpisodeStatus.COMPLETED
+                info = {"env_response": ConversationTurn(role="user", content="ok")}
+                return new_state, 1.0, True, info
+
+        env = NewEnv(max_turns=1, reward_fn=ImmediateReward())
+
+        async def agent_fn(history, context):
+            return "assistant reply"
+
+        trajectory = await env.run_episode(agent_fn, scenario={"id": "s"})
+
+        assert trajectory.total_reward == 1.0
+        assert trajectory.turn_rewards == [1.0]
 
     def test_environment_with_empty_scenarios(self):
         """Test environment handles empty scenario list"""
@@ -385,9 +444,7 @@ class TestEnvironmentRewardIntegration:
         reward_fn = HelpfulnessReward()
 
         env = ConversationEnvironment(
-            scenarios=scenarios,
-            max_turns=3,
-            reward_function=reward_fn
+            scenarios=scenarios, max_turns=3, reward_function=reward_fn
         )
 
         state = await env.reset()
@@ -419,7 +476,7 @@ class TestEnvironmentEdgeCases:
 
         # Should either handle gracefully or raise error
         try:
-            env = ConversationEnvironment(scenarios=scenarios, max_turns=0)
+            ConversationEnvironment(scenarios=scenarios, max_turns=0)
             # If it allows, episodes should immediately end
         except ValueError:
             # Raising error is acceptable
@@ -431,7 +488,7 @@ class TestEnvironmentEdgeCases:
 
         # Should raise error
         try:
-            env = ConversationEnvironment(scenarios=scenarios, max_turns=-1)
+            ConversationEnvironment(scenarios=scenarios, max_turns=-1)
             # If it allows negative, that's unexpected but test it
         except ValueError:
             # Expected behavior
@@ -475,7 +532,7 @@ class TestEnvironmentEdgeCases:
         ]
 
         try:
-            env = ConversationEnvironment(scenarios=scenarios, max_turns=3)
+            ConversationEnvironment(scenarios=scenarios, max_turns=3)
             # If it handles gracefully, that's fine
         except (KeyError, ValueError):
             # Raising error is also acceptable
@@ -488,12 +545,14 @@ class TestEnvironmentContextPreservation:
     @pytest.mark.asyncio
     async def test_context_preserved_across_steps(self):
         """Test that scenario context is available in all steps"""
-        scenarios = [{
-            "id": "s1",
-            "topic": "support",
-            "context": "Customer needs technical help",
-            "metadata": {"priority": "high"}
-        }]
+        scenarios = [
+            {
+                "id": "s1",
+                "topic": "support",
+                "context": "Customer needs technical help",
+                "metadata": {"priority": "high"},
+            }
+        ]
 
         env = ConversationEnvironment(scenarios=scenarios, max_turns=5)
 
@@ -525,9 +584,7 @@ class TestTaskEnvironmentSuccessCriteria:
 
         tasks = [{"description": "Test task", "required_actions": []}]
         env = TaskEnvironment(
-            tasks=tasks,
-            success_criteria=custom_success_criteria,
-            max_turns=5
+            tasks=tasks, success_criteria=custom_success_criteria, max_turns=5
         )
 
         state = await env.reset()
@@ -555,9 +612,7 @@ class TestTaskEnvironmentSuccessCriteria:
 
         tasks = [{"description": "Test task", "required_actions": []}]
         env = TaskEnvironment(
-            tasks=tasks,
-            success_criteria=custom_success_criteria,
-            max_turns=5
+            tasks=tasks, success_criteria=custom_success_criteria, max_turns=5
         )
 
         state = await env.reset()
@@ -586,9 +641,7 @@ class TestTaskEnvironmentSuccessCriteria:
 
         tasks = [{"description": "Test task", "required_actions": []}]
         env = TaskEnvironment(
-            tasks=tasks,
-            success_criteria=custom_success_criteria,
-            max_turns=5
+            tasks=tasks, success_criteria=custom_success_criteria, max_turns=5
         )
 
         state = await env.reset()

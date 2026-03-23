@@ -9,8 +9,7 @@ without Exploration" (ICML 2019)
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -96,7 +95,7 @@ class ConversationalVAE(nn.Module):
         # Encoder: state + action -> latent
         encoder_layers = []
         input_dim = state_dim + action_dim
-        for i in range(num_layers):
+        for _i in range(num_layers):
             output_dim = hidden_size
             encoder_layers.append(nn.Linear(input_dim, output_dim))
             encoder_layers.append(nn.ReLU())
@@ -131,7 +130,7 @@ class ConversationalVAE(nn.Module):
         self,
         state: torch.Tensor,
         action: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Encode state-action pair to latent distribution parameters"""
         x = torch.cat([state, action], dim=-1)
         h = self.encoder(x)
@@ -162,7 +161,7 @@ class ConversationalVAE(nn.Module):
         self,
         state: torch.Tensor,
         action: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Full forward pass: encode, sample, decode.
 
@@ -336,8 +335,10 @@ class BatchConstrainedQLearning:
         self,
         state_dim: int,
         action_dim: int,
-        config: Optional[BCQConfig] = None,
-        device: str = "cuda" if torch is not None and torch.cuda.is_available() else "cpu",
+        config: BCQConfig | None = None,
+        device: str = "cuda"
+        if torch is not None and torch.cuda.is_available()
+        else "cpu",
     ):
         _require_torch()
 
@@ -418,7 +419,7 @@ class BatchConstrainedQLearning:
         self,
         states: torch.Tensor,
         actions: torch.Tensor,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute VAE reconstruction + KL loss"""
         reconstructed, mean, log_var = self.vae(states, actions)
 
@@ -445,7 +446,7 @@ class BatchConstrainedQLearning:
         rewards: torch.Tensor,
         next_states: torch.Tensor,
         dones: torch.Tensor,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute Q-function loss with BCQ action selection"""
         with torch.no_grad():
             # Sample actions from VAE for next states
@@ -507,7 +508,7 @@ class BatchConstrainedQLearning:
     def _compute_perturbation_loss(
         self,
         states: torch.Tensor,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute perturbation network loss (maximize Q)"""
         # Sample actions from VAE
         with torch.no_grad():
@@ -534,7 +535,7 @@ class BatchConstrainedQLearning:
         rewards: torch.Tensor,
         next_states: torch.Tensor,
         dones: torch.Tensor,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Perform one BCQ training step.
 
@@ -554,9 +555,7 @@ class BatchConstrainedQLearning:
         self.vae_optimizer.zero_grad()
         vae_loss, vae_metrics = self._compute_vae_loss(states, actions)
         vae_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            self.vae.parameters(), self.config.max_grad_norm
-        )
+        torch.nn.utils.clip_grad_norm_(self.vae.parameters(), self.config.max_grad_norm)
         self.vae_optimizer.step()
         metrics.update(vae_metrics)
 
@@ -599,18 +598,14 @@ class BatchConstrainedQLearning:
         tau = self.config.soft_target_tau
 
         for target_param, param in zip(
-            self.q1_target.parameters(), self.q1.parameters()
+            self.q1_target.parameters(), self.q1.parameters(), strict=False
         ):
-            target_param.data.copy_(
-                tau * param.data + (1 - tau) * target_param.data
-            )
+            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
         for target_param, param in zip(
-            self.q2_target.parameters(), self.q2.parameters()
+            self.q2_target.parameters(), self.q2.parameters(), strict=False
         ):
-            target_param.data.copy_(
-                tau * param.data + (1 - tau) * target_param.data
-            )
+            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
     def select_action(
         self,
@@ -721,22 +716,24 @@ class BCQTrainer:
         self,
         state_dim: int,
         action_dim: int,
-        config: Optional[BCQConfig] = None,
-        device: str = "cuda" if torch is not None and torch.cuda.is_available() else "cpu",
+        config: BCQConfig | None = None,
+        device: str = "cuda"
+        if torch is not None and torch.cuda.is_available()
+        else "cpu",
     ):
         _require_torch()
 
         self.bcq = BatchConstrainedQLearning(state_dim, action_dim, config, device)
         self.config = config or BCQConfig()
         self.device = device
-        self.training_metrics: List[Dict[str, float]] = []
+        self.training_metrics: list[dict[str, float]] = []
 
     def train(
         self,
-        dataset: Dict[str, np.ndarray],
+        dataset: dict[str, np.ndarray],
         num_epochs: int = 100,
         batch_size: int = 256,
-    ) -> List[Dict[str, float]]:
+    ) -> list[dict[str, float]]:
         """
         Train BCQ on offline dataset.
 
@@ -758,9 +755,7 @@ class BCQTrainer:
         dataset_size = states.shape[0]
         num_batches = dataset_size // batch_size
 
-        logger.info(
-            f"Training BCQ on {dataset_size} samples for {num_epochs} epochs"
-        )
+        logger.info(f"Training BCQ on {dataset_size} samples for {num_epochs} epochs")
 
         for epoch in range(num_epochs):
             indices = torch.randperm(dataset_size)

@@ -11,20 +11,27 @@ import time
 import uuid
 from contextvars import ContextVar
 from datetime import datetime
-from typing import Any, Dict, Optional, Callable
 from functools import wraps
+from types import MappingProxyType
+from typing import Any
+from collections.abc import Callable, Mapping
+
+from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 
 from .config import get_config
 
-# Context variable for request tracing
-_trace_context: ContextVar[Dict[str, Any]] = ContextVar("trace_context", default={})
+# Context variable for request tracing. Default must be immutable.
+_trace_context: ContextVar[Mapping[str, Any]] = ContextVar(
+    "trace_context", default=MappingProxyType({})
+)
 
-TRACE_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+TRACE_EXCEPTIONS = INFERENCE_EXCEPTIONS
 
 
 # ============================================================================
 # Structured Logging
 # ============================================================================
+
 
 class StructuredLogFormatter(logging.Formatter):
     """JSON structured log formatter for production logging."""
@@ -68,7 +75,13 @@ class StructuredLogFormatter(logging.Formatter):
 
         # Add any extra dict passed to logger
         extra = getattr(record, "__dict__", {})
-        for key in ["client_ip", "user_agent", "error_code", "job_id", "conversation_id"]:
+        for key in [
+            "client_ip",
+            "user_agent",
+            "error_code",
+            "job_id",
+            "conversation_id",
+        ]:
             if key in extra:
                 log_entry[key] = extra[key]
 
@@ -93,11 +106,11 @@ class ConsoleLogFormatter(logging.Formatter):
     """Human-readable console formatter for development."""
 
     COLORS = {
-        "DEBUG": "\033[36m",    # Cyan
-        "INFO": "\033[32m",     # Green
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
         "WARNING": "\033[33m",  # Yellow
-        "ERROR": "\033[31m",    # Red
-        "CRITICAL": "\033[35m", # Magenta
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
     }
     RESET = "\033[0m"
 
@@ -170,41 +183,46 @@ def setup_logging(
 # Tracing
 # ============================================================================
 
+
 class Span:
     """Simple span for tracing operations."""
 
     def __init__(
         self,
         name: str,
-        trace_id: Optional[str] = None,
-        parent_span_id: Optional[str] = None,
+        trace_id: str | None = None,
+        parent_span_id: str | None = None,
     ):
         self.name = name
         self.trace_id = trace_id or uuid.uuid4().hex
         self.span_id = uuid.uuid4().hex[:16]
         self.parent_span_id = parent_span_id
         self.start_time = time.monotonic()
-        self.end_time: Optional[float] = None
-        self.attributes: Dict[str, Any] = {}
+        self.end_time: float | None = None
+        self.attributes: dict[str, Any] = {}
         self.events: list = []
         self.status: str = "OK"
-        self.status_message: Optional[str] = None
+        self.status_message: str | None = None
 
     def set_attribute(self, key: str, value: Any) -> "Span":
         """Set a span attribute."""
         self.attributes[key] = value
         return self
 
-    def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None) -> "Span":
+    def add_event(
+        self, name: str, attributes: dict[str, Any] | None = None
+    ) -> "Span":
         """Add an event to the span."""
-        self.events.append({
-            "name": name,
-            "timestamp": time.monotonic(),
-            "attributes": attributes or {},
-        })
+        self.events.append(
+            {
+                "name": name,
+                "timestamp": time.monotonic(),
+                "attributes": attributes or {},
+            }
+        )
         return self
 
-    def set_status(self, status: str, message: Optional[str] = None) -> "Span":
+    def set_status(self, status: str, message: str | None = None) -> "Span":
         """Set span status."""
         self.status = status
         self.status_message = message
@@ -220,7 +238,7 @@ class Span:
         end = self.end_time or time.monotonic()
         return (end - self.start_time) * 1000
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert span to dictionary for logging/export."""
         return {
             "trace_id": self.trace_id,
@@ -256,15 +274,15 @@ class Tracer:
     def start_span(
         self,
         name: str,
-        trace_id: Optional[str] = None,
-        parent_span_id: Optional[str] = None,
+        trace_id: str | None = None,
+        parent_span_id: str | None = None,
     ) -> Span:
         """Start a new span."""
         span = Span(name, trace_id, parent_span_id)
 
         if self._enabled:
             # Update context
-            ctx = _trace_context.get().copy()
+            ctx = dict(_trace_context.get())
             ctx["trace_id"] = span.trace_id
             ctx["span_id"] = span.span_id
             _trace_context.set(ctx)
@@ -280,12 +298,12 @@ class Tracer:
                 f"Span completed: {span.name}",
                 extra={
                     "span": span.to_dict(),
-                }
+                },
             )
 
 
 # Global tracer instance
-_tracer: Optional[Tracer] = None
+_tracer: Tracer | None = None
 
 
 def get_tracer() -> Tracer:
@@ -303,7 +321,8 @@ def get_tracer() -> Tracer:
 # Tracing Decorator
 # ============================================================================
 
-def trace(name: Optional[str] = None):
+
+def trace(name: str | None = None):
     """
     Decorator to trace a function.
 
@@ -312,6 +331,7 @@ def trace(name: Optional[str] = None):
         async def my_function():
             ...
     """
+
     def decorator(func: Callable) -> Callable:
         span_name = name or func.__name__
 
@@ -358,6 +378,7 @@ def trace(name: Optional[str] = None):
                 tracer.end_span(span)
 
         import asyncio
+
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
@@ -369,11 +390,12 @@ def trace(name: Optional[str] = None):
 # Context Management
 # ============================================================================
 
+
 def set_trace_context(
-    request_id: Optional[str] = None,
-    trace_id: Optional[str] = None,
-    span_id: Optional[str] = None,
-    user_id: Optional[str] = None,
+    request_id: str | None = None,
+    trace_id: str | None = None,
+    span_id: str | None = None,
+    user_id: str | None = None,
 ) -> None:
     """Set trace context for the current request."""
     ctx = {
@@ -387,9 +409,9 @@ def set_trace_context(
     _trace_context.set(ctx)
 
 
-def get_trace_context() -> Dict[str, Any]:
+def get_trace_context() -> dict[str, Any]:
     """Get current trace context."""
-    return _trace_context.get()
+    return dict(_trace_context.get())
 
 
 def clear_trace_context() -> None:
@@ -401,9 +423,10 @@ def clear_trace_context() -> None:
 # OpenTelemetry Integration (Optional)
 # ============================================================================
 
+
 def setup_opentelemetry(
     service_name: str = "stateset-agents-api",
-    endpoint: Optional[str] = None,
+    endpoint: str | None = None,
 ) -> bool:
     """
     Set up OpenTelemetry tracing (if available).
@@ -412,9 +435,9 @@ def setup_opentelemetry(
     """
     try:
         from opentelemetry import trace as otel_trace
+        from opentelemetry.sdk.resources import SERVICE_NAME, Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 
         # Set up resource
         resource = Resource(attributes={SERVICE_NAME: service_name})
@@ -424,12 +447,16 @@ def setup_opentelemetry(
 
         if endpoint:
             try:
-                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+                    OTLPSpanExporter,
+                )
+
                 exporter = OTLPSpanExporter(endpoint=endpoint)
                 provider.add_span_processor(BatchSpanProcessor(exporter))
             except ImportError:
                 logging.warning("OTLP exporter not available, using console exporter")
                 from opentelemetry.sdk.trace.export import ConsoleSpanExporter
+
                 provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
 
         otel_trace.set_tracer_provider(provider)
@@ -445,6 +472,7 @@ def setup_opentelemetry(
 # ============================================================================
 # Initialization
 # ============================================================================
+
 
 def setup_observability() -> None:
     """Set up all observability components based on configuration."""
@@ -473,5 +501,5 @@ def setup_observability() -> None:
             "prometheus_enabled": config.observability.enable_prometheus,
             "log_level": config.observability.log_level,
             "log_format": config.observability.log_format,
-        }
+        },
     )

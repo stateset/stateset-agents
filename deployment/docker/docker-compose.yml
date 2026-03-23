@@ -1,223 +1,115 @@
-version: '3.8'
-
 services:
-  # ================================
-  # Main API Service
-  # ================================
-  stateset-agents:
+  # FastAPI gateway (Anthropic/OpenAI compatible)
+  stateset-agents-api:
     build:
       context: ../../
       dockerfile: deployment/docker/Dockerfile
-      target: production
+      target: runtime
     ports:
       - "8000:8000"
     environment:
-      - ENVIRONMENT=production
-      - LOG_LEVEL=INFO
-      - WORKERS=4
-    volumes:
-      - ../../logs:/app/logs
-      - ../../models:/app/models:ro
-    restart: unless-stopped
+      API_ENVIRONMENT: ${API_ENVIRONMENT:-development}
+      API_REQUIRE_AUTH: ${API_REQUIRE_AUTH:-false}
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-INFO}
+
+      # Default to stub so `docker compose up` works without a model backend.
+      INFERENCE_BACKEND: ${INFERENCE_BACKEND:-stub}
+      INFERENCE_BACKEND_URL: ${INFERENCE_BACKEND_URL:-http://localhost:8001}
+      INFERENCE_DEFAULT_MODEL: ${INFERENCE_DEFAULT_MODEL:-moonshotai/Kimi-K2.5}
+
+      # Optional (not enabled by default in the gateway image).
+      CACHE_BACKEND: ${CACHE_BACKEND:-memory}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DB_BACKEND: ${DB_BACKEND:-memory}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://stateset:${POSTGRES_PASSWORD:-change_me_dev}@postgres:5432/stateset_agents}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
-    networks:
-      - stateset-network
+      start_period: 30s
     depends_on:
       - redis
       - postgres
-
-  # ================================
-  # GPU-enabled API Service
-  # ================================
-  stateset-agents-gpu:
-    build:
-      context: ../../
-      dockerfile: deployment/docker/Dockerfile
-      target: gpu-production
-    ports:
-      - "8001:8000"
-    environment:
-      - ENVIRONMENT=production
-      - LOG_LEVEL=INFO
-      - CUDA_VISIBLE_DEVICES=0
-    volumes:
-      - ../../logs:/app/logs
-      - ../../models:/app/models:ro
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    restart: unless-stopped
     networks:
       - stateset-network
-    profiles:
-      - gpu
 
-  # ================================
-  # Development Service
-  # ================================
-  stateset-agents-dev:
+  # Development gateway (hot reload)
+  stateset-agents-api-dev:
     build:
       context: ../../
       dockerfile: deployment/docker/Dockerfile
-      target: development
+      target: dev
     ports:
       - "8002:8000"
     environment:
-      - ENVIRONMENT=development
-      - LOG_LEVEL=DEBUG
-      - PYTHONPATH=/app
+      API_ENVIRONMENT: development
+      API_REQUIRE_AUTH: "false"
+      API_LOG_LEVEL: DEBUG
+      INFERENCE_BACKEND: ${INFERENCE_BACKEND:-stub}
+      INFERENCE_BACKEND_URL: ${INFERENCE_BACKEND_URL:-http://localhost:8001}
+      INFERENCE_DEFAULT_MODEL: ${INFERENCE_DEFAULT_MODEL:-moonshotai/Kimi-K2.5}
     volumes:
       - ../../:/app
       - /app/__pycache__
-      - ../../logs:/app/logs
-    restart: unless-stopped
     networks:
       - stateset-network
     profiles:
       - dev
 
-  # ================================
-  # Testing Service
-  # ================================
+  # Run the Python test suite in a container
   stateset-agents-test:
     build:
       context: ../../
       dockerfile: deployment/docker/Dockerfile
-      target: testing
+      target: test
     environment:
-      - ENVIRONMENT=testing
-      - LOG_LEVEL=DEBUG
-    volumes:
-      - ../../:/app
-      - /app/__pycache__
-      - ../../test-results:/app/test-results
+      API_REQUIRE_AUTH: "false"
+      INFERENCE_BACKEND: stub
+      INFERENCE_DEFAULT_MODEL: moonshotai/Kimi-K2.5
     networks:
       - stateset-network
     profiles:
       - test
 
-  # ================================
-  # Redis Cache
-  # ================================
+  # Optional deps (only used when enabled via env vars)
   redis:
     image: redis:7.2-alpine
     ports:
       - "6379:6379"
-    volumes:
-      - redis_data:/data
-      - ../../deployment/docker/redis.conf:/etc/redis/redis.conf
-    command: redis-server /etc/redis/redis.conf
+    command: ["redis-server", "--appendonly", "yes"]
     restart: unless-stopped
     networks:
       - stateset-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
-  # ================================
-  # PostgreSQL Database
-  # ================================
   postgres:
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: stateset_agents
       POSTGRES_USER: stateset
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stateset_secure_2024}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_dev}
     ports:
       - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ../../deployment/docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
     networks:
       - stateset-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U stateset -d stateset_agents"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
-  # ================================
-  # Monitoring Stack
-  # ================================
   prometheus:
     image: prom/prometheus:latest
     ports:
       - "9090:9090"
     volumes:
-      - ../../deployment/docker/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
     restart: unless-stopped
     networks:
       - stateset-network
     profiles:
       - monitoring
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ../../deployment/docker/grafana/provisioning:/etc/grafana/provisioning
-      - ../../deployment/docker/grafana/dashboards:/var/lib/grafana/dashboards
-    restart: unless-stopped
-    networks:
-      - stateset-network
-    depends_on:
-      - prometheus
-    profiles:
-      - monitoring
-
-  # ================================
-  # Load Balancer (Traefik)
-  # ================================
-  traefik:
-    image: traefik:v3.0
-    ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ../../deployment/docker/traefik.yml:/etc/traefik/traefik.yml
-      - traefik_data:/etc/traefik/acme
-    restart: unless-stopped
-    networks:
-      - stateset-network
-      - traefik-network
-    profiles:
-      - lb
-
-volumes:
-  redis_data:
-  postgres_data:
-  prometheus_data:
-  grafana_data:
-  traefik_data:
 
 networks:
   stateset-network:
-    driver: bridge
-  traefik-network:
     driver: bridge

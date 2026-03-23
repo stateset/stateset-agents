@@ -1,4 +1,5 @@
 import stateset_agents as sa
+import stateset_agents.api as api
 
 ALWAYS_PRESENT = {
     "GRPOException",
@@ -42,6 +43,7 @@ ALWAYS_PRESENT = {
     "ensure_async_type_safety",
     "ModelConfig",
     "TrainingConfig",
+    "TypedTrainingConfig",
     "TypedConversationTurn",
     "TrajectoryData",
     "RewardMetrics",
@@ -69,3 +71,11 @@ def test_public_api_required_symbols_not_none() -> None:
 def test_package_metadata_is_present() -> None:
     assert isinstance(sa.__version__, str)
     assert sa.__version__
+
+
+def test_typed_training_config_alias_is_distinct_from_runtime_training_config() -> None:
+    assert sa.TypedTrainingConfig is not sa.TrainingConfig
+
+
+def test_api_version_matches_package_version() -> None:
+    assert api.__version__ == sa.__version__

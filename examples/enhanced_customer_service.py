@@ -14,10 +14,8 @@ real-world implementations, including:
 import asyncio
 import logging
 import os
-from pathlib import Path
-from typing import Any, Dict, List
 
-from stateset_agents import ConversationEnvironment, MultiTurnAgent, train
+from stateset_agents import ConversationEnvironment, MultiTurnAgent
 from stateset_agents.core.agent import AgentConfig
 from stateset_agents.core.data_processing import load_and_prepare_data
 from stateset_agents.core.reward import (
@@ -84,7 +82,7 @@ async def create_enhanced_customer_service_agent(
 
 
 def create_enhanced_reward_function(
-    domain: str = "customer_service", expected_responses: Dict[str, str] = None
+    domain: str = "customer_service", expected_responses: dict[str, str] = None
 ) -> CompositeReward:
     """Create an enhanced composite reward function"""
 
@@ -144,7 +142,9 @@ async def main():
 
     # Configuration
     DATA_PATH = "customer_service_conversations.jsonl"  # Your data file
-    MODEL_NAME = os.getenv("MODEL_NAME", "gpt2")  # Override with env var for larger models
+    MODEL_NAME = os.getenv(
+        "MODEL_NAME", "gpt2"
+    )  # Override with env var for larger models
     OUTPUT_DIR = "./outputs/enhanced_customer_service"
 
     # Training configuration with enhanced settings
@@ -265,7 +265,7 @@ async def main():
             logger.info(
                 f"  Overall mean reward: {eval_results['overall_stats']['overall_mean_reward']:.4f}"
             )
-            logger.info(f"  Reward distribution:")
+            logger.info("  Reward distribution:")
             for percentile, value in eval_results["overall_stats"][
                 "reward_distribution"
             ].items():

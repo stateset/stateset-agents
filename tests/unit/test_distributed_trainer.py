@@ -5,9 +5,7 @@ Tests cover distributed configuration, multi-GPU setup, fault tolerance,
 and memory optimization features.
 """
 
-import asyncio
-import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
@@ -96,7 +94,9 @@ class TestDistributedGRPOTrainer:
     @pytest.fixture
     def mock_dependencies(self):
         """Mock dependencies for distributed trainer."""
-        with patch("training.distributed_trainer.DISTRIBUTED_AVAILABLE", True):
+        with patch(
+            "stateset_agents.training.distributed_trainer.DISTRIBUTED_AVAILABLE", True
+        ):
             yield
 
     @pytest.fixture
@@ -127,6 +127,7 @@ class TestDistributedGRPOTrainer:
     def distributed_config(self):
         """Create a distributed config."""
         from stateset_agents.training.distributed_trainer import DistributedConfig
+
         return DistributedConfig()
 
     @pytest.fixture
@@ -348,6 +349,7 @@ class TestDistributedSampler:
         epoch = 5
 
         import random
+
         random.seed(seed + epoch)
 
         # Shuffled indices would differ per epoch

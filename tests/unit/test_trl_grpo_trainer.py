@@ -9,33 +9,37 @@ Covers:
 - Training workflow
 """
 
-import pytest
-import torch
-from unittest.mock import Mock, MagicMock, patch, AsyncMock
-from dataclasses import asdict
-
 # Mock the external dependencies before importing
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+import torch
+
 
 # Create mock modules with __spec__ attribute
 class MockModule(MagicMock):
     __spec__ = MagicMock()
 
-sys.modules['trl'] = MockModule()
-sys.modules['trl.core'] = MockModule()
-sys.modules['peft'] = MockModule()
-sys.modules['vllm'] = MockModule()
 
-from stateset_agents.training.trl_grpo_trainer import (
-    TRLGRPOConfig,
-    TrajectoryGenerator,
-    ModelManager,
+sys.modules["trl"] = MockModule()
+sys.modules["trl.core"] = MockModule()
+sys.modules["peft"] = MockModule()
+sys.modules["vllm"] = MockModule()
+
+# These imports must come after the sys.modules stubs above.
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent  # noqa: E402
+from stateset_agents.core.environment import ConversationEnvironment  # noqa: E402
+from stateset_agents.core.trajectory import (  # noqa: E402
+    ConversationTurn,
+    MultiTurnTrajectory,
 )
-from stateset_agents.training.config import TrainingConfig
-from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
-from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.trajectory import MultiTurnTrajectory, ConversationTurn
+from stateset_agents.training.config import TrainingConfig  # noqa: E402
+from stateset_agents.training.trl_grpo_trainer import (  # noqa: E402
+    ModelManager,
+    TrajectoryGenerator,
+    TRLGRPOConfig,
+)
 
 
 class TestTRLGRPOConfig:
@@ -84,9 +88,7 @@ class TestTRLGRPOConfig:
         )
 
         trl_config = TRLGRPOConfig.from_training_config(
-            base_config,
-            beta=0.05,
-            num_generations=6
+            base_config, beta=0.05, num_generations=6
         )
 
         assert trl_config.model_name == "gpt2"
@@ -223,7 +225,9 @@ class TestTrajectoryGenerator:
         # Mock the environment's run_episode method
         mock_trajectory = MultiTurnTrajectory()
         mock_trajectory.add_turn(ConversationTurn(role="user", content="Hello"))
-        mock_trajectory.add_turn(ConversationTurn(role="assistant", content="Hi there!"))
+        mock_trajectory.add_turn(
+            ConversationTurn(role="assistant", content="Hi there!")
+        )
 
         env.run_episode = AsyncMock(return_value=mock_trajectory)
 
@@ -260,8 +264,8 @@ class TestModelManager:
         # Should default to CPU if CUDA not available
         assert manager.device in [torch.device("cpu"), torch.device("cuda")]
 
-    @patch('training.trl_grpo_trainer.AutoTokenizer')
-    @patch('training.trl_grpo_trainer.AutoModelForCausalLM')
+    @patch("stateset_agents.training.trl_grpo_trainer.AutoTokenizer")
+    @patch("stateset_agents.training.trl_grpo_trainer.AutoModelForCausalLM")
     def test_model_loading_with_lora(self, mock_model_cls, mock_tokenizer_cls):
         """Test loading model with LoRA"""
         config = TRLGRPOConfig(
@@ -313,8 +317,8 @@ class TestModelManager:
 class TestTRLGRPOTrainerWrapper:
     """Test TRL GRPO trainer wrapper"""
 
-    @patch('training.trl_grpo_trainer.TRLGRPOTrainer')
-    @patch('training.trl_grpo_trainer.GRPOConfig')
+    @patch("stateset_agents.training.trl_grpo_trainer.TRLGRPOTrainer")
+    @patch("stateset_agents.training.trl_grpo_trainer.GRPOConfig")
     def test_wrapper_creation(self, mock_grpo_config_cls, mock_trainer_cls):
         """Test creating trainer wrapper"""
         config = TRLGRPOConfig(
@@ -350,8 +354,8 @@ class TestTRLGRPOTrainerWrapper:
         assert wrapper.model == mock_model
         assert wrapper.tokenizer == mock_tokenizer
 
-    @patch('training.trl_grpo_trainer.TRLGRPOTrainer')
-    @patch('training.trl_grpo_trainer.GRPOConfig')
+    @patch("stateset_agents.training.trl_grpo_trainer.TRLGRPOTrainer")
+    @patch("stateset_agents.training.trl_grpo_trainer.GRPOConfig")
     def test_wrapper_grpo_config_creation(self, mock_grpo_config_cls, mock_trainer_cls):
         """Test GRPO config creation from training config"""
         config = TRLGRPOConfig(
@@ -383,7 +387,7 @@ class TestTRLGRPOTrainerWrapper:
 class TestTrainingWorkflow:
     """Test end-to-end training workflow"""
 
-    @patch('training.trl_grpo_trainer.wandb')
+    @patch("stateset_agents.training.trl_grpo_trainer.wandb")
     def test_wandb_initialization(self, mock_wandb):
         """Test W&B initialization in training"""
         config = TRLGRPOConfig(
@@ -446,8 +450,7 @@ class TestEdgeCases:
         )
 
         effective_batch_size = (
-            config.per_device_train_batch_size *
-            config.gradient_accumulation_steps
+            config.per_device_train_batch_size * config.gradient_accumulation_steps
         )
 
         assert effective_batch_size == 4096
@@ -468,7 +471,7 @@ class TestEdgeCases:
         # Empty scenarios - should handle gracefully or error appropriately
         try:
             env = ConversationEnvironment(scenarios=[], max_turns=2)
-            generator = TrajectoryGenerator(config, agent, env)
+            TrajectoryGenerator(config, agent, env)
             # If it doesn't error, that's acceptable
         except (ValueError, AssertionError):
             # If it errors on empty scenarios, that's also acceptable

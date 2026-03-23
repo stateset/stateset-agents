@@ -1,6 +1,14 @@
-# GRPO Agent Framework - Deployment Guide
+# StateSet Agents - Deployment Guide
 
-This directory contains comprehensive deployment configurations and scripts for the GRPO Agent Framework. The framework supports multiple deployment scenarios from local development to production cloud environments.
+This directory contains deployment configurations for StateSet Agents.
+
+Recommended (current) entrypoints:
+- Helm: `deployment/helm/stateset-agents`
+- Kubernetes: `deployment/kubernetes/production-deployment.yaml` + `deployment/kubernetes/kimi-k25-vllm.yaml`
+- Docker: `deployment/docker/docker-compose.yml`
+
+Legacy GRPO framework artifacts also exist in this folder for historical reasons
+and are not maintained.
 
 ## 📋 Table of Contents
 

@@ -7,23 +7,11 @@ multimodal processing, and training optimization.
 """
 
 import asyncio
-import json
 import logging
-import time
 import uuid
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-
-try:
-    import torch
-    import torch.nn as nn
-
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
+from collections.abc import Callable
+from datetime import datetime
+from typing import Any
 
 from .adaptive_learning_controller import (
     AdaptiveLearningController,
@@ -31,7 +19,24 @@ from .adaptive_learning_controller import (
 )
 from .advanced_monitoring import get_monitoring_service, monitor_async_function
 from .enhanced_state_management import get_state_service
-from .error_handling import ErrorHandler, RetryConfig, retry_async
+from .error_handling import ErrorHandler
+from .intelligent_orchestrator_logic import (
+    assess_adaptation_need,
+    assess_resource_pressure,
+    calculate_performance_trend,
+    calculate_recent_performance,
+    make_adaptive_decision,
+    make_automated_decision,
+    make_conservative_decision,
+)
+from .intelligent_orchestrator_models import (
+    ComponentState,
+    ComponentStatus,
+    OptimizationObjective,
+    OrchestrationConfig,
+    OrchestrationDecision,
+    OrchestrationMode,
+)
 from .multimodal_processing import (
     ModalityInput,
     ModalityType,
@@ -58,135 +63,6 @@ ORCHESTRATOR_EXCEPTIONS = (
 )
 
 
-class OrchestrationMode(Enum):
-    """Modes of orchestration"""
-
-    MANUAL = "manual"  # Manual control
-    SEMI_AUTOMATED = "semi_automated"  # Human oversight with automation
-    FULLY_AUTOMATED = "fully_automated"  # Complete automation
-    ADAPTIVE = "adaptive"  # Self-adapting based on performance
-
-
-class OptimizationObjective(Enum):
-    """Optimization objectives"""
-
-    PERFORMANCE = "performance"  # Maximize performance metrics
-    EFFICIENCY = "efficiency"  # Optimize for resource efficiency
-    SPEED = "speed"  # Optimize for training/inference speed
-    ROBUSTNESS = "robustness"  # Optimize for stability and robustness
-    BALANCED = "balanced"  # Balance multiple objectives
-
-
-class ComponentStatus(Enum):
-    """Status of framework components"""
-
-    INACTIVE = "inactive"
-    INITIALIZING = "initializing"
-    ACTIVE = "active"
-    ERROR = "error"
-    OPTIMIZING = "optimizing"
-    UPDATING = "updating"
-
-
-@dataclass
-class OrchestrationConfig:
-    """Configuration for intelligent orchestration"""
-
-    mode: OrchestrationMode = OrchestrationMode.ADAPTIVE
-    optimization_objective: OptimizationObjective = OptimizationObjective.BALANCED
-
-    # Component enablement
-    enable_adaptive_learning: bool = True
-    enable_nas: bool = True
-    enable_multimodal: bool = True
-    enable_auto_optimization: bool = True
-
-    # Thresholds and parameters
-    performance_threshold: float = 0.8
-    adaptation_interval: timedelta = timedelta(minutes=30)
-    nas_interval: timedelta = timedelta(hours=4)
-    optimization_interval: timedelta = timedelta(hours=1)
-
-    # Resource constraints
-    max_gpu_memory_usage: float = 0.9  # 90% of available memory
-    max_cpu_usage: float = 0.8  # 80% of available CPU
-    max_concurrent_processes: int = 4
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "mode": self.mode.value,
-            "optimization_objective": self.optimization_objective.value,
-            "enable_adaptive_learning": self.enable_adaptive_learning,
-            "enable_nas": self.enable_nas,
-            "enable_multimodal": self.enable_multimodal,
-            "enable_auto_optimization": self.enable_auto_optimization,
-            "performance_threshold": self.performance_threshold,
-            "adaptation_interval_minutes": self.adaptation_interval.total_seconds()
-            / 60,
-            "nas_interval_hours": self.nas_interval.total_seconds() / 3600,
-            "optimization_interval_hours": self.optimization_interval.total_seconds()
-            / 3600,
-            "max_gpu_memory_usage": self.max_gpu_memory_usage,
-            "max_cpu_usage": self.max_cpu_usage,
-            "max_concurrent_processes": self.max_concurrent_processes,
-        }
-
-
-@dataclass
-class ComponentState:
-    """State of a framework component"""
-
-    component_id: str
-    status: ComponentStatus
-    last_update: datetime
-    performance_metrics: Dict[str, float] = field(default_factory=dict)
-    resource_usage: Dict[str, float] = field(default_factory=dict)
-    error_count: int = 0
-    success_count: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def update_performance(self, metrics: Dict[str, float]):
-        """Update performance metrics"""
-        self.performance_metrics.update(metrics)
-        self.last_update = datetime.now()
-        self.success_count += 1
-
-    def record_error(self, error_info: str):
-        """Record an error"""
-        self.error_count += 1
-        self.metadata["last_error"] = error_info
-        self.metadata["last_error_time"] = datetime.now().isoformat()
-        self.status = ComponentStatus.ERROR
-
-
-@dataclass
-class OrchestrationDecision:
-    """A decision made by the orchestrator"""
-
-    decision_id: str
-    timestamp: datetime
-    decision_type: str
-    component: str
-    action: str
-    reasoning: str
-    expected_benefit: float
-    confidence: float
-    parameters: Dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "decision_id": self.decision_id,
-            "timestamp": self.timestamp.isoformat(),
-            "decision_type": self.decision_type,
-            "component": self.component,
-            "action": self.action,
-            "reasoning": self.reasoning,
-            "expected_benefit": self.expected_benefit,
-            "confidence": self.confidence,
-            "parameters": self.parameters,
-        }
-
-
 class IntelligentOrchestrator:
     """Main intelligent orchestration system"""
 
@@ -195,14 +71,14 @@ class IntelligentOrchestrator:
         self.device = device
 
         # Core components
-        self.adaptive_learning_controller: Optional[AdaptiveLearningController] = None
-        self.nas_controller: Optional[NeuralArchitectureSearch] = None
-        self.multimodal_processor: Optional[MultimodalProcessor] = None
-        self.performance_optimizer: Optional[PerformanceOptimizer] = None
+        self.adaptive_learning_controller: AdaptiveLearningController | None = None
+        self.nas_controller: NeuralArchitectureSearch | None = None
+        self.multimodal_processor: MultimodalProcessor | None = None
+        self.performance_optimizer: PerformanceOptimizer | None = None
 
         # State management
-        self.component_states: Dict[str, ComponentState] = {}
-        self.decision_history: List[OrchestrationDecision] = []
+        self.component_states: dict[str, ComponentState] = {}
+        self.decision_history: list[OrchestrationDecision] = []
 
         # Orchestration state
         self.orchestration_id = str(uuid.uuid4())
@@ -216,8 +92,8 @@ class IntelligentOrchestrator:
         self.state_service = get_state_service()
 
         # Performance tracking
-        self.global_performance_history: List[float] = []
-        self.resource_usage_history: Dict[str, List[float]] = {
+        self.global_performance_history: list[float] = []
+        self.resource_usage_history: dict[str, list[float]] = {
             "cpu": [],
             "memory": [],
             "gpu_memory": [],
@@ -225,7 +101,7 @@ class IntelligentOrchestrator:
 
     async def initialize(
         self,
-        enabled_modalities: List[str] = None,
+        enabled_modalities: list[str] = None,
         training_function: Callable = None,
         evaluation_function: Callable = None,
     ):
@@ -284,12 +160,12 @@ class IntelligentOrchestrator:
         self,
         task_id: str,
         state: Any,
-        available_actions: List[str],
+        available_actions: list[str],
         reward: float,
         success: bool,
-        current_hyperparams: Dict[str, float],
-        multimodal_inputs: List[ModalityInput] = None,
-    ) -> Tuple[Dict[str, Any], OrchestrationDecision]:
+        current_hyperparams: dict[str, float],
+        multimodal_inputs: list[ModalityInput] = None,
+    ) -> tuple[dict[str, Any], OrchestrationDecision]:
         """Orchestrate a single training step with all components"""
 
         start_time = datetime.now()
@@ -388,7 +264,7 @@ class IntelligentOrchestrator:
         eval_function: Callable,
         input_dim: int,
         output_dim: int,
-    ) -> Optional[ArchitectureConfig]:
+    ) -> ArchitectureConfig | None:
         """Optimize neural architecture using NAS"""
 
         if not self.nas_controller:
@@ -428,7 +304,7 @@ class IntelligentOrchestrator:
             return None
 
     async def _make_orchestration_decision(
-        self, task_id: str, reward: float, success: bool, step_results: Dict[str, Any]
+        self, task_id: str, reward: float, success: bool, step_results: dict[str, Any]
     ) -> OrchestrationDecision:
         """Make an intelligent orchestration decision"""
 
@@ -476,58 +352,13 @@ class IntelligentOrchestrator:
         recent_performance: float,
         resource_pressure: float,
     ) -> OrchestrationDecision:
-        """Fully automated decision making"""
-
-        if recent_performance < self.config.performance_threshold:
-            if resource_pressure < 0.7:
-                # Performance is low, resources available - optimize aggressively
-                return OrchestrationDecision(
-                    decision_id="",
-                    timestamp=datetime.now(),
-                    decision_type="performance_optimization",
-                    component="orchestrator",
-                    action="aggressive_optimize",
-                    reasoning=f"Performance {recent_performance:.3f} below threshold {self.config.performance_threshold}",
-                    expected_benefit=0.3,
-                    confidence=0.8,
-                )
-            else:
-                # Performance low, resources constrained - gentle optimization
-                return OrchestrationDecision(
-                    decision_id="",
-                    timestamp=datetime.now(),
-                    decision_type="resource_optimization",
-                    component="orchestrator",
-                    action="gentle_optimize",
-                    reasoning=f"Performance low but resources constrained ({resource_pressure:.2f})",
-                    expected_benefit=0.1,
-                    confidence=0.6,
-                )
-        else:
-            # Performance acceptable - maintain or explore
-            exploration_probability = max(0.1, 1.0 - recent_performance)
-            if reward > recent_performance:
-                return OrchestrationDecision(
-                    decision_id="",
-                    timestamp=datetime.now(),
-                    decision_type="exploration",
-                    component="orchestrator",
-                    action="explore_improvements",
-                    reasoning="Performance good, exploring for better solutions",
-                    expected_benefit=0.05,
-                    confidence=exploration_probability,
-                )
-            else:
-                return OrchestrationDecision(
-                    decision_id="",
-                    timestamp=datetime.now(),
-                    decision_type="maintenance",
-                    component="orchestrator",
-                    action="maintain_status",
-                    reasoning="Performance stable, maintaining current approach",
-                    expected_benefit=0.0,
-                    confidence=0.9,
-                )
+        """Fully automated decision making."""
+        return make_automated_decision(
+            self.config,
+            reward,
+            recent_performance,
+            resource_pressure,
+        )
 
     async def _adaptive_decision_making(
         self,
@@ -536,231 +367,57 @@ class IntelligentOrchestrator:
         success: bool,
         recent_performance: float,
         resource_pressure: float,
-        step_results: Dict[str, Any],
+        step_results: dict[str, Any],
     ) -> OrchestrationDecision:
-        """Adaptive decision making based on learning insights"""
+        """Adaptive decision making based on learning insights."""
 
-        # Get insights from adaptive learning controller
         learning_insights = {}
         if self.adaptive_learning_controller:
             learning_insights = (
                 await self.adaptive_learning_controller.get_learning_insights()
             )
 
-        # Analyze trends
         performance_trend = self._calculate_performance_trend()
-        adaptation_needed = self._assess_adaptation_need(
-            learning_insights, performance_trend
-        )
-
-        if adaptation_needed:
-            if "curriculum_insights" in learning_insights:
-                curr_insights = learning_insights["curriculum_insights"]
-                if curr_insights.get("current_difficulty", 0.5) < 0.3:
-                    # Difficulty too low, increase challenge
-                    return OrchestrationDecision(
-                        decision_id="",
-                        timestamp=datetime.now(),
-                        decision_type="curriculum_adaptation",
-                        component="adaptive_learning",
-                        action="increase_difficulty",
-                        reasoning="Current difficulty too low for optimal learning",
-                        expected_benefit=0.2,
-                        confidence=0.7,
-                    )
-                elif curr_insights.get("current_difficulty", 0.5) > 0.9:
-                    # Difficulty too high, provide support
-                    return OrchestrationDecision(
-                        decision_id="",
-                        timestamp=datetime.now(),
-                        decision_type="curriculum_adaptation",
-                        component="adaptive_learning",
-                        action="provide_support",
-                        reasoning="Current difficulty too high, agent struggling",
-                        expected_benefit=0.15,
-                        confidence=0.8,
-                    )
-
-        # Check if NAS optimization is needed
         nas_optimization_due = (
             datetime.now() - self.last_optimization > self.config.nas_interval
-            and recent_performance < 0.85
         )
-
-        if nas_optimization_due:
-            return OrchestrationDecision(
-                decision_id="",
-                timestamp=datetime.now(),
-                decision_type="architecture_optimization",
-                component="nas",
-                action="schedule_nas_optimization",
-                reasoning="Performance plateau detected, architecture optimization due",
-                expected_benefit=0.25,
-                confidence=0.6,
-            )
-
-        # Default to exploration or maintenance
-        if performance_trend > 0.05:
-            return OrchestrationDecision(
-                decision_id="",
-                timestamp=datetime.now(),
-                decision_type="exploration",
-                component="orchestrator",
-                action="continue_current_strategy",
-                reasoning="Positive performance trend, continuing current approach",
-                expected_benefit=0.1,
-                confidence=0.8,
-            )
-        else:
-            return OrchestrationDecision(
-                decision_id="",
-                timestamp=datetime.now(),
-                decision_type="optimization",
-                component="orchestrator",
-                action="explore_alternatives",
-                reasoning="Performance stagnant, exploring alternative strategies",
-                expected_benefit=0.15,
-                confidence=0.5,
-            )
+        return make_adaptive_decision(
+            self.config,
+            learning_insights,
+            performance_trend,
+            recent_performance,
+            nas_optimization_due,
+        )
 
     async def _conservative_decision_making(
         self, task_id: str, reward: float, success: bool, recent_performance: float
     ) -> OrchestrationDecision:
-        """Conservative decision making for manual/semi-automated modes"""
-
-        if recent_performance < self.config.performance_threshold * 0.8:
-            # Performance significantly below threshold
-            return OrchestrationDecision(
-                decision_id="",
-                timestamp=datetime.now(),
-                decision_type="alert",
-                component="orchestrator",
-                action="request_human_intervention",
-                reasoning=f"Performance {recent_performance:.3f} significantly below threshold",
-                expected_benefit=0.0,
-                confidence=1.0,
-            )
-        elif not success:
-            # Recent failure
-            return OrchestrationDecision(
-                decision_id="",
-                timestamp=datetime.now(),
-                decision_type="recovery",
-                component="orchestrator",
-                action="gentle_recovery",
-                reasoning="Recent failure detected, applying gentle recovery",
-                expected_benefit=0.05,
-                confidence=0.7,
-            )
-        else:
-            # Normal operation
-            return OrchestrationDecision(
-                decision_id="",
-                timestamp=datetime.now(),
-                decision_type="maintenance",
-                component="orchestrator",
-                action="monitor_and_maintain",
-                reasoning="Normal operation, monitoring for changes",
-                expected_benefit=0.0,
-                confidence=0.9,
-            )
+        """Conservative decision making for manual and semi-automated modes."""
+        return make_conservative_decision(self.config, success, recent_performance)
 
     def _calculate_recent_performance(self) -> float:
         """Calculate recent performance summary (robust to outliers)."""
-        if not self.global_performance_history:
-            return 0.5  # Default
-
-        recent_window = min(50, len(self.global_performance_history))
-        recent_scores = self.global_performance_history[-recent_window:]
-        # Use median to reduce sensitivity to outliers/spikes.
-        sorted_scores = sorted(recent_scores)
-        mid = len(sorted_scores) // 2
-        if len(sorted_scores) % 2 == 1:
-            return float(sorted_scores[mid])
-        return float(sorted_scores[mid - 1] + sorted_scores[mid]) / 2.0
+        return calculate_recent_performance(self.global_performance_history)
 
     def _calculate_performance_trend(self) -> float:
-        """Calculate performance trend (positive = improving)"""
-        if len(self.global_performance_history) < 20:
-            return 0.0
-
-        recent = self.global_performance_history[-10:]
-        earlier = self.global_performance_history[-20:-10]
-
-        recent_avg = sum(recent) / len(recent)
-        earlier_avg = sum(earlier) / len(earlier)
-
-        return recent_avg - earlier_avg
+        """Calculate performance trend (positive = improving)."""
+        return calculate_performance_trend(self.global_performance_history)
 
     def _assess_resource_pressure(self) -> float:
-        """Assess current resource pressure (0.0 = low, 1.0 = high)"""
-        # Simplified resource pressure calculation
-        # In practice, this would use actual system monitoring
-
-        pressure_factors = []
-
-        # Check memory usage
-        if "memory" in self.resource_usage_history:
-            recent_memory = (
-                self.resource_usage_history["memory"][-10:]
-                if self.resource_usage_history["memory"]
-                else [0.5]
-            )
-            avg_memory = sum(recent_memory) / len(recent_memory)
-            pressure_factors.append(avg_memory)
-
-        # Check CPU usage
-        if "cpu" in self.resource_usage_history:
-            recent_cpu = (
-                self.resource_usage_history["cpu"][-10:]
-                if self.resource_usage_history["cpu"]
-                else [0.5]
-            )
-            avg_cpu = sum(recent_cpu) / len(recent_cpu)
-            pressure_factors.append(avg_cpu)
-
-        if not pressure_factors:
-            return 0.5  # Default moderate pressure
-
-        return sum(pressure_factors) / len(pressure_factors)
+        """Assess current resource pressure (0.0 = low, 1.0 = high)."""
+        return assess_resource_pressure(self.resource_usage_history)
 
     def _assess_adaptation_need(
-        self, learning_insights: Dict[str, Any], performance_trend: float
+        self, learning_insights: dict[str, Any], performance_trend: float
     ) -> bool:
-        """Assess if adaptation is needed"""
-
-        adaptation_signals = []
-
-        # Performance trend signal
-        if performance_trend < -0.05:  # Declining performance
-            adaptation_signals.append(True)
-
-        # Learning velocity signal
-        if "curriculum_insights" in learning_insights:
-            task_progress = learning_insights["curriculum_insights"].get(
-                "task_progress", {}
-            )
-            for task_id, progress in task_progress.items():
-                if progress.get("success_rate", 1.0) < 0.6:
-                    adaptation_signals.append(True)
-                    break
-
-        # Exploration signal
-        if "exploration_insights" in learning_insights:
-            epsilon = learning_insights["exploration_insights"].get(
-                "current_epsilon", 0.1
-            )
-            if epsilon < 0.05:  # Very low exploration
-                adaptation_signals.append(True)
-
-        # Need adaptation if any signal is true
-        return any(adaptation_signals)
+        """Assess if adaptation is needed."""
+        return assess_adaptation_need(learning_insights, performance_trend)
 
     def _update_component_state(
         self,
         component_id: str,
         status: ComponentStatus,
-        metrics: Dict[str, float] = None,
+        metrics: dict[str, float] = None,
     ):
         """Update the state of a component"""
         if component_id not in self.component_states:
@@ -774,7 +431,7 @@ class IntelligentOrchestrator:
         if metrics:
             self.component_states[component_id].update_performance(metrics)
 
-    async def _update_all_component_states(self, step_results: Dict[str, Any]):
+    async def _update_all_component_states(self, step_results: dict[str, Any]):
         """Update states of all components based on step results"""
         for component, results in step_results.items():
             if isinstance(results, dict) and "processing_time" in results:
@@ -794,6 +451,21 @@ class IntelligentOrchestrator:
             return OptimizationLevel.BALANCED
         else:
             return OptimizationLevel.BALANCED
+
+    async def _record_monitoring_metric(
+        self,
+        metric_name: str,
+        value: float,
+        labels: dict[str, str] | None = None,
+    ):
+        """Record a metric against sync or async monitoring implementations."""
+        record_metric = getattr(self.monitoring, "record_metric", None)
+        if not callable(record_metric):
+            return
+
+        maybe_awaitable = record_metric(metric_name, value, labels or {})
+        if asyncio.iscoroutine(maybe_awaitable):
+            await maybe_awaitable
 
     async def _log_orchestration_metrics(self):
         """Log orchestration metrics to monitoring system"""
@@ -820,9 +492,12 @@ class IntelligentOrchestrator:
         }
 
         for metric_name, value in metrics.items():
-            await self.monitoring.record_metric(f"orchestrator.{metric_name}", value)
+            await self._record_monitoring_metric(
+                f"orchestrator.{metric_name}",
+                value,
+            )
 
-    def get_orchestration_status(self) -> Dict[str, Any]:
+    def get_orchestration_status(self) -> dict[str, Any]:
         """Get current orchestration status"""
         return {
             "orchestration_id": self.orchestration_id,
@@ -850,7 +525,7 @@ class IntelligentOrchestrator:
             },
         }
 
-    def get_optimization_insights(self) -> Dict[str, Any]:
+    def get_optimization_insights(self) -> dict[str, Any]:
         """Get insights about optimization opportunities"""
         insights = {
             "performance_bottlenecks": [],
@@ -958,3 +633,16 @@ def create_orchestration_config(
     )
 
     return config
+
+
+__all__ = [
+    "ComponentState",
+    "ComponentStatus",
+    "IntelligentOrchestrator",
+    "OptimizationObjective",
+    "OrchestrationConfig",
+    "OrchestrationDecision",
+    "OrchestrationMode",
+    "create_intelligent_orchestrator",
+    "create_orchestration_config",
+]

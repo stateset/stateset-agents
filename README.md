@@ -5,7 +5,7 @@
 **Reinforcement‑learning framework for multi‑turn conversational AI agents.**
 
 [![PyPI version](https://badge.fury.io/py/stateset-agents.svg)](https://pypi.org/project/stateset-agents/)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-green.svg)](LICENSE)
 
 </div>
@@ -52,6 +52,53 @@ The result is steadier learning for dialogue tasks.
 
 ---
 
+## Reward semantics
+
+Reward functions can be evaluated per-step or only at episode end. Set
+`reward_type` on your `RewardFunction` to control how the environment applies it:
+
+- `RewardType.IMMEDIATE` or `RewardType.DENSE`: compute per-step rewards only.
+- `RewardType.CUMULATIVE` or `RewardType.SPARSE`: compute a final reward only.
+
+If you pass a custom reward without `reward_type`, the environment assumes legacy
+behavior and may compute both step and final rewards. For new rewards, always
+set `reward_type` explicitly to avoid double counting.
+
+---
+
+## Tool calling (ToolAgent)
+
+`ToolAgent` lets a model request a tool via a JSON block, which the agent executes:
+
+```python
+import asyncio
+from stateset_agents.core.agent import AgentConfig, ToolAgent
+
+def add(a: int, b: int) -> int:
+    return a + b
+
+async def main():
+    agent = ToolAgent(
+        AgentConfig(model_name="stub://tools", use_stub_model=True),
+        tools=[
+            {
+                "name": "add",
+                "description": "Add two integers",
+                "parameters": {"a": "int", "b": "int"},
+                "function": add,
+            }
+        ],
+    )
+    await agent.initialize()
+    # The model should respond with a JSON tool call like:
+    # {"tool": "add", "parameters": {"a": 1, "b": 2}}
+    print(await agent.generate_response("Please calculate 1 + 2"))
+
+asyncio.run(main())
+```
+
+---
+
 ## Installation
 
 ### Core (lightweight, stub‑ready)
@@ -69,12 +116,70 @@ pip install "stateset-agents[training]"
 ### Optional extras
 
 ```bash
-pip install "stateset-agents[trl]"        # TRL GRPO integration + bitsandbytes
-pip install "stateset-agents[vllm]"       # vLLM generation backend
-pip install "stateset-agents[hpo]"        # Optuna/Ray Tune HPO
-pip install "stateset-agents[api]"        # FastAPI service
-pip install "stateset-agents[distributed]"# DeepSpeed / multi‑GPU helpers
-pip install "stateset-agents[full]"       # Most extras in one go
+pip install "stateset-agents[auto-research]" # Autonomous experiment loop + Optuna
+pip install "stateset-agents[trl]"           # TRL GRPO integration + bitsandbytes
+pip install "stateset-agents[vllm]"          # vLLM generation backend
+pip install "stateset-agents[hpo]"           # Optuna/Ray Tune HPO
+pip install "stateset-agents[api]"           # FastAPI service
+pip install "stateset-agents[distributed]"   # DeepSpeed / multi‑GPU helpers
+pip install "stateset-agents[full]"          # Most extras in one go
+```
+
+### Qwen 3.5 starter path
+
+If you want the fastest path to a first post-training run for `Qwen/Qwen3.5-0.8B`, use the dedicated CLI starter or the equivalent example script:
+
+```bash
+pip install "stateset-agents[training,trl]"
+stateset-agents qwen3-5-0-8b --json-output
+stateset-agents qwen3-5-0-8b --starter-profile memory --json-output
+stateset-agents qwen3-5-0-8b --list-profiles --json-output
+stateset-agents qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json
+stateset-agents qwen3-5-0-8b --config ./qwen3_5_0_8b.json --no-dry-run
+python examples/finetune_qwen3_5_0_8b_gspo.py --dry-run
+```
+
+Use `--list-profiles` when you want to compare the built-in `balanced`, `memory`, and `quality` presets before saving or running one.
+
+For the repo-specific walkthrough, see `docs/QWEN3_FINETUNING_GUIDE.md`.
+
+### API serving (/v1/messages)
+
+```bash
+export INFERENCE_BACKEND=vllm
+export INFERENCE_BACKEND_URL=http://localhost:8001
+export INFERENCE_DEFAULT_MODEL=moonshotai/Kimi-K2.5
+# Optional: ask the backend to include token usage in streaming chunks when supported.
+export INFERENCE_STREAM_INCLUDE_USAGE=true
+```
+
+```bash
+curl http://localhost:8000/v1/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "moonshotai/Kimi-K2.5",
+    "max_tokens": 128,
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+OpenAI-compatible endpoint:
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "moonshotai/Kimi-K2.5",
+    "max_tokens": 128,
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+### Helm deployment
+
+```bash
+helm upgrade --install stateset-agents deployment/helm/stateset-agents \
+  --namespace stateset-agents
 ```
 
 ---
@@ -458,6 +563,35 @@ agent = await load_agent_from_checkpoint("./outputs/refund_agent")
 
 ---
 
+## Auto‑Research
+
+Run autonomous hyperparameter experiments overnight. The loop proposes configurations, trains with a time budget, evaluates on held‑out scenarios, and keeps only improvements.
+
+```bash
+# Quick test (no GPU)
+stateset-agents auto-research --stub --max-experiments 5
+
+# Real training with smart proposer
+stateset-agents auto-research --proposer smart --improvement-patience 10
+
+# From a config file
+stateset-agents auto-research --config config.yaml
+```
+
+7 proposer strategies (perturbation, smart, adaptive, random, grid, bayesian, LLM), 5 search spaces, early abort on bad experiments, resume from checkpoint, W&B logging, and post‑run analysis with parameter importance.
+
+```python
+# Load and analyze results after a run
+from stateset_agents.training.auto_research import ExperimentTracker, compare_runs
+tracker = ExperimentTracker.load("./auto_research_results")
+tracker.print_summary()
+print(compare_runs("./run_a", "./run_b"))
+```
+
+See `docs/AUTO_RESEARCH_GUIDE.md` for the full guide.
+
+---
+
 ## CLI
 
 The CLI is a thin wrapper around the Python API:
@@ -469,6 +603,7 @@ stateset-agents train --stub
 stateset-agents train --config ./config.yaml --dry-run false --save ./outputs/ckpt
 stateset-agents evaluate --checkpoint ./outputs/ckpt --message "Hello"
 stateset-agents serve --host 0.0.0.0 --port 8001
+stateset-agents auto-research --proposer smart --max-experiments 50
 ```
 
 For complex runs prefer the Python API and the examples folder.
@@ -484,9 +619,11 @@ Good starting points:
 - `examples/complete_grpo_training.py` – end‑to‑end GRPO training
 - `examples/train_with_gspo.py` – GSPO + GSPO‑token training
 - `examples/train_with_trl_grpo.py` – Hugging Face TRL GRPO integration
+- `examples/auto_research_quickstart.py` – autonomous experiment loop
 
 Key docs:
 
+- `docs/AUTO_RESEARCH_GUIDE.md`
 - `docs/USAGE_GUIDE.md`
 - `docs/RL_FRAMEWORK_GUIDE.md`
 - `docs/GSPO_GUIDE.md`

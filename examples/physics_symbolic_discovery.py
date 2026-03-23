@@ -9,7 +9,6 @@ import argparse
 import asyncio
 import logging
 from pathlib import Path
-from typing import List
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.trajectory import ConversationTurn
@@ -49,16 +48,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 async def score_targets_only(
-    tasks: List[SymbolicPhysicsTask], reward_fn: SymbolicPhysicsRewardFunction
+    tasks: list[SymbolicPhysicsTask], reward_fn: SymbolicPhysicsRewardFunction
 ) -> None:
     for task in tasks:
         if not task.target_expression:
             logger.info("Task %s has no target expression.", task.task_id)
             continue
         turn = ConversationTurn(role="assistant", content=task.target_expression)
-        result = await reward_fn.compute_reward(
-            turns=[turn], context=task.to_dict()
-        )
+        result = await reward_fn.compute_reward(turns=[turn], context=task.to_dict())
         logger.info("Task %s target score: %.3f", task.task_id, result.score)
 
 

@@ -10,11 +10,11 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
-from .trajectory import ConversationTurn, MultiTurnTrajectory
+from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
 
@@ -40,18 +40,18 @@ class RewardResult:
     """Result of reward computation"""
 
     score: float
-    breakdown: Dict[str, float] = field(default_factory=dict)
-    components: Dict[str, float] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    explanation: Optional[str] = None
+    breakdown: dict[str, float] = field(default_factory=dict)
+    components: dict[str, float] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    explanation: str | None = None
 
     def __init__(
         self,
         score: float,
-        components: Optional[Dict[str, float]] = None,
-        breakdown: Optional[Dict[str, float]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        explanation: Optional[str] = None,
+        components: dict[str, float] | None = None,
+        breakdown: dict[str, float] | None = None,
+        metadata: dict[str, Any] | None = None,
+        explanation: str | None = None,
     ):
         self.score = float(score)
         if breakdown is None and components is not None:
@@ -64,9 +64,10 @@ class RewardResult:
         self.metadata = dict(metadata or {})
         self.explanation = explanation
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "score": self.score,
+            "total_reward": self.total_reward,
             "breakdown": self.breakdown,
             "components": self.components,
             "metadata": self.metadata,
@@ -74,14 +75,23 @@ class RewardResult:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "RewardResult":
+    def from_dict(cls, data: dict[str, Any]) -> "RewardResult":
         return cls(
-            score=float(data.get("score", 0.0)),
+            score=float(data.get("score", data.get("total_reward", 0.0))),
             breakdown=data.get("breakdown") or data.get("components") or {},
             components=data.get("components") or data.get("breakdown") or {},
             metadata=data.get("metadata") or {},
             explanation=data.get("explanation"),
         )
+
+    @property
+    def total_reward(self) -> float:
+        """Compatibility alias used by several training paths."""
+        return self.score
+
+    @total_reward.setter
+    def total_reward(self, value: float) -> None:
+        self.score = float(value)
 
 
 class RewardFunction(ABC):
@@ -93,7 +103,7 @@ class RewardFunction(ABC):
         self,
         weight: float = 1.0,
         reward_type: RewardType = RewardType.IMMEDIATE,
-        name: Optional[str] = None,
+        name: str | None = None,
     ):
         self.weight = weight
         self.reward_type = reward_type
@@ -101,7 +111,7 @@ class RewardFunction(ABC):
 
     @abstractmethod
     async def compute_reward(
-        self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """Compute reward for conversation turns"""
         pass
@@ -109,8 +119,8 @@ class RewardFunction(ABC):
     async def compute_turn_reward(
         self,
         turn: ConversationTurn,
-        context: Optional[Dict[str, Any]] = None,
-        conversation_history: Optional[List[ConversationTurn]] = None,
+        context: dict[str, Any] | None = None,
+        conversation_history: list[ConversationTurn] | None = None,
     ) -> RewardResult:
         """Compute reward for a single turn"""
         turns = conversation_history or []
@@ -125,7 +135,7 @@ class RewardFunction(ABC):
         """
         try:
             # Check if we're already in an async context
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             # We're in an async context - can't use asyncio.run()
             raise RuntimeError(
                 "Cannot call RewardFunction synchronously from within an async context. "
@@ -147,7 +157,7 @@ class CompositeReward(RewardFunction):
 
     def __init__(
         self,
-        reward_functions: List[RewardFunction],
+        reward_functions: list[RewardFunction],
         combination_method: str = "weighted_sum",
         normalize_weights: bool = False,
     ):
@@ -157,7 +167,7 @@ class CompositeReward(RewardFunction):
         self.normalize_weights = normalize_weights
 
     async def compute_reward(
-        self, turns: List[ConversationTurn], context: Optional[Dict[str, Any]] = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """Compute composite reward from all functions"""
 
@@ -170,7 +180,7 @@ class CompositeReward(RewardFunction):
                 metadata={"error": "No reward functions configured"},
             )
 
-        results: List[Tuple[RewardFunction, RewardResult]] = []
+        results: list[tuple[RewardFunction, RewardResult]] = []
         for reward_fn in self.reward_functions:
             try:
                 result = await reward_fn.compute_reward(turns, context)
@@ -197,21 +207,25 @@ class CompositeReward(RewardFunction):
 
         if self.combination_method == "weighted_sum":
             total_score = sum(
-                rr.score * w for (rf, rr), w in zip(results, component_weights)
+                rr.score * w for (rf, rr), w in zip(results, component_weights, strict=False)
             )
         elif self.combination_method == "average":
-            total_score = float(np.mean([r.score for _, r in results])) if results else 0.0
+            total_score = (
+                float(np.mean([r.score for _, r in results])) if results else 0.0
+            )
         elif self.combination_method == "min":
             total_score = min((r.score for _, r in results), default=0.0)
         elif self.combination_method == "max":
             total_score = max((r.score for _, r in results), default=0.0)
         else:
-            logger.warning(f"Unknown combination method '{self.combination_method}', defaulting to weighted_sum")
+            logger.warning(
+                f"Unknown combination method '{self.combination_method}', defaulting to weighted_sum"
+            )
             total_score = sum(
-                rr.score * w for (rf, rr), w in zip(results, component_weights)
+                rr.score * w for (rf, rr), w in zip(results, component_weights, strict=False)
             )
 
-        components: Dict[str, float] = {}
+        components: dict[str, float] = {}
         for reward_fn, result in results:
             name = (reward_fn.name or reward_fn.__class__.__name__).lower()
             if name.endswith("reward"):

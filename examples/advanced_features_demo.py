@@ -12,21 +12,33 @@ Run: python examples/advanced_features_demo.py
 """
 
 import asyncio
+
 import numpy as np
-from typing import List
 
-from stateset_agents.core.agent import Agent, AgentConfig
-from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
-
-# ============================================================================
-# Feature 1: Curriculum Learning
-# ============================================================================
-
+from stateset_agents.core.agent import Agent
 from stateset_agents.core.curriculum_learning import (
     CurriculumLearning,
     CurriculumStage,
     PerformanceBasedScheduler,
 )
+from stateset_agents.core.few_shot_adaptation import (
+    DomainDetector,
+    DomainProfile,
+    FewShotAdaptationManager,
+    FewShotExample,
+    PromptBasedAdaptation,
+)
+from stateset_agents.core.multi_agent_coordination import (
+    AgentRole,
+    CooperativeRewardShaping,
+    CoordinationStrategy,
+    MultiAgentCoordinator,
+)
+from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
+
+# ============================================================================
+# Feature 1: Curriculum Learning
+# ============================================================================
 
 
 async def demo_curriculum_learning():
@@ -72,8 +84,8 @@ async def demo_curriculum_learning():
 
     # Simulate training episodes
     for episode in range(20):
-        stage = curriculum.get_current_stage()
-        config = curriculum.get_current_config()
+        curriculum.get_current_stage()
+        curriculum.get_current_config()
 
         # Simulate episode with varying performance
         reward = 0.5 + (episode * 0.03) + np.random.normal(0, 0.1)
@@ -95,20 +107,13 @@ async def demo_curriculum_learning():
                 f"Avg Reward: {summary['stage_avg_reward']:.3f}"
             )
 
-    print(f"✓ Completed curriculum training")
+    print("✓ Completed curriculum training")
     print(f"✓ Final stage: {curriculum.get_current_stage().stage_id}")
 
 
 # ============================================================================
 # Feature 2: Multi-Agent Coordination
 # ============================================================================
-
-from stateset_agents.core.multi_agent_coordination import (
-    AgentRole,
-    CoordinationStrategy,
-    CooperativeRewardShaping,
-    MultiAgentCoordinator,
-)
 
 
 class SimpleAgent(Agent):
@@ -156,7 +161,7 @@ async def demo_multi_agent_coordination():
         coordination_strategy=CoordinationStrategy.SEQUENTIAL,
     )
 
-    print(f"✓ Initialized multi-agent coordinator")
+    print("✓ Initialized multi-agent coordinator")
 
     # Execute collaborative task
     task = {
@@ -169,7 +174,7 @@ async def demo_multi_agent_coordination():
         task, max_iterations=3
     )
 
-    print(f"✓ Completed collaborative task")
+    print("✓ Completed collaborative task")
     print(f"  - Total turns: {len(trajectory.turns)}")
     print(f"  - Agents involved: {len(result.get('results', []))}")
 
@@ -186,7 +191,7 @@ async def demo_multi_agent_coordination():
         cooperation_metrics={"researcher": 0.95, "planner": 0.9, "executor": 0.85},
     )
 
-    print(f"✓ Computed cooperative rewards:")
+    print("✓ Computed cooperative rewards:")
     for agent_id, reward in agent_rewards.items():
         print(f"  - {agent_id}: {reward:.3f}")
 
@@ -196,12 +201,10 @@ async def demo_multi_agent_coordination():
 # ============================================================================
 
 try:
-    import torch
-
     from stateset_agents.training.offline_rl_algorithms import (
-        OfflineRLTrainer,
         CQLConfig,
         IQLConfig,
+        OfflineRLTrainer,
     )
 
     TORCH_AVAILABLE = True
@@ -294,9 +297,9 @@ async def demo_offline_rl():
 
 try:
     from stateset_agents.rewards.bayesian_reward_model import (
-        BayesianRewardFunction,
-        BayesianRewardConfig,
         ActiveLearningSelector,
+        BayesianRewardConfig,
+        BayesianRewardFunction,
     )
 
     BAYESIAN_AVAILABLE = True
@@ -324,7 +327,9 @@ async def demo_bayesian_uncertainty():
 
     reward_fn = BayesianRewardFunction(input_dim=768, config=config, device="cpu")
 
-    print(f"✓ Created Bayesian reward model with {config.num_ensemble} ensemble members")
+    print(
+        f"✓ Created Bayesian reward model with {config.num_ensemble} ensemble members"
+    )
 
     # Test with different conversation qualities
     test_cases = [
@@ -353,27 +358,23 @@ async def demo_bayesian_uncertainty():
         print(f"  Reward: {result.score:.3f}")
         print(f"  95% CI: [{ci_lower:.3f}, {ci_upper:.3f}]")
         print(f"  Epistemic: {epistemic:.3f}, Aleatoric: {aleatoric:.3f}")
+        print(f"  Total uncertainty: {total:.3f}")
         print(f"  Confidence: {result.metadata['confidence']:.2%}")
 
         if result.metadata["high_uncertainty"]:
-            print(f"  ⚠️  HIGH UNCERTAINTY - Consider human review")
+            print("  ⚠️  HIGH UNCERTAINTY - Consider human review")
 
     # Active learning
     selector = ActiveLearningSelector(uncertainty_threshold=0.3)
-    print(f"\n✓ Active learning selector ready for high-uncertainty samples")
+    print(
+        "\n✓ Active learning selector ready for high-uncertainty samples "
+        f"(threshold={selector.uncertainty_threshold})"
+    )
 
 
 # ============================================================================
 # Feature 5: Few-Shot Adaptation
 # ============================================================================
-
-from stateset_agents.core.few_shot_adaptation import (
-    DomainDetector,
-    DomainProfile,
-    FewShotAdaptationManager,
-    FewShotExample,
-    PromptBasedAdaptation,
-)
 
 
 async def demo_few_shot_adaptation():
@@ -391,7 +392,7 @@ async def demo_few_shot_adaptation():
         default_strategy=PromptBasedAdaptation(max_examples=3),
     )
 
-    print(f"✓ Created few-shot adaptation manager")
+    print("✓ Created few-shot adaptation manager")
 
     # Define domains with examples
     domains = {
@@ -434,7 +435,7 @@ async def demo_few_shot_adaptation():
     }
 
     # Register domains
-    for domain_id, domain in domains.items():
+    for _domain_id, domain in domains.items():
         manager.register_domain(domain, domain.examples)
         print(f"✓ Registered domain: {domain.name} ({len(domain.examples)} examples)")
 
@@ -456,7 +457,7 @@ async def demo_few_shot_adaptation():
     # Get adapted agents
     print("\n--- Domain Adaptation ---")
     for domain_id, domain in domains.items():
-        adapted = await manager.get_adapted_agent(domain_id)
+        await manager.get_adapted_agent(domain_id)
         print(f"✓ Created adapted agent for {domain.name}")
 
     # Get statistics
@@ -492,9 +493,7 @@ async def main():
         print("\n" + "=" * 70)
         print("DEMO COMPLETE! 🎉")
         print("=" * 70)
-        print(
-            "\n✓ All advanced features demonstrated successfully!"
-        )
+        print("\n✓ All advanced features demonstrated successfully!")
         print("✓ StateSet Agents is now 10/10!")
         print("\nNext steps:")
         print("- See docs/ADVANCED_FEATURES_GUIDE.md for detailed documentation")

@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any
+from collections.abc import Callable, Mapping
 
 from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
 from stateset_agents.core.trajectory import ConversationTurn
@@ -26,11 +27,11 @@ class SymbolicRewardConfig:
     """Configuration for symbolic physics reward evaluation."""
 
     num_samples: int = 8
-    sample_range: Tuple[float, float] = (-2.0, 2.0)
+    sample_range: tuple[float, float] = (-2.0, 2.0)
     rel_tol: float = 1e-2
     abs_tol: float = 1e-3
     max_expression_length: int = 140
-    component_weights: Dict[str, float] = field(
+    component_weights: dict[str, float] = field(
         default_factory=lambda: {
             "validity": 0.1,
             "equivalence": 0.6,
@@ -38,14 +39,14 @@ class SymbolicRewardConfig:
             "simplicity": 0.1,
         }
     )
-    allowed_functions: Optional[Mapping[str, Callable[..., float]]] = None
+    allowed_functions: Mapping[str, Callable[..., float]] | None = None
 
 
 def _close_enough(a: float, b: float, rel_tol: float, abs_tol: float) -> bool:
     return abs(a - b) <= abs_tol + rel_tol * max(abs(a), abs(b))
 
 
-def _weighted_average(scores: Dict[str, float], weights: Dict[str, float]) -> float:
+def _weighted_average(scores: dict[str, float], weights: dict[str, float]) -> float:
     total = 0.0
     weighted = 0.0
     for name, value in scores.items():
@@ -57,7 +58,7 @@ def _weighted_average(scores: Dict[str, float], weights: Dict[str, float]) -> fl
     return weighted / total
 
 
-def _extract_last_assistant(turns: List[Any]) -> Optional[ConversationTurn]:
+def _extract_last_assistant(turns: list[Any]) -> ConversationTurn | None:
     for item in reversed(turns):
         if isinstance(item, ConversationTurn) and item.role == "assistant":
             return item
@@ -66,14 +67,16 @@ def _extract_last_assistant(turns: List[Any]) -> Optional[ConversationTurn]:
         if role == "assistant" and content is not None:
             return ConversationTurn(role="assistant", content=str(content))
         if isinstance(item, dict) and item.get("role") == "assistant":
-            return ConversationTurn(role="assistant", content=str(item.get("content", "")))
+            return ConversationTurn(
+                role="assistant", content=str(item.get("content", ""))
+            )
     return None
 
 
 def _symmetry_score(
     expression: str,
-    samples: List[Dict[str, float]],
-    pairs: List[List[str]],
+    samples: list[dict[str, float]],
+    pairs: list[list[str]],
     sign: float,
     rel_tol: float,
     abs_tol: float,
@@ -108,8 +111,8 @@ def _symmetry_score(
 
 def _zeros_score(
     expression: str,
-    variables: List[str],
-    points: List[Dict[str, float]],
+    variables: list[str],
+    points: list[dict[str, float]],
     derived_variables: Mapping[str, str],
     rel_tol: float,
     abs_tol: float,
@@ -122,7 +125,9 @@ def _zeros_score(
     base_vars = [var for var in variables if var not in derived_variables]
     for point in points:
         base_values = {var: float(point.get(var, 0.0)) for var in base_vars}
-        values = apply_derived_variables(base_values, derived_variables, allowed_functions)
+        values = apply_derived_variables(
+            base_values, derived_variables, allowed_functions
+        )
         for var in variables:
             values.setdefault(var, float(point.get(var, 0.0)))
         try:
@@ -138,10 +143,10 @@ def _zeros_score(
 
 def _scale_score(
     expression: str,
-    samples: List[Dict[str, float]],
-    variables: List[str],
+    samples: list[dict[str, float]],
+    variables: list[str],
     derived_variables: Mapping[str, str],
-    factors: List[float],
+    factors: list[float],
     power: float,
     rel_tol: float,
     abs_tol: float,
@@ -167,13 +172,11 @@ def _scale_score(
             for var in variables:
                 scaled.setdefault(var, values.get(var, 0.0) * factor)
             try:
-                scaled_val = safe_eval_expression(
-                    expression, scaled, allowed_functions
-                )
+                scaled_val = safe_eval_expression(expression, scaled, allowed_functions)
             except Exception:
                 total += 1
                 continue
-            target = (factor ** power) * base_val
+            target = (factor**power) * base_val
             if _close_enough(scaled_val, target, rel_tol, abs_tol):
                 matches += 1
             total += 1
@@ -182,8 +185,8 @@ def _scale_score(
 
 def _sign_flip_score(
     expression: str,
-    samples: List[Dict[str, float]],
-    variables: List[str],
+    samples: list[dict[str, float]],
+    variables: list[str],
     sign: float,
     rel_tol: float,
     abs_tol: float,
@@ -219,13 +222,13 @@ def _sign_flip_score(
 
 def _sum_score(
     expression: str,
-    samples: List[Dict[str, float]],
-    terms: List[str],
-    weights: Optional[List[float]],
+    samples: list[dict[str, float]],
+    terms: list[str],
+    weights: list[float] | None,
     rel_tol: float,
     abs_tol: float,
     allowed_functions: Mapping[str, Callable[..., float]],
-    candidate_values: Optional[List[float]] = None,
+    candidate_values: list[float] | None = None,
 ) -> float:
     if not terms:
         return 0.0
@@ -238,7 +241,7 @@ def _sum_score(
     for idx, values in enumerate(samples):
         try:
             target = 0.0
-            for term, weight in zip(terms, padded_weights):
+            for term, weight in zip(terms, padded_weights, strict=False):
                 term_val = safe_eval_expression(term, values, allowed_functions)
                 target += weight * term_val
             if candidate_values is None:
@@ -255,13 +258,13 @@ def _sum_score(
 
 def _product_score(
     expression: str,
-    samples: List[Dict[str, float]],
-    factors: List[str],
-    exponents: Optional[List[float]],
+    samples: list[dict[str, float]],
+    factors: list[str],
+    exponents: list[float] | None,
     rel_tol: float,
     abs_tol: float,
     allowed_functions: Mapping[str, Callable[..., float]],
-    candidate_values: Optional[List[float]] = None,
+    candidate_values: list[float] | None = None,
 ) -> float:
     if not factors:
         return 0.0
@@ -275,9 +278,9 @@ def _product_score(
     for idx, values in enumerate(samples):
         try:
             target = 1.0
-            for factor, exponent in zip(factors, padded_exponents):
+            for factor, exponent in zip(factors, padded_exponents, strict=False):
                 factor_val = safe_eval_expression(factor, values, allowed_functions)
-                target *= factor_val ** exponent
+                target *= factor_val**exponent
             if candidate_values is None:
                 candidate = safe_eval_expression(expression, values, allowed_functions)
             else:
@@ -295,10 +298,14 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
 
     def __init__(
         self,
-        config: Optional[SymbolicRewardConfig] = None,
+        config: SymbolicRewardConfig | None = None,
         weight: float = 1.0,
     ) -> None:
-        super().__init__(weight=weight, reward_type=RewardType.IMMEDIATE, name="SymbolicPhysicsReward")
+        super().__init__(
+            weight=weight,
+            reward_type=RewardType.IMMEDIATE,
+            name="SymbolicPhysicsReward",
+        )
         self.config = config or SymbolicRewardConfig()
         self.allowed_functions = (
             dict(self.config.allowed_functions)
@@ -308,10 +315,10 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
 
     async def compute_reward(  # type: ignore[override]
         self,
-        turns: Optional[List[Any]] = None,
-        context: Optional[Dict[str, Any]] = None,
-        trajectory: Optional[Any] = None,
-        turn: Optional[Any] = None,
+        turns: list[Any] | None = None,
+        context: dict[str, Any] | None = None,
+        trajectory: Any | None = None,
+        turn: Any | None = None,
         **_: Any,
     ) -> RewardResult:
         context = context or {}
@@ -322,13 +329,13 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
         assistant_turn = _extract_last_assistant(turns)
         if assistant_turn is None:
             result = RewardResult(score=0.0, metadata={"error": "no_assistant_turn"})
-            setattr(result, "total_reward", 0.0)
+            result.total_reward = 0.0
             return result
 
         expression = extract_expression(assistant_turn.content)
         if not expression:
             result = RewardResult(score=0.0, metadata={"error": "no_expression"})
-            setattr(result, "total_reward", 0.0)
+            result.total_reward = 0.0
             return result
 
         variables = list(context.get("variables") or [])
@@ -338,7 +345,7 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
 
         if not variables:
             result = RewardResult(score=0.0, metadata={"error": "no_variables"})
-            setattr(result, "total_reward", 0.0)
+            result.total_reward = 0.0
             return result
 
         samples = generate_samples(
@@ -357,7 +364,9 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
             target_values = None
             if target_expression:
                 target_values = [
-                    safe_eval_expression(target_expression, sample, self.allowed_functions)
+                    safe_eval_expression(
+                        target_expression, sample, self.allowed_functions
+                    )
                     for sample in samples
                 ]
         except Exception as exc:
@@ -366,10 +375,10 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
                 score=0.0,
                 metadata={"error": "evaluation_failed", "expression": expression},
             )
-            setattr(result, "total_reward", 0.0)
+            result.total_reward = 0.0
             return result
 
-        components: Dict[str, float] = {}
+        components: dict[str, float] = {}
         component_weights = dict(self.config.component_weights)
 
         components["validity"] = 1.0
@@ -377,14 +386,16 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
         if target_expression and target_values is not None:
             matches = sum(
                 1
-                for candidate, target in zip(candidate_values, target_values)
-                if _close_enough(candidate, target, self.config.rel_tol, self.config.abs_tol)
+                for candidate, target in zip(candidate_values, target_values, strict=False)
+                if _close_enough(
+                    candidate, target, self.config.rel_tol, self.config.abs_tol
+                )
             )
             components["equivalence"] = matches / max(1, len(target_values))
         else:
             component_weights.pop("equivalence", None)
 
-        constraint_scores: Dict[str, float] = {}
+        constraint_scores: dict[str, float] = {}
         if constraints:
             for idx, constraint in enumerate(constraints):
                 ctype = str(constraint.get("type", "")).lower()
@@ -392,9 +403,7 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
                 if ctype in {"symmetry", "antisymmetry"}:
                     pairs = constraint.get("pairs", [])
                     sign = float(
-                        constraint.get(
-                            "sign", -1.0 if ctype == "antisymmetry" else 1.0
-                        )
+                        constraint.get("sign", -1.0 if ctype == "antisymmetry" else 1.0)
                     )
                     score = _symmetry_score(
                         expression,
@@ -417,7 +426,11 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
                         self.allowed_functions,
                     )
                 elif ctype == "scale":
-                    factors = constraint.get("factors") or constraint.get("scale_factors") or [0.5, 2.0]
+                    factors = (
+                        constraint.get("factors")
+                        or constraint.get("scale_factors")
+                        or [0.5, 2.0]
+                    )
                     power = float(constraint.get("power", 0.0))
                     score = _scale_score(
                         expression,
@@ -456,7 +469,9 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
                     )
                 elif ctype == "sum":
                     terms = list(constraint.get("terms") or [])
-                    weights = constraint.get("weights") or constraint.get("coefficients")
+                    weights = constraint.get("weights") or constraint.get(
+                        "coefficients"
+                    )
                     score = _sum_score(
                         expression,
                         samples,
@@ -511,5 +526,5 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
                 "num_samples": len(samples),
             },
         )
-        setattr(result, "total_reward", float(score))
+        result.total_reward = float(score)
         return result

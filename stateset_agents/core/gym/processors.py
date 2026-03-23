@@ -8,7 +8,8 @@ compatible with the stateset-agents framework (text descriptions, structured dat
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any
+
 import numpy as np
 
 
@@ -21,7 +22,9 @@ class ObservationProcessor(ABC):
     """
 
     @abstractmethod
-    def process(self, observation: Any, context: Optional[Dict[str, Any]] = None) -> str:
+    def process(
+        self, observation: Any, context: dict[str, Any] | None = None
+    ) -> str:
         """
         Convert a gym observation to a text description.
 
@@ -60,11 +63,13 @@ class VectorObservationProcessor(ObservationProcessor):
         precision: Number of decimal places for formatting (default: 3)
     """
 
-    def __init__(self, feature_names: Optional[list[str]] = None, precision: int = 3):
+    def __init__(self, feature_names: list[str] | None = None, precision: int = 3):
         self.feature_names = feature_names
         self.precision = precision
 
-    def process(self, observation: Any, context: Optional[Dict[str, Any]] = None) -> str:
+    def process(
+        self, observation: Any, context: dict[str, Any] | None = None
+    ) -> str:
         """Convert numeric vector to text description."""
         if not isinstance(observation, (np.ndarray, list, tuple)):
             observation = np.array(observation)
@@ -80,7 +85,7 @@ class VectorObservationProcessor(ObservationProcessor):
         if self.feature_names and len(self.feature_names) == len(observation):
             parts = [
                 f"{name}: {val:.{self.precision}f}"
-                for name, val in zip(self.feature_names, observation)
+                for name, val in zip(self.feature_names, observation, strict=False)
             ]
             return "Observation: " + ", ".join(parts)
         else:
@@ -112,12 +117,14 @@ class CartPoleObservationProcessor(VectorObservationProcessor):
                 "cart_position",
                 "cart_velocity",
                 "pole_angle",
-                "pole_angular_velocity"
+                "pole_angular_velocity",
             ],
-            precision=precision
+            precision=precision,
         )
 
-    def process(self, observation: Any, context: Optional[Dict[str, Any]] = None) -> str:
+    def process(
+        self, observation: Any, context: dict[str, Any] | None = None
+    ) -> str:
         """Convert CartPole observation to detailed text description."""
         if not isinstance(observation, (np.ndarray, list, tuple)):
             observation = np.array(observation)
@@ -137,8 +144,16 @@ class CartPoleObservationProcessor(VectorObservationProcessor):
 
         # Create rich description
         cart_dir = "right" if cart_vel > 0 else "left" if cart_vel < 0 else "stationary"
-        pole_dir = "clockwise" if pole_vel > 0 else "counterclockwise" if pole_vel < 0 else "stable"
-        pole_tilt = "right" if pole_angle > 0 else "left" if pole_angle < 0 else "upright"
+        pole_dir = (
+            "clockwise"
+            if pole_vel > 0
+            else "counterclockwise"
+            if pole_vel < 0
+            else "stable"
+        )
+        pole_tilt = (
+            "right" if pole_angle > 0 else "left" if pole_angle < 0 else "upright"
+        )
 
         description = (
             f"Cart at position {cart_pos:.{self.precision}f}, "
@@ -175,12 +190,11 @@ class MountainCarObservationProcessor(VectorObservationProcessor):
     """
 
     def __init__(self, precision: int = 3):
-        super().__init__(
-            feature_names=["position", "velocity"],
-            precision=precision
-        )
+        super().__init__(feature_names=["position", "velocity"], precision=precision)
 
-    def process(self, observation: Any, context: Optional[Dict[str, Any]] = None) -> str:
+    def process(
+        self, observation: Any, context: dict[str, Any] | None = None
+    ) -> str:
         """Convert MountainCar observation to text."""
         if not isinstance(observation, (np.ndarray, list, tuple)):
             observation = np.array(observation)
@@ -204,7 +218,13 @@ class MountainCarObservationProcessor(VectorObservationProcessor):
         else:
             location = "middle slope"
 
-        movement = "moving right" if velocity > 0 else "moving left" if velocity < 0 else "stationary"
+        movement = (
+            "moving right"
+            if velocity > 0
+            else "moving left"
+            if velocity < 0
+            else "stationary"
+        )
 
         description = (
             f"Car at {location} (position: {position:.{self.precision}f}), "
@@ -232,10 +252,7 @@ class MountainCarObservationProcessor(VectorObservationProcessor):
 
 
 # Factory function for easy processor creation
-def create_observation_processor(
-    env_id: str,
-    **kwargs
-) -> ObservationProcessor:
+def create_observation_processor(env_id: str, **kwargs) -> ObservationProcessor:
     """
     Factory function to create the appropriate observation processor for a gym environment.
 

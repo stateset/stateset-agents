@@ -4,10 +4,11 @@ GRPO Configuration Module
 Centralized configuration for the GRPO service.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from dataclasses import dataclass
-from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class GRPOConfig:
     """Runtime configuration for the GRPO API."""
 
     # Authentication
-    api_keys: Dict[str, List[str]]
+    api_keys: dict[str, list[str]]
     allow_anonymous: bool
 
     # Rate limiting
@@ -50,15 +51,15 @@ class GRPOConfig:
     enable_prometheus: bool
 
     # CORS settings
-    cors_origins: List[str]
+    cors_origins: list[str]
     cors_allow_credentials: bool
 
     @classmethod
-    def from_env(cls) -> "GRPOConfig":
+    def from_env(cls) -> GRPOConfig:
         """Create configuration from environment variables."""
         # Parse API keys: format "key1:role1|role2,key2:role3"
         raw_keys = os.getenv("GRPO_API_KEYS", "")
-        parsed_keys: Dict[str, List[str]] = {}
+        parsed_keys: dict[str, list[str]] = {}
 
         for item in raw_keys.split(","):
             cleaned = item.strip()
@@ -83,7 +84,7 @@ class GRPOConfig:
             cors_origins = ["*"] if env == "development" else []
 
         # Credentials only allowed when origins are explicitly specified
-        cors_allow_credentials = cors_origins and cors_origins != ["*"]
+        cors_allow_credentials = bool(cors_origins and cors_origins != ["*"])
 
         return cls(
             api_keys=parsed_keys,
@@ -100,7 +101,7 @@ class GRPOConfig:
             cors_allow_credentials=cors_allow_credentials,
         )
 
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """Validate configuration and return list of issues."""
         issues = []
 
@@ -125,7 +126,7 @@ class GRPOConfig:
 
 
 # Global singleton
-_config: GRPOConfig = None
+_config: GRPOConfig | None = None
 
 
 def get_grpo_config() -> GRPOConfig:

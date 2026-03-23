@@ -7,14 +7,14 @@ functionality within the GRPO Agent Framework.
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 async def test_kimi_k25_model_loading(
     model_name: str = "moonshotai/Kimi-K2.5",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Test if Kimi-K2.5 model can be loaded and initialized.
 
@@ -31,7 +31,7 @@ async def test_kimi_k25_model_loading(
 
         # Test tokenizer loading
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        logger.info(f"✅ Tokenizer loaded successfully")
+        logger.info("✅ Tokenizer loaded successfully")
         logger.info(f"   - Vocabulary size: {len(tokenizer)}")
         logger.info(f"   - Max model length: {tokenizer.model_max_length}")
 
@@ -60,7 +60,7 @@ async def test_kimi_k25_model_loading(
 async def test_kimi_k25_agent_creation(
     model_name: str = "moonshotai/Kimi-K2.5",
     system_prompt: str = "You are Kimi, an AI assistant created by Moonshot AI.",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Test creating a MultiTurnAgent with Kimi-K2.5.
 
@@ -72,7 +72,6 @@ async def test_kimi_k25_agent_creation(
         Dictionary with test results
     """
     try:
-        from stateset_agents import MultiTurnAgent
         from stateset_agents.core.agent import AgentConfig
 
         logger.info(f"Testing agent creation with {model_name}")
@@ -90,7 +89,7 @@ async def test_kimi_k25_agent_creation(
 
         agent = Agent(agent_config)
 
-        logger.info(f"✅ Agent created successfully")
+        logger.info("✅ Agent created successfully")
         logger.info(f"   - Model: {agent.config.model_name}")
         logger.info(f"   - System prompt: {agent.config.system_prompt[:50]}...")
 
@@ -116,7 +115,7 @@ async def test_kimi_k25_agent_creation(
 async def test_kimi_k25_config(
     model_name: str = "moonshotai/Kimi-K2.5",
     task: str = "customer_service",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Test Kimi-K2.5 GSPO configuration.
 
@@ -137,7 +136,7 @@ async def test_kimi_k25_config(
 
         from examples.kimi_k25_config import get_kimi_k25_config
 
-        logger.info(f"Testing Kimi-K2.5 GSPO configuration")
+        logger.info("Testing Kimi-K2.5 GSPO configuration")
 
         # Get configuration
         config = get_kimi_k25_config(
@@ -148,7 +147,7 @@ async def test_kimi_k25_config(
             use_8bit=False,
         )
 
-        logger.info(f"✅ Configuration created successfully")
+        logger.info("✅ Configuration created successfully")
         logger.info(f"   - Model: {config.model_name}")
         logger.info(f"   - Learning rate: {config.learning_rate}")
         logger.info(f"   - LoRA enabled: {config.use_lora}")
@@ -175,7 +174,7 @@ async def test_kimi_k25_config(
 
 async def test_kimi_k25_vision_support(
     model_name: str = "moonshotai/Kimi-K2.5",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Test Kimi-K2.5's vision capabilities.
 
@@ -200,7 +199,7 @@ async def test_kimi_k25_vision_support(
             tokenizer.added_tokens_decoder
         )
 
-        logger.info(f"✅ Vision support test completed")
+        logger.info("✅ Vision support test completed")
         logger.info(f"   - Vision supported: {has_vision_support}")
         logger.info(f"   - Image token: {image_token}")
 
@@ -220,7 +219,7 @@ async def test_kimi_k25_vision_support(
 
 async def test_kimi_k25_thinking_mode(
     model_name: str = "moonshotai/Kimi-K2.5",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Test Kimi-K2.5's thinking mode configuration.
 
@@ -242,7 +241,7 @@ async def test_kimi_k25_thinking_mode(
             config, "use_thinking"
         )
 
-        logger.info(f"✅ Thinking mode test completed")
+        logger.info("✅ Thinking mode test completed")
         logger.info(f"   - Thinking mode supported: {has_thinking_mode}")
 
         return {
@@ -260,7 +259,7 @@ async def test_kimi_k25_thinking_mode(
 
 async def run_all_kimi_k25_tests(
     model_name: str = "moonshotai/Kimi-K2.5",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Run all Kimi-K2.5 integration tests.
 
@@ -316,7 +315,6 @@ async def run_all_kimi_k25_tests(
 
 def main():
     """Run all tests and print results"""
-    import asyncio
 
     results = asyncio.run(run_all_kimi_k25_tests())
 

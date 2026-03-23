@@ -9,7 +9,7 @@ This module provides a comprehensive API versioning system with:
 - Change log generation
 
 Usage:
-    from api.versioning import APIVersion, VersionedRouter, deprecate
+    from stateset_agents.api.versioning import APIVersion, VersionedRouter, deprecate
 
     router = VersionedRouter(current_version=APIVersion.V2)
 
@@ -21,14 +21,13 @@ Usage:
 
 import functools
 import logging
-import warnings
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
-from typing import Any, Callable, Deque, Dict, List, Optional, Set, Tuple, Type, Union
+from typing import Any
+from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +72,7 @@ class APIVersion(str, Enum):
             valid = [v.value for v in cls]
             raise ValueError(
                 f"Unknown API version '{version}'. Valid versions: {valid}"
-            )
+            ) from None
 
 
 @dataclass
@@ -92,10 +91,10 @@ class VersionInfo:
     version: APIVersion
     release_date: date
     status: str = "stable"  # stable, deprecated, sunset
-    sunset_date: Optional[date] = None
-    changelog_url: Optional[str] = None
-    breaking_changes: List[str] = field(default_factory=list)
-    new_features: List[str] = field(default_factory=list)
+    sunset_date: date | None = None
+    changelog_url: str | None = None
+    breaking_changes: list[str] = field(default_factory=list)
+    new_features: list[str] = field(default_factory=list)
 
     def is_deprecated(self) -> bool:
         """Check if this version is deprecated."""
@@ -109,7 +108,7 @@ class VersionInfo:
             return True
         return False
 
-    def days_until_sunset(self) -> Optional[int]:
+    def days_until_sunset(self) -> int | None:
         """Get days until sunset (None if not deprecated)."""
         if not self.sunset_date:
             return None
@@ -118,7 +117,7 @@ class VersionInfo:
 
 
 # Version registry
-VERSION_INFO: Dict[APIVersion, VersionInfo] = {
+VERSION_INFO: dict[APIVersion, VersionInfo] = {
     APIVersion.V1: VersionInfo(
         version=APIVersion.V1,
         release_date=date(2024, 1, 1),
@@ -169,16 +168,16 @@ class DeprecationNotice:
     """
 
     message: str
-    sunset_date: Optional[date] = None
-    replacement: Optional[str] = None
-    migration_guide_url: Optional[str] = None
+    sunset_date: date | None = None
+    replacement: str | None = None
+    migration_guide_url: str | None = None
 
     def to_header_value(self) -> str:
         """Format as HTTP Deprecation header value."""
-        parts = [f'@{self.sunset_date.isoformat()}' if self.sunset_date else "true"]
+        parts = [f"@{self.sunset_date.isoformat()}" if self.sunset_date else "true"]
         return " ".join(parts)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON response."""
         return {
             "message": self.message,
@@ -189,10 +188,10 @@ class DeprecationNotice:
 
 
 def deprecate(
-    sunset: Optional[str] = None,
-    replacement: Optional[str] = None,
-    message: Optional[str] = None,
-    migration_guide: Optional[str] = None,
+    sunset: str | None = None,
+    replacement: str | None = None,
+    message: str | None = None,
+    migration_guide: str | None = None,
 ) -> Callable:
     """Decorator to mark an endpoint as deprecated.
 
@@ -227,7 +226,7 @@ def deprecate(
         # Create deprecation notice
         notice = DeprecationNotice(
             message=message
-            or f"This endpoint is deprecated"
+            or "This endpoint is deprecated"
             + (f" and will be removed on {sunset}" if sunset else ""),
             sunset_date=sunset_date,
             replacement=replacement,
@@ -265,7 +264,9 @@ def deprecate(
             if isinstance(response, Response):
                 response.headers["Deprecation"] = notice.to_header_value()
                 if replacement:
-                    response.headers["Link"] = f'<{replacement}>; rel="successor-version"'
+                    response.headers[
+                        "Link"
+                    ] = f'<{replacement}>; rel="successor-version"'
                 if notice.sunset_date:
                     response.headers["Sunset"] = notice.sunset_date.isoformat()
 
@@ -285,8 +286,8 @@ def deprecate(
 
 async def get_requested_version(
     request: Request,
-    accept_version: Optional[str] = Header(None, alias="Accept-Version"),
-    x_api_version: Optional[str] = Header(None, alias="X-API-Version"),
+    accept_version: str | None = Header(None, alias="Accept-Version"),
+    x_api_version: str | None = Header(None, alias="X-API-Version"),
 ) -> APIVersion:
     """Extract requested API version from request headers.
 
@@ -350,9 +351,9 @@ def add_version_headers(response: Response, version: APIVersion) -> Response:
                 response.headers["Sunset"] = info.sunset_date.isoformat()
                 days = info.days_until_sunset()
                 if days is not None and days < 30:
-                    response.headers["Warning"] = (
-                        f'299 - "This API version will be sunset in {days} days"'
-                    )
+                    response.headers[
+                        "Warning"
+                    ] = f'299 - "This API version will be sunset in {days} days"'
 
     return response
 
@@ -399,13 +400,13 @@ class VersionedRouter(APIRouter):
         self.version_info = VERSION_INFO.get(current_version)
 
         # Add version middleware
-        self._version_endpoints: Dict[str, Set[APIVersion]] = {}
+        self._version_endpoints: dict[str, set[APIVersion]] = {}
 
     def add_version_route(
         self,
         path: str,
         endpoint: Callable,
-        versions: Optional[List[APIVersion]] = None,
+        versions: list[APIVersion] | None = None,
         **kwargs,
     ):
         """Add a route with version constraints.
@@ -479,10 +480,10 @@ class MigrationStep:
 
     from_version: APIVersion
     to_version: APIVersion
-    field_renames: Dict[str, str] = field(default_factory=dict)
-    field_removals: List[str] = field(default_factory=list)
-    field_additions: Dict[str, Any] = field(default_factory=dict)
-    transform_functions: Dict[str, Callable] = field(default_factory=dict)
+    field_renames: dict[str, str] = field(default_factory=dict)
+    field_removals: list[str] = field(default_factory=list)
+    field_additions: dict[str, Any] = field(default_factory=dict)
+    transform_functions: dict[str, Callable] = field(default_factory=dict)
 
 
 class RequestMigrator:
@@ -504,7 +505,7 @@ class RequestMigrator:
     """
 
     def __init__(self):
-        self.steps: Dict[tuple, MigrationStep] = {}
+        self.steps: dict[tuple, MigrationStep] = {}
 
     def add_step(self, step: MigrationStep) -> None:
         """Add a migration step."""
@@ -513,10 +514,10 @@ class RequestMigrator:
 
     def migrate(
         self,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         from_version: APIVersion,
         to_version: APIVersion,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Migrate data from one version to another.
 
         Args:
@@ -551,7 +552,7 @@ class RequestMigrator:
         self,
         from_version: APIVersion,
         to_version: APIVersion,
-    ) -> List[MigrationStep]:
+    ) -> list[MigrationStep]:
         """Find migration steps to get from one version to another."""
         # Simple case: direct path exists
         key = (from_version, to_version)
@@ -560,13 +561,13 @@ class RequestMigrator:
         # Multi-hop search using BFS over available steps
         from collections import deque
 
-        adjacency: Dict[APIVersion, List[Tuple[APIVersion, MigrationStep]]] = {}
+        adjacency: dict[APIVersion, list[tuple[APIVersion, MigrationStep]]] = {}
         for (src, dst), step in self.steps.items():
             adjacency.setdefault(src, []).append((dst, step))
 
-        queue: Deque[APIVersion] = deque([from_version])
+        queue: deque[APIVersion] = deque([from_version])
         # Map version -> (previous_version, step_used_to_reach)
-        prev: Dict[APIVersion, Tuple[Optional[APIVersion], Optional[MigrationStep]]] = {
+        prev: dict[APIVersion, tuple[APIVersion | None, MigrationStep | None]] = {
             from_version: (None, None)
         }
 
@@ -585,7 +586,7 @@ class RequestMigrator:
             return []
 
         # Reconstruct path
-        path: List[MigrationStep] = []
+        path: list[MigrationStep] = []
         cur: APIVersion = to_version
         while True:
             parent, step = prev[cur]
@@ -596,9 +597,7 @@ class RequestMigrator:
         path.reverse()
         return path
 
-    def _apply_step(
-        self, data: Dict[str, Any], step: MigrationStep
-    ) -> Dict[str, Any]:
+    def _apply_step(self, data: dict[str, Any], step: MigrationStep) -> dict[str, Any]:
         """Apply a single migration step."""
         result = data.copy()
 
@@ -638,20 +637,24 @@ def create_version_info_router() -> APIRouter:
     router = APIRouter(tags=["Version Info"])
 
     @router.get("/versions")
-    async def list_versions() -> Dict[str, Any]:
+    async def list_versions() -> dict[str, Any]:
         """Get information about all API versions."""
         versions = []
         for version, info in VERSION_INFO.items():
-            versions.append({
-                "version": version.value,
-                "release_date": info.release_date.isoformat(),
-                "status": info.status,
-                "sunset_date": info.sunset_date.isoformat() if info.sunset_date else None,
-                "days_until_sunset": info.days_until_sunset(),
-                "changelog_url": info.changelog_url,
-                "breaking_changes": info.breaking_changes,
-                "new_features": info.new_features,
-            })
+            versions.append(
+                {
+                    "version": version.value,
+                    "release_date": info.release_date.isoformat(),
+                    "status": info.status,
+                    "sunset_date": info.sunset_date.isoformat()
+                    if info.sunset_date
+                    else None,
+                    "days_until_sunset": info.days_until_sunset(),
+                    "changelog_url": info.changelog_url,
+                    "breaking_changes": info.breaking_changes,
+                    "new_features": info.new_features,
+                }
+            )
 
         return {
             "current_version": APIVersion.latest().value,
@@ -659,12 +662,12 @@ def create_version_info_router() -> APIRouter:
         }
 
     @router.get("/versions/{version}")
-    async def get_version_info(version: str) -> Dict[str, Any]:
+    async def get_version_info(version: str) -> dict[str, Any]:
         """Get detailed information about a specific API version."""
         try:
             api_version = APIVersion.from_string(version)
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+            raise HTTPException(status_code=404, detail=str(e)) from e
 
         info = VERSION_INFO.get(api_version)
         if not info:

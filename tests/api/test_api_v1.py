@@ -5,34 +5,35 @@ Tests for all API endpoints including security, validation, rate limiting, and e
 """
 
 import asyncio
-import json
 import os
 import time
 import uuid
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from httpx import AsyncClient
-import httpx
+from httpx import ASGITransport, AsyncClient
 
 from tests.api.asgi_client import SyncASGIClient
 
 # Environment is set by conftest.py, but ensure it's set for standalone runs
 os.environ.setdefault("API_ENVIRONMENT", "development")
 os.environ.setdefault("API_CORS_ORIGINS", "*")
-os.environ.setdefault("API_JWT_SECRET", "test-secret-key-for-testing-purposes-only-minimum-32-chars")
+os.environ.setdefault(
+    "API_JWT_SECRET", "test-secret-key-for-testing-purposes-only-minimum-32-chars"
+)
 os.environ.setdefault("API_REQUIRE_AUTH", "false")
 os.environ.setdefault("API_RATE_LIMIT_ENABLED", "false")
 
 # Try to import API components - skip tests if not available
 try:
-    from api.main import create_app
-    from api.config import get_config, APIConfig, reload_config
-    from api.auth import generate_token, generate_api_key
-    from api.errors import ErrorCode
+    from stateset_agents.api.auth import generate_api_key, generate_token
+    from stateset_agents.api.config import APIConfig, get_config, reload_config
+    from stateset_agents.api.constants import MAX_AUTH_FAILURES_BEFORE_LOCKOUT
+    from stateset_agents.api.errors import ErrorCode
+    from stateset_agents.api.main import create_app
+    from stateset_agents.api.security import get_api_security_monitor
+
     API_AVAILABLE = True
-except ImportError as e:
+except ImportError:
     API_AVAILABLE = False
     create_app = None
     get_config = None
@@ -42,12 +43,15 @@ except ImportError as e:
     generate_api_key = None
     ErrorCode = None
 
-pytestmark = pytest.mark.skipif(not API_AVAILABLE, reason="API dependencies not available")
+pytestmark = pytest.mark.skipif(
+    not API_AVAILABLE, reason="API dependencies not available"
+)
 
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture(scope="module")
 def app():
@@ -67,7 +71,7 @@ def client(app):
 @pytest.fixture
 async def async_client(app):
     """Create async test client."""
-    transport = httpx.ASGITransport(app=app)
+    transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
@@ -88,6 +92,7 @@ def api_key():
 # ============================================================================
 # Health Check Tests
 # ============================================================================
+
 
 class TestHealthEndpoint:
     """Tests for /api/v1/health endpoint."""
@@ -125,6 +130,7 @@ class TestHealthEndpoint:
 # ============================================================================
 # Training Endpoint Tests
 # ============================================================================
+
 
 class TestTrainingEndpoint:
     """Tests for /api/v1/training endpoints."""
@@ -267,6 +273,34 @@ class TestTrainingEndpoint:
         assert response2.status_code == 202
         assert response1.json()["job_id"] == response2.json()["job_id"]
 
+    def test_start_training_idempotency_key_is_trimmed(self, client):
+        """Idempotency key whitespace should be normalized."""
+        idempotency_key = "  shared-training-key  "
+
+        user_payload = {"prompts": ["Test prompt"], "strategy": "computational"}
+
+        user_a_first = client.post(
+            "/api/v1/training",
+            json={**user_payload, "idempotency_key": idempotency_key},
+        )
+        user_a_again = client.post(
+            "/api/v1/training",
+            json={**user_payload, "idempotency_key": "shared-training-key"},
+        )
+
+        assert user_a_first.status_code == 202
+        assert user_a_again.status_code == 202
+        assert (
+            user_a_again.json()["job_id"] == user_a_first.json()["job_id"]
+        )
+
+        user_a_third = client.post(
+            "/api/v1/training",
+            json={**user_payload, "idempotency_key": "  shared-training-key"},
+        )
+        assert user_a_third.status_code == 202
+        assert user_a_third.json()["job_id"] == user_a_first.json()["job_id"]
+
     def test_get_training_status(self, client):
         """Should get training job status."""
         # First create a job
@@ -320,6 +354,7 @@ class TestTrainingEndpoint:
 # ============================================================================
 # Conversation Endpoint Tests
 # ============================================================================
+
 
 class TestConversationEndpoint:
     """Tests for /api/v1/conversations endpoints."""
@@ -497,6 +532,7 @@ class TestConversationEndpoint:
 # Error Handling Tests
 # ============================================================================
 
+
 class TestErrorHandling:
     """Tests for error handling."""
 
@@ -566,6 +602,7 @@ class TestErrorHandling:
 # Security Header Tests
 # ============================================================================
 
+
 class TestSecurityHeaders:
     """Tests for security headers."""
 
@@ -603,6 +640,7 @@ class TestSecurityHeaders:
 # ============================================================================
 # Rate Limiting Tests
 # ============================================================================
+
 
 class TestRateLimiting:
     """Tests for rate limiting."""
@@ -658,6 +696,7 @@ class TestRateLimiting:
 # Authentication Tests
 # ============================================================================
 
+
 class TestAuthentication:
     """Tests for authentication."""
 
@@ -665,7 +704,10 @@ class TestAuthentication:
     def auth_required_client(self, app):
         """Client with authentication required."""
         os.environ["API_REQUIRE_AUTH"] = "true"
-        os.environ["API_KEYS"] = "test-api-key-that-is-long-enough-32ch:admin|user"
+        os.environ["API_KEYS"] = (
+            "test-api-key-that-is-long-enough-32ch:admin|user,"
+            "admin-api-key-that-is-long-enough-32ch:admin|user"
+        )
         reload_config()
 
         with SyncASGIClient(create_app()) as client:
@@ -715,10 +757,208 @@ class TestAuthentication:
 
         assert response.status_code == 200
 
+    def test_training_status_ignores_x_user_id_header(self, auth_required_client):
+        """Status checks should be based on API key identity, not X-User-ID header."""
+        headers = {
+            "X-API-Key": "test-api-key-that-is-long-enough-32ch",
+            "X-User-ID": "owner-user",
+        }
+        payload = {
+            "prompts": ["stability check"],
+            "strategy": "computational",
+            "num_iterations": 1,
+        }
+
+        create = auth_required_client.post("/api/v1/training", json=payload, headers=headers)
+        assert create.status_code == 202
+        job_id = create.json()["job_id"]
+
+        spoofed = auth_required_client.get(
+            f"/api/v1/training/{job_id}",
+            headers={
+                "X-API-Key": "test-api-key-that-is-long-enough-32ch",
+                "X-User-ID": "intruder-user",
+            },
+        )
+        assert spoofed.status_code == 200
+
+    def test_training_job_is_isolated_by_api_key(self, auth_required_client):
+        """Training jobs should be isolated by API key identity."""
+        payload = {
+            "prompts": ["job isolation test"],
+            "strategy": "computational",
+            "num_iterations": 1,
+        }
+        create = auth_required_client.post(
+            "/api/v1/training",
+            json=payload,
+            headers={"X-API-Key": "test-api-key-that-is-long-enough-32ch"},
+        )
+        assert create.status_code == 202
+        job_id = create.json()["job_id"]
+
+        other_user = auth_required_client.get(
+            f"/api/v1/training/{job_id}",
+            headers={"X-API-Key": "admin-api-key-that-is-long-enough-32ch"},
+        )
+        assert other_user.status_code == 404
+
+    def test_idempotency_key_is_scoped_per_authenticated_user(self, auth_required_client):
+        """Scoped idempotency keys should not collide across API credentials."""
+        payload = {
+            "prompts": ["stability check"],
+            "strategy": "computational",
+            "num_iterations": 1,
+            "idempotency_key": "  shared-key  ",
+        }
+
+        user_headers = {"X-API-Key": "test-api-key-that-is-long-enough-32ch"}
+        admin_headers = {"X-API-Key": "admin-api-key-that-is-long-enough-32ch"}
+
+        user_job = auth_required_client.post("/api/v1/training", json=payload, headers=user_headers)
+        admin_job = auth_required_client.post("/api/v1/training", json=payload, headers=admin_headers)
+
+        assert user_job.status_code == 202
+        assert admin_job.status_code == 202
+        assert user_job.json()["job_id"] != admin_job.json()["job_id"]
+
+        user_job_again = auth_required_client.post(
+            "/api/v1/training",
+            json={**payload, "idempotency_key": "shared-key"},
+            headers=user_headers,
+        )
+        admin_job_again = auth_required_client.post(
+            "/api/v1/training",
+            json={**payload, "idempotency_key": "  shared-key"},
+            headers=admin_headers,
+        )
+
+        assert user_job_again.status_code == 202
+        assert admin_job_again.status_code == 202
+        assert user_job_again.json()["job_id"] == user_job.json()["job_id"]
+        assert admin_job_again.json()["job_id"] == admin_job.json()["job_id"]
+
+    def test_auth_lockout_blocks_repeated_failures(self, auth_required_client):
+        """Repeated auth failures should trigger temporary lockout."""
+        bad_headers = {"X-API-Key": "bad-key-that-is-not-valid"}
+        payload = {"message": "test"}
+
+        security_monitor = get_api_security_monitor()
+        for key in list(security_monitor.auth_tracker.failures):
+            security_monitor.auth_tracker.clear_failures(key)
+        for key in list(security_monitor.auth_tracker.lockouts):
+            security_monitor.auth_tracker.clear_failures(key)
+
+        for _ in range(MAX_AUTH_FAILURES_BEFORE_LOCKOUT):
+            response = auth_required_client.post(
+                "/api/v1/conversations",
+                json=payload,
+                headers=bad_headers,
+            )
+            assert response.status_code == 401
+
+        locked = auth_required_client.post(
+            "/api/v1/conversations",
+            json=payload,
+            headers=bad_headers,
+        )
+        assert locked.status_code == 401
+        assert "Retry-After" in locked.headers
+
+        # Cleanup auth tracker state to avoid affecting other tests.
+        for key in list(security_monitor.auth_tracker.lockouts):
+            security_monitor.auth_tracker.clear_failures(key)
+        for key in list(security_monitor.auth_tracker.failures):
+            security_monitor.auth_tracker.clear_failures(key)
+
+    def test_auth_lockout_is_per_credential(self, auth_required_client):
+        """Different credentials should have separate auth lockout buckets."""
+        key_one = {"X-API-Key": "bad-key-that-is-not-valid-1"}
+        key_two = {"X-API-Key": "bad-key-that-is-not-valid-2"}
+        payload = {"message": "test"}
+
+        security_monitor = get_api_security_monitor()
+        for key in list(security_monitor.auth_tracker.failures):
+            security_monitor.auth_tracker.clear_failures(key)
+        for key in list(security_monitor.auth_tracker.lockouts):
+            security_monitor.auth_tracker.clear_failures(key)
+
+        for _ in range(MAX_AUTH_FAILURES_BEFORE_LOCKOUT):
+            response = auth_required_client.post(
+                "/api/v1/conversations",
+                json=payload,
+                headers=key_one,
+            )
+            assert response.status_code == 401
+
+        locked = auth_required_client.post(
+            "/api/v1/conversations",
+            json=payload,
+            headers=key_one,
+        )
+        assert locked.status_code == 401
+        assert "Retry-After" in locked.headers
+
+        rebound = auth_required_client.post(
+            "/api/v1/conversations",
+            json=payload,
+            headers=key_two,
+        )
+        assert rebound.status_code == 401
+        assert "Retry-After" not in rebound.headers
+
+        for key in list(security_monitor.auth_tracker.lockouts):
+            security_monitor.auth_tracker.clear_failures(key)
+        for key in list(security_monitor.auth_tracker.failures):
+            security_monitor.auth_tracker.clear_failures(key)
+
+    def test_lockout_resets_after_successful_auth(self, auth_required_client):
+        """Successful authentication should clear previous failure history for that client."""
+        security_monitor = get_api_security_monitor()
+        for key in list(security_monitor.auth_tracker.lockouts):
+            security_monitor.auth_tracker.clear_failures(key)
+        for key in list(security_monitor.auth_tracker.failures):
+            security_monitor.auth_tracker.clear_failures(key)
+
+        bad_headers = {"X-API-Key": "bad-key-that-is-not-valid"}
+        good_headers = {"X-API-Key": "test-api-key-that-is-long-enough-32ch"}
+        payload = {"message": "test"}
+
+        # Build up failures without reaching full lockout.
+        for _ in range(MAX_AUTH_FAILURES_BEFORE_LOCKOUT - 1):
+            response = auth_required_client.post(
+                "/api/v1/conversations",
+                json=payload,
+                headers=bad_headers,
+            )
+            assert response.status_code == 401
+
+        success = auth_required_client.post(
+            "/api/v1/conversations",
+            json=payload,
+            headers=good_headers,
+        )
+        assert success.status_code == 200
+
+        # Same bad key should not be locked out immediately after reset.
+        rebound = auth_required_client.post(
+            "/api/v1/conversations",
+            json=payload,
+            headers=bad_headers,
+        )
+        assert rebound.status_code == 401
+        assert "Retry-After" not in rebound.headers
+
+        for key in list(security_monitor.auth_tracker.lockouts):
+            security_monitor.auth_tracker.clear_failures(key)
+        for key in list(security_monitor.auth_tracker.failures):
+            security_monitor.auth_tracker.clear_failures(key)
+
 
 # ============================================================================
 # OpenAPI Documentation Tests
 # ============================================================================
+
 
 class TestOpenAPIDocumentation:
     """Tests for OpenAPI documentation."""
@@ -775,6 +1015,7 @@ class TestOpenAPIDocumentation:
 # ============================================================================
 # Input Validation Security Tests
 # ============================================================================
+
 
 class TestInputValidationSecurity:
     """Tests for input validation security."""
@@ -838,13 +1079,14 @@ class TestInputValidationSecurity:
 # Concurrency Tests
 # ============================================================================
 
+
 class TestConcurrency:
     """Tests for concurrent request handling."""
 
     @pytest.mark.asyncio
     async def test_concurrent_requests(self, app):
         """Should handle concurrent requests."""
-        transport = httpx.ASGITransport(app=app)
+        transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Make 10 concurrent requests
             tasks = [
@@ -864,7 +1106,7 @@ class TestConcurrency:
     @pytest.mark.asyncio
     async def test_concurrent_training_jobs(self, app):
         """Should handle concurrent training job creation."""
-        transport = httpx.ASGITransport(app=app)
+        transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             tasks = [
                 client.post(
@@ -887,6 +1129,7 @@ class TestConcurrency:
 # ============================================================================
 # Integration Tests
 # ============================================================================
+
 
 class TestIntegration:
     """Integration tests for complete workflows."""

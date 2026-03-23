@@ -2,23 +2,22 @@
 Tests for Multi-Agent Coordination System
 """
 
-import pytest
-import asyncio
 
+import pytest
+
+from stateset_agents.core.agent import Agent
 from stateset_agents.core.multi_agent_coordination import (
-    AgentRole,
     AgentMessage,
+    AgentRole,
     AgentState,
-    TeamState,
     BlackboardChannel,
     CapabilityBasedAllocator,
-    PerformanceBasedAllocator,
-    MultiAgentCoordinator,
     CooperativeRewardShaping,
     CoordinationStrategy,
-    CommunicationProtocol,
+    MultiAgentCoordinator,
+    PerformanceBasedAllocator,
+    TeamState,
 )
-from stateset_agents.core.agent import Agent
 
 
 class MockAgent(Agent):
@@ -350,7 +349,9 @@ class TestMultiAgentCoordinator:
             "required_capabilities": ["general"],
         }
 
-        trajectory, result = await coordinator.execute_collaborative_task(task, max_iterations=2)
+        trajectory, result = await coordinator.execute_collaborative_task(
+            task, max_iterations=2
+        )
 
         assert len(trajectory.turns) >= 1
         assert "results" in result

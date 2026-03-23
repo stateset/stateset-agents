@@ -5,10 +5,13 @@ Versioned API router for backward compatibility.
 """
 
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
+from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+
+from ..logging_config import get_logger
 from .handlers import ConversationHandler, TrainingHandler
 from .models import (
     BatchCancelRequest,
@@ -20,18 +23,13 @@ from .models import (
     BatchTrainingResponse,
     GRPOConversationRequest,
     GRPOConversationResponse,
-    GRPOHealthResponse,
-    GRPOMetricsResponse,
-    GRPOScaleRequest,
-    GRPOScaleResponse,
     GRPOTrainingRequest,
     GRPOTrainingResponse,
 )
-from ..logging_config import get_logger
 
 logger = get_logger(__name__)
 
-GRPO_V1_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+GRPO_V1_EXCEPTIONS = INFERENCE_EXCEPTIONS
 
 # API v1 Router
 router_v1 = APIRouter(prefix="/v1", tags=["v1"])
@@ -40,7 +38,7 @@ router_v1 = APIRouter(prefix="/v1", tags=["v1"])
 def create_v1_router(
     training_handler: TrainingHandler,
     conversation_handler: ConversationHandler,
-    services: Dict[str, Any],
+    services: dict[str, Any],
     verify_request,
 ) -> APIRouter:
     """
@@ -107,7 +105,11 @@ def create_v1_router(
         ctx=Depends(verify_request),
     ):
         """Get training job status (API v1)."""
-        response = training_handler.get_job_status(job_id)
+        response = training_handler.get_job_status(
+            job_id,
+            ctx.user_id,
+            ctx.roles,
+        )
         if not response:
             raise HTTPException(status_code=404, detail="Job not found")
         return response
@@ -122,7 +124,11 @@ def create_v1_router(
         ctx=Depends(verify_request),
     ):
         """Cancel training job (API v1)."""
-        if not training_handler.cancel_job(job_id):
+        if not training_handler.cancel_job(
+            job_id,
+            ctx.user_id,
+            ctx.roles,
+        ):
             raise HTTPException(status_code=404, detail="Job not found or completed")
         return {"message": "Job cancelled", "job_id": job_id}
 
@@ -139,11 +145,17 @@ def create_v1_router(
     ):
         """Send conversation message (API v1)."""
         try:
-            return await conversation_handler.handle_message(request, ctx.user_id)
+            return await conversation_handler.handle_message(
+                request,
+                ctx.user_id,
+                ctx.roles,
+            )
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e)) from e
         except ValueError as e:
             if "not found" in str(e).lower():
-                raise HTTPException(status_code=404, detail=str(e))
-            raise HTTPException(status_code=500, detail=str(e))
+                raise HTTPException(status_code=404, detail=str(e)) from e
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.delete(
         "/conversations/{conversation_id}",
@@ -155,7 +167,14 @@ def create_v1_router(
         ctx=Depends(verify_request),
     ):
         """End conversation (API v1)."""
-        result = conversation_handler.end_conversation(conversation_id)
+        try:
+            result = conversation_handler.end_conversation(
+                conversation_id,
+                ctx.user_id,
+                ctx.roles,
+            )
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e)) from e
         if not result:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return {"message": "Conversation ended", **result}
@@ -202,20 +221,24 @@ def create_v1_router(
                     False,
                 )
 
-                results.append(BatchItemResult(
-                    index=i,
-                    job_id=response.job_id,
-                    status="accepted",
-                ))
+                results.append(
+                    BatchItemResult(
+                        index=i,
+                        job_id=response.job_id,
+                        status="accepted",
+                    )
+                )
                 accepted += 1
 
             except GRPO_V1_EXCEPTIONS as e:
-                results.append(BatchItemResult(
-                    index=i,
-                    job_id=None,
-                    status="rejected",
-                    error=str(e),
-                ))
+                results.append(
+                    BatchItemResult(
+                        index=i,
+                        job_id=None,
+                        status="rejected",
+                        error=str(e),
+                    )
+                )
                 rejected += 1
 
                 if request.fail_fast:
@@ -244,7 +267,11 @@ def create_v1_router(
         not_found = []
 
         for job_id in request.job_ids:
-            response = training_handler.get_job_status(job_id)
+            response = training_handler.get_job_status(
+                job_id,
+                ctx.user_id,
+                ctx.roles,
+            )
             if response:
                 jobs[job_id] = response
             else:
@@ -271,14 +298,21 @@ def create_v1_router(
         already_completed = []
 
         for job_id in request.job_ids:
-            job = training_handler.state.get_job(job_id)
-
-            if not job:
+            response = training_handler.get_job_status(
+                job_id,
+                ctx.user_id,
+                ctx.roles,
+            )
+            if not response:
                 not_found.append(job_id)
-            elif job.status in ("completed", "failed", "cancelled"):
+            elif response.status in ("completed", "failed", "cancelled"):
                 already_completed.append(job_id)
             else:
-                training_handler.cancel_job(job_id)
+                training_handler.cancel_job(
+                    job_id,
+                    ctx.user_id,
+                    ctx.roles,
+                )
                 cancelled.append(job_id)
 
         return BatchCancelResponse(

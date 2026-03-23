@@ -6,11 +6,10 @@ transfer techniques for bridging the gap between simulated and real
 conversation environments.
 """
 
-import asyncio
 import logging
 import math
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -102,7 +101,7 @@ class UserBehaviorModel(nn.Module):
         # Encoder for conversation state
         encoder_layers = []
         input_dim = state_dim + action_dim  # State + agent response
-        for i in range(num_layers):
+        for _i in range(num_layers):
             output_dim = hidden_size
             encoder_layers.append(nn.Linear(input_dim, output_dim))
             encoder_layers.append(nn.ReLU())
@@ -135,7 +134,7 @@ class UserBehaviorModel(nn.Module):
         self,
         state: torch.Tensor,
         agent_response: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         Predict user behavior given conversation state and agent response.
 
@@ -162,9 +161,9 @@ class UserBehaviorModel(nn.Module):
 
     def compute_loss(
         self,
-        predictions: Dict[str, torch.Tensor],
-        targets: Dict[str, torch.Tensor],
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        predictions: dict[str, torch.Tensor],
+        targets: dict[str, torch.Tensor],
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute loss for user behavior prediction"""
         losses = {}
 
@@ -176,9 +175,7 @@ class UserBehaviorModel(nn.Module):
 
         # Length prediction loss
         if "length" in targets:
-            losses["length"] = F.mse_loss(
-                predictions["length"], targets["length"]
-            )
+            losses["length"] = F.mse_loss(predictions["length"], targets["length"])
 
         # Emotion classification loss
         if "emotion" in targets:
@@ -287,12 +284,13 @@ class DomainAdaptationModule(nn.Module):
         sigma: float = 1.0,
     ) -> torch.Tensor:
         """Compute Maximum Mean Discrepancy"""
+
         def rbf_kernel(x, y, sigma):
-            xx = torch.sum(x ** 2, dim=-1, keepdim=True)
-            yy = torch.sum(y ** 2, dim=-1, keepdim=True)
+            xx = torch.sum(x**2, dim=-1, keepdim=True)
+            yy = torch.sum(y**2, dim=-1, keepdim=True)
             xy = torch.mm(x, y.t())
             distances = xx - 2 * xy + yy.t()
-            return torch.exp(-distances / (2 * sigma ** 2))
+            return torch.exp(-distances / (2 * sigma**2))
 
         k_ss = rbf_kernel(sim_dist, sim_dist, sigma)
         k_rr = rbf_kernel(real_dist, real_dist, sigma)
@@ -301,9 +299,11 @@ class DomainAdaptationModule(nn.Module):
         n_s = sim_dist.shape[0]
         n_r = real_dist.shape[0]
 
-        mmd = (k_ss.sum() / (n_s * n_s) +
-               k_rr.sum() / (n_r * n_r) -
-               2 * k_sr.sum() / (n_s * n_r))
+        mmd = (
+            k_ss.sum() / (n_s * n_s)
+            + k_rr.sum() / (n_r * n_r)
+            - 2 * k_sr.sum() / (n_s * n_r)
+        )
 
         return mmd
 
@@ -323,7 +323,9 @@ class DomainAdaptationModule(nn.Module):
         real_centered = real_features - real_mean
 
         sim_cov = torch.mm(sim_centered.t(), sim_centered) / (sim_features.shape[0] - 1)
-        real_cov = torch.mm(real_centered.t(), real_centered) / (real_features.shape[0] - 1)
+        real_cov = torch.mm(real_centered.t(), real_centered) / (
+            real_features.shape[0] - 1
+        )
 
         # Frobenius norm of covariance difference
         coral_loss = torch.norm(sim_cov - real_cov, p="fro") ** 2 / (4 * d * d)
@@ -392,14 +394,13 @@ class SimToRealTransfer:
 
         # Optimizer
         self.optimizer = Adam(
-            list(self.user_model.parameters()) +
-            list(self.domain_adapter.parameters()),
+            list(self.user_model.parameters()) + list(self.domain_adapter.parameters()),
             lr=config.learning_rate,
         )
 
         # Training state
         self.training_step = 0
-        self.gap_history: List[Dict[str, float]] = []
+        self.gap_history: list[dict[str, float]] = []
         self.is_calibrated = False
 
     async def identify_user_model(
@@ -442,7 +443,9 @@ class SimToRealTransfer:
             self.optimizer.step()
 
             if step % 500 == 0:
-                logger.info(f"User model step {step}/{num_steps}: loss={metrics['total_loss']:.4f}")
+                logger.info(
+                    f"User model step {step}/{num_steps}: loss={metrics['total_loss']:.4f}"
+                )
 
         logger.info("User model identification complete")
         return self.user_model
@@ -450,7 +453,7 @@ class SimToRealTransfer:
     def _prepare_user_model_data(
         self,
         dataset: Any,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Prepare data for user model training"""
         training_data = []
 
@@ -463,30 +466,46 @@ class SimToRealTransfer:
                 # Agent response: current assistant turn
                 # Target: next user turn
                 if turn.role == "assistant" and next_turn.role == "user":
-                    training_data.append({
-                        "state": np.random.randn(self.config.state_dim).astype(np.float32),  # Placeholder
-                        "agent_response": np.random.randn(self.config.action_dim).astype(np.float32),
-                        "user_response": np.random.randn(self.config.action_dim).astype(np.float32),
-                        "length": len(next_turn.content.split()),
-                        "continuation": 1.0 if i < len(traj.turns) - 2 else 0.0,
-                    })
+                    training_data.append(
+                        {
+                            "state": np.random.randn(self.config.state_dim).astype(
+                                np.float32
+                            ),  # Placeholder
+                            "agent_response": np.random.randn(
+                                self.config.action_dim
+                            ).astype(np.float32),
+                            "user_response": np.random.randn(
+                                self.config.action_dim
+                            ).astype(np.float32),
+                            "length": len(next_turn.content.split()),
+                            "continuation": 1.0 if i < len(traj.turns) - 2 else 0.0,
+                        }
+                    )
 
         return training_data
 
     def _sample_user_model_batch(
         self,
-        data: List[Dict[str, Any]],
+        data: list[dict[str, Any]],
         batch_size: int,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Sample a batch for user model training"""
-        indices = np.random.choice(len(data), size=min(batch_size, len(data)), replace=False)
+        indices = np.random.choice(
+            len(data), size=min(batch_size, len(data)), replace=False
+        )
         samples = [data[i] for i in indices]
 
         states = torch.FloatTensor([s["state"] for s in samples]).to(self.device)
-        agent_responses = torch.FloatTensor([s["agent_response"] for s in samples]).to(self.device)
-        user_responses = torch.FloatTensor([s["user_response"] for s in samples]).to(self.device)
+        agent_responses = torch.FloatTensor([s["agent_response"] for s in samples]).to(
+            self.device
+        )
+        user_responses = torch.FloatTensor([s["user_response"] for s in samples]).to(
+            self.device
+        )
         lengths = torch.FloatTensor([[s["length"]] for s in samples]).to(self.device)
-        continuations = torch.FloatTensor([[s["continuation"]] for s in samples]).to(self.device)
+        continuations = torch.FloatTensor([[s["continuation"]] for s in samples]).to(
+            self.device
+        )
 
         return {
             "states": states,
@@ -501,7 +520,7 @@ class SimToRealTransfer:
     async def calibrate_simulator(
         self,
         user_model: UserBehaviorModel = None,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Calibrate simulator using learned user model.
 
@@ -527,7 +546,7 @@ class SimToRealTransfer:
         self.is_calibrated = True
         return metrics
 
-    def get_calibration_metrics(self) -> Dict[str, float]:
+    def get_calibration_metrics(self) -> dict[str, float]:
         """Get current calibration metrics"""
         if not self.is_calibrated:
             return {"error": "Not calibrated"}
@@ -538,7 +557,7 @@ class SimToRealTransfer:
             "latest_gap": self.gap_history[-1] if self.gap_history else {},
         }
 
-    def get_sim_real_ratio(self, step: int) -> Tuple[float, float]:
+    def get_sim_real_ratio(self, step: int) -> tuple[float, float]:
         """
         Get current sim/real data ratio based on transfer schedule.
 
@@ -564,7 +583,7 @@ class SimToRealTransfer:
             decay_rate = 0.9999
             sim_ratio = max(
                 self.config.final_sim_ratio,
-                self.config.initial_sim_ratio * (decay_rate ** effective_step),
+                self.config.initial_sim_ratio * (decay_rate**effective_step),
             )
 
         elif self.config.transfer_schedule == "cosine":
@@ -591,7 +610,7 @@ class SimToRealTransfer:
         self,
         batch_size: int,
         step: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get a mixed batch of simulated and real data.
 
@@ -620,27 +639,33 @@ class SimToRealTransfer:
             for _ in range(sim_size):
                 # Generate simulated trajectory
                 state = await self.simulator.reset()
-                batch["sim_data"].append({
-                    "state": state,
-                    "is_simulated": True,
-                })
+                batch["sim_data"].append(
+                    {
+                        "state": state,
+                        "is_simulated": True,
+                    }
+                )
 
         # Get real data
         if real_size > 0 and self.real_dataset is not None:
             indices = np.random.choice(
-                len(self.real_dataset), size=min(real_size, len(self.real_dataset)), replace=False
+                len(self.real_dataset),
+                size=min(real_size, len(self.real_dataset)),
+                replace=False,
             )
             for idx in indices:
                 traj = self.real_dataset[idx]
-                batch["real_data"].append({
-                    "trajectory": traj,
-                    "is_simulated": False,
-                })
+                batch["real_data"].append(
+                    {
+                        "trajectory": traj,
+                        "is_simulated": False,
+                    }
+                )
 
         self.training_step = step
         return batch
 
-    def compute_transfer_gap(self) -> Dict[str, float]:
+    def compute_transfer_gap(self) -> dict[str, float]:
         """Compute current sim-to-real transfer gap"""
         if self.simulator is None or self.real_dataset is None:
             return {"error": "Simulator and real data required"}

@@ -8,7 +8,6 @@ metrics collection, and integration with monitoring systems.
 import csv
 import json
 import logging
-import os
 import time
 import traceback
 import uuid
@@ -17,7 +16,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any
 
 # Optional imports for enhanced functionality
 try:
@@ -37,7 +36,7 @@ try:
 except ImportError:
     HAS_OPENTELEMETRY = False
 
-LOGGING_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+LOGGING_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     ValueError,
     TypeError,
@@ -76,16 +75,16 @@ class LogEntry:
     level: LogLevel
     category: LogCategory
     message: str
-    trace_id: Optional[str] = None
-    span_id: Optional[str] = None
-    user_id: Optional[str] = None
-    session_id: Optional[str] = None
-    request_id: Optional[str] = None
-    component: Optional[str] = None
-    duration_ms: Optional[float] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    trace_id: str | None = None
+    span_id: str | None = None
+    user_id: str | None = None
+    session_id: str | None = None
+    request_id: str | None = None
+    component: str | None = None
+    duration_ms: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         data = asdict(self)
         data["timestamp"] = self.timestamp.isoformat()
@@ -105,7 +104,7 @@ class GRPOLogger:
         self,
         name: str,
         log_level: LogLevel = LogLevel.INFO,
-        log_file: Optional[str] = None,
+        log_file: str | None = None,
         enable_console: bool = True,
         enable_json: bool = True,
         enable_metrics: bool = True,
@@ -390,8 +389,8 @@ class GRPOLogger:
         path: str,
         status_code: int,
         duration_ms: float,
-        user_id: Optional[str] = None,
-        request_id: Optional[str] = None,
+        user_id: str | None = None,
+        request_id: str | None = None,
         **kwargs,
     ):
         """Log API request"""
@@ -418,9 +417,9 @@ class GRPOLogger:
         self,
         event_type: str,
         conversation_id: str,
-        user_id: Optional[str] = None,
-        message_length: Optional[int] = None,
-        quality_score: Optional[float] = None,
+        user_id: str | None = None,
+        message_length: int | None = None,
+        quality_score: float | None = None,
         **kwargs,
     ):
         """Log conversation event"""
@@ -441,8 +440,8 @@ class GRPOLogger:
         self,
         event_type: str,
         iteration: int,
-        loss: Optional[float] = None,
-        reward: Optional[float] = None,
+        loss: float | None = None,
+        reward: float | None = None,
         **kwargs,
     ):
         """Log training event"""
@@ -461,8 +460,8 @@ class GRPOLogger:
     def log_security_event(
         self,
         event_type: str,
-        user_id: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        user_id: str | None = None,
+        ip_address: str | None = None,
         **kwargs,
     ):
         """Log security event"""
@@ -478,7 +477,7 @@ class GRPOLogger:
 
         self._log_entry(entry)
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get logging metrics"""
         return {
             "total_logs": self.metrics["total_logs"],
@@ -526,7 +525,7 @@ class GRPOLogger:
 
 
 # Global logger instance
-_global_logger: Optional[GRPOLogger] = None
+_global_logger: GRPOLogger | None = None
 
 
 def get_logger(
@@ -543,7 +542,7 @@ def get_logger(
 
 def setup_logging(
     log_level: str = "INFO",
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
     enable_json: bool = True,
     enable_metrics: bool = True,
     enable_tracing: bool = False,

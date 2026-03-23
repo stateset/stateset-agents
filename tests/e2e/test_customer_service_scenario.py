@@ -6,27 +6,30 @@ These tests simulate real-world usage scenarios from start to finish.
 
 import asyncio
 import sys
-from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 # Block vllm import to avoid torchvision issues
-if 'vllm' not in sys.modules:
-    sys.modules['vllm'] = type(sys)('vllm')  # type: ignore
+if "vllm" not in sys.modules:
+    sys.modules["vllm"] = type(sys)("vllm")  # type: ignore
 
 E2E_AVAILABLE = True
 try:
     from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
     from stateset_agents.core.environment import ConversationEnvironment
-    from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
+    from stateset_agents.core.reward import (
+        CompositeReward,
+        HelpfulnessReward,
+        SafetyReward,
+    )
     from stateset_agents.training import train
-except (ImportError, RuntimeError) as e:
+except (ImportError, RuntimeError):
     E2E_AVAILABLE = False
 
 pytestmark = pytest.mark.skipif(
     not E2E_AVAILABLE,
-    reason="E2E modules not available (check transformers/torchvision compatibility)"
+    reason="E2E modules not available (check transformers/torchvision compatibility)",
 )
 
 

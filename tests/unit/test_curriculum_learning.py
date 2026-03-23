@@ -2,20 +2,17 @@
 Tests for Curriculum Learning System
 """
 
-import pytest
 import numpy as np
+import pytest
 
 from stateset_agents.core.curriculum_learning import (
+    AdaptiveScheduler,
     CurriculumLearning,
     CurriculumStage,
-    CurriculumProgress,
     PerformanceBasedScheduler,
-    AdaptiveScheduler,
     TaskDifficultyController,
-    DifficultyMetric,
-    ProgressionStrategy,
 )
-from stateset_agents.core.trajectory import MultiTurnTrajectory, ConversationTurn
+from stateset_agents.core.trajectory import MultiTurnTrajectory
 
 
 class TestCurriculumStage:
@@ -187,7 +184,7 @@ class TestAdaptiveScheduler:
         trajectories = []
 
         # Should not advance while still improving
-        result = scheduler.should_advance(stage, progress, trajectories)
+        scheduler.should_advance(stage, progress, trajectories)
         # May or may not advance depending on current performance
 
 
@@ -217,7 +214,10 @@ class TestCurriculumLearning:
         )
 
         assert len(curriculum.stages) == 3
-        assert curriculum.stages[0].difficulty_level < curriculum.stages[1].difficulty_level
+        assert (
+            curriculum.stages[0].difficulty_level
+            < curriculum.stages[1].difficulty_level
+        )
 
     def test_record_episode_and_advancement(self):
         stages = [
@@ -293,7 +293,9 @@ class TestCurriculumLearning:
 
     def test_manual_stage_setting(self):
         stages = [
-            CurriculumStage(stage_id=f"stage_{i}", difficulty_level=i / 3, task_config={})
+            CurriculumStage(
+                stage_id=f"stage_{i}", difficulty_level=i / 3, task_config={}
+            )
             for i in range(3)
         ]
 
@@ -309,7 +311,9 @@ class TestCurriculumLearning:
 
     def test_progress_summary(self):
         stages = [
-            CurriculumStage(stage_id=f"stage_{i}", difficulty_level=i / 2, task_config={})
+            CurriculumStage(
+                stage_id=f"stage_{i}", difficulty_level=i / 2, task_config={}
+            )
             for i in range(2)
         ]
 

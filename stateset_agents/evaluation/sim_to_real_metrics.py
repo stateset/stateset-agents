@@ -5,10 +5,9 @@ Provides comprehensive metrics for evaluating the quality of
 sim-to-real transfer in conversational agents.
 """
 
-import asyncio
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -54,7 +53,7 @@ class SimToRealMetrics:
     # Overall score
     overall_gap: float = 0.0
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         """Convert metrics to dictionary"""
         return {
             "response_length_kl": self.response_length_kl,
@@ -71,7 +70,7 @@ class SimToRealMetrics:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, float]) -> "SimToRealMetrics":
+    def from_dict(cls, data: dict[str, float]) -> "SimToRealMetrics":
         """Create metrics from dictionary"""
         return cls(**{k: v for k, v in data.items() if hasattr(cls, k)})
 
@@ -136,7 +135,9 @@ def compute_js_divergence(
     m = 0.5 * (p + q)
 
     # JS divergence
-    js = 0.5 * compute_kl_divergence(p, m, epsilon) + 0.5 * compute_kl_divergence(q, m, epsilon)
+    js = 0.5 * compute_kl_divergence(p, m, epsilon) + 0.5 * compute_kl_divergence(
+        q, m, epsilon
+    )
 
     return float(js)
 
@@ -162,7 +163,7 @@ def compute_mmd(
 
     def rbf_kernel(a, b, sigma):
         sq_dist = np.sum((a[:, np.newaxis] - b[np.newaxis, :]) ** 2, axis=-1)
-        return np.exp(-sq_dist / (2 * sigma ** 2))
+        return np.exp(-sq_dist / (2 * sigma**2))
 
     k_xx = rbf_kernel(x, x, sigma)
     k_yy = rbf_kernel(y, y, sigma)
@@ -171,16 +172,18 @@ def compute_mmd(
     n_x = x.shape[0]
     n_y = y.shape[0]
 
-    mmd = (k_xx.sum() / (n_x * n_x) +
-           k_yy.sum() / (n_y * n_y) -
-           2 * k_xy.sum() / (n_x * n_y))
+    mmd = (
+        k_xx.sum() / (n_x * n_x)
+        + k_yy.sum() / (n_y * n_y)
+        - 2 * k_xy.sum() / (n_x * n_y)
+    )
 
     return float(max(0, mmd))
 
 
 def compute_distribution_divergence(
-    sim_values: List[float],
-    real_values: List[float],
+    sim_values: list[float],
+    real_values: list[float],
     method: str = "kl",
     num_bins: int = 50,
 ) -> float:
@@ -226,9 +229,9 @@ def compute_distribution_divergence(
 
 
 def compute_response_statistics(
-    trajectories: List[Any],
+    trajectories: list[Any],
     role: str = "assistant",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Compute statistics from conversation trajectories.
 
@@ -295,13 +298,13 @@ class SimToRealEvaluator:
         self.user_model = user_model
 
         # Cached statistics
-        self._real_stats: Optional[Dict[str, Any]] = None
+        self._real_stats: dict[str, Any] | None = None
 
     def compute_distribution_metrics(
         self,
-        sim_trajectories: List[Any],
-        real_trajectories: List[Any],
-    ) -> Dict[str, float]:
+        sim_trajectories: list[Any],
+        real_trajectories: list[Any],
+    ) -> dict[str, float]:
         """
         Compute distribution-based metrics between sim and real data.
 
@@ -339,25 +342,33 @@ class SimToRealEvaluator:
             real_vocab = real_stats["vocabulary"]
             intersection = len(sim_vocab & real_vocab)
             union = len(sim_vocab | real_vocab)
-            metrics["vocabulary_js_divergence"] = 1.0 - (intersection / union if union > 0 else 0)
+            metrics["vocabulary_js_divergence"] = 1.0 - (
+                intersection / union if union > 0 else 0
+            )
 
         # Reward correlation
         if sim_stats["rewards"] and real_stats["rewards"]:
             if len(sim_stats["rewards"]) > 1 and len(real_stats["rewards"]) > 1:
                 # Sample to same size
                 min_len = min(len(sim_stats["rewards"]), len(real_stats["rewards"]))
-                sim_rewards = np.random.choice(sim_stats["rewards"], min_len, replace=False)
-                real_rewards = np.random.choice(real_stats["rewards"], min_len, replace=False)
+                sim_rewards = np.random.choice(
+                    sim_stats["rewards"], min_len, replace=False
+                )
+                real_rewards = np.random.choice(
+                    real_stats["rewards"], min_len, replace=False
+                )
                 correlation = np.corrcoef(sim_rewards, real_rewards)[0, 1]
-                metrics["reward_correlation"] = float(correlation) if not np.isnan(correlation) else 0
+                metrics["reward_correlation"] = (
+                    float(correlation) if not np.isnan(correlation) else 0
+                )
 
         return metrics
 
     def compute_performance_gap(
         self,
         agent: Any,
-        sim_rewards: List[float],
-        real_rewards: List[float],
+        sim_rewards: list[float],
+        real_rewards: list[float],
     ) -> float:
         """
         Compute gap in agent performance between sim and real.
@@ -383,7 +394,7 @@ class SimToRealEvaluator:
         user_model: Any,
         real_data: Any,
         num_samples: int = 100,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Evaluate user model quality on real data.
 
@@ -450,10 +461,13 @@ class SimToRealEvaluator:
                     # Generate dummy response
                     response = "This is a simulated response for evaluation."
                     from ..core.trajectory import ConversationTurn
+
                     action = ConversationTurn(role="assistant", content=response)
                     trajectory.turns.append(action)
 
-                    new_state, reward, done, _ = await self.simulator.step(state, action)
+                    new_state, reward, done, _ = await self.simulator.step(
+                        state, action
+                    )
                     trajectory.total_reward += reward
 
                     if done:
@@ -474,7 +488,9 @@ class SimToRealEvaluator:
             )
             metrics.response_length_kl = dist_metrics.get("response_length_kl", 0)
             metrics.turn_count_mmd = dist_metrics.get("turn_count_mmd", 0)
-            metrics.vocabulary_js_divergence = dist_metrics.get("vocabulary_js_divergence", 0)
+            metrics.vocabulary_js_divergence = dist_metrics.get(
+                "vocabulary_js_divergence", 0
+            )
             metrics.reward_correlation = dist_metrics.get("reward_correlation", 0)
 
         # Evaluate user model
@@ -496,7 +512,7 @@ class SimToRealEvaluator:
         logger.info(f"Evaluation complete. Overall gap: {metrics.overall_gap:.4f}")
         return metrics
 
-    def get_real_stats(self) -> Dict[str, Any]:
+    def get_real_stats(self) -> dict[str, Any]:
         """Get cached real data statistics"""
         if self._real_stats is None and self.real_dataset is not None:
             self._real_stats = compute_response_statistics(list(self.real_dataset))

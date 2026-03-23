@@ -1,16 +1,22 @@
-import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.computational_engine import ComputationalGRPOEngine
-from stateset_agents.core.environment import ConversationTurn, Environment, EnvironmentState, EpisodeStatus
+from stateset_agents.core.environment import (
+    ConversationTurn,
+    Environment,
+    EnvironmentState,
+    EpisodeStatus,
+)
 from stateset_agents.core.reward import RewardFunction, RewardResult
 
 
 class StubEnvironment(Environment):
-    async def reset(self, scenario: Optional[Dict[str, Any]] = None) -> EnvironmentState:
+    async def reset(
+        self, scenario: dict[str, Any] | None = None
+    ) -> EnvironmentState:
         return EnvironmentState(
             episode_id="stub-episode",
             turn_count=0,
@@ -32,7 +38,7 @@ class StubEnvironment(Environment):
 
 class StubReward(RewardFunction):
     async def compute_reward(
-        self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
+        self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> RewardResult:
         return RewardResult(score=0.5, breakdown={}, metadata={})
 

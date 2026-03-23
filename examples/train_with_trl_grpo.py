@@ -12,12 +12,14 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Import framework components
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.rewards.multi_objective_reward import create_customer_service_reward
+from stateset_agents.rewards.multi_objective_reward import (
+    create_customer_service_reward,
+)
 from stateset_agents.training.trl_grpo_trainer import (
     TRLGRPOConfig,
     train_customer_service_with_trl,
@@ -34,8 +36,8 @@ logger = logging.getLogger(__name__)
 
 
 def load_training_data(
-    file_path: str, max_examples: Optional[int] = None
-) -> List[Dict[str, Any]]:
+    file_path: str, max_examples: int | None = None
+) -> list[dict[str, Any]]:
     """Load training data from JSONL file"""
     data = []
 
@@ -44,7 +46,7 @@ def load_training_data(
         return get_sample_data()
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             for line_num, line in enumerate(f, 1):
                 if not line.strip():
                     continue
@@ -67,7 +69,7 @@ def load_training_data(
     return data
 
 
-def get_sample_data() -> List[Dict[str, Any]]:
+def get_sample_data() -> list[dict[str, Any]]:
     """Return sample training data for demonstration"""
     return [
         {
@@ -222,7 +224,7 @@ async def quick_training_demo():
     logger.info("✅ Quick demo completed!")
 
 
-async def full_training_pipeline(config_dict: Dict[str, Any]):
+async def full_training_pipeline(config_dict: dict[str, Any]):
     """Full training pipeline with all features"""
 
     # Load training data

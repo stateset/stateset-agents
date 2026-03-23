@@ -5,20 +5,21 @@ This module provides comprehensive experiment tracking, visualization,
 and analysis capabilities for GRPO training with rich metrics and insights.
 """
 
-import asyncio
-import base64
-import io
+from __future__ import annotations
+
 import importlib.util
-import json
 import logging
-import os
 import tempfile
-from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any
 
 import numpy as np
+
+from stateset_agents.core.reward import RewardResult
+from stateset_agents.core.trajectory import Trajectory
+
+from .monitoring import MonitoringService
+from .wandb_config import WandBConfig, create_wandb_config, setup_wandb_from_env
 
 plt = None  # type: ignore[assignment]
 sns = None  # type: ignore[assignment]
@@ -31,7 +32,7 @@ SEABORN_INSTALLED = importlib.util.find_spec("seaborn") is not None
 # Backwards-compat flag; indicates whether wandb can be imported.
 WANDB_AVAILABLE = WANDB_INSTALLED
 
-WANDB_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+WANDB_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     ValueError,
     TypeError,
@@ -99,6 +100,7 @@ def _load_plotting() -> bool:
         )
         return False
 
+
 try:
     import torch
 
@@ -106,89 +108,9 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from stateset_agents.core import trajectory as core_trajectory
-
-from .monitoring import MonitoringService
-
-MultiTurnTrajectory = core_trajectory.MultiTurnTrajectory
-TrajectoryGroup = core_trajectory.TrajectoryGroup
-Trajectory = core_trajectory.Trajectory
-
-from stateset_agents.core import agent as core_agent
-
-AgentConfig = core_agent.AgentConfig
-
-from stateset_agents.core import reward as core_reward
-
-RewardResult = core_reward.RewardResult
-
 TrainingConfig = None  # Lazy import
-TrainingConfig = None
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class WandBConfig:
-    """Configuration for Weights & Biases integration"""
-
-    # Project settings
-    project: str = "grpo-agent-framework"
-    entity: Optional[str] = None
-    name: Optional[str] = None
-    tags: List[str] = field(default_factory=list)
-    notes: Optional[str] = None
-
-    # Logging settings
-    log_frequency: int = 10  # Log every N steps
-    log_trajectories: bool = True
-    log_rewards: bool = True
-    log_model_gradients: bool = True
-    log_model_parameters: bool = False
-    log_system_metrics: bool = True
-
-    # Visualization settings
-    create_reward_plots: bool = True
-    create_trajectory_plots: bool = True
-    create_loss_plots: bool = True
-    plot_frequency: int = 100  # Create plots every N steps
-
-    # Advanced features
-    log_code: bool = True
-    log_model_architecture: bool = True
-    save_model_artifacts: bool = True
-    watch_model: bool = True
-
-    # Storage settings
-    offline_mode: bool = False
-    save_dir: Optional[str] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "project": self.project,
-            "entity": self.entity,
-            "name": self.name,
-            "tags": self.tags,
-            "notes": self.notes,
-            "log_frequency": self.log_frequency,
-            "log_trajectories": self.log_trajectories,
-            "log_rewards": self.log_rewards,
-            "log_model_gradients": self.log_model_gradients,
-            "log_model_parameters": self.log_model_parameters,
-            "log_system_metrics": self.log_system_metrics,
-            "create_reward_plots": self.create_reward_plots,
-            "create_trajectory_plots": self.create_trajectory_plots,
-            "create_loss_plots": self.create_loss_plots,
-            "plot_frequency": self.plot_frequency,
-            "log_code": self.log_code,
-            "log_model_architecture": self.log_model_architecture,
-            "save_model_artifacts": self.save_model_artifacts,
-            "watch_model": self.watch_model,
-            "offline_mode": self.offline_mode,
-            "save_dir": self.save_dir,
-        }
-
-
 class WandBIntegration:
     """
     Enhanced Weights & Biases integration for GRPO training
@@ -197,8 +119,8 @@ class WandBIntegration:
     def __init__(
         self,
         config: WandBConfig,
-        training_config: Optional[TrainingConfig] = None,
-        monitoring_service: Optional[MonitoringService] = None,
+        training_config: TrainingConfig | None = None,
+        monitoring_service: MonitoringService | None = None,
     ):
         if not (WANDB_INSTALLED and MATPLOTLIB_INSTALLED and SEABORN_INSTALLED):
             raise ImportError(
@@ -233,7 +155,7 @@ class WandBIntegration:
         self.plot_cache = {}
 
     def initialize(
-        self, model: Optional[Any] = None, optimizer: Optional[Any] = None, **kwargs
+        self, model: Any | None = None, optimizer: Any | None = None, **kwargs
     ):
         """Initialize Weights & Biases run"""
         if self.is_initialized:
@@ -285,9 +207,9 @@ class WandBIntegration:
 
     def log_step(
         self,
-        metrics: Dict[str, Any],
-        step: Optional[int] = None,
-        epoch: Optional[int] = None,
+        metrics: dict[str, Any],
+        step: int | None = None,
+        epoch: int | None = None,
         commit: bool = True,
     ):
         """Log metrics for a training step"""
@@ -319,9 +241,9 @@ class WandBIntegration:
 
     def log_trajectories(
         self,
-        trajectories: List[Trajectory],
-        rewards: List[RewardResult],
-        step: Optional[int] = None,
+        trajectories: list[Trajectory],
+        rewards: list[RewardResult],
+        step: int | None = None,
     ):
         """Log trajectory data with rich analysis"""
         if not self.is_initialized or not self.config.log_trajectories:
@@ -329,7 +251,7 @@ class WandBIntegration:
 
         # Store trajectory history
         trajectory_data = []
-        for i, (traj, reward) in enumerate(zip(trajectories, rewards)):
+        for i, (traj, reward) in enumerate(zip(trajectories, rewards, strict=False)):
             data = {
                 "trajectory_id": i,
                 "step": step or self.step_count,
@@ -381,7 +303,7 @@ class WandBIntegration:
             self._create_trajectory_plots()
 
     def log_reward_analysis(
-        self, rewards: List[RewardResult], step: Optional[int] = None
+        self, rewards: list[RewardResult], step: int | None = None
     ):
         """Log detailed reward analysis"""
         if not self.is_initialized or not self.config.log_rewards:
@@ -436,8 +358,8 @@ class WandBIntegration:
         self,
         loss: float,
         learning_rate: float,
-        gradient_norm: Optional[float] = None,
-        step: Optional[int] = None,
+        gradient_norm: float | None = None,
+        step: int | None = None,
     ):
         """Log training-specific metrics"""
         if not self.is_initialized:
@@ -468,7 +390,7 @@ class WandBIntegration:
         ):
             self._create_loss_plots()
 
-    def log_model_metrics(self, model: Any, step: Optional[int] = None):
+    def log_model_metrics(self, model: Any, step: int | None = None):
         """Log model-specific metrics"""
         if not self.is_initialized or not TORCH_AVAILABLE:
             return
@@ -501,9 +423,9 @@ class WandBIntegration:
 
     def log_system_metrics(
         self,
-        gpu_memory: Optional[float] = None,
-        cpu_usage: Optional[float] = None,
-        step: Optional[int] = None,
+        gpu_memory: float | None = None,
+        cpu_usage: float | None = None,
+        step: int | None = None,
     ):
         """Log system performance metrics"""
         if not self.is_initialized or not self.config.log_system_metrics:
@@ -558,7 +480,7 @@ class WandBIntegration:
         try:
             model_summary = str(model)
             arch_info["model/architecture"] = model_summary
-        except:
+        except Exception:
             pass
 
         wandb.log(arch_info)
@@ -685,8 +607,8 @@ class WandBIntegration:
             fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
             # Loss trend
-            steps = [l["step"] for l in self.loss_history]
-            losses = [l["loss"] for l in self.loss_history]
+            steps = [entry["step"] for entry in self.loss_history]
+            losses = [entry["loss"] for entry in self.loss_history]
 
             axes[0, 0].plot(steps, losses, alpha=0.7)
             axes[0, 0].set_title("Training Loss")
@@ -695,7 +617,7 @@ class WandBIntegration:
             axes[0, 0].set_yscale("log")
 
             # Learning rate
-            learning_rates = [l["learning_rate"] for l in self.loss_history]
+            learning_rates = [entry["learning_rate"] for entry in self.loss_history]
             axes[0, 1].plot(steps, learning_rates, alpha=0.7)
             axes[0, 1].set_title("Learning Rate")
             axes[0, 1].set_xlabel("Step")
@@ -703,15 +625,15 @@ class WandBIntegration:
 
             # Gradient norms
             grad_norms = [
-                l["gradient_norm"]
-                for l in self.loss_history
-                if l["gradient_norm"] is not None
+                entry["gradient_norm"]
+                for entry in self.loss_history
+                if entry["gradient_norm"] is not None
             ]
             if grad_norms:
                 grad_steps = [
-                    l["step"]
-                    for l in self.loss_history
-                    if l["gradient_norm"] is not None
+                    entry["step"]
+                    for entry in self.loss_history
+                    if entry["gradient_norm"] is not None
                 ]
                 axes[1, 0].plot(grad_steps, grad_norms, alpha=0.7)
                 axes[1, 0].set_title("Gradient Norm")
@@ -732,7 +654,7 @@ class WandBIntegration:
             logger.error(f"Failed to create loss plots: {e}")
 
     def save_model_artifact(
-        self, model: Any, name: str, metadata: Optional[Dict[str, Any]] = None
+        self, model: Any, name: str, metadata: dict[str, Any] | None = None
     ):
         """Save model as W&B artifact"""
         if not self.is_initialized or not self.config.save_model_artifacts:
@@ -762,7 +684,7 @@ class WandBIntegration:
         except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to save model artifact: {e}")
 
-    def create_summary_report(self) -> Dict[str, Any]:
+    def create_summary_report(self) -> dict[str, Any]:
         """Create a comprehensive summary report"""
         if not self.is_initialized:
             return {}
@@ -788,7 +710,7 @@ class WandBIntegration:
             )
 
         if self.loss_history:
-            losses = [l["loss"] for l in self.loss_history]
+            losses = [entry["loss"] for entry in self.loss_history]
             summary["final_loss"] = losses[-1]
             summary["best_loss"] = min(losses)
             summary["average_loss"] = np.mean(losses)
@@ -813,37 +735,6 @@ class WandBIntegration:
             self.is_initialized = False
             logger.info("Finished W&B run")
 
-
-# Utility functions
-def create_wandb_config(
-    project: str, name: Optional[str] = None, tags: Optional[List[str]] = None, **kwargs
-) -> WandBConfig:
-    """Create a W&B configuration with sensible defaults"""
-    return WandBConfig(
-        project=project,
-        name=name or f"grpo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        tags=tags or [],
-        **kwargs,
-    )
-
-
-def setup_wandb_from_env() -> Optional[WandBConfig]:
-    """Setup W&B configuration from environment variables"""
-    api_key = os.getenv("WANDB_API_KEY")
-    if not api_key:
-        logger.warning("WANDB_API_KEY not found in environment")
-        return None
-
-    return WandBConfig(
-        project=os.getenv("WANDB_PROJECT", "grpo-agent-framework"),
-        entity=os.getenv("WANDB_ENTITY"),
-        name=os.getenv("WANDB_RUN_NAME"),
-        tags=os.getenv("WANDB_TAGS", "").split(",") if os.getenv("WANDB_TAGS") else [],
-        notes=os.getenv("WANDB_NOTES"),
-        offline_mode=os.getenv("WANDB_MODE") == "offline",
-    )
-
-
 class WandBMonitoringService(MonitoringService):
     """Monitoring service that logs to W&B"""
 
@@ -853,9 +744,9 @@ class WandBMonitoringService(MonitoringService):
     async def log_metric(
         self,
         name: str,
-        value: Union[int, float],
-        tags: Optional[Dict[str, str]] = None,
-        timestamp: Optional[datetime] = None,
+        value: int | float,
+        tags: dict[str, str] | None = None,
+        timestamp: datetime | None = None,
     ):
         """Log a metric to W&B"""
         if self.wandb.is_initialized:
@@ -864,9 +755,9 @@ class WandBMonitoringService(MonitoringService):
     async def log_event(
         self,
         name: str,
-        data: Dict[str, Any],
-        tags: Optional[Dict[str, str]] = None,
-        timestamp: Optional[datetime] = None,
+        data: dict[str, Any],
+        tags: dict[str, str] | None = None,
+        timestamp: datetime | None = None,
     ):
         """Log an event to W&B"""
         if self.wandb.is_initialized:
@@ -875,9 +766,9 @@ class WandBMonitoringService(MonitoringService):
     async def log_error(
         self,
         error: Exception,
-        context: Optional[Dict[str, Any]] = None,
-        tags: Optional[Dict[str, str]] = None,
-        timestamp: Optional[datetime] = None,
+        context: dict[str, Any] | None = None,
+        tags: dict[str, str] | None = None,
+        timestamp: datetime | None = None,
     ):
         """Log an error to W&B"""
         if self.wandb.is_initialized:
@@ -888,455 +779,22 @@ class WandBMonitoringService(MonitoringService):
             }
             self.wandb.log_step({"errors/error": error_data}, commit=False)
 
-
-class WandBLogger:
-    """
-    Comprehensive W&B logger for GRPO agent training
-
-    Provides seamless integration with Weights & Biases for tracking:
-    - Training metrics and losses
-    - Model configurations
-    - Conversation examples
-    - Reward distributions
-    - System metrics
-    - Model checkpoints
-    """
-
-    def __init__(
-        self,
-        project: str = "grpo-agent-framework",
-        entity: Optional[str] = None,
-        api_key: Optional[str] = None,
-        enabled: bool = True,
-        **kwargs,
-    ):
-        self.project = project
-        self.entity = entity
-        self.enabled = bool(enabled)
-        self.run = None
-        self.start_time = None
-
-        if self.enabled:
-            if not WANDB_INSTALLED:
-                logger.warning(
-                    "wandb package not available. Install with: pip install wandb"
-                )
-                self.enabled = False
-            elif not _load_wandb():
-                logger.warning("wandb import failed. W&B logging will be disabled.")
-                self.enabled = False
-
-        # Handle API key
-        if api_key:
-            os.environ["WANDB_API_KEY"] = api_key
-
-        # Check if W&B is properly configured
-        if self.enabled and not os.getenv("WANDB_API_KEY"):
-            logger.warning("WANDB_API_KEY not found. W&B logging will be disabled.")
-            self.enabled = False
-
-        logger.info(f"W&B Logger initialized (enabled: {self.enabled})")
-
-    def init_run(
-        self,
-        config: Dict[str, Any],
-        name: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        notes: Optional[str] = None,
-        group: Optional[str] = None,
-        job_type: str = "train",
-    ):
-        """Initialize a new W&B run"""
-        if not self.enabled:
-            return
-
-        try:
-            # Clean config for W&B (remove non-serializable objects)
-            clean_config = self._clean_config(config)
-
-            self.run = wandb.init(
-                project=self.project,
-                entity=self.entity,
-                name=name,
-                tags=tags or [],
-                notes=notes,
-                group=group,
-                job_type=job_type,
-                config=clean_config,
-                reinit=True,
-            )
-
-            self.start_time = datetime.now()
-            logger.info(f"W&B run initialized: {self.run.name}")
-
-        except WANDB_EXCEPTIONS as e:
-            logger.error(f"Failed to initialize W&B run: {e}")
-            self.enabled = False
-
-    def _clean_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Clean configuration dictionary for W&B serialization"""
-        clean_config = {}
-
-        for key, value in config.items():
-            try:
-                # Skip non-serializable objects
-                if callable(value) or hasattr(value, "__dict__"):
-                    if hasattr(value, "__dict__"):
-                        # Try to serialize object attributes
-                        clean_config[key] = {
-                            k: v
-                            for k, v in value.__dict__.items()
-                            if not callable(v) and not k.startswith("_")
-                        }
-                    else:
-                        clean_config[key] = str(value)
-                else:
-                    clean_config[key] = value
-            except WANDB_EXCEPTIONS:
-                # Skip problematic values
-                continue
-
-        return clean_config
-
-    def log_metrics(
-        self,
-        metrics: Dict[str, Any],
-        step: Optional[int] = None,
-        prefix: Optional[str] = None,
-    ):
-        """Log metrics to W&B"""
-        if not self.enabled or not self.run:
-            return
-
-        try:
-            # Add prefix if specified
-            if prefix:
-                metrics = {f"{prefix}/{k}": v for k, v in metrics.items()}
-
-            # Filter out non-numeric values for main logging
-            numeric_metrics = {}
-            for k, v in metrics.items():
-                try:
-                    if isinstance(v, (int, float, np.number)):
-                        numeric_metrics[k] = float(v)
-                    elif hasattr(v, "item"):  # PyTorch tensors
-                        numeric_metrics[k] = float(v.item())
-                    else:
-                        # Log as string or handle special W&B objects
-                        numeric_metrics[k] = v
-                except WANDB_EXCEPTIONS:
-                    continue
-
-            self.run.log(numeric_metrics, step=step)
-
-        except WANDB_EXCEPTIONS as e:
-            logger.error(f"Failed to log metrics: {e}")
-
-    def log_agent_config(self, agent_config: AgentConfig):
-        """Log agent configuration details"""
-        if not self.enabled:
-            return
-
-        try:
-            config_dict = {
-                "agent/model_name": agent_config.model_name,
-                "agent/system_prompt_length": len(agent_config.system_prompt)
-                if agent_config.system_prompt
-                else 0,
-                "agent/temperature": agent_config.temperature,
-                "agent/max_new_tokens": agent_config.max_new_tokens,
-                "agent/torch_dtype": agent_config.torch_dtype,
-                "agent/device_map": str(agent_config.device_map),
-                "agent/use_peft": agent_config.use_peft,
-            }
-
-            if agent_config.peft_config:
-                config_dict.update(
-                    {
-                        f"agent/peft_{k}": v
-                        for k, v in agent_config.peft_config.items()
-                        if isinstance(v, (str, int, float, bool))
-                    }
-                )
-
-            self.log_metrics(config_dict)
-
-        except WANDB_EXCEPTIONS as e:
-            logger.error(f"Failed to log agent config: {e}")
-
-    def log_training_step(
-        self,
-        losses: Dict[str, float],
-        learning_rate: float,
-        step: int,
-        trajectory_groups: Optional[List[TrajectoryGroup]] = None,
-    ):
-        """Log training step metrics"""
-        if not self.enabled:
-            return
-
-        try:
-            # Base training metrics
-            metrics = {
-                "train/learning_rate": learning_rate,
-                "train/step": step,
-                **{f"train/{k}": v for k, v in losses.items()},
-            }
-
-            # Add trajectory group metrics if provided
-            if trajectory_groups:
-                traj_metrics = self._compute_trajectory_metrics(trajectory_groups)
-                metrics.update({f"train/{k}": v for k, v in traj_metrics.items()})
-
-            self.log_metrics(metrics, step=step)
-
-        except WANDB_EXCEPTIONS as e:
-            logger.error(f"Failed to log training step: {e}")
-
-    def log_evaluation(
-        self,
-        eval_metrics: Dict[str, float],
-        step: int,
-        trajectories: Optional[List[MultiTurnTrajectory]] = None,
-    ):
-        """Log evaluation metrics"""
-        if not self.enabled:
-            return
-
-        try:
-            # Prefix evaluation metrics
-            metrics = {f"eval/{k}": v for k, v in eval_metrics.items()}
-
-            # Add trajectory analysis if provided
-            if trajectories:
-                traj_analysis = self._analyze_trajectories(trajectories)
-                metrics.update(
-                    {f"eval_analysis/{k}": v for k, v in traj_analysis.items()}
-                )
-
-            self.log_metrics(metrics, step=step)
-
-        except WANDB_EXCEPTIONS as e:
-            logger.error(f"Failed to log evaluation: {e}")
-
-    def _compute_trajectory_metrics(
-        self, trajectory_groups: List[TrajectoryGroup]
-    ) -> Dict[str, float]:
-        """Compute metrics from trajectory groups"""
-        if not trajectory_groups:
-            return {}
-
-        all_rewards = []
-        group_sizes = []
-        reward_diversities = []
-
-        for group in trajectory_groups:
-            if hasattr(group, "trajectories"):
-                rewards = []
-                for traj in group.trajectories:
-                    if hasattr(traj, "total_reward"):
-                        rewards.append(traj.total_reward)
-                    elif hasattr(traj, "reward"):
-                        rewards.append(traj.reward)
-
-                if rewards:
-                    all_rewards.extend(rewards)
-                    group_sizes.append(len(rewards))
-                    if len(rewards) > 1:
-                        reward_diversities.append(np.std(rewards))
-
-        if not all_rewards:
-            return {}
-
-        metrics = {
-            "num_groups": len(trajectory_groups),
-            "total_trajectories": len(all_rewards),
-            "avg_group_size": np.mean(group_sizes) if group_sizes else 0,
-            "reward_mean": np.mean(all_rewards),
-            "reward_std": np.std(all_rewards),
-            "reward_min": np.min(all_rewards),
-            "reward_max": np.max(all_rewards),
-            "reward_median": np.median(all_rewards),
-        }
-
-        if reward_diversities:
-            metrics["reward_diversity_mean"] = np.mean(reward_diversities)
-            metrics["reward_diversity_std"] = np.std(reward_diversities)
-
-        return metrics
-
-    def _analyze_trajectories(
-        self, trajectories: List[MultiTurnTrajectory]
-    ) -> Dict[str, float]:
-        """Analyze trajectory characteristics"""
-        if not trajectories:
-            return {}
-
-        episode_lengths = []
-        total_rewards = []
-        turn_counts = []
-
-        for traj in trajectories:
-            episode_lengths.append(traj.episode_length)
-            total_rewards.append(traj.total_reward)
-
-            # Count turns by role
-            user_turns = len([t for t in traj.turns if t.role == "user"])
-            assistant_turns = len([t for t in traj.turns if t.role == "assistant"])
-            turn_counts.append({"user": user_turns, "assistant": assistant_turns})
-
-        analysis = {
-            "num_episodes": len(trajectories),
-            "avg_episode_length": np.mean(episode_lengths),
-            "episode_length_std": np.std(episode_lengths),
-            "avg_total_reward": np.mean(total_rewards),
-            "total_reward_std": np.std(total_rewards),
-            "avg_user_turns": np.mean([tc["user"] for tc in turn_counts]),
-            "avg_assistant_turns": np.mean([tc["assistant"] for tc in turn_counts]),
-        }
-
-        return analysis
-
-    def log_model_checkpoint(
-        self,
-        checkpoint_path: str,
-        step: int,
-        metrics: Optional[Dict[str, float]] = None,
-        is_best: bool = False,
-    ):
-        """Log model checkpoint information"""
-        if not self.enabled:
-            return
-
-        try:
-            checkpoint_metrics = {
-                "checkpoint/step": step,
-                "checkpoint/is_best": is_best,
-                "checkpoint/path": checkpoint_path,
-                "checkpoint/timestamp": datetime.now().isoformat(),
-            }
-
-            if metrics:
-                checkpoint_metrics.update(
-                    {f"checkpoint/{k}": v for k, v in metrics.items()}
-                )
-
-            self.log_metrics(checkpoint_metrics, step=step)
-
-        except WANDB_EXCEPTIONS as e:
-            logger.error(f"Failed to log checkpoint: {e}")
-
-    def log_conversation_examples(
-        self, trajectories: List[MultiTurnTrajectory], step: int, num_examples: int = 3
-    ):
-        """Log conversation examples as W&B tables"""
-        if not self.enabled or not trajectories:
-            return
-
-        try:
-            # Select examples
-            examples = trajectories[:num_examples]
-
-            # Create table data
-            table_data = []
-            for i, traj in enumerate(examples):
-                conversation = ""
-                for turn in traj.turns:
-                    conversation += f"{turn.role.capitalize()}: {turn.content}\n\n"
-
-                table_data.append(
-                    [i, traj.total_reward, traj.episode_length, conversation.strip()]
-                )
-
-            # Create W&B table
-            table = wandb.Table(
-                columns=["Example", "Total Reward", "Episode Length", "Conversation"],
-                data=table_data,
-            )
-
-            self.log_metrics({f"examples/conversations_step_{step}": table}, step=step)
-
-        except WANDB_EXCEPTIONS as e:
-            logger.error(f"Failed to log conversation examples: {e}")
-
-    def log_reward_distribution(
-        self, rewards: List[float], step: int, name: str = "rewards"
-    ):
-        """Log reward distribution histogram"""
-        if not self.enabled or not rewards:
-            return
-
-        try:
-            self.log_metrics(
-                {
-                    f"{name}/distribution": wandb.Histogram(rewards),
-                    f"{name}/mean": np.mean(rewards),
-                    f"{name}/std": np.std(rewards),
-                },
-                step=step,
-            )
-        except WANDB_EXCEPTIONS as e:
-            logger.error(f"Failed to log reward distribution: {e}")
-
-    def finish_run(self, summary: Optional[Dict[str, Any]] = None):
-        """Finish the W&B run and log summary"""
-        if not self.enabled or not self.run:
-            return
-
-        try:
-            # Add training duration to summary
-            if self.start_time:
-                duration = (datetime.now() - self.start_time).total_seconds()
-                if summary is None:
-                    summary = {}
-                summary["training_duration_seconds"] = duration
-                summary["training_duration_hours"] = duration / 3600
-
-            # Log summary
-            if summary:
-                for key, value in summary.items():
-                    self.run.summary[key] = value
-
-            self.run.finish()
-            logger.info("W&B run finished")
-
-        except WANDB_EXCEPTIONS as e:
-            logger.error(f"Failed to finish W&B run: {e}")
-
-    def log_system_metrics(self):
-        """Log system metrics (GPU, memory, etc.)"""
-        if not self.enabled:
-            return
-
-        try:
-            import psutil
-            import torch
-
-            metrics = {
-                "system/cpu_percent": psutil.cpu_percent(),
-                "system/memory_percent": psutil.virtual_memory().percent,
-            }
-
-            # Add GPU metrics if available
-            if torch.cuda.is_available():
-                for i in range(torch.cuda.device_count()):
-                    memory_allocated = torch.cuda.memory_allocated(i) / 1024**3  # GB
-                    memory_reserved = torch.cuda.memory_reserved(i) / 1024**3  # GB
-                    metrics[f"gpu_{i}/memory_allocated_gb"] = memory_allocated
-                    metrics[f"gpu_{i}/memory_reserved_gb"] = memory_reserved
-
-            self.log_metrics(metrics)
-
-        except WANDB_EXCEPTIONS as e:
-            logger.error(f"Failed to log system metrics: {e}")
-
-
-# Convenience functions
-def init_wandb(
-    project: str = "grpo-agent-framework",
-    entity: Optional[str] = None,
-    api_key: Optional[str] = None,
-    **kwargs,
-) -> WandBLogger:
-    """Initialize W&B logger with convenience wrapper"""
-    return WandBLogger(project=project, entity=entity, api_key=api_key, **kwargs)
+from .wandb_logger import WandBLogger, init_wandb
+
+__all__ = [
+    "MATPLOTLIB_INSTALLED",
+    "SEABORN_INSTALLED",
+    "TORCH_AVAILABLE",
+    "WANDB_AVAILABLE",
+    "WANDB_EXCEPTIONS",
+    "WANDB_INSTALLED",
+    "WandBConfig",
+    "WandBIntegration",
+    "WandBLogger",
+    "WandBMonitoringService",
+    "_load_plotting",
+    "_load_wandb",
+    "create_wandb_config",
+    "init_wandb",
+    "setup_wandb_from_env",
+]

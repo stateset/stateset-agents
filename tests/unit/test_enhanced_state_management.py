@@ -7,7 +7,6 @@ and distributed state functionality.
 
 import asyncio
 import time
-from collections import OrderedDict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -376,9 +375,15 @@ class TestDistributedStateService:
     @pytest.fixture
     def state_service(self):
         """Create a mock DistributedStateService."""
-        with patch("core.enhanced_state_management.REDIS_AVAILABLE", False), \
-             patch("core.enhanced_state_management.MONGODB_AVAILABLE", False):
-            from stateset_agents.core.enhanced_state_management import DistributedStateService
+        with patch(
+            "stateset_agents.core.enhanced_state_management.REDIS_AVAILABLE", False
+        ), patch(
+            "stateset_agents.core.enhanced_state_management.MONGODB_AVAILABLE", False
+        ):
+            from stateset_agents.core.enhanced_state_management import (
+                DistributedStateService,
+            )
+
             service = DistributedStateService()
             return service
 
@@ -402,8 +407,11 @@ class TestStateManager:
     @pytest.fixture
     def state_manager(self):
         """Create a mock StateManager."""
-        with patch("core.enhanced_state_management.REDIS_AVAILABLE", False):
+        with patch(
+            "stateset_agents.core.enhanced_state_management.REDIS_AVAILABLE", False
+        ):
             from stateset_agents.core.enhanced_state_management import StateManager
+
             manager = StateManager()
             return manager
 
@@ -430,6 +438,22 @@ class TestStateManager:
 
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_update_notifies_watchers_with_previous_value(self, state_manager):
+        """Batched updates should pass the pre-update value to watchers."""
+        events = []
+
+        async def watcher(key, old_value, new_value):
+            events.append((key, old_value, new_value))
+
+        await state_manager.set("key1", "before")
+        await state_manager.watch("key1", watcher)
+
+        updated = await state_manager.update({"key1": "after"})
+
+        assert updated is True
+        assert events == [("key1", "before", "after")]
+
 
 class TestConversationManager:
     """Test ConversationManager class."""
@@ -438,6 +462,7 @@ class TestConversationManager:
     def conversation_manager(self):
         """Create a mock ConversationManager."""
         from stateset_agents.core.enhanced_state_management import ConversationManager
+
         state_manager = MagicMock()
         state_manager.get = AsyncMock(return_value=None)
         state_manager.set = AsyncMock()
@@ -490,11 +515,15 @@ class TestManagedStateContext:
     @pytest.mark.asyncio
     async def test_context_manager(self):
         """Test using managed_state_context."""
-        with patch("core.enhanced_state_management.get_state_service") as mock_get:
+        with patch(
+            "stateset_agents.core.enhanced_state_management.get_state_service"
+        ) as mock_get:
             mock_service = MagicMock()
             mock_get.return_value = mock_service
 
-            from stateset_agents.core.enhanced_state_management import managed_state_context
+            from stateset_agents.core.enhanced_state_management import (
+                managed_state_context,
+            )
 
             async with managed_state_context() as service:
                 assert service is mock_service
@@ -505,8 +534,11 @@ class TestGetStateService:
 
     def test_get_state_service(self):
         """Test getting the global state service."""
-        with patch("core.enhanced_state_management.REDIS_AVAILABLE", False), \
-             patch("core.enhanced_state_management.MONGODB_AVAILABLE", False):
+        with patch(
+            "stateset_agents.core.enhanced_state_management.REDIS_AVAILABLE", False
+        ), patch(
+            "stateset_agents.core.enhanced_state_management.MONGODB_AVAILABLE", False
+        ):
             from stateset_agents.core.enhanced_state_management import get_state_service
 
             service1 = get_state_service()

@@ -1,8 +1,13 @@
 import re
 
-from hypothesis import given, settings, strategies as st
+import pytest
 
-from stateset_agents.core.input_validation import SecurityConfig, SecureInputValidator
+from stateset_agents.core.input_validation import SecureInputValidator, SecurityConfig
+
+hypothesis = pytest.importorskip("hypothesis")
+given = hypothesis.given
+settings = hypothesis.settings
+st = hypothesis.strategies
 
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 BIDI_RE = re.compile(r"[\u200e\u200f\u202a-\u202e\u2066-\u2069]")

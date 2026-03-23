@@ -9,10 +9,8 @@ This module tests:
 - PPO clipping correctness
 """
 
-import asyncio
 import threading
 import time
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -23,7 +21,8 @@ class TestTTLDict:
     @pytest.fixture
     def ttl_dict(self):
         """Create a TTLDict for testing."""
-        from api.ultimate_grpo_service import TTLDict
+        from stateset_agents.api.grpo.state import TTLDict
+
         # Keep TTL-based tests fast while still validating expiry.
         return TTLDict(ttl_seconds=0.05, max_size=5)
 
@@ -81,15 +80,14 @@ class TestErrorHandler:
     def error_handler(self):
         """Create an ErrorHandler for testing."""
         from stateset_agents.core.error_handling import ErrorHandler
+
         return ErrorHandler(max_error_history=10)
 
     def test_bounded_history(self, error_handler):
         """Test that error history is bounded."""
         for i in range(20):
             error_handler.handle_error(
-                Exception(f"Error {i}"),
-                component="test",
-                operation="test_op"
+                Exception(f"Error {i}"), component="test", operation="test_op"
             )
 
         # Should only keep max_error_history entries
@@ -101,7 +99,7 @@ class TestErrorHandler:
             ValueError("Test error"),
             component="test_component",
             operation="test_operation",
-            context={"key": "value"}
+            context={"key": "value"},
         )
 
         assert error_context.component == "test_component"
@@ -110,19 +108,21 @@ class TestErrorHandler:
 
     def test_grpo_exception_handling(self, error_handler):
         """Test handling of GRPO-specific exceptions."""
-        from stateset_agents.core.error_handling import GRPOException, ErrorCategory, ErrorSeverity
+        from stateset_agents.core.error_handling import (
+            ErrorCategory,
+            ErrorSeverity,
+            GRPOException,
+        )
 
         grpo_error = GRPOException(
             "Test GRPO error",
             category=ErrorCategory.TRAINING,
             severity=ErrorSeverity.HIGH,
-            details={"step": 100}
+            details={"step": 100},
         )
 
         error_context = error_handler.handle_error(
-            grpo_error,
-            component="trainer",
-            operation="training_step"
+            grpo_error, component="trainer", operation="training_step"
         )
 
         assert error_context.category == ErrorCategory.TRAINING
@@ -136,11 +136,13 @@ class TestMetricsCollectorThreadSafety:
     def metrics_collector(self):
         """Create a MetricsCollector for testing."""
         from stateset_agents.utils.monitoring import MetricsCollector
+
         return MetricsCollector(enable_prometheus=False)
 
     def test_concurrent_metric_recording(self, metrics_collector):
         """Test that concurrent metric recording is thread-safe."""
         from stateset_agents.utils.monitoring import Metric, MetricType
+
         errors = []
 
         def record_metrics(thread_id):
@@ -150,7 +152,7 @@ class TestMetricsCollectorThreadSafety:
                         name=f"test_metric_{thread_id}",
                         type=MetricType.GAUGE,
                         value=float(i),
-                        labels={"thread": str(thread_id)}
+                        labels={"thread": str(thread_id)},
                     )
                     metrics_collector.record_metric(metric)
             except Exception as e:
@@ -170,6 +172,7 @@ class TestMetricsCollectorThreadSafety:
     def test_concurrent_snapshot(self, metrics_collector):
         """Test that getting summaries is thread-safe."""
         from stateset_agents.utils.monitoring import Metric, MetricType
+
         errors = []
 
         def record_and_get_summary(thread_id):
@@ -178,7 +181,7 @@ class TestMetricsCollectorThreadSafety:
                     metric = Metric(
                         name=f"metric_{thread_id}",
                         type=MetricType.GAUGE,
-                        value=float(i)
+                        value=float(i),
                     )
                     metrics_collector.record_metric(metric)
                     metrics_collector.get_metrics_summary()
@@ -203,15 +206,16 @@ class TestSecurityEncryption:
     def test_encryption_not_xor(self):
         """Test that encryption is not using weak XOR cipher."""
         pytest.importorskip("cryptography")
-        from stateset_agents.utils.security import SecureConfig
         import os
+
+        from stateset_agents.utils.security import SecureConfig
 
         secure_config = SecureConfig()
 
         # Set a test encryption key
-        original_key = os.environ.get('CONFIG_ENCRYPTION_KEY')
+        original_key = os.environ.get("CONFIG_ENCRYPTION_KEY")
         try:
-            os.environ['CONFIG_ENCRYPTION_KEY'] = 'test-secret-key-123-long-enough'
+            os.environ["CONFIG_ENCRYPTION_KEY"] = "test-secret-key-123-long-enough"
             original = "sensitive_api_key_12345"
             encrypted = secure_config._simple_encrypt(original)
 
@@ -220,6 +224,7 @@ class TestSecurityEncryption:
 
             # Should not be simple base64 of original (XOR with key)
             import base64
+
             simple_b64 = base64.b64encode(original.encode()).decode()
             assert encrypted != simple_b64
 
@@ -228,20 +233,21 @@ class TestSecurityEncryption:
             assert decrypted == original
         finally:
             if original_key is not None:
-                os.environ['CONFIG_ENCRYPTION_KEY'] = original_key
+                os.environ["CONFIG_ENCRYPTION_KEY"] = original_key
             else:
-                os.environ.pop('CONFIG_ENCRYPTION_KEY', None)
+                os.environ.pop("CONFIG_ENCRYPTION_KEY", None)
 
     def test_encryption_without_key_uses_base64(self):
         """Test that missing encryption key falls back to base64."""
-        from stateset_agents.utils.security import SecureConfig
-        import os
         import base64
+        import os
+
+        from stateset_agents.utils.security import SecureConfig
 
         secure_config = SecureConfig()
 
         # Remove encryption key
-        original_key = os.environ.pop('CONFIG_ENCRYPTION_KEY', None)
+        original_key = os.environ.pop("CONFIG_ENCRYPTION_KEY", None)
         try:
             test_value = "test_value"
             result = secure_config._simple_encrypt(test_value)
@@ -249,7 +255,7 @@ class TestSecurityEncryption:
             assert result == base64.b64encode(test_value.encode()).decode()
         finally:
             if original_key is not None:
-                os.environ['CONFIG_ENCRYPTION_KEY'] = original_key
+                os.environ["CONFIG_ENCRYPTION_KEY"] = original_key
 
 
 class TestPPOClipping:
@@ -323,6 +329,7 @@ class TestAsyncRewardComputation:
         try:
             # We're not in an async context here
             import asyncio
+
             result = asyncio.run(reward_fn.compute_reward([]))
             assert result.score == 0.75
         except RuntimeError:
@@ -336,7 +343,7 @@ class TestCompositeRewardEdgeCases:
     @pytest.mark.asyncio
     async def test_composite_reward_empty_results(self):
         """Test CompositeReward handles empty results gracefully."""
-        from stateset_agents.core.reward_base import CompositeReward, RewardFunction, RewardResult
+        from stateset_agents.core.reward_base import CompositeReward, RewardFunction
 
         class FailingReward(RewardFunction):
             async def compute_reward(self, turns, context=None):
@@ -355,7 +362,11 @@ class TestCompositeRewardEdgeCases:
     @pytest.mark.asyncio
     async def test_composite_reward_with_valid_functions(self):
         """Test CompositeReward with working reward functions."""
-        from stateset_agents.core.reward_base import CompositeReward, RewardFunction, RewardResult
+        from stateset_agents.core.reward_base import (
+            CompositeReward,
+            RewardFunction,
+            RewardResult,
+        )
 
         class WorkingReward(RewardFunction):
             async def compute_reward(self, turns, context=None):
@@ -400,7 +411,7 @@ class TestEnvironmentGetReward:
         env = TestEnv()
 
         # Should have get_reward method
-        assert hasattr(env, 'get_reward')
+        assert hasattr(env, "get_reward")
 
     @pytest.mark.asyncio
     async def test_environment_get_reward_returns_float(self):

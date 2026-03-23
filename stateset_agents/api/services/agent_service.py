@@ -4,34 +4,48 @@ import time
 import uuid
 from dataclasses import replace
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from fastapi import HTTPException
+
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
-from ..schemas import AgentConfigRequest, ConversationRequest, ConversationResponse
+from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
 from stateset_agents.utils.security import SecurityMonitor
+
+from ..schemas import AgentConfigRequest, ConversationRequest, ConversationResponse
 
 logger = logging.getLogger(__name__)
 
-AGENT_SERVICE_EXCEPTIONS = (AttributeError, OSError, RuntimeError, TypeError, ValueError)
-TOKENIZE_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
+AGENT_SERVICE_EXCEPTIONS = (
+    AttributeError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
+
+TOKENIZE_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
+
 
 class AgentService:
     """Service for managing agents."""
 
     def __init__(self, security_monitor: SecurityMonitor):
-        self.agents: Dict[str, MultiTurnAgent] = {}
-        self.conversations: Dict[str, List[Dict[str, Any]]] = {}
+        self.agents: dict[str, MultiTurnAgent] = {}
+        self.conversations: dict[str, list[dict[str, Any]]] = {}
         self.security_monitor = security_monitor
 
     def _get_or_create_conversation(
         self,
         agent_id: str,
         conversation_id: str,
-        user_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
         conversation_list = self.conversations.setdefault(agent_id, [])
         for conversation in conversation_list:
             if conversation.get("id") == conversation_id:
+                if not self._user_can_access_conversation(conversation, user_id):
+                    raise HTTPException(status_code=404, detail="Conversation not found")
                 return conversation
 
         conversation = {
@@ -47,11 +61,28 @@ class AgentService:
         conversation_list.append(conversation)
         return conversation
 
+    @staticmethod
+    def _user_can_access_conversation(
+        conversation: dict[str, Any], user_id: str | None
+    ) -> bool:
+        if user_id is None:
+            return True
+
+        metadata = conversation.get("metadata")
+        if not isinstance(metadata, dict):
+            return True
+
+        owner = metadata.get("user_id")
+        if owner is None:
+            return True
+
+        return owner == user_id
+
     def _merge_messages(
         self,
-        conversation_messages: List[Dict[str, Any]],
-        incoming_messages: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        conversation_messages: list[dict[str, Any]],
+        incoming_messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Merge incoming messages into stored conversation history."""
         if not conversation_messages:
             conversation_messages.extend(incoming_messages)
@@ -75,7 +106,9 @@ class AgentService:
 
     def _should_use_stub_model(self, model_name: str) -> bool:
         environment = os.getenv("API_ENVIRONMENT", "production").lower()
-        allow_external = os.getenv("API_ALLOW_EXTERNAL_MODELS", "false").lower() == "true"
+        allow_external = (
+            os.getenv("API_ALLOW_EXTERNAL_MODELS", "false").lower() == "true"
+        )
 
         if str(model_name).startswith("stub://"):
             return True
@@ -212,9 +245,9 @@ class AgentService:
                 tokens_used = int(len(response_text.split()) * 1.3)
 
             conversation["last_message_at"] = datetime.utcnow()
-            conversation["total_tokens"] = int(conversation.get("total_tokens", 0)) + int(
-                tokens_used
-            )
+            conversation["total_tokens"] = int(
+                conversation.get("total_tokens", 0)
+            ) + int(tokens_used)
             conversation_metadata = conversation.setdefault("metadata", {})
             if request.context:
                 conversation_metadata["context"] = dict(request.context)
@@ -234,19 +267,26 @@ class AgentService:
 
         except AGENT_SERVICE_EXCEPTIONS as e:
             logger.error(f"Agent response failed: {e}")
-            raise HTTPException(status_code=500, detail="Agent response failed")
+            raise HTTPException(status_code=500, detail="Agent response failed") from e
 
-    def delete_conversation(self, conversation_id: str) -> bool:
+    def delete_conversation(
+        self, conversation_id: str, user_id: str | None = None
+    ) -> bool:
         """Delete a stored conversation and clear related plan state."""
         for agent_id, conv_list in self.conversations.items():
             for idx, conv in enumerate(conv_list):
                 if conv.get("id") == conversation_id:
+                    if not self._user_can_access_conversation(conv, user_id):
+                        return False
                     conv_list.pop(idx)
                     agent = self.agents.get(agent_id)
                     planning_manager = getattr(agent, "planning_manager", None)
-                    if planning_manager and hasattr(planning_manager, "clear_conversation"):
+                    if planning_manager and hasattr(
+                        planning_manager, "clear_conversation"
+                    ):
                         planning_manager.clear_conversation(conversation_id)
                     return True
         return False
+
 
 # Global instance will be created in dependencies or main

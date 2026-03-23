@@ -1,10 +1,6 @@
 StateSet Agents Documentation
 =============================
 
-.. image:: _static/logo.png
-   :alt: StateSet Agents Logo
-   :align: center
-
 Welcome to the official documentation for **StateSet Agents**, a comprehensive framework for training multi-turn AI agents using reinforcement learning techniques.
 
 🚀 **What is StateSet Agents?**
@@ -43,6 +39,7 @@ StateSet Agents is a production-ready framework that enables you to:
 
    installation
    quickstart
+   qwen3_5_starter
    examples
 
 .. toctree::
@@ -87,6 +84,7 @@ StateSet Agents is a production-ready framework that enables you to:
    architecture
    testing
    changelog
+   license
 
 🔗 **Links**
 

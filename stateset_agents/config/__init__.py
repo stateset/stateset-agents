@@ -8,7 +8,7 @@ and training configurations from YAML/JSON files.
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -16,25 +16,26 @@ logger = logging.getLogger(__name__)
 PRESETS_DIR = Path(__file__).parent / "presets"
 
 
-def _load_yaml(path: Path) -> Dict[str, Any]:
+def _load_yaml(path: Path) -> dict[str, Any]:
     """Load a YAML file, falling back to JSON if yaml is unavailable."""
     try:
         import yaml
-        with open(path, "r") as f:
+
+        with open(path) as f:
             return yaml.safe_load(f) or {}
     except ImportError:
         logger.warning("PyYAML not installed, falling back to JSON parsing")
-        with open(path, "r") as f:
+        with open(path) as f:
             return json.load(f)
 
 
-def _load_json(path: Path) -> Dict[str, Any]:
+def _load_json(path: Path) -> dict[str, Any]:
     """Load a JSON file."""
-    with open(path, "r") as f:
+    with open(path) as f:
         return json.load(f)
 
 
-def load_config(path: Union[str, Path]) -> Dict[str, Any]:
+def load_config(path: str | Path) -> dict[str, Any]:
     """Load a configuration file (YAML or JSON).
 
     Args:
@@ -63,8 +64,8 @@ def load_config(path: Union[str, Path]) -> Dict[str, Any]:
 def load_preset(
     category: str,
     name: str,
-    presets_dir: Optional[Path] = None,
-) -> Dict[str, Any]:
+    presets_dir: Path | None = None,
+) -> dict[str, Any]:
     """Load a preset configuration by category and name.
 
     Args:
@@ -94,7 +95,7 @@ def load_preset(
 
 def list_presets(
     category: str,
-    presets_dir: Optional[Path] = None,
+    presets_dir: Path | None = None,
 ) -> list:
     """List available presets in a category.
 
@@ -119,7 +120,7 @@ def list_presets(
     return sorted(set(presets))
 
 
-def get_agent_preset(name: str) -> Dict[str, Any]:
+def get_agent_preset(name: str) -> dict[str, Any]:
     """Load an agent preset configuration.
 
     Args:
@@ -131,7 +132,7 @@ def get_agent_preset(name: str) -> Dict[str, Any]:
     return load_preset("agents", name)
 
 
-def get_environment_preset(name: str) -> Dict[str, Any]:
+def get_environment_preset(name: str) -> dict[str, Any]:
     """Load an environment preset configuration.
 
     Args:

@@ -9,9 +9,9 @@ import math
 import operator
 import random
 import re
-from typing import Callable, Dict, Iterable, List, Mapping, Optional, Tuple
+from collections.abc import Callable, Iterable, Mapping
 
-DEFAULT_ALLOWED_FUNCTIONS: Dict[str, Callable[..., float]] = {
+DEFAULT_ALLOWED_FUNCTIONS: dict[str, Callable[..., float]] = {
     "abs": abs,
     "sin": math.sin,
     "cos": math.cos,
@@ -21,7 +21,7 @@ DEFAULT_ALLOWED_FUNCTIONS: Dict[str, Callable[..., float]] = {
     "sqrt": math.sqrt,
 }
 
-DEFAULT_CONSTANTS: Dict[str, float] = {
+DEFAULT_CONSTANTS: dict[str, float] = {
     "pi": math.pi,
     "e": math.e,
 }
@@ -88,8 +88,8 @@ class _SafeEvaluator(ast.NodeVisitor):
     def __init__(
         self,
         variables: Mapping[str, float],
-        functions: Optional[Mapping[str, Callable[..., float]]] = None,
-        constants: Optional[Mapping[str, float]] = None,
+        functions: Mapping[str, Callable[..., float]] | None = None,
+        constants: Mapping[str, float] | None = None,
     ) -> None:
         self.variables = dict(variables)
         self.functions = dict(functions or DEFAULT_ALLOWED_FUNCTIONS)
@@ -146,8 +146,8 @@ class _SafeEvaluator(ast.NodeVisitor):
 def safe_eval_expression(
     expression: str,
     variables: Mapping[str, float],
-    allowed_functions: Optional[Mapping[str, Callable[..., float]]] = None,
-    constants: Optional[Mapping[str, float]] = None,
+    allowed_functions: Mapping[str, Callable[..., float]] | None = None,
+    constants: Mapping[str, float] | None = None,
 ) -> float:
     """Safely evaluate a math expression with restricted operations."""
     expr = normalize_expression(expression)
@@ -169,8 +169,8 @@ def safe_eval_expression(
 def apply_derived_variables(
     values: Mapping[str, float],
     derived_variables: Mapping[str, str],
-    allowed_functions: Optional[Mapping[str, Callable[..., float]]] = None,
-) -> Dict[str, float]:
+    allowed_functions: Mapping[str, Callable[..., float]] | None = None,
+) -> dict[str, float]:
     """Compute derived variables in order using existing values."""
     derived = dict(values)
     for name, expr in derived_variables.items():
@@ -180,18 +180,18 @@ def apply_derived_variables(
 
 def generate_samples(
     variables: Iterable[str],
-    derived_variables: Optional[Mapping[str, str]] = None,
+    derived_variables: Mapping[str, str] | None = None,
     num_samples: int = 8,
-    sample_range: Tuple[float, float] = (-2.0, 2.0),
-    seed: Optional[int] = None,
-    allowed_functions: Optional[Mapping[str, Callable[..., float]]] = None,
-) -> List[Dict[str, float]]:
+    sample_range: tuple[float, float] = (-2.0, 2.0),
+    seed: int | None = None,
+    allowed_functions: Mapping[str, Callable[..., float]] | None = None,
+) -> list[dict[str, float]]:
     """Generate random samples for variables with optional derived relations."""
     rng = random.Random(seed)
     derived_variables = derived_variables or {}
     variables_list = list(variables)
     base_vars = [var for var in variables_list if var not in derived_variables]
-    samples: List[Dict[str, float]] = []
+    samples: list[dict[str, float]] = []
     low, high = sample_range
     for _ in range(num_samples):
         values = {var: rng.uniform(low, high) for var in base_vars}

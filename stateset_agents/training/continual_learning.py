@@ -14,7 +14,8 @@ import random
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any
+from collections.abc import Iterable, Sequence
 
 try:  # pragma: no cover - optional dependency
     import torch
@@ -22,12 +23,13 @@ except ImportError:  # pragma: no cover
     torch = None  # type: ignore[assignment]
 
 from stateset_agents.core.trajectory import TrajectoryGroup
+from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
 
 from .loss_computation import _prepare_inputs_and_labels
 
 logger = logging.getLogger(__name__)
 
-CONTINUAL_EXCEPTIONS = (AttributeError, RuntimeError, TypeError, ValueError)
+CONTINUAL_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
 
 
 class ContinualLearningStrategy(str, Enum):
@@ -84,10 +86,10 @@ class ReplayEntry:
     """Stored trajectory group with metadata for replay."""
 
     group: TrajectoryGroup
-    task_id: Optional[str]
+    task_id: str | None
     reward: float
     sequence: int
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class TrajectoryReplayBuffer:
@@ -98,13 +100,13 @@ class TrajectoryReplayBuffer:
         max_size: int = 2000,
         storage_strategy: str = "reservoir",
         sampling_strategy: str = "uniform",
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         self.max_size = max(1, int(max_size))
         self.storage_strategy = storage_strategy
         self.sampling_strategy = sampling_strategy
         self._rng = random.Random(seed)
-        self._entries: List[ReplayEntry] = []
+        self._entries: list[ReplayEntry] = []
         self._seen = 0
         self._sequence = 0
 
@@ -120,8 +122,8 @@ class TrajectoryReplayBuffer:
     def add_groups(
         self,
         groups: Iterable[TrajectoryGroup],
-        task_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        task_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         for group in groups:
             reward = _mean_reward(group)
@@ -154,9 +156,9 @@ class TrajectoryReplayBuffer:
     def sample_groups(
         self,
         count: int,
-        task_id: Optional[str] = None,
-        sampling_strategy: Optional[str] = None,
-    ) -> List[TrajectoryGroup]:
+        task_id: str | None = None,
+        sampling_strategy: str | None = None,
+    ) -> list[TrajectoryGroup]:
         if count <= 0 or not self._entries:
             return []
 
@@ -180,14 +182,14 @@ class TrajectoryReplayBuffer:
             chosen = self._rng.choices(candidates, weights=weights, k=count)
             return [entry.group for entry in chosen]
         if strategy == "balanced":
-            by_task: Dict[Optional[str], List[ReplayEntry]] = {}
+            by_task: dict[str | None, list[ReplayEntry]] = {}
             for entry in candidates:
                 by_task.setdefault(entry.task_id, []).append(entry)
             task_ids = [tid for tid in by_task if tid is not None]
             if not task_ids:
                 return [entry.group for entry in self._rng.sample(candidates, count)]
             per_task = max(1, count // len(task_ids))
-            selected: List[ReplayEntry] = []
+            selected: list[ReplayEntry] = []
             for tid in task_ids:
                 entries = by_task.get(tid, [])
                 if not entries:
@@ -205,7 +207,7 @@ class TrajectoryReplayBuffer:
         # Uniform without replacement
         return [entry.group for entry in self._rng.sample(candidates, count)]
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         rewards = [entry.reward for entry in self._entries]
         return {
             "size": len(self._entries),
@@ -215,7 +217,7 @@ class TrajectoryReplayBuffer:
             "sampling_strategy": self.sampling_strategy,
         }
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> dict[str, Any]:
         """Return a serializable snapshot of the buffer state."""
         return {
             "max_size": self.max_size,
@@ -235,7 +237,7 @@ class TrajectoryReplayBuffer:
             ],
         }
 
-    def load_state_dict(self, state: Dict[str, Any]) -> None:
+    def load_state_dict(self, state: dict[str, Any]) -> None:
         """Restore buffer state from a snapshot."""
         if not isinstance(state, dict):
             return
@@ -250,7 +252,7 @@ class TrajectoryReplayBuffer:
         if isinstance(sampling_strategy, str) and sampling_strategy:
             self.sampling_strategy = sampling_strategy
 
-        entries: List[ReplayEntry] = []
+        entries: list[ReplayEntry] = []
         for item in state.get("entries", []) or []:
             if not isinstance(item, dict):
                 continue
@@ -295,8 +297,8 @@ class ContinualLearningManager:
     def __init__(
         self,
         config: ContinualLearningConfig,
-        training_config: Optional[Any] = None,
-        seed: Optional[int] = None,
+        training_config: Any | None = None,
+        seed: int | None = None,
     ):
         self.config = config
         self.training_config = training_config
@@ -308,15 +310,15 @@ class ContinualLearningManager:
             seed=seed,
         )
         self.reference_model = None
-        self._ewc_fisher: Dict[str, Any] = {}
-        self._ewc_params: Dict[str, Any] = {}
+        self._ewc_fisher: dict[str, Any] = {}
+        self._ewc_params: dict[str, Any] = {}
 
         if self.config.uses_ewc() and torch is None:
             logger.warning("EWC requested but PyTorch is unavailable; disabling EWC.")
             self.config.ewc_lambda = 0.0
 
     @classmethod
-    def from_training_config(cls, training_config: Any) -> "ContinualLearningManager":
+    def from_training_config(cls, training_config: Any) -> ContinualLearningManager:
         strategy = _coerce_str(
             getattr(training_config, "continual_strategy", None), "none"
         )
@@ -350,20 +352,16 @@ class ContinualLearningManager:
             continual_kl_beta=_coerce_float(
                 getattr(training_config, "continual_kl_beta", None), 0.0
             ),
-            ewc_lambda=_coerce_float(
-                getattr(training_config, "ewc_lambda", None), 0.0
-            ),
+            ewc_lambda=_coerce_float(getattr(training_config, "ewc_lambda", None), 0.0),
             ewc_num_samples=_coerce_int(
                 getattr(training_config, "ewc_num_samples", None), 64
             ),
-            ewc_decay=_coerce_float(
-                getattr(training_config, "ewc_decay", None), 0.9
-            ),
+            ewc_decay=_coerce_float(getattr(training_config, "ewc_decay", None), 0.9),
             task_id_key=_coerce_str(
                 getattr(training_config, "task_id_key", None), "task_id"
             ),
         )
-        seed = getattr(training_config, "seed", None)
+        seed = _coerce_seed(getattr(training_config, "seed", None))
         return cls(config=config, training_config=training_config, seed=seed)
 
     @property
@@ -380,16 +378,16 @@ class ContinualLearningManager:
     def add_trajectory_groups(
         self,
         groups: Sequence[TrajectoryGroup],
-        task_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        task_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         if not (self.config.uses_replay() or self.config.uses_ewc()):
             return
         self.buffer.add_groups(groups, task_id=task_id, metadata=metadata)
 
     def sample_replay_groups(
-        self, new_group_count: int, task_id: Optional[str] = None
-    ) -> List[TrajectoryGroup]:
+        self, new_group_count: int, task_id: str | None = None
+    ) -> list[TrajectoryGroup]:
         if not self.should_replay():
             return []
         if new_group_count <= 0:
@@ -410,8 +408,8 @@ class ContinualLearningManager:
     def on_task_end(
         self,
         agent: Any,
-        task_id: Optional[str] = None,
-        recent_groups: Optional[Sequence[TrajectoryGroup]] = None,
+        task_id: str | None = None,
+        recent_groups: Sequence[TrajectoryGroup] | None = None,
     ) -> None:
         if self.config.uses_lwf():
             self._snapshot_reference_model(agent)
@@ -430,8 +428,8 @@ class ContinualLearningManager:
     def _update_ewc(
         self,
         agent: Any,
-        task_id: Optional[str] = None,
-        recent_groups: Optional[Sequence[TrajectoryGroup]] = None,
+        task_id: str | None = None,
+        recent_groups: Sequence[TrajectoryGroup] | None = None,
     ) -> None:
         if torch is None:
             return
@@ -466,7 +464,7 @@ class ContinualLearningManager:
 
     def _estimate_fisher(
         self, agent: Any, trajectories: Sequence[Any]
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         if torch is None:
             return {}, {}
 
@@ -482,10 +480,10 @@ class ContinualLearningManager:
         if not named_params:
             return {}, {}
 
-        fisher: Dict[str, Any] = {
+        fisher: dict[str, Any] = {
             name: torch.zeros_like(param) for name, param in named_params
         }
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             name: param.detach().clone() for name, param in named_params
         }
 
@@ -509,7 +507,7 @@ class ContinualLearningManager:
                     retain_graph=False,
                     allow_unused=True,
                 )
-                for (name, _), grad in zip(named_params, grads):
+                for (name, _), grad in zip(named_params, grads, strict=False):
                     if grad is not None:
                         fisher[name] += grad.detach() ** 2
             except CONTINUAL_EXCEPTIONS as exc:
@@ -524,7 +522,7 @@ class ContinualLearningManager:
 
         return fisher, params
 
-    def compute_ewc_penalty(self, agent: Any) -> Optional[Any]:
+    def compute_ewc_penalty(self, agent: Any) -> Any | None:
         if not self.config.uses_ewc() or not self._ewc_fisher:
             return None
         if torch is None:
@@ -546,7 +544,7 @@ class ContinualLearningManager:
             return None
         return 0.5 * float(self.config.ewc_lambda) * loss
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> dict[str, Any]:
         """Return a serializable snapshot of continual learning state."""
         return {
             "config": asdict(self.config),
@@ -555,7 +553,7 @@ class ContinualLearningManager:
             "ewc_params": self._ewc_params,
         }
 
-    def load_state_dict(self, state: Dict[str, Any]) -> None:
+    def load_state_dict(self, state: dict[str, Any]) -> None:
         """Restore continual learning state from a snapshot."""
         if not isinstance(state, dict):
             return
@@ -578,8 +576,8 @@ class ContinualLearningManager:
 
 def _flatten_trajectories(
     groups: Sequence[TrajectoryGroup],
-) -> List[Any]:
-    trajectories: List[Any] = []
+) -> list[Any]:
+    trajectories: list[Any] = []
     for group in groups:
         trajectories.extend(list(group.trajectories))
     return trajectories
@@ -618,6 +616,29 @@ def _coerce_float(value: Any, default: float) -> float:
         except ValueError:
             return default
     return default
+
+
+def _coerce_seed(value: Any) -> int | None:
+    """Coerce arbitrary seed values into a stable Optional[int].
+
+    `random.Random()` accepts a broad range of seed types, but non-standard
+    objects trigger a deprecation warning (hash-based seeding). For configs
+    coming from mocks or dynamic sources, we prefer an explicit int-or-None.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value))
+        except ValueError:
+            return None
+    return None
 
 
 def _coerce_str(value: Any, default: str) -> str:

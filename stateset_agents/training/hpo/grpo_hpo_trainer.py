@@ -6,22 +6,22 @@ that adds automatic hyperparameter optimization capabilities.
 """
 
 import asyncio
+import json
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
-import json
+from typing import Any
 
-from stateset_agents.training.config import TrainingConfig
-from stateset_agents.training.trainer import MultiTurnGRPOTrainer
-from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.agent import MultiTurnAgent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
+from stateset_agents.training.config import TrainingConfig
+from stateset_agents.training.trainer import MultiTurnGRPOTrainer
 
-from .base import HPOBackend, HPOCallback, HPOResult, HPOSummary, SearchSpace
+from .base import HPOBackend, HPOCallback, HPOSummary
 from .config import HPOConfig
-from .search_spaces import get_search_space
 from .optuna_backend import OptunaBackend
 from .ray_tune_backend import RayTuneBackend
+from .search_spaces import get_search_space
 from .wandb_backend import WandBSweepsBackend
 
 logger = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ class GRPOHPOTrainer:
         reward_function: RewardFunction,
         base_config: TrainingConfig,
         hpo_config: HPOConfig,
-        callbacks: Optional[List[HPOCallback]] = None,
+        callbacks: list[HPOCallback] | None = None,
     ):
         """Initialize GRPO HPO Trainer.
 
@@ -118,8 +118,8 @@ class GRPOHPOTrainer:
         self.backend = self._create_backend()
 
         # Track results
-        self.hpo_summary: Optional[HPOSummary] = None
-        self.best_agent: Optional[MultiTurnAgent] = None
+        self.hpo_summary: HPOSummary | None = None
+        self.best_agent: MultiTurnAgent | None = None
 
     def _create_backend(self) -> HPOBackend:
         """Create the HPO backend based on configuration."""
@@ -132,7 +132,7 @@ class GRPOHPOTrainer:
                 direction=self.hpo_config.direction,
                 callbacks=self.callbacks,
                 study_name=self.hpo_config.study_name,
-                **backend_config
+                **backend_config,
             )
         elif self.hpo_config.backend == "ray_tune":
             return RayTuneBackend(
@@ -144,7 +144,9 @@ class GRPOHPOTrainer:
                 study_name=self.hpo_config.study_name,
                 scheduler=backend_config.get("scheduler", "asha"),
                 search_alg=backend_config.get("search_alg", "bayesopt"),
-                max_concurrent=backend_config.get("max_concurrent", self.hpo_config.n_parallel_trials),
+                max_concurrent=backend_config.get(
+                    "max_concurrent", self.hpo_config.n_parallel_trials
+                ),
                 cpu_per_trial=self.hpo_config.cpu_per_trial,
                 gpu_per_trial=self.hpo_config.gpu_per_trial,
                 ray_init_kwargs=backend_config.get("ray_init_kwargs"),
@@ -164,7 +166,7 @@ class GRPOHPOTrainer:
         else:
             raise ValueError(f"Unknown backend: {self.hpo_config.backend}")
 
-    def _create_training_config(self, params: Dict[str, Any]) -> TrainingConfig:
+    def _create_training_config(self, params: dict[str, Any]) -> TrainingConfig:
         """Create a training config by applying HPO params to base config.
 
         Args:
@@ -175,8 +177,7 @@ class GRPOHPOTrainer:
         """
         # Start with base config
         config_dict = {
-            k: v for k, v in self.base_config.__dict__.items()
-            if not k.startswith('_')
+            k: v for k, v in self.base_config.__dict__.items() if not k.startswith("_")
         }
 
         # Override with HPO params
@@ -189,7 +190,7 @@ class GRPOHPOTrainer:
         # Create new config
         return TrainingConfig(**config_dict)
 
-    async def _objective_function(self, params: Dict[str, Any]) -> float:
+    async def _objective_function(self, params: dict[str, Any]) -> float:
         """Objective function for HPO.
 
         This trains the agent with given parameters and returns the metric.
@@ -208,7 +209,7 @@ class GRPOHPOTrainer:
             agent=self.agent,
             environment=self.environment,
             reward_function=self.reward_function,
-            config=training_config
+            config=training_config,
         )
 
         # Train (use a subset of episodes for faster HPO)
@@ -224,7 +225,9 @@ class GRPOHPOTrainer:
             # Extract objective metric
             metric_value = metrics.get(self.hpo_config.objective_metric, 0.0)
 
-            logger.info(f"Trial completed: {self.hpo_config.objective_metric} = {metric_value:.4f}")
+            logger.info(
+                f"Trial completed: {self.hpo_config.objective_metric} = {metric_value:.4f}"
+            )
 
             return metric_value
 
@@ -232,9 +235,9 @@ class GRPOHPOTrainer:
             logger.error(f"Training failed: {e}")
             # Return worst possible value
             if self.hpo_config.direction == "maximize":
-                return float('-inf')
+                return float("-inf")
             else:
-                return float('inf')
+                return float("inf")
 
     async def optimize(self) -> HPOSummary:
         """Run hyperparameter optimization.
@@ -251,7 +254,7 @@ class GRPOHPOTrainer:
         self.hpo_summary = await self.backend.optimize(
             objective_fn=self._objective_function,
             n_trials=self.hpo_config.n_trials,
-            timeout=self.hpo_config.timeout
+            timeout=self.hpo_config.timeout,
         )
 
         # Save results
@@ -263,8 +266,7 @@ class GRPOHPOTrainer:
         return self.hpo_summary
 
     async def train_with_best_params(
-        self,
-        full_episodes: Optional[int] = None
+        self, full_episodes: int | None = None
     ) -> MultiTurnAgent:
         """Train agent using the best parameters found by HPO.
 
@@ -296,7 +298,7 @@ class GRPOHPOTrainer:
             agent=self.agent,
             environment=self.environment,
             reward_function=self.reward_function,
-            config=training_config
+            config=training_config,
         )
 
         # Train
@@ -324,12 +326,12 @@ class GRPOHPOTrainer:
 
         # Save search space
         search_space_path = self.hpo_config.output_dir / "search_space.json"
-        with open(search_space_path, 'w') as f:
+        with open(search_space_path, "w") as f:
             json.dump(self.search_space.to_dict(), f, indent=2)
 
         # Save config
         config_path = self.hpo_config.output_dir / "hpo_config.json"
-        with open(config_path, 'w') as f:
+        with open(config_path, "w") as f:
             json.dump(self.hpo_config.to_dict(), f, indent=2)
 
         # Save individual trial results
@@ -371,7 +373,7 @@ class GRPOHPOTrainer:
 
         return self.hpo_summary
 
-    def get_best_params(self) -> Dict[str, Any]:
+    def get_best_params(self) -> dict[str, Any]:
         """Get the best hyperparameters found.
 
         Returns:
@@ -385,7 +387,7 @@ class GRPOHPOTrainer:
 
         return self.hpo_summary.best_params
 
-    def plot_results(self, save_dir: Optional[Path] = None):
+    def plot_results(self, save_dir: Path | None = None):
         """Generate and save HPO visualization plots.
 
         Args:
@@ -414,10 +416,13 @@ class GRPOHPOTrainer:
             except HPO_EXCEPTIONS as e:
                 logger.warning(f"Could not generate plots: {e}")
         else:
-            logger.warning(f"Plotting not yet implemented for {self.hpo_config.backend}")
+            logger.warning(
+                f"Plotting not yet implemented for {self.hpo_config.backend}"
+            )
 
 
 # Convenience function for quick HPO
+
 
 async def quick_hpo(
     agent: MultiTurnAgent,
@@ -426,7 +431,7 @@ async def quick_hpo(
     base_config: TrainingConfig,
     n_trials: int = 20,
     search_space_name: str = "grpo",
-    output_dir: Path = Path("./quick_hpo")
+    output_dir: Path = Path("./quick_hpo"),
 ) -> HPOSummary:
     """Quick HPO with sensible defaults.
 
@@ -460,15 +465,15 @@ async def quick_hpo(
         optuna_config={
             "sampler": "tpe",
             "pruner": "median",
-        }
+        },
     )
 
     trainer = GRPOHPOTrainer(
         agent=agent,
         environment=environment,
-        reward_function=reward_fn,
+        reward_function=reward_function,
         base_config=base_config,
-        hpo_config=hpo_config
+        hpo_config=hpo_config,
     )
 
     return await trainer.optimize()

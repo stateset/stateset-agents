@@ -4,7 +4,7 @@ from enum import Enum
 
 import pytest
 
-from api.versioning import APIVersion, MigrationStep, RequestMigrator
+from stateset_agents.api.versioning import APIVersion, MigrationStep, RequestMigrator
 
 
 class DummyVersion(str, Enum):
@@ -49,4 +49,3 @@ def test_migration_no_path_raises() -> None:
     )
     with pytest.raises(ValueError):
         migrator.migrate({}, APIVersion.V2, APIVersion.V1)
-

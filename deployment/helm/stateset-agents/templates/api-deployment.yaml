@@ -1,0 +1,87 @@
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stateset-agents.fullname" . }}-api
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ include "stateset-agents.fullname" . }}-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: {{ include "stateset-agents.fullname" . }}-api
+  template:
+    metadata:
+      labels:
+        app: {{ include "stateset-agents.fullname" . }}-api
+    spec:
+      automountServiceAccountToken: false
+      {{- $sa := include "stateset-agents.serviceAccountName" . }}
+      {{- if $sa }}
+      serviceAccountName: {{ $sa }}
+      {{- end }}
+      {{- with .Values.api.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: api
+        image: {{ include "stateset-agents.image" .Values.api.image }}
+        imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+        {{- with .Values.api.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        ports:
+        - containerPort: {{ .Values.api.service.port }}
+          name: http
+        envFrom:
+        - secretRef:
+            name: {{ .Values.secrets.api.name | quote }}
+            optional: {{ not .Values.secrets.api.create }}
+        env:
+        - name: INFERENCE_BACKEND_URL
+          value: {{ default (printf "http://%s-vllm:8000" (include "stateset-agents.fullname" .)) (index .Values.api.env "INFERENCE_BACKEND_URL") | quote }}
+        {{- range $key, $value := .Values.api.env }}
+        {{- if ne $key "INFERENCE_BACKEND_URL" }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+        resources:
+          requests:
+            cpu: {{ .Values.api.resources.requests.cpu | quote }}
+            memory: {{ .Values.api.resources.requests.memory | quote }}
+          limits:
+            cpu: {{ .Values.api.resources.limits.cpu | quote }}
+            memory: {{ .Values.api.resources.limits.memory | quote }}
+        {{- if .Values.api.tmp.enabled }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        {{- end }}
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .Values.api.service.port }}
+          periodSeconds: 5
+          failureThreshold: 30
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: {{ .Values.api.service.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: {{ .Values.api.service.port }}
+          initialDelaySeconds: 15
+          periodSeconds: 5
+      {{- if .Values.api.tmp.enabled }}
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      {{- end }}
+{{- end }}

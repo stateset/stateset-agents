@@ -25,11 +25,11 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
+from typing import Any
+from collections.abc import AsyncIterator, Callable
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -68,15 +68,17 @@ class StreamEvent:
 
     def to_sse(self) -> str:
         """Format as Server-Sent Event."""
-        data_json = json.dumps({
-            "type": self.event_type.value,
-            "data": self.data,
-            "id": self.id,
-            "timestamp": self.timestamp,
-        })
+        data_json = json.dumps(
+            {
+                "type": self.event_type.value,
+                "data": self.data,
+                "id": self.id,
+                "timestamp": self.timestamp,
+            }
+        )
         return f"id: {self.id}\nevent: {self.event_type.value}\ndata: {data_json}\n\n"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "type": self.event_type.value,
@@ -90,10 +92,10 @@ class StreamingRequest(BaseModel):
     """Request for streaming chat."""
 
     message: str = Field(..., description="User message")
-    conversation_id: Optional[str] = Field(None, description="Conversation ID")
-    system_prompt: Optional[str] = Field(None, description="System prompt override")
-    temperature: Optional[float] = Field(0.7, ge=0.0, le=2.0)
-    max_tokens: Optional[int] = Field(512, ge=1, le=4096)
+    conversation_id: str | None = Field(None, description="Conversation ID")
+    system_prompt: str | None = Field(None, description="System prompt override")
+    temperature: float | None = Field(0.7, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(512, ge=1, le=4096)
     stream_tokens: bool = Field(True, description="Stream individual tokens")
 
     class Config:
@@ -112,13 +114,13 @@ class BatchItem(BaseModel):
 
     id: str = Field(..., description="Unique item ID")
     message: str = Field(..., description="User message")
-    context: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    context: dict[str, Any] | None = Field(default_factory=dict)
 
 
 class BatchRequest(BaseModel):
     """Batch processing request."""
 
-    items: List[BatchItem] = Field(..., min_length=1, max_length=100)
+    items: list[BatchItem] = Field(..., min_length=1, max_length=100)
     parallel: int = Field(4, ge=1, le=10, description="Parallel processing")
     stream_progress: bool = Field(True, description="Stream progress updates")
 
@@ -139,8 +141,8 @@ class BatchItemResult(BaseModel):
 
     id: str
     status: str  # "completed", "failed"
-    response: Optional[str] = None
-    error: Optional[str] = None
+    response: str | None = None
+    error: str | None = None
     latency_ms: float
 
 
@@ -151,7 +153,7 @@ class BatchResponse(BaseModel):
     total_items: int
     completed: int
     failed: int
-    results: List[BatchItemResult]
+    results: list[BatchItemResult]
     total_latency_ms: float
 
 
@@ -165,7 +167,7 @@ class StreamingService:
             agent: Agent to use for generation
         """
         self.agent = agent
-        self._active_streams: Dict[str, Dict[str, Any]] = {}
+        self._active_streams: dict[str, dict[str, Any]] = {}
 
     def set_agent(self, agent: Any) -> None:
         """Set the agent for streaming."""
@@ -174,8 +176,8 @@ class StreamingService:
     async def stream_response(
         self,
         message: str,
-        conversation_id: Optional[str] = None,
-        system_prompt: Optional[str] = None,
+        conversation_id: str | None = None,
+        system_prompt: str | None = None,
         **kwargs,
     ) -> AsyncIterator[StreamEvent]:
         """Stream a response from the agent.
@@ -202,13 +204,17 @@ class StreamingService:
                 data={
                     "stream_id": stream_id,
                     "conversation_id": conversation_id,
-                    "model": getattr(self.agent.config, "model_name", "unknown") if self.agent else "mock",
+                    "model": getattr(self.agent.config, "model_name", "unknown")
+                    if self.agent
+                    else "mock",
                 },
             )
 
             if self.agent is None:
                 # Mock streaming for testing
-                mock_response = "Hello! I'm a mock agent response. How can I help you today?"
+                mock_response = (
+                    "Hello! I'm a mock agent response. How can I help you today?"
+                )
                 for word in mock_response.split():
                     yield StreamEvent(
                         event_type=StreamEventType.TOKEN,
@@ -240,7 +246,10 @@ class StreamingService:
                 event_type=StreamEventType.DONE,
                 data={
                     "stream_id": stream_id,
-                    "duration_ms": (time.time() - self._active_streams[stream_id]["started"]) * 1000,
+                    "duration_ms": (
+                        time.time() - self._active_streams[stream_id]["started"]
+                    )
+                    * 1000,
                 },
             )
 
@@ -255,9 +264,9 @@ class StreamingService:
 
     async def process_batch(
         self,
-        items: List[BatchItem],
+        items: list[BatchItem],
         parallel: int = 4,
-        progress_callback: Optional[Callable[[int, int, BatchItemResult], None]] = None,
+        progress_callback: Callable[[int, int, BatchItemResult], None] | None = None,
     ) -> BatchResponse:
         """Process a batch of requests.
 
@@ -271,7 +280,7 @@ class StreamingService:
         """
         batch_id = uuid.uuid4().hex[:12]
         start_time = time.time()
-        results: List[BatchItemResult] = []
+        results: list[BatchItemResult] = []
         semaphore = asyncio.Semaphore(parallel)
 
         async def process_item(item: BatchItem) -> BatchItemResult:
@@ -323,7 +332,7 @@ class StreamingService:
 
     async def stream_batch_progress(
         self,
-        items: List[BatchItem],
+        items: list[BatchItem],
         parallel: int = 4,
     ) -> AsyncIterator[StreamEvent]:
         """Process batch with streaming progress.
@@ -385,7 +394,7 @@ class StreamingService:
 
 
 # Global service instance
-_streaming_service: Optional[StreamingService] = None
+_streaming_service: StreamingService | None = None
 
 
 def get_streaming_service() -> StreamingService:
@@ -414,6 +423,7 @@ async def stream_chat(
 
     Returns a stream of events containing tokens as they are generated.
     """
+
     async def event_generator():
         async for event in service.stream_response(
             message=request.message,
@@ -438,10 +448,11 @@ async def stream_chat(
 @router.get("/chat")
 async def stream_chat_get(
     message: str = Query(..., description="User message"),
-    conversation_id: Optional[str] = Query(None),
+    conversation_id: str | None = Query(None),
     service: StreamingService = Depends(get_streaming_service),
 ) -> StreamingResponse:
     """Stream chat via GET request (for EventSource compatibility)."""
+
     async def event_generator():
         async for event in service.stream_response(
             message=message,
@@ -480,6 +491,7 @@ async def stream_batch(
     service: StreamingService = Depends(get_streaming_service),
 ) -> StreamingResponse:
     """Process batch with streaming progress updates."""
+
     async def event_generator():
         async for event in service.stream_batch_progress(
             items=request.items,

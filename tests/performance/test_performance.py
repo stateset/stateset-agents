@@ -4,7 +4,6 @@ Performance tests for critical operations.
 These tests measure execution time and resource usage.
 """
 
-import asyncio
 import os
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -143,7 +142,6 @@ class TestAgentPerformance:
         with patch.object(
             performance_reward, "compute_reward", new=AsyncMock(return_value=0.85)
         ):
-
             start_time = time.time()
 
             # Run multiple reward computations to measure performance

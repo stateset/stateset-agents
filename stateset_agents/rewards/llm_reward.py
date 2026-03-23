@@ -9,16 +9,13 @@ import asyncio
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
-from datetime import datetime
 from textwrap import dedent
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 try:
     from litellm import completion
-    from litellm.types.utils import ModelResponse
     from openai.types.chat.chat_completion_message_param import (
         ChatCompletionMessageParam,
     )
@@ -26,16 +23,15 @@ try:
     LITELLM_AVAILABLE = True
 except ImportError:
     LITELLM_AVAILABLE = False
-    ChatCompletionMessageParam = Dict[str, Any]
-
+    ChatCompletionMessageParam = dict[str, Any]
 
 from stateset_agents.core import reward as core_reward
+from stateset_agents.utils.cache import CacheService
+from stateset_agents.utils.monitoring import MonitoringService
 
 RewardFunction = core_reward.RewardFunction
 RewardResult = core_reward.RewardResult
 
-from stateset_agents.utils.cache import CacheService
-from stateset_agents.utils.monitoring import MonitoringService
 logger = logging.getLogger(__name__)
 
 LLM_REWARD_EXCEPTIONS = (
@@ -62,7 +58,7 @@ class TrajectoryScore(BaseModel):
 class RulerResponse(BaseModel):
     """Response from the ruler LLM judge"""
 
-    scores: List[TrajectoryScore] = Field(description="The scores for each trajectory.")
+    scores: list[TrajectoryScore] = Field(description="The scores for each trajectory.")
 
 
 # Pre-defined rubrics for different domains
@@ -151,7 +147,7 @@ class RulerRewardFunction(RewardFunction):
         self,
         model: str = "openai/gpt-4",
         rubric_type: str = "default",
-        custom_rubric: Optional[str] = None,
+        custom_rubric: str | None = None,
         temperature: float = 0.0,
         fallback_enabled: bool = True,
         cache_ttl: int = 3600,
@@ -159,8 +155,8 @@ class RulerRewardFunction(RewardFunction):
         max_retries: int = 3,
         timeout: float = 30.0,
         weight: float = 1.0,
-        cache_service: Optional[CacheService] = None,
-        monitoring_service: Optional[MonitoringService] = None,
+        cache_service: CacheService | None = None,
+        monitoring_service: MonitoringService | None = None,
     ):
         """
         Initialize LLM Judge reward function.
@@ -209,18 +205,23 @@ class RulerRewardFunction(RewardFunction):
         self.fallback_uses = 0
 
     def _hash_trajectory(
-        self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]]
+        self, turns: list[dict[str, Any]], context: dict[str, Any] | None
     ) -> str:
         """Generate a hash key for trajectory content for caching."""
         content = json.dumps(
-            {"turns": turns, "context": context, "model": self.model, "rubric": self.rubric_type},
+            {
+                "turns": turns,
+                "context": context,
+                "model": self.model,
+                "rubric": self.rubric_type,
+            },
             sort_keys=True,
             default=str,
         )
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     async def compute_reward(
-        self, turns: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None
+        self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """
         Compute reward using LLM Judge.
@@ -304,9 +305,9 @@ class RulerRewardFunction(RewardFunction):
 
     async def compute_batch_rewards(
         self,
-        batch_turns: List[List[Dict[str, Any]]],
-        context: Optional[Dict[str, Any]] = None,
-    ) -> List[RewardResult]:
+        batch_turns: list[list[dict[str, Any]]],
+        context: dict[str, Any] | None = None,
+    ) -> list[RewardResult]:
         """
         Compute rewards for a batch of trajectory turns.
 
@@ -352,9 +353,9 @@ class RulerRewardFunction(RewardFunction):
 
     async def _compute_scores(
         self,
-        messages_list: List[List[ChatCompletionMessageParam]],
-        context: Optional[Dict[str, Any]] = None,
-    ) -> List[float]:
+        messages_list: list[list[ChatCompletionMessageParam]],
+        context: dict[str, Any] | None = None,
+    ) -> list[float]:
         """Compute scores for a list of message sequences"""
         if not messages_list:
             return []
@@ -402,8 +403,8 @@ class RulerRewardFunction(RewardFunction):
         return []
 
     async def _ruler_judge(
-        self, message_lists: List[List[ChatCompletionMessageParam]]
-    ) -> List[float]:
+        self, message_lists: list[list[ChatCompletionMessageParam]]
+    ) -> list[float]:
         """Core LLM Judge implementation"""
         if not message_lists:
             return []
@@ -444,8 +445,8 @@ class RulerRewardFunction(RewardFunction):
 
         judge_prompt = dedent(
             f"""
-            All of the trajectories below have been given the same goal. 
-            Your job is to consider each of them and give them a score between 0 and 1. 
+            All of the trajectories below have been given the same goal.
+            Your job is to consider each of them and give them a score between 0 and 1.
             Take into consideration your best judgement of the agent's goal.
 
             Grading standards:
@@ -496,7 +497,7 @@ class RulerRewardFunction(RewardFunction):
 
         return [s.score for s in parsed.scores]
 
-    async def _make_completion_call(self, messages: List[Dict[str, Any]]) -> Any:
+    async def _make_completion_call(self, messages: list[dict[str, Any]]) -> Any:
         """Make async completion call (wrapper for sync litellm)"""
         # Run in thread pool since litellm is synchronous
         loop = asyncio.get_event_loop()
@@ -512,8 +513,8 @@ class RulerRewardFunction(RewardFunction):
         )
 
     def _turns_to_messages(
-        self, turns: List[Dict[str, Any]]
-    ) -> List[ChatCompletionMessageParam]:
+        self, turns: list[dict[str, Any]]
+    ) -> list[ChatCompletionMessageParam]:
         """Convert conversation turns to message format"""
         messages = []
         for turn in turns:
@@ -525,7 +526,7 @@ class RulerRewardFunction(RewardFunction):
 
         return messages
 
-    def _heuristic_fallback(self, turns: List[Dict[str, Any]]) -> float:
+    def _heuristic_fallback(self, turns: list[dict[str, Any]]) -> float:
         """Simple heuristic scoring as fallback"""
         if not turns:
             return 0.0
@@ -571,7 +572,7 @@ class RulerRewardFunction(RewardFunction):
         return max(0.0, min(1.0, score))
 
     def _get_cache_key(
-        self, messages_list: List[List[ChatCompletionMessageParam]]
+        self, messages_list: list[list[ChatCompletionMessageParam]]
     ) -> str:
         """Generate cache key for LLM Judge results"""
         import hashlib
@@ -588,7 +589,7 @@ class RulerRewardFunction(RewardFunction):
         )
         return f"ruler_reward:{hashlib.sha256(content.encode()).hexdigest()}"
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get performance metrics"""
         return {
             "total_calls": self.total_calls,
@@ -599,12 +600,12 @@ class RulerRewardFunction(RewardFunction):
         }
 
     @staticmethod
-    def get_available_rubrics() -> Dict[str, str]:
+    def get_available_rubrics() -> dict[str, str]:
         """Get all available pre-defined rubrics"""
         return RUBRICS.copy()
 
     @staticmethod
-    def create_custom_rubric(name: str, criteria: List[Dict[str, str]]) -> str:
+    def create_custom_rubric(name: str, criteria: list[dict[str, str]]) -> str:
         """
         Create a custom rubric from criteria.
 

@@ -12,11 +12,14 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable, Coroutine
+
+from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 
 logger = logging.getLogger(__name__)
 
-SHUTDOWN_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+SHUTDOWN_EXCEPTIONS = INFERENCE_EXCEPTIONS
 
 
 class ShutdownPhase(Enum):
@@ -47,10 +50,10 @@ class ShutdownState:
     """Current shutdown state."""
 
     is_shutting_down: bool = False
-    started_at: Optional[datetime] = None
-    current_phase: Optional[ShutdownPhase] = None
-    completed_tasks: List[str] = field(default_factory=list)
-    failed_tasks: List[str] = field(default_factory=list)
+    started_at: datetime | None = None
+    current_phase: ShutdownPhase | None = None
+    completed_tasks: list[str] = field(default_factory=list)
+    failed_tasks: list[str] = field(default_factory=list)
     in_flight_requests: int = 0
 
 
@@ -87,7 +90,7 @@ class GracefulShutdownManager:
         self.drain_timeout = drain_timeout
         self.total_timeout = total_timeout
         self.state = ShutdownState()
-        self._tasks: Dict[ShutdownPhase, List[ShutdownTask]] = {
+        self._tasks: dict[ShutdownPhase, list[ShutdownTask]] = {
             phase: [] for phase in ShutdownPhase
         }
         self._shutdown_event = asyncio.Event()
@@ -236,7 +239,7 @@ class GracefulShutdownManager:
 
         logger.info("Request draining complete")
 
-    async def _execute_phase_tasks(self, tasks: List[ShutdownTask]) -> None:
+    async def _execute_phase_tasks(self, tasks: list[ShutdownTask]) -> None:
         """Execute all tasks for a shutdown phase."""
         for task in tasks:
             logger.debug("Running shutdown task: %s", task.name)
@@ -249,7 +252,7 @@ class GracefulShutdownManager:
                 self.state.completed_tasks.append(task.name)
                 logger.info("Completed shutdown task: %s", task.name)
 
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as exc:
                 logger.warning(
                     "Shutdown task %s timed out after %.1fs",
                     task.name,
@@ -258,7 +261,9 @@ class GracefulShutdownManager:
                 self.state.failed_tasks.append(task.name)
 
                 if task.critical:
-                    raise RuntimeError(f"Critical shutdown task {task.name} timed out")
+                    raise RuntimeError(
+                        f"Critical shutdown task {task.name} timed out"
+                    ) from exc
 
             except SHUTDOWN_EXCEPTIONS as e:
                 logger.exception("Shutdown task %s failed: %s", task.name, e)
@@ -267,7 +272,7 @@ class GracefulShutdownManager:
                 if task.critical:
                     raise
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get shutdown status."""
         return {
             "is_shutting_down": self.state.is_shutting_down,
@@ -284,7 +289,7 @@ class GracefulShutdownManager:
 
 
 # Global singleton
-_shutdown_manager: Optional[GracefulShutdownManager] = None
+_shutdown_manager: GracefulShutdownManager | None = None
 
 
 def get_shutdown_manager(

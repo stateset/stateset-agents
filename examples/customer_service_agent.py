@@ -6,10 +6,8 @@ for customer service using the GRPO Agent Framework.
 """
 
 import asyncio
-import json
 import logging
 import os
-from pathlib import Path
 
 # Framework imports
 from stateset_agents import (
@@ -97,7 +95,7 @@ class CustomerServiceAgent(MultiTurnAgent):
             model_name=model_name,
             system_prompt="""You are a professional customer service representative. Your goals are to:
 1. Be helpful and solve customer problems
-2. Be polite and empathetic  
+2. Be polite and empathetic
 3. Provide accurate information
 4. Be concise but thorough
 5. Always maintain a positive, solution-oriented attitude
@@ -355,7 +353,7 @@ async def main():
 
     # Option 1: Manual training with specific configuration
     logger.info("\nOption 1: Manual training configuration")
-    trained_agent_manual = await train(
+    await train(
         agent=agent,
         environment=environment,
         reward_fn=reward_fn,
@@ -450,7 +448,7 @@ async def evaluate_agent(agent, environment, num_episodes=10):
     if total_rewards:
         import numpy as np
 
-        logger.info(f"\nEvaluation Results:")
+        logger.info("\nEvaluation Results:")
         logger.info(
             f"Average Reward: {np.mean(total_rewards):.3f} ± {np.std(total_rewards):.3f}"
         )

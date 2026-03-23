@@ -10,7 +10,7 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..core.computational_engine import create_computational_engine
 
@@ -203,9 +203,9 @@ class AdvancedCustomerServiceAgent:
     async def handle_customer_interaction(
         self,
         message: str,
-        conversation_id: Optional[str] = None,
-        customer_context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        conversation_id: str | None = None,
+        customer_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Handle a complete customer interaction"""
 
         start_time = datetime.now()
@@ -325,8 +325,8 @@ class AdvancedCustomerServiceAgent:
             }
 
     def _get_suggested_actions(
-        self, message: str, response: str, context: Dict[str, Any]
-    ) -> List[str]:
+        self, message: str, response: str, context: dict[str, Any]
+    ) -> list[str]:
         """Get suggested follow-up actions"""
         suggestions = []
 
@@ -362,7 +362,6 @@ class AdvancedCustomerServiceAgent:
         # Create computational engine
         from ..core.agent import Agent
         from ..core.environment import Environment
-        from ..core.reward import RewardFunction
 
         class CustomerServiceAgent(Agent):
             def __init__(self, multiturn_agent):
@@ -382,11 +381,11 @@ class AdvancedCustomerServiceAgent:
                 self.dialogues = dialogues
                 self.current_dialogue = 0
 
-            async def reset(self) -> Dict[str, Any]:
+            async def reset(self) -> dict[str, Any]:
                 self.current_dialogue = 0
                 return {"dialogue_index": 0}
 
-            async def step(self, action: str) -> Dict[str, Any]:
+            async def step(self, action: str) -> dict[str, Any]:
                 self.current_dialogue += 1
                 done = self.current_dialogue >= len(self.dialogues)
 
@@ -448,7 +447,7 @@ class AdvancedCustomerServiceAgent:
             },
         }
 
-    async def get_performance_report(self) -> Dict[str, Any]:
+    async def get_performance_report(self) -> dict[str, Any]:
         """Get comprehensive performance report"""
         return {
             "conversation_metrics": self.conversation_metrics,
@@ -460,9 +459,7 @@ class AdvancedCustomerServiceAgent:
             "dialogue_database_stats": {
                 "total_dialogues": len(self.dialogue_db.dialogues),
                 "categories": list(
-                    set(
-                        d.get("category", "general") for d in self.dialogue_db.dialogues
-                    )
+                    {d.get("category", "general") for d in self.dialogue_db.dialogues}
                 ),
             },
         }
@@ -541,7 +538,7 @@ async def run_interactive_demo():
 
             # Display metrics
             metrics = result["metrics"]
-            print(f"\n📈 Interaction Metrics:")
+            print("\n📈 Interaction Metrics:")
             print(f"   Response time: {metrics['response_time_seconds']:.2f}s")
             print(f"   Quality score: {metrics['average_quality']:.3f}")
 
@@ -610,7 +607,7 @@ async def run_benchmark_demo():
     total_time = (datetime.now() - total_start_time).total_seconds()
 
     # Display benchmark results
-    print(f"\n🏆 BENCHMARK RESULTS")
+    print("\n🏆 BENCHMARK RESULTS")
     print(f"{'='*50}")
     print(f"Total scenarios: {len(test_scenarios)}")
     print(f"Total time: {total_time:.2f}s")

@@ -5,6 +5,8 @@ This module implements state-of-the-art neural reward models using transformer
 embeddings for accurate reward prediction in conversational AI.
 """
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import logging
@@ -12,9 +14,10 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-import numpy as np
+from stateset_agents.core.reward import RewardFunction, RewardResult
+from stateset_agents.core.trajectory import ConversationTurn
 
 try:
     import torch
@@ -22,6 +25,7 @@ try:
     import torch.nn.functional as F
     import torch.optim as optim
     from torch.utils.data import DataLoader, Dataset
+
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
@@ -39,6 +43,7 @@ AutoTokenizer = None
 get_linear_schedule_with_warmup = None
 TRANSFORMERS_AVAILABLE = False
 
+
 def _load_transformers_reward():
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_reward_loaded, AutoModel, AutoTokenizer
@@ -46,11 +51,10 @@ def _load_transformers_reward():
     if _transformers_reward_loaded:
         return TRANSFORMERS_AVAILABLE
     try:
-        from transformers import (
-            AutoModel as _AutoModel,
-            AutoTokenizer as _AutoTokenizer,
-            get_linear_schedule_with_warmup as _get_linear,
-        )
+        from transformers import AutoModel as _AutoModel
+        from transformers import AutoTokenizer as _AutoTokenizer
+        from transformers import get_linear_schedule_with_warmup as _get_linear
+
         AutoModel = _AutoModel
         AutoTokenizer = _AutoTokenizer
         get_linear_schedule_with_warmup = _get_linear
@@ -62,8 +66,6 @@ def _load_transformers_reward():
         _transformers_reward_loaded = True  # Mark as attempted
         return False
 
-from stateset_agents.core.reward import RewardFunction, RewardResult
-from stateset_agents.core.trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +86,7 @@ DEFAULT_STUB_HIDDEN_SIZE = 384
 class _ModelOutput:
     """Minimal transformers-like model output."""
 
-    def __init__(self, last_hidden_state: "torch.Tensor"):
+    def __init__(self, last_hidden_state: torch.Tensor):
         self.last_hidden_state = last_hidden_state
 
 
@@ -101,13 +103,15 @@ class _TinyEncoder(nn.Module):
 
     def __init__(self, vocab_size: int, hidden_size: int):
         super().__init__()
-        self.embeddings = _TinyEmbeddings(vocab_size=vocab_size, hidden_size=hidden_size)
+        self.embeddings = _TinyEmbeddings(
+            vocab_size=vocab_size, hidden_size=hidden_size
+        )
         self.config = SimpleNamespace(hidden_size=hidden_size, vocab_size=vocab_size)
 
     def forward(
         self,
-        input_ids: "torch.Tensor",
-        attention_mask: Optional["torch.Tensor"] = None,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor | None = None,
     ) -> _ModelOutput:
         token_embeddings = self.embeddings.word_embeddings(input_ids)
         if attention_mask is not None:
@@ -120,7 +124,7 @@ class _TinyEncoder(nn.Module):
 class _BatchEncoding(dict):
     """Minimal replacement for transformers.BatchEncoding."""
 
-    def to(self, device: "torch.device") -> "_BatchEncoding":
+    def to(self, device: torch.device) -> _BatchEncoding:
         for key, value in list(self.items()):
             if isinstance(value, torch.Tensor):
                 self[key] = value.to(device)
@@ -136,9 +140,7 @@ class _SimpleTokenizer:
     @staticmethod
     def _stable_token_id(token: str, vocab_size: int) -> int:
         try:
-            digest = hashlib.md5(
-                token.encode("utf-8"), usedforsecurity=False
-            ).digest()
+            digest = hashlib.md5(token.encode("utf-8"), usedforsecurity=False).digest()
         except TypeError:
             digest = hashlib.md5(token.encode("utf-8")).digest()
         value = int.from_bytes(digest[:4], byteorder="big", signed=False)
@@ -155,7 +157,9 @@ class _SimpleTokenizer:
         **kwargs: Any,
     ) -> _BatchEncoding:
         if return_tensors != "pt":
-            raise ValueError("Only return_tensors='pt' is supported by _SimpleTokenizer")
+            raise ValueError(
+                "Only return_tensors='pt' is supported by _SimpleTokenizer"
+            )
 
         tokens = text.split()
         token_ids = [self._stable_token_id(t, self.vocab_size) for t in tokens]
@@ -171,22 +175,24 @@ class _SimpleTokenizer:
 
         input_ids = torch.tensor([token_ids], dtype=torch.long)
         attention_mask = torch.tensor([attention], dtype=torch.long)
-        return _BatchEncoding({"input_ids": input_ids, "attention_mask": attention_mask})
+        return _BatchEncoding(
+            {"input_ids": input_ids, "attention_mask": attention_mask}
+        )
 
 
 class _NullScheduler:
     """No-op LR scheduler for environments without transformers."""
 
-    def __init__(self, optimizer: "torch.optim.Optimizer"):
+    def __init__(self, optimizer: torch.optim.Optimizer):
         self.optimizer = optimizer
 
     def step(self):
         return None
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> dict[str, Any]:
         return {}
 
-    def load_state_dict(self, state_dict: Dict[str, Any]):
+    def load_state_dict(self, state_dict: dict[str, Any]):
         return None
 
 
@@ -240,16 +246,16 @@ class RewardExample:
     prompt: str
     response: str
     reward: float
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
 
     @classmethod
     def from_conversation_turns(
         cls,
-        turns: List[ConversationTurn],
+        turns: list[ConversationTurn],
         reward: float,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> "RewardExample":
+        metadata: dict[str, Any] | None = None,
+    ) -> RewardExample:
         """Create from conversation turns"""
         # Extract prompt (all user turns concatenated)
         prompt_parts = [t.content for t in turns if t.role == "user"]
@@ -272,7 +278,7 @@ class RewardDataset(Dataset):
 
     def __init__(
         self,
-        examples: List[RewardExample],
+        examples: list[RewardExample],
         tokenizer: AutoTokenizer,
         max_length: int = 512,
     ):
@@ -283,7 +289,7 @@ class RewardDataset(Dataset):
     def __len__(self) -> int:
         return len(self.examples)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         example = self.examples[idx]
 
         # Tokenize prompt and response
@@ -462,8 +468,8 @@ class TransformerRewardTrainer:
 
     def __init__(
         self,
-        config: Optional[RewardTrainingConfig] = None,
-        model: Optional[TransformerRewardModel] = None,
+        config: RewardTrainingConfig | None = None,
+        model: TransformerRewardModel | None = None,
     ):
         if not TORCH_AVAILABLE:
             raise ImportError(
@@ -523,11 +529,11 @@ class TransformerRewardTrainer:
 
     def train(
         self,
-        train_examples: List[RewardExample],
-        val_examples: Optional[List[RewardExample]] = None,
+        train_examples: list[RewardExample],
+        val_examples: list[RewardExample] | None = None,
         freeze_encoders: bool = False,
         verbose: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Train the reward model
 
@@ -816,8 +822,8 @@ class LearnedRewardFunction(RewardFunction):
 
     async def compute_reward(
         self,
-        turns: List[ConversationTurn],
-        context: Optional[Dict[str, Any]] = None,
+        turns: list[ConversationTurn],
+        context: dict[str, Any] | None = None,
     ) -> RewardResult:
         """Compute reward using learned model"""
         try:
@@ -864,8 +870,8 @@ class LearnedRewardFunction(RewardFunction):
 
 
 def create_transformer_reward_function(
-    checkpoint_path: Optional[str] = None,
-    config: Optional[RewardTrainingConfig] = None,
+    checkpoint_path: str | None = None,
+    config: RewardTrainingConfig | None = None,
     weight: float = 1.0,
 ) -> LearnedRewardFunction:
     """Create a learned reward function from a checkpoint"""

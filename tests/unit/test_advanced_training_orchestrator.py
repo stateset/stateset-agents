@@ -5,10 +5,7 @@ Tests cover training job management, resource allocation, job scheduling,
 experiment tracking, and training workers.
 """
 
-import asyncio
-import pickle
 import time
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -29,13 +26,14 @@ try:
         TrainingWorker,
         get_training_orchestrator,
     )
+
     ORCHESTRATOR_AVAILABLE = True
-except (ImportError, RuntimeError) as e:
+except (ImportError, RuntimeError):
     ORCHESTRATOR_AVAILABLE = False
 
 pytestmark = pytest.mark.skipif(
     not ORCHESTRATOR_AVAILABLE,
-    reason="Training orchestrator not available (check transformers/torchvision compatibility)"
+    reason="Training orchestrator not available (check transformers/torchvision compatibility)",
 )
 
 
@@ -472,7 +470,9 @@ class TestTrainingWorker:
     @pytest.fixture
     def worker(self):
         """Create a TrainingWorker for testing."""
-        with patch("training.advanced_training_orchestrator.get_monitoring_service") as mock:
+        with patch(
+            "stateset_agents.training.advanced_training_orchestrator.get_monitoring_service"
+        ) as mock:
             mock.return_value = MagicMock()
             mock.return_value.record_training_iteration = MagicMock()
             return TrainingWorker("worker_001")
@@ -518,9 +518,13 @@ class TestAdvancedTrainingOrchestrator:
     @pytest.fixture
     def mock_dependencies(self):
         """Mock external dependencies."""
-        with patch("training.advanced_training_orchestrator.get_monitoring_service") as mock_monitoring, \
-             patch("training.advanced_training_orchestrator.get_state_service") as mock_state, \
-             patch("training.advanced_training_orchestrator.psutil") as mock_psutil:
+        with patch(
+            "stateset_agents.training.advanced_training_orchestrator.get_monitoring_service"
+        ) as mock_monitoring, patch(
+            "stateset_agents.training.advanced_training_orchestrator.get_state_service"
+        ) as mock_state, patch(
+            "stateset_agents.training.advanced_training_orchestrator.psutil"
+        ) as mock_psutil:
             mock_monitoring.return_value = MagicMock()
             mock_monitoring.return_value.metrics_collector = MagicMock()
             mock_state.return_value = MagicMock()
@@ -564,7 +568,9 @@ class TestAdvancedTrainingOrchestrator:
         assert orchestrator.resource_manager is not None
 
     @pytest.mark.asyncio
-    async def test_submit_training_job(self, orchestrator, training_config, mock_dependencies):
+    async def test_submit_training_job(
+        self, orchestrator, training_config, mock_dependencies
+    ):
         """Test submitting a training job."""
         job_id = await orchestrator.submit_training_job(
             training_config, priority=2, user_id="user_001"
@@ -595,6 +601,62 @@ class TestAdvancedTrainingOrchestrator:
         assert status["max_concurrent_jobs"] == 2
 
     @pytest.mark.asyncio
+    async def test_get_job_status_handles_serialized_job_state(
+        self, orchestrator, training_config
+    ):
+        """Serialized enum/config data should round-trip through get_job_status."""
+        from stateset_agents.training.advanced_training_models import (
+            serialize_training_job,
+        )
+
+        job = TrainingJob(job_id="job_001", config=training_config)
+        job.status = TrainingStatus.RUNNING
+        job.current_epoch = 1
+        job.current_step = 25
+
+        orchestrator.state_service.state_manager.get = AsyncMock(
+            return_value=serialize_training_job(job)
+        )
+
+        status = await orchestrator.get_job_status(job.job_id)
+
+        assert status is not None
+        assert status["status"] == "running"
+        assert status["progress"]["current_epoch"] == 1
+        assert status["progress"]["current_step"] == 25
+
+    @pytest.mark.asyncio
+    async def test_cleanup_completed_tasks_releases_resources_and_persists_state(
+        self, orchestrator, training_config
+    ):
+        """Completed worker tasks should deallocate resources and persist final state."""
+        job = TrainingJob(job_id="job_001", config=training_config)
+        job.status = TrainingStatus.COMPLETED
+
+        worker_id = "worker_job_001"
+        orchestrator.workers[worker_id] = MagicMock()
+        task = MagicMock()
+        task.done.return_value = True
+        orchestrator.worker_tasks[worker_id] = task
+        orchestrator.worker_jobs[worker_id] = job
+        orchestrator.scheduler.running_jobs[job.job_id] = job
+        orchestrator.resource_manager.deallocate_resources = AsyncMock()
+        orchestrator.state_service.state_manager.set = AsyncMock()
+
+        await orchestrator._cleanup_completed_tasks()
+
+        orchestrator.resource_manager.deallocate_resources.assert_awaited_once_with(
+            job.job_id
+        )
+        assert job.job_id in orchestrator.scheduler.completed_jobs
+        assert worker_id not in orchestrator.worker_jobs
+        assert worker_id not in orchestrator.worker_tasks
+        assert worker_id not in orchestrator.workers
+
+        persisted = orchestrator.state_service.state_manager.set.await_args.args[1]
+        assert persisted["status"] == "completed"
+
+    @pytest.mark.asyncio
     async def test_shutdown(self, orchestrator, mock_dependencies):
         """Test orchestrator shutdown."""
         # Add a running job
@@ -610,16 +672,23 @@ class TestAdvancedTrainingOrchestrator:
         await orchestrator.shutdown()
 
         # Verify job was cancelled
-        assert orchestrator.scheduler.running_jobs["job_001"].status == TrainingStatus.CANCELLED
+        assert (
+            orchestrator.scheduler.running_jobs["job_001"].status
+            == TrainingStatus.CANCELLED
+        )
 
 
 class TestGetTrainingOrchestrator:
     """Test global orchestrator instance."""
 
-    @patch("training.advanced_training_orchestrator._orchestrator", None)
-    @patch("training.advanced_training_orchestrator.get_monitoring_service")
-    @patch("training.advanced_training_orchestrator.get_state_service")
-    @patch("training.advanced_training_orchestrator.psutil")
+    @patch(
+        "stateset_agents.training.advanced_training_orchestrator._orchestrator", None
+    )
+    @patch(
+        "stateset_agents.training.advanced_training_orchestrator.get_monitoring_service"
+    )
+    @patch("stateset_agents.training.advanced_training_orchestrator.get_state_service")
+    @patch("stateset_agents.training.advanced_training_orchestrator.psutil")
     def test_get_training_orchestrator_creates_instance(
         self, mock_psutil, mock_state, mock_monitoring
     ):

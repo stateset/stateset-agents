@@ -10,22 +10,23 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 
 try:
     import psutil
+
     HAS_PSUTIL = True
 except ImportError:
     HAS_PSUTIL = False
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
-from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.reward import create_customer_service_reward
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent  # noqa: E402
+from stateset_agents.core.environment import ConversationEnvironment  # noqa: E402
 
 
 class BenchmarkResult:
@@ -43,7 +44,7 @@ class BenchmarkResult:
         """Add a metric to the results"""
         self.metrics[key] = value
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return {
             "name": self.name,
@@ -69,7 +70,9 @@ class PerformanceBenchmark:
     def __init__(self):
         self.results = []
 
-    async def benchmark_response_time(self, num_iterations: int = 100) -> BenchmarkResult:
+    async def benchmark_response_time(
+        self, num_iterations: int = 100
+    ) -> BenchmarkResult:
         """Benchmark average response generation time"""
         print(f"\n{'=' * 60}")
         print("BENCHMARK: Response Generation Time")
@@ -217,17 +220,23 @@ class PerformanceBenchmark:
         result.add_metric("total_time_seconds", total_time)
         result.add_metric("total_turns", total_turns)
         result.add_metric("turns_per_second", turns_per_second)
-        result.add_metric("avg_time_per_conversation_ms", (total_time / num_concurrent) * 1000)
+        result.add_metric(
+            "avg_time_per_conversation_ms", (total_time / num_concurrent) * 1000
+        )
 
         print(f"Total time: {total_time:.2f}s")
         print(f"Total turns: {total_turns}")
         print(f"Turns/sec: {turns_per_second:.2f}")
-        print(f"Avg time per conversation: {result.metrics['avg_time_per_conversation_ms']:.2f}ms")
+        print(
+            f"Avg time per conversation: {result.metrics['avg_time_per_conversation_ms']:.2f}ms"
+        )
 
         self.results.append(result)
         return result
 
-    async def benchmark_memory_efficiency(self, num_conversations: int = 1000) -> BenchmarkResult:
+    async def benchmark_memory_efficiency(
+        self, num_conversations: int = 1000
+    ) -> BenchmarkResult:
         """Benchmark memory efficiency"""
         print(f"\n{'=' * 60}")
         print("BENCHMARK: Memory Efficiency")
@@ -276,7 +285,9 @@ class PerformanceBenchmark:
         result.add_metric("final_memory_mb", final_memory)
         result.add_metric("memory_increase_mb", memory_increase)
         result.add_metric("memory_per_conversation_kb", memory_per_conversation * 1024)
-        result.add_metric("memory_efficiency_percent", (1 - memory_increase / final_memory) * 100)
+        result.add_metric(
+            "memory_efficiency_percent", (1 - memory_increase / final_memory) * 100
+        )
 
         print(f"Baseline memory: {baseline_memory:.2f}MB")
         print(f"Final memory: {final_memory:.2f}MB")
@@ -286,7 +297,9 @@ class PerformanceBenchmark:
         self.results.append(result)
         return result
 
-    async def benchmark_training_iteration(self, num_episodes: int = 10) -> BenchmarkResult:
+    async def benchmark_training_iteration(
+        self, num_episodes: int = 10
+    ) -> BenchmarkResult:
         """Benchmark training iteration speed"""
         print(f"\n{'=' * 60}")
         print(f"BENCHMARK: Training Iteration Speed (N={num_episodes})")
@@ -322,7 +335,7 @@ class PerformanceBenchmark:
             async def agent_fn(history, context):
                 return await agent.generate_response(history, context)
 
-            trajectory = await environment.run_episode(agent_fn, scenarios[episode % len(scenarios)])
+            await environment.run_episode(agent_fn, scenarios[episode % len(scenarios)])
 
             episode_end = time.time()
             episode_times.append(episode_end - episode_start)
@@ -342,7 +355,7 @@ class PerformanceBenchmark:
         self.results.append(result)
         return result
 
-    def generate_summary_report(self) -> Dict[str, Any]:
+    def generate_summary_report(self) -> dict[str, Any]:
         """Generate a summary report of all benchmarks"""
         print(f"\n{'=' * 60}")
         print("BENCHMARK SUMMARY")
@@ -363,15 +376,23 @@ class PerformanceBenchmark:
                 key_metrics["p99_response_time_ms"] = result.metrics.get("p99_ms", 0)
 
             elif result.name == "throughput":
-                key_metrics["conversations_per_second"] = result.metrics.get("conversations_per_second", 0)
+                key_metrics["conversations_per_second"] = result.metrics.get(
+                    "conversations_per_second", 0
+                )
 
             elif result.name == "concurrent_conversations":
-                key_metrics["concurrent_capacity"] = result.metrics.get("num_concurrent", 0)
-                key_metrics["concurrent_throughput"] = result.metrics.get("turns_per_second", 0)
+                key_metrics["concurrent_capacity"] = result.metrics.get(
+                    "num_concurrent", 0
+                )
+                key_metrics["concurrent_throughput"] = result.metrics.get(
+                    "turns_per_second", 0
+                )
 
             elif result.name == "memory_efficiency":
                 if not result.metrics.get("skipped"):
-                    key_metrics["memory_efficiency_percent"] = result.metrics.get("memory_efficiency_percent", 0)
+                    key_metrics["memory_efficiency_percent"] = result.metrics.get(
+                        "memory_efficiency_percent", 0
+                    )
 
         summary["key_metrics"] = key_metrics
 
@@ -405,7 +426,7 @@ class PerformanceBenchmark:
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2)
 
-        print(f"\n✅ All benchmarks completed!")
+        print("\n✅ All benchmarks completed!")
         print(f"📁 Results saved to: {output_path}")
         print(f"📄 Summary: {summary_path}")
 

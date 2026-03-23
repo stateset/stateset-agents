@@ -9,20 +9,21 @@ Covers:
 - Configuration classes for each algorithm
 """
 
+from unittest.mock import Mock
+
+import numpy as np
 import pytest
 import torch
 import torch.nn as nn
-import numpy as np
-from unittest.mock import Mock, MagicMock, AsyncMock, patch
 
 from stateset_agents.core.enhanced.advanced_rl_algorithms import (
-    PPOConfig,
-    DPOConfig,
     A2CConfig,
-    ActorCriticNetwork,
-    PPOTrainer,
-    DPOTrainer,
     A2CTrainer,
+    ActorCriticNetwork,
+    DPOConfig,
+    DPOTrainer,
+    PPOConfig,
+    PPOTrainer,
 )
 
 
@@ -196,9 +197,9 @@ class TestActorCriticNetwork:
         network = ActorCriticNetwork(64, 128, 10)
 
         # Both actor and critic should use shared_layers
-        assert hasattr(network, 'shared_layers')
-        assert hasattr(network, 'actor')
-        assert hasattr(network, 'critic')
+        assert hasattr(network, "shared_layers")
+        assert hasattr(network, "actor")
+        assert hasattr(network, "critic")
 
         # Shared layers should be a Sequential module
         assert isinstance(network.shared_layers, nn.Sequential)
@@ -226,7 +227,7 @@ class TestPPOTrainer:
 
             assert trainer is not None
             assert trainer.config == config
-        except Exception as e:
+        except Exception:
             # If initialization requires more setup, that's acceptable
             pass
 
@@ -244,8 +245,6 @@ class TestPPOTrainer:
 
     def test_ppo_advantage_computation(self):
         """Test PPO advantage calculation"""
-        config = PPOConfig(gamma=0.99, gae_lambda=0.95)
-
         # Simple advantage computation test
         rewards = np.array([1.0, 0.5, 0.8, 0.3])
         values = np.array([0.5, 0.4, 0.6, 0.2])
@@ -294,7 +293,7 @@ class TestDPOTrainer:
 
             assert trainer is not None
             assert trainer.config == config
-        except Exception as e:
+        except Exception:
             # If initialization requires more, that's OK
             pass
 
@@ -351,7 +350,7 @@ class TestA2CTrainer:
 
             assert trainer is not None
             assert trainer.config == config
-        except Exception as e:
+        except Exception:
             # If initialization needs more, acceptable
             pass
 
@@ -367,7 +366,7 @@ class TestA2CTrainer:
         n_step_return = 0.0
 
         for i, r in enumerate(rewards):
-            n_step_return += (gamma ** i) * r
+            n_step_return += (gamma**i) * r
 
         n_step_return += (gamma ** len(rewards)) * next_value
 
@@ -391,15 +390,15 @@ class TestAlgorithmComparison:
         a2c_config = A2CConfig()
 
         # PPO has clipping, A2C doesn't
-        assert hasattr(ppo_config, 'clip_param')
-        assert not hasattr(a2c_config, 'clip_param')
+        assert hasattr(ppo_config, "clip_param")
+        assert not hasattr(a2c_config, "clip_param")
 
         # PPO has mini-batches for multiple epochs
-        assert hasattr(ppo_config, 'mini_batch_size')
-        assert hasattr(ppo_config, 'ppo_epochs')
+        assert hasattr(ppo_config, "mini_batch_size")
+        assert hasattr(ppo_config, "ppo_epochs")
 
         # A2C has n-step returns
-        assert hasattr(a2c_config, 'n_steps')
+        assert hasattr(a2c_config, "n_steps")
 
     def test_dpo_vs_ppo_objectives(self):
         """Test difference in learning objectives"""
@@ -407,10 +406,10 @@ class TestAlgorithmComparison:
         dpo_config = DPOConfig()
 
         # PPO optimizes policy with clipping
-        assert hasattr(ppo_config, 'clip_param')
+        assert hasattr(ppo_config, "clip_param")
 
         # DPO learns from preferences
-        assert hasattr(dpo_config, 'beta')  # Temperature for preferences
+        assert hasattr(dpo_config, "beta")  # Temperature for preferences
 
     def test_on_policy_vs_off_policy(self):
         """Test on-policy vs off-policy characteristics"""

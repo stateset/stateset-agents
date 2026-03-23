@@ -7,35 +7,32 @@ and health check patterns.
 
 import asyncio
 import time
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from api.resilience import (
-    CircuitBreaker,
-    CircuitBreakerConfig,
-    CircuitState,
-    CircuitOpenError,
-    RetryStrategy,
-    RetryConfig,
+from stateset_agents.api.resilience import (
     Bulkhead,
     BulkheadConfig,
     BulkheadFullError,
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitOpenError,
+    CircuitState,
     HealthChecker,
     HealthStatus,
-    HealthCheckResult,
-    timeout,
+    RetryConfig,
+    RetryStrategy,
     TimeoutError,
-    retry,
-    get_circuit_breaker,
     get_all_circuit_stats,
+    get_circuit_breaker,
+    retry,
+    timeout,
 )
-
 
 # ============================================================================
 # Circuit Breaker Tests
 # ============================================================================
+
 
 class TestCircuitBreaker:
     """Tests for circuit breaker pattern."""
@@ -127,9 +124,7 @@ class TestCircuitBreaker:
     async def test_half_open_closes_on_success(self):
         """Half-open circuit should close after enough successes."""
         config = CircuitBreakerConfig(
-            failure_threshold=1,
-            success_threshold=2,
-            timeout_seconds=0.1
+            failure_threshold=1, success_threshold=2, timeout_seconds=0.1
         )
         breaker = CircuitBreaker("test", config)
 
@@ -178,13 +173,12 @@ class TestCircuitBreaker:
     @pytest.mark.asyncio
     async def test_fallback_function(self):
         """Fallback should be called when circuit is open."""
+
         async def fallback():
             return "fallback_value"
 
         config = CircuitBreakerConfig(
-            failure_threshold=1,
-            timeout_seconds=10,
-            fallback=fallback
+            failure_threshold=1, timeout_seconds=10, fallback=fallback
         )
         breaker = CircuitBreaker("test", config)
 
@@ -203,8 +197,7 @@ class TestCircuitBreaker:
     async def test_excluded_exceptions(self):
         """Excluded exceptions should not count as failures."""
         config = CircuitBreakerConfig(
-            failure_threshold=3,
-            excluded_exceptions=(ValueError,)
+            failure_threshold=3, excluded_exceptions=(ValueError,)
         )
         breaker = CircuitBreaker("test", config)
 
@@ -256,6 +249,7 @@ class TestCircuitBreaker:
 # ============================================================================
 # Retry Strategy Tests
 # ============================================================================
+
 
 class TestRetryStrategy:
     """Tests for retry pattern."""
@@ -314,9 +308,7 @@ class TestRetryStrategy:
     async def test_non_retryable_exception(self):
         """Non-retryable exceptions should not retry."""
         config = RetryConfig(
-            max_attempts=3,
-            base_delay=0.01,
-            non_retryable_exceptions=(TypeError,)
+            max_attempts=3, base_delay=0.01, non_retryable_exceptions=(TypeError,)
         )
         strategy = RetryStrategy(config)
         call_count = 0
@@ -334,12 +326,7 @@ class TestRetryStrategy:
     @pytest.mark.asyncio
     async def test_exponential_backoff(self):
         """Delays should increase exponentially."""
-        config = RetryConfig(
-            max_attempts=4,
-            base_delay=0.1,
-            max_delay=10,
-            jitter=False
-        )
+        config = RetryConfig(max_attempts=4, base_delay=0.1, max_delay=10, jitter=False)
         strategy = RetryStrategy(config)
 
         delays = []
@@ -355,12 +342,7 @@ class TestRetryStrategy:
     @pytest.mark.asyncio
     async def test_max_delay_cap(self):
         """Delay should be capped at max_delay."""
-        config = RetryConfig(
-            max_attempts=10,
-            base_delay=1,
-            max_delay=5,
-            jitter=False
-        )
+        config = RetryConfig(max_attempts=10, base_delay=1, max_delay=5, jitter=False)
         strategy = RetryStrategy(config)
 
         delay = strategy._calculate_delay(10)
@@ -388,12 +370,14 @@ class TestRetryStrategy:
 # Timeout Tests
 # ============================================================================
 
+
 class TestTimeout:
     """Tests for timeout pattern."""
 
     @pytest.mark.asyncio
     async def test_completes_within_timeout(self):
         """Fast operations should complete normally."""
+
         @timeout(1.0)
         async def fast_operation():
             return "done"
@@ -404,6 +388,7 @@ class TestTimeout:
     @pytest.mark.asyncio
     async def test_raises_on_timeout(self):
         """Slow operations should raise TimeoutError."""
+
         @timeout(0.1)
         async def slow_operation():
             await asyncio.sleep(1.0)
@@ -418,6 +403,7 @@ class TestTimeout:
 # ============================================================================
 # Bulkhead Tests
 # ============================================================================
+
 
 class TestBulkhead:
     """Tests for bulkhead pattern."""
@@ -488,11 +474,15 @@ class TestBulkhead:
         task2.cancel()
         try:
             await task1
-        except:
+        except asyncio.CancelledError:
+            pass
+        except Exception:
             pass
         try:
             await task2
-        except:
+        except asyncio.CancelledError:
+            pass
+        except Exception:
             pass
 
     @pytest.mark.asyncio
@@ -524,6 +514,7 @@ class TestBulkhead:
 # ============================================================================
 # Health Checker Tests
 # ============================================================================
+
 
 class TestHealthChecker:
     """Tests for health check pattern."""
@@ -646,6 +637,7 @@ class TestHealthChecker:
 # ============================================================================
 # Global Registry Tests
 # ============================================================================
+
 
 class TestGlobalRegistry:
     """Tests for global circuit breaker registry."""

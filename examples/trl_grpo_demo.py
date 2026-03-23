@@ -21,7 +21,10 @@ async def main():
 
     # Check if TRL is available
     try:
-        from stateset_agents.training import TRL_AVAILABLE, train_customer_service_with_trl
+        from stateset_agents.training import (
+            TRL_AVAILABLE,
+            train_customer_service_with_trl,
+        )
 
         if not TRL_AVAILABLE:
             logger.error(
@@ -113,7 +116,7 @@ async def main():
             logger.info(f"🤖 Agent: {response}")
 
         logger.info("\n🎉 Demo completed successfully!")
-        logger.info(f"Trained model saved to: ./outputs/demo_agent/final_model")
+        logger.info("Trained model saved to: ./outputs/demo_agent/final_model")
 
     except Exception as e:
         logger.error(f"Error during training: {e}")

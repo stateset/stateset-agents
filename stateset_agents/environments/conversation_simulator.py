@@ -5,18 +5,18 @@ A calibratable conversation simulation environment that can be
 tuned to match real conversation distributions for better transfer.
 """
 
-import asyncio
 import logging
 import random
-import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
+from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+
 from ..core.environment import Environment, EnvironmentState, EpisodeStatus
-from ..core.trajectory import ConversationTurn, MultiTurnTrajectory
+from ..core.trajectory import ConversationTurn
 from ..training.domain_randomization import (
     DomainRandomizationConfig,
     DomainRandomizer,
@@ -27,7 +27,7 @@ from ..training.domain_randomization import (
 
 logger = logging.getLogger(__name__)
 
-SIMULATOR_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+SIMULATOR_EXCEPTIONS = INFERENCE_EXCEPTIONS
 
 
 @dataclass
@@ -35,11 +35,11 @@ class ConversationSimulatorConfig:
     """Configuration for the conversation simulator"""
 
     # Persona configuration
-    personas: List[UserPersona] = field(default_factory=list)
+    personas: list[UserPersona] = field(default_factory=list)
     persona_sampling: str = "uniform"  # uniform, weighted, curriculum
 
     # Topic distribution
-    topic_distribution: Dict[str, float] = field(
+    topic_distribution: dict[str, float] = field(
         default_factory=lambda: {
             "general": 0.3,
             "technical": 0.25,
@@ -49,7 +49,7 @@ class ConversationSimulatorConfig:
     )
 
     # Difficulty settings
-    difficulty_range: Tuple[float, float] = (0.3, 0.9)
+    difficulty_range: tuple[float, float] = (0.3, 0.9)
     use_curriculum: bool = True
     curriculum_steps: int = 5000
 
@@ -60,11 +60,11 @@ class ConversationSimulatorConfig:
 
     # Simulation backend
     llm_backend: str = "rule_based"  # rule_based, local, openai, anthropic
-    llm_model: Optional[str] = None
+    llm_model: str | None = None
     use_rule_based_fallback: bool = True
 
     # Calibration
-    calibration_dataset_path: Optional[str] = None
+    calibration_dataset_path: str | None = None
     calibration_method: str = "mmd"  # mmd, kl, wasserstein
 
     # Episode settings
@@ -96,7 +96,7 @@ class UserSimulator:
         self._response_templates = self._load_templates()
         self._llm_client = None
 
-    def _load_templates(self) -> Dict[str, List[str]]:
+    def _load_templates(self) -> dict[str, list[str]]:
         """Load response templates for rule-based simulation"""
         templates = {
             "greeting": [
@@ -155,8 +155,8 @@ class UserSimulator:
 
     async def generate_response(
         self,
-        history: List[Dict[str, str]],
-        context: Dict[str, Any],
+        history: list[dict[str, str]],
+        context: dict[str, Any],
     ) -> str:
         """
         Generate a user response based on conversation history.
@@ -181,8 +181,8 @@ class UserSimulator:
 
     def _generate_rule_based(
         self,
-        history: List[Dict[str, str]],
-        context: Dict[str, Any],
+        history: list[dict[str, str]],
+        context: dict[str, Any],
     ) -> str:
         """Generate response using rule-based logic"""
         turn_count = len([m for m in history if m.get("role") == "user"])
@@ -231,8 +231,8 @@ class UserSimulator:
 
     def _generate_contextual_response(
         self,
-        history: List[Dict[str, str]],
-        context: Dict[str, Any],
+        history: list[dict[str, str]],
+        context: dict[str, Any],
     ) -> str:
         """Generate a contextual response based on scenario"""
         scenario = context.get("scenario", {})
@@ -270,8 +270,8 @@ class UserSimulator:
 
     async def _generate_llm_response(
         self,
-        history: List[Dict[str, str]],
-        context: Dict[str, Any],
+        history: list[dict[str, str]],
+        context: dict[str, Any],
     ) -> str:
         """Generate response using LLM"""
         # Build system prompt from persona
@@ -311,9 +311,9 @@ class UserSimulator:
         typo_type = random.choice(["swap", "delete", "duplicate"])
 
         if typo_type == "swap" and pos < len(text) - 1:
-            text = text[:pos] + text[pos + 1] + text[pos] + text[pos + 2:]
+            text = text[:pos] + text[pos + 1] + text[pos] + text[pos + 2 :]
         elif typo_type == "delete":
-            text = text[:pos] + text[pos + 1:]
+            text = text[:pos] + text[pos + 1 :]
         elif typo_type == "duplicate":
             text = text[:pos] + text[pos] + text[pos:]
 
@@ -353,7 +353,7 @@ class ConversationSimulator(Environment):
     def __init__(
         self,
         config: ConversationSimulatorConfig,
-        domain_randomization: Optional[DomainRandomizationConfig] = None,
+        domain_randomization: DomainRandomizationConfig | None = None,
     ):
         super().__init__(max_turns=config.max_turns)
 
@@ -371,12 +371,12 @@ class ConversationSimulator(Environment):
         self.scenario_generator = ScenarioGenerator(self.dr_config)
 
         # Current episode state
-        self._current_simulator: Optional[UserSimulator] = None
-        self._current_scenario: Optional[Dict[str, Any]] = None
-        self._episode_history: List[ConversationTurn] = []
+        self._current_simulator: UserSimulator | None = None
+        self._current_scenario: dict[str, Any] | None = None
+        self._episode_history: list[ConversationTurn] = []
 
         # Calibration data
-        self._calibration_stats: Dict[str, Any] = {}
+        self._calibration_stats: dict[str, Any] = {}
         self._is_calibrated = False
 
         # Training step counter
@@ -384,7 +384,7 @@ class ConversationSimulator(Environment):
 
     async def reset(
         self,
-        scenario: Optional[Dict[str, Any]] = None,
+        scenario: dict[str, Any] | None = None,
     ) -> EnvironmentState:
         """
         Reset environment for new episode.
@@ -453,7 +453,7 @@ class ConversationSimulator(Environment):
         self,
         state: EnvironmentState,
         action: ConversationTurn,
-    ) -> Tuple[EnvironmentState, float, bool, Dict[str, Any]]:
+    ) -> tuple[EnvironmentState, float, bool, dict[str, Any]]:
         """
         Execute one conversation turn.
 
@@ -498,8 +498,7 @@ class ConversationSimulator(Environment):
         if not done:
             # Generate user response
             history = [
-                {"role": t.role, "content": t.content}
-                for t in self._episode_history
+                {"role": t.role, "content": t.content} for t in self._episode_history
             ]
             user_response = await self._current_simulator.generate_response(
                 history=history,
@@ -566,7 +565,10 @@ class ConversationSimulator(Environment):
                 reward -= 0.1 * self.config.reward_scale
 
         # Politeness bonus
-        if any(word in response.lower() for word in ["please", "thank", "appreciate", "help"]):
+        if any(
+            word in response.lower()
+            for word in ["please", "thank", "appreciate", "help"]
+        ):
             reward += 0.05 * self.config.reward_scale
 
         return reward
@@ -583,9 +585,32 @@ class ConversationSimulator(Environment):
         user_words = set(user_message.lower().split())
 
         # Remove common words
-        stopwords = {"the", "a", "an", "is", "are", "was", "were", "be", "been",
-                     "being", "have", "has", "had", "do", "does", "did", "will",
-                     "would", "could", "should", "may", "might", "must", "shall"}
+        stopwords = {
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "may",
+            "might",
+            "must",
+            "shall",
+        }
         response_words -= stopwords
         user_words -= stopwords
 
@@ -620,7 +645,7 @@ class ConversationSimulator(Environment):
         """Get a new random persona"""
         return self.persona_generator.generate_random_persona()
 
-    def randomize_scenario(self) -> Dict[str, Any]:
+    def randomize_scenario(self) -> dict[str, Any]:
         """Get a new random scenario"""
         return self.scenario_generator.curriculum_sample(self._training_step)
 
@@ -628,7 +653,7 @@ class ConversationSimulator(Environment):
         self,
         real_data: Any,  # ConversationDataset
         num_samples: int = 1000,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Calibrate simulator to match real conversation data.
 
@@ -683,7 +708,7 @@ class ConversationSimulator(Environment):
     def _compute_dataset_stats(
         self,
         dataset: Any,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Compute statistics from a dataset"""
         response_lengths = []
         turn_counts = []
@@ -698,7 +723,9 @@ class ConversationSimulator(Environment):
                 rewards.append(traj.total_reward)
 
         return {
-            "mean_response_length": np.mean(response_lengths) if response_lengths else 0,
+            "mean_response_length": np.mean(response_lengths)
+            if response_lengths
+            else 0,
             "std_response_length": np.std(response_lengths) if response_lengths else 0,
             "mean_turn_count": np.mean(turn_counts) if turn_counts else 0,
             "mean_reward": np.mean(rewards) if rewards else 0,
@@ -706,8 +733,8 @@ class ConversationSimulator(Environment):
 
     def _compute_trajectory_stats(
         self,
-        trajectories: List[List[ConversationTurn]],
-    ) -> Dict[str, float]:
+        trajectories: list[list[ConversationTurn]],
+    ) -> dict[str, float]:
         """Compute statistics from generated trajectories"""
         response_lengths = []
         turn_counts = []
@@ -719,7 +746,9 @@ class ConversationSimulator(Environment):
                     response_lengths.append(len(turn.content.split()))
 
         return {
-            "mean_response_length": np.mean(response_lengths) if response_lengths else 0,
+            "mean_response_length": np.mean(response_lengths)
+            if response_lengths
+            else 0,
             "std_response_length": np.std(response_lengths) if response_lengths else 0,
             "mean_turn_count": np.mean(turn_counts) if turn_counts else 0,
             "mean_reward": 0,  # Not computed for generated
@@ -727,13 +756,14 @@ class ConversationSimulator(Environment):
 
     def _compute_adjustments(
         self,
-        real_stats: Dict[str, float],
-        sim_stats: Dict[str, float],
-    ) -> Dict[str, float]:
+        real_stats: dict[str, float],
+        sim_stats: dict[str, float],
+    ) -> dict[str, float]:
         """Compute calibration adjustments"""
         return {
             "response_length_ratio": (
-                real_stats["mean_response_length"] / (sim_stats["mean_response_length"] + 1e-6)
+                real_stats["mean_response_length"]
+                / (sim_stats["mean_response_length"] + 1e-6)
             ),
             "turn_count_ratio": (
                 real_stats["mean_turn_count"] / (sim_stats["mean_turn_count"] + 1e-6)
@@ -742,7 +772,7 @@ class ConversationSimulator(Environment):
 
     def _apply_calibration(
         self,
-        adjustments: Dict[str, float],
+        adjustments: dict[str, float],
     ) -> None:
         """Apply calibration adjustments to simulator"""
         # Adjust max turns based on calibration
@@ -765,7 +795,7 @@ class ConversationSimulator(Environment):
     def compute_sim_real_gap(
         self,
         real_data: Any,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Compute metrics for sim-to-real gap.
 
@@ -787,9 +817,9 @@ class ConversationSimulator(Environment):
         ) / (real_stats["mean_response_length"] + 1e-6)
 
         # Turn count gap
-        turn_gap = abs(
-            real_stats["mean_turn_count"] - sim_stats["mean_turn_count"]
-        ) / (real_stats["mean_turn_count"] + 1e-6)
+        turn_gap = abs(real_stats["mean_turn_count"] - sim_stats["mean_turn_count"]) / (
+            real_stats["mean_turn_count"] + 1e-6
+        )
 
         return {
             "response_length_gap": length_gap,
@@ -808,7 +838,7 @@ class ConversationSimulator(Environment):
 
     async def get_initial_prompt(
         self,
-        scenario: Optional[Dict[str, Any]] = None,
+        scenario: dict[str, Any] | None = None,
     ) -> str:
         """Get system prompt for the scenario"""
         if scenario is None:

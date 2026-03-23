@@ -17,11 +17,10 @@ Key features:
 Reference: https://arxiv.org/abs/1803.05407 (Mean teachers are better role models)
 """
 
-import copy
 import logging
 import math
 from contextlib import contextmanager
-from typing import Any, Dict, Iterator, Optional, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -101,8 +100,8 @@ class EMAModel:
         self.update_every = update_every
 
         self.step = 0
-        self.shadow_params: Dict[str, torch.Tensor] = {}
-        self.collected_params: Dict[str, torch.Tensor] = {}
+        self.shadow_params: dict[str, torch.Tensor] = {}
+        self.collected_params: dict[str, torch.Tensor] = {}
 
         # Initialize shadow parameters
         self._initialize_shadow_params()
@@ -150,7 +149,7 @@ class EMAModel:
         return self.decay
 
     @torch.no_grad()
-    def update(self, model: Optional[nn.Module] = None) -> None:
+    def update(self, model: nn.Module | None = None) -> None:
         """
         Update EMA parameters.
 
@@ -194,7 +193,7 @@ class EMAModel:
                         shadow.mul_(decay).add_(buffer_data, alpha=1 - decay)
 
     @torch.no_grad()
-    def copy_to(self, model: Optional[nn.Module] = None) -> None:
+    def copy_to(self, model: nn.Module | None = None) -> None:
         """
         Copy EMA parameters to model.
 
@@ -255,7 +254,7 @@ class EMAModel:
         self.collected_params = {}
 
     @contextmanager
-    def average_parameters(self, model: Optional[nn.Module] = None):
+    def average_parameters(self, model: nn.Module | None = None):
         """
         Context manager for using EMA parameters.
 
@@ -277,7 +276,7 @@ class EMAModel:
         finally:
             self.restore()
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> dict[str, Any]:
         """Get state dict for serialization."""
         return {
             "shadow_params": {k: v.clone() for k, v in self.shadow_params.items()},
@@ -288,7 +287,7 @@ class EMAModel:
             "warmup_steps": self.warmup_steps,
         }
 
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load state dict."""
         self.shadow_params = {
             k: v.clone() for k, v in state_dict["shadow_params"].items()
@@ -339,7 +338,7 @@ class MultiEMA:
     def __init__(
         self,
         model: nn.Module,
-        decays: list = [0.99, 0.999, 0.9999],
+        decays: list[float] | None = None,
         cpu_offload: bool = True,
     ):
         """
@@ -351,10 +350,10 @@ class MultiEMA:
             cpu_offload: Whether to store EMAs on CPU
         """
         self.model = model
-        self.decays = decays
+        self.decays = list(decays) if decays is not None else [0.99, 0.999, 0.9999]
         self.emas = {
             decay: EMAModel(model, decay=decay, cpu_offload=cpu_offload)
-            for decay in decays
+            for decay in self.decays
         }
 
     def update(self) -> None:
@@ -372,14 +371,11 @@ class MultiEMA:
         with self.emas[decay].average_parameters():
             yield
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> dict[str, Any]:
         """Get combined state dict."""
-        return {
-            decay: ema.state_dict()
-            for decay, ema in self.emas.items()
-        }
+        return {decay: ema.state_dict() for decay, ema in self.emas.items()}
 
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load combined state dict."""
         for decay, ema_state in state_dict.items():
             if decay in self.emas:

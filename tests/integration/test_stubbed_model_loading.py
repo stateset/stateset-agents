@@ -1,10 +1,11 @@
+import importlib
 from types import SimpleNamespace
 
 import pytest
 
 torch = pytest.importorskip("torch")
 
-from stateset_agents.training import base_trainer as bt
+bt = importlib.import_module("stateset_agents.training.base_trainer")
 
 
 class DummyTokenizer:

@@ -1,232 +1,102 @@
-# ================================
-# Multi-stage Dockerfile for StateSet Agents
-# ================================
+# syntax=docker/dockerfile:1
 
-# ================================
-# Base stage with common dependencies
-# ================================
+# Multi-stage Dockerfile for the StateSet Agents Python API gateway.
+#
+# This image is intended to run the FastAPI gateway (`stateset_agents.api.main:app`)
+# which proxies inference to a backend (e.g. vLLM) and can optionally run training
+# workflows. GPU inference and GPU model serving should be done in dedicated
+# model-server images (e.g. vLLM) deployed alongside this gateway.
+#
+# Targets:
+# - runtime (default): production-ish gateway
+# - dev: dev gateway with extra tooling
+# - test: runs the Python test suite
+
 FROM python:3.11-slim AS base
 
-# Security: Use non-root user
-ENV USER=stateset \
-    GROUP=stateset \
-    UID=1001 \
-    GID=1001 \
-    HOME=/home/stateset
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# Security: Create non-root user and group
-RUN groupadd -r -g $GID $GROUP && \
-    useradd -r -u $UID -g $GID -d $HOME -s /bin/bash -c "StateSet User" $USER
-
-# Install security updates and essential packages
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-        curl \
-        ca-certificates \
-        gnupg \
-        lsb-release \
-        build-essential \
-        git \
-        libssl-dev \
-        libffi-dev \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/*
-
-# Security: Install dumb-init for proper signal handling
-RUN curl -Lo /usr/local/bin/dumb-init https://github.com/Yelp/dumb-init/releases/download/v1.2.5/dumb-init_1.2.5_x86_64 && \
-    chmod +x /usr/local/bin/dumb-init
-
-# Create application directory with proper permissions
-RUN mkdir -p /app && chown -R $USER:$GROUP /app
-
-# Set working directory
 WORKDIR /app
 
-# ================================
-# Builder stage for dependencies
-# ================================
+# Runtime deps: curl (health checks) + certs.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user for runtime.
+RUN groupadd -r -g 10001 stateset && \
+    useradd -r -u 10001 -g 10001 -m -d /home/stateset stateset
+
+
 FROM base AS builder
 
-# Copy dependency files for caching
-COPY pyproject.toml requirements*.txt ./
+# Build deps for native wheels (kept out of final image).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential \
+      git \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install build dependencies
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+ARG STATESET_EXTRAS="api"
 
-# Install Python dependencies in virtual environment
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install production dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# ================================
-# Development stage
-# ================================
-FROM base AS development
+# Copy only what we need to install the package. (The `grpo_agent_framework`
+# package is intentionally not installed via packaging, but is used at runtime
+# through `PYTHONPATH=/app`.)
+COPY pyproject.toml setup.py README.md ./
+COPY stateset_agents/ ./stateset_agents/
+COPY grpo_agent_framework/ ./grpo_agent_framework/
 
-# Install development tools
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        vim \
-        htop \
-        git \
-        openssh-client \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir ".[${STATESET_EXTRAS}]"
 
-# Copy virtual environment from builder
-COPY --from=builder --chown=$USER:$GROUP /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy application code
-COPY --chown=$USER:$GROUP . .
+FROM builder AS dev
 
-# Install development dependencies
-RUN pip install --no-cache-dir -r requirements-dev.txt
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app"
 
-# Switch to non-root user
-USER $USER
+ARG DEV_EXTRAS="api,dev"
+RUN pip install --no-cache-dir ".[${DEV_EXTRAS}]"
 
-# Development ports
-EXPOSE 8000 8001 8002
+USER 10001:10001
 
-# Health check for development
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Default command for development
-CMD ["uvicorn", "stateset_agents.api.ultimate_grpo_service:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
-
-# ================================
-# Testing stage
-# ================================
-FROM development AS testing
-
-# Install additional testing dependencies if needed
-RUN pip install --no-cache-dir pytest-cov pytest-xdist
-
-# Copy test files
-COPY --chown=$USER:$GROUP tests/ ./tests/
-
-# Run tests by default
-CMD ["pytest", "--cov=stateset_agents", "--cov-report=html", "--cov-report=xml"]
-
-# ================================
-# Production stage
-# ================================
-FROM base AS production
-
-# Security: Remove unnecessary packages
-RUN apt-get update && \
-    apt-get remove -y --purge \
-        build-essential \
-        git \
-        curl \
-        && apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy virtual environment from builder
-COPY --from=builder --chown=$USER:$GROUP /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Copy application code (excluding development files)
-COPY --chown=$USER:$GROUP pyproject.toml ./
-COPY --chown=$USER:$GROUP stateset_agents/ ./stateset_agents/
-COPY --chown=$USER:$GROUP grpo_agent_framework/ ./grpo_agent_framework/
-
-# Install production package
-RUN pip install --no-cache-dir -e .
-
-# Security: Create secure temporary directories
-RUN mkdir -p /tmp && chown -R $USER:$GROUP /tmp
-
-# Set secure environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app \
-    TMPDIR=/tmp \
-    PYTHONHASHSEED=random
-
-# Switch to non-root user
-USER $USER
-
-# Production ports
 EXPOSE 8000
 
-# Security: Use dumb-init as entrypoint
-ENTRYPOINT ["/usr/local/bin/dumb-init", "--"]
+CMD ["uvicorn", "stateset_agents.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
-# Health check for production
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
 
-# Default command for production
-CMD ["uvicorn", "stateset_agents.api.ultimate_grpo_service:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+FROM dev AS test
 
-# ================================
-# GPU-enabled production stage
-# ================================
-FROM nvidia/cuda:11.8-runtime-ubuntu22.04 AS gpu-production
+# Test stage needs the full repo for `tests/` and legacy shims.
+USER root
+COPY . .
+USER stateset
 
-# Install Python and system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        python3.11 \
-        python3.11-dev \
-        python3.11-venv \
-        python3-pip \
-        curl \
-        ca-certificates \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/*
+CMD ["pytest", "-q"]
 
-# Create non-root user
-ENV USER=stateset \
-    GROUP=stateset \
-    UID=1001 \
-    GID=1001 \
-    HOME=/home/stateset
 
-RUN groupadd -r -g $GID $GROUP && \
-    useradd -r -u $UID -g $GID -d $HOME -s /bin/bash -c "StateSet User" $USER
+FROM base AS runtime
 
-# Install dumb-init
-RUN curl -Lo /usr/local/bin/dumb-init https://github.com/Yelp/dumb-init/releases/download/v1.2.5/dumb-init_1.2.5_x86_64 && \
-    chmod +x /usr/local/bin/dumb-init
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app"
 
-# Create application directory
-RUN mkdir -p /app && chown -R $USER:$GROUP /app
-WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
 
-# Copy virtual environment from builder
-COPY --from=builder --chown=$USER:$GROUP /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+# Runtime-only source needed on PYTHONPATH (not installed as a distribution).
+COPY --chown=10001:10001 grpo_agent_framework/ ./grpo_agent_framework/
 
-# Copy application code
-COPY --chown=$USER:$GROUP pyproject.toml ./
-COPY --chown=$USER:$GROUP stateset_agents/ ./stateset_agents/
-COPY --chown=$USER:$GROUP grpo_agent_framework/ ./grpo_agent_framework/
+USER 10001:10001
 
-# Install production package
-RUN pip install --no-cache-dir -e .
-
-# GPU-specific environment variables
-ENV CUDA_VISIBLE_DEVICES=0 \
-    TORCH_USE_CUDA_DSA=1
-
-# Switch to non-root user
-USER $USER
-
-# GPU production ports
 EXPOSE 8000
 
-# GPU health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+  CMD curl -fsS http://localhost:8000/healthz || exit 1
 
-# GPU production command
-ENTRYPOINT ["/usr/local/bin/dumb-init", "--"]
-CMD ["uvicorn", "stateset_agents.api.ultimate_grpo_service:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["uvicorn", "stateset_agents.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

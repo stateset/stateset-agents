@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from stateset_agents.core.environment import ConversationEnvironment, TaskEnvironment
 
 
 async def test_conversation_environment_clone_isolated_state() -> None:
-    scenario: Dict[str, Any] = {
+    scenario: dict[str, Any] = {
         "id": "s1",
         "topic": "demo",
         "context": "Demo",
@@ -26,9 +26,11 @@ async def test_conversation_environment_clone_isolated_state() -> None:
 
 
 async def test_task_environment_clone_preserves_configuration() -> None:
-    tasks: List[Dict[str, Any]] = [{"id": "t1", "goal": "done", "description": "Demo task"}]
+    tasks: list[dict[str, Any]] = [
+        {"id": "t1", "goal": "done", "description": "Demo task"}
+    ]
 
-    def _success_criteria(turns: Any, context: Dict[str, Any]) -> bool:
+    def _success_criteria(turns: Any, context: dict[str, Any]) -> bool:
         return True
 
     env = TaskEnvironment(tasks=tasks, success_criteria=_success_criteria, max_turns=3)
@@ -41,7 +43,7 @@ async def test_task_environment_clone_preserves_configuration() -> None:
 
 
 async def test_task_environment_reset_includes_conversation_id() -> None:
-    tasks: List[Dict[str, Any]] = [
+    tasks: list[dict[str, Any]] = [
         {
             "id": "t1",
             "goal": "done",
@@ -50,7 +52,7 @@ async def test_task_environment_reset_includes_conversation_id() -> None:
         }
     ]
 
-    def _success_criteria(turns: Any, context: Dict[str, Any]) -> bool:
+    def _success_criteria(turns: Any, context: dict[str, Any]) -> bool:
         return True
 
     env = TaskEnvironment(tasks=tasks, success_criteria=_success_criteria, max_turns=3)

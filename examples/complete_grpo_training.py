@@ -21,12 +21,11 @@ from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import create_customer_service_reward
 from stateset_agents.core.value_function import create_value_function
-from stateset_agents.training.trainer import MultiTurnGRPOTrainer
 from stateset_agents.training.config import TrainingConfig, TrainingProfile
+from stateset_agents.training.trainer import MultiTurnGRPOTrainer
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -50,7 +49,6 @@ async def main():
         # For production, use a larger model like:
         # model_name="meta-llama/Llama-2-7b-chat-hf",
         # model_name="mistralai/Mistral-7B-Instruct-v0.1",
-
         system_prompt=(
             "You are a helpful and empathetic customer service representative. "
             "Your goal is to understand customer issues and provide clear, "
@@ -126,7 +124,7 @@ async def main():
     )
 
     logger.info(f"  ✓ Environment created with {len(training_scenarios)} scenarios")
-    logger.info(f"  Max turns per conversation: 6")
+    logger.info("  Max turns per conversation: 6")
 
     # =========================================================================
     # Step 4: Create Reward Function
@@ -137,7 +135,9 @@ async def main():
     reward_fn = create_customer_service_reward()
 
     logger.info("  ✓ Customer service reward function created")
-    logger.info("    Components: Helpfulness, Empathy, Action-oriented, Professionalism")
+    logger.info(
+        "    Components: Helpfulness, Empathy, Action-oriented, Professionalism"
+    )
 
     # =========================================================================
     # Step 5: Configure Training with GRPO Features
@@ -153,7 +153,6 @@ async def main():
         learning_rate=5e-6,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
-
         # GRPO-specific parameters
         beta=0.1,  # KL divergence penalty coefficient
         use_reference_model=True,  # Enable reference model for KL regularization
@@ -161,24 +160,20 @@ async def main():
         value_clip=0.2,  # Value function clipping
         advantage_normalization=True,
         baseline_type="group_mean",  # Use group mean as baseline
-
         # Optimization
         bf16=True,  # Use bfloat16 for efficiency
         gradient_checkpointing=False,  # Disable for small models
         max_grad_norm=1.0,
-
         # Logging and evaluation
         logging_steps=5,
         eval_steps=25,
         save_steps=50,
         output_dir="./outputs/complete_grpo_example",
         run_name="grpo-customer-service-complete",
-
         # W&B integration (optional)
         report_to="none",  # Set to "wandb" if you have W&B configured
         # wandb_project="stateset-agents",
         # wandb_tags=["grpo", "customer-service", "complete-implementation"],
-
         # Early stopping
         early_stopping=True,
         patience=30,
@@ -206,24 +201,26 @@ async def main():
 
     await trainer.initialize()
     logger.info("  ✓ Trainer initialized")
-    logger.info(f"    Optimizer: AdamW")
+    logger.info("    Optimizer: AdamW")
     logger.info(f"    Scheduler: {train_config.lr_scheduler_type}")
-    logger.info(f"    Reference model: {'Loaded' if trainer.reference_model else 'Not used'}")
+    logger.info(
+        f"    Reference model: {'Loaded' if trainer.reference_model else 'Not used'}"
+    )
 
     # =========================================================================
     # Step 7: (Optional) Create Value Function for GAE
     # =========================================================================
     logger.info("\n[Step 7] Setting up Value Function for GAE...")
 
-    value_function = create_value_function(
+    create_value_function(
         model=agent.model,
         gamma=0.99,  # Discount factor
         gae_lambda=0.95,  # GAE lambda
     )
 
     logger.info("  ✓ Value function created")
-    logger.info(f"    Gamma (discount factor): 0.99")
-    logger.info(f"    GAE lambda: 0.95")
+    logger.info("    Gamma (discount factor): 0.99")
+    logger.info("    GAE lambda: 0.95")
 
     # =========================================================================
     # Step 8: Run Training
@@ -252,9 +249,15 @@ async def main():
         )
 
         logger.info("\nEvaluation Results:")
-        logger.info(f"  Mean Reward: {eval_results['overall_stats']['overall_mean_reward']:.4f}")
-        logger.info(f"  Std Reward: {eval_results['overall_stats']['overall_std_reward']:.4f}")
-        logger.info(f"  Mean Episode Length: {eval_results['overall_stats']['overall_mean_length']:.2f}")
+        logger.info(
+            f"  Mean Reward: {eval_results['overall_stats']['overall_mean_reward']:.4f}"
+        )
+        logger.info(
+            f"  Std Reward: {eval_results['overall_stats']['overall_std_reward']:.4f}"
+        )
+        logger.info(
+            f"  Mean Episode Length: {eval_results['overall_stats']['overall_mean_length']:.2f}"
+        )
 
         # =====================================================================
         # Step 10: Save Final Model
@@ -276,8 +279,7 @@ async def main():
         ]
 
         response = await trained_agent.generate_response(
-            test_messages,
-            context={"order_status": "delayed", "customer_value": "high"}
+            test_messages, context={"order_status": "delayed", "customer_value": "high"}
         )
 
         logger.info("\nTest Conversation:")

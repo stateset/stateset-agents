@@ -18,13 +18,13 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from collections.abc import Iterable
 
 
 class Publisher:
     """Handles framework publishing operations."""
 
-    def __init__(self, project_root: Optional[str] = None):
+    def __init__(self, project_root: str | None = None):
         self.project_root = Path(project_root or Path(__file__).parent.parent)
         self.version_file = self.project_root / "stateset_agents" / "__init__.py"
         self.pyproject_file = self.project_root / "pyproject.toml"
@@ -33,14 +33,14 @@ class Publisher:
 
     def get_current_version(self) -> str:
         """Get current version from __init__.py."""
-        with open(self.version_file, "r") as f:
+        with open(self.version_file) as f:
             content = f.read()
             match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
             if match:
                 return match.group(1)
         raise ValueError("Could not find version in __init__.py")
 
-    def _parse_version_base(self, version: str) -> Tuple[int, int, int]:
+    def _parse_version_base(self, version: str) -> tuple[int, int, int]:
         match = re.match(r"^(\d+)\.(\d+)\.(\d+)", version)
         if not match:
             raise ValueError(f"Unsupported version format: {version!r}")
@@ -91,19 +91,24 @@ class Publisher:
                 continue
             if re.match(r'^version\s*=\s*["\']', stripped):
                 newline = "\n" if line.endswith("\n") else ""
-                lines[idx] = re.sub(
-                    r'^(\s*version\s*=\s*)["\'][^"\']+["\'](\s*)$',
-                    rf'\1"{new_version}"\2',
-                    line.rstrip("\n"),
-                ) + newline
+                lines[idx] = (
+                    re.sub(
+                        r'^(\s*version\s*=\s*)["\'][^"\']+["\'](\s*)$',
+                        rf'\1"{new_version}"\2',
+                        line.rstrip("\n"),
+                    )
+                    + newline
+                )
                 return "".join(lines)
         raise ValueError("Could not find [project].version in pyproject.toml")
 
-    def _replace_version_in_setup_py(self, setup_py_content: str, new_version: str) -> str:
+    def _replace_version_in_setup_py(
+        self, setup_py_content: str, new_version: str
+    ) -> str:
         # Replace the first `version="x.y.z"` occurrence (expected in setup()).
         new_content, count = re.subn(
             r'(\bversion\s*=\s*["\'])([^"\']+)(["\'])',
-            rf'\g<1>{new_version}\3',
+            rf"\g<1>{new_version}\3",
             setup_py_content,
             count=1,
         )
@@ -117,7 +122,7 @@ class Publisher:
         print(f"Bumping version to {new_version}")
 
         # Update __init__.py
-        with open(self.version_file, "r") as f:
+        with open(self.version_file) as f:
             content = f.read()
 
         content = re.sub(
@@ -130,7 +135,7 @@ class Publisher:
             f.write(content)
 
         # Update pyproject.toml
-        with open(self.pyproject_file, "r") as f:
+        with open(self.pyproject_file) as f:
             pyproject_content = f.read()
 
         pyproject_content = self._replace_project_version_in_pyproject(
@@ -142,7 +147,7 @@ class Publisher:
 
         # Update setup.py (if present)
         if self.setup_py_file.exists():
-            with open(self.setup_py_file, "r", encoding="utf-8") as f:
+            with open(self.setup_py_file, encoding="utf-8") as f:
                 setup_py_content = f.read()
             setup_py_content = self._replace_version_in_setup_py(
                 setup_py_content, new_version
@@ -174,7 +179,7 @@ class Publisher:
                     [sys.executable, str(self.setup_py_file), "sdist", "bdist_wheel"]
                 )
 
-            last_error: Optional[subprocess.CalledProcessError] = None
+            last_error: subprocess.CalledProcessError | None = None
             for cmd in build_commands:
                 self._clean_build_artifacts()
                 try:
@@ -258,6 +263,16 @@ print("Import test successful")
             return candidates
         return sorted(dist_dir.glob(f"*{version}*"))
 
+    def _resolve_twine_credentials(self, test: bool) -> str | None:
+        token_var = "TEST_PYPI_API_TOKEN" if test else "PYPI_API_TOKEN"
+        token = os.environ.get(token_var)
+        if token:
+            return token
+
+        if os.environ.get("CI", "").strip().lower() in {"1", "true", "yes"}:
+            raise RuntimeError(f"{token_var} is required for non-interactive CI publish.")
+        return None
+
     def publish_to_pypi(
         self, version: str, test: bool = True, skip_existing: bool = False
     ) -> bool:
@@ -278,7 +293,7 @@ print("Import test successful")
 
             env = os.environ.copy()
             token_var = "TEST_PYPI_API_TOKEN" if test else "PYPI_API_TOKEN"
-            token = os.environ.get(token_var)
+            token = self._resolve_twine_credentials(test)
             if not token and not env.get("TWINE_PASSWORD"):
                 print(f"Warning: {token_var} not found in environment")
                 print(
@@ -338,7 +353,7 @@ print("Import test successful")
 """
 
         if self.changelog_file.exists():
-            with open(self.changelog_file, "r") as f:
+            with open(self.changelog_file) as f:
                 content = f.read()
         else:
             content = "# Changelog\n\nAll notable changes will be documented in this file.\n\n"
@@ -358,18 +373,69 @@ print("Import test successful")
 
         print("Changelog updated")
 
+    def _validate_release_branch(self) -> None:
+        """Require sanctioned branches for release publishing."""
+        skip = os.environ.get("SKIP_RELEASE_BRANCH_CHECK", "").strip() == "1"
+        if skip:
+            print("Skipping release-branch check (SKIP_RELEASE_BRANCH_CHECK=1)")
+            return
+
+        try:
+            branch = (
+                subprocess.check_output(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    text=True,
+                    cwd=self.project_root,
+                )
+                .strip()
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                f"Could not determine git branch for release check: {exc}"
+            ) from exc
+
+        if branch in {"", "HEAD"}:
+            raise RuntimeError(
+                "Release checks require a local branch; detached HEAD is not allowed."
+            )
+        if not (branch in {"main", "master"} or branch.startswith("release/")):
+            raise RuntimeError(
+                f"Refusing to publish from branch {branch!r}. "
+                "Use main/master/release/* or set SKIP_RELEASE_BRANCH_CHECK=1."
+            )
+
     def run_full_publish(
         self,
-        new_version: Optional[str] = None,
+        new_version: str | None = None,
         test_pypi: bool = True,
         create_release: bool = True,
         changes: str = "",
         skip_existing: bool = False,
+        run_readiness: bool = True,
+        check_branch: bool = True,
     ) -> bool:
         """Run the complete publishing workflow."""
         print("🚀 Starting StateSet Agents publishing workflow...")
 
         try:
+            if check_branch:
+                self._validate_release_branch()
+
+            if run_readiness:
+                print("📋 Running publish readiness checks...")
+                readiness_script = self.project_root / "scripts" / "publish_readiness.sh"
+                if not readiness_script.exists():
+                    print(
+                        f"Missing readiness script: {readiness_script}\n"
+                        "Install and run from repository root."
+                    )
+                    return False
+                subprocess.run(
+                    ["bash", str(readiness_script)],
+                    check=True,
+                    cwd=self.project_root,
+                )
+
             # Get or validate version
             if new_version:
                 self.bump_version(new_version)
@@ -416,8 +482,11 @@ def main():
         "--version",
         help="Version to publish (e.g. 1.2.3) or bump type (patch|minor|major)",
     )
-    parser.add_argument("--test", action="store_true", help="Publish to TestPyPI")
-    parser.add_argument(
+    repo_group = parser.add_mutually_exclusive_group()
+    repo_group.add_argument(
+        "--test", action="store_true", help="Publish to TestPyPI (default)"
+    )
+    repo_group.add_argument(
         "--production", action="store_true", help="Publish to production PyPI"
     )
     parser.add_argument(
@@ -429,6 +498,19 @@ def main():
         action="store_true",
         help="Skip already-uploaded distributions (idempotent uploads)",
     )
+    parser.add_argument(
+        "--skip-readiness",
+        action="store_true",
+        help="Skip publish readiness checks",
+    )
+    parser.add_argument(
+        "--skip-branch-check",
+        action="store_true",
+        help=(
+            "Skip release branch enforcement (for TestPyPI or production). "
+            "Use SKIP_RELEASE_BRANCH_CHECK=1 instead."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -437,7 +519,7 @@ def main():
     # Determine PyPI target
     test_pypi = not args.production
 
-    resolved_version: Optional[str] = None
+    resolved_version: str | None = None
     if args.version:
         resolved_version = publisher.resolve_version(args.version)
 
@@ -447,6 +529,8 @@ def main():
         create_release=not args.skip_release,
         changes=args.changes or "",
         skip_existing=args.skip_existing,
+        run_readiness=not args.skip_readiness,
+        check_branch=not args.skip_branch_check,
     )
 
     sys.exit(0 if success else 1)

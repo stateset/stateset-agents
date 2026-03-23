@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kimi-k25-vllm-finetuned
+  namespace: stateset-agents
+  labels:
+    app: kimi-k25-vllm-finetuned
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kimi-k25-vllm-finetuned
+  template:
+    metadata:
+      labels:
+        app: kimi-k25-vllm-finetuned
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: vllm
+        # Pin to a tested tag or digest for production.
+        image: vllm/vllm-openai:nightly
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: MODEL_ID
+          value: /models/kimi-k25/merged
+        - name: HF_HOME
+          value: /models/hf
+        - name: TRANSFORMERS_CACHE
+          value: /models/hf
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: hf_token
+        command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+        args:
+        - --model=$(MODEL_ID)
+        - --tensor-parallel-size=8
+        - --mm-encoder-tp-mode=data
+        - --tool-call-parser=kimi_k2
+        - --reasoning-parser=kimi_k2
+        - --max-model-len=256000
+        - --gpu-memory-utilization=0.90
+        - --enable-chunked-prefill
+        - --enable-prefix-caching
+        - --trust-remote-code
+        - --host=0.0.0.0
+        - --port=8000
+        resources:
+          requests:
+            cpu: "10"
+            memory: "600Gi"
+            ephemeral-storage: "500Gi"
+            nvidia.com/gpu: "8"
+          limits:
+            cpu: "10"
+            memory: "600Gi"
+            ephemeral-storage: "500Gi"
+            nvidia.com/gpu: "8"
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        - name: models
+          mountPath: /models
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          failureThreshold: 180
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 5
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      - name: models
+        persistentVolumeClaim:
+          claimName: stateset-models-pvc
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-tesla-a100
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kimi-k25-vllm-finetuned
+  namespace: stateset-agents
+spec:
+  selector:
+    app: kimi-k25-vllm-finetuned
+  type: ClusterIP
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000

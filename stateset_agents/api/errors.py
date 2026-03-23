@@ -5,15 +5,14 @@ Unified error handling with consistent response format across all API services.
 """
 
 import logging
-import traceback
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
@@ -23,8 +22,10 @@ logger = logging.getLogger(__name__)
 # Error Codes
 # ============================================================================
 
+
 class ErrorCode(str, Enum):
     """Standardized error codes."""
+
     # Client errors (4xx)
     BAD_REQUEST = "BAD_REQUEST"
     UNAUTHORIZED = "UNAUTHORIZED"
@@ -54,23 +55,20 @@ class ErrorCode(str, Enum):
 # Error Response Models
 # ============================================================================
 
+
 class ErrorDetail(BaseModel):
     """Individual error detail."""
-    field: Optional[str] = Field(None, description="Field that caused the error")
+
+    field: str | None = Field(None, description="Field that caused the error")
     message: str = Field(..., description="Human-readable error message")
-    code: Optional[str] = Field(None, description="Machine-readable error code")
+    code: str | None = Field(None, description="Machine-readable error code")
 
 
 class ErrorResponse(BaseModel):
     """Standardized error response envelope."""
-    error: Dict[str, Any] = Field(..., description="Error information")
-    request_id: str = Field(..., description="Unique request identifier for tracing")
-    timestamp: str = Field(..., description="ISO 8601 timestamp")
-    path: str = Field(..., description="Request path that caused the error")
-    documentation_url: Optional[str] = Field(None, description="Link to relevant documentation")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "error": {
                     "code": "VALIDATION_ERROR",
@@ -79,20 +77,30 @@ class ErrorResponse(BaseModel):
                         {
                             "field": "prompts",
                             "message": "At least one prompt is required",
-                            "code": "required"
+                            "code": "required",
                         }
-                    ]
+                    ],
                 },
                 "request_id": "550e8400-e29b-41d4-a716-446655440000",
                 "timestamp": "2024-01-15T10:30:00.000Z",
-                "path": "/api/v1/train"
+                "path": "/api/v1/train",
             }
         }
+    )
+
+    error: dict[str, Any] = Field(..., description="Error information")
+    request_id: str = Field(..., description="Unique request identifier for tracing")
+    timestamp: str = Field(..., description="ISO 8601 timestamp")
+    path: str = Field(..., description="Request path that caused the error")
+    documentation_url: str | None = Field(
+        None, description="Link to relevant documentation"
+    )
 
 
 # ============================================================================
 # API Exceptions
 # ============================================================================
+
 
 class APIError(Exception):
     """Base API exception with consistent error information."""
@@ -102,9 +110,9 @@ class APIError(Exception):
         code: ErrorCode,
         message: str,
         status_code: int = 500,
-        details: Optional[List[ErrorDetail]] = None,
-        documentation_url: Optional[str] = None,
-        internal_error: Optional[Exception] = None,
+        details: list[ErrorDetail] | None = None,
+        documentation_url: str | None = None,
+        internal_error: Exception | None = None,
     ):
         super().__init__(message)
         self.code = code
@@ -114,7 +122,7 @@ class APIError(Exception):
         self.documentation_url = documentation_url
         self.internal_error = internal_error
 
-    def to_response(self, request_id: str, path: str) -> Dict[str, Any]:
+    def to_response(self, request_id: str, path: str) -> dict[str, Any]:
         """Convert to response dictionary."""
         response = {
             "error": {
@@ -127,7 +135,9 @@ class APIError(Exception):
         }
 
         if self.details:
-            response["error"]["details"] = [d.dict(exclude_none=True) for d in self.details]
+            response["error"]["details"] = [
+                d.model_dump(exclude_none=True) for d in self.details
+            ]
 
         if self.documentation_url:
             response["documentation_url"] = self.documentation_url
@@ -137,25 +147,29 @@ class APIError(Exception):
 
 class BadRequestError(APIError):
     """400 Bad Request."""
-    def __init__(self, message: str, details: Optional[List[ErrorDetail]] = None):
+
+    def __init__(self, message: str, details: list[ErrorDetail] | None = None):
         super().__init__(ErrorCode.BAD_REQUEST, message, 400, details)
 
 
 class UnauthorizedError(APIError):
     """401 Unauthorized."""
+
     def __init__(self, message: str = "Authentication required"):
         super().__init__(ErrorCode.UNAUTHORIZED, message, 401)
 
 
 class ForbiddenError(APIError):
     """403 Forbidden."""
+
     def __init__(self, message: str = "Access denied"):
         super().__init__(ErrorCode.FORBIDDEN, message, 403)
 
 
 class NotFoundError(APIError):
     """404 Not Found."""
-    def __init__(self, resource: str, identifier: Optional[str] = None):
+
+    def __init__(self, resource: str, identifier: str | None = None):
         message = f"{resource} not found"
         if identifier:
             message = f"{resource} '{identifier}' not found"
@@ -164,18 +178,21 @@ class NotFoundError(APIError):
 
 class ConflictError(APIError):
     """409 Conflict."""
+
     def __init__(self, message: str):
         super().__init__(ErrorCode.CONFLICT, message, 409)
 
 
 class ValidationError(APIError):
     """422 Validation Error."""
-    def __init__(self, message: str, details: Optional[List[ErrorDetail]] = None):
+
+    def __init__(self, message: str, details: list[ErrorDetail] | None = None):
         super().__init__(ErrorCode.VALIDATION_ERROR, message, 422, details)
 
 
 class RateLimitError(APIError):
     """429 Rate Limit Exceeded."""
+
     def __init__(self, retry_after: int = 60):
         super().__init__(
             ErrorCode.RATE_LIMIT_EXCEEDED,
@@ -187,25 +204,35 @@ class RateLimitError(APIError):
 
 class InternalError(APIError):
     """500 Internal Server Error."""
-    def __init__(self, message: str = "An internal error occurred", internal_error: Optional[Exception] = None):
-        super().__init__(ErrorCode.INTERNAL_ERROR, message, 500, internal_error=internal_error)
+
+    def __init__(
+        self,
+        message: str = "An internal error occurred",
+        internal_error: Exception | None = None,
+    ):
+        super().__init__(
+            ErrorCode.INTERNAL_ERROR, message, 500, internal_error=internal_error
+        )
 
 
 class ServiceUnavailableError(APIError):
     """503 Service Unavailable."""
+
     def __init__(self, message: str = "Service temporarily unavailable"):
         super().__init__(ErrorCode.SERVICE_UNAVAILABLE, message, 503)
 
 
 class TrainingError(APIError):
     """Training-specific error."""
-    def __init__(self, message: str, details: Optional[List[ErrorDetail]] = None):
+
+    def __init__(self, message: str, details: list[ErrorDetail] | None = None):
         super().__init__(ErrorCode.TRAINING_FAILED, message, 500, details)
 
 
 class AgentError(APIError):
     """Agent-specific error."""
-    def __init__(self, message: str, details: Optional[List[ErrorDetail]] = None):
+
+    def __init__(self, message: str, details: list[ErrorDetail] | None = None):
         super().__init__(ErrorCode.AGENT_ERROR, message, 500, details)
 
 
@@ -213,8 +240,10 @@ class AgentError(APIError):
 # Domain-Specific Exceptions
 # ============================================================================
 
+
 class AgentNotFoundError(NotFoundError):
     """Agent with given ID not found."""
+
     def __init__(self, agent_id: str):
         super().__init__("Agent", agent_id)
         self.agent_id = agent_id
@@ -222,12 +251,16 @@ class AgentNotFoundError(NotFoundError):
 
 class InvalidAgentConfigError(BadRequestError):
     """Agent configuration is invalid."""
-    def __init__(self, details: str, validation_errors: Optional[List[ErrorDetail]] = None):
+
+    def __init__(
+        self, details: str, validation_errors: list[ErrorDetail] | None = None
+    ):
         super().__init__(f"Invalid agent configuration: {details}", validation_errors)
 
 
 class ConversationNotFoundError(NotFoundError):
     """Conversation not found."""
+
     def __init__(self, conversation_id: str):
         super().__init__("Conversation", conversation_id)
         self.conversation_id = conversation_id
@@ -235,6 +268,7 @@ class ConversationNotFoundError(NotFoundError):
 
 class TrainingJobNotFoundError(NotFoundError):
     """Training job not found."""
+
     def __init__(self, job_id: str):
         super().__init__("Training job", job_id)
         self.job_id = job_id
@@ -242,19 +276,26 @@ class TrainingJobNotFoundError(NotFoundError):
 
 class TrainingConfigError(BadRequestError):
     """Training configuration is invalid."""
-    def __init__(self, details: str, validation_errors: Optional[List[ErrorDetail]] = None):
-        super().__init__(f"Invalid training configuration: {details}", validation_errors)
+
+    def __init__(
+        self, details: str, validation_errors: list[ErrorDetail] | None = None
+    ):
+        super().__init__(
+            f"Invalid training configuration: {details}", validation_errors
+        )
 
 
 class TokenizationError(InternalError):
     """Failed to tokenize text."""
+
     def __init__(self, message: str = "Failed to calculate token count"):
         super().__init__(message)
 
 
 class ModelLoadError(InternalError):
     """Failed to load model."""
-    def __init__(self, model_name: str, reason: Optional[str] = None):
+
+    def __init__(self, model_name: str, reason: str | None = None):
         message = f"Failed to load model '{model_name}'"
         if reason:
             message += f": {reason}"
@@ -264,24 +305,28 @@ class ModelLoadError(InternalError):
 
 class PromptInjectionError(BadRequestError):
     """Potential prompt injection detected."""
+
     def __init__(self, field: str = "input"):
         super().__init__(
             f"Request rejected: potentially harmful content detected in {field}",
-            details=[ErrorDetail(
-                field=field,
-                message="Content appears to contain prompt injection attempt",
-                code="prompt_injection"
-            )]
+            details=[
+                ErrorDetail(
+                    field=field,
+                    message="Content appears to contain prompt injection attempt",
+                    code="prompt_injection",
+                )
+            ],
         )
 
 
 class ResourceExhaustedError(APIError):
     """Resource limit exceeded."""
+
     def __init__(self, resource: str, limit: int):
         super().__init__(
             ErrorCode.RESOURCE_EXHAUSTED,
             f"Resource limit exceeded for {resource}. Maximum allowed: {limit}",
-            429
+            429,
         )
         self.resource = resource
         self.limit = limit
@@ -289,12 +334,13 @@ class ResourceExhaustedError(APIError):
 
 class AuthLockoutError(APIError):
     """Account temporarily locked due to too many failed attempts."""
+
     def __init__(self, retry_after_seconds: int):
         super().__init__(
             ErrorCode.FORBIDDEN,
             f"Account temporarily locked due to too many failed authentication attempts. "
             f"Please try again in {retry_after_seconds} seconds.",
-            403
+            403,
         )
         self.retry_after_seconds = retry_after_seconds
 
@@ -303,13 +349,14 @@ class AuthLockoutError(APIError):
 # Error Response Builder
 # ============================================================================
 
+
 def build_error_response(
     request: Request,
     status_code: int,
     code: ErrorCode,
     message: str,
-    details: Optional[List[Dict[str, Any]]] = None,
-    documentation_url: Optional[str] = None,
+    details: list[dict[str, Any]] | None = None,
+    documentation_url: str | None = None,
 ) -> JSONResponse:
     """Build a standardized error response."""
     request_id = getattr(request.state, "request_id", "unknown")
@@ -336,6 +383,7 @@ def build_error_response(
 # ============================================================================
 # Exception Handlers
 # ============================================================================
+
 
 async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
     """Handle APIError exceptions."""
@@ -379,8 +427,6 @@ async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """Handle FastAPI HTTPException."""
-    request_id = getattr(request.state, "request_id", "unknown")
-
     # Map status codes to error codes
     status_to_code = {
         400: ErrorCode.BAD_REQUEST,
@@ -440,7 +486,9 @@ async def starlette_http_exception_handler(
     return response
 
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     """Handle Pydantic validation errors."""
     request_id = getattr(request.state, "request_id", "unknown")
 
@@ -448,11 +496,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     details = []
     for error in exc.errors():
         field_path = ".".join(str(loc) for loc in error["loc"])
-        details.append({
-            "field": field_path,
-            "message": error["msg"],
-            "code": error["type"],
-        })
+        details.append(
+            {
+                "field": field_path,
+                "message": error["msg"],
+                "code": error["type"],
+            }
+        )
 
     logger.warning(
         "Validation error",
@@ -626,6 +676,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # ============================================================================
 # Setup Function
 # ============================================================================
+
 
 def setup_exception_handlers(app: FastAPI) -> None:
     """Register all exception handlers."""
