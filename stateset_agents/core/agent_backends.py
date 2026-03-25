@@ -192,6 +192,10 @@ class StubTokenizer:
             parts.append("Assistant:")
         return "\n".join(parts)
 
+    def save_pretrained(self, path: str) -> None:
+        """No-op save to match HuggingFace interface."""
+        pass
+
 
 class StubModelConfig:
     """Configuration for StubModel to match PyTorch model interface."""
