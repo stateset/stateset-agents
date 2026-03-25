@@ -43,6 +43,15 @@ try:
 except ImportError:
     LLM_JUDGE_AVAILABLE = False
 
+# LLM Judge training adapters (always available — gracefully degrade)
+from .llm_judge_adapter import (
+    LLMJudgeReward,
+    LLMJudgeRewardComponent,
+    LLMJudgeRewardWithFallback,
+    create_rlaif_reward,
+    create_rlaif_component,
+)
+
 __all__ = [
     "LLMRewardFunction",
     "RewardResult",
@@ -75,3 +84,13 @@ if LLM_JUDGE_AVAILABLE:
             "create_llm_judge_reward",
         ]
     )
+
+__all__.extend(
+    [
+        "LLMJudgeReward",
+        "LLMJudgeRewardComponent",
+        "LLMJudgeRewardWithFallback",
+        "create_rlaif_reward",
+        "create_rlaif_component",
+    ]
+)

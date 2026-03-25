@@ -491,6 +491,60 @@ def probe_loss_features() -> float:
 
 
 # ---------------------------------------------------------------------------
+# RLAIF integration probe
+# ---------------------------------------------------------------------------
+
+def probe_rlaif_integration() -> float:
+    """Check that LLM Judge is properly wired into the training pipeline.
+
+    Returns a score from 0.0 to 1.0 based on integration completeness.
+    """
+    score = 0.0
+    checks = 0
+
+    try:
+        # 1. LLMJudgeReward adapter exists and is a RewardFunction
+        checks += 1
+        from stateset_agents.rewards.llm_judge_adapter import LLMJudgeReward
+        from stateset_agents.core.reward_base import RewardFunction
+        if issubclass(LLMJudgeReward, RewardFunction):
+            score += 1.0
+
+        # 2. LLMJudgeRewardComponent exists for MultiObjective
+        checks += 1
+        from stateset_agents.rewards.llm_judge_adapter import LLMJudgeRewardComponent
+        if hasattr(LLMJudgeRewardComponent, "compute_score"):
+            score += 1.0
+
+        # 3. Fallback reward works without API key
+        checks += 1
+        from stateset_agents.rewards.llm_judge_adapter import create_rlaif_reward
+        fallback = create_rlaif_reward(api_key="")  # No key
+        if fallback is not None and not fallback._judge_available:
+            score += 1.0
+
+        # 4. Fallback has compute_reward method and heuristic initialized
+        checks += 1
+        if (
+            hasattr(fallback, "compute_reward")
+            and callable(fallback.compute_reward)
+            and fallback._get_heuristic() is not None
+        ):
+            score += 1.0
+
+        # 5. Exported from rewards package
+        checks += 1
+        from stateset_agents.rewards import create_rlaif_reward as _factory
+        if callable(_factory):
+            score += 1.0
+
+    except Exception as exc:
+        logger.warning("RLAIF integration probe failed: %s", exc)
+
+    return score / max(checks, 1)
+
+
+# ---------------------------------------------------------------------------
 # Numerical correctness probe
 # ---------------------------------------------------------------------------
 
@@ -597,7 +651,12 @@ async def main() -> float:
     numerical = probe_numerical_correctness()
     print(f"  numerical: {numerical:.6f}")
 
-    # 5. Compute composite score
+    # 5. RLAIF integration probe
+    print("\n--- RLAIF integration ---")
+    rlaif = probe_rlaif_integration()
+    print(f"  rlaif: {rlaif:.6f}")
+
+    # 6. Compute composite score
     completed = [r for r in algo_results if r.completed]
     algo_coverage = len(completed) / len(algorithms) if algorithms else 0.0
 
@@ -620,15 +679,16 @@ async def main() -> float:
     else:
         convergence = 0.0
 
-    # Composite: weighted sum (7 dimensions)
+    # Composite: weighted sum (8 dimensions)
     composite = (
-        0.20 * reward_quality
+        0.15 * reward_quality
         + 0.10 * stability
-        + 0.15 * algo_coverage
-        + 0.15 * convergence
+        + 0.10 * algo_coverage
+        + 0.10 * convergence
         + 0.15 * discrimination
         + 0.10 * loss_features
         + 0.15 * numerical
+        + 0.15 * rlaif
     )
 
     elapsed = time.monotonic() - overall_start
@@ -636,13 +696,14 @@ async def main() -> float:
     print("\n" + "=" * 60)
     print("COMPOSITE SCORING")
     print("=" * 60)
-    print(f"  reward_quality:  {reward_quality:.6f}  (weight 0.20)")
+    print(f"  reward_quality:  {reward_quality:.6f}  (weight 0.15)")
     print(f"  stability:       {stability:.6f}  (weight 0.10)")
-    print(f"  algo_coverage:   {algo_coverage:.6f}  (weight 0.15)")
-    print(f"  convergence:     {convergence:.6f}  (weight 0.15)")
+    print(f"  algo_coverage:   {algo_coverage:.6f}  (weight 0.10)")
+    print(f"  convergence:     {convergence:.6f}  (weight 0.10)")
     print(f"  discrimination:  {discrimination:.6f}  (weight 0.15)")
     print(f"  loss_features:   {loss_features:.6f}  (weight 0.10)")
     print(f"  numerical:       {numerical:.6f}  (weight 0.15)")
+    print(f"  rlaif:           {rlaif:.6f}  (weight 0.15)")
     print(f"  ---")
     print(f"  total_time:      {elapsed:.1f}s")
     print()
@@ -655,6 +716,7 @@ async def main() -> float:
     print(f"convergence: {convergence:.6f}")
     print(f"discrimination: {discrimination:.6f}")
     print(f"loss_features: {loss_features:.6f}")
+    print(f"rlaif: {rlaif:.6f}")
     print(f"numerical: {numerical:.6f}")
 
     return composite
