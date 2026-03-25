@@ -58,20 +58,29 @@ class HelpfulnessReward(RewardFunction):
     def _evaluate_helpfulness(self, content: str) -> float:
         """Evaluate helpfulness of a single response"""
         score = 0.0
+        length = len(content)
+        content_lower = content.lower()
+
+        # Very short responses are unhelpful
+        if length < 10:
+            return 0.0
 
         # Length bonus (not too short, not too long)
-        length = len(content)
-        if 20 <= length <= 500:
+        if 50 <= length <= 500:
             score += 0.3
+        elif 20 <= length < 50:
+            score += 0.15
         elif length > 500:
-            score += 0.2  # Slight penalty for very long responses
-
-        # Information density
-        sentences = content.split(".")
-        if len(sentences) >= 2:
             score += 0.2
 
-        # Helpful phrases
+        # Information density — count real sentences (non-empty, 3+ words)
+        sentences = [s.strip() for s in content.split(".") if len(s.strip().split()) >= 3]
+        if len(sentences) >= 2:
+            score += 0.2
+        elif len(sentences) == 1:
+            score += 0.1
+
+        # Helpful phrases — broader coverage
         helpful_phrases = [
             "let me help",
             "i can assist",
@@ -80,10 +89,22 @@ class HelpfulnessReward(RewardFunction):
             "the answer is",
             "you can try",
             "here are some options",
+            "happy to help",
+            "let me look into",
+            "i understand",
+            "i can help",
+            "here are",
+            "let me check",
+            "i recommend",
+            "you might want to",
+            "the best approach",
+            "i can see",
+            "based on",
+            "for you",
+            "right away",
         ]
-        content_lower = content.lower()
         phrase_matches = sum(1 for phrase in helpful_phrases if phrase in content_lower)
-        score += min(phrase_matches * 0.1, 0.3)
+        score += min(phrase_matches * 0.08, 0.3)
 
         # Question answering
         if "?" in content and any(
