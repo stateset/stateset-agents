@@ -73,12 +73,23 @@ class HelpfulnessReward(RewardFunction):
         elif length > 500:
             score += 0.2
 
-        # Information density — count real sentences (non-empty, 3+ words)
-        sentences = [s.strip() for s in content.split(".") if len(s.strip().split()) >= 3]
-        if len(sentences) >= 2:
+        # Information density — count real sentences (split on common delimiters)
+        import re as _re
+        raw_sentences = _re.split(r'[.!?]+', content)
+        sentences = [s.strip() for s in raw_sentences if len(s.strip().split()) >= 3]
+        if len(sentences) >= 3:
+            score += 0.25
+        elif len(sentences) >= 2:
             score += 0.2
         elif len(sentences) == 1:
             score += 0.1
+
+        # Word diversity bonus — high unique-word ratio signals informative content
+        words = content_lower.split()
+        if len(words) >= 5:
+            unique_ratio = len(set(words)) / len(words)
+            if unique_ratio >= 0.7:
+                score += 0.1
 
         # Helpful phrases — broader coverage
         helpful_phrases = [
