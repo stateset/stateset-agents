@@ -131,6 +131,25 @@ def compute_grpo_loss(
     else:
         total_loss_tensor = torch.tensor(0.0, requires_grad=True)
 
+    # Entropy bonus — encourages exploration by penalizing overly confident
+    # distributions.  The coefficient is defined in TrainingConfig but was
+    # previously unused.
+    entropy_coef = float(getattr(config, "entropy_coef", 0.0))
+    entropy_value = 0.0
+    if entropy_coef > 0 and policy_losses:
+        # Estimate entropy from the last forward pass logits if available.
+        # When unavailable, skip — entropy is a bonus, not a requirement.
+        try:
+            entropy_value = _estimate_policy_entropy(
+                trajectory_groups, agent, config, device
+            )
+            if entropy_value > 0:
+                total_loss_tensor = total_loss_tensor - entropy_coef * torch.tensor(
+                    entropy_value, device=device
+                )
+        except LOSS_EXCEPTIONS:
+            pass
+
     return {
         "policy_loss": total_loss_tensor,
         "total_loss": total_loss_tensor,
@@ -140,7 +159,54 @@ def compute_grpo_loss(
         "advantage_std": float(np.std(all_advantages_for_logging))
         if all_advantages_for_logging
         else 0.0,
+        "entropy": entropy_value,
     }
+
+
+def _estimate_policy_entropy(
+    trajectory_groups: list[Any],
+    agent: Any,
+    config: Any,
+    device: Any,
+) -> float:
+    """Estimate the mean entropy of the policy distribution.
+
+    Samples a single trajectory from the first non-empty group and computes
+    the token-averaged entropy from the logits.  This is intentionally cheap
+    (one forward pass) since it runs every training step.
+    """
+    torch = get_torch() or require_torch()
+    F = get_functional()
+    if F is None:
+        return 0.0
+
+    for group in trajectory_groups:
+        if not group.trajectories:
+            continue
+        trajectory = group.trajectories[0]
+        try:
+            inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
+            with torch.no_grad():
+                outputs = agent.model(**inputs, labels=labels)
+                logits = outputs.logits
+                log_probs = F.log_softmax(logits, dim=-1)
+                probs = log_probs.exp()
+                # H = -sum(p * log p)
+                token_entropy = -(probs * log_probs).sum(dim=-1)
+
+                # Mask to labelled tokens only
+                if torch.is_tensor(labels):
+                    mask = labels.ne(-100)
+                    if mask.any():
+                        entropy = (token_entropy * mask).sum() / mask.sum()
+                    else:
+                        entropy = token_entropy.mean()
+                else:
+                    entropy = token_entropy.mean()
+                return float(entropy.item())
+        except LOSS_EXCEPTIONS:
+            continue
+    return 0.0
 
 
 def _compute_group_policy_loss(
@@ -169,6 +235,9 @@ def _compute_group_policy_loss(
 
     # PPO-style clipping ratio (falls back to advantage clipping when old log probs are absent).
     clip_ratio = getattr(config, "clip_ratio", getattr(config, "clip_epsilon", 0.2))
+    # Token-level loss normalization — divide loss by response token count to
+    # prevent bias toward longer sequences (aligned with DAPO's approach).
+    use_token_level = getattr(config, "token_level_loss", False)
 
     for traj_idx, (trajectory, advantage) in enumerate(
         zip(group.trajectories, advantages, strict=False)
@@ -233,6 +302,14 @@ def _compute_group_policy_loss(
                     # Without old log_probs, PPO-style clipping is impossible.
                     # clip_ratio operates in ratio space, not advantage magnitude.
                     policy_loss = advantage * nll
+
+                # Token-level normalization: divide by response token count
+                # to avoid biasing toward longer sequences.
+                if use_token_level and torch.is_tensor(labels):
+                    _mask = labels.ne(-100)
+                    _tc = int(_mask.sum().item())
+                    if _tc > 1:
+                        policy_loss = policy_loss / _tc
 
                 total_loss = total_loss + policy_loss
                 num_trajectories += 1

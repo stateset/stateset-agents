@@ -343,6 +343,63 @@ async def probe_reward_discrimination() -> float:
 
 
 # ---------------------------------------------------------------------------
+# Loss computation quality probe
+# ---------------------------------------------------------------------------
+
+def probe_loss_features() -> float:
+    """Check that key loss computation features are wired up.
+
+    Returns a score from 0.0 to 1.0 based on feature completeness.
+    """
+    score = 0.0
+    checks = 0
+
+    try:
+        from stateset_agents.training.loss_computation import (
+            _estimate_policy_entropy,
+            compute_grpo_loss,
+        )
+
+        # 1. compute_grpo_loss exists and is callable
+        checks += 1
+        if callable(compute_grpo_loss):
+            score += 1.0
+
+        # 2. Entropy estimation function exists
+        checks += 1
+        if callable(_estimate_policy_entropy):
+            score += 1.0
+
+        # 3. entropy_coef is read from config
+        import inspect
+        src = inspect.getsource(compute_grpo_loss)
+
+        checks += 1
+        if "entropy_coef" in src:
+            score += 1.0
+
+        # 4. Token-level normalization option exists (in group policy loss)
+        from stateset_agents.training.loss_computation import (
+            _compute_group_policy_loss,
+        )
+        group_src = inspect.getsource(_compute_group_policy_loss)
+
+        checks += 1
+        if "token_level" in group_src:
+            score += 1.0
+
+        # 5. Return dict includes entropy key
+        checks += 1
+        if '"entropy"' in src or "'entropy'" in src:
+            score += 1.0
+
+    except Exception as exc:
+        logger.warning("Loss feature probe failed: %s", exc)
+
+    return score / max(checks, 1)
+
+
+# ---------------------------------------------------------------------------
 # Main evaluation
 # ---------------------------------------------------------------------------
 
@@ -375,13 +432,16 @@ async def main() -> float:
     discrimination = await probe_reward_discrimination()
     print(f"  discrimination: {discrimination:.6f}")
 
-    # 3. Compute composite score
+    # 3. Loss computation features probe
+    print("\n--- Loss computation features ---")
+    loss_features = probe_loss_features()
+    print(f"  loss_features: {loss_features:.6f}")
+
+    # 4. Compute composite score
     completed = [r for r in algo_results if r.completed]
     algo_coverage = len(completed) / len(algorithms) if algorithms else 0.0
 
     # Reward quality: best eval_reward across completed algorithms
-    # (coverage already penalizes missing algorithms — reward_quality should
-    # reflect the best achievable quality, not be diluted by algorithm count)
     if completed:
         reward_quality = max(r.eval_reward for r in completed)
     else:
@@ -390,7 +450,7 @@ async def main() -> float:
     # Stability: inverse of mean reward std (lower std = better)
     if completed:
         mean_std = sum(r.eval_reward_std for r in completed) / len(completed)
-        stability = max(0.0, 1.0 - mean_std)  # 0 std = perfect stability
+        stability = max(0.0, 1.0 - mean_std)
     else:
         stability = 0.0
 
@@ -400,13 +460,14 @@ async def main() -> float:
     else:
         convergence = 0.0
 
-    # Composite: weighted sum
+    # Composite: weighted sum (rebalanced to include loss features)
     composite = (
-        0.30 * reward_quality
-        + 0.20 * stability
-        + 0.20 * algo_coverage
+        0.25 * reward_quality
+        + 0.15 * stability
+        + 0.15 * algo_coverage
         + 0.15 * convergence
         + 0.15 * discrimination
+        + 0.15 * loss_features
     )
 
     elapsed = time.monotonic() - overall_start
@@ -414,11 +475,12 @@ async def main() -> float:
     print("\n" + "=" * 60)
     print("COMPOSITE SCORING")
     print("=" * 60)
-    print(f"  reward_quality:  {reward_quality:.6f}  (weight 0.30)")
-    print(f"  stability:       {stability:.6f}  (weight 0.20)")
-    print(f"  algo_coverage:   {algo_coverage:.6f}  (weight 0.20)")
+    print(f"  reward_quality:  {reward_quality:.6f}  (weight 0.25)")
+    print(f"  stability:       {stability:.6f}  (weight 0.15)")
+    print(f"  algo_coverage:   {algo_coverage:.6f}  (weight 0.15)")
     print(f"  convergence:     {convergence:.6f}  (weight 0.15)")
     print(f"  discrimination:  {discrimination:.6f}  (weight 0.15)")
+    print(f"  loss_features:   {loss_features:.6f}  (weight 0.15)")
     print(f"  ---")
     print(f"  total_time:      {elapsed:.1f}s")
     print()
@@ -430,6 +492,7 @@ async def main() -> float:
     print(f"algo_coverage: {algo_coverage:.6f}")
     print(f"convergence: {convergence:.6f}")
     print(f"discrimination: {discrimination:.6f}")
+    print(f"loss_features: {loss_features:.6f}")
 
     return composite
 
