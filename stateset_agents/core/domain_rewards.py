@@ -149,28 +149,38 @@ class CustomerServiceReward(DomainSpecificReward):
             ).ratio()
             score += similarity * 0.4
 
-        # Empathy score
+        # Empathy score — redistribute weight when no expected response
+        empathy_weight = 0.3 if not expected else 0.2
         empathy_matches = sum(
             1 for word in self.domain_keywords["empathy"] if word in response_lower
         )
-        empathy_score = min(empathy_matches / 3, 1.0)  # Cap at 3 empathy words
-        score += empathy_score * 0.2
+        empathy_score = min(empathy_matches / 3, 1.0)
+        score += empathy_score * empathy_weight
 
         # Action-oriented score
+        action_weight = 0.3 if not expected else 0.2
         action_matches = sum(
             1 for word in self.domain_keywords["action"] if word in response_lower
         )
-        action_score = min(action_matches / 2, 1.0)  # Cap at 2 action words
-        score += action_score * 0.2
+        action_score = min(action_matches / 2, 1.0)
+        score += action_score * action_weight
 
         # Professionalism score
+        prof_weight = 0.2 if not expected else 0.1
         prof_matches = sum(
             1
             for word in self.domain_keywords["professionalism"]
             if word in response_lower
         )
         prof_score = min(prof_matches / 2, 1.0)
-        score += prof_score * 0.1
+        score += prof_score * prof_weight
+
+        # Resolution keywords bonus
+        resolution_matches = sum(
+            1 for word in self.domain_keywords["resolution"] if word in response_lower
+        )
+        if resolution_matches > 0:
+            score += min(resolution_matches * 0.05, 0.1)
 
         # Length appropriateness
         word_count = len(response.split())

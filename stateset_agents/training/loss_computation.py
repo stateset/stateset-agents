@@ -227,11 +227,12 @@ def _compute_group_policy_loss(
                     if not _warned_missing_log_probs:
                         logger.warning(
                             "clip_ratio set but trajectories lack log_probs; "
-                            "falling back to advantage clipping."
+                            "using unclipped REINFORCE loss."
                         )
                         _warned_missing_log_probs = True
-                    clamped_advantage = advantage.clamp(-clip_ratio, clip_ratio)
-                    policy_loss = clamped_advantage * nll
+                    # Without old log_probs, PPO-style clipping is impossible.
+                    # clip_ratio operates in ratio space, not advantage magnitude.
+                    policy_loss = advantage * nll
 
                 total_loss = total_loss + policy_loss
                 num_trajectories += 1

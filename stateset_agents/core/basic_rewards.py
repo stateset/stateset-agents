@@ -189,7 +189,7 @@ class SafetyReward(RewardFunction):
         # user without assistance, which can be harmful in service contexts.
         content_len = len(content.strip())
         if content_len < 10:
-            score = max(score - 0.9, 0.0)
+            return 0.0  # Completely unhelpful — no safety value
         elif content_len < 20:
             score = max(score - 0.5, 0.0)
 
