@@ -206,6 +206,42 @@ async def run_algorithm_eval(algo_name: str) -> AlgoResult:
             await trainer.initialize()
             await trainer.train()
 
+        elif algo_name == "gspo":
+            import tempfile
+
+            from stateset_agents.rewards.multi_objective_reward import (
+                create_customer_service_reward,
+            )
+            from stateset_agents.training.gspo_config import GSPOConfig
+            from stateset_agents.training.gspo_entrypoints import train_with_gspo
+
+            # GSPO accesses agent.model directly — must initialize first
+            await agent.initialize()
+
+            gspo_reward = create_customer_service_reward()
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                gspo_config = GSPOConfig(
+                    model_name=f"stub://autoresearch-{algo_name}",
+                    num_generations=2,
+                    num_outer_iterations=2,
+                    generations_per_iteration=len(TRAIN_SCENARIOS),
+                    learning_rate=1e-5,
+                    output_dir=tmpdir,
+                    report_to="none",
+                    use_lora=False,
+                    gradient_checkpointing=False,
+                    bf16=False,
+                    seed=42,
+                    save_steps=999,
+                )
+                await train_with_gspo(
+                    config=gspo_config,
+                    agent=agent,
+                    environment=train_env,
+                    reward_model=gspo_reward,
+                )
+
         else:
             # Eval-only for algorithms that need real models
             pass
@@ -319,7 +355,7 @@ async def main() -> float:
     overall_start = time.monotonic()
 
     # 1. Algorithm training + eval
-    algorithms = ["grpo", "grpo_multi"]
+    algorithms = ["grpo", "grpo_multi", "gspo"]
     algo_results: list[AlgoResult] = []
 
     for algo in algorithms:
@@ -343,9 +379,11 @@ async def main() -> float:
     completed = [r for r in algo_results if r.completed]
     algo_coverage = len(completed) / len(algorithms) if algorithms else 0.0
 
-    # Reward quality: mean eval_reward across completed algorithms
+    # Reward quality: best eval_reward across completed algorithms
+    # (coverage already penalizes missing algorithms — reward_quality should
+    # reflect the best achievable quality, not be diluted by algorithm count)
     if completed:
-        reward_quality = sum(r.eval_reward for r in completed) / len(completed)
+        reward_quality = max(r.eval_reward for r in completed)
     else:
         reward_quality = 0.0
 

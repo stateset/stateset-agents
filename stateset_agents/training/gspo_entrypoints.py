@@ -55,12 +55,21 @@ async def train_with_gspo(
             )
             use_wandb = False
 
-    model_manager = GSPOModelManager(config)
-    model, tokenizer = model_manager.load_model_and_tokenizer()
+    _is_stub = config.model_name.startswith("stub://") or getattr(
+        config, "use_stub_model", False
+    )
 
-    agent.model = model
-    agent.tokenizer = tokenizer
-    agent.generation_config = agent._build_generation_config()
+    if _is_stub:
+        logger.info("Stub backend detected — skipping model manager, using agent's model")
+        model = agent.model
+        tokenizer = agent.tokenizer
+        model_manager = None
+    else:
+        model_manager = GSPOModelManager(config)
+        model, tokenizer = model_manager.load_model_and_tokenizer()
+        agent.model = model
+        agent.tokenizer = tokenizer
+        agent.generation_config = agent._build_generation_config()
 
     if not train_queries:
         logger.info("Generating training queries from environment scenarios...")
@@ -89,7 +98,7 @@ async def train_with_gspo(
         agent=agent,
         environment=environment,
         reward_model=reward_model,
-        ref_model=model_manager.ref_model,
+        ref_model=model_manager.ref_model if model_manager else None,
     )
 
     if config.use_vllm:

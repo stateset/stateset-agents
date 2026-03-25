@@ -160,13 +160,45 @@ class StubTokenizer:
 
     def __call__(
         self,
-        prompt: str,
+        prompt: str | list[str],
         return_tensors: str = "pt",
         truncation: bool = True,
         max_length: int | None = None,
+        padding: bool | str = False,
         **_: Any,
     ) -> dict[str, Any]:
-        return {"prompt": prompt, "input_ids": [[0]]}
+        texts = [prompt] if isinstance(prompt, str) else list(prompt)
+
+        batch_ids: list[list[int]] = []
+        for text in texts:
+            tokens = [ord(ch) % 256 for ch in (text or "")]
+            if not tokens:
+                tokens = [0]
+            if max_length and len(tokens) > max_length:
+                tokens = tokens[:max_length]
+            batch_ids.append(tokens)
+
+        if padding:
+            max_len = max(len(t) for t in batch_ids)
+            batch_masks = []
+            for i, tokens in enumerate(batch_ids):
+                pad_len = max_len - len(tokens)
+                batch_masks.append([1] * len(tokens) + [0] * pad_len)
+                batch_ids[i] = tokens + [self.pad_token_id] * pad_len
+        else:
+            batch_masks = [[1] * len(t) for t in batch_ids]
+
+        if return_tensors == "pt":
+            try:
+                import torch
+                return {
+                    "input_ids": torch.tensor(batch_ids, dtype=torch.long),
+                    "attention_mask": torch.tensor(batch_masks, dtype=torch.long),
+                }
+            except ImportError:
+                pass
+
+        return {"input_ids": batch_ids, "attention_mask": batch_masks}
 
     def decode(self, text: Any, skip_special_tokens: bool = True) -> str:
         return text if isinstance(text, str) else str(text)
@@ -263,28 +295,31 @@ class StubModel:
 
     def __call__(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
         """Make model callable to match PyTorch interface."""
+        batch_size = 1
+        seq_len = 10
+        vocab_size = self.config.vocab_size
 
-        # Create mock output that looks like transformer model output
+        try:
+            import torch
+            if input_ids is not None and hasattr(input_ids, "shape"):
+                batch_size, seq_len = input_ids.shape[0], input_ids.shape[1]
+            elif input_ids is not None and isinstance(input_ids, (list, tuple)):
+                batch_size = len(input_ids)
+                seq_len = len(input_ids[0]) if input_ids else 10
+        except Exception:
+            pass
+
         class MockOutput:
-            def __init__(self):
-                # For stub mode, return dummy loss and logits
-                batch_size = 1
-                seq_len = 10
-                vocab_size = 50257
-
-                # Import torch if available, otherwise create simple objects
+            def __init__(self, bs, sl, vs):
                 try:
                     import torch
-
                     self.loss = torch.tensor(0.5, requires_grad=True)
-                    self.logits = torch.randn(
-                        batch_size, seq_len, vocab_size, requires_grad=True
-                    )
+                    self.logits = torch.randn(bs, sl, vs, requires_grad=True)
                 except ImportError:
                     self.loss = 0.5
-                    self.logits = [[0.0] * vocab_size for _ in range(seq_len)]
+                    self.logits = [[[0.0] * vs for _ in range(sl)] for _ in range(bs)]
 
-        return MockOutput()
+        return MockOutput(batch_size, seq_len, vocab_size)
 
 
 @dataclass

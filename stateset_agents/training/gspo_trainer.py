@@ -347,22 +347,29 @@ class GSPOTrainer:
         self.reward_model = reward_model
         self.ref_model = ref_model
 
-        # Optimizer
-        self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            lr=config.learning_rate,
-        )
+        # Optimizer — stub models have no parameters; use a dummy param.
+        params = list(self.model.parameters())
+        if not params:
+            self._stub_param = torch.nn.Parameter(torch.zeros(1))
+            params = [self._stub_param]
+        self.optimizer = torch.optim.AdamW(params, lr=config.learning_rate)
 
-        # Scheduler
+        # Scheduler — fallback to constant LR when transformers unavailable.
         total_steps = max(
             1, int(config.num_outer_iterations) * int(config.num_iterations)
         )
         warmup_steps = int(total_steps * float(config.warmup_ratio))
-        self.scheduler = get_cosine_schedule_with_warmup(
-            self.optimizer,
-            num_warmup_steps=warmup_steps,
-            num_training_steps=total_steps,
-        )
+        _load_transformers()
+        if get_cosine_schedule_with_warmup is not None:
+            self.scheduler = get_cosine_schedule_with_warmup(
+                self.optimizer,
+                num_warmup_steps=warmup_steps,
+                num_training_steps=total_steps,
+            )
+        else:
+            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self.optimizer, lr_lambda=lambda step: 1.0
+            )
 
         # Trajectory generator
         self.generator = GSPOTrajectoryGenerator(config, agent, environment)
@@ -657,10 +664,10 @@ class GSPOTrainer:
         self.optimizer.zero_grad()
         total_loss.backward()
 
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(
-            self.model.parameters(), self.config.max_grad_norm
-        )
+        # Gradient clipping (skip for stub models with no real parameters)
+        model_params = list(self.model.parameters())
+        if model_params:
+            torch.nn.utils.clip_grad_norm_(model_params, self.config.max_grad_norm)
 
         # Update parameters
         self.optimizer.step()
