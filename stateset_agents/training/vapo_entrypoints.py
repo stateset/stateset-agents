@@ -61,8 +61,14 @@ async def train_with_vapo(
         )
 
     logger.info("Loading model: %s", model_name)
-    model_manager = VAPOModelManager(config)
-    model, tokenizer = model_manager.load_model_and_tokenizer()
+    _is_stub = model_name.startswith("stub://") or getattr(config, "use_stub_model", False)
+    if _is_stub:
+        from stateset_agents.core.agent_backends import StubModel, StubTokenizer
+        model = StubModel()
+        tokenizer = StubTokenizer()
+    else:
+        model_manager = VAPOModelManager(config)
+        model, tokenizer = model_manager.load_model_and_tokenizer()
 
     trainer = VAPOTrainer(
         config=config,
@@ -97,11 +103,11 @@ async def train_with_vapo(
                     "Iter %s/%s | Policy: %.4f | Value: %.4f | Reward: %.4f | Acc: %.2f%% | EV: %.4f",
                     iteration,
                     config.num_episodes,
-                    metrics["policy_loss"],
-                    metrics["value_loss"],
-                    metrics["average_reward"],
-                    metrics["accuracy"] * 100,
-                    metrics["explained_variance"],
+                    metrics.get("policy_loss", 0.0),
+                    metrics.get("value_loss", 0.0),
+                    metrics.get("average_reward", 0.0),
+                    metrics.get("accuracy", 0.0) * 100,
+                    metrics.get("explained_variance", 0.0),
                 )
 
             if use_wandb:

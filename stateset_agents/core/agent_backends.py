@@ -252,11 +252,36 @@ class StubModel:
         self.config = StubModelConfig()
         self._training = False
 
+    @property
+    def training(self) -> bool:
+        return self._training
+
     def generate(
         self,
-        prompt: str,
+        prompt: Any = None,
         context: dict[str, Any] | None = None,
-    ) -> str:
+        *,
+        input_ids: Any = None,
+        attention_mask: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        # Tensor-mode: return stub token ids matching shape expectations
+        if input_ids is not None:
+            try:
+                import torch
+                if hasattr(input_ids, "shape"):
+                    bs = input_ids.shape[0]
+                    prompt_len = input_ids.shape[1]
+                else:
+                    bs = 1
+                    prompt_len = 10
+                max_new = kwargs.get("max_new_tokens", 5)
+                total_len = prompt_len + max_new
+                return torch.ones(bs, total_len, dtype=torch.long)
+            except ImportError:
+                return [[1] * 15]
+
+        # String-mode: return a stub text response
         base_response = self._responses[self._index % len(self._responses)]
         self._index += 1
         if context and isinstance(context, dict) and context.get("user_hint"):
@@ -298,6 +323,8 @@ class StubModel:
         batch_size = 1
         seq_len = 10
         vocab_size = self.config.vocab_size
+        hidden_size = self.config.hidden_size
+        output_hidden = kwargs.get("output_hidden_states", False)
 
         try:
             import torch
@@ -310,16 +337,21 @@ class StubModel:
             pass
 
         class MockOutput:
-            def __init__(self, bs, sl, vs):
+            def __init__(self, bs, sl, vs, hs, include_hidden):
                 try:
                     import torch
                     self.loss = torch.tensor(0.5, requires_grad=True)
                     self.logits = torch.randn(bs, sl, vs, requires_grad=True)
+                    if include_hidden:
+                        self.hidden_states = (torch.randn(bs, sl, hs),)
+                    else:
+                        self.hidden_states = None
                 except ImportError:
                     self.loss = 0.5
                     self.logits = [[[0.0] * vs for _ in range(sl)] for _ in range(bs)]
+                    self.hidden_states = None
 
-        return MockOutput(batch_size, seq_len, vocab_size)
+        return MockOutput(batch_size, seq_len, vocab_size, hidden_size, output_hidden)
 
 
 @dataclass

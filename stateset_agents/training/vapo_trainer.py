@@ -367,7 +367,10 @@ class VAPOTrainer:
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
         self.verifier_fn = verifier_fn
-        self.device = next(model.parameters()).device
+        try:
+            self.device = next(model.parameters()).device
+        except StopIteration:
+            self.device = torch.device("cpu")
 
         # Get hidden size from model config
         if hasattr(model, "config"):
@@ -390,8 +393,12 @@ class VAPOTrainer:
         )
 
         # Separate optimizers for actor and critic
+        params = list(self.model.parameters())
+        if not params:
+            self._stub_param = torch.nn.Parameter(torch.zeros(1))
+            params = [self._stub_param]
         self.actor_optimizer = torch.optim.AdamW(
-            self.model.parameters(),
+            params,
             lr=config.actor_learning_rate,
             betas=(config.adam_beta1, config.adam_beta2),
             weight_decay=config.weight_decay,
@@ -877,9 +884,11 @@ class VAPOTrainer:
             self.critic_optimizer.zero_grad()
             total_loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.config.max_grad_norm
-            )
+            _params = list(self.model.parameters())
+            if _params:
+                torch.nn.utils.clip_grad_norm_(
+                    _params, self.config.max_grad_norm
+                )
             torch.nn.utils.clip_grad_norm_(
                 self.value_head.parameters(), self.config.max_grad_norm
             )

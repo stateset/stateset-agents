@@ -346,7 +346,10 @@ class DAPOTrainer:
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
         self.verifier_fn = verifier_fn  # For binary correctness (e.g., math)
-        self.device = next(model.parameters()).device
+        try:
+            self.device = next(model.parameters()).device
+        except StopIteration:
+            self.device = torch.device("cpu")
 
         # vLLM generator for fast generation
         self.vllm_generator: VLLMGenerator | None = None
@@ -371,8 +374,12 @@ class DAPOTrainer:
         )
 
         # Optimizer (constant learning rate as per paper)
+        params = list(self.model.parameters())
+        if not params:
+            self._stub_param = torch.nn.Parameter(torch.zeros(1))
+            params = [self._stub_param]
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
+            params,
             lr=config.learning_rate,
             betas=(config.adam_beta1, config.adam_beta2),
             weight_decay=config.weight_decay,
@@ -847,9 +854,11 @@ class DAPOTrainer:
                 loss.backward()
 
                 # Gradient clipping
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.config.max_grad_norm
-                )
+                _params = list(self.model.parameters())
+                if _params:
+                    torch.nn.utils.clip_grad_norm_(
+                        _params, self.config.max_grad_norm
+                    )
 
                 # Update
                 self.optimizer.step()

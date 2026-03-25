@@ -242,6 +242,85 @@ async def run_algorithm_eval(algo_name: str) -> AlgoResult:
                     reward_model=gspo_reward,
                 )
 
+        elif algo_name == "dapo":
+            import tempfile
+
+            from stateset_agents.training.dapo_config import DAPOConfig
+            from stateset_agents.training.dapo_entrypoints import train_with_dapo
+
+            await agent.initialize()
+
+            def _dapo_reward(prompt: str, response: str) -> float:
+                return reward_fn.compute_reward_sync(
+                    [
+                        {"role": "user", "content": prompt},
+                        {"role": "assistant", "content": response},
+                    ]
+                ) if hasattr(reward_fn, "compute_reward_sync") else 0.5
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                dapo_config = DAPOConfig(
+                    model_name=f"stub://autoresearch-{algo_name}",
+                    num_episodes=2,
+                    per_device_train_batch_size=2,
+                    group_size=2,
+                    learning_rate=1e-5,
+                    output_dir=tmpdir,
+                    use_dynamic_sampling=False,
+                    bf16=False,
+                )
+                _model, _tok, _hist = await train_with_dapo(
+                    model_name=dapo_config.model_name,
+                    reward_fn=_dapo_reward,
+                    train_prompts=[s["user_responses"][0] for s in TRAIN_SCENARIOS],
+                    config=dapo_config,
+                    output_dir=tmpdir,
+                )
+
+            # Re-init agent for eval
+            agent = MultiTurnAgent(agent_config)
+            await agent.initialize()
+
+        elif algo_name == "vapo":
+            import tempfile
+
+            from stateset_agents.training.vapo_config import VAPOConfig
+            from stateset_agents.training.vapo_entrypoints import train_with_vapo
+
+            await agent.initialize()
+
+            def _vapo_reward(prompt: str, response: str) -> float:
+                return reward_fn.compute_reward_sync(
+                    [
+                        {"role": "user", "content": prompt},
+                        {"role": "assistant", "content": response},
+                    ]
+                ) if hasattr(reward_fn, "compute_reward_sync") else 0.5
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                vapo_config = VAPOConfig(
+                    model_name=f"stub://autoresearch-{algo_name}",
+                    num_episodes=2,
+                    per_device_train_batch_size=2,
+                    group_size=2,
+                    value_warmup_steps=1,
+                    actor_learning_rate=1e-5,
+                    critic_learning_rate=1e-5,
+                    output_dir=tmpdir,
+                    bf16=False,
+                )
+                _model, _tok, _hist = await train_with_vapo(
+                    model_name=vapo_config.model_name,
+                    reward_fn=_vapo_reward,
+                    train_prompts=[s["user_responses"][0] for s in TRAIN_SCENARIOS],
+                    config=vapo_config,
+                    output_dir=tmpdir,
+                )
+
+            # Re-init agent for eval
+            agent = MultiTurnAgent(agent_config)
+            await agent.initialize()
+
         else:
             # Eval-only for algorithms that need real models
             pass
@@ -412,7 +491,7 @@ async def main() -> float:
     overall_start = time.monotonic()
 
     # 1. Algorithm training + eval
-    algorithms = ["grpo", "grpo_multi", "gspo"]
+    algorithms = ["grpo", "grpo_multi", "gspo", "dapo", "vapo"]
     algo_results: list[AlgoResult] = []
 
     for algo in algorithms:

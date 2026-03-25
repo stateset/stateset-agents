@@ -63,8 +63,14 @@ async def train_with_dapo(
         )
 
     logger.info("Loading model: %s", model_name)
-    model_manager = DAPOModelManager(config)
-    model, tokenizer = model_manager.load_model_and_tokenizer()
+    _is_stub = model_name.startswith("stub://") or getattr(config, "use_stub_model", False)
+    if _is_stub:
+        from stateset_agents.core.agent_backends import StubModel, StubTokenizer
+        model = StubModel()
+        tokenizer = StubTokenizer()
+    else:
+        model_manager = DAPOModelManager(config)
+        model, tokenizer = model_manager.load_model_and_tokenizer()
 
     trainer = DAPOTrainer(
         config=config,
@@ -107,10 +113,10 @@ async def train_with_dapo(
                 "Iter %s/%s | Loss: %.4f | Reward: %.4f | Acc: %.2f%% | Filtered: %.1f%%",
                 iteration,
                 config.num_episodes,
-                metrics["policy_loss"],
-                metrics["average_reward"],
-                metrics["accuracy"] * 100,
-                metrics["filtered_ratio"] * 100,
+                metrics.get("policy_loss", 0.0),
+                metrics.get("average_reward", 0.0),
+                metrics.get("accuracy", 0.0) * 100,
+                metrics.get("filtered_ratio", 0.0) * 100,
             )
 
             if wandb_enabled:
