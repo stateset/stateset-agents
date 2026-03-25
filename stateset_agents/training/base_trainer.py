@@ -599,10 +599,15 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         Returns:
             KL divergence (scalar)
         """
+        # KL(π_θ || π_ref) = Σ π_θ(x) * [log π_θ(x) - log π_ref(x)]
+        # Previous code used F.kl_div(current_log, ref_probs) which computes
+        # KL(ref || current) — the WRONG direction for RL policy gradient.
         current_log_probs = F.log_softmax(current_logits, dim=-1)
-        reference_probs = F.softmax(reference_logits, dim=-1)
+        reference_log_probs = F.log_softmax(reference_logits, dim=-1)
 
-        kl = F.kl_div(current_log_probs, reference_probs, reduction="none").sum(dim=-1)
+        # Manual forward-KL: π_θ * (log π_θ - log π_ref)
+        current_probs = current_log_probs.exp()
+        kl = (current_probs * (current_log_probs - reference_log_probs)).sum(dim=-1)
 
         if mask is not None:
             kl = kl * mask

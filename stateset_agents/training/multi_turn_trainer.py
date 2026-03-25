@@ -469,12 +469,21 @@ class MultiTurnGRPOTrainer:
         return new_groups, []
 
     def _update_global_stats(self, batch_mean: float, batch_size: int):
-        """Update global reward statistics"""
-        self._global_reward_mean = (
-            self._global_reward_mean * self._global_reward_count
-            + batch_mean * batch_size
-        ) / max(1, self._global_reward_count + batch_size)
+        """Update global reward statistics.
+
+        Uses Welford-style sum/count tracking to avoid floating-point drift
+        that accumulates when using incremental mean over many batches.
+        """
+        if not hasattr(self, "_global_reward_sum"):
+            self._global_reward_sum = self._global_reward_mean * self._global_reward_count
+
+        self._global_reward_sum += batch_mean * batch_size
         self._global_reward_count += batch_size
+        self._global_reward_mean = (
+            self._global_reward_sum / self._global_reward_count
+            if self._global_reward_count > 0
+            else 0.0
+        )
 
     def _get_environment_scenarios(self) -> list[dict[str, Any]]:
         return get_environment_scenarios(self.environment, self.config)

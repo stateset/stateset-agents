@@ -122,8 +122,10 @@ class AdaptiveKLController(KLController):
         """Adjust KL coefficient based on current KL divergence."""
         self.stats.update(current_kl)
 
-        # Proportional error
-        proportional_error = (current_kl - self.target_kl) / self.target_kl
+        # Proportional error — clamped to prevent explosion when target_kl
+        # is very small (e.g. 0.001) or current_kl far from target.
+        proportional_error = (current_kl - self.target_kl) / max(self.target_kl, 1e-8)
+        proportional_error = max(-2.0, min(2.0, proportional_error))
 
         # Adjust coefficient
         # Using a multiplicative update scaled by progress through horizon
