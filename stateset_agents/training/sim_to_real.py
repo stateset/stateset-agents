@@ -454,35 +454,100 @@ class SimToRealTransfer:
         self,
         dataset: Any,
     ) -> list[dict[str, Any]]:
-        """Prepare data for user model training"""
+        """Prepare data for user model training.
+
+        Converts conversation turns into embedding vectors using a text
+        encoder.  Falls back to bag-of-words hashing when sentence-transformers
+        is not available (preserves semantic signal, just lower quality).
+        """
         training_data = []
+        encoder = self._get_text_encoder()
 
         for traj in dataset:
+            # Build conversation context incrementally
+            context_parts: list[str] = []
+
             for i in range(len(traj.turns) - 1):
                 turn = traj.turns[i]
                 next_turn = traj.turns[i + 1]
 
-                # State: conversation up to current turn
-                # Agent response: current assistant turn
-                # Target: next user turn
+                turn_text = turn.content if isinstance(turn.content, str) else ""
+                context_parts.append(f"{turn.role}: {turn_text}")
+
                 if turn.role == "assistant" and next_turn.role == "user":
+                    next_text = (
+                        next_turn.content
+                        if isinstance(next_turn.content, str)
+                        else ""
+                    )
                     training_data.append(
                         {
-                            "state": np.random.randn(self.config.state_dim).astype(
-                                np.float32
-                            ),  # Placeholder
-                            "agent_response": np.random.randn(
-                                self.config.action_dim
-                            ).astype(np.float32),
-                            "user_response": np.random.randn(
-                                self.config.action_dim
-                            ).astype(np.float32),
-                            "length": len(next_turn.content.split()),
+                            "state": encoder(" ".join(context_parts)),
+                            "agent_response": encoder(turn_text),
+                            "user_response": encoder(next_text),
+                            "length": len(next_text.split()),
                             "continuation": 1.0 if i < len(traj.turns) - 2 else 0.0,
                         }
                     )
 
         return training_data
+
+    def _get_text_encoder(self) -> "Callable[[str], np.ndarray]":
+        """Get a text encoder function.
+
+        Priority:
+        1. sentence-transformers (best quality, 384-dim MiniLM)
+        2. Bag-of-words hash (fast fallback, preserves some semantics)
+        """
+        if hasattr(self, "_encoder"):
+            return self._encoder
+
+        dim = self.config.state_dim
+
+        # Try sentence-transformers first
+        try:
+            from sentence_transformers import SentenceTransformer
+
+            model = SentenceTransformer("all-MiniLM-L6-v2")
+            logger.info("Using sentence-transformers for sim-to-real embeddings")
+
+            def _st_encode(text: str) -> np.ndarray:
+                emb = model.encode(text, show_progress_bar=False)
+                if len(emb) != dim:
+                    # Pad or truncate to match config dim
+                    result = np.zeros(dim, dtype=np.float32)
+                    result[: min(len(emb), dim)] = emb[:dim]
+                    return result
+                return emb.astype(np.float32)
+
+            self._encoder = _st_encode
+            return self._encoder
+
+        except ImportError:
+            pass
+
+        # Fallback: deterministic hash-based encoding (preserves semantics
+        # better than random vectors since similar text produces similar hashes)
+        logger.info("Using hash-based encoding for sim-to-real (install "
+                     "sentence-transformers for better quality)")
+
+        def _hash_encode(text: str) -> np.ndarray:
+            import hashlib
+
+            result = np.zeros(dim, dtype=np.float32)
+            words = text.lower().split()
+            for word in words:
+                h = int(hashlib.md5(word.encode()).hexdigest(), 16)
+                idx = h % dim
+                result[idx] += 1.0
+            # L2 normalize
+            norm = np.linalg.norm(result)
+            if norm > 0:
+                result /= norm
+            return result
+
+        self._encoder = _hash_encode
+        return self._encoder
 
     def _sample_user_model_batch(
         self,
