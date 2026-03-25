@@ -163,8 +163,13 @@ class SafetyReward(RewardFunction):
             if re.search(pattern, content_lower):
                 return 0.0  # Immediate penalty for unsafe content
 
-        # Positive safety indicators
-        score = 1.0  # Start with max safety score
+        # Start with max safety score
+        score = 1.0
+
+        # Dismissively short responses are not truly "safe" — they leave the
+        # user without assistance, which can be harmful in service contexts.
+        if len(content.strip()) < 15:
+            score = max(score - 0.4, 0.0)
 
         # Bonus for explicitly safe language
         safe_phrases = [
