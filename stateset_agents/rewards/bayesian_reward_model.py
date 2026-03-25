@@ -635,8 +635,111 @@ class ActiveLearningSelector:
         # Select top batch_size
         selected_indices = np.argsort(scores)[-batch_size:].tolist()
 
-        # Update selected samples
+        # Update selected samples (cap memory at 1000 recent samples)
         for idx in selected_indices:
             self.selected_samples.append(candidates[idx][0])
+        if len(self.selected_samples) > 1000:
+            self.selected_samples = self.selected_samples[-1000:]
 
         return selected_indices
+
+    def update_with_labels(
+        self,
+        reward_model: Any,
+        features: list[np.ndarray],
+        labels: list[float],
+        num_update_steps: int = 10,
+        learning_rate: float = 1e-4,
+    ) -> dict[str, float]:
+        """Update the reward model with human-labeled samples.
+
+        Closes the active learning feedback loop: after humans label the
+        selected high-uncertainty samples, this method fine-tunes the reward
+        model on the new labels to reduce uncertainty on similar samples.
+
+        Args:
+            reward_model: The BayesianRewardFunction (or any model with
+                a ``train_step(features, labels)`` method).
+            features: Feature vectors for labeled samples.
+            labels: Human-provided reward labels.
+            num_update_steps: Gradient steps on the labeled data.
+            learning_rate: Learning rate for the update.
+
+        Returns:
+            Metrics dict with keys: update_loss, uncertainty_before,
+            uncertainty_after, improvement.
+        """
+        try:
+            import torch
+        except ImportError:
+            return {"error": 1.0}
+
+        if not features or not labels:
+            return {"update_loss": 0.0, "num_labels": 0}
+
+        X = torch.tensor(np.array(features), dtype=torch.float32)
+        y = torch.tensor(labels, dtype=torch.float32)
+
+        # Measure uncertainty before update
+        uncertainty_before = 0.0
+        if hasattr(reward_model, "_predict_with_uncertainty"):
+            with torch.no_grad():
+                _, ep, _ = reward_model._predict_with_uncertainty(X)
+                uncertainty_before = float(ep.mean().item())
+
+        # Fine-tune the reward model
+        total_loss = 0.0
+        trainable = getattr(reward_model, "model", None)
+        if trainable is None or not hasattr(trainable, "parameters"):
+            logger.warning("Reward model has no trainable parameters")
+            return {"update_loss": 0.0, "num_labels": len(labels)}
+
+        optimizer = torch.optim.Adam(trainable.parameters(), lr=learning_rate)
+        trainable.train()
+
+        for step in range(num_update_steps):
+            optimizer.zero_grad()
+            predictions = trainable(X).squeeze()
+            loss = torch.nn.functional.mse_loss(predictions, y)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+
+        trainable.eval()
+
+        # Measure uncertainty after update
+        uncertainty_after = 0.0
+        if hasattr(reward_model, "_predict_with_uncertainty"):
+            with torch.no_grad():
+                _, ep, _ = reward_model._predict_with_uncertainty(X)
+                uncertainty_after = float(ep.mean().item())
+
+        improvement = max(0.0, uncertainty_before - uncertainty_after)
+
+        metrics = {
+            "update_loss": total_loss / max(num_update_steps, 1),
+            "num_labels": float(len(labels)),
+            "uncertainty_before": uncertainty_before,
+            "uncertainty_after": uncertainty_after,
+            "improvement": improvement,
+        }
+
+        logger.info(
+            "Active learning update: %d labels, loss=%.4f, "
+            "uncertainty %.4f -> %.4f (Δ=%.4f)",
+            len(labels),
+            metrics["update_loss"],
+            uncertainty_before,
+            uncertainty_after,
+            improvement,
+        )
+
+        return metrics
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get active learning statistics."""
+        return {
+            "num_selected": len(self.selected_samples),
+            "uncertainty_threshold": self.uncertainty_threshold,
+            "diversity_weight": self.diversity_weight,
+        }

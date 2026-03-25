@@ -57,6 +57,10 @@ class DistributedConfig:
     fsdp_cpu_offload: bool = False
     fsdp_backward_prefetch: bool = True
     fsdp_mixed_precision: bool = True
+    fsdp_activation_checkpointing: bool = False
+    fsdp_auto_wrap_min_params: int = 1_000_000  # Auto-wrap layers with >= 1M params
+    fsdp_sync_module_states: bool = True  # Sync params on init for correct sharding
+    fsdp_limit_all_gathers: bool = True  # Reduce all-gather communication overhead
 
     # DeepSpeed specific
     deepspeed_config: dict[str, Any] | None = None
@@ -160,9 +164,18 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         logger.info("Model wrapped with DistributedDataParallel")
 
     def _wrap_model_fsdp(self):
-        """Wrap model with FullyShardedDataParallel"""
+        """Wrap model with FullyShardedDataParallel.
 
-        # Configure FSDP
+        Features:
+        - Auto-wrap policy for transformer layers with configurable param threshold
+        - Activation checkpointing to reduce memory usage (2-3x memory savings)
+        - Mixed precision with configurable dtype
+        - CPU offloading for training models larger than GPU memory
+        - Synchronized module states for correct initialization
+        """
+        from functools import partial
+
+        # Configure FSDP components
         cpu_offload = CPUOffload(
             offload_params=self.distributed_config.fsdp_cpu_offload
         )
@@ -179,15 +192,66 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 buffer_dtype=torch.bfloat16 if self.config.bf16 else torch.float16,
             )
 
+        # Auto-wrap policy: wrap layers with >= min_params parameters.
+        # This gives FSDP proper per-layer sharding granularity instead of
+        # wrapping the entire model as one flat unit.
+        auto_wrap_policy = None
+        min_params = self.distributed_config.fsdp_auto_wrap_min_params
+        if min_params > 0:
+            try:
+                from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
+
+                auto_wrap_policy = partial(
+                    size_based_auto_wrap_policy, min_num_params=min_params
+                )
+                logger.info("FSDP auto-wrap: layers >= %d params", min_params)
+            except ImportError:
+                logger.debug("size_based_auto_wrap_policy not available")
+
         # Wrap model
-        self.agent.model = FSDP(
-            self.agent.model,
-            cpu_offload=cpu_offload,
-            backward_prefetch=backward_prefetch,
-            mixed_precision=mixed_precision,
-            sharding_strategy=self.distributed_config.fsdp_sharding_strategy,
-            device_id=torch.cuda.current_device(),
-        )
+        fsdp_kwargs = {
+            "cpu_offload": cpu_offload,
+            "backward_prefetch": backward_prefetch,
+            "mixed_precision": mixed_precision,
+            "sharding_strategy": self.distributed_config.fsdp_sharding_strategy,
+            "device_id": torch.cuda.current_device(),
+            "sync_module_states": self.distributed_config.fsdp_sync_module_states,
+            "limit_all_gathers": self.distributed_config.fsdp_limit_all_gathers,
+        }
+        if auto_wrap_policy is not None:
+            fsdp_kwargs["auto_wrap_policy"] = auto_wrap_policy
+
+        self.agent.model = FSDP(self.agent.model, **fsdp_kwargs)
+
+        # Activation checkpointing: trade compute for memory by recomputing
+        # activations during backward pass instead of storing them.
+        if self.distributed_config.fsdp_activation_checkpointing:
+            try:
+                from torch.distributed.fsdp import (
+                    FullyShardedDataParallel as _FSDP_check,
+                )
+                from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+                    apply_activation_checkpointing,
+                    checkpoint_wrapper,
+                    CheckpointImpl,
+                )
+
+                # Apply to all FSDP-wrapped sub-modules
+                non_reentrant_wrapper = partial(
+                    checkpoint_wrapper,
+                    checkpoint_impl=CheckpointImpl.NO_REENTRANT,
+                )
+                apply_activation_checkpointing(
+                    self.agent.model,
+                    checkpoint_wrapper_fn=non_reentrant_wrapper,
+                )
+                logger.info("FSDP activation checkpointing enabled")
+            except ImportError:
+                logger.warning(
+                    "Activation checkpointing requested but PyTorch version "
+                    "does not support it — skipping"
+                )
+
         logger.info("Model wrapped with FullyShardedDataParallel")
 
     def _wrap_model_deepspeed(self):

@@ -617,16 +617,80 @@ class BaseTrainer(ABC, Generic[ConfigT]):
 
     def clip_gradients(self) -> float:
         """Clip gradients and return the norm."""
+        params = list(self.model.parameters())
+        if not params:
+            return 0.0
         return torch.nn.utils.clip_grad_norm_(
-            self.model.parameters(),
+            params,
             self.config.max_grad_norm,
         ).item()
+
+    def get_gradient_stats(self) -> dict[str, float]:
+        """Compute gradient statistics for monitoring.
+
+        Returns dict with grad_norm, grad_max, grad_mean, and num_zero_grads.
+        Useful for detecting vanishing/exploding gradients and dead parameters.
+        """
+        total_norm = 0.0
+        max_grad = 0.0
+        grad_sum = 0.0
+        param_count = 0
+        zero_count = 0
+
+        for p in self.model.parameters():
+            if p.grad is not None:
+                grad = p.grad.detach()
+                param_norm = grad.norm(2).item()
+                total_norm += param_norm ** 2
+                max_grad = max(max_grad, grad.abs().max().item())
+                grad_sum += grad.abs().mean().item()
+                param_count += 1
+                if param_norm < 1e-10:
+                    zero_count += 1
+
+        return {
+            "grad_norm": total_norm ** 0.5,
+            "grad_max": max_grad,
+            "grad_mean": grad_sum / max(param_count, 1),
+            "num_zero_grads": zero_count,
+        }
+
+    def get_learning_rate(self) -> float:
+        """Get current learning rate from optimizer/scheduler."""
+        if self.optimizer is not None:
+            for pg in self.optimizer.param_groups:
+                return pg.get("lr", 0.0)
+        return getattr(self.config, "learning_rate", 0.0)
+
+    def get_training_metrics(self) -> dict[str, float]:
+        """Gather comprehensive training state metrics.
+
+        Combines gradient stats, learning rate, and step info into a
+        single dict suitable for logging.
+        """
+        metrics: dict[str, float] = {
+            "global_step": float(self.global_step),
+            "learning_rate": self.get_learning_rate(),
+        }
+
+        # Gradient stats (only if model has parameters)
+        try:
+            grad_stats = self.get_gradient_stats()
+            metrics.update(grad_stats)
+        except (RuntimeError, AttributeError):
+            pass
+
+        return metrics
 
     def log_metrics(
         self, metrics: dict[str, float], step: int | None = None
     ) -> None:
         """Log metrics to W&B and internal history."""
         step = step or self.global_step
+
+        # Enrich with training state if not already present
+        if "learning_rate" not in metrics:
+            metrics["learning_rate"] = self.get_learning_rate()
 
         # Update history
         for key, value in metrics.items():

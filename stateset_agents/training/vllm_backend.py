@@ -475,11 +475,21 @@ class VLLMGenerator:
         self,
         adapter_name: str,
         adapter_path: str,
-    ):
+    ) -> bool:
         """
         Add a LoRA adapter to the vLLM engine.
 
-        Note: Requires enable_lora=True in config.
+        Args:
+            adapter_name: Unique name for the adapter.
+            adapter_path: Path to a directory containing adapter_config.json
+                and adapter weights.
+
+        Returns:
+            True if the adapter was loaded successfully.
+
+        Raises:
+            RuntimeError: If vLLM is not initialized or LoRA is not enabled.
+            FileNotFoundError: If adapter_path does not exist.
         """
         if not self.is_available:
             raise RuntimeError("vLLM not initialized")
@@ -487,10 +497,65 @@ class VLLMGenerator:
         if not self.config.enable_lora:
             raise RuntimeError("LoRA not enabled in config. Set enable_lora=True.")
 
-        # vLLM LoRA loading
+        from pathlib import Path
 
-        # Note: Actual LoRA loading depends on vLLM version
-        logger.info(f"Adding LoRA adapter: {adapter_name} from {adapter_path}")
+        adapter_dir = Path(adapter_path)
+        if not adapter_dir.exists():
+            raise FileNotFoundError(f"LoRA adapter path not found: {adapter_path}")
+
+        config_file = adapter_dir / "adapter_config.json"
+        if not config_file.exists():
+            logger.warning(
+                "No adapter_config.json in %s — vLLM may fail to load", adapter_path
+            )
+
+        logger.info("Adding LoRA adapter: %s from %s", adapter_name, adapter_path)
+
+        try:
+            # vLLM >= 0.4.0 uses LoRARequest for dynamic adapter loading.
+            # The engine's generate() accepts lora_request= parameter.
+            if not VLLM_AVAILABLE:
+                raise ImportError("vLLM not available")
+
+            from vllm.lora.request import LoRARequest
+
+            # Register the adapter for later use in generate() calls.
+            # vLLM requires a unique integer ID per adapter.
+            if not hasattr(self, "_lora_adapters"):
+                self._lora_adapters = {}
+
+            adapter_id = len(self._lora_adapters) + 1
+            lora_request = LoRARequest(
+                lora_name=adapter_name,
+                lora_int_id=adapter_id,
+                lora_local_path=str(adapter_dir),
+            )
+            self._lora_adapters[adapter_name] = lora_request
+
+            logger.info(
+                "LoRA adapter '%s' registered (id=%d). Use generate() with "
+                "lora_request='%s' to apply.",
+                adapter_name,
+                adapter_id,
+                adapter_name,
+            )
+            return True
+
+        except ImportError:
+            logger.warning(
+                "vLLM LoRARequest not available (requires vLLM >= 0.4.0). "
+                "LoRA adapter '%s' not loaded.",
+                adapter_name,
+            )
+            return False
+        except VLLM_EXCEPTIONS as exc:
+            logger.error("Failed to register LoRA adapter '%s': %s", adapter_name, exc)
+            return False
+
+    def get_lora_request(self, adapter_name: str) -> Any:
+        """Get a registered LoRA request by name for use in generate() calls."""
+        adapters = getattr(self, "_lora_adapters", {})
+        return adapters.get(adapter_name)
 
     def get_tokenizer(self):
         """Get the underlying tokenizer"""
