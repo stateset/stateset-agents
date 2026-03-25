@@ -78,11 +78,34 @@ class RewardNormalizer:
         self.stats = RewardStatistics()
 
     def add_reward(self, reward: float):
-        """Add a reward value to the buffer"""
+        """Add a reward value to the buffer.
+
+        Uses online Welford's algorithm for the first 100 observations to
+        avoid the bootstrap discontinuity when periodic stats kick in.
+        """
         self.reward_buffer.append(reward)
 
-        # Update statistics periodically
-        if len(self.reward_buffer) % 100 == 0:
+        # Online Welford update for smooth bootstrap
+        n = len(self.reward_buffer)
+        if n == 1:
+            self.stats.mean = reward
+            self.stats.std = 0.0
+            self.stats.min = reward
+            self.stats.max = reward
+            self.stats.count = 1
+            self._welford_m2 = 0.0
+        elif n <= 100:
+            delta = reward - self.stats.mean
+            self.stats.mean += delta / n
+            delta2 = reward - self.stats.mean
+            self._welford_m2 = getattr(self, "_welford_m2", 0.0) + delta * delta2
+            self.stats.std = (self._welford_m2 / n) ** 0.5 if n > 1 else 0.0
+            self.stats.min = min(self.stats.min, reward)
+            self.stats.max = max(self.stats.max, reward)
+            self.stats.count = n
+
+        # Full buffer refresh every 100 samples (for percentile accuracy)
+        if n % 100 == 0:
             self._update_statistics()
 
     def _update_statistics(self):

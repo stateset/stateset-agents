@@ -104,6 +104,15 @@ def compute_grpo_loss(
             baseline = torch.tensor(
                 global_reward_mean, dtype=torch.float32, device=device
             )
+        elif baseline_type == "leave_one_out":
+            # Leave-one-out baseline: for trajectory i, baseline = mean
+            # of all OTHER trajectories.  Lower variance than group mean.
+            n = rewards.numel()
+            if n > 1:
+                total = rewards.sum()
+                baseline = (total - rewards) / (n - 1)
+            else:
+                baseline = rewards.mean()
         else:  # group_mean (default)
             baseline = rewards.mean()
 

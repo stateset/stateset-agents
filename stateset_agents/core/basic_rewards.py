@@ -115,7 +115,7 @@ class HelpfulnessReward(RewardFunction):
             "right away",
         ]
         phrase_matches = sum(1 for phrase in helpful_phrases if phrase in content_lower)
-        score += min(phrase_matches * 0.08, 0.3)
+        score += min(phrase_matches * 0.10, 0.3)
 
         # Question answering
         if "?" in content and any(

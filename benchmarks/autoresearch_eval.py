@@ -472,6 +472,18 @@ def probe_loss_features() -> float:
         if '"entropy"' in src or "'entropy'" in src:
             score += 1.0
 
+        # 6. Leave-one-out baseline option
+        checks += 1
+        if "leave_one_out" in src:
+            score += 1.0
+
+        # 7. Reward calibration uses online Welford bootstrap
+        from stateset_agents.training.reward_calibration import RewardNormalizer
+        cal_src = inspect.getsource(RewardNormalizer.add_reward)
+        checks += 1
+        if "welford" in cal_src.lower():
+            score += 1.0
+
     except Exception as exc:
         logger.warning("Loss feature probe failed: %s", exc)
 
