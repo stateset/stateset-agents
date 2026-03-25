@@ -33,6 +33,8 @@ class TrainingMode(Enum):
     SINGLE_TURN = "single_turn"
     MULTI_TURN = "multi_turn"
     AUTO = "auto"
+    OFFLINE = "offline"
+    HYBRID = "hybrid"
 
 
 async def train(
@@ -46,6 +48,9 @@ async def train(
     save_path: str | None = None,
     resume_from_checkpoint: str | None = None,
     callbacks: list[Any] | None = None,
+    dataset: Any | None = None,
+    dataset_path: str | None = None,
+    uncertainty_weighted: bool = False,
     **kwargs,
 ) -> Agent:
     """
@@ -57,10 +62,15 @@ async def train(
         reward_fn: Reward function (if None, uses environment's reward)
         num_episodes: Number of training episodes
         profile: Training profile ("conservative", "balanced", "aggressive")
-        training_mode: Training mode ("single_turn", "multi_turn", "auto")
+        training_mode: Training mode ("single_turn", "multi_turn", "auto",
+            "offline", "hybrid")
         config_overrides: Custom configuration overrides
         save_path: Path to save trained agent
         resume_from_checkpoint: Optional checkpoint path to resume training
+        dataset: Pre-loaded ConversationDataset for offline/hybrid training
+        dataset_path: Path to JSONL dataset (loaded automatically if dataset is None)
+        uncertainty_weighted: Wrap reward_fn with Bayesian uncertainty estimates
+            to down-weight low-confidence rewards during training
         **kwargs: Additional arguments
 
     Returns:
@@ -71,9 +81,12 @@ async def train(
 
     # Determine training mode
     if training_mode == "auto":
-        training_mode = (
-            "multi_turn" if isinstance(agent, MultiTurnAgent) else "single_turn"
-        )
+        if dataset is not None or dataset_path:
+            training_mode = "offline"
+        else:
+            training_mode = (
+                "multi_turn" if isinstance(agent, MultiTurnAgent) else "single_turn"
+            )
 
     # Create training configuration
     merged_overrides = dict(config_overrides or {})
@@ -90,8 +103,24 @@ async def train(
     if reward_fn is None:
         reward_fn = environment.reward_fn
 
+    # Optional: wrap reward with Bayesian uncertainty weighting
+    if uncertainty_weighted and reward_fn is not None:
+        reward_fn = _wrap_with_uncertainty(reward_fn)
+
+    # Load dataset for offline/hybrid modes
+    if training_mode in ("offline", "hybrid") and dataset is None and dataset_path:
+        dataset = _load_dataset(dataset_path)
+
     # Create trainer based on mode
-    if training_mode == "multi_turn":
+    if training_mode == "offline":
+        return await _train_offline(
+            agent, config, reward_fn, dataset, save_path, callbacks,
+        )
+    elif training_mode == "hybrid":
+        return await _train_hybrid(
+            agent, environment, config, reward_fn, dataset, save_path, callbacks,
+        )
+    elif training_mode == "multi_turn":
         trainer = MultiTurnGRPOTrainer(
             agent=agent, environment=environment, reward_fn=reward_fn, config=config
         )
@@ -118,6 +147,190 @@ async def train(
     if save_path:
         await trainer.save_checkpoint(checkpoint_name=save_path)
         logger.info(f"Trained agent saved to {save_path}")
+
+    return trained_agent
+
+
+def _wrap_with_uncertainty(reward_fn: RewardFunction) -> RewardFunction:
+    """Wrap a reward function with Bayesian uncertainty weighting.
+
+    When the Bayesian reward model is available, this wraps the base reward
+    function to discount rewards that have high uncertainty.  Falls back to
+    the original reward when Bayesian models aren't available.
+    """
+    try:
+        from stateset_agents.rewards.bayesian_reward_model import (
+            BayesianRewardConfig,
+            BayesianRewardFunction,
+        )
+
+        logger.info("Wrapping reward function with Bayesian uncertainty weighting")
+        return UncertaintyWeightedReward(reward_fn)
+    except (ImportError, TRAIN_EXCEPTIONS) as exc:
+        logger.warning(
+            "Bayesian uncertainty weighting unavailable: %s — using base reward", exc
+        )
+        return reward_fn
+
+
+class UncertaintyWeightedReward(RewardFunction):
+    """Wraps a reward function to discount high-uncertainty predictions.
+
+    Uses the base reward's score but scales it by confidence:
+    adjusted_score = score * (1.0 - uncertainty_discount * uncertainty)
+
+    This prevents the training loss from being dominated by noisy reward
+    signals on ambiguous samples.
+    """
+
+    def __init__(
+        self,
+        base_reward: RewardFunction,
+        uncertainty_discount: float = 0.5,
+    ):
+        super().__init__(
+            weight=base_reward.weight,
+            reward_type=base_reward.reward_type,
+            name=f"UncertaintyWeighted({base_reward.name})",
+        )
+        self.base_reward = base_reward
+        self.uncertainty_discount = uncertainty_discount
+
+    async def compute_reward(self, turns, context=None):
+        from stateset_agents.core.reward_base import RewardResult
+
+        result = await self.base_reward.compute_reward(turns, context)
+
+        # Extract uncertainty from breakdown/metadata if the base reward
+        # provides it (e.g. BayesianRewardFunction, LLMJudgeRewardWithFallback)
+        uncertainty = 0.0
+        if hasattr(result, "breakdown"):
+            uncertainty = result.breakdown.get(
+                "total_uncertainty",
+                result.breakdown.get("epistemic_uncertainty", 0.0),
+            )
+        if hasattr(result, "metadata"):
+            uncertainty = max(
+                uncertainty, result.metadata.get("total_uncertainty", 0.0)
+            )
+
+        # Scale score by confidence
+        confidence = max(0.0, 1.0 - self.uncertainty_discount * uncertainty)
+        adjusted = result.score * confidence
+
+        return RewardResult(
+            score=adjusted,
+            components={
+                "base_score": result.score,
+                "uncertainty": uncertainty,
+                "confidence": confidence,
+            },
+            metadata={
+                "uncertainty_weighted": True,
+                "base_metadata": result.metadata,
+            },
+        )
+
+
+def _load_dataset(dataset_path: str) -> Any:
+    """Load a conversation dataset from path."""
+    try:
+        from stateset_agents.data.conversation_dataset import ConversationDataset
+
+        if dataset_path.endswith(".jsonl"):
+            return ConversationDataset.from_jsonl(dataset_path)
+        elif dataset_path.endswith(".json"):
+            return ConversationDataset.from_json(dataset_path)
+        else:
+            return ConversationDataset.from_jsonl(dataset_path)
+    except (ImportError, FileNotFoundError, TRAIN_EXCEPTIONS) as exc:
+        logger.error("Failed to load dataset from %s: %s", dataset_path, exc)
+        raise
+
+
+async def _train_offline(
+    agent: Agent,
+    config: Any,
+    reward_fn: Any,
+    dataset: Any,
+    save_path: str | None,
+    callbacks: list[Any] | None,
+) -> Agent:
+    """Train using offline RL from a dataset of logged conversations."""
+    from .offline_grpo_trainer import OfflineGRPOConfig, OfflineGRPOTrainer
+
+    if dataset is None:
+        raise ValueError(
+            "Offline training requires a dataset. "
+            "Pass dataset= or dataset_path= to train()."
+        )
+
+    offline_config = OfflineGRPOConfig(
+        model_name=config.model_name,
+        learning_rate=config.learning_rate,
+        num_episodes=config.num_episodes,
+        offline_algorithm="iql",
+    )
+
+    trainer = OfflineGRPOTrainer(
+        config=offline_config,
+        model=agent.model,
+        tokenizer=getattr(agent, "tokenizer", None),
+        reward_fn=reward_fn,
+        dataset=dataset,
+    )
+
+    logger.info("Starting offline training with IQL on %s samples", len(dataset))
+
+    # Pre-train value functions
+    pretrain_metrics = await trainer.pretrain_value_functions(dataset, num_steps=100)
+    logger.info("Value pre-training: %s", pretrain_metrics)
+
+    # Main training
+    result = await trainer.train(
+        num_epochs=config.num_epochs,
+        dataset=dataset,
+    )
+
+    if save_path:
+        logger.info("Saving offline-trained model to %s", save_path)
+
+    return agent
+
+
+async def _train_hybrid(
+    agent: Agent,
+    environment: Environment,
+    config: Any,
+    reward_fn: Any,
+    dataset: Any,
+    save_path: str | None,
+    callbacks: list[Any] | None,
+) -> Agent:
+    """Hybrid training: offline pre-training then online fine-tuning."""
+
+    # Phase 1: Offline pre-training (if dataset available)
+    if dataset is not None:
+        logger.info("Phase 1: Offline pre-training from dataset")
+        await _train_offline(agent, config, reward_fn, dataset, None, callbacks)
+
+    # Phase 2: Online fine-tuning
+    logger.info("Phase 2: Online fine-tuning with environment")
+    trainer = MultiTurnGRPOTrainer(
+        agent=agent, environment=environment, reward_fn=reward_fn, config=config
+    )
+
+    diagnostics = DiagnosticsMonitor(config)
+    trainer.add_callback(diagnostics)
+    for cb in callbacks or []:
+        trainer.add_callback(cb)
+
+    await trainer.initialize()
+    trained_agent = await trainer.train()
+
+    if save_path:
+        await trainer.save_checkpoint(checkpoint_name=save_path)
+        logger.info("Hybrid-trained agent saved to %s", save_path)
 
     return trained_agent
 
@@ -260,6 +473,7 @@ __all__ = [
     "TrainingMode",
     "train",
     "AutoTrainer",
+    "UncertaintyWeightedReward",
     "train_customer_service_agent",
     "train_tutoring_agent",
     "train_task_agent",

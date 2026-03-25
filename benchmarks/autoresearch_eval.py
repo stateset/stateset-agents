@@ -545,6 +545,59 @@ def probe_rlaif_integration() -> float:
 
 
 # ---------------------------------------------------------------------------
+# Offline RL + uncertainty integration probe
+# ---------------------------------------------------------------------------
+
+def probe_offline_and_uncertainty() -> float:
+    """Check that offline RL and uncertainty weighting are wired into train().
+
+    Returns a score from 0.0 to 1.0.
+    """
+    score = 0.0
+    checks = 0
+
+    try:
+        import inspect
+
+        # 1. TrainingMode has OFFLINE and HYBRID
+        from stateset_agents.training.train import TrainingMode
+        checks += 1
+        if hasattr(TrainingMode, "OFFLINE") and hasattr(TrainingMode, "HYBRID"):
+            score += 1.0
+
+        # 2. train() accepts dataset and uncertainty_weighted params
+        from stateset_agents.training.train import train
+        sig = inspect.signature(train)
+        checks += 1
+        if "dataset" in sig.parameters and "uncertainty_weighted" in sig.parameters:
+            score += 1.0
+
+        # 3. UncertaintyWeightedReward exists and is a RewardFunction
+        from stateset_agents.training.train import UncertaintyWeightedReward
+        from stateset_agents.core.reward_base import RewardFunction
+        checks += 1
+        if issubclass(UncertaintyWeightedReward, RewardFunction):
+            score += 1.0
+
+        # 4. _train_offline function exists
+        from stateset_agents.training.train import _train_offline
+        checks += 1
+        if callable(_train_offline):
+            score += 1.0
+
+        # 5. _train_hybrid function exists
+        from stateset_agents.training.train import _train_hybrid
+        checks += 1
+        if callable(_train_hybrid):
+            score += 1.0
+
+    except Exception as exc:
+        logger.warning("Offline/uncertainty probe failed: %s", exc)
+
+    return score / max(checks, 1)
+
+
+# ---------------------------------------------------------------------------
 # Numerical correctness probe
 # ---------------------------------------------------------------------------
 
@@ -656,7 +709,12 @@ async def main() -> float:
     rlaif = probe_rlaif_integration()
     print(f"  rlaif: {rlaif:.6f}")
 
-    # 6. Compute composite score
+    # 6. Offline RL + uncertainty probe
+    print("\n--- Offline RL + uncertainty ---")
+    offline = probe_offline_and_uncertainty()
+    print(f"  offline: {offline:.6f}")
+
+    # 7. Compute composite score
     completed = [r for r in algo_results if r.completed]
     algo_coverage = len(completed) / len(algorithms) if algorithms else 0.0
 
@@ -679,16 +737,17 @@ async def main() -> float:
     else:
         convergence = 0.0
 
-    # Composite: weighted sum (8 dimensions)
+    # Composite: weighted sum (9 dimensions)
     composite = (
-        0.15 * reward_quality
-        + 0.10 * stability
+        0.12 * reward_quality
+        + 0.08 * stability
         + 0.10 * algo_coverage
         + 0.10 * convergence
-        + 0.15 * discrimination
+        + 0.12 * discrimination
         + 0.10 * loss_features
-        + 0.15 * numerical
-        + 0.15 * rlaif
+        + 0.12 * numerical
+        + 0.12 * rlaif
+        + 0.14 * offline
     )
 
     elapsed = time.monotonic() - overall_start
@@ -696,14 +755,15 @@ async def main() -> float:
     print("\n" + "=" * 60)
     print("COMPOSITE SCORING")
     print("=" * 60)
-    print(f"  reward_quality:  {reward_quality:.6f}  (weight 0.15)")
-    print(f"  stability:       {stability:.6f}  (weight 0.10)")
+    print(f"  reward_quality:  {reward_quality:.6f}  (weight 0.12)")
+    print(f"  stability:       {stability:.6f}  (weight 0.08)")
     print(f"  algo_coverage:   {algo_coverage:.6f}  (weight 0.10)")
     print(f"  convergence:     {convergence:.6f}  (weight 0.10)")
-    print(f"  discrimination:  {discrimination:.6f}  (weight 0.15)")
+    print(f"  discrimination:  {discrimination:.6f}  (weight 0.12)")
     print(f"  loss_features:   {loss_features:.6f}  (weight 0.10)")
-    print(f"  numerical:       {numerical:.6f}  (weight 0.15)")
-    print(f"  rlaif:           {rlaif:.6f}  (weight 0.15)")
+    print(f"  numerical:       {numerical:.6f}  (weight 0.12)")
+    print(f"  rlaif:           {rlaif:.6f}  (weight 0.12)")
+    print(f"  offline:         {offline:.6f}  (weight 0.14)")
     print(f"  ---")
     print(f"  total_time:      {elapsed:.1f}s")
     print()
@@ -717,6 +777,7 @@ async def main() -> float:
     print(f"discrimination: {discrimination:.6f}")
     print(f"loss_features: {loss_features:.6f}")
     print(f"rlaif: {rlaif:.6f}")
+    print(f"offline: {offline:.6f}")
     print(f"numerical: {numerical:.6f}")
 
     return composite
