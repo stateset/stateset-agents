@@ -124,8 +124,8 @@ class HelpfulnessReward(RewardFunction):
             score += 0.2
 
         # Acknowledge + solve pattern — the gold standard for helpful responses
-        acknowledge_words = ["understand", "appreciate", "thank", "sorry", "concern"]
-        solve_words = ["here", "try", "check", "help", "option", "step", "resolve", "approach"]
+        acknowledge_words = ["understand", "appreciate", "thank", "sorry", "concern", "happy", "glad"]
+        solve_words = ["here", "try", "check", "help", "option", "step", "resolve", "approach", "found", "details"]
         has_acknowledge = any(w in content_lower for w in acknowledge_words)
         has_solve = any(w in content_lower for w in solve_words)
         if has_acknowledge and has_solve:
