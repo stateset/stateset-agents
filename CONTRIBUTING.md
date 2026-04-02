@@ -44,11 +44,8 @@ This project follows a [Code of Conduct](CODE_OF_CONDUCT.md) to ensure a welcomi
 ### Quick Setup
 
 ```bash
-# Install with development dependencies
+# Install development dependencies and pre-commit hooks
 make dev-setup
-# or manually:
-# pip install -e ".[dev]"
-# pre-commit install
 ```
 
 ### Manual Setup
@@ -61,7 +58,7 @@ make dev-setup
 
 2. Install dependencies:
    ```bash
-   pip install -e ".[dev]"
+   pip install -e ".[dev,api]"
    ```
 
 3. Install pre-commit hooks:
@@ -70,6 +67,9 @@ make dev-setup
    ```
 
 ## Development Workflow
+
+Maintenance rules for repo hygiene and deprecated shim modules live in
+[docs/REPO_MAINTENANCE.md](docs/REPO_MAINTENANCE.md).
 
 ### 1. Choose an Issue
 
@@ -99,6 +99,7 @@ git checkout -b fix/issue-number-description
 make ci
 
 # Or run individually:
+make repo-hygiene  # Prevent generated/backup artifacts from being tracked
 make lint          # Code formatting and linting
 make check-types   # Type checking
 make test-unit     # Unit tests
@@ -162,7 +163,7 @@ We use several tools to maintain code quality:
 
 ### Python Version Support
 
-- Python 3.8+ is supported
+- Python 3.10+ is supported
 - Code should work on all supported versions
 - Use modern Python features when appropriate
 

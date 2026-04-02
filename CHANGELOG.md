@@ -5,12 +5,23 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2026-04-02
+
+### Added
+- First-class `gemma-4-31b` starter support across packaged training helpers, CLI entrypoints, presets, examples, and regression tests.
+- Repo hygiene checks for generated artifacts, backup files, and local tool state, enforced in local workflows and CI.
+- A canonical-import regression test to prevent new code from depending on deprecated top-level shim modules.
+
+### Changed
+- Bumped the package version to `0.11.1` in package metadata and runtime exports.
+- Removed tracked backup files and local autoresearch state from the repository, and tightened contributor guidance around maintenance policy.
+
 ## [0.11.0] - 2026-04-02
 
 ### Added
 - Expo-powered mobile training console under `mobile/` with dashboard, runs, datasets, models, and run-detail screens tailored to RL fine-tuning workflows.
 - Mobile data layer that reads live training-lab endpoints when available and falls back to curated mock runs, datasets, models, algorithms, and environments for preview mode.
-- Auto-research session artifacts documenting recent training-quality search iterations and benchmark outcomes in `.autoresearch/`.
+- Auto-research workflow support for tracking recent training-quality search iterations and benchmark outcomes.
 
 ### Changed
 - Bumped the package version to `0.11.0` in package metadata and runtime exports.

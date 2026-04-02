@@ -13,13 +13,14 @@
 - `scripts/`, `deployment/`, `benchmarks/`: Utilities for training, deployment, and performance.
 
 ## Build, Test, and Development Commands
-- Setup (Python 3.8+):
+- Setup (Python 3.10+):
   - `python -m venv .venv && source .venv/bin/activate`
   - `pip install -e ".[dev,api]"`
 - Run tests: `pytest -q` (use `-k` to filter; async tests use `pytest-asyncio`).
 - Format & lint: `ruff check . && black . && isort .`
 - Type check (CI-gated surface): `mypy --config-file mypy.ini`
 - Type check (full package, WIP): `python scripts/check_types.py --all`
+- Repo hygiene: `python scripts/check_repo_hygiene.py`
 - Run an example: `python examples/quick_start.py`
 - API (optional deps): `python -m stateset_agents.api.main` (requires `fastapi` and `uvicorn`).
 

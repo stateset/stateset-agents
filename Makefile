@@ -1,4 +1,4 @@
-.PHONY: help install install-dev install-all test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
+.PHONY: help install install-dev install-all dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
 
 PYTHON_BIN := $(shell command -v python3 >/dev/null 2>&1 && echo python3 || command -v python)
 
@@ -15,6 +15,10 @@ install-dev: ## Install package with development dependencies
 
 install-all: ## Install package with all optional dependencies
 	pip install -e ".[dev,api,examples,training,trl]"
+
+dev-setup: ## Install development dependencies and pre-commit hooks
+	$(MAKE) install-dev
+	$(MAKE) pre-commit-install
 
 # Testing
 test: ## Run all tests
@@ -51,6 +55,9 @@ check-types: ## Run mypy type checking
 
 check-types-script: ## Run custom type checking script
 	python scripts/check_types.py
+
+repo-hygiene: ## Ensure generated and backup artifacts are not tracked
+	python scripts/check_repo_hygiene.py
 
 # Documentation
 docs: ## Build documentation
@@ -178,6 +185,7 @@ dev-test: ## Quick development checks (format, type, unit tests)
 	$(MAKE) test-unit
 
 ci: ## Simulate CI pipeline locally
+	$(MAKE) repo-hygiene
 	$(MAKE) dev-test
 	$(MAKE) test-cov
 

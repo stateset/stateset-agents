@@ -220,13 +220,14 @@ See [QWEN3_FINETUNING_GUIDE.md](../docs/QWEN3_FINETUNING_GUIDE.md) for a getting
 Fine-tune Google Gemma models:
 
 ```bash
-python examples/finetune_gemma3_gspo.py \
-    --model google/gemma-2-9b-it \
-    --task customer_service \
-    --use-lora
+python examples/finetune_gemma4_31b_gspo.py --dry-run
+python examples/finetune_gemma4_31b_gspo.py --starter-profile memory --dry-run
+python examples/finetune_gemma4_31b_gspo.py --no-dry-run --task customer_service
 ```
 
-See [GEMMA3_FINETUNING_GUIDE.md](../docs/GEMMA3_FINETUNING_GUIDE.md)
+The dedicated Gemma 4 starter targets `google/gemma-4-31B-it` with GSPO-ready
+QLoRA defaults for StateSet Agents. The older family-wide fallback script remains
+`examples/finetune_gemma3_gspo.py` for Gemma 2 era checkpoints.
 
 #### Llama Models
 

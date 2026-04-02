@@ -746,6 +746,54 @@ def test_cli_init_qwen_preset_memory_profile_json(tmp_path):
     assert loaded["max_prompt_length"] == 768
 
 
+def test_cli_init_gemma_preset_json(tmp_path):
+    """Test init can scaffold the Gemma 4 31B starter preset."""
+    cfg_path = tmp_path / "gemma4_31b.json"
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            "--preset",
+            "gemma-4-31b",
+            "--path",
+            str(cfg_path),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert loaded["model_name"] == "google/gemma-4-31B-it"
+    assert loaded["task"] == "customer_service"
+    assert loaded["trust_remote_code"] is True
+    assert loaded["use_4bit"] is True
+    assert loaded["attn_implementation"] == "sdpa"
+
+
+def test_cli_init_gemma_preset_memory_profile_json(tmp_path):
+    """Test init can scaffold the low-memory Gemma starter preset."""
+    cfg_path = tmp_path / "gemma4_memory.json"
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            "--preset",
+            "gemma-4-31b",
+            "--starter-profile",
+            "memory",
+            "--path",
+            str(cfg_path),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert loaded["starter_profile"] == "memory"
+    assert loaded["use_4bit"] is True
+    assert loaded["max_prompt_length"] == 2048
+
+
 def test_cli_init_invalid_preset():
     """Test init rejects unsupported preset names."""
     result = runner.invoke(app, ["init", "--preset", "unknown-preset"])

@@ -181,6 +181,12 @@ node_modules/
 
 # Local agent / CLI caches
 .claude/
+.codex
+.codex/
+.autoresearch/
+
+# Frontend build outputs
+dashboard/dist/
 
 # Local environment variants
 .env.local
