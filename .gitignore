@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -140,7 +140,7 @@ Thumbs.db
 # Project specific
 # Model checkpoints
 checkpoints/
-models/
+/models/
 *.pt
 *.pth
 *.bin
@@ -227,8 +227,8 @@ artifact/
 artifacts/
 outputs/
 results/
-runs/
-runs/*
+/runs/
+/runs/*
 tensorboard/
 tensorboard_logs/
 tensorboard-logs/

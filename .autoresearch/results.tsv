@@ -1,0 +1,24 @@
+timestamp	commit	metric	status	description	log_file
+20260325T151349398949Z	e9b717b	0.710000	keep	baseline	.autoresearch/logs/20260325T151349398949Z-e9b717b.log
+20260325T151548978685Z	4084154	0.810000	keep	add save_pretrained to StubTokenizer	.autoresearch/logs/20260325T151548978685Z-4084154.log
+20260325T151741875613Z	ed3a815	0.869360	keep	improve helpfulness reward discrimination	.autoresearch/logs/20260325T151741875613Z-ed3a815.log
+20260325T152015608993Z	d5fb592	0.893360	keep	safety penalty for dismissively short responses	.autoresearch/logs/20260325T152015608993Z-d5fb592.log
+20260325T152142963274Z	b331d0b	0.932460	keep	sentence splitting on !? and word diversity bonus	.autoresearch/logs/20260325T152142963274Z-b331d0b.log
+20260325T152506630593Z	ecb318c	0.932460	discard	fix GRPO advantage clamping bug for missing log_probs	.autoresearch/logs/20260325T152506630593Z-ecb318c.log
+20260325T152937810867Z	caae405	0.944460	keep	stronger safety penalty for dismissive responses	.autoresearch/logs/20260325T152937810867Z-caae405.log
+20260325T153313095754Z	955a146	0.962460	keep	tiered safety penalty: 0.9 for <10 chars, 0.5 for <20	.autoresearch/logs/20260325T153313095754Z-955a146.log
+20260325T153614990204Z	755d3ce	0.975960	keep	helpfulness acknowledge+solve pattern bonus	.autoresearch/logs/20260325T153614990204Z-755d3ce.log
+20260325T153950092965Z	8f16954	0.982760	keep	expand acknowledge/solve word lists	.autoresearch/logs/20260325T153950092965Z-8f16954.log
+20260325T154339548203Z	284cd8e	0.985560	keep	add found/see as acknowledge words	.autoresearch/logs/20260325T154339548203Z-284cd8e.log
+20260325T160757612454Z	eb7c8c8	0.985360	discard	GSPO stub support + 3-algorithm benchmark	.autoresearch/logs/20260325T160757612454Z-eb7c8c8.log
+20260325T161455634253Z	d51540e	0.985560	discard	GSPO stub backend support (framework fixes only)	.autoresearch/logs/20260325T161455634253Z-d51540e.log
+20260325T162146646363Z	33f29ec	0.985960	keep	GSPO stub support + 3-algo benchmark	.autoresearch/logs/20260325T162146646363Z-33f29ec.log
+20260325T162503821390Z	2eeb8ee	0.985960	discard	fix advantage clamping + improve CustomerServiceReward	.autoresearch/logs/20260325T162503821390Z-2eeb8ee.log
+20260325T162945327342Z	58805e7	0.991960	keep	fix advantage clamping + zero-score dismissive + domain rewards	.autoresearch/logs/20260325T162945327342Z-58805e7.log
+20260325T192518589959Z	66e004e	0.993060	keep	entropy bonus + token normalization + loss features benchmark	.autoresearch/logs/20260325T192518589959Z-66e004e.log
+20260325T195052350195Z	5eae5e4	nan	crash	DAPO/VAPO stub support + 5-algorithm benchmark	.autoresearch/logs/20260325T195052350195Z-5eae5e4.log
+20260325T203807452299Z	6671343	0.993300	keep	DAPO/VAPO stub support + 5-algo benchmark	.autoresearch/logs/20260325T203807452299Z-6671343.log
+20260325T205704157146Z	15ce982	0.994320	keep	fix KL direction + reward drift + KL clamping + numerical probe	.autoresearch/logs/20260325T205704157146Z-15ce982.log
+20260325T211147583468Z	26f5799	0.994320	discard	leave-one-out baseline + reward calibration Welford bootstrap	.autoresearch/logs/20260325T211147583468Z-26f5799.log
+20260325T213348576879Z	ee7e143	1.000000	keep	leave-one-out + Welford calibration + phrase weight = perfect score	.autoresearch/logs/20260325T213348576879Z-ee7e143.log
+20260325T220143829316Z	95bd768	1.000000	discard	RLAIF adapters: LLMJudge wired into all training algorithms	.autoresearch/logs/20260325T220143829316Z-95bd768.log

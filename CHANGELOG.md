@@ -5,6 +5,17 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-04-02
+
+### Added
+- Expo-powered mobile training console under `mobile/` with dashboard, runs, datasets, models, and run-detail screens tailored to RL fine-tuning workflows.
+- Mobile data layer that reads live training-lab endpoints when available and falls back to curated mock runs, datasets, models, algorithms, and environments for preview mode.
+- Auto-research session artifacts documenting recent training-quality search iterations and benchmark outcomes in `.autoresearch/`.
+
+### Changed
+- Bumped the package version to `0.11.0` in package metadata and runtime exports.
+- Scoped `.gitignore` patterns for `lib/`, `models/`, and `runs/` to the repository root so mobile source files can be tracked and released normally.
+
 ## [0.5.0] - 2025-10-19
 
 ### Added

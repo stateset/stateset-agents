@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "StateSet Fine-Tuning Lab",
+    "slug": "stateset-agents-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "stateset-agents",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#1E1612",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.stateset.agents.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1E1612"
+      },
+      "package": "com.stateset.agents.mobile",
+      "permissions": []
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}
