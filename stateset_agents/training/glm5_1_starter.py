@@ -2,8 +2,9 @@
 
 GLM 5.1 (``zai-org/GLM-5.1``) is a 754B-parameter Mixture-of-Experts model
 with DeepSeek V3-style Multi-head Latent Attention (MLA) and 256 routed
-experts (8 active per token). Even the FP8 variant (``zai-org/GLM-5.1-FP8``)
-is far beyond what fits on a single GPU, so this starter assumes:
+experts (8 active per token). A private FP8 deployment alias such as
+``your-org/GLM-5.1-FP8`` is far beyond what fits on a single GPU, so this
+starter assumes:
 
 * QLoRA-only fine-tuning on the routed/dense projection matrices
 * vLLM-backed generation during training
@@ -26,7 +27,7 @@ from stateset_agents.training.config import TrainingConfig, get_config_for_task
 logger = logging.getLogger(__name__)
 
 GLM5_1_BASE_MODEL = "zai-org/GLM-5.1"
-GLM5_1_FP8_MODEL = "zai-org/GLM-5.1-FP8"
+GLM5_1_FP8_MODEL = "your-org/GLM-5.1-FP8"
 GLM5_1_SUPPORTED_VARIANTS = [
     GLM5_1_BASE_MODEL,
     GLM5_1_FP8_MODEL,

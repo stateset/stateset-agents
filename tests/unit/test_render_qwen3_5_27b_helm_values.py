@@ -87,12 +87,12 @@ def test_render_values_from_manifest_with_gcs_uri(tmp_path):
     rendered = _run_render(
         str(path),
         "--gcs-uri",
-        "gs://stateset-models/qwen3-5-27b/runs/run-123/merged",
+        "gs://YOUR_BUCKET/qwen3-5-27b/runs/YOUR_RUN_ID/merged",
     )
 
     assert "modelSync:" in rendered
     assert (
-        'gcsUri: "gs://stateset-models/qwen3-5-27b/runs/run-123/merged"' in rendered
+        'gcsUri: "gs://YOUR_BUCKET/qwen3-5-27b/runs/YOUR_RUN_ID/merged"' in rendered
     )
     assert 'localDir: "/models/qwen3-5-27b/runs/run-123/merged"' in rendered
 

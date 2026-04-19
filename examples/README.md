@@ -243,12 +243,12 @@ Fine-tune Zhipu AI's GLM 5.1 (754B MoE):
 ```bash
 python examples/finetune_glm5_1_gspo.py --dry-run
 python examples/finetune_glm5_1_gspo.py --starter-profile memory --dry-run
-python examples/finetune_glm5_1_gspo.py --model zai-org/GLM-5.1-FP8 --fp8-serving --dry-run
+python examples/finetune_glm5_1_gspo.py --model your-org/GLM-5.1-FP8 --fp8-serving --dry-run
 python examples/finetune_glm5_1_gspo.py --no-dry-run --task customer_service --output-dir /models/glm5-1
 ```
 
-The dedicated GLM 5.1 starter targets `zai-org/GLM-5.1` (BF16) and
-`zai-org/GLM-5.1-FP8` for single-host serving. See
+The dedicated GLM 5.1 starter targets `zai-org/GLM-5.1` (BF16) and a private
+alias such as `your-org/GLM-5.1-FP8` for single-host serving. See
 [GLM5_1_HOSTING_PLAN.md](../docs/GLM5_1_HOSTING_PLAN.md) for the full
 deployment recipe (Helm values, K8s manifests, multi-node topology, and
 the Helm values renderer in `scripts/render_glm5_1_helm_values.py`).

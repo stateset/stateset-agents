@@ -54,7 +54,7 @@ def test_render_values_from_manifest_finetuned(tmp_path):
 
 def test_render_values_from_manifest_fp8(tmp_path):
     manifest = {
-        "model": "zai-org/GLM-5.1-FP8",
+        "model": "your-org/GLM-5.1-FP8",
         "merged_model_dir": None,
         "recommended": {
             "tensor_parallel_size": 8,
@@ -71,7 +71,7 @@ def test_render_values_from_manifest_fp8(tmp_path):
 
     rendered = _run_render(str(path))
 
-    assert 'modelId: "zai-org/GLM-5.1-FP8"' in rendered
+    assert 'modelId: "your-org/GLM-5.1-FP8"' in rendered
     assert "--quantization=fp8" in rendered
     assert "--tensor-parallel-size=8" in rendered
     # Pipeline parallel of 1 should not emit the flag.
@@ -118,12 +118,12 @@ def test_render_values_from_manifest_with_gcs_uri(tmp_path):
     rendered = _run_render(
         str(path),
         "--gcs-uri",
-        "gs://stateset-models/glm5-1/runs/run-123/merged",
+        "gs://YOUR_BUCKET/glm5-1/runs/YOUR_RUN_ID/merged",
     )
 
     assert "modelSync:" in rendered
     assert (
-        'gcsUri: "gs://stateset-models/glm5-1/runs/run-123/merged"' in rendered
+        'gcsUri: "gs://YOUR_BUCKET/glm5-1/runs/YOUR_RUN_ID/merged"' in rendered
     )
     assert 'localDir: "/models/glm5-1/runs/run-123/merged"' in rendered
 
@@ -184,7 +184,7 @@ def test_build_values_malformed_recommended_falls_back_to_defaults():
 def test_build_values_quantization_emits_flag():
     values = build_values_from_manifest(
         {
-            "model": "zai-org/GLM-5.1-FP8",
+            "model": "your-org/GLM-5.1-FP8",
             "recommended": {"quantization": "fp8", "pipeline_parallel_size": 1},
         }
     )

@@ -33,7 +33,7 @@ spec:
           name: http
         env:
         - name: MODEL_ID
-          value: zai-org/GLM-5.1-FP8
+          value: your-org/GLM-5.1-FP8
         - name: HF_HOME
           value: /models/hf
         - name: TRANSFORMERS_CACHE

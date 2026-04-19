@@ -34,7 +34,7 @@ def test_glm5_1_training_exports_remain_available() -> None:
     assert GLM5_1_BASE_MODEL == DirectBaseModel
     assert ".json" in GLM5_1_CONFIG_SUFFIXES
     assert GLM5_1_BASE_MODEL == "zai-org/GLM-5.1"
-    assert GLM5_1_FP8_MODEL == "zai-org/GLM-5.1-FP8"
+    assert GLM5_1_FP8_MODEL == "your-org/GLM-5.1-FP8"
     assert "memory" in GLM5_1_STARTER_PROFILE_CHOICES
     assert "balanced" in GLM5_1_STARTER_PROFILE_DESCRIPTIONS
     assert GLM5_1_DEFAULT_OUTPUT_DIR == "./outputs/glm5_1_gspo"

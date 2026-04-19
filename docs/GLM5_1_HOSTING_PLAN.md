@@ -11,7 +11,7 @@ experts and 8 active per token). Two checkpoints are published:
 | Model | Repo | Notes |
 | --- | --- | --- |
 | GLM-5.1 | `zai-org/GLM-5.1` | BF16 weights, ~1.5 TB on disk |
-| GLM-5.1-FP8 | `zai-org/GLM-5.1-FP8` | FP8 weights, ~754 GB on disk |
+| GLM-5.1-FP8 | `your-org/GLM-5.1-FP8` | Example private FP8 deployment alias, ~754 GB on disk |
 
 ## 1. Decision
 
@@ -29,7 +29,7 @@ Reasons:
 For the minimum viable deployment, prefer the FP8 variant:
 
 - Public model name at the gateway: `zai-org/GLM-5.1`
-- Internal serving model in `vLLM`: `zai-org/GLM-5.1-FP8`
+- Private serving model in `vLLM`: `your-org/GLM-5.1-FP8`
 
 ## 2. What "Minimal" Means Here
 
@@ -37,7 +37,7 @@ The two practical hosting shapes are:
 
 | Shape | Variant | Topology | vLLM args |
 | --- | --- | --- | --- |
-| Single-host (FP8) | `zai-org/GLM-5.1-FP8` | 1x 8xH200 (1128 GB VRAM) | `--tensor-parallel-size=8 --quantization=fp8` |
+| Single-host (FP8) | `your-org/GLM-5.1-FP8` | 1x 8xH200 (1128 GB VRAM) | `--tensor-parallel-size=8 --quantization=fp8` |
 | Multi-node (BF16) | `zai-org/GLM-5.1` | 2x 8xH100 / 8xH200 | `--tensor-parallel-size=8 --pipeline-parallel-size=2` |
 
 The single-host FP8 path is the minimum practical setup with the current Helm
@@ -57,8 +57,8 @@ The minimum architecture is:
 1. `vLLM` serves the model behind an in-cluster `ClusterIP` Service.
 2. The StateSet gateway exposes `POST /v1/messages`, `POST /v1/chat/completions`,
    and `GET /v1/models`.
-3. The gateway rewrites the public model name `zai-org/GLM-5.1` to the
-   internal FP8 model id `zai-org/GLM-5.1-FP8` via `INFERENCE_MODEL_MAP`.
+3. The gateway rewrites the public model name `zai-org/GLM-5.1` to your
+   private FP8 model id `your-org/GLM-5.1-FP8` via `INFERENCE_MODEL_MAP`.
 4. Initial client access is through `kubectl port-forward`.
 5. Public ingress is a second step after the internal path is healthy.
 
@@ -156,7 +156,7 @@ the emitted serving manifest:
 ```bash
 python scripts/render_glm5_1_helm_values.py \
   --manifest /models/glm5-1/serving_manifest.json \
-  --gcs-uri gs://stateset-models/glm5-1/runs/run-123/merged
+  --gcs-uri gs://YOUR_BUCKET/glm5-1/runs/YOUR_RUN_ID/merged
 ```
 
 Pipe the output into a values file:
@@ -190,7 +190,8 @@ After deploying, confirm:
 
 1. The vLLM pod reaches `Ready` (initial weight load can take 10–15 minutes).
 2. `kubectl port-forward svc/glm5-1-vllm-fp8 8000:8000` and `curl
-   localhost:8000/v1/models` returns `zai-org/GLM-5.1-FP8`.
+   localhost:8000/v1/models` returns your FP8 alias (for example
+   `your-org/GLM-5.1-FP8`).
 3. The gateway proxies the public name through:
    ```bash
    curl -sX POST localhost:8001/v1/chat/completions \

@@ -53,3 +53,54 @@ def test_selected_kubernetes_and_docs_refs_use_current_package_version() -> None
         contents = target.read_text()
         assert "0.7.1" not in contents
         assert __version__ in contents
+
+
+def test_public_deployment_examples_require_auth_by_default() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    targets = [
+        repo_root
+        / "deployment"
+        / "helm"
+        / "stateset-agents"
+        / "values-glm5-1-fp8.yaml",
+        repo_root
+        / "deployment"
+        / "helm"
+        / "stateset-agents"
+        / "values-qwen3-5-27b-minimal.yaml",
+        repo_root
+        / "deployment"
+        / "helm"
+        / "stateset-agents"
+        / "values-gke-example-staging.yaml",
+    ]
+
+    for target in targets:
+        contents = target.read_text()
+        assert 'API_REQUIRE_AUTH: "true"' in contents
+        assert 'API_REQUIRE_AUTH: "false"' not in contents
+
+
+def test_public_docs_and_examples_do_not_embed_internal_identifiers() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    targets = [
+        repo_root / "docs" / "GLM5_1_HOSTING_PLAN.md",
+        repo_root / "docs" / "glm5_1_starter.rst",
+        repo_root / "examples" / "README.md",
+        repo_root / "examples" / "finetune_glm5_1_gspo.py",
+        repo_root / "scripts" / "gke" / "publish_model_to_gcs.sh",
+        repo_root / "deployment" / "helm" / "stateset-agents" / "values-glm5-1-fp8.yaml",
+        repo_root / "deployment" / "kubernetes" / "glm5-1-vllm-fp8.yaml",
+    ]
+
+    forbidden_markers = [
+        "gs://stateset-models",
+        "gs://stateset-models-prod",
+        "gs://stateset-models-dev",
+        "zai-org/GLM-5.1-FP8",
+    ]
+
+    for target in targets:
+        contents = target.read_text()
+        for marker in forbidden_markers:
+            assert marker not in contents

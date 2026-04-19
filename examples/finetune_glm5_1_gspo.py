@@ -95,8 +95,8 @@ Examples:
   # Use the low-memory starter preset for a tighter cluster
   python examples/finetune_glm5_1_gspo.py --starter-profile memory --dry-run
 
-  # Preview against the FP8 serving variant
-  python examples/finetune_glm5_1_gspo.py --model zai-org/GLM-5.1-FP8 --fp8-serving --dry-run
+  # Preview against a private FP8 serving alias
+  python examples/finetune_glm5_1_gspo.py --model your-org/GLM-5.1-FP8 --fp8-serving --dry-run
 
   # Save a reusable starter config
   python examples/finetune_glm5_1_gspo.py --write-config ./glm5_1.json
@@ -116,7 +116,7 @@ Examples:
         default=GLM5_1_BASE_MODEL,
         help=(
             "Model name. Use zai-org/GLM-5.1 for BF16 training or "
-            "zai-org/GLM-5.1-FP8 for FP8 serving previews."
+            "your-org/GLM-5.1-FP8 for FP8 serving previews."
         ),
     )
     parser.add_argument(
@@ -167,7 +167,7 @@ Examples:
     parser.add_argument(
         "--fp8-serving",
         action="store_true",
-        help="Recommend FP8 single-host serving (zai-org/GLM-5.1-FP8) in the manifest.",
+        help="Recommend FP8 single-host serving (your-org/GLM-5.1-FP8) in the manifest.",
     )
     parser.add_argument(
         "--disable-auto-tool-choice",

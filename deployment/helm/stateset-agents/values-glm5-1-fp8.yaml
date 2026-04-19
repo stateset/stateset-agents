@@ -1,11 +1,11 @@
 api:
   env:
-    API_REQUIRE_AUTH: "false"
+    API_REQUIRE_AUTH: "true"
     INFERENCE_DEFAULT_MODEL: "zai-org/GLM-5.1"
-    INFERENCE_MODEL_MAP: '{"zai-org/GLM-5.1":"zai-org/GLM-5.1-FP8"}'
+    INFERENCE_MODEL_MAP: '{"zai-org/GLM-5.1":"your-org/GLM-5.1-FP8"}'
 
 vllm:
-  modelId: "zai-org/GLM-5.1-FP8"
+  modelId: "your-org/GLM-5.1-FP8"
   finetuned: false
   gpu:
     count: 8

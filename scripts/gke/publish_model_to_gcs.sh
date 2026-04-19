@@ -22,8 +22,8 @@ Usage:
   $(basename "$0") --local-dir PATH --gcs-uri gs://BUCKET/prefix [--project PROJECT]
 
 Examples:
-  $(basename "$0") --local-dir /models/kimi-k25 --gcs-uri gs://stateset-models-prod/kimi-k25/runs/2026-02-07_001
-  $(basename "$0") --local-dir ./outputs/kimi_k25_gspo --gcs-uri gs://stateset-models-dev/kimi-k25/runs/local-test
+  $(basename "$0") --local-dir /models/kimi-k25 --gcs-uri gs://YOUR_BUCKET/kimi-k25/runs/2026-02-07_001
+  $(basename "$0") --local-dir ./outputs/kimi_k25_gspo --gcs-uri gs://YOUR_BUCKET/kimi-k25/runs/local-test
 EOF
 }
 

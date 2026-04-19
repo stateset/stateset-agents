@@ -4,9 +4,9 @@ GLM 5.1 Starter Path
 Use this starter when you want the fastest path to a first GSPO post-training
 run for ``zai-org/GLM-5.1``. GLM 5.1 is a 754B-parameter Mixture-of-Experts
 model with DeepSeek V3-style Multi-head Latent Attention (MLA) and 256 routed
-experts (8 active per token). Even the FP8 variant (``zai-org/GLM-5.1-FP8``)
-requires a full 8×H200/B200 host, so this starter assumes QLoRA training and
-vLLM-backed serving.
+experts (8 active per token). A private FP8 deployment alias such as
+``your-org/GLM-5.1-FP8`` requires a full 8×H200/B200 host, so this starter
+assumes QLoRA training and vLLM-backed serving.
 
 CLI quick start
 ---------------
@@ -68,7 +68,7 @@ override with ``scripts/render_glm5_1_helm_values.py``:
 
    python scripts/render_glm5_1_helm_values.py \
      --manifest ./outputs/glm5_1_gspo/serving_manifest.json \
-     --gcs-uri gs://stateset-models/glm5-1/runs/run-123/merged
+     --gcs-uri gs://YOUR_BUCKET/glm5-1/runs/YOUR_RUN_ID/merged
 
 Programmatic surface
 --------------------
