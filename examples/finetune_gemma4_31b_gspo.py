@@ -1,5 +1,7 @@
 """Dedicated Gemma 4 31B GSPO starter script."""
 
+# ruff: noqa: E402
+
 from __future__ import annotations
 
 import argparse
@@ -214,3 +216,10 @@ Examples:
 
 if __name__ == "__main__":
     main()
+
+
+# Re-export the async finetune helper for direct programmatic use.
+__all__ = [
+    "finetune_gemma4_31b",
+    "main",
+]

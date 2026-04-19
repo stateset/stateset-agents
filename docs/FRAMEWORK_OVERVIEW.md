@@ -69,7 +69,10 @@ stateset-agents serve --host 0.0.0.0 --port 8000
 python -m pytest -q
 
 # Formatting / linting
-black . && isort . && flake8 .
+ruff check . && black . && isort .
+
+# Type checking
+python scripts/check_types.py --all
 ```
 
 ## Notes
@@ -79,4 +82,3 @@ black . && isort . && flake8 .
   observability.
 - For container builds, see `deployment/docker/Dockerfile` (gateway) and
   `deployment/docker/Dockerfile.trainer` (trainer jobs).
-

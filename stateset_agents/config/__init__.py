@@ -8,7 +8,7 @@ and training configurations from YAML/JSON files.
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -19,20 +19,20 @@ PRESETS_DIR = Path(__file__).parent / "presets"
 def _load_yaml(path: Path) -> dict[str, Any]:
     """Load a YAML file, falling back to JSON if yaml is unavailable."""
     try:
-        import yaml
+        import yaml  # type: ignore[import-untyped]
 
         with open(path) as f:
-            return yaml.safe_load(f) or {}
+            return cast(dict[str, Any], yaml.safe_load(f) or {})
     except ImportError:
         logger.warning("PyYAML not installed, falling back to JSON parsing")
         with open(path) as f:
-            return json.load(f)
+            return cast(dict[str, Any], json.load(f))
 
 
 def _load_json(path: Path) -> dict[str, Any]:
     """Load a JSON file."""
     with open(path) as f:
-        return json.load(f)
+        return cast(dict[str, Any], json.load(f))
 
 
 def load_config(path: str | Path) -> dict[str, Any]:

@@ -165,7 +165,7 @@ class AutoResearchConfig:
 
         if suffix in (".yaml", ".yml"):
             try:
-                import yaml
+                import yaml  # type: ignore[import-untyped]
             except ImportError as exc:
                 raise ImportError(
                     "PyYAML required for YAML config files. "

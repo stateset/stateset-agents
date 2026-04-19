@@ -19,7 +19,7 @@ This guide provides comprehensive instructions for using the GRPO Agent Framewor
 ### Installation
 
 ```bash
-pip install grpo-agent-framework
+pip install stateset-agents
 ```
 
 ### Basic Usage
@@ -27,40 +27,46 @@ pip install grpo-agent-framework
 ```python
 import asyncio
 from stateset_agents import (
-    MultiTurnAgent, ConversationEnvironment, 
-    HelpfulnessReward, train
+    MultiTurnAgent,
+    ConversationEnvironment,
+    HelpfulnessReward,
+    train,
 )
 from stateset_agents.core.agent import AgentConfig
 
 async def quick_example():
     # 1. Create an agent
     config = AgentConfig(
-        model_name="openai/gpt-oss-120b",
+        model_name="stub://quickstart",
+        use_stub_model=True,
         system_prompt="You are a helpful AI assistant.",
-        temperature=0.8
+        temperature=0.8,
     )
     agent = MultiTurnAgent(config)
     await agent.initialize()
-    
+
     # 2. Create environment with scenarios
-    scenarios = [{
-        "id": "help_conversation",
-        "user_responses": [
-            "Hi! Can you help me?",
-            "I need advice on learning Python.",
-            "Thank you for the suggestions!"
-        ]
-    }]
+    scenarios = [
+        {
+            "id": "help_conversation",
+            "user_responses": [
+                "Hi! Can you help me?",
+                "I need advice on learning Python.",
+                "Thank you for the suggestions!",
+            ],
+        }
+    ]
     environment = ConversationEnvironment(scenarios=scenarios)
-    
+
     # 3. Train the agent
     trained_agent = await train(
         agent=agent,
         environment=environment,
-        num_episodes=100,
-        profile="balanced"
+        num_episodes=4,
+        profile="balanced",
+        training_mode="single_turn",
     )
-    
+
     # 4. Use the trained agent
     response = await trained_agent.generate_response([
         {"role": "user", "content": "Hello! How are you?"}
@@ -70,6 +76,8 @@ async def quick_example():
 # Run the example
 asyncio.run(quick_example())
 ```
+
+For the maintained smoke-tested onboarding flow, run `python examples/quick_start.py`.
 
 ## Core Concepts
 
@@ -109,7 +117,8 @@ Reward functions evaluate agent performance:
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 
 config = AgentConfig(
-    model_name="openai/gpt-oss-120b",
+    model_name="stub://quickstart",
+    use_stub_model=True,
     system_prompt="You are a helpful assistant.",
     temperature=0.8,
     max_new_tokens=256,
@@ -475,10 +484,10 @@ loaded_agent = await load_agent_from_checkpoint(
 
 ### Complete Examples
 
-1. **Quick Start**: `stateset_agents/examples/quick_start.py`
-   - Basic agent training
+1. **Quick Start**: `examples/quick_start.py`
+   - Stub-backed first-run training example
    - Simple reward functions
-   - Minimal configuration
+   - Minimal configuration with a clear upgrade path to real models
 
 2. **Customer Service Agent**: `stateset_agents/examples/customer_service_agent.py`
    - Specialized agent class
@@ -547,9 +556,9 @@ Agent saved to: ./checkpoints/my_trained_agent
 
 ### Getting Help
 
-- Check the documentation: https://grpo-framework.readthedocs.io
+- Check the documentation in this repository's `docs/` directory
 - Review examples in the `examples/` directory
-- File issues: https://github.com/yourusername/grpo-agent-framework/issues
+- File issues: https://github.com/stateset/stateset-agents/issues
 
 ## Next Steps
 

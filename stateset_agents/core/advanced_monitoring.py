@@ -25,7 +25,7 @@ try:
 
     PROMETHEUS_AVAILABLE = True
 except ImportError:
-    CollectorRegistry = Counter = Gauge = Histogram = Summary = None  # type: ignore[assignment]
+    CollectorRegistry = Counter = Gauge = Histogram = Summary = None
     PROMETHEUS_AVAILABLE = False
 
 try:
@@ -178,7 +178,7 @@ class MetricsCollector:
         self,
         name: str,
         value: float,
-        labels: dict[str, str] = None,
+        labels: dict[str, str] | None = None,
         metric_type: MetricType = MetricType.GAUGE,
     ):
         """Record a metric point"""
@@ -288,7 +288,9 @@ class MetricsCollector:
                 logger.error(f"Custom collector failed: {e}")
 
     def get_metrics(
-        self, name_pattern: str = None, time_range: tuple[float, float] = None
+        self,
+        name_pattern: str | None = None,
+        time_range: tuple[float, float] | None = None,
     ) -> dict[str, list[MetricPoint]]:
         """Get metrics with optional filtering"""
         current_time = time.time()
@@ -613,7 +615,7 @@ class AdvancedMonitoringService:
         self,
         name: str,
         value: float,
-        labels: dict[str, str] = None,
+        labels: dict[str, str] | None = None,
         metric_type: MetricType = MetricType.GAUGE,
     ):
         """Record a metric through the service facade."""
@@ -729,7 +731,12 @@ class AdvancedMonitoringService:
             return {}
 
         current_time = time.time()
-        dashboard = {"timestamp": current_time, "system": {}, "grpo": {}, "alerts": []}
+        dashboard: dict[str, Any] = {
+            "timestamp": current_time,
+            "system": {},
+            "grpo": {},
+            "alerts": [],
+        }
 
         # System metrics
         system_metrics = self.metrics_collector.aggregate_metrics("system", "avg", 300)
@@ -794,7 +801,7 @@ def monitor_operation(operation_name: str, **tags):
 
 
 # Decorators for automatic monitoring
-def monitor_async_function(operation_name: str = None):
+def monitor_async_function(operation_name: str | None = None):
     """Decorator for monitoring async functions"""
 
     def decorator(func):
@@ -844,7 +851,7 @@ def monitor_async_function(operation_name: str = None):
     return decorator
 
 
-def monitor_function(operation_name: str = None):
+def monitor_function(operation_name: str | None = None):
     """Decorator for monitoring sync functions"""
 
     def decorator(func):

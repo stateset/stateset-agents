@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from collections.abc import Callable
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
@@ -123,7 +123,7 @@ class CircuitBreaker:
         async def wrapper(*args, **kwargs):
             return await self.call(func, *args, **kwargs)
 
-        return wrapper
+        return cast(F, wrapper)
 
     async def call(self, func: Callable, *args, **kwargs) -> Any:
         """Execute function through circuit breaker."""
@@ -153,7 +153,8 @@ class CircuitBreaker:
             if isinstance(e, self.config.excluded_exceptions):
                 raise
 
-            await self._on_failure(e)
+            if isinstance(e, Exception):
+                await self._on_failure(e)
             raise
 
     async def _on_success(self) -> None:
@@ -216,9 +217,12 @@ class CircuitBreaker:
 
     async def _execute_fallback(self, *args, **kwargs) -> Any:
         """Execute fallback function."""
-        if asyncio.iscoroutinefunction(self.config.fallback):
-            return await self.config.fallback(*args, **kwargs)
-        return self.config.fallback(*args, **kwargs)
+        fallback = self.config.fallback
+        if fallback is None:
+            raise RuntimeError("Fallback function is not configured")
+        if asyncio.iscoroutinefunction(fallback):
+            return await fallback(*args, **kwargs)
+        return fallback(*args, **kwargs)
 
     def reset(self) -> None:
         """Manually reset the circuit breaker."""
@@ -270,11 +274,11 @@ class RetryStrategy:
         async def wrapper(*args, **kwargs):
             return await self.execute(func, *args, **kwargs)
 
-        return wrapper
+        return cast(F, wrapper)
 
     async def execute(self, func: Callable, *args, **kwargs) -> Any:
         """Execute function with retry logic."""
-        last_exception = None
+        last_exception: Exception | None = None
 
         for attempt in range(1, self.config.max_attempts + 1):
             try:
@@ -301,6 +305,8 @@ class RetryStrategy:
                 )
                 await asyncio.sleep(delay)
 
+        if last_exception is None:
+            raise RuntimeError("Retry failed without capturing an exception")
         raise last_exception
 
     def _calculate_delay(self, attempt: int) -> float:
@@ -363,7 +369,7 @@ def timeout(seconds: float) -> Callable[[F], F]:
                     f"Operation {func.__name__} timed out after {seconds}s"
                 ) from exc
 
-        return wrapper
+        return cast(F, wrapper)
 
     return decorator
 
@@ -422,7 +428,7 @@ class Bulkhead:
         async def wrapper(*args, **kwargs):
             return await self.execute(func, *args, **kwargs)
 
-        return wrapper
+        return cast(F, wrapper)
 
     async def execute(self, func: Callable, *args, **kwargs) -> Any:
         """Execute function through bulkhead."""

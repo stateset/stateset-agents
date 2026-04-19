@@ -215,7 +215,7 @@ class AutoResearchLoop:
         if self._wandb is None:
             return
         try:
-            summary = {
+            summary: dict[str, float | int | str | bool | None] = {
                 "best_objective": self.tracker.best_value,
                 "total_experiments": self.tracker.num_experiments,
                 "kept": self.tracker.num_kept,
@@ -749,7 +749,7 @@ class AutoResearchLoop:
             concurrency=self.config.eval_concurrency,
         )
 
-        results = await evaluate_agent(
+        results: dict[str, float] = await evaluate_agent(
             agent=self.agent,
             environment=eval_env,
             reward_fn=self._eval_reward_fn,
@@ -782,7 +782,7 @@ class AutoResearchLoop:
             return None
 
         elapsed = time.time() - self._loop_start_time
-        return max(0.0, self.config.max_wall_clock - elapsed)
+        return float(max(0.0, self.config.max_wall_clock - elapsed))
 
     def _current_experiment_timeout(self) -> float:
         """Return the active timeout for baseline/experiment execution."""
@@ -812,7 +812,7 @@ class AutoResearchLoop:
         else:
             relative_gain = (best - objective) / abs(best)
 
-        return relative_gain >= self.config.improvement_threshold
+        return bool(relative_gain >= self.config.improvement_threshold)
 
     def _record_crash(
         self, experiment_id: str, params: dict[str, Any], description: str

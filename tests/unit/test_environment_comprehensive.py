@@ -163,6 +163,21 @@ class TestEnvironmentStepExecution:
                 break
 
     @pytest.mark.asyncio
+    async def test_stateful_step_returns_payload(self):
+        """The convenience step(action) API should return a stateful payload."""
+        scenarios = [{"topic": "conversation"}]
+        env = ConversationEnvironment(scenarios=scenarios, max_turns=3)
+
+        initial_state = await env.reset()
+        result = await env.step("Hello there")
+
+        assert result["state"]["turn_count"] == initial_state["turn_count"] + 1
+        assert "reward" in result
+        assert "done" in result
+        assert "info" in result
+        assert result["step"] == 1
+
+    @pytest.mark.asyncio
     async def test_step_with_empty_action(self):
         """Test step with empty action string"""
         scenarios = [{"topic": "test"}]

@@ -18,7 +18,7 @@ from typing import Any
 from .trajectory import ConversationTurn
 
 _SKLEARN_LAZY = object()
-train_test_split = _SKLEARN_LAZY  # type: ignore[assignment]
+train_test_split: Any = _SKLEARN_LAZY
 _SKLEARN_AVAILABLE = importlib.util.find_spec("sklearn") is not None
 
 logger = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ class DataLoader:
 
             # Skip system messages and find user-assistant pairs
             user_message = None
-            conversation_history = []
+            conversation_history: list[ConversationTurn] = []
 
             for i, msg in enumerate(messages):
                 if msg["role"] == "system":
@@ -203,7 +203,7 @@ class DataLoader:
 
         # Return the task type with highest score
         if scores:
-            return max(scores, key=scores.get)
+            return max(scores, key=lambda task_name: scores[task_name])
         else:
             return "general"
 
@@ -347,18 +347,18 @@ def _get_train_test_split():
 
     if train_test_split is _SKLEARN_LAZY:
         if not _SKLEARN_AVAILABLE:
-            train_test_split = None  # type: ignore[assignment]
+            train_test_split = None
             return None
         try:
             from sklearn.model_selection import (
-                train_test_split as _tts,  # type: ignore[import-not-found]
+                train_test_split as _tts,
             )
 
-            train_test_split = _tts  # type: ignore[assignment]
+            train_test_split = _tts
         except ImportError:  # pragma: no cover - optional dependency
-            train_test_split = None  # type: ignore[assignment]
+            train_test_split = None
 
-    return train_test_split  # type: ignore[return-value]
+    return train_test_split
 
 
 class DataProcessor:
@@ -408,8 +408,13 @@ class DataProcessor:
             # Add current query
             messages.append({"role": "user", "content": query})
 
-            return self.tokenizer.apply_chat_template(
+            rendered_prompt: object = self.tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
+            )
+            return (
+                rendered_prompt
+                if isinstance(rendered_prompt, str)
+                else str(rendered_prompt)
             )
         else:
             # Simple formatting

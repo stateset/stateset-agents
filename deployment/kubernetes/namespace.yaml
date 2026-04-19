@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: grpo-framework
+  name: stateset-agents
   labels:
-    name: grpo-framework
-    app: grpo-agent-framework
+    name: stateset-agents
+    app: stateset-agents

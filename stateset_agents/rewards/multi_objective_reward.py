@@ -1,11 +1,11 @@
 """Multi-objective reward composition and factory helpers."""
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
-from stateset_agents.core import reward as core_reward
+from stateset_agents.core.reward_base import RewardFunction, RewardResult
 from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
 from .multi_objective_components import (
@@ -20,9 +20,6 @@ from .multi_objective_components import (
     RewardComponent,
     SimilarityRewardComponent,
 )
-
-RewardFunction = core_reward.RewardFunction
-RewardResult = core_reward.RewardResult
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +57,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
         self._normalize_component_weights()
         self.evaluation_count = 0
-        self.component_scores = {}
+        self.component_scores: dict[str, list[float]] = {}
 
     def _normalize_component_weights(self) -> None:
         """Normalize component weights to a stable sum of 1.0."""
@@ -70,17 +67,17 @@ class MultiObjectiveRewardFunction(RewardFunction):
         for component in self.components:
             component.weight = component.weight / total_weight
 
-    def add_component(self, component: BaseRewardComponent):
+    def add_component(self, component: BaseRewardComponent) -> None:
         """Add a reward component."""
         self.components.append(component)
         self._normalize_component_weights()
 
-    def remove_component(self, name: str):
+    def remove_component(self, name: str) -> None:
         """Remove a reward component by name."""
         self.components = [c for c in self.components if c.name != name]
         self._normalize_component_weights()
 
-    async def compute_reward(  # type: ignore[override]
+    async def compute_reward(
         self,
         turns: list[Any] | None = None,
         context: dict[str, Any] | None = None,
@@ -113,12 +110,14 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
         if not self.components:
             return RewardResult(
-                score=0.0, breakdown={"error": "No components configured"}
+                score=0.0,
+                breakdown={"total_score": 0.0},
+                metadata={"error": "No components configured"},
             )
 
         # Compute scores for each component
-        component_scores = {}
-        weighted_scores = []
+        component_scores: dict[str, float] = {}
+        weighted_scores: list[float] = []
 
         for component in self.components:
             try:
@@ -159,12 +158,18 @@ class MultiObjectiveRewardFunction(RewardFunction):
         self.evaluation_count += 1
 
         # Create breakdown
-        breakdown = {
+        weights = {c.name: c.weight for c in self.components}
+        breakdown: dict[str, Any] = {
             "total_score": final_score,
+            "evaluation_count": float(self.evaluation_count),
             "components": component_scores,
-            "weights": {c.name: c.weight for c in self.components},
+            "weights": weights,
             "normalization_method": self.normalization_method,
-            "evaluation_count": self.evaluation_count,
+        }
+        metadata = {
+            "components": component_scores,
+            "weights": weights,
+            "normalization_method": self.normalization_method,
         }
 
         # Log metrics
@@ -172,10 +177,15 @@ class MultiObjectiveRewardFunction(RewardFunction):
             await self.monitoring.log_metric(
                 "multi_objective_reward.evaluation",
                 final_score,
-                tags={"method": self.normalization_method},
+                labels={"method": self.normalization_method},
             )
 
-        result = RewardResult(score=final_score, breakdown=breakdown, metadata={})
+        result = RewardResult(
+            score=final_score,
+            components=component_scores,
+            breakdown=cast(dict[str, float], breakdown),
+            metadata=metadata,
+        )
         # Some trainers expect `total_reward`; keep it as an alias for score.
         result.total_reward = float(final_score)
         return result
@@ -187,9 +197,9 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
         to_dict = getattr(item, "to_dict", None)
         if callable(to_dict):
-            normalized = to_dict()
-            if isinstance(normalized, dict):
-                return normalized
+            normalized_dict = to_dict()
+            if isinstance(normalized_dict, dict):
+                return normalized_dict
 
         role = getattr(item, "role", None)
         content = getattr(item, "content", None)
@@ -204,16 +214,16 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
     def get_component_statistics(self) -> dict[str, dict[str, float]]:
         """Get statistics for each component"""
-        stats = {}
+        stats: dict[str, dict[str, float]] = {}
 
         for name, scores in self.component_scores.items():
             if scores:
                 stats[name] = {
-                    "mean": np.mean(scores),
-                    "std": np.std(scores),
-                    "min": np.min(scores),
-                    "max": np.max(scores),
-                    "count": len(scores),
+                    "mean": float(np.mean(scores)),
+                    "std": float(np.std(scores)),
+                    "min": float(np.min(scores)),
+                    "max": float(np.max(scores)),
+                    "count": float(len(scores)),
                 }
 
         return stats

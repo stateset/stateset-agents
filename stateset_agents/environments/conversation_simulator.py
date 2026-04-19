@@ -356,6 +356,7 @@ class ConversationSimulator(Environment):
         domain_randomization: DomainRandomizationConfig | None = None,
     ):
         super().__init__(max_turns=config.max_turns)
+        self.max_turns: int = config.max_turns
 
         self.config = config
         self.dr_config = domain_randomization or DomainRandomizationConfig(
@@ -472,7 +473,7 @@ class ConversationSimulator(Environment):
 
         # Check for early termination
         done = False
-        info = {"reward_breakdown": {}}
+        info: dict[str, Any] = {"reward_breakdown": {}}
 
         # Random early exit (user leaves)
         if random.random() < self.config.early_exit_probability:
@@ -497,10 +498,17 @@ class ConversationSimulator(Environment):
 
         if not done:
             # Generate user response
-            history = [
-                {"role": t.role, "content": t.content} for t in self._episode_history
+            history: list[dict[str, str]] = [
+                {
+                    "role": str(t.role or ""),
+                    "content": str(t.content or ""),
+                }
+                for t in self._episode_history
             ]
-            user_response = await self._current_simulator.generate_response(
+            simulator = self._current_simulator
+            if simulator is None:
+                raise RuntimeError("Conversation simulator is not initialized")
+            user_response = await simulator.generate_response(
                 history=history,
                 context={
                     "scenario": self._current_scenario,
@@ -537,7 +545,7 @@ class ConversationSimulator(Environment):
     ) -> float:
         """Compute reward for agent action"""
         reward = 0.0
-        response = action.content
+        response = action.content or ""
 
         # Base reward for responding
         reward += 0.1 * self.config.reward_scale
@@ -553,14 +561,16 @@ class ConversationSimulator(Environment):
 
         # Penalize repetition
         if self.config.penalize_repetition:
-            history_text = " ".join([t.content for t in self._episode_history[:-1]])
-            if response in history_text:
+            history_text = " ".join(
+                [(turn.content or "") for turn in self._episode_history[:-1]]
+            )
+            if response and response in history_text:
                 reward -= 0.2 * self.config.reward_scale
 
         # Check relevance to topic
         if self.config.penalize_irrelevance:
-            topic = state.context.get("topic", "")
-            last_user = state.context.get("last_user_message", "")
+            topic = str(state.context.get("topic", "") or "")
+            last_user = str(state.context.get("last_user_message", "") or "")
             if not self._is_relevant(response, topic, last_user):
                 reward -= 0.1 * self.config.reward_scale
 
@@ -624,7 +634,7 @@ class ConversationSimulator(Environment):
         action: ConversationTurn,
     ) -> bool:
         """Check if conversation goal is achieved"""
-        response = action.content.lower()
+        response = (action.content or "").lower()
 
         # Check for resolution indicators
         resolution_phrases = [
@@ -647,7 +657,10 @@ class ConversationSimulator(Environment):
 
     def randomize_scenario(self) -> dict[str, Any]:
         """Get a new random scenario"""
-        return self.scenario_generator.curriculum_sample(self._training_step)
+        scenario: dict[str, Any] = self.scenario_generator.curriculum_sample(
+            self._training_step
+        )
+        return scenario
 
     async def calibrate(
         self,
@@ -718,17 +731,20 @@ class ConversationSimulator(Environment):
             turn_counts.append(len(traj.turns))
             for turn in traj.turns:
                 if turn.role == "assistant":
-                    response_lengths.append(len(turn.content.split()))
+                    response_text = turn.content or ""
+                    response_lengths.append(len(response_text.split()))
             if hasattr(traj, "total_reward"):
                 rewards.append(traj.total_reward)
 
         return {
-            "mean_response_length": np.mean(response_lengths)
+            "mean_response_length": float(np.mean(response_lengths))
             if response_lengths
-            else 0,
-            "std_response_length": np.std(response_lengths) if response_lengths else 0,
-            "mean_turn_count": np.mean(turn_counts) if turn_counts else 0,
-            "mean_reward": np.mean(rewards) if rewards else 0,
+            else 0.0,
+            "std_response_length": float(np.std(response_lengths))
+            if response_lengths
+            else 0.0,
+            "mean_turn_count": float(np.mean(turn_counts)) if turn_counts else 0.0,
+            "mean_reward": float(np.mean(rewards)) if rewards else 0.0,
         }
 
     def _compute_trajectory_stats(
@@ -743,15 +759,18 @@ class ConversationSimulator(Environment):
             turn_counts.append(len(traj))
             for turn in traj:
                 if turn.role == "assistant":
-                    response_lengths.append(len(turn.content.split()))
+                    response_text = turn.content or ""
+                    response_lengths.append(len(response_text.split()))
 
         return {
-            "mean_response_length": np.mean(response_lengths)
+            "mean_response_length": float(np.mean(response_lengths))
             if response_lengths
-            else 0,
-            "std_response_length": np.std(response_lengths) if response_lengths else 0,
-            "mean_turn_count": np.mean(turn_counts) if turn_counts else 0,
-            "mean_reward": 0,  # Not computed for generated
+            else 0.0,
+            "std_response_length": float(np.std(response_lengths))
+            if response_lengths
+            else 0.0,
+            "mean_turn_count": float(np.mean(turn_counts)) if turn_counts else 0.0,
+            "mean_reward": 0.0,  # Not computed for generated
         }
 
     def _compute_adjustments(
@@ -795,7 +814,7 @@ class ConversationSimulator(Environment):
     def compute_sim_real_gap(
         self,
         real_data: Any,
-    ) -> dict[str, float]:
+    ) -> dict[str, Any]:
         """
         Compute metrics for sim-to-real gap.
 

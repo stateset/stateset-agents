@@ -645,7 +645,8 @@ async def resume_experiment(experiment_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail="Experiment is not paused")
     exp["status"] = ExperimentStatus.RUNNING.value
     _add_log(experiment_id, "info", "Training resumed")
-    return await start_experiment(experiment_id)
+    resumed = await start_experiment(experiment_id)
+    return dict(resumed)
 
 
 @router.post("/experiments/{experiment_id}/stop")
@@ -764,10 +765,11 @@ async def get_metrics(experiment_id: str) -> dict[str, Any]:
     """Get current training metrics."""
     sim = _simulators.get(experiment_id)
     if sim:
-        return sim._metrics
+        return dict(sim._metrics)
     exp = _experiments.get(experiment_id)
     if exp:
-        return exp.get("metrics", {})
+        metrics = exp.get("metrics")
+        return dict(metrics) if isinstance(metrics, dict) else {}
     raise HTTPException(status_code=404, detail="Experiment not found")
 
 

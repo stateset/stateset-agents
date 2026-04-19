@@ -14,20 +14,19 @@ import weakref
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from contextlib import AbstractAsyncContextManager
 from typing import (
     Any,
     Generic,
     TypeVar,
 )
-from collections.abc import Awaitable
+from collections.abc import AsyncIterator, Awaitable
 
 from .error_handling import ErrorCode, ResourceException
 
 try:  # pragma: no cover - optional dependency
-    import aiohttp  # type: ignore[import-not-found]
+    import aiohttp
 except ImportError:  # pragma: no cover
-    aiohttp = None  # type: ignore[assignment]
+    aiohttp = None
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +150,7 @@ class PooledResource(Generic[T]):
             self.info.state = ResourceState.IDLE
             self.info.last_used = time.time()
 
-    async def mark_failed(self, error: Exception) -> None:
+    async def mark_failed(self, error: BaseException) -> None:
         """Mark resource as failed"""
         async with self._lock:
             self.info.state = ResourceState.FAILED
@@ -193,46 +192,26 @@ class AsyncResourceFactory(Generic[T]):
                 logger.warning(f"Error closing resource: {e}")
 
 
-if aiohttp is not None:
+class HTTPSessionFactory(AsyncResourceFactory[Any]):
+    """Factory for HTTP client sessions."""
 
-    class HTTPSessionFactory(AsyncResourceFactory[aiohttp.ClientSession]):  # type: ignore[name-defined]
-        """Factory for HTTP client sessions."""
+    def __init__(self, **session_kwargs):
+        self.session_kwargs = session_kwargs
 
-        def __init__(self, **session_kwargs):
-            self.session_kwargs = session_kwargs
+    async def create_resource(self, **kwargs) -> Any:
+        """Create new HTTP session."""
+        aiohttp_mod = _require_aiohttp()
+        merged_kwargs = {**self.session_kwargs, **kwargs}
+        return aiohttp_mod.ClientSession(**merged_kwargs)
 
-        async def create_resource(self, **kwargs) -> aiohttp.ClientSession:  # type: ignore[name-defined]
-            """Create new HTTP session."""
-            aiohttp_mod = _require_aiohttp()
-            merged_kwargs = {**self.session_kwargs, **kwargs}
-            return aiohttp_mod.ClientSession(**merged_kwargs)
+    async def validate_resource(self, session: Any) -> bool:
+        """Validate HTTP session."""
+        return not bool(session.closed)
 
-        async def validate_resource(self, session: aiohttp.ClientSession) -> bool:  # type: ignore[name-defined]
-            """Validate HTTP session."""
-            return not session.closed
-
-        async def cleanup_resource(self, session: aiohttp.ClientSession) -> None:  # type: ignore[name-defined]
-            """Close HTTP session."""
-            if not session.closed:
-                await session.close()
-
-else:
-
-    class HTTPSessionFactory(AsyncResourceFactory[Any]):
-        """Placeholder factory when aiohttp is not installed."""
-
-        def __init__(self, **session_kwargs):
-            self.session_kwargs = session_kwargs
-
-        async def create_resource(self, **kwargs) -> Any:
-            _require_aiohttp()
-            raise AssertionError("unreachable")
-
-        async def validate_resource(self, session: Any) -> bool:
-            return False
-
-        async def cleanup_resource(self, session: Any) -> None:
-            return None
+    async def cleanup_resource(self, session: Any) -> None:
+        """Close HTTP session."""
+        if not bool(session.closed):
+            await session.close()
 
 
 class AsyncResourcePool(Generic[T]):
@@ -259,7 +238,7 @@ class AsyncResourcePool(Generic[T]):
         self.name = name
 
         self._pool: list[PooledResource[T]] = []
-        self._available = asyncio.Queue()
+        self._available: asyncio.Queue[PooledResource[T]] = asyncio.Queue()
         self._lock = asyncio.Lock()
         self._state = PoolState.INITIALIZING
         self._stats = PoolStats()
@@ -277,6 +256,7 @@ class AsyncResourcePool(Generic[T]):
                 # Create minimum number of resources
                 for _ in range(self.min_size):
                     resource = await self._create_resource(raise_on_fail=True)
+                    assert resource is not None
                     created.append(resource)
                     self._pool.append(resource)
                     await self._available.put(resource)
@@ -326,7 +306,7 @@ class AsyncResourcePool(Generic[T]):
             return None
 
     @asynccontextmanager
-    async def acquire(self, timeout: float | None = None) -> AbstractAsyncContextManager[T]:
+    async def acquire(self, timeout: float | None = None) -> AsyncIterator[T]:
         """Acquire a resource from the pool"""
         if self._state != PoolState.READY:
             raise RuntimeError(f"Pool {self.name} is not ready (state: {self._state})")
@@ -346,8 +326,9 @@ class AsyncResourcePool(Generic[T]):
                 # Try to create new resource if under max size
                 async with self._lock:
                     if len(self._pool) < self.max_size:
-                        pooled_resource = await self._create_resource()
-                        if pooled_resource:
+                        new_resource = await self._create_resource()
+                        if new_resource is not None:
+                            pooled_resource = new_resource
                             self._pool.append(pooled_resource)
                             self._stats.total_connections += 1
                             self._stats.pool_misses += 1
@@ -461,7 +442,7 @@ class AsyncResourcePool(Generic[T]):
 
     async def _perform_health_check(self) -> None:
         """Perform health check on pool resources"""
-        resources_to_remove = []
+        resources_to_remove: list[PooledResource[T]] = []
 
         async with self._lock:
             for resource in self._pool:
@@ -531,7 +512,7 @@ class AsyncResourcePool(Generic[T]):
 
             elif target_size < current_size:
                 # Scale down - remove idle resources
-                resources_to_remove = []
+                resources_to_remove: list[PooledResource[T]] = []
                 for resource in self._pool:
                     if (
                         resource.info.state == ResourceState.IDLE
@@ -643,7 +624,7 @@ class AsyncTaskManager:
 
     async def submit_batch(
         self, coros: list[Awaitable[T]], return_exceptions: bool = False
-    ) -> list[T | Exception]:
+    ) -> list[T | BaseException]:
         """Submit a batch of tasks"""
         tasks = [self.submit_task(coro) for coro in coros]
 

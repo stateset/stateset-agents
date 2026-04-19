@@ -127,8 +127,8 @@ class BlackboardChannel(CommunicationChannel):
 
     def __init__(self):
         self.blackboard: dict[str, Any] = {}
-        self.message_queues: dict[str, asyncio.Queue] = {}
-        self.broadcast_queue: asyncio.Queue = asyncio.Queue()
+        self.message_queues: dict[str, asyncio.Queue[AgentMessage]] = {}
+        self.broadcast_queue: asyncio.Queue[AgentMessage] = asyncio.Queue()
         self.lock = asyncio.Lock()
 
     def _ensure_queue(self, agent_id: str) -> None:
@@ -140,8 +140,10 @@ class BlackboardChannel(CommunicationChannel):
         if message.is_broadcast():
             await self.broadcast(message)
         else:
-            self._ensure_queue(message.receiver_id)
-            await self.message_queues[message.receiver_id].put(message)
+            receiver_id = message.receiver_id
+            assert receiver_id is not None
+            self._ensure_queue(receiver_id)
+            await self.message_queues[receiver_id].put(message)
 
     async def receive(
         self, agent_id: str, timeout: float | None = None
@@ -244,13 +246,13 @@ class PerformanceBasedAllocator(TaskAllocator):
 
         # Exploration: random agent
         if np.random.random() < self.exploration_rate:
-            return np.random.choice([a.agent_id for a in available_agents])
+            return str(np.random.choice([a.agent_id for a in available_agents]))
 
         # Exploitation: best performing agent
         agents_with_history = [a for a in available_agents if a.performance_history]
 
         if not agents_with_history:
-            return np.random.choice([a.agent_id for a in available_agents])
+            return str(np.random.choice([a.agent_id for a in available_agents]))
 
         best_agent = max(
             agents_with_history, key=lambda a: np.mean(a.performance_history[-10:])
@@ -444,7 +446,7 @@ class MultiAgentCoordinator:
         # Wait for all agents
         responses = await asyncio.gather(*agent_tasks, return_exceptions=True)
 
-        results = []
+        results: list[dict[str, str]] = []
         for agent_id, response in zip(agent_ids, responses, strict=False):
             if isinstance(response, Exception):
                 logger.error(f"Agent {agent_id} failed: {response}")
@@ -459,7 +461,8 @@ class MultiAgentCoordinator:
                 },
             )
             trajectory.add_turn(turn, reward=0.0)
-            results.append({"agent_id": agent_id, "response": response})
+            response_text = str(response)
+            results.append({"agent_id": agent_id, "response": response_text})
 
         # Aggregate results
         aggregated = await self._aggregate_responses([r["response"] for r in results])
@@ -479,7 +482,7 @@ class MultiAgentCoordinator:
 
         consensus_reached = False
         iteration = 0
-        agent_proposals = {}
+        agent_proposals: dict[str, str] = {}
 
         while not consensus_reached and iteration < max_iterations:
             # Each agent proposes a solution
@@ -533,11 +536,11 @@ class MultiAgentCoordinator:
         # Simplified consensus: check if responses are similar
         # In practice, would use semantic similarity
         responses = [p[1] for p in proposals]
-        avg_length = np.mean([len(r) for r in responses])
-        length_variance = np.var([len(r) for r in responses])
+        avg_length = float(np.mean([len(r) for r in responses]))
+        length_variance = float(np.var([len(r) for r in responses]))
 
         # Low variance in response length as proxy for consensus
-        return length_variance < (avg_length * 0.2) ** 2
+        return bool(length_variance < (avg_length * 0.2) ** 2)
 
     async def send_message(self, message: AgentMessage) -> None:
         """Send message through communication channel"""

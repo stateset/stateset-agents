@@ -49,21 +49,28 @@ Let's create a simple conversational agent:
 
 .. code-block:: python
 
-   from stateset_agents import MultiTurnAgent, AgentConfig
+   import asyncio
 
-   # Configure the agent
-   config = AgentConfig(
-       model_name="gpt2",           # Use GPT-2 model
-       temperature=0.7,             # Sampling temperature
-       max_new_tokens=256,          # Maximum response length
-       system_prompt="You are a helpful AI assistant."
-   )
+   from stateset_agents import MultiTurnAgent
+   from stateset_agents.core.agent import AgentConfig
 
-   # Create the agent
-   agent = MultiTurnAgent(config)
+   async def main() -> None:
+       config = AgentConfig(
+           model_name="stub://quickstart",
+           use_stub_model=True,
+           temperature=0.7,
+           max_new_tokens=256,
+           system_prompt="You are a helpful AI assistant.",
+       )
 
-   # Initialize the agent (loads the model)
-   await agent.initialize()
+       agent = MultiTurnAgent(config)
+       await agent.initialize()
+
+   if __name__ == "__main__":
+       asyncio.run(main())
+
+This stub-backed setup avoids heavyweight model downloads and matches the
+smoke-tested example in ``examples/quick_start.py``.
 
 💬 **Having a Conversation**
 
@@ -71,13 +78,12 @@ Now let's have a conversation with our agent:
 
 .. code-block:: python
 
-   # Prepare conversation messages
+   # Continue inside the async main() function after agent.initialize()
    messages = [
        {"role": "system", "content": "You are a helpful assistant."},
-       {"role": "user", "content": "Hello! Can you help me learn Python?"}
+       {"role": "user", "content": "Hello! Can you help me learn Python?"},
    ]
 
-   # Get response from agent
    response = await agent.generate_response(messages)
    print(f"Agent: {response}")
 
@@ -88,14 +94,14 @@ To make your agent better at specific tasks, you can train it using reinforcemen
 .. code-block:: python
 
    from stateset_agents import (
-       ConversationEnvironment, 
-       CompositeReward, 
-       HelpfulnessReward, 
+       ConversationEnvironment,
+       HelpfulnessReward,
        SafetyReward,
-       train
+       train,
    )
+   from stateset_agents.core.reward import CompositeReward
 
-   # Create training scenarios
+   # Continue inside the async main() function after agent.initialize()
    scenarios = [
        {
            "id": "learning_python",
@@ -109,25 +115,25 @@ To make your agent better at specific tasks, you can train it using reinforcemen
        }
    ]
 
-   # Create environment
    environment = ConversationEnvironment(scenarios=scenarios)
 
-   # Create reward function
    reward_fn = CompositeReward([
-       HelpfulnessReward(weight=0.7),    # Reward helpful responses
-       SafetyReward(weight=0.3)           # Reward safe responses
+       HelpfulnessReward(weight=0.7),
+       SafetyReward(weight=0.3),
    ])
 
-   # Train the agent
    trained_agent = await train(
        agent=agent,
        environment=environment,
        reward_fn=reward_fn,
-       num_episodes=50,          # Number of training episodes
-       profile="balanced"        # Training profile
+       num_episodes=4,
+       profile="balanced",
+       training_mode="single_turn",
    )
 
    print("Training completed! 🎉")
+
+For the fully wired version, run ``python examples/quick_start.py``.
 
 📊 **Monitoring Training Progress**
 

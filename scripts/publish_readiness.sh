@@ -187,7 +187,7 @@ isort --check-only .
 
 printf "\n[2/8] Running type checks...\n"
 CURRENT_STEP="type_checks"
-mypy --config-file mypy.ini
+python scripts/check_types.py --all
 
 printf "\n[3/8] Running tests with coverage gate (70%)...\n"
 CURRENT_STEP="tests_with_coverage"

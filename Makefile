@@ -1,10 +1,12 @@
 .PHONY: help install install-dev install-all dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
 
 PYTHON_BIN := $(shell command -v python3 >/dev/null 2>&1 && echo python3 || command -v python)
+PACKAGE_VERSION := $(shell $(PYTHON_BIN) -c "import stateset_agents; print(stateset_agents.__version__)")
+SPHINX_DOCS_ENV := API_REQUIRE_AUTH=false INFERENCE_BACKEND=stub
 
 help: ## Show this help message
 	@echo "Available commands:"
-	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = \":.*?## \"}; {printf \"  %-20s %s\n\", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
 # Installation
 install: ## Install package with core dependencies
@@ -25,7 +27,7 @@ test: ## Run all tests
 	pytest
 
 test-cov: ## Run tests with coverage report
-	pytest --cov-report=html
+	pytest --cov=stateset_agents --cov-report=html --cov-report=term-missing
 	@echo "Coverage report generated in htmlcov/index.html"
 
 test-unit: ## Run only unit tests
@@ -51,7 +53,7 @@ format: ## Format code with black and isort
 	isort .
 
 check-types: ## Run mypy type checking
-	mypy --config-file mypy.ini
+	python scripts/check_types.py --all
 
 check-types-script: ## Run custom type checking script
 	python scripts/check_types.py
@@ -61,10 +63,10 @@ repo-hygiene: ## Ensure generated and backup artifacts are not tracked
 
 # Documentation
 docs: ## Build documentation
-	sphinx-build docs docs/_build/html
+	$(SPHINX_DOCS_ENV) sphinx-build docs docs/_build/html
 
 docs-build: ## Build documentation (alias)
-	sphinx-build docs docs/_build/html
+	$(SPHINX_DOCS_ENV) sphinx-build docs docs/_build/html
 
 docs-clean: ## Clean documentation build artifacts
 	rm -rf docs/_build
@@ -73,7 +75,7 @@ docs-api: ## Generate API documentation stubs
 	sphinx-apidoc -f -o docs/api stateset_agents
 
 docs-serve: ## Build and serve documentation locally
-	sphinx-build docs docs/_build/html
+	$(SPHINX_DOCS_ENV) sphinx-build docs docs/_build/html
 	cd docs/_build/html && python -m http.server 8000
 
 # Packaging
@@ -150,7 +152,7 @@ docker-run: ## Run Docker container
 	docker run -p 8000:8000 stateset-agents
 
 docker-build-gateway: ## Build FastAPI gateway image (deployment/docker/Dockerfile)
-	docker build -f deployment/docker/Dockerfile -t stateset/stateset-agents-api:0.7.1 .
+	docker build -f deployment/docker/Dockerfile -t stateset/stateset-agents-api:$(PACKAGE_VERSION) .
 
 docker-run-gateway: ## Run FastAPI gateway locally (stub backend)
 	docker run -p 8000:8000 \
@@ -158,10 +160,10 @@ docker-run-gateway: ## Run FastAPI gateway locally (stub backend)
 	  -e API_REQUIRE_AUTH=false \
 	  -e INFERENCE_BACKEND=stub \
 	  -e INFERENCE_DEFAULT_MODEL=moonshotai/Kimi-K2.5 \
-	  stateset/stateset-agents-api:0.7.1
+	  stateset/stateset-agents-api:$(PACKAGE_VERSION)
 
 docker-build-trainer: ## Build trainer image (deployment/docker/Dockerfile.trainer)
-	docker build -f deployment/docker/Dockerfile.trainer -t stateset/stateset-agents-trainer:0.7.1 .
+	docker build -f deployment/docker/Dockerfile.trainer -t stateset/stateset-agents-trainer:$(PACKAGE_VERSION) .
 
 docker-dev: ## Run development environment
 	docker compose -f deployment/docker/docker-compose.dev.yml up stateset-agents-api-dev
@@ -186,7 +188,9 @@ dev-test: ## Quick development checks (format, type, unit tests)
 
 ci: ## Simulate CI pipeline locally
 	$(MAKE) repo-hygiene
-	$(MAKE) dev-test
+	$(MAKE) lint
+	$(MAKE) check-types
+	$(MAKE) test-unit
 	$(MAKE) test-cov
 
 security-scan: ## Run basic security scanning tools
@@ -197,67 +201,79 @@ security-scan: ## Run basic security scanning tools
 security-scan-strict: ## Run stricter security scanning (exit on high severity findings)
 	bandit -r stateset_agents -f json -o bandit-report.json || true
 	safety check --json > safety-report.json || true
-	python - <<'PY'
-import json, sys
-from pathlib import Path
+	$(PYTHON_BIN) - <<-'PY'
+		import json
+		import sys
+		from pathlib import Path
 
-bandit_path = Path("bandit-report.json")
-safety_path = Path("safety-report.json")
+		bandit_path = Path("bandit-report.json")
+		safety_path = Path("safety-report.json")
 
-if not bandit_path.exists() or not bandit_path.read_text().strip():
-    print("Bandit report not generated")
-    sys.exit(1)
+		if not bandit_path.exists() or not bandit_path.read_text().strip():
+		    print("Bandit report not generated")
+		    sys.exit(1)
 
-try:
-    bandit_payload = json.loads(bandit_path.read_text())
-except Exception as exc:
-    print(f"Bandit output parse failed: {exc}")
-    sys.exit(1)
+		try:
+		    bandit_payload = json.loads(bandit_path.read_text())
+		except Exception as exc:
+		    print(f"Bandit output parse failed: {exc}")
+		    sys.exit(1)
 
-bandit_results = []
-if isinstance(bandit_payload, dict):
-    bandit_results = bandit_payload.get("results", [])
-elif isinstance(bandit_payload, list):
-    bandit_results = bandit_payload
+		bandit_results = []
+		if isinstance(bandit_payload, dict):
+		    bandit_results = bandit_payload.get("results", [])
+		elif isinstance(bandit_payload, list):
+		    bandit_results = bandit_payload
 
-high_findings = [
-    item
-    for item in bandit_results
-    if str(item.get("issue_severity", "")).upper() in {"MEDIUM", "HIGH", "CRITICAL"}
-]
+		high_findings = [
+		    item
+		    for item in bandit_results
+		    if str(item.get("issue_severity", "")).upper()
+		    in {"MEDIUM", "HIGH", "CRITICAL"}
+		]
 
-if high_findings:
-    for item in high_findings[:10]:
-        print(
-            f"Bandit: {item.get('filename')}:{item.get('line_number')} "
-            f"{item.get('test_id')} {item.get('issue_severity')}"
-        )
-    print(f"Bandit: failing with {len(high_findings)} medium/high/critical findings")
-    sys.exit(1)
+		if high_findings:
+		    for item in high_findings[:10]:
+		        print(
+		            f"Bandit: {item.get('filename')}:{item.get('line_number')} "
+		            f"{item.get('test_id')} {item.get('issue_severity')}"
+		        )
+		    print(
+		        f"Bandit: failing with {len(high_findings)} "
+		        "medium/high/critical findings"
+		    )
+		    sys.exit(1)
 
-if not safety_path.exists() or not safety_path.read_text().strip():
-    print("Safety report not generated; ensure safety is installed")
-    sys.exit(1)
+		if not safety_path.exists() or not safety_path.read_text().strip():
+		    print("Safety report not generated; ensure safety is installed")
+		    sys.exit(1)
 
-try:
-    safety_payload = json.loads(safety_path.read_text())
-except Exception as exc:
-    print(f"Safety output parse failed: {exc}")
-    sys.exit(1)
+		try:
+		    safety_payload = json.loads(safety_path.read_text())
+		except Exception as exc:
+		    print(f"Safety output parse failed: {exc}")
+		    sys.exit(1)
 
-vulns = safety_payload.get("vulnerabilities", safety_payload if isinstance(safety_payload, list) else [])
-high = [v for v in vulns if str(v.get("severity", "")).upper() in {"HIGH", "CRITICAL"}]
+		vulns = safety_payload.get(
+		    "vulnerabilities",
+		    safety_payload if isinstance(safety_payload, list) else [],
+		)
+		high = [
+		    v
+		    for v in vulns
+		    if str(v.get("severity", "")).upper() in {"HIGH", "CRITICAL"}
+		]
 
-if high:
-    for v in high[:10]:
-        print(
-            f"High severity vulnerability: {v.get('package_name', 'unknown')} "
-            f"{v.get('id', '')}"
-        )
-    sys.exit(1)
+		if high:
+		    for v in high[:10]:
+		        print(
+		            f"High severity vulnerability: "
+		            f"{v.get('package_name', 'unknown')} {v.get('id', '')}"
+		        )
+		    sys.exit(1)
 
-sys.exit(0)
-PY
+		sys.exit(0)
+	PY
 
 publish-readiness: ## Run pre-publish release readiness gate
 	bash scripts/publish_readiness.sh

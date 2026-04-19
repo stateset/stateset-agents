@@ -269,7 +269,7 @@ def register_routes(
         if request.apply_to_all:
             for engine_id in list(state.engines.keys()):
                 engine = state.get_engine(engine_id)
-                if hasattr(engine, "scale_computation"):
+                if engine is not None and hasattr(engine, "scale_computation"):
                     try:
                         result = engine.scale_computation(request.scale_factor)
                         results[engine_id] = result

@@ -139,8 +139,8 @@ class ArchitectureSearchSpace:
         max_depth: int = 12,
         min_width: int = 64,
         max_width: int = 2048,
-        allowed_layer_types: list[LayerType] = None,
-        allowed_activations: list[ActivationType] = None,
+        allowed_layer_types: list[LayerType] | None = None,
+        allowed_activations: list[ActivationType] | None = None,
     ):
         self.min_depth = min_depth
         self.max_depth = max_depth
@@ -225,7 +225,7 @@ class ArchitectureSearchSpace:
             random.uniform(0.0, 0.3) if layer_type == LayerType.DROPOUT else 0.0
         )
 
-        layer_specific_params = {}
+        layer_specific_params: dict[str, Any] = {}
 
         if layer_type == LayerType.ATTENTION:
             layer_specific_params.update(
@@ -455,7 +455,7 @@ class ArchitectureEvaluator:
 
         # Evaluate performance
         performance = await eval_fn(model)
-        return performance
+        return float(performance)
 
 
 class EvolutionarySearch:
@@ -540,6 +540,8 @@ class EvolutionarySearch:
 
             population = next_population
 
+        if self.best_architecture is None:
+            return search_space.sample_random_architecture(input_dim, output_dim)
         return self.best_architecture
 
     def _crossover(
@@ -753,6 +755,8 @@ class NeuralArchitectureSearch:
             if search_count >= 50:
                 break
 
+        if best_arch is None:
+            return self.search_space.sample_random_architecture(input_dim, output_dim)
         return best_arch
 
     async def _log_search_results(

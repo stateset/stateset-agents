@@ -63,7 +63,7 @@ except ImportError:
     LLM = None
     SamplingParams = None
     RequestOutput = None
-    logger.warning(
+    logger.info(
         "vLLM not installed. Install with `pip install vllm` for 5-20x faster generation. "
         "Falling back to HuggingFace generation."
     )
@@ -200,7 +200,8 @@ class VLLMGenerator:
     def __init__(self, config: VLLMConfig):
         self.config = config
         self.engine: LLM | None = None
-        self.tokenizer = None
+        self.tokenizer: Any | None = None
+        self._lora_adapters: dict[str, Any] = {}
         self._initialized = False
 
     async def initialize(self) -> bool:
@@ -300,7 +301,10 @@ class VLLMGenerator:
             sampling_params = self.create_sampling_params(**kwargs)
 
         # Generate with vLLM
-        outputs: list[RequestOutput] = self.engine.generate(prompts, sampling_params)
+        engine = self.engine
+        if engine is None:
+            raise RuntimeError("vLLM engine not initialized")
+        outputs: list[RequestOutput] = engine.generate(prompts, sampling_params)
 
         # Process outputs
         results = []
@@ -313,7 +317,7 @@ class VLLMGenerator:
             response_token_ids = list(completion.token_ids)
 
             # Extract log probabilities
-            token_logprobs = []
+            token_logprobs: list[float] = []
             if completion.logprobs is not None:
                 for logprob_dict in completion.logprobs:
                     if logprob_dict is not None:
@@ -446,16 +450,20 @@ class VLLMGenerator:
             prompt_logprobs=1,
         )
 
-        outputs = self.engine.generate(full_sequences, sampling_params)
+        engine = self.engine
+        tokenizer = self.tokenizer
+        if engine is None or tokenizer is None:
+            raise RuntimeError("vLLM engine not initialized")
+        outputs = engine.generate(full_sequences, sampling_params)
 
         results = []
         for i, output in enumerate(outputs):
             prompt = prompts[i]
-            prompt_tokens = self.tokenizer.encode(prompt)
+            prompt_tokens = tokenizer.encode(prompt)
             prompt_length = len(prompt_tokens)
 
             # Extract log probs for response tokens (after prompt)
-            token_logprobs = []
+            token_logprobs: list[float] = []
             if output.prompt_logprobs is not None:
                 for j, logprob_dict in enumerate(output.prompt_logprobs):
                     if j >= prompt_length and logprob_dict is not None:
@@ -521,9 +529,6 @@ class VLLMGenerator:
 
             # Register the adapter for later use in generate() calls.
             # vLLM requires a unique integer ID per adapter.
-            if not hasattr(self, "_lora_adapters"):
-                self._lora_adapters = {}
-
             adapter_id = len(self._lora_adapters) + 1
             lora_request = LoRARequest(
                 lora_name=adapter_name,
@@ -587,8 +592,8 @@ class HuggingFaceGeneratorFallback:
     def __init__(self, model_name: str, device: str | None = None):
         self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = None
-        self.tokenizer = None
+        self.model: Any | None = None
+        self.tokenizer: Any | None = None
         self._initialized = False
 
     async def initialize(self) -> bool:
@@ -644,35 +649,37 @@ class HuggingFaceGeneratorFallback:
         if isinstance(prompts, str):
             prompts = [prompts]
 
+        tokenizer = self.tokenizer
+        model = self.model
+        assert tokenizer is not None and model is not None
+
         results = []
 
         for prompt in prompts:
-            inputs = self.tokenizer(
+            inputs = tokenizer(
                 prompt,
                 return_tensors="pt",
                 truncation=True,
                 max_length=2048,
-            ).to(self.model.device)
+            ).to(model.device)
 
             prompt_length = inputs["input_ids"].shape[1]
 
             with torch.no_grad():
-                outputs = self.model.generate(
+                outputs = model.generate(
                     **inputs,
                     max_new_tokens=max_tokens,
                     temperature=temperature,
                     top_p=top_p,
                     do_sample=True,
-                    pad_token_id=self.tokenizer.pad_token_id,
+                    pad_token_id=tokenizer.pad_token_id,
                     output_scores=True,
                     return_dict_in_generate=True,
                 )
 
             generated_ids = outputs.sequences[0]
             response_ids = generated_ids[prompt_length:]
-            response_text = self.tokenizer.decode(
-                response_ids, skip_special_tokens=True
-            )
+            response_text = tokenizer.decode(response_ids, skip_special_tokens=True)
 
             # Compute log probs from scores
             token_logprobs = []

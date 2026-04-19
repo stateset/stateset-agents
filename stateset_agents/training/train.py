@@ -5,7 +5,7 @@ High-level training interface for GRPO Agent Framework
 import asyncio
 import logging
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from stateset_agents.core.agent import Agent, MultiTurnAgent
 from stateset_agents.core.environment import Environment
@@ -25,6 +25,8 @@ TRAIN_EXCEPTIONS = (
     OSError,
     asyncio.TimeoutError,
 )
+UNCERTAINTY_WRAP_EXCEPTIONS = (ImportError,) + TRAIN_EXCEPTIONS
+DATASET_LOAD_EXCEPTIONS = (ImportError, FileNotFoundError) + TRAIN_EXCEPTIONS
 
 
 class TrainingMode(Enum):
@@ -121,7 +123,7 @@ async def train(
             agent, environment, config, reward_fn, dataset, save_path, callbacks,
         )
     elif training_mode == "multi_turn":
-        trainer = MultiTurnGRPOTrainer(
+        trainer: Any = MultiTurnGRPOTrainer(
             agent=agent, environment=environment, reward_fn=reward_fn, config=config
         )
     else:
@@ -141,7 +143,7 @@ async def train(
 
     # Initialize and train
     await trainer.initialize()
-    trained_agent = await trainer.train()
+    trained_agent = cast(Agent, await trainer.train())
 
     # Save if requested
     if save_path:
@@ -159,14 +161,13 @@ def _wrap_with_uncertainty(reward_fn: RewardFunction) -> RewardFunction:
     the original reward when Bayesian models aren't available.
     """
     try:
-        from stateset_agents.rewards.bayesian_reward_model import (
-            BayesianRewardConfig,
-            BayesianRewardFunction,
-        )
+        import importlib
+
+        importlib.import_module("stateset_agents.rewards.bayesian_reward_model")
 
         logger.info("Wrapping reward function with Bayesian uncertainty weighting")
         return UncertaintyWeightedReward(reward_fn)
-    except (ImportError, TRAIN_EXCEPTIONS) as exc:
+    except UNCERTAINTY_WRAP_EXCEPTIONS as exc:
         logger.warning(
             "Bayesian uncertainty weighting unavailable: %s — using base reward", exc
         )
@@ -243,7 +244,7 @@ def _load_dataset(dataset_path: str) -> Any:
             return ConversationDataset.from_json(dataset_path)
         else:
             return ConversationDataset.from_jsonl(dataset_path)
-    except (ImportError, FileNotFoundError, TRAIN_EXCEPTIONS) as exc:
+    except DATASET_LOAD_EXCEPTIONS as exc:
         logger.error("Failed to load dataset from %s: %s", dataset_path, exc)
         raise
 
@@ -287,7 +288,7 @@ async def _train_offline(
     logger.info("Value pre-training: %s", pretrain_metrics)
 
     # Main training
-    result = await trainer.train(
+    await trainer.train(
         num_epochs=config.num_epochs,
         dataset=dataset,
     )
@@ -326,7 +327,7 @@ async def _train_hybrid(
         trainer.add_callback(cb)
 
     await trainer.initialize()
-    trained_agent = await trainer.train()
+    trained_agent = cast(Agent, await trainer.train())
 
     if save_path:
         await trainer.save_checkpoint(checkpoint_name=save_path)

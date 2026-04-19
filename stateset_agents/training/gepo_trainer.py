@@ -16,10 +16,10 @@ Reference: https://arxiv.org/abs/2508.17850
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-from collections.abc import Callable
 
 import torch
 import torch.nn.functional as F
@@ -32,14 +32,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Try to import from gspo_trainer, with fallback for standalone usage
-try:
-    from .gspo_trainer import GSPOConfig, GSPOModelManager
-except ImportError:
-    # Fallback - define minimal versions if gspo_trainer unavailable
-    GSPOConfig = None
-    GSPOModelManager = None
-
 try:
     import numpy as np
     import wandb
@@ -51,12 +43,12 @@ except ImportError as e:
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_gepo_loaded = False
-AutoModelForCausalLM = None
-AutoTokenizer = None
-get_cosine_schedule_with_warmup = None
+AutoModelForCausalLM: Any | None = None
+AutoTokenizer: Any | None = None
+get_cosine_schedule_with_warmup: Any | None = None
 
 
-def _load_transformers_gepo():
+def _load_transformers_gepo() -> bool:
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_gepo_loaded, AutoModelForCausalLM, AutoTokenizer
     global get_cosine_schedule_with_warmup
@@ -136,14 +128,21 @@ class GEPOModelManager:
 
     def __init__(self, config: GEPOConfig):
         self.config = config
-        self.model = None
-        self.tokenizer = None
-        self.ref_model = None
+        self.model: Any | None = None
+        self.tokenizer: Any | None = None
+        self.ref_model: Any | None = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def load_model_and_tokenizer(self) -> tuple[Any, Any]:
         """Load model and tokenizer with optional LoRA"""
         logger.info(f"Loading model: {self.config.model_name}")
+        if not _load_transformers_gepo():
+            raise ImportError(
+                "transformers is required for GEPO training. "
+                "Install with `pip install stateset-agents[training]`."
+            )
+        if AutoTokenizer is None or AutoModelForCausalLM is None:
+            raise RuntimeError("transformers GEPO loader did not initialize correctly")
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -179,7 +178,8 @@ class GEPOModelManager:
                 task_type=TaskType.CAUSAL_LM,
             )
             self.model = get_peft_model(base_model, lora_config)
-            self.model.print_trainable_parameters()
+            if self.model is not None:
+                self.model.print_trainable_parameters()
         else:
             self.model = base_model
 
@@ -247,7 +247,7 @@ class GEPOTrainer:
             )
 
         # Metrics tracking
-        self.metrics_history = {
+        self.metrics_history: dict[str, list[float]] = {
             "policy_loss": [],
             "average_reward": [],
             "kl_divergence": [],

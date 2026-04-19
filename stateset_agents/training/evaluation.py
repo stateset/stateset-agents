@@ -187,7 +187,7 @@ async def evaluate_agent(
     else:
         sem = asyncio.Semaphore(cfg.concurrency)
 
-        async def _run_guarded(i: int) -> dict[str, Any] | None:
+        async def _run_guarded(i: int) -> list[dict[str, Any]] | None:
             async with sem:
                 return await _run_one(i)
 

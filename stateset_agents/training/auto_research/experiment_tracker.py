@@ -364,7 +364,7 @@ class ExperimentTracker:
         successful = [r for r in self.records if r.status != "crash"]
         if len(successful) >= 2:
             print("\nConvergence trace:")
-            running_best = None
+            running_best: float | None = None
             for r in successful:
                 marker = ""
                 if running_best is None:
@@ -540,7 +540,7 @@ class ExperimentTracker:
 
         # Add running best column based on accepted improvements only.
         if len(df) > 0:
-            running_best = None
+            running_best: float | None = None
             running_best_values: list[float] = []
             for row in rows:
                 objective = row["objective"]
@@ -552,6 +552,8 @@ class ExperimentTracker:
                         running_best = objective
                     elif self.direction == "minimize" and objective < running_best:
                         running_best = objective
+                if running_best is None:
+                    continue
                 running_best_values.append(running_best)
             df["running_best"] = running_best_values
 

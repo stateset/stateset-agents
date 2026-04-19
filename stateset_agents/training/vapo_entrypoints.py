@@ -8,7 +8,7 @@ import logging
 import os
 from datetime import datetime
 from typing import Any
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import numpy as np
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 async def train_with_vapo(
     model_name: str,
-    reward_fn: Callable[[str, str], float],
+    reward_fn: Callable[[str, str], float | Awaitable[float]],
     train_prompts: list[str],
     config: VAPOConfig | None = None,
     verifier_fn: Callable[[str, str], bool] | None = None,

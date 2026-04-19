@@ -309,7 +309,11 @@ class AutomatedTestSuite:
     ) -> dict[str, Any]:
         """Evaluate a response against test case expectations"""
 
-        evaluation = {"overall_score": 0.0, "characteristics_matched": [], "issues": []}
+        evaluation: dict[str, Any] = {
+            "overall_score": 0.0,
+            "characteristics_matched": [],
+            "issues": [],
+        }
 
         expected_characteristics = test_case.get("expected_characteristics", [])
 
@@ -397,7 +401,7 @@ class ComparativeAnalyzer:
                 "user_experience",
             ]
 
-        comparison = {}
+        comparison: dict[str, Any] = {}
 
         for group in metric_groups:
             comparison[group] = self._compare_metric_group(results, group)
@@ -412,7 +416,7 @@ class ComparativeAnalyzer:
     ) -> dict[str, Any]:
         """Compare results within a metric group"""
 
-        group_comparison = {}
+        group_comparison: dict[str, Any] = {}
 
         for result in results:
             metrics = result.metrics.to_dict()
@@ -424,7 +428,7 @@ class ComparativeAnalyzer:
             algorithms = list(group_comparison.keys())
 
             # Calculate pairwise improvements
-            improvements = {}
+            improvements: dict[str, dict[str, str]] = {}
             for i, alg1 in enumerate(algorithms):
                 for j, alg2 in enumerate(algorithms):
                     if i != j:
@@ -441,7 +445,7 @@ class ComparativeAnalyzer:
     def _rank_algorithms(self, results: list[EvaluationResult]) -> list[dict[str, Any]]:
         """Rank algorithms based on overall performance"""
 
-        rankings = []
+        rankings: list[dict[str, Any]] = []
 
         for result in results:
             # Calculate composite score
@@ -482,8 +486,8 @@ class ContinuousMonitor:
 
     def __init__(self, monitoring_interval: int = 300):  # 5 minutes default
         self.monitoring_interval = monitoring_interval
-        self.performance_history = []
-        self.alerts = []
+        self.performance_history: list[dict[str, Any]] = []
+        self.alerts: list[dict[str, Any]] = []
         self.thresholds = {
             "response_time_threshold": 5.0,  # seconds
             "error_rate_threshold": 0.05,  # 5%
@@ -538,7 +542,7 @@ class ContinuousMonitor:
             execution_time = time.time() - start_time
 
             # Basic quality metrics
-            metrics = {
+            metrics: dict[str, Any] = {
                 "response_time": execution_time,
                 "response_length": len(response.split()),
                 "error": False,
@@ -557,7 +561,7 @@ class ContinuousMonitor:
     def _check_alerts(self, metrics: dict[str, Any]) -> list[dict[str, Any]]:
         """Check for performance alerts"""
 
-        alerts = []
+        alerts: list[dict[str, Any]] = []
 
         # Response time alert
         if metrics.get("response_time", 0) > self.thresholds["response_time_threshold"]:
@@ -611,7 +615,7 @@ class AdvancedEvaluator:
         self,
         agents: list[Agent],
         environment: Environment,
-        evaluation_config: dict[str, Any] = None,
+        evaluation_config: dict[str, Any] | None = None,
     ) -> list[EvaluationResult]:
         """Run comprehensive evaluation across multiple agents"""
 
@@ -624,7 +628,7 @@ class AdvancedEvaluator:
 
         logger.info(f"Starting comprehensive evaluation of {len(agents)} agents")
 
-        results = []
+        results: list[EvaluationResult] = []
 
         for agent in agents:
             logger.info(
@@ -647,7 +651,7 @@ class AdvancedEvaluator:
                 algorithm=getattr(agent, "algorithm", "unknown"),
                 timestamp=datetime.now(),
                 metrics=metrics,
-                test_cases=list(test_results.keys()),
+                test_cases=list(self.test_suite.test_cases),
                 comparative_analysis={},
             )
 
@@ -698,14 +702,14 @@ class AdvancedEvaluator:
         )
 
         # Calculate average execution time
-        execution_times = []
+        execution_times: list[float] = []
         for result in test_results.values():
             if result["summary"]["avg_execution_time"] > 0:
                 execution_times.append(result["summary"]["avg_execution_time"])
 
         if execution_times:
-            metrics.response_time = np.mean(execution_times)
-            metrics.standard_deviation = np.std(execution_times)
+            metrics.response_time = float(np.mean(execution_times))
+            metrics.standard_deviation = float(np.std(execution_times))
 
         metrics.sample_size = total_tests
 

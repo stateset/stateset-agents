@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from importlib.util import find_spec
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -41,18 +41,18 @@ try:
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    torch = None  # type: ignore
-    nn = None  # type: ignore
-    F = None  # type: ignore
+    torch = cast(Any, None)
+    nn = cast(Any, None)
+    F = cast(Any, None)
 
 # Lazy imports for transformers to avoid torch/torchvision compatibility issues
 _transformers_loaded = False
-AutoModel = None
-AutoProcessor = None
-AutoTokenizer = None
+AutoModel: Any = None
+AutoProcessor: Any = None
+AutoTokenizer: Any = None
 
 
-def _load_transformers():
+def _load_transformers() -> bool:
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_loaded, AutoModel, AutoProcessor, AutoTokenizer
     if _transformers_loaded:
@@ -70,6 +70,12 @@ def _load_transformers():
     except (ImportError, RuntimeError) as e:
         logger.warning(f"Failed to load transformers: {e}")
         return False
+
+
+def _require_transformers() -> None:
+    """Ensure transformers are loaded before processor initialization."""
+    if not _load_transformers():
+        raise ImportError("transformers is required for multimodal processing")
 
 
 try:
@@ -180,7 +186,7 @@ class ProcessedFeatures:
 class ModalityProcessor(ABC):
     """Abstract base class for modality processors"""
 
-    def __init__(self, model_name: str = None, device: str = "cpu"):
+    def __init__(self, model_name: str | None = None, device: str = "cpu"):
         self.model_name = model_name
         self.device = device
         self.error_handler = ErrorHandler()
@@ -210,14 +216,16 @@ class TextProcessor(ModalityProcessor):
         device: str = "cpu",
     ):
         super().__init__(model_name, device)
-        self.tokenizer = None
-        self.model = None
+        self.tokenizer: Any | None = None
+        self.model: Any | None = None
         self.max_length = 512
 
     async def initialize(self):
         """Initialize text processor"""
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch and transformers required for text processing")
+        if AutoTokenizer is None or AutoModel is None:
+            _require_transformers()
 
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
@@ -238,8 +246,13 @@ class TextProcessor(ModalityProcessor):
             if isinstance(text, bytes):
                 text = text.decode("utf-8")
 
+            tokenizer = self.tokenizer
+            model = self.model
+            if tokenizer is None or model is None:
+                raise RuntimeError("TextProcessor is not initialized")
+
             # Tokenize
-            inputs = self.tokenizer(
+            inputs = tokenizer(
                 text,
                 return_tensors="pt",
                 max_length=self.max_length,
@@ -250,7 +263,7 @@ class TextProcessor(ModalityProcessor):
 
             # Get features
             with torch.no_grad():
-                outputs = self.model(**inputs)
+                outputs = model(**inputs)
                 # Use CLS token or mean pooling
                 if (
                     hasattr(outputs, "pooler_output")
@@ -289,7 +302,7 @@ class TextProcessor(ModalityProcessor):
     def get_feature_dimension(self) -> int:
         """Get text feature dimension"""
         if self.model is not None:
-            return self.model.config.hidden_size
+            return int(self.model.config.hidden_size)
         return 384  # Default for MiniLM
 
 
@@ -300,8 +313,8 @@ class ImageProcessor(ModalityProcessor):
         self, model_name: str = "google/vit-base-patch16-224", device: str = "cpu"
     ):
         super().__init__(model_name, device)
-        self.processor = None
-        self.model = None
+        self.processor: Any | None = None
+        self.model: Any | None = None
 
     async def initialize(self):
         """Initialize image processor"""
@@ -309,6 +322,7 @@ class ImageProcessor(ModalityProcessor):
             raise ImportError(
                 "PyTorch, transformers, and PIL required for image processing"
             )
+        _require_transformers()
 
         try:
             self.processor = AutoProcessor.from_pretrained(self.model_name)
@@ -343,13 +357,18 @@ class ImageProcessor(ModalityProcessor):
             if image.mode != "RGB":
                 image = image.convert("RGB")
 
+            processor = self.processor
+            model = self.model
+            if processor is None or model is None:
+                raise RuntimeError("ImageProcessor is not initialized")
+
             # Process image
-            inputs = self.processor(image, return_tensors="pt")
+            inputs = processor(image, return_tensors="pt")
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             # Get features
             with torch.no_grad():
-                outputs = self.model(**inputs)
+                outputs = model(**inputs)
                 # Use pooler output or CLS token
                 if (
                     hasattr(outputs, "pooler_output")
@@ -385,7 +404,7 @@ class ImageProcessor(ModalityProcessor):
     def get_feature_dimension(self) -> int:
         """Get image feature dimension"""
         if self.model is not None:
-            return self.model.config.hidden_size
+            return int(self.model.config.hidden_size)
         return 768  # Default for ViT
 
 
@@ -394,8 +413,8 @@ class AudioProcessor(ModalityProcessor):
 
     def __init__(self, model_name: str = "facebook/wav2vec2-base", device: str = "cpu"):
         super().__init__(model_name, device)
-        self.processor = None
-        self.model = None
+        self.processor: Any | None = None
+        self.model: Any | None = None
         self.sample_rate = 16000
 
     async def initialize(self):
@@ -404,6 +423,7 @@ class AudioProcessor(ModalityProcessor):
             raise ImportError(
                 "PyTorch, transformers, and librosa required for audio processing"
             )
+        _require_transformers()
 
         try:
             self.processor = AutoProcessor.from_pretrained(self.model_name)
@@ -439,15 +459,20 @@ class AudioProcessor(ModalityProcessor):
             if len(audio.shape) > 1:
                 audio = librosa.to_mono(audio)
 
+            processor = self.processor
+            model = self.model
+            if processor is None or model is None:
+                raise RuntimeError("AudioProcessor is not initialized")
+
             # Process audio
-            inputs = self.processor(
+            inputs = processor(
                 audio, sampling_rate=self.sample_rate, return_tensors="pt", padding=True
             )
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             # Get features
             with torch.no_grad():
-                outputs = self.model(**inputs)
+                outputs = model(**inputs)
                 # Mean pooling over time dimension
                 features = outputs.last_hidden_state.mean(dim=1)
 
@@ -478,7 +503,7 @@ class AudioProcessor(ModalityProcessor):
     def get_feature_dimension(self) -> int:
         """Get audio feature dimension"""
         if self.model is not None:
-            return self.model.config.hidden_size
+            return int(self.model.config.hidden_size)
         return 768  # Default for Wav2Vec2
 
 
@@ -488,7 +513,7 @@ class StructuredDataProcessor(ModalityProcessor):
     def __init__(self, embedding_dim: int = 512, device: str = "cpu"):
         super().__init__("structured_processor", device)
         self.embedding_dim = embedding_dim
-        self.encoder = None
+        self.encoder: Any | None = None
 
     async def initialize(self):
         """Initialize structured data processor"""
@@ -531,14 +556,17 @@ class StructuredDataProcessor(ModalityProcessor):
 
             # Dynamically adjust encoder input size if needed
             input_size = tensor.shape[-1]
-            if self.encoder[0].in_features != input_size:
-                self.encoder[0] = nn.Linear(input_size, 128).to(self.device)
+            encoder = self.encoder
+            if encoder is None:
+                raise RuntimeError("StructuredDataProcessor is not initialized")
+            if encoder[0].in_features != input_size:
+                encoder[0] = nn.Linear(input_size, 128).to(self.device)
 
             tensor = tensor.to(self.device)
 
             # Get features
             with torch.no_grad():
-                features = self.encoder(tensor)
+                features = encoder(tensor)
 
             processing_time = (datetime.now() - start_time).total_seconds()
 
@@ -692,7 +720,7 @@ class MultimodalProcessor:
 
         # Initialize processors
         self.processors: dict[ModalityType, ModalityProcessor] = {}
-        self.fusion_network = None
+        self.fusion_network: MultimodalFusion | None = None
 
         self.error_handler = ErrorHandler()
         self.monitoring = get_monitoring_service()
@@ -701,6 +729,7 @@ class MultimodalProcessor:
         """Initialize processors for enabled modalities"""
         for modality in enabled_modalities:
             try:
+                processor: ModalityProcessor
                 if modality == ModalityType.TEXT:
                     processor = TextProcessor(device=self.device)
                 elif modality == ModalityType.IMAGE:
@@ -838,8 +867,8 @@ def create_multimodal_processor(
 def create_modality_input(
     modality: str,
     data: Any,
-    metadata: dict[str, Any] = None,
-    encoding: str = None,
+    metadata: dict[str, Any] | None = None,
+    encoding: str | None = None,
     quality: str = "medium",
 ) -> ModalityInput:
     """Create a modality input object"""
@@ -878,6 +907,9 @@ def validate_multimodal_input(inputs: list[ModalityInput]) -> list[str]:
 
         if inp.modality == ModalityType.IMAGE and inp.encoding == "base64":
             try:
+                if not isinstance(inp.data, (str, bytes, bytearray)):
+                    issues.append(f"Input {i}: Invalid base64 payload type for image")
+                    continue
                 base64.b64decode(inp.data)
             except MULTIMODAL_EXCEPTIONS:
                 issues.append(f"Input {i}: Invalid base64 encoding for image")

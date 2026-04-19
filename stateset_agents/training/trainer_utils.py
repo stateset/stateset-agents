@@ -24,9 +24,9 @@ get_linear_schedule_with_warmup: Any | None = None
 
 # Try initial imports
 try:
-    import torch as _torch  # type: ignore[import-not-found]
-    import torch.amp as _amp  # type: ignore[import-not-found]
-    import torch.nn.functional as _F  # type: ignore[import-not-found]
+    import torch as _torch
+    import torch.amp as _amp
+    import torch.nn.functional as _F
 
     torch = _torch
     F = _F
@@ -46,7 +46,7 @@ def _load_transformers_utils() -> bool:
         return True
     try:
         from transformers import (
-            DataCollatorForLanguageModeling as _DataCollatorForLanguageModeling,  # type: ignore[import-not-found]
+            DataCollatorForLanguageModeling as _DataCollatorForLanguageModeling,
         )
         from transformers import TrainingArguments as _TrainingArguments
         from transformers import (
@@ -72,18 +72,18 @@ def require_torch() -> Any:
     global torch, F, amp
     if torch is None:
         try:
-            import torch as _torch  # type: ignore[import-not-found]
-            import torch.amp as _amp  # type: ignore[import-not-found]
-            import torch.nn.functional as _F  # type: ignore[import-not-found]
+            import torch as _torch
+            import torch.amp as _amp
+            import torch.nn.functional as _F
         except ImportError as exc:  # pragma: no cover - import guarding
             raise ImportError(
                 "PyTorch is required for training features. "
                 "Install the 'training' extra: pip install stateset-agents[training]"
             ) from exc
-        torch = _torch  # type: ignore[assignment]
-        F = _F  # type: ignore[assignment]
-        amp = _amp  # type: ignore[assignment]
-    return torch  # type: ignore[return-value]
+        torch = _torch
+        F = _F
+        amp = _amp
+    return torch
 
 
 def require_transformers() -> None:
@@ -99,7 +99,7 @@ def require_transformers() -> None:
     ):
         try:
             from transformers import (
-                DataCollatorForLanguageModeling as _DataCollatorForLanguageModeling,  # type: ignore[import-not-found]
+                DataCollatorForLanguageModeling as _DataCollatorForLanguageModeling,
             )
             from transformers import TrainingArguments as _TrainingArguments
             from transformers import (
@@ -114,10 +114,10 @@ def require_transformers() -> None:
                 "Install the 'training' extra: pip install stateset-agents[training]"
             ) from exc
 
-        DataCollatorForLanguageModeling = _DataCollatorForLanguageModeling  # type: ignore[assignment]
-        TrainingArguments = _TrainingArguments  # type: ignore[assignment]
-        get_cosine_schedule_with_warmup = _get_cosine_schedule_with_warmup  # type: ignore[assignment]
-        get_linear_schedule_with_warmup = _get_linear_schedule_with_warmup  # type: ignore[assignment]
+        DataCollatorForLanguageModeling = _DataCollatorForLanguageModeling
+        TrainingArguments = _TrainingArguments
+        get_cosine_schedule_with_warmup = _get_cosine_schedule_with_warmup
+        get_linear_schedule_with_warmup = _get_linear_schedule_with_warmup
 
 
 def get_torch():

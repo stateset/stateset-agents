@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from stateset_agents.core.reward import RewardFunction, RewardResult
 from stateset_agents.core.trajectory import ConversationTurn
@@ -29,12 +29,12 @@ try:
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    torch = None  # type: ignore
-    nn = None  # type: ignore
-    F = None  # type: ignore
-    optim = None  # type: ignore
-    DataLoader = None  # type: ignore
-    Dataset = None  # type: ignore
+    torch = cast(Any, None)
+    nn = cast(Any, None)
+    F = cast(Any, None)
+    optim = cast(Any, None)
+    DataLoader = cast(Any, None)
+    Dataset = cast(Any, None)
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_reward_loaded = False
@@ -258,11 +258,11 @@ class RewardExample:
     ) -> RewardExample:
         """Create from conversation turns"""
         # Extract prompt (all user turns concatenated)
-        prompt_parts = [t.content for t in turns if t.role == "user"]
+        prompt_parts = [str(t.content or "") for t in turns if t.role == "user"]
         prompt = " ".join(prompt_parts)
 
         # Extract response (last assistant turn)
-        response_parts = [t.content for t in turns if t.role == "assistant"]
+        response_parts = [str(t.content or "") for t in turns if t.role == "assistant"]
         response = response_parts[-1] if response_parts else ""
 
         return cls(
@@ -279,7 +279,7 @@ class RewardDataset(Dataset):
     def __init__(
         self,
         examples: list[RewardExample],
-        tokenizer: AutoTokenizer,
+        tokenizer: Any,
         max_length: int = 512,
     ):
         self.examples = examples
@@ -520,10 +520,10 @@ class TransformerRewardTrainer:
             self.tokenizer = _SimpleTokenizer(vocab_size=vocab_size)
 
         # Training state
-        self.optimizer = None
-        self.scheduler = None
-        self.train_losses = []
-        self.val_losses = []
+        self.optimizer: Any | None = None
+        self.scheduler: Any | None = None
+        self.train_losses: list[float] = []
+        self.val_losses: list[float] = []
         self.best_val_loss = float("inf")
         self.patience_counter = 0
 
@@ -637,6 +637,10 @@ class TransformerRewardTrainer:
         """Train for one epoch"""
         self.model.train()
         total_loss = 0.0
+        optimizer = self.optimizer
+        scheduler = self.scheduler
+        if optimizer is None or scheduler is None:
+            raise RuntimeError("Optimizer and scheduler must be initialized before training")
 
         for batch in train_loader:
             # Move to device
@@ -658,7 +662,7 @@ class TransformerRewardTrainer:
             loss = F.mse_loss(predicted_rewards, rewards)
 
             # Backward pass
-            self.optimizer.zero_grad()
+            optimizer.zero_grad()
             loss.backward()
 
             # Clip gradients
@@ -666,8 +670,8 @@ class TransformerRewardTrainer:
                 self.model.parameters(), self.config.max_grad_norm
             )
 
-            self.optimizer.step()
-            self.scheduler.step()
+            optimizer.step()
+            scheduler.step()
 
             total_loss += loss.item()
 
@@ -706,9 +710,12 @@ class TransformerRewardTrainer:
     def predict(self, prompt: str, response: str) -> float:
         """Predict reward for a single prompt-response pair"""
         self.model.eval()
+        tokenizer = self.tokenizer
+        if tokenizer is None:
+            raise RuntimeError("Tokenizer is not initialized")
 
         # Tokenize
-        prompt_encoding = self.tokenizer(
+        prompt_encoding = tokenizer(
             prompt,
             max_length=self.config.max_length,
             padding="max_length",
@@ -716,7 +723,7 @@ class TransformerRewardTrainer:
             return_tensors="pt",
         ).to(self.device)
 
-        response_encoding = self.tokenizer(
+        response_encoding = tokenizer(
             response,
             max_length=self.config.max_length,
             padding="max_length",
@@ -733,7 +740,7 @@ class TransformerRewardTrainer:
                 response_attention_mask=response_encoding["attention_mask"],
             )
 
-        return reward.item()
+        return float(reward.item())
 
     def save_checkpoint(self, path: str):
         """Save model checkpoint"""
@@ -749,12 +756,12 @@ class TransformerRewardTrainer:
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict()
-                if self.optimizer
-                else None,
-                "scheduler_state_dict": self.scheduler.state_dict()
-                if self.scheduler
-                else None,
+                "optimizer_state_dict": (
+                    self.optimizer.state_dict() if self.optimizer is not None else None
+                ),
+                "scheduler_state_dict": (
+                    self.scheduler.state_dict() if self.scheduler is not None else None
+                ),
                 "train_losses": self.train_losses,
                 "val_losses": self.val_losses,
                 "best_val_loss": self.best_val_loss,
@@ -782,10 +789,10 @@ class TransformerRewardTrainer:
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
-        if checkpoint.get("optimizer_state_dict") and self.optimizer:
+        if checkpoint.get("optimizer_state_dict") is not None and self.optimizer is not None:
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-        if checkpoint.get("scheduler_state_dict") and self.scheduler:
+        if checkpoint.get("scheduler_state_dict") is not None and self.scheduler is not None:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
         self.train_losses = checkpoint.get("train_losses", [])
@@ -818,7 +825,7 @@ class LearnedRewardFunction(RewardFunction):
         self.trainer = trainer
         self.normalize = normalize
         self.cache_predictions = cache_predictions
-        self._prediction_cache = {}
+        self._prediction_cache: dict[str, float] = {}
 
     async def compute_reward(
         self,
@@ -828,8 +835,10 @@ class LearnedRewardFunction(RewardFunction):
         """Compute reward using learned model"""
         try:
             # Extract prompt and response
-            prompt = " ".join(t.content for t in turns if t.role == "user")
-            response_turns = [t.content for t in turns if t.role == "assistant"]
+            prompt = " ".join(str(t.content or "") for t in turns if t.role == "user")
+            response_turns = [
+                str(t.content or "") for t in turns if t.role == "assistant"
+            ]
             response = response_turns[-1] if response_turns else ""
 
             # Check cache

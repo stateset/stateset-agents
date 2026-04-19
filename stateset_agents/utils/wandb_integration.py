@@ -21,9 +21,9 @@ from stateset_agents.core.trajectory import Trajectory
 from .monitoring import MonitoringService
 from .wandb_config import WandBConfig, create_wandb_config, setup_wandb_from_env
 
-plt = None  # type: ignore[assignment]
-sns = None  # type: ignore[assignment]
-wandb = None
+plt: Any | None = None
+sns: Any | None = None
+wandb: Any | None = None
 
 WANDB_INSTALLED = importlib.util.find_spec("wandb") is not None
 MATPLOTLIB_INSTALLED = importlib.util.find_spec("matplotlib") is not None
@@ -64,7 +64,7 @@ def _load_wandb() -> bool:
     if wandb is not None:
         return True
     try:
-        import wandb as _wandb  # type: ignore
+        import wandb as _wandb
 
         wandb = _wandb
         WANDB_AVAILABLE = True
@@ -84,17 +84,17 @@ def _load_plotting() -> bool:
         return True
     try:
         if plt is None:
-            import matplotlib.pyplot as _plt  # type: ignore
+            import matplotlib.pyplot as _plt
 
             plt = _plt
         if sns is None:
-            import seaborn as _sns  # type: ignore
+            import seaborn as _sns
 
             sns = _sns
         return True
     except (ImportError, RuntimeError, OSError) as exc:  # pragma: no cover - env
-        plt = None  # type: ignore[assignment]
-        sns = None  # type: ignore[assignment]
+        plt = None
+        sns = None
         logging.getLogger(__name__).warning(
             "Failed to import matplotlib/seaborn: %s", exc
         )
@@ -108,9 +108,27 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-TrainingConfig = None  # Lazy import
-
 logger = logging.getLogger(__name__)
+
+
+def _require_wandb() -> Any:
+    """Return the wandb module once it has been loaded."""
+    if wandb is None and not _load_wandb():
+        raise ImportError("wandb is required for this operation")
+    if wandb is None:  # pragma: no cover - defensive
+        raise ImportError("wandb is required for this operation")
+    return wandb
+
+
+def _require_plotting_modules() -> tuple[Any, Any]:
+    """Return matplotlib/seaborn once they have been loaded."""
+    if not _load_plotting():
+        raise ImportError("matplotlib and seaborn are required for this operation")
+    if plt is None or sns is None:  # pragma: no cover - defensive
+        raise ImportError("matplotlib and seaborn are required for this operation")
+    return plt, sns
+
+
 class WandBIntegration:
     """
     Enhanced Weights & Biases integration for GRPO training
@@ -119,7 +137,7 @@ class WandBIntegration:
     def __init__(
         self,
         config: WandBConfig,
-        training_config: TrainingConfig | None = None,
+        training_config: Any | None = None,
         monitoring_service: MonitoringService | None = None,
     ):
         if not (WANDB_INSTALLED and MATPLOTLIB_INSTALLED and SEABORN_INSTALLED):
@@ -137,22 +155,22 @@ class WandBIntegration:
 
         # State tracking
         self.is_initialized = False
-        self.run = None
+        self.run: Any | None = None
         self.step_count = 0
         self.epoch_count = 0
 
         # Data collection
-        self.trajectory_history = []
-        self.reward_history = []
-        self.loss_history = []
-        self.gradient_history = []
+        self.trajectory_history: list[dict[str, Any]] = []
+        self.reward_history: list[dict[str, Any]] = []
+        self.loss_history: list[dict[str, Any]] = []
+        self.gradient_history: list[dict[str, Any]] = []
 
         # Metrics aggregation
-        self.metrics_buffer = {}
+        self.metrics_buffer: dict[str, list[Any]] = {}
         self.last_log_step = 0
 
         # Visualization
-        self.plot_cache = {}
+        self.plot_cache: dict[str, Any] = {}
 
     def initialize(
         self, model: Any | None = None, optimizer: Any | None = None, **kwargs
@@ -161,10 +179,11 @@ class WandBIntegration:
         if self.is_initialized:
             logger.warning("WandB already initialized")
             return
+        wb = _require_wandb()
 
         # Setup run configuration
         run_config = {
-            "framework": "grpo-agent-framework",
+            "framework": "stateset-agents",
             "timestamp": datetime.now().isoformat(),
             **self.config.to_dict(),
         }
@@ -175,7 +194,7 @@ class WandBIntegration:
         run_config.update(kwargs)
 
         # Initialize W&B run
-        self.run = wandb.init(
+        self.run = wb.init(
             project=self.config.project,
             entity=self.config.entity,
             name=self.config.name,
@@ -188,7 +207,7 @@ class WandBIntegration:
 
         # Watch model if provided
         if model and self.config.watch_model:
-            wandb.watch(
+            wb.watch(
                 model,
                 log="all" if self.config.log_model_parameters else "gradients",
                 log_freq=self.config.log_frequency,
@@ -203,7 +222,8 @@ class WandBIntegration:
             self._log_code()
 
         self.is_initialized = True
-        logger.info(f"Initialized WandB run: {self.run.id}")
+        if self.run is not None:
+            logger.info(f"Initialized WandB run: {self.run.id}")
 
     def log_step(
         self,
@@ -216,6 +236,7 @@ class WandBIntegration:
         if not self.is_initialized:
             logger.warning("WandB not initialized")
             return
+        wb = _require_wandb()
 
         if step is not None:
             self.step_count = step
@@ -236,7 +257,7 @@ class WandBIntegration:
 
         # Log to W&B
         if commit or self.step_count % self.config.log_frequency == 0:
-            wandb.log(log_metrics, step=self.step_count, commit=commit)
+            wb.log(log_metrics, step=self.step_count, commit=commit)
             self.last_log_step = self.step_count
 
     def log_trajectories(
@@ -248,9 +269,10 @@ class WandBIntegration:
         """Log trajectory data with rich analysis"""
         if not self.is_initialized or not self.config.log_trajectories:
             return
+        wb = _require_wandb()
 
         # Store trajectory history
-        trajectory_data = []
+        trajectory_data: list[dict[str, Any]] = []
         for i, (traj, reward) in enumerate(zip(trajectories, rewards, strict=False)):
             data = {
                 "trajectory_id": i,
@@ -280,7 +302,7 @@ class WandBIntegration:
 
         # Create trajectory table
         if len(trajectory_data) > 0:
-            table = wandb.Table(
+            table = wb.Table(
                 columns=["trajectory_id", "prompt", "response", "reward", "length"],
                 data=[
                     [
@@ -293,7 +315,7 @@ class WandBIntegration:
                     for d in trajectory_data
                 ],
             )
-            wandb.log({"trajectories/table": table}, step=step or self.step_count)
+            wb.log({"trajectories/table": table}, step=step or self.step_count)
 
         # Create visualizations
         if (
@@ -324,7 +346,7 @@ class WandBIntegration:
         self.reward_history.extend(reward_data)
 
         # Analyze reward components
-        component_analysis = {}
+        component_analysis: dict[str, list[float]] = {}
         for reward in rewards:
             if hasattr(reward, "breakdown") and reward.breakdown:
                 for component, value in reward.breakdown.items():
@@ -464,6 +486,7 @@ class WandBIntegration:
         """Log model architecture information"""
         if not TORCH_AVAILABLE or not hasattr(model, "parameters"):
             return
+        wb = _require_wandb()
 
         # Count parameters
         total_params = sum(p.numel() for p in model.parameters())
@@ -483,13 +506,15 @@ class WandBIntegration:
         except Exception:
             pass
 
-        wandb.log(arch_info)
+        wb.log(arch_info)
 
     def _log_code(self):
         """Log code artifacts"""
+        if self.run is None:
+            return
         try:
             # Log current directory as code
-            wandb.run.log_code(
+            self.run.log_code(
                 ".",
                 include_fn=lambda path: path.endswith(
                     (".py", ".yaml", ".yml", ".json")
@@ -502,10 +527,12 @@ class WandBIntegration:
         """Create trajectory visualization plots"""
         if not self.trajectory_history:
             return
+        wb = _require_wandb()
+        plotting, _ = _require_plotting_modules()
 
         try:
             # Reward distribution over time
-            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+            fig, axes = plotting.subplots(2, 2, figsize=(15, 10))
 
             # Reward over time
             steps = [t["step"] for t in self.trajectory_history]
@@ -535,9 +562,9 @@ class WandBIntegration:
             axes[1, 1].set_xlabel("Length")
             axes[1, 1].set_ylabel("Frequency")
 
-            plt.tight_layout()
-            wandb.log({"trajectories/analysis": wandb.Image(fig)})
-            plt.close(fig)
+            plotting.tight_layout()
+            wb.log({"trajectories/analysis": wb.Image(fig)})
+            plotting.close(fig)
 
         except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to create trajectory plots: {e}")
@@ -546,9 +573,11 @@ class WandBIntegration:
         """Create reward analysis plots"""
         if not self.reward_history:
             return
+        wb = _require_wandb()
+        plotting, _ = _require_plotting_modules()
 
         try:
-            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+            fig, axes = plotting.subplots(2, 2, figsize=(15, 10))
 
             # Reward trend
             steps = [r["step"] for r in self.reward_history]
@@ -591,9 +620,9 @@ class WandBIntegration:
                 axes[1, 1].set_xlabel("Step")
                 axes[1, 1].set_ylabel("Variance")
 
-            plt.tight_layout()
-            wandb.log({"rewards/analysis": wandb.Image(fig)})
-            plt.close(fig)
+            plotting.tight_layout()
+            wb.log({"rewards/analysis": wb.Image(fig)})
+            plotting.close(fig)
 
         except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to create reward plots: {e}")
@@ -602,9 +631,11 @@ class WandBIntegration:
         """Create loss analysis plots"""
         if not self.loss_history:
             return
+        wb = _require_wandb()
+        plotting, _ = _require_plotting_modules()
 
         try:
-            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+            fig, axes = plotting.subplots(2, 2, figsize=(15, 10))
 
             # Loss trend
             steps = [entry["step"] for entry in self.loss_history]
@@ -646,9 +677,9 @@ class WandBIntegration:
             axes[1, 1].set_xlabel("Loss")
             axes[1, 1].set_ylabel("Frequency")
 
-            plt.tight_layout()
-            wandb.log({"training/analysis": wandb.Image(fig)})
-            plt.close(fig)
+            plotting.tight_layout()
+            wb.log({"training/analysis": wb.Image(fig)})
+            plotting.close(fig)
 
         except WANDB_EXCEPTIONS as e:
             logger.error(f"Failed to create loss plots: {e}")
@@ -659,6 +690,7 @@ class WandBIntegration:
         """Save model as W&B artifact"""
         if not self.is_initialized or not self.config.save_model_artifacts:
             return
+        wb = _require_wandb()
 
         try:
             # Create temporary file
@@ -672,12 +704,12 @@ class WandBIntegration:
                     pickle.dump(model, tmp_file)
 
                 # Create artifact
-                artifact = wandb.Artifact(
+                artifact = wb.Artifact(
                     name=name, type="model", metadata=metadata or {}
                 )
 
                 artifact.add_file(tmp_file.name)
-                wandb.log_artifact(artifact)
+                wb.log_artifact(artifact)
 
                 logger.info(f"Saved model artifact: {name}")
 
@@ -686,8 +718,9 @@ class WandBIntegration:
 
     def create_summary_report(self) -> dict[str, Any]:
         """Create a comprehensive summary report"""
-        if not self.is_initialized:
+        if not self.is_initialized or self.run is None:
             return {}
+        wb = _require_wandb()
 
         summary = {
             "run_id": self.run.id,
@@ -719,7 +752,7 @@ class WandBIntegration:
             )
 
         # Log summary
-        wandb.log({"summary": summary})
+        wb.log({"summary": summary})
 
         return summary
 

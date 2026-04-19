@@ -102,7 +102,7 @@ class GSPOTokenTrainer(GSPOTrainer):
         """
         self.model.train()
 
-        total_loss = 0.0
+        total_loss = torch.tensor(0.0, device=self.model.device)
         total_clipped = 0
         total_samples = 0
         all_rewards = []
@@ -145,7 +145,7 @@ class GSPOTokenTrainer(GSPOTrainer):
             advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
 
             # Compute current log probs for each response and get token-level details
-            current_log_probs = []
+            current_log_prob_values: list[float] = []
             sequence_lengths = []
             token_log_probs_list = []
 
@@ -177,15 +177,15 @@ class GSPOTokenTrainer(GSPOTrainer):
 
                 # Sum for sequence log prob
                 sequence_log_prob = token_log_probs.sum().item()
-                current_log_probs.append(sequence_log_prob)
+                current_log_prob_values.append(sequence_log_prob)
 
                 # Sequence length
                 seq_len = shift_labels.shape[1]
                 sequence_lengths.append(seq_len)
 
-            current_log_probs = torch.tensor(current_log_probs, dtype=torch.float32).to(
-                self.model.device
-            )
+            current_log_probs = torch.tensor(
+                current_log_prob_values, dtype=torch.float32
+            ).to(self.model.device)
             sequence_lengths = torch.tensor(sequence_lengths, dtype=torch.float32).to(
                 self.model.device
             )
@@ -211,7 +211,7 @@ class GSPOTokenTrainer(GSPOTrainer):
             # Compute policy loss using GSPO-token objective
             # For each response, we compute token-level weighted loss
 
-            loss = 0.0
+            loss = torch.tensor(0.0, device=self.model.device)
             for i, token_log_probs in enumerate(token_log_probs_list):
                 seq_len = token_log_probs.shape[1]
 
@@ -237,14 +237,14 @@ class GSPOTokenTrainer(GSPOTrainer):
 
             # Add KL penalty if specified
             if self.config.beta > 0 and self.ref_model is not None:
-                ref_log_probs = []
+                ref_log_prob_values: list[float] = []
                 for response in responses:
                     ref_log_prob = await self._compute_ref_log_prob(query, response)
-                    ref_log_probs.append(ref_log_prob)
+                    ref_log_prob_values.append(ref_log_prob)
 
-                ref_log_probs = torch.tensor(ref_log_probs, dtype=torch.float32).to(
-                    self.model.device
-                )
+                ref_log_probs = torch.tensor(
+                    ref_log_prob_values, dtype=torch.float32
+                ).to(self.model.device)
 
                 kl_div = (current_log_probs - ref_log_probs) / sequence_lengths
                 kl_penalty = self.config.beta * kl_div.mean()

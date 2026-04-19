@@ -121,7 +121,7 @@ def compare_runs(
     lines.append("─" * len(header))
 
     # Rows
-    best_value = None
+    best_value: float | None = None
     best_idx = 0
     for i, (name, tracker) in enumerate(zip(names, trackers, strict=True)):
         bv = tracker.best_value
@@ -146,7 +146,10 @@ def compare_runs(
             best_idx = i
 
     lines.append("")
-    lines.append(f"Winner: {names[best_idx]} (best {objective_metric}={best_value:.6f})")
+    winner_value = best_value if best_value is not None else float("nan")
+    lines.append(
+        f"Winner: {names[best_idx]} (best {objective_metric}={winner_value:.6f})"
+    )
 
     # Parameter comparison — show best params side-by-side
     lines.append("")
@@ -298,7 +301,7 @@ def compute_convergence_curve(
         return []
 
     curve: list[tuple[int, float]] = []
-    running_best = None
+    running_best: float | None = None
 
     for i, r in enumerate(successful):
         if running_best is None:
@@ -308,6 +311,8 @@ def compute_convergence_curve(
                 running_best = r.objective_value
             elif direction == "minimize" and r.objective_value < running_best:
                 running_best = r.objective_value
+        if running_best is None:
+            continue
         curve.append((i, running_best))
 
     return curve

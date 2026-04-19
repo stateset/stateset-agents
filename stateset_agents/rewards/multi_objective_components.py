@@ -441,9 +441,10 @@ class ModelBasedRewardComponent(BaseRewardComponent):
         )
 
         try:
-            if self.api_client:
+            client = self.api_client
+            if client is not None:
                 effective_provider = _resolve_model_provider(
-                    self.provider, self.api_client
+                    self.provider, client
                 )
                 self.model_name = _resolve_model_name(
                     effective_provider, self._configured_model_name
@@ -454,8 +455,8 @@ class ModelBasedRewardComponent(BaseRewardComponent):
                 elif effective_provider == "anthropic":
                     response = await self._call_anthropic_api(prompt)
                     score = self._parse_score_from_response(response)
-                elif hasattr(self.api_client, "generate"):
-                    response = await self.api_client.generate(prompt)
+                elif hasattr(client, "generate"):
+                    response = await client.generate(prompt)
                     score = self._parse_score_from_response(response)
                 else:
                     logger.warning(
@@ -473,37 +474,46 @@ class ModelBasedRewardComponent(BaseRewardComponent):
 
     async def _call_openai_api(self, prompt: str) -> str:
         """Call OpenAI API for scoring."""
+        client = self.api_client
+        if client is None:
+            raise RuntimeError("OpenAI client is not configured")
         try:
-            if hasattr(self.api_client, "chat"):
-                response = await self.api_client.chat.completions.create(
+            if hasattr(client, "chat"):
+                response = await client.chat.completions.create(
                     model=self.model_name,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=10,
                     temperature=0.0,
                 )
-                return response.choices[0].message.content
+                content: object = response.choices[0].message.content
+                return content if isinstance(content, str) else str(content)
 
-            response = await self.api_client.completions.create(
+            response = await client.completions.create(
                 model=self.model_name,
                 prompt=prompt,
                 max_tokens=10,
                 temperature=0.0,
             )
-            return response.choices[0].text
+            text: object = response.choices[0].text
+            return text if isinstance(text, str) else str(text)
         except MULTI_REWARD_EXCEPTIONS as exc:
             logger.error("OpenAI API call failed: %s", exc)
             raise
 
     async def _call_anthropic_api(self, prompt: str) -> str:
         """Call Anthropic API for scoring."""
+        client = self.api_client
+        if client is None:
+            raise RuntimeError("Anthropic client is not configured")
         try:
-            response = await self.api_client.messages.create(
+            response = await client.messages.create(
                 model=self.model_name,
                 max_tokens=10,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
             )
-            return response.content[0].text
+            text: object = response.content[0].text
+            return text if isinstance(text, str) else str(text)
         except MULTI_REWARD_EXCEPTIONS as exc:
             logger.error("Anthropic API call failed: %s", exc)
             raise

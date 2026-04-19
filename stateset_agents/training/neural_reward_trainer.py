@@ -30,12 +30,8 @@ except ImportError:
     TORCH_AVAILABLE = False
 
 from stateset_agents.core.reward import RewardFunction, RewardResult
-from stateset_agents.core.trajectory import Trajectory
-
-try:
-    from stateset_agents.utils.cache import CacheService  # optional utility
-except ImportError:  # pragma: no cover
-    CacheService = None  # type: ignore
+from stateset_agents.core.trajectory import ConversationTurn, Trajectory
+from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
 
 logger = logging.getLogger(__name__)
@@ -224,7 +220,7 @@ class NeuralRewardModel(nn.Module):
 
         with torch.no_grad():
             reward = self.forward(prompt_emb, response_emb)
-            return reward.item()
+            return float(reward.item())
 
     def _embed_text(self, text: str, max_length: int = 128) -> torch.Tensor:
         """Simple text embedding"""
@@ -285,13 +281,13 @@ class NeuralRewardTrainer:
         self.monitoring = monitoring_service
 
         # Training state
-        self.train_losses = []
-        self.val_losses = []
+        self.train_losses: list[float] = []
+        self.val_losses: list[float] = []
         self.best_val_loss = float("inf")
         self.patience_counter = 0
 
         # Experience replay
-        self.replay_buffer = deque(maxlen=10000)
+        self.replay_buffer: deque[TrajectoryData] = deque(maxlen=10000)
 
     def add_trajectory(self, trajectory_data: TrajectoryData):
         """Add trajectory to replay buffer"""
@@ -370,7 +366,7 @@ class NeuralRewardTrainer:
                     self.monitoring.log_metric(
                         "neural_reward.train_loss",
                         train_loss,
-                        tags={"epoch": epoch + 1},
+                        labels={"epoch": str(epoch + 1)},
                     )
                 )
                 if val_loss is not None:
@@ -378,7 +374,7 @@ class NeuralRewardTrainer:
                         self.monitoring.log_metric(
                             "neural_reward.val_loss",
                             val_loss,
-                            tags={"epoch": epoch + 1},
+                            labels={"epoch": str(epoch + 1)},
                         )
                     )
 
@@ -522,10 +518,10 @@ class NeuralRewardFunction(RewardFunction):
         # Tracking
         self.evaluation_count = 0
         self.update_count = 0
-        self.last_update_performance = {}
+        self.last_update_performance: dict[str, Any] = {}
 
     async def compute_reward(
-        self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """
         Compute reward using neural model
@@ -561,9 +557,9 @@ class NeuralRewardFunction(RewardFunction):
                 score=reward,
                 breakdown={
                     "neural_reward": reward,
-                    "model_updates": self.update_count,
-                    "evaluation_count": self.evaluation_count,
-                    "replay_buffer_size": len(self.trainer.replay_buffer),
+                    "model_updates": float(self.update_count),
+                    "evaluation_count": float(self.evaluation_count),
+                    "replay_buffer_size": float(len(self.trainer.replay_buffer)),
                 },
             )
 
@@ -573,9 +569,9 @@ class NeuralRewardFunction(RewardFunction):
                 score=self.fallback_reward,
                 breakdown={
                     "neural_reward": self.fallback_reward,
-                    "fallback_used": True,
-                    "error": str(e),
+                    "fallback_used": 1.0,
                 },
+                metadata={"error": str(e)},
             )
 
     async def _update_model(self):
@@ -595,7 +591,7 @@ class NeuralRewardFunction(RewardFunction):
 
     def add_trajectory_feedback(
         self,
-        turns: list[dict[str, Any]],
+        turns: list[ConversationTurn],
         reward: float,
         context: dict[str, Any] | None = None,
     ):
@@ -616,18 +612,24 @@ class NeuralRewardFunction(RewardFunction):
 
         self.trainer.add_trajectory(trajectory_data)
 
-    def _extract_prompt(self, turns: list[dict[str, Any]]) -> str:
+    def _extract_prompt(self, turns: list[ConversationTurn]) -> str:
         """Extract prompt from conversation turns"""
-        user_turns = [t for t in turns if t.get("role") == "user"]
+        user_turns = [
+            turn for turn in self._normalize_turns(turns) if turn.get("role") == "user"
+        ]
         if user_turns:
-            return user_turns[0].get("content", "")
+            return str(user_turns[0].get("content", ""))
         return ""
 
-    def _extract_response(self, turns: list[dict[str, Any]]) -> str:
+    def _extract_response(self, turns: list[ConversationTurn]) -> str:
         """Extract response from conversation turns"""
-        assistant_turns = [t for t in turns if t.get("role") == "assistant"]
+        assistant_turns = [
+            turn
+            for turn in self._normalize_turns(turns)
+            if turn.get("role") == "assistant"
+        ]
         if assistant_turns:
-            return assistant_turns[-1].get("content", "")
+            return str(assistant_turns[-1].get("content", ""))
         return ""
 
     def get_model_info(self) -> dict[str, Any]:
@@ -640,6 +642,24 @@ class NeuralRewardFunction(RewardFunction):
             "last_update_performance": self.last_update_performance,
             "trainer_metrics": self.trainer.get_metrics(),
         }
+
+    def _normalize_turns(self, turns: list[ConversationTurn]) -> list[dict[str, Any]]:
+        """Convert turns to dicts for prompt and response extraction."""
+        normalized: list[dict[str, Any]] = []
+        for turn in turns:
+            if isinstance(turn, dict):
+                normalized.append(dict(turn))
+                continue
+
+            metadata = getattr(turn, "metadata", None)
+            normalized_turn: dict[str, Any] = {
+                "role": str(getattr(turn, "role", "user")),
+                "content": str(getattr(turn, "content", "")),
+            }
+            if isinstance(metadata, dict):
+                normalized_turn["metadata"] = dict(metadata)
+            normalized.append(normalized_turn)
+        return normalized
 
 
 # Convenience functions

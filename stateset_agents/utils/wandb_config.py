@@ -22,7 +22,7 @@ def _parse_env_tags(raw_tags: str | None) -> list[str]:
 class WandBConfig:
     """Configuration for Weights & Biases integration."""
 
-    project: str = "grpo-agent-framework"
+    project: str = "stateset-agents"
     entity: str | None = None
     name: str | None = None
     tags: list[str] = field(default_factory=list)
@@ -80,7 +80,7 @@ def create_wandb_config(
     """Create a W&B configuration with sensible defaults."""
     return WandBConfig(
         project=project,
-        name=name or f"grpo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        name=name or f"stateset-agents-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
         tags=tags or [],
         **kwargs,
     )
@@ -95,7 +95,7 @@ def setup_wandb_from_env() -> WandBConfig | None:
         return None
 
     return WandBConfig(
-        project=os.getenv("WANDB_PROJECT", "grpo-agent-framework"),
+        project=os.getenv("WANDB_PROJECT", "stateset-agents"),
         entity=os.getenv("WANDB_ENTITY"),
         name=os.getenv("WANDB_RUN_NAME"),
         tags=_parse_env_tags(os.getenv("WANDB_TAGS")),

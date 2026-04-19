@@ -5,7 +5,7 @@ Enhanced OpenAPI schema customization, documentation, and examples
 for professional API documentation.
 """
 
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
@@ -252,7 +252,7 @@ def custom_openapi_schema(app: FastAPI) -> dict[str, Any]:
     - Server definitions for different environments
     """
     if app.openapi_schema:
-        return app.openapi_schema
+        return cast(dict[str, Any], app.openapi_schema)
 
     openapi_schema = get_openapi(
         title=API_TITLE,
@@ -310,7 +310,7 @@ def custom_openapi_schema(app: FastAPI) -> dict[str, Any]:
     _enhance_paths(openapi_schema)
 
     app.openapi_schema = openapi_schema
-    return app.openapi_schema
+    return cast(dict[str, Any], app.openapi_schema)
 
 
 def _enhance_paths(schema: dict[str, Any]) -> None:

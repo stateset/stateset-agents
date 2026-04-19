@@ -175,7 +175,7 @@ class TrainingConfig:
     @classmethod
     def from_profile(cls, profile: TrainingProfile, **overrides) -> "TrainingConfig":
         """Create configuration from predefined profile"""
-        base_config: dict[str, Any]
+        base_config: dict[str, Any] = {}
 
         if profile == TrainingProfile.CONSERVATIVE:
             base_config = {
@@ -226,8 +226,6 @@ class TrainingConfig:
                 "patience": 20,
                 "lr_scheduler_type": "linear",
             }
-        else:
-            base_config = {}
 
         # Apply overrides
         base_config.update(overrides)

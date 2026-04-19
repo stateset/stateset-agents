@@ -147,8 +147,8 @@ class InMemoryCacheBackend(CacheBackend):
         self.max_size = max_size
         self.eviction_policy = eviction_policy
         self.cache: dict[str, CacheEntry] = {}
-        self.access_order = OrderedDict()
-        self.access_frequency = defaultdict(int)
+        self.access_order: OrderedDict[str, float] = OrderedDict()
+        self.access_frequency: defaultdict[str, int] = defaultdict(int)
         self.lock = asyncio.Lock()
 
     async def get(self, key: str) -> Any | None:
@@ -322,7 +322,7 @@ class RedisCacheBackend(CacheBackend):
         self.key_prefix = key_prefix
         self.serializer = serializer.lower()
         self.allow_pickle = allow_pickle
-        self.client = None
+        self.client: Any | None = None
         self._connection_pool = None
 
         if self.serializer not in ("json", "pickle"):
@@ -352,9 +352,12 @@ class RedisCacheBackend(CacheBackend):
     async def get(self, key: str) -> Any | None:
         """Get value from Redis."""
         await self._ensure_connected()
+        client = self.client
+        if client is None:
+            return None
 
         try:
-            data = await self.client.get(self._make_key(key))
+            data = await client.get(self._make_key(key))
             if data is None:
                 return None
 
@@ -366,14 +369,17 @@ class RedisCacheBackend(CacheBackend):
     async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Set value in Redis."""
         await self._ensure_connected()
+        client = self.client
+        if client is None:
+            return False
 
         try:
             data = self._serialize(value)
 
             if ttl:
-                await self.client.setex(self._make_key(key), ttl, data)
+                await client.setex(self._make_key(key), ttl, data)
             else:
-                await self.client.set(self._make_key(key), data)
+                await client.set(self._make_key(key), data)
 
             return True
         except STATE_EXCEPTIONS as e:
@@ -383,10 +389,13 @@ class RedisCacheBackend(CacheBackend):
     async def delete(self, key: str) -> bool:
         """Delete value from Redis."""
         await self._ensure_connected()
+        client = self.client
+        if client is None:
+            return False
 
         try:
-            result = await self.client.delete(self._make_key(key))
-            return result > 0
+            result = await client.delete(self._make_key(key))
+            return bool(result > 0)
         except STATE_EXCEPTIONS as e:
             logger.error("Redis delete error: %s", e)
             return False
@@ -394,10 +403,13 @@ class RedisCacheBackend(CacheBackend):
     async def exists(self, key: str) -> bool:
         """Check if key exists in Redis."""
         await self._ensure_connected()
+        client = self.client
+        if client is None:
+            return False
 
         try:
-            result = await self.client.exists(self._make_key(key))
-            return result > 0
+            result = await client.exists(self._make_key(key))
+            return bool(result > 0)
         except STATE_EXCEPTIONS as e:
             logger.error("Redis exists error: %s", e)
             return False
@@ -417,11 +429,14 @@ class RedisCacheBackend(CacheBackend):
     async def clear(self) -> bool:
         """Clear all cache entries with prefix."""
         await self._ensure_connected()
+        client = self.client
+        if client is None:
+            return False
 
         try:
-            keys = await self.client.keys(f"{self.key_prefix}*")
+            keys = await client.keys(f"{self.key_prefix}*")
             if keys:
-                await self.client.delete(*keys)
+                await client.delete(*keys)
             return True
         except STATE_EXCEPTIONS as e:
             logger.error("Redis clear error: %s", e)

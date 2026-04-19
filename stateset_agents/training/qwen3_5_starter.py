@@ -79,7 +79,7 @@ def _write_mapping_file(payload: dict[str, Any], path: Path) -> Path:
         return path
 
     try:
-        import yaml  # type: ignore
+        import yaml
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
             "PyYAML is required for YAML Qwen starter config files. Install with: pip install pyyaml"
@@ -155,7 +155,7 @@ def get_qwen3_5_profile_description(starter_profile: str = "balanced") -> str:
     return QWEN35_08B_STARTER_PROFILE_DESCRIPTIONS[starter_profile]
 
 
-def summarize_qwen3_5_config(config: "Qwen35Config") -> dict[str, Any]:
+def summarize_qwen3_5_config(config: Qwen35Config) -> dict[str, Any]:
     """Summarize the most relevant first-run properties for a resolved config."""
     quantization_mode = "none"
     if config.use_4bit:
@@ -283,7 +283,7 @@ class Qwen35Config:
         return dict(self.__dict__)
 
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "Qwen35Config":
+    def from_dict(cls, config_dict: dict[str, Any]) -> Qwen35Config:
         return cls(**config_dict)
 
     def get_effective_batch_size(self) -> int:

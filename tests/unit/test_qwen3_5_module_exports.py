@@ -11,6 +11,8 @@ from stateset_agents.training import (
     Qwen35Config,
     create_qwen3_5_preview,
     describe_qwen3_5_starter_profiles,
+    build_serving_manifest,
+    export_merged_model_for_serving,
     finetune_qwen3_5_0_8b,
     get_qwen3_5_config,
     get_qwen3_5_profile_description,
@@ -18,6 +20,7 @@ from stateset_agents.training import (
     load_qwen3_5_config_file,
     run_qwen3_5_0_8b_config,
     summarize_qwen3_5_config,
+    write_serving_manifest,
     write_qwen3_5_config_file,
 )
 from stateset_agents.training.qwen3_5_starter import (
@@ -43,8 +46,11 @@ def test_qwen3_5_training_exports_remain_available() -> None:
     assert callable(get_qwen3_5_profile_overrides)
     assert callable(create_qwen3_5_preview)
     assert callable(describe_qwen3_5_starter_profiles)
+    assert callable(build_serving_manifest)
+    assert callable(export_merged_model_for_serving)
     assert callable(finetune_qwen3_5_0_8b)
     assert callable(load_qwen3_5_config_file)
     assert callable(run_qwen3_5_0_8b_config)
     assert callable(summarize_qwen3_5_config)
+    assert callable(write_serving_manifest)
     assert callable(write_qwen3_5_config_file)

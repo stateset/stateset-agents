@@ -605,7 +605,7 @@ class SecureInputValidator:
         # Check for excessive repetition of same word/phrase
         words = text.lower().split()
         if len(words) > 10:
-            word_freq = defaultdict(int)
+            word_freq: defaultdict[str, int] = defaultdict(int)
             for word in words:
                 word_freq[word] += 1
 

@@ -16,35 +16,35 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 try:  # pragma: no cover - optional dependency
-    import psutil  # type: ignore
+    import psutil
 except ImportError:  # pragma: no cover
-    psutil = None  # type: ignore[assignment]
+    psutil = None
 
 try:  # pragma: no cover - optional dependency
-    import torch  # type: ignore
-    import torch.nn as nn  # type: ignore
+    import torch
+    import torch.nn as nn
 except ImportError:  # pragma: no cover
-    torch = None  # type: ignore[assignment]
-    nn = None  # type: ignore[assignment]
+    torch = None
+    nn = None
 
 if torch is not None:  # pragma: no cover - optional dependency
     try:
         # Prefer the modern torch.amp APIs; fall back to torch.cuda.amp for older
         # PyTorch versions. (torch.cuda.amp.* emits deprecation warnings in
         # newer versions.)
-        from torch.amp import GradScaler, autocast  # type: ignore
+        from torch.amp import GradScaler, autocast
     except (ImportError, AttributeError, RuntimeError):  # pragma: no cover
         try:
-            from torch.cuda.amp import GradScaler, autocast  # type: ignore
+            from torch.cuda.amp import GradScaler, autocast
         except (ImportError, AttributeError, RuntimeError):  # pragma: no cover
-            GradScaler = None  # type: ignore[assignment]
-            autocast = None  # type: ignore[assignment]
+            GradScaler = None
+            autocast = None
 else:  # pragma: no cover
-    GradScaler = None  # type: ignore[assignment]
-    autocast = None  # type: ignore[assignment]
+    GradScaler = None
+    autocast = None
 
 # Lazy import for transformers to avoid torch/torchvision compatibility issues
-PreTrainedModel = Any  # type: ignore[assignment]
+PreTrainedModel = Any
 _transformers_perf_loaded = False
 
 
@@ -54,7 +54,7 @@ def _load_pretrained_model() -> bool:
     if _transformers_perf_loaded:
         return True
     try:
-        from transformers import PreTrainedModel as _PreTrainedModel  # type: ignore
+        from transformers import PreTrainedModel as _PreTrainedModel
 
         PreTrainedModel = _PreTrainedModel
         _transformers_perf_loaded = True
@@ -329,9 +329,9 @@ class BatchOptimizer:
                 "pip install stateset-agents[training]"
             )
         self.config = config
-        self.optimal_batch_size = 1
+        self.optimal_batch_size: int = 1
         self.performance_history: list[PerformanceMetrics] = []
-        self.last_oom_batch_size = None
+        self.last_oom_batch_size: int | None = None
 
     def find_optimal_batch_size(
         self,
@@ -404,10 +404,13 @@ class BatchOptimizer:
             len(self.performance_history) >= 10
             and current_metrics.gpu_utilization_percent < 70.0
         ):
-            new_size = min(
+            oom_ceiling = (
                 self.last_oom_batch_size - 1
-                if self.last_oom_batch_size
-                else self.optimal_batch_size * 2,
+                if self.last_oom_batch_size is not None
+                else self.optimal_batch_size * 2
+            )
+            new_size = min(
+                oom_ceiling,
                 int(self.optimal_batch_size * 1.2),
             )
             logger.info(f"Increasing batch size due to underutilization: {new_size}")

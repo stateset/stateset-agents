@@ -26,7 +26,7 @@ class WandBLogger:
 
     def __init__(
         self,
-        project: str = "grpo-agent-framework",
+        project: str = "stateset-agents",
         entity: str | None = None,
         api_key: str | None = None,
         enabled: bool = True,
@@ -36,8 +36,8 @@ class WandBLogger:
         self.project = project
         self.entity = entity
         self.enabled = bool(enabled)
-        self.run = None
-        self.start_time = None
+        self.run: Any | None = None
+        self.start_time: datetime | None = None
         self.offline_mode = os.getenv("WANDB_MODE", "").lower() == "offline"
 
         support = _wandb_support()
@@ -101,7 +101,7 @@ class WandBLogger:
     def _clean_config(self, config: dict[str, Any]) -> dict[str, Any]:
         """Clean configuration dictionary for W&B serialization."""
         support = _wandb_support()
-        clean_config = {}
+        clean_config: dict[str, Any] = {}
 
         for key, value in config.items():
             try:
@@ -242,9 +242,9 @@ class WandBLogger:
         if not trajectory_groups:
             return {}
 
-        all_rewards = []
-        group_sizes = []
-        reward_diversities = []
+        all_rewards: list[float] = []
+        group_sizes: list[int] = []
+        reward_diversities: list[float] = []
 
         for group in trajectory_groups:
             if hasattr(group, "trajectories"):
@@ -259,25 +259,25 @@ class WandBLogger:
                     all_rewards.extend(rewards)
                     group_sizes.append(len(rewards))
                     if len(rewards) > 1:
-                        reward_diversities.append(np.std(rewards))
+                        reward_diversities.append(float(np.std(rewards)))
 
         if not all_rewards:
             return {}
 
-        metrics = {
-            "num_groups": len(trajectory_groups),
-            "total_trajectories": len(all_rewards),
-            "avg_group_size": np.mean(group_sizes) if group_sizes else 0,
-            "reward_mean": np.mean(all_rewards),
-            "reward_std": np.std(all_rewards),
-            "reward_min": np.min(all_rewards),
-            "reward_max": np.max(all_rewards),
-            "reward_median": np.median(all_rewards),
+        metrics: dict[str, float] = {
+            "num_groups": float(len(trajectory_groups)),
+            "total_trajectories": float(len(all_rewards)),
+            "avg_group_size": float(np.mean(group_sizes)) if group_sizes else 0.0,
+            "reward_mean": float(np.mean(all_rewards)),
+            "reward_std": float(np.std(all_rewards)),
+            "reward_min": float(np.min(all_rewards)),
+            "reward_max": float(np.max(all_rewards)),
+            "reward_median": float(np.median(all_rewards)),
         }
 
         if reward_diversities:
-            metrics["reward_diversity_mean"] = np.mean(reward_diversities)
-            metrics["reward_diversity_std"] = np.std(reward_diversities)
+            metrics["reward_diversity_mean"] = float(np.mean(reward_diversities))
+            metrics["reward_diversity_std"] = float(np.std(reward_diversities))
 
         return metrics
 
@@ -288,9 +288,9 @@ class WandBLogger:
         if not trajectories:
             return {}
 
-        episode_lengths = []
-        total_rewards = []
-        turn_counts = []
+        episode_lengths: list[float] = []
+        total_rewards: list[float] = []
+        turn_counts: list[dict[str, int]] = []
 
         for traj in trajectories:
             episode_lengths.append(traj.episode_length)
@@ -301,13 +301,15 @@ class WandBLogger:
             turn_counts.append({"user": user_turns, "assistant": assistant_turns})
 
         return {
-            "num_episodes": len(trajectories),
-            "avg_episode_length": np.mean(episode_lengths),
-            "episode_length_std": np.std(episode_lengths),
-            "avg_total_reward": np.mean(total_rewards),
-            "total_reward_std": np.std(total_rewards),
-            "avg_user_turns": np.mean([tc["user"] for tc in turn_counts]),
-            "avg_assistant_turns": np.mean([tc["assistant"] for tc in turn_counts]),
+            "num_episodes": float(len(trajectories)),
+            "avg_episode_length": float(np.mean(episode_lengths)),
+            "episode_length_std": float(np.std(episode_lengths)),
+            "avg_total_reward": float(np.mean(total_rewards)),
+            "total_reward_std": float(np.std(total_rewards)),
+            "avg_user_turns": float(np.mean([tc["user"] for tc in turn_counts])),
+            "avg_assistant_turns": float(
+                np.mean([tc["assistant"] for tc in turn_counts])
+            ),
         }
 
     def log_model_checkpoint(
@@ -353,7 +355,9 @@ class WandBLogger:
             for i, traj in enumerate(examples):
                 conversation = ""
                 for turn in traj.turns:
-                    conversation += f"{turn.role.capitalize()}: {turn.content}\n\n"
+                    conversation += (
+                        f"{str(turn.role or '').capitalize()}: {turn.content}\n\n"
+                    )
 
                 table_data.append(
                     [i, traj.total_reward, traj.episode_length, conversation.strip()]
@@ -438,7 +442,7 @@ class WandBLogger:
 
 
 def init_wandb(
-    project: str = "grpo-agent-framework",
+    project: str = "stateset-agents",
     entity: str | None = None,
     api_key: str | None = None,
     **kwargs,

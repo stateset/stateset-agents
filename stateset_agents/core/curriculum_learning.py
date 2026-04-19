@@ -143,7 +143,7 @@ class PerformanceBasedScheduler(CurriculumScheduler):
                 f"avg_reward={avg_reward:.3f}"
             )
 
-        return should_advance
+        return bool(should_advance)
 
     def get_difficulty_adjustment(
         self,
@@ -329,7 +329,9 @@ class CurriculumLearning:
         # Update success rate
         recent_window = min(50, len(self.progress.stage_rewards))
         recent_rewards = self.progress.stage_rewards[-recent_window:]
-        self.progress.stage_success_rate = np.mean([r > 0 for r in recent_rewards])
+        self.progress.stage_success_rate = float(
+            np.mean([r > 0 for r in recent_rewards])
+        )
 
         # Keep trajectory history for scheduler
         self.recent_trajectories.append(trajectory)

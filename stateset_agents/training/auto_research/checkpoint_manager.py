@@ -13,7 +13,7 @@ import logging
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ class CheckpointManager:
         if not meta_path.exists():
             return None
         with open(meta_path) as f:
-            return json.load(f)
+            return cast(dict[str, Any], json.load(f))
 
     def restore_best(self, agent: Any) -> bool:
         """Restore agent state from the best checkpoint.

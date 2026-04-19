@@ -1,0 +1,133 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen3-5-27b-vllm
+  namespace: stateset-agents
+  labels:
+    app: qwen3-5-27b-vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qwen3-5-27b-vllm
+  template:
+    metadata:
+      labels:
+        app: qwen3-5-27b-vllm
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:nightly
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: MODEL_ID
+          value: Qwen/Qwen3.5-27B
+        - name: HF_HOME
+          value: /models/hf
+        - name: TRANSFORMERS_CACHE
+          value: /models/hf
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: hf_token
+        command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+        args:
+        - --model=$(MODEL_ID)
+        - --tensor-parallel-size=8
+        - --max-model-len=262144
+        - --reasoning-parser=qwen3
+        - --enable-auto-tool-choice
+        - --tool-call-parser=qwen3_coder
+        - --language-model-only
+        - --gpu-memory-utilization=0.90
+        - --enable-chunked-prefill
+        - --enable-prefix-caching
+        - --trust-remote-code
+        - --host=0.0.0.0
+        - --port=8000
+        resources:
+          requests:
+            cpu: "10"
+            memory: "600Gi"
+            ephemeral-storage: "500Gi"
+            nvidia.com/gpu: "8"
+          limits:
+            cpu: "10"
+            memory: "600Gi"
+            ephemeral-storage: "500Gi"
+            nvidia.com/gpu: "8"
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        - name: models
+          mountPath: /models
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          failureThreshold: 180
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 5
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      - name: models
+        persistentVolumeClaim:
+          claimName: stateset-models-pvc
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-tesla-a100
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-5-27b-vllm
+  namespace: stateset-agents
+spec:
+  selector:
+    app: qwen3-5-27b-vllm
+  type: ClusterIP
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: qwen3-5-27b-vllm-monitoring
+  namespace: stateset-agents
+spec:
+  selector:
+    matchLabels:
+      app: qwen3-5-27b-vllm
+  endpoints:
+  - port: 8000
+    path: /metrics
+    interval: 30s

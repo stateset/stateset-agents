@@ -20,7 +20,8 @@ I've significantly enhanced your AI Agents RL framework with cutting-edge capabi
 ```python
 # Create an enhanced agent with all advanced capabilities
 agent = create_enhanced_agent(
-    model_name="gpt2",
+    model_name="stub://quickstart",
+    use_stub_model=True,
     memory_enabled=True,
     reasoning_enabled=True,
     persona_name="Advanced Assistant"

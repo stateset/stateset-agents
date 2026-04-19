@@ -10,11 +10,12 @@ import functools
 import threading
 import uuid
 from collections import defaultdict, deque
+from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 # Optional imports for enhanced functionality
 try:
@@ -153,6 +154,43 @@ class TraceData:
         }
 
 
+@dataclass
+class TracerMetrics:
+    """Internal metrics for the observability tracer."""
+
+    total_spans: int = 0
+    active_spans: int = 0
+    completed_traces: int = 0
+    average_span_duration: float = 0.0
+    spans_by_operation: defaultdict[str, int] = field(
+        default_factory=lambda: defaultdict(int)
+    )
+    error_spans: int = 0
+
+
+@dataclass
+class PerformanceMetricEntry:
+    """Single performance metric entry."""
+
+    operation: str
+    duration_ms: float
+    timestamp: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "operation": self.operation,
+            "duration_ms": self.duration_ms,
+            "timestamp": self.timestamp,
+            "metadata": self.metadata,
+        }
+
+
+def _noop_context() -> Iterator[None]:
+    """Yielding no-op context manager used when tracing is disabled."""
+    yield None
+
+
 class ObservabilityTracer:
     """Custom tracer for observability"""
 
@@ -170,6 +208,7 @@ class ObservabilityTracer:
         self.active_spans: dict[str, Span] = {}
         self.completed_traces: deque = deque(maxlen=1000)
         self.current_context = threading.local()
+        self.tracer: Any | None = None
 
         # Initialize OpenTelemetry if available
         if HAS_OPENTELEMETRY:
@@ -178,14 +217,7 @@ class ObservabilityTracer:
             )
 
         # Performance metrics
-        self.metrics = {
-            "total_spans": 0,
-            "active_spans": 0,
-            "completed_traces": 0,
-            "average_span_duration": 0.0,
-            "spans_by_operation": defaultdict(int),
-            "error_spans": 0,
-        }
+        self.metrics = TracerMetrics()
 
     def _setup_opentelemetry(
         self,
@@ -222,43 +254,42 @@ class ObservabilityTracer:
             "span_duration_ms", description="Span duration in milliseconds"
         )
 
-    def _generate_ids(self) -> tuple:
+    def _generate_ids(self) -> tuple[str, str]:
         """Generate trace and span IDs"""
         return str(uuid.uuid4()), str(uuid.uuid4())
 
+    def _get_span_stack(self) -> list[Span]:
+        """Return the current thread-local span stack."""
+        stack = getattr(self.current_context, "span_stack", None)
+        if stack is None:
+            stack = []
+            self.current_context.span_stack = stack
+        return cast(list[Span], stack)
+
     def _get_current_span(self) -> Span | None:
         """Get current active span"""
-        if not hasattr(self.current_context, "span_stack"):
+        stack = self._get_span_stack()
+        if not stack:
             return None
+        return stack[-1]
 
-        if not self.current_context.span_stack:
-            return None
-
-        return self.current_context.span_stack[-1]
-
-    def _push_span(self, span: Span):
+    def _push_span(self, span: Span) -> None:
         """Push span to context stack"""
-        if not hasattr(self.current_context, "span_stack"):
-            self.current_context.span_stack = []
-
-        self.current_context.span_stack.append(span)
+        self._get_span_stack().append(span)
 
     def _pop_span(self) -> Span | None:
         """Pop span from context stack"""
-        if not hasattr(self.current_context, "span_stack"):
+        stack = self._get_span_stack()
+        if not stack:
             return None
-
-        if not self.current_context.span_stack:
-            return None
-
-        return self.current_context.span_stack.pop()
+        return stack.pop()
 
     def start_span(
         self,
         operation_name: str,
         kind: SpanKind = SpanKind.INTERNAL,
         parent_context: SpanContext | None = None,
-        tags: dict[str, Any] = None,
+        tags: dict[str, Any] | None = None,
     ) -> Span:
         """Start a new span"""
         current_span = self._get_current_span()
@@ -290,9 +321,9 @@ class ObservabilityTracer:
         self._push_span(span)
 
         # Update metrics
-        self.metrics["total_spans"] += 1
-        self.metrics["active_spans"] += 1
-        self.metrics["spans_by_operation"][operation_name] += 1
+        self.metrics.total_spans += 1
+        self.metrics.active_spans += 1
+        self.metrics.spans_by_operation[operation_name] += 1
 
         # OpenTelemetry integration
         if HAS_OPENTELEMETRY and hasattr(self, "span_counter"):
@@ -300,7 +331,7 @@ class ObservabilityTracer:
 
         return span
 
-    def finish_span(self, span: Span, error: Exception | None = None):
+    def finish_span(self, span: Span, error: BaseException | None = None) -> None:
         """Finish a span"""
         span.end_time = datetime.now()
         span.duration_ms = (span.end_time - span.start_time).total_seconds() * 1000
@@ -311,7 +342,7 @@ class ObservabilityTracer:
             span.tags["error"] = True
             span.tags["error.message"] = str(error)
             span.tags["error.type"] = type(error).__name__
-            self.metrics["error_spans"] += 1
+            self.metrics.error_spans += 1
 
         # Remove from active spans
         if span.span_id in self.active_spans:
@@ -320,27 +351,26 @@ class ObservabilityTracer:
         self._pop_span()
 
         # Update metrics
-        self.metrics["active_spans"] -= 1
+        self.metrics.active_spans -= 1
 
         # Update average duration
-        total_duration = self.metrics["average_span_duration"] * (
-            self.metrics["total_spans"] - 1
-        )
-        self.metrics["average_span_duration"] = (
-            total_duration + span.duration_ms
-        ) / self.metrics["total_spans"]
+        total_duration = self.metrics.average_span_duration * (self.metrics.total_spans - 1)
+        duration_ms = span.duration_ms or 0.0
+        self.metrics.average_span_duration = (
+            total_duration + duration_ms
+        ) / self.metrics.total_spans
 
         # OpenTelemetry integration
         if HAS_OPENTELEMETRY and hasattr(self, "span_duration"):
             self.span_duration.record(
-                span.duration_ms,
-                {"operation": span.operation_name, "kind": span.kind.value},
-            )
+                    duration_ms,
+                    {"operation": span.operation_name, "kind": span.kind.value},
+                )
 
         # Check if trace is complete
         self._check_trace_completion(span.trace_id)
 
-    def _check_trace_completion(self, trace_id: str):
+    def _check_trace_completion(self, trace_id: str) -> None:
         """Check if trace is complete and store it"""
         # Find all spans for this trace
         trace_spans = [
@@ -351,13 +381,13 @@ class ObservabilityTracer:
         if not trace_spans:
             # Find all completed spans for this trace (would need to store somewhere)
             # For now, we'll just track completion
-            self.metrics["completed_traces"] += 1
+            self.metrics.completed_traces += 1
 
-    def add_span_tag(self, span: Span, key: str, value: Any):
+    def add_span_tag(self, span: Span, key: str, value: Any) -> None:
         """Add tag to span"""
         span.tags[key] = value
 
-    def add_span_log(self, span: Span, message: str, level: str = "info", **kwargs):
+    def add_span_log(self, span: Span, message: str, level: str = "info", **kwargs) -> None:
         """Add log to span"""
         log_entry = {
             "timestamp": datetime.now().isoformat(),
@@ -394,7 +424,7 @@ class ObservabilityTracer:
         self,
         operation_name: str,
         kind: SpanKind = SpanKind.INTERNAL,
-        tags: dict[str, Any] = None,
+        tags: dict[str, Any] | None = None,
     ):
         """Context manager for tracing"""
         span = self.start_span(operation_name, kind, tags=tags)
@@ -412,7 +442,7 @@ class ObservabilityTracer:
         self,
         operation_name: str,
         kind: SpanKind = SpanKind.INTERNAL,
-        tags: dict[str, Any] = None,
+        tags: dict[str, Any] | None = None,
     ):
         """Async context manager for tracing"""
         span = self.start_span(operation_name, kind, tags=tags)
@@ -428,14 +458,14 @@ class ObservabilityTracer:
     def get_metrics(self) -> dict[str, Any]:
         """Get tracer metrics"""
         return {
-            "total_spans": self.metrics["total_spans"],
-            "active_spans": self.metrics["active_spans"],
-            "completed_traces": self.metrics["completed_traces"],
-            "average_span_duration_ms": self.metrics["average_span_duration"],
-            "spans_by_operation": dict(self.metrics["spans_by_operation"]),
-            "error_spans": self.metrics["error_spans"],
-            "error_rate": self.metrics["error_spans"] / self.metrics["total_spans"]
-            if self.metrics["total_spans"] > 0
+            "total_spans": self.metrics.total_spans,
+            "active_spans": self.metrics.active_spans,
+            "completed_traces": self.metrics.completed_traces,
+            "average_span_duration_ms": self.metrics.average_span_duration,
+            "spans_by_operation": dict(self.metrics.spans_by_operation),
+            "error_spans": self.metrics.error_spans,
+            "error_rate": self.metrics.error_spans / self.metrics.total_spans
+            if self.metrics.total_spans > 0
             else 0,
         }
 
@@ -468,11 +498,11 @@ class ObservabilityManager:
             self._setup_structured_logging()
 
         # Performance tracking
-        self.performance_metrics = {
-            "api_requests": defaultdict(list),
+        self.performance_metrics: dict[str, list[PerformanceMetricEntry]] = {
+            "api_requests": [],
             "training_iterations": [],
-            "conversation_metrics": defaultdict(list),
-            "system_metrics": defaultdict(list),
+            "conversation_metrics": [],
+            "system_metrics": [],
         }
 
     def _setup_structured_logging(self):
@@ -515,7 +545,7 @@ class ObservabilityManager:
     def trace_api_request(self, method: str, path: str, user_id: str | None = None):
         """Trace API request"""
         if not self.tracer:
-            return contextmanager(lambda: (yield))()
+            return contextmanager(_noop_context)()
 
         tags = {"http.method": method, "http.url": path, "component": "api"}
 
@@ -527,7 +557,7 @@ class ObservabilityManager:
     def trace_training_iteration(self, iteration: int, batch_size: int):
         """Trace training iteration"""
         if not self.tracer:
-            return contextmanager(lambda: (yield))()
+            return contextmanager(_noop_context)()
 
         tags = {
             "training.iteration": iteration,
@@ -542,7 +572,7 @@ class ObservabilityManager:
     def trace_conversation(self, conversation_id: str, user_id: str | None = None):
         """Trace conversation"""
         if not self.tracer:
-            return contextmanager(lambda: (yield))()
+            return contextmanager(_noop_context)()
 
         tags = {"conversation.id": conversation_id, "component": "conversation"}
 
@@ -556,7 +586,7 @@ class ObservabilityManager:
     def trace_reward_computation(self, reward_type: str, conversation_id: str):
         """Trace reward computation"""
         if not self.tracer:
-            return contextmanager(lambda: (yield))()
+            return contextmanager(_noop_context)()
 
         tags = {
             "reward.type": reward_type,
@@ -572,14 +602,14 @@ class ObservabilityManager:
         self, category: str, operation: str, duration_ms: float, **metadata
     ):
         """Record performance metric"""
-        metric_data = {
-            "operation": operation,
-            "duration_ms": duration_ms,
-            "timestamp": datetime.now().isoformat(),
-            **metadata,
-        }
+        metric_entry = PerformanceMetricEntry(
+            operation=operation,
+            duration_ms=duration_ms,
+            timestamp=datetime.now().isoformat(),
+            metadata=metadata,
+        )
 
-        self.performance_metrics[category].append(metric_data)
+        self.performance_metrics.setdefault(category, []).append(metric_entry)
 
         # Keep only recent metrics
         if len(self.performance_metrics[category]) > 1000:
@@ -595,7 +625,7 @@ class ObservabilityManager:
             if not metric_entries:
                 continue
 
-            durations = [m["duration_ms"] for m in metric_entries]
+            durations = [entry.duration_ms for entry in metric_entries]
 
             summary[category] = {
                 "total_operations": len(metric_entries),
@@ -674,7 +704,7 @@ def setup_observability(
 def trace_function(
     operation_name: str | None = None,
     kind: SpanKind = SpanKind.INTERNAL,
-    tags: dict[str, Any] = None,
+    tags: dict[str, Any] | None = None,
 ):
     """Decorator for tracing functions"""
 

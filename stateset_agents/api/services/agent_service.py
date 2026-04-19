@@ -76,7 +76,7 @@ class AgentService:
         if owner is None:
             return True
 
-        return owner == user_id
+        return bool(owner == user_id)
 
     def _merge_messages(
         self,

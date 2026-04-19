@@ -429,7 +429,7 @@ class RedisCache(CacheInterface):
 
     def __init__(self, config: CacheConfig):
         self.config = config
-        self._client = None
+        self._client: Any | None = None
         self._stats = CacheStats()
         self._connected = False
         self._last_health_check = 0.0
@@ -475,12 +475,15 @@ class RedisCache(CacheInterface):
         """Get a value from Redis."""
         if not self._connected:
             return None
+        client = self._client
+        if client is None:
+            return None
 
         start = time.monotonic()
         prefixed_key = f"{self.config.key_prefix}{key}"
 
         try:
-            data = await self._client.get(prefixed_key)
+            data = await client.get(prefixed_key)
 
             if data is None:
                 self._stats.misses += 1
@@ -504,6 +507,9 @@ class RedisCache(CacheInterface):
         """Set a value in Redis."""
         if not self._connected:
             return False
+        client = self._client
+        if client is None:
+            return False
 
         start = time.monotonic()
         prefixed_key = f"{self.config.key_prefix}{key}"
@@ -512,7 +518,7 @@ class RedisCache(CacheInterface):
         try:
             data = self._serialize(value)
 
-            await self._client.setex(prefixed_key, ttl, data)
+            await client.setex(prefixed_key, ttl, data)
 
             self._stats.sets += 1
             self._stats.bytes_written += len(data)
@@ -529,13 +535,16 @@ class RedisCache(CacheInterface):
         """Delete a key from Redis."""
         if not self._connected:
             return False
+        client = self._client
+        if client is None:
+            return False
 
         prefixed_key = f"{self.config.key_prefix}{key}"
 
         try:
-            result = await self._client.delete(prefixed_key)
+            result = await client.delete(prefixed_key)
             self._stats.deletes += 1
-            return result > 0
+            return bool(result > 0)
         except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis delete error: {e}")
             self._stats.errors += 1
@@ -544,6 +553,9 @@ class RedisCache(CacheInterface):
     async def delete_pattern(self, pattern: str) -> int:
         """Delete keys matching a pattern."""
         if not self._connected:
+            return 0
+        client = self._client
+        if client is None:
             return 0
 
         if pattern.startswith(self.config.key_prefix):
@@ -555,11 +567,11 @@ class RedisCache(CacheInterface):
             cursor = 0
             deleted = 0
             while True:
-                cursor, keys = await self._client.scan(
+                cursor, keys = await client.scan(
                     cursor, match=pattern_with_prefix, count=100
                 )
                 if keys:
-                    deleted += await self._client.delete(*keys)
+                    deleted += await client.delete(*keys)
                     self._stats.deletes += len(keys)
                 if cursor == 0:
                     break
@@ -573,11 +585,14 @@ class RedisCache(CacheInterface):
         """Check if a key exists in Redis."""
         if not self._connected:
             return False
+        client = self._client
+        if client is None:
+            return False
 
         prefixed_key = f"{self.config.key_prefix}{key}"
 
         try:
-            return await self._client.exists(prefixed_key) > 0
+            return bool(await client.exists(prefixed_key) > 0)
         except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis exists error: {e}")
             return False
@@ -586,6 +601,9 @@ class RedisCache(CacheInterface):
         """Clear all keys with our prefix."""
         if not self._connected:
             return 0
+        client = self._client
+        if client is None:
+            return 0
 
         try:
             pattern = f"{self.config.key_prefix}*"
@@ -593,9 +611,9 @@ class RedisCache(CacheInterface):
             deleted = 0
 
             while True:
-                cursor, keys = await self._client.scan(cursor, match=pattern, count=100)
+                cursor, keys = await client.scan(cursor, match=pattern, count=100)
                 if keys:
-                    deleted += await self._client.delete(*keys)
+                    deleted += await client.delete(*keys)
                 if cursor == 0:
                     break
 
@@ -618,9 +636,14 @@ class RedisCache(CacheInterface):
             # Try to reconnect
             self._health_status = await self.connect()
             return self._health_status
+        client = self._client
+        if client is None:
+            self._connected = False
+            self._health_status = False
+            return False
 
         try:
-            await self._client.ping()
+            await client.ping()
             self._health_status = True
             return True
         except CACHE_EXCEPTIONS as e:
@@ -682,8 +705,9 @@ class RedisCache(CacheInterface):
 
     async def close(self) -> None:
         """Close Redis connection."""
-        if self._client:
-            await self._client.close()
+        client = self._client
+        if client is not None:
+            await client.close()
             self._connected = False
 
 
@@ -817,6 +841,7 @@ async def create_cache(config: CacheConfig | None = None) -> CacheInterface:
         Configured cache instance.
     """
     config = config or CacheConfig.from_env()
+    cache: CacheInterface[Any]
 
     if config.backend == CacheBackend.REDIS:
         cache = RedisCache(config)

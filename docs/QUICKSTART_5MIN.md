@@ -53,7 +53,7 @@ from stateset_agents.core.agent import AgentConfig
 async def train():
     # 1. Setup
     config = GSPOConfig(
-        model_name="gpt2",           # Or: "Qwen/Qwen2.5-0.5B"
+        model_name="your-real-model-id",
         num_generations=4,            # Responses per prompt
         num_outer_iterations=10,      # Training cycles
         use_lora=True,                # Memory efficient
@@ -98,7 +98,7 @@ config = get_config_for_task("customer_service")
 ### Memory-Constrained (8GB VRAM)
 ```python
 config = GSPOConfig(
-    model_name="gpt2",
+    model_name="your-real-model-id",
     use_lora=True,
     use_4bit=True,
     gradient_checkpointing=True,
@@ -120,13 +120,13 @@ config = GSPOConfig(
 
 ```bash
 # Quick start
-stateset-agents train --model gpt2 --algorithm gspo
+stateset-agents train --model your-real-model-id --algorithm gspo
 
 # With config file
 stateset-agents train --config my_config.yaml
 
 # Monitor with W&B
-stateset-agents train --model gpt2 --wandb-project my-project
+stateset-agents train --model your-real-model-id --wandb-project my-project
 ```
 
 ## Next Steps

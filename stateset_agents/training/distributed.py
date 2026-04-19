@@ -12,7 +12,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.distributed as dist
@@ -90,14 +90,15 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         **kwargs,
     ):
         self.distributed_config = distributed_config or DistributedConfig()
-        self.accelerator = None
+        self.accelerator: Accelerator | None = None
         self.is_main_process = True
+        self.config = config or TrainingConfig()
 
         # Initialize distributed environment
         self._init_distributed()
 
         # Initialize base trainer
-        super().__init__(agent, environment, reward_fn, config, **kwargs)
+        super().__init__(agent, environment, reward_fn, self.config, **kwargs)
 
     def _init_distributed(self):
         """Initialize distributed training environment"""
@@ -227,13 +228,10 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         # activations during backward pass instead of storing them.
         if self.distributed_config.fsdp_activation_checkpointing:
             try:
-                from torch.distributed.fsdp import (
-                    FullyShardedDataParallel as _FSDP_check,
-                )
                 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+                    CheckpointImpl,
                     apply_activation_checkpointing,
                     checkpoint_wrapper,
-                    CheckpointImpl,
                 )
 
                 # Apply to all FSDP-wrapped sub-modules
@@ -287,10 +285,11 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
     async def training_step(self, trajectory_groups: list[Any]) -> dict[str, Any]:
         """Execute distributed training step"""
 
-        if self.distributed_config.strategy == "accelerate":
+        accelerator = self.accelerator
+        if self.distributed_config.strategy == "accelerate" and accelerator is not None:
             # Use Accelerate's gradient accumulation
-            with self.accelerator.accumulate(self.agent.model):
-                metrics = await super().training_step(trajectory_groups)
+            with accelerator.accumulate(self.agent.model):
+                metrics: dict[str, Any] = await super().training_step(trajectory_groups)
         else:
             metrics = await super().training_step(trajectory_groups)
 
@@ -303,7 +302,7 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
     def _sync_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
         """Synchronize metrics across all processes"""
 
-        synced_metrics = {}
+        synced_metrics: dict[str, Any] = {}
         for key, value in metrics.items():
             if isinstance(value, (int, float)):
                 tensor = torch.tensor(value, device=self.agent.model.device)
@@ -464,7 +463,7 @@ async def train_distributed(
     try:
         # Initialize and train
         await trainer.initialize()
-        trained_agent = await trainer.train()
+        trained_agent = cast(MultiTurnAgent, await trainer.train())
         return trained_agent
 
     finally:

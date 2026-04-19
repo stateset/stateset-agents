@@ -14,6 +14,7 @@ from typing import Any
 from stateset_agents.utils.cache import CacheService
 
 from .agent import Agent
+from .agent_config import AgentConfig
 from .long_term_planning import PlanningConfig, PlanningManager
 from .multiturn_analysis import (
     analyze_user_input,
@@ -30,6 +31,7 @@ from .multiturn_context import (
     apply_context_update,
 )
 from .reward import RewardFunction
+from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,15 @@ class MultiTurnAgent(Agent):
         planning_manager: PlanningManager | None = None,
         **kwargs,
     ):
-        super().__init__(model_config, **kwargs)
+        agent_config_kwargs = {
+            field_name: value
+            for field_name, value in model_config.items()
+            if field_name in AgentConfig.__dataclass_fields__
+        }
+        if "model_name" not in agent_config_kwargs:
+            agent_config_kwargs["model_name"] = "stub://test"
+        super().__init__(AgentConfig(**agent_config_kwargs), **kwargs)
+        self.model_config = dict(model_config)
 
         self.max_context_length = max_context_length
         self.max_conversation_turns = max_conversation_turns
@@ -110,17 +120,19 @@ class MultiTurnAgent(Agent):
         }
 
         # Tool registry
-        self.tools = {}
+        self.tools: dict[str, Callable[..., Any]] = {}
 
         # Response generation backend controls (pluggable)
         self._use_hf_backend: bool = bool(kwargs.get("use_hf_backend", False))
         self._hf_backend_config: dict[str, Any] = dict(
             kwargs.get("hf_backend_config", {}) or {}
         )
-        self._hf_agent = None  # Lazy-initialized HF-backed agent
-        self.response_backend: Callable[[str | list[dict[str, Any]]], str | Awaitable[str]] | None = kwargs.get("response_backend")
+        self._hf_agent: Agent | None = None  # Lazy-initialized HF-backed agent
+        self.response_backend: (
+            Callable[[str | list[dict[str, Any]]], str | Awaitable[str]] | None
+        ) = kwargs.get("response_backend")
 
-    def register_tool(self, name: str, tool_func: callable):
+    def register_tool(self, name: str, tool_func: Callable[..., Any]) -> None:
         """Register a tool for the agent to use"""
         self.tools[name] = tool_func
 
@@ -156,7 +168,7 @@ class MultiTurnAgent(Agent):
             try:
                 maybe = self.response_backend(messages_for_backend)
                 if asyncio.iscoroutine(maybe):
-                    return await maybe  # type: ignore[return-value]
+                    return str(await maybe)
                 return str(maybe)
             except BACKEND_EXCEPTIONS as e:
                 logger.warning("Custom backend failed, falling back: %s", e)
@@ -217,25 +229,26 @@ class MultiTurnAgent(Agent):
             from .agent import AgentConfig as HFConfig
             from .agent import MultiTurnAgent as HFMultiTurnAgent
 
-            model_name = (
-                self._hf_backend_config.get("model_name")
-                or self.model_config.get("model_name")
-                or "gpt2"
-            )
+            model_name = self._hf_backend_config.get("model_name") or self.model_config.get(
+                "model_name"
+            ) or "gpt2"
             cfg_kwargs = {
                 k: v for k, v in self._hf_backend_config.items() if k != "model_name"
             }
             hf_cfg = HFConfig(model_name=model_name, **cfg_kwargs)
-            hf_agent = HFMultiTurnAgent(hf_cfg)
-            await hf_agent.initialize()
-            self._hf_agent = hf_agent
+            backend_agent = HFMultiTurnAgent(hf_cfg)
+            await backend_agent.initialize()
+            self._hf_agent = backend_agent
 
         if isinstance(messages_or_prompt, str):
             messages = [{"role": "user", "content": messages_or_prompt}]
         else:
             messages = messages_or_prompt
 
-        return await self._hf_agent.generate_response(messages)  # type: ignore[attr-defined]
+        hf_agent = self._hf_agent
+        if hf_agent is None:
+            raise RuntimeError("HF backend agent was not initialized")
+        return str(await hf_agent.generate_response(messages))
 
     async def start_conversation(
         self,
@@ -291,7 +304,7 @@ class MultiTurnAgent(Agent):
         context.add_turn({"role": "assistant", "content": response})
 
         # Return recent conversation history
-        return context.get_recent_history(max_turns)
+        return list(context.get_recent_history(max_turns))
 
     async def generate_multiturn_response(
         self,
@@ -603,7 +616,7 @@ class MultiTurnAgent(Agent):
 
     def _extract_technical_terms(self, text: str) -> list[str]:
         """Extract technical terms from text"""
-        return extract_technical_terms(text)
+        return list(extract_technical_terms(text))
 
     async def _apply_tools(self, context: ConversationContext, response: str) -> str:
         """Apply tools based on response content"""
@@ -635,7 +648,8 @@ class MultiTurnAgent(Agent):
 
     def _extract_document_reference(self, text: str) -> str | None:
         """Extract document reference from text"""
-        return extract_document_reference(text)
+        reference = extract_document_reference(text)
+        return None if reference is None else str(reference)
 
     async def _compress_context(self, context: ConversationContext):
         """Compress conversation context to manage memory"""
@@ -643,7 +657,7 @@ class MultiTurnAgent(Agent):
 
     def _create_conversation_summary(self, turns: list[dict[str, Any]]) -> str:
         """Create a summary of conversation turns"""
-        return create_conversation_summary(turns)
+        return str(create_conversation_summary(turns))
 
     async def compute_multiturn_rewards(
         self,
@@ -657,6 +671,18 @@ class MultiTurnAgent(Agent):
 
         context = self.active_conversations[conversation_id]
         turns = context.history
+        reward_turns = [
+            ConversationTurn(
+                role=str(turn.get("role", "assistant")),
+                content=str(turn.get("content", "")),
+                metadata={
+                    key: value
+                    for key, value in turn.items()
+                    if key not in {"role", "content"}
+                },
+            )
+            for turn in turns
+        ]
 
         # Compute rewards from each function
         total_reward = 0.0
@@ -665,7 +691,7 @@ class MultiTurnAgent(Agent):
         for reward_func in reward_functions:
             try:
                 result = await reward_func.compute_reward(
-                    turns, context.get_context_summary()
+                    reward_turns, context.get_context_summary()
                 )
                 total_reward += result.score * reward_func.weight
                 reward_breakdown[reward_func.__class__.__name__] = result.score
@@ -690,13 +716,13 @@ class MultiTurnAgent(Agent):
 
     def _evaluate_context_coherence(self, context: ConversationContext) -> float:
         """Evaluate how coherent the conversation context is"""
-        return evaluate_context_coherence(context)
+        return float(evaluate_context_coherence(context))
 
     def _evaluate_goal_achievement(
         self, context: ConversationContext, ground_truth: dict[str, Any] | None
     ) -> float:
         """Evaluate if conversation achieved its goal"""
-        return evaluate_goal_achievement(context, ground_truth)
+        return float(evaluate_goal_achievement(context, ground_truth))
 
     def end_conversation(self, conversation_id: str) -> ConversationContext | None:
         """End a conversation and return its context"""
@@ -730,7 +756,7 @@ class MultiTurnAgent(Agent):
                             keep_completed=self.planning_manager.config.keep_completed,
                         ),
                     }
-            return summary
+            return dict(summary)
         return None
 
 

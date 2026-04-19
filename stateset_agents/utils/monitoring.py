@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from collections.abc import Callable
 
 # Optional imports for enhanced functionality
@@ -55,7 +55,7 @@ def _prometheus_get_or_create(
     except ValueError:
         # Registry keys include a base name without `_total` for Counters.
         base_name = name[:-6] if name.endswith("_total") else name
-        collector = REGISTRY._names_to_collectors.get(base_name) or REGISTRY._names_to_collectors.get(name)  # type: ignore[attr-defined]
+        collector = REGISTRY._names_to_collectors.get(base_name) or REGISTRY._names_to_collectors.get(name)
         if collector is None or not isinstance(collector, metric_cls):
             raise
         return collector
@@ -158,11 +158,12 @@ class HealthCheck:
         try:
             loop = asyncio.get_running_loop()
             if asyncio.iscoroutinefunction(self.check_func):
-                task = loop.create_task(self.check_func())
+                result = await asyncio.wait_for(self.check_func(), timeout=self.timeout)
             else:
-                task = loop.run_in_executor(None, self.check_func)
-
-            result = await asyncio.wait_for(task, timeout=self.timeout)
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(None, self.check_func),
+                    timeout=self.timeout,
+                )
 
             duration = time.time() - start_time
 
@@ -195,6 +196,31 @@ class HealthCheck:
             }
 
 
+@dataclass
+class SystemMetrics:
+    """Recent system resource samples."""
+
+    cpu_usage: deque[float] = field(default_factory=lambda: deque(maxlen=100))
+    memory_usage: deque[float] = field(default_factory=lambda: deque(maxlen=100))
+    disk_usage: deque[float] = field(default_factory=lambda: deque(maxlen=100))
+    network_io: deque[dict[str, float]] = field(
+        default_factory=lambda: deque(maxlen=100)
+    )
+
+
+@dataclass
+class ApplicationMetrics:
+    """Recent application-level metrics."""
+
+    requests_total: int = 0
+    requests_per_second: deque[float] = field(default_factory=lambda: deque(maxlen=60))
+    response_times: deque[float] = field(default_factory=lambda: deque(maxlen=1000))
+    active_conversations: int = 0
+    training_iterations: int = 0
+    reward_scores: deque[float] = field(default_factory=lambda: deque(maxlen=100))
+    error_count: int = 0
+
+
 class MetricsCollector:
     """Collects and manages metrics with thread-safe operations"""
 
@@ -207,23 +233,10 @@ class MetricsCollector:
         self._lock = threading.RLock()
 
         # System metrics
-        self.system_metrics = {
-            "cpu_usage": deque(maxlen=100),
-            "memory_usage": deque(maxlen=100),
-            "disk_usage": deque(maxlen=100),
-            "network_io": deque(maxlen=100),
-        }
+        self.system_metrics = SystemMetrics()
 
         # Application metrics
-        self.app_metrics = {
-            "requests_total": 0,
-            "requests_per_second": deque(maxlen=60),
-            "response_times": deque(maxlen=1000),
-            "active_conversations": 0,
-            "training_iterations": 0,
-            "reward_scores": deque(maxlen=100),
-            "error_count": 0,
-        }
+        self.app_metrics = ApplicationMetrics()
 
         # Initialize Prometheus metrics
         if self.enable_prometheus:
@@ -306,13 +319,13 @@ class MetricsCollector:
 
                     # Thread-safe update of all metrics
                     with self._lock:
-                        self.system_metrics["cpu_usage"].append(cpu_percent)
-                        self.system_metrics["memory_usage"].append(memory.percent)
-                        self.system_metrics["disk_usage"].append(disk.percent)
-                        self.system_metrics["network_io"].append(
+                        self.system_metrics.cpu_usage.append(cpu_percent)
+                        self.system_metrics.memory_usage.append(memory.percent)
+                        self.system_metrics.disk_usage.append(disk.percent)
+                        self.system_metrics.network_io.append(
                             {
-                                "bytes_sent": net_io.bytes_sent,
-                                "bytes_recv": net_io.bytes_recv,
+                                "bytes_sent": float(net_io.bytes_sent),
+                                "bytes_recv": float(net_io.bytes_recv),
                                 "timestamp": time.time(),
                             }
                         )
@@ -347,22 +360,26 @@ class MetricsCollector:
                 prom_metric.observe(metric.value)
 
     def increment_counter(
-        self, name: str, value: float = 1.0, labels: dict[str, str] = None
-    ):
+        self, name: str, value: float = 1.0, labels: dict[str, str] | None = None
+    ) -> None:
         """Increment a counter metric"""
         metric = Metric(
             name=name, type=MetricType.COUNTER, value=value, labels=labels or {}
         )
         self.record_metric(metric)
 
-    def set_gauge(self, name: str, value: float, labels: dict[str, str] = None):
+    def set_gauge(
+        self, name: str, value: float, labels: dict[str, str] | None = None
+    ) -> None:
         """Set a gauge metric"""
         metric = Metric(
             name=name, type=MetricType.GAUGE, value=value, labels=labels or {}
         )
         self.record_metric(metric)
 
-    def observe_histogram(self, name: str, value: float, labels: dict[str, str] = None):
+    def observe_histogram(
+        self, name: str, value: float, labels: dict[str, str] | None = None
+    ) -> None:
         """Observe a histogram metric"""
         metric = Metric(
             name=name, type=MetricType.HISTOGRAM, value=value, labels=labels or {}
@@ -371,7 +388,7 @@ class MetricsCollector:
 
     def get_metrics_summary(self) -> dict[str, Any]:
         """Get summary of all metrics"""
-        summary = {
+        summary: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "system_metrics": {},
             "application_metrics": {},
@@ -382,62 +399,63 @@ class MetricsCollector:
         if HAS_PSUTIL:
             summary["system_metrics"] = {
                 "cpu_usage": {
-                    "current": list(self.system_metrics["cpu_usage"])[-1]
-                    if self.system_metrics["cpu_usage"]
+                    "current": list(self.system_metrics.cpu_usage)[-1]
+                    if self.system_metrics.cpu_usage
                     else 0,
-                    "average": statistics.mean(self.system_metrics["cpu_usage"])
-                    if self.system_metrics["cpu_usage"]
+                    "average": statistics.mean(self.system_metrics.cpu_usage)
+                    if self.system_metrics.cpu_usage
                     else 0,
-                    "max": max(self.system_metrics["cpu_usage"])
-                    if self.system_metrics["cpu_usage"]
+                    "max": max(self.system_metrics.cpu_usage)
+                    if self.system_metrics.cpu_usage
                     else 0,
                 },
                 "memory_usage": {
-                    "current": list(self.system_metrics["memory_usage"])[-1]
-                    if self.system_metrics["memory_usage"]
+                    "current": list(self.system_metrics.memory_usage)[-1]
+                    if self.system_metrics.memory_usage
                     else 0,
-                    "average": statistics.mean(self.system_metrics["memory_usage"])
-                    if self.system_metrics["memory_usage"]
+                    "average": statistics.mean(self.system_metrics.memory_usage)
+                    if self.system_metrics.memory_usage
                     else 0,
-                    "max": max(self.system_metrics["memory_usage"])
-                    if self.system_metrics["memory_usage"]
+                    "max": max(self.system_metrics.memory_usage)
+                    if self.system_metrics.memory_usage
                     else 0,
                 },
                 "disk_usage": {
-                    "current": list(self.system_metrics["disk_usage"])[-1]
-                    if self.system_metrics["disk_usage"]
+                    "current": list(self.system_metrics.disk_usage)[-1]
+                    if self.system_metrics.disk_usage
                     else 0,
-                    "average": statistics.mean(self.system_metrics["disk_usage"])
-                    if self.system_metrics["disk_usage"]
+                    "average": statistics.mean(self.system_metrics.disk_usage)
+                    if self.system_metrics.disk_usage
                     else 0,
-                    "max": max(self.system_metrics["disk_usage"])
-                    if self.system_metrics["disk_usage"]
+                    "max": max(self.system_metrics.disk_usage)
+                    if self.system_metrics.disk_usage
                     else 0,
                 },
             }
 
         # Application metrics
         summary["application_metrics"] = {
-            "requests_total": self.app_metrics["requests_total"],
-            "requests_per_second": list(self.app_metrics["requests_per_second"])[-1]
-            if self.app_metrics["requests_per_second"]
+            "requests_total": self.app_metrics.requests_total,
+            "requests_per_second": list(self.app_metrics.requests_per_second)[-1]
+            if self.app_metrics.requests_per_second
             else 0,
-            "average_response_time": statistics.mean(self.app_metrics["response_times"])
-            if self.app_metrics["response_times"]
+            "average_response_time": statistics.mean(self.app_metrics.response_times)
+            if self.app_metrics.response_times
             else 0,
-            "active_conversations": self.app_metrics["active_conversations"],
-            "training_iterations": self.app_metrics["training_iterations"],
-            "average_reward_score": statistics.mean(self.app_metrics["reward_scores"])
-            if self.app_metrics["reward_scores"]
+            "active_conversations": self.app_metrics.active_conversations,
+            "training_iterations": self.app_metrics.training_iterations,
+            "average_reward_score": statistics.mean(self.app_metrics.reward_scores)
+            if self.app_metrics.reward_scores
             else 0,
-            "error_count": self.app_metrics["error_count"],
+            "error_count": self.app_metrics.error_count,
         }
 
         # Custom metrics
+        custom_metrics = cast(dict[str, Any], summary["custom_metrics"])
         for metric_name, metric_list in self.metrics.items():
             if metric_list:
                 latest_metric = metric_list[-1]
-                summary["custom_metrics"][metric_name] = {
+                custom_metrics[metric_name] = {
                     "type": latest_metric.type.value,
                     "value": latest_metric.value,
                     "labels": latest_metric.labels,
@@ -453,7 +471,7 @@ class AlertManager:
     def __init__(self):
         self.alerts: deque = deque(maxlen=10000)  # Bounded to prevent memory leak
         self.alert_rules: list[dict[str, Any]] = []
-        self.notification_handlers: list[Callable] = []
+        self.notification_handlers: list[Callable[[Alert], None]] = []
         self._lock = threading.RLock()
         self._logger = logging.getLogger(__name__ + ".AlertManager")
 
@@ -463,8 +481,8 @@ class AlertManager:
         condition: Callable[[dict[str, Any]], bool],
         severity: AlertSeverity,
         message: str,
-        labels: dict[str, str] = None,
-    ):
+        labels: dict[str, str] | None = None,
+    ) -> None:
         """Add an alert rule"""
         rule = {
             "name": name,
@@ -776,8 +794,8 @@ class MonitoringService:
             )
 
             # Update app metrics
-            self.metrics_collector.app_metrics["requests_total"] += 1
-            self.metrics_collector.app_metrics["response_times"].append(duration)
+            self.metrics_collector.app_metrics.requests_total += 1
+            self.metrics_collector.app_metrics.response_times.append(duration)
 
         except MONITORING_EXCEPTIONS as e:
             # Record failed request
@@ -791,11 +809,13 @@ class MonitoringService:
             )
 
             # Update app metrics
-            self.metrics_collector.app_metrics["error_count"] += 1
+            self.metrics_collector.app_metrics.error_count += 1
 
             raise
 
-    async def log_metric(self, name: str, value: float, labels: dict[str, str] = None):
+    async def log_metric(
+        self, name: str, value: float, labels: dict[str, str] | None = None
+    ) -> None:
         """Log a custom metric"""
         metric = Metric(
             name=name, type=MetricType.GAUGE, value=value, labels=labels or {}

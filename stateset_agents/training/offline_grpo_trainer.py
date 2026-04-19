@@ -9,7 +9,7 @@ uses those value estimates as baselines for GRPO training.
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from collections.abc import Callable
 
 import numpy as np
@@ -22,10 +22,10 @@ try:
     import torch.nn.functional as F
     from torch.optim import AdamW
 except ImportError:
-    torch = None
-    nn = None
-    F = None
-    AdamW = None
+    torch = cast(Any, None)
+    nn = cast(Any, None)
+    F = cast(Any, None)
+    AdamW = cast(Any, None)
 
 from .base_trainer import BaseTrainerConfig
 
@@ -212,7 +212,7 @@ class OfflineGRPOTrainer:
         tokenizer: Any = None,
         reward_fn: Callable | None = None,
         dataset: Any = None,  # ConversationDataset
-        device: str = None,
+        device: str | None = None,
     ):
         _require_torch()
 
@@ -264,7 +264,7 @@ class OfflineGRPOTrainer:
         self.training_metrics: list[dict[str, float]] = []
 
         # Offline RL algorithm instance
-        self._offline_learner = None
+        self._offline_learner: Any | None = None
 
     def _init_offline_learner(self) -> None:
         """Initialize the offline RL algorithm"""
@@ -324,7 +324,7 @@ class OfflineGRPOTrainer:
     async def pretrain_value_functions(
         self,
         dataset: Any = None,
-        num_steps: int = None,
+        num_steps: int | None = None,
     ) -> dict[str, float]:
         """
         Pre-train value functions on offline dataset.
@@ -351,17 +351,23 @@ class OfflineGRPOTrainer:
         # Initialize offline learner if not done
         if self._offline_learner is None:
             self._init_offline_learner()
+        offline_learner = self._offline_learner
+        if offline_learner is None:
+            raise RuntimeError("Offline learner could not be initialized")
 
-        # Convert dataset to offline RL format
-        try:
-            offline_data = dataset.to_offline_rl_format()
-        except OFFLINE_DATA_EXCEPTIONS as e:
-            logger.warning(f"Could not convert to offline RL format: {e}")
-            # Use simplified format
+        # Convert dataset to offline RL format when supported.
+        to_offline_rl_format = getattr(dataset, "to_offline_rl_format", None)
+        if callable(to_offline_rl_format):
+            try:
+                offline_data = to_offline_rl_format()
+            except OFFLINE_DATA_EXCEPTIONS as e:
+                logger.warning(f"Could not convert to offline RL format: {e}")
+                offline_data = self._prepare_simplified_dataset(dataset)
+        else:
             offline_data = self._prepare_simplified_dataset(dataset)
 
         # Train offline learner
-        metrics = []
+        metrics: list[dict[str, float]] = []
         batch_size = self.config.pretrain_value_batch_size
         dataset_size = offline_data["states"].shape[0]
 
@@ -390,15 +396,14 @@ class OfflineGRPOTrainer:
             )
 
             # Train step
-            if hasattr(self._offline_learner, "train_step"):
-                step_metrics = self._offline_learner.train_step(
-                    batch_states,
-                    batch_actions,
-                    batch_rewards,
-                    batch_next_states,
-                    batch_dones,
-                )
-                metrics.append(step_metrics)
+            step_metrics = offline_learner.train_step(
+                batch_states,
+                batch_actions,
+                batch_rewards,
+                batch_next_states,
+                batch_dones,
+            )
+            metrics.append(step_metrics)
 
             # Also train our value networks
             self._train_value_step(
@@ -424,9 +429,11 @@ class OfflineGRPOTrainer:
         self.value_pretrained = True
         logger.info("Value function pre-training complete")
 
+        last_metrics = metrics[-1] if metrics else {}
+        final_loss = float(last_metrics.get("total_loss", last_metrics.get("loss", 0.0)))
         return {
-            "num_steps": num_steps,
-            "final_loss": metrics[-1] if metrics else {},
+            "num_steps": float(num_steps),
+            "final_loss": final_loss,
         }
 
     def _train_value_step(
@@ -475,7 +482,7 @@ class OfflineGRPOTrainer:
         ):
             target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
-        return value_loss.item()
+        return float(value_loss.item())
 
     def _prepare_simplified_dataset(
         self,
@@ -629,7 +636,7 @@ class OfflineGRPOTrainer:
 
     async def train(
         self,
-        num_epochs: int = None,
+        num_epochs: int | None = None,
         dataset: Any = None,
     ) -> dict[str, Any]:
         """
@@ -672,10 +679,10 @@ class OfflineGRPOTrainer:
 
             if epoch_metrics:
                 avg_metrics = {
-                    k: np.mean([m[k] for m in epoch_metrics if k in m])
+                    k: float(np.mean([m[k] for m in epoch_metrics if k in m]))
                     for k in epoch_metrics[0].keys()
                 }
-                avg_metrics["epoch"] = epoch
+                avg_metrics["epoch"] = float(epoch)
 
                 if epoch % 10 == 0:
                     logger.info(
@@ -699,7 +706,7 @@ class OfflineGRPOTrainer:
             if state.dim() == 1:
                 state = state.unsqueeze(0)
             value = self.value_net(state)
-            return value.item()
+            return float(value.item())
 
     def get_q_estimate(
         self,
@@ -713,7 +720,7 @@ class OfflineGRPOTrainer:
             if action.dim() == 1:
                 action = action.unsqueeze(0)
             q = self.q_net(state, action)
-            return q.item()
+            return float(q.item())
 
     def save(self, path: str) -> None:
         """Save model checkpoint"""

@@ -278,7 +278,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _extract_api_key(self, request: Request) -> str | None:
         """Extract API key from request headers."""
         # Check Authorization header
-        auth_header = request.headers.get("Authorization", "")
+        auth_header = str(request.headers.get("Authorization", ""))
         if auth_header.lower().startswith("bearer "):
             return auth_header.split(" ", 1)[1].strip()
 

@@ -14,13 +14,13 @@ import random
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from collections.abc import Iterable, Sequence
 
 try:  # pragma: no cover - optional dependency
     import torch
 except ImportError:  # pragma: no cover
-    torch = None  # type: ignore[assignment]
+    torch = cast(Any, None)
 
 from stateset_agents.core.trajectory import TrajectoryGroup
 from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
@@ -239,9 +239,6 @@ class TrajectoryReplayBuffer:
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
         """Restore buffer state from a snapshot."""
-        if not isinstance(state, dict):
-            return
-
         max_size = state.get("max_size")
         if isinstance(max_size, int) and max_size > 0:
             self.max_size = max_size
@@ -309,7 +306,7 @@ class ContinualLearningManager:
             sampling_strategy=config.replay_sampling,
             seed=seed,
         )
-        self.reference_model = None
+        self.reference_model: Any | None = None
         self._ewc_fisher: dict[str, Any] = {}
         self._ewc_params: dict[str, Any] = {}
 
@@ -555,9 +552,6 @@ class ContinualLearningManager:
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
         """Restore continual learning state from a snapshot."""
-        if not isinstance(state, dict):
-            return
-
         config_state = state.get("config")
         if isinstance(config_state, dict):
             for key, value in config_state.items():

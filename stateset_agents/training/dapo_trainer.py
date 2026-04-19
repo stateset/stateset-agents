@@ -17,8 +17,8 @@ import asyncio
 import json
 import logging
 import os
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -40,24 +40,24 @@ DAPO_EXCEPTIONS = (
 try:
     import wandb
 except ImportError:  # pragma: no cover - optional dependency
-    wandb = None  # type: ignore
+    wandb = cast(Any, None)
 
 try:
     from peft import LoraConfig, TaskType, get_peft_model
 except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None  # type: ignore
-    TaskType = None  # type: ignore
-    get_peft_model = None  # type: ignore
+    LoraConfig = cast(Any, None)
+    TaskType = cast(Any, None)
+    get_peft_model = cast(Any, None)
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_dapo_loaded = False
-AutoModelForCausalLM = None
-AutoTokenizer = None
-get_cosine_schedule_with_warmup = None
-get_constant_schedule = None
+AutoModelForCausalLM: Any = None
+AutoTokenizer: Any = None
+get_cosine_schedule_with_warmup: Any = None
+get_constant_schedule: Any = None
 
 
-def _load_transformers_dapo():
+def _load_transformers_dapo() -> bool:
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_dapo_loaded, AutoModelForCausalLM, AutoTokenizer
     global get_cosine_schedule_with_warmup, get_constant_schedule
@@ -112,14 +112,14 @@ def _require_wandb() -> None:
 
 # Lazy import vLLM backend to avoid torch/torchvision compatibility issues
 # vllm imports transformers which imports torchvision at module level
-VLLMConfig = None
-VLLMGenerator = None
-GenerationResult = None
+VLLMConfig: Any = None
+VLLMGenerator: Any = None
+GenerationResult: Any = None
 VLLM_BACKEND_AVAILABLE = False
 _vllm_backend_loaded = False
 
 
-def _load_vllm_backend():
+def _load_vllm_backend() -> bool:
     """Lazily load vLLM backend to avoid import-time errors."""
     global _vllm_backend_loaded, VLLMConfig, VLLMGenerator, GenerationResult, VLLM_BACKEND_AVAILABLE
     if _vllm_backend_loaded:
@@ -147,17 +147,21 @@ class DAPOModelManager:
 
     def __init__(self, config: DAPOConfig):
         self.config = config
-        self.model = None
-        self.tokenizer = None
+        self.model: Any | None = None
+        self.tokenizer: Any | None = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def load_model_and_tokenizer(self) -> tuple[Any, Any]:
         """Load model and tokenizer with optional LoRA"""
         logger.info(f"Loading model: {self.config.model_name}")
         _require_transformers_dapo()
+        auto_tokenizer = AutoTokenizer
+        auto_model = AutoModelForCausalLM
+        if auto_tokenizer is None or auto_model is None:
+            raise ImportError("transformers exports are unavailable for DAPO")
 
         # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        self.tokenizer = auto_tokenizer.from_pretrained(
             self.config.model_name,
             trust_remote_code=True,
             padding_side="left",
@@ -175,9 +179,7 @@ class DAPOModelManager:
         }
 
         # Load base model
-        base_model = AutoModelForCausalLM.from_pretrained(
-            self.config.model_name, **model_kwargs
-        )
+        base_model = auto_model.from_pretrained(self.config.model_name, **model_kwargs)
 
         # Add LoRA adapters if configured
         if self.config.use_lora:
@@ -190,8 +192,9 @@ class DAPOModelManager:
                 bias="none",
                 task_type=TaskType.CAUSAL_LM,
             )
-            self.model = get_peft_model(base_model, lora_config)
-            self.model.print_trainable_parameters()
+            model_with_lora = get_peft_model(base_model, lora_config)
+            model_with_lora.print_trainable_parameters()
+            self.model = model_with_lora
         else:
             self.model = base_model
 
@@ -335,7 +338,7 @@ class DAPOTrainer:
         config: DAPOConfig,
         model: Any,
         tokenizer: Any,
-        reward_fn: Callable[[str, str], float],
+        reward_fn: Callable[[str, str], float | Awaitable[float]],
         verifier_fn: Callable[[str, str], bool] | None = None,
     ):
         # Ensure transformers is loaded for scheduler
@@ -352,7 +355,7 @@ class DAPOTrainer:
             self.device = torch.device("cpu")
 
         # vLLM generator for fast generation
-        self.vllm_generator: VLLMGenerator | None = None
+        self.vllm_generator: Any | None = None
         self._vllm_initialized = False
 
         # Setup vLLM if configured
@@ -397,7 +400,7 @@ class DAPOTrainer:
             )
 
         # Metrics
-        self.metrics_history = {
+        self.metrics_history: dict[str, list[float]] = {
             "policy_loss": [],
             "average_reward": [],
             "accuracy": [],
@@ -406,6 +409,15 @@ class DAPOTrainer:
         }
 
         self.global_step = 0
+
+    async def _compute_reward(self, prompt: str, response: str) -> float:
+        """Support sync or async reward callables."""
+        reward = self.reward_fn(prompt, response)
+        if asyncio.iscoroutine(reward):
+            reward_value = await cast(Awaitable[float], reward)
+        else:
+            reward_value = cast(float, reward)
+        return float(reward_value)
 
     def _setup_vllm(self):
         """Setup vLLM generator"""
@@ -416,7 +428,13 @@ class DAPOTrainer:
             logger.warning("vLLM backend failed to load, will use HuggingFace fallback")
             return
 
-        vllm_config = VLLMConfig(
+        vllm_config_cls = VLLMConfig
+        vllm_generator_cls = VLLMGenerator
+        if vllm_config_cls is None or vllm_generator_cls is None:
+            logger.warning("vLLM backend exports unavailable, using HuggingFace fallback")
+            return
+
+        vllm_config = vllm_config_cls(
             model_name=self.config.model_name,
             gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
             tensor_parallel_size=self.config.vllm_tensor_parallel_size,
@@ -427,7 +445,7 @@ class DAPOTrainer:
             dtype="bfloat16" if self.config.bf16 else "float16",
         )
 
-        self.vllm_generator = VLLMGenerator(vllm_config)
+        self.vllm_generator = vllm_generator_cls(vllm_config)
 
     async def initialize_vllm(self) -> bool:
         """Initialize vLLM engine"""
@@ -438,7 +456,7 @@ class DAPOTrainer:
             return True
 
         try:
-            success = await self.vllm_generator.initialize()
+            success = bool(await self.vllm_generator.initialize())
             self._vllm_initialized = success
             if success:
                 logger.info(
@@ -575,8 +593,11 @@ class DAPOTrainer:
     async def _generate_with_vllm(self, prompt: str) -> list[dict[str, Any]]:
         """Generate responses using vLLM (5-20x faster)"""
         try:
+            generator = self.vllm_generator
+            if generator is None:
+                return await self._generate_with_hf(prompt)
             # Generate all responses in a single batched call
-            grouped_results = await self.vllm_generator.generate_groups(
+            grouped_results = await generator.generate_groups(
                 prompts=[prompt],
                 num_generations_per_prompt=self.config.group_size,
             )
@@ -678,9 +699,7 @@ class DAPOTrainer:
         """Compute accuracy for a group of responses"""
         if self.verifier_fn is None:
             # If no verifier, use reward threshold
-            correct = sum(
-                1 for r in responses if self.reward_fn(prompt, r["response"]) > 0.5
-            )
+            correct = sum(1 for r in responses if float(r.get("reward", 0.0)) > 0.5)
         else:
             correct = sum(
                 1 for r in responses if self.verifier_fn(prompt, r["response"])
@@ -691,14 +710,14 @@ class DAPOTrainer:
         self,
         prompts: list[str],
         target_batch_size: int,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], float]:
         """
         Collect samples using dynamic sampling.
 
         Continues generating until we have enough non-trivial samples
         (accuracy not 0 or 1).
         """
-        collected_samples = []
+        collected_samples: list[dict[str, Any]] = []
         prompts_processed = 0
         prompts_filtered = 0
 
@@ -723,7 +742,8 @@ class DAPOTrainer:
             # Compute rewards and advantages
             rewards = []
             for resp in group_responses:
-                base_reward = self.reward_fn(prompt, resp["response"])
+                base_reward = await self._compute_reward(prompt, resp["response"])
+                resp["reward"] = base_reward
 
                 # Apply overlong reward shaping
                 if self.config.use_overlong_shaping:
@@ -788,9 +808,9 @@ class DAPOTrainer:
             return {"policy_loss": 0.0, "filtered_ratio": 1.0}
 
         total_loss = 0.0
-        all_rewards = []
-        all_accuracies = []
-        all_seq_lengths = []
+        all_rewards: list[float] = []
+        all_accuracies: list[float] = []
+        all_seq_lengths: list[int] = []
         num_updates = 0
 
         # Process samples
@@ -871,13 +891,15 @@ class DAPOTrainer:
 
         # Compute metrics
         metrics = {
-            "policy_loss": total_loss / max(num_updates, 1),
-            "average_reward": np.mean(all_rewards) if all_rewards else 0.0,
-            "accuracy": np.mean(all_accuracies) if all_accuracies else 0.0,
+            "policy_loss": float(total_loss / max(num_updates, 1)),
+            "average_reward": float(np.mean(all_rewards)) if all_rewards else 0.0,
+            "accuracy": float(np.mean(all_accuracies)) if all_accuracies else 0.0,
             "filtered_ratio": filter_ratio,
-            "avg_sequence_length": np.mean(all_seq_lengths) if all_seq_lengths else 0.0,
-            "learning_rate": self.config.learning_rate,
-            "global_step": self.global_step,
+            "avg_sequence_length": float(np.mean(all_seq_lengths))
+            if all_seq_lengths
+            else 0.0,
+            "learning_rate": float(self.config.learning_rate),
+            "global_step": float(self.global_step),
         }
 
         # Store metrics

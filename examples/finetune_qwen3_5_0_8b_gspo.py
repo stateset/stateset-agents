@@ -1,5 +1,7 @@
 """Dedicated Qwen3.5-0.8B GSPO starter script."""
 
+# ruff: noqa: E402
+
 from __future__ import annotations
 
 import argparse
@@ -209,3 +211,10 @@ Examples:
 
 if __name__ == "__main__":
     main()
+
+
+# Re-export the async finetune helper for direct programmatic use.
+__all__ = [
+    "finetune_qwen3_5_0_8b",
+    "main",
+]

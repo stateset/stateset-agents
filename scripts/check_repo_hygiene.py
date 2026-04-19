@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from stateset_agents.utils.repo_hygiene import (

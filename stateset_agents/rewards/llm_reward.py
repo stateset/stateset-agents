@@ -25,12 +25,10 @@ except ImportError:
     LITELLM_AVAILABLE = False
     ChatCompletionMessageParam = dict[str, Any]
 
-from stateset_agents.core import reward as core_reward
+from stateset_agents.core.reward_base import RewardFunction, RewardResult
+from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
-
-RewardFunction = core_reward.RewardFunction
-RewardResult = core_reward.RewardResult
 
 logger = logging.getLogger(__name__)
 
@@ -205,12 +203,12 @@ class RulerRewardFunction(RewardFunction):
         self.fallback_uses = 0
 
     def _hash_trajectory(
-        self, turns: list[dict[str, Any]], context: dict[str, Any] | None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None
     ) -> str:
         """Generate a hash key for trajectory content for caching."""
         content = json.dumps(
             {
-                "turns": turns,
+                "turns": self._normalize_turns(turns),
                 "context": context,
                 "model": self.model,
                 "rubric": self.rubric_type,
@@ -221,7 +219,7 @@ class RulerRewardFunction(RewardFunction):
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     async def compute_reward(
-        self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
         """
         Compute reward using LLM Judge.
@@ -237,12 +235,17 @@ class RulerRewardFunction(RewardFunction):
         trajectory_hash = self._hash_trajectory(turns, context)
         if self.cache is not None:
             try:
-                cached = await self.cache.get(f"reward:{trajectory_hash}")
+                cached = self.cache.get(f"reward:{trajectory_hash}")
                 if cached is not None:
                     self.cache_hits += 1
+                    cached_breakdown = dict(cached.get("breakdown", {}))
                     return RewardResult(
-                        score=cached["score"],
-                        breakdown={**cached["breakdown"], "cache_hit": True},
+                        score=float(cached.get("score", 0.0)),
+                        breakdown={**cached_breakdown, "cache_hit": 1.0},
+                        metadata={
+                            "model": self.model,
+                            "rubric_type": self.rubric_type,
+                        },
                     )
             except LLM_REWARD_EXCEPTIONS as cache_err:
                 logger.debug(f"Cache lookup failed: {cache_err}")
@@ -266,16 +269,18 @@ class RulerRewardFunction(RewardFunction):
                 score=score,
                 breakdown={
                     "ruler_score": score,
+                    "cache_hit": 0.0,
+                },
+                metadata={
                     "model": self.model,
                     "rubric_type": self.rubric_type,
-                    "cache_hit": False,
                 },
             )
 
             # Cache the result for future calls
             if self.cache is not None:
                 try:
-                    await self.cache.set(
+                    self.cache.set(
                         f"reward:{trajectory_hash}",
                         {"score": result.score, "breakdown": result.breakdown},
                         ttl=self.cache_ttl,
@@ -296,16 +301,16 @@ class RulerRewardFunction(RewardFunction):
                     score=fallback_score,
                     breakdown={
                         "ruler_score": fallback_score,
-                        "fallback_used": True,
-                        "error": str(e),
+                        "fallback_used": 1.0,
                     },
+                    metadata={"error": str(e)},
                 )
             else:
                 raise
 
     async def compute_batch_rewards(
         self,
-        batch_turns: list[list[dict[str, Any]]],
+        batch_turns: list[list[ConversationTurn]],
         context: dict[str, Any] | None = None,
     ) -> list[RewardResult]:
         """
@@ -342,9 +347,11 @@ class RulerRewardFunction(RewardFunction):
                     score=score,
                     breakdown={
                         "ruler_score": score,
+                        "batch_index": float(i),
+                    },
+                    metadata={
                         "model": self.model,
                         "rubric_type": self.rubric_type,
-                        "batch_index": i,
                     },
                 )
             )
@@ -363,10 +370,10 @@ class RulerRewardFunction(RewardFunction):
         # Check cache
         cache_key = self._get_cache_key(messages_list)
         if self.cache:
-            cached_scores = await self.cache.get(cache_key)
+            cached_scores = self.cache.get(cache_key)
             if cached_scores:
                 self.cache_hits += 1
-                return cached_scores
+                return [float(score) for score in cached_scores]
 
         # Compute scores with retries
         for attempt in range(self.max_retries):
@@ -375,17 +382,17 @@ class RulerRewardFunction(RewardFunction):
 
                 # Cache results
                 if self.cache:
-                    await self.cache.set(cache_key, scores, ttl=self.cache_ttl)
+                    self.cache.set(cache_key, scores, ttl=self.cache_ttl)
 
                 # Log metrics
                 if self.monitoring:
                     await self.monitoring.log_metric(
                         "ruler_reward.batch_processed",
-                        len(messages_list),
-                        tags={
+                        float(len(messages_list)),
+                        labels={
                             "model": self.model,
                             "rubric_type": self.rubric_type,
-                            "attempt": attempt + 1,
+                            "attempt": str(attempt + 1),
                         },
                     )
 
@@ -513,11 +520,11 @@ class RulerRewardFunction(RewardFunction):
         )
 
     def _turns_to_messages(
-        self, turns: list[dict[str, Any]]
+        self, turns: list[ConversationTurn]
     ) -> list[ChatCompletionMessageParam]:
         """Convert conversation turns to message format"""
-        messages = []
-        for turn in turns:
+        messages: list[ChatCompletionMessageParam] = []
+        for turn in self._normalize_turns(turns):
             role = turn.get("role", "user")
             content = turn.get("content", "")
 
@@ -526,13 +533,16 @@ class RulerRewardFunction(RewardFunction):
 
         return messages
 
-    def _heuristic_fallback(self, turns: list[dict[str, Any]]) -> float:
+    def _heuristic_fallback(self, turns: list[ConversationTurn]) -> float:
         """Simple heuristic scoring as fallback"""
-        if not turns:
+        normalized_turns = self._normalize_turns(turns)
+        if not normalized_turns:
             return 0.0
 
         # Get the last assistant message
-        assistant_messages = [t for t in turns if t.get("role") == "assistant"]
+        assistant_messages = [
+            turn for turn in normalized_turns if turn.get("role") == "assistant"
+        ]
         if not assistant_messages:
             return 0.0
 
@@ -570,6 +580,24 @@ class RulerRewardFunction(RewardFunction):
 
         # Ensure score is in [0, 1]
         return max(0.0, min(1.0, score))
+
+    def _normalize_turns(self, turns: list[ConversationTurn]) -> list[dict[str, Any]]:
+        """Convert turn objects to serializable dicts."""
+        normalized: list[dict[str, Any]] = []
+        for turn in turns:
+            if isinstance(turn, dict):
+                normalized.append(dict(turn))
+                continue
+
+            metadata = getattr(turn, "metadata", None)
+            normalized_turn: dict[str, Any] = {
+                "role": str(getattr(turn, "role", "user")),
+                "content": str(getattr(turn, "content", "")),
+            }
+            if isinstance(metadata, dict):
+                normalized_turn["metadata"] = dict(metadata)
+            normalized.append(normalized_turn)
+        return normalized
 
     def _get_cache_key(
         self, messages_list: list[list[ChatCompletionMessageParam]]

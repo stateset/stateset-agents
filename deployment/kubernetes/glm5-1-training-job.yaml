@@ -1,0 +1,69 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: glm5-1-training
+  namespace: stateset-agents
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: glm5-1-training
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: trainer
+        image: stateset/stateset-agents-trainer:0.11.2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+        command: ["bash", "-lc"]
+        args:
+        - >
+          python examples/finetune_glm5_1_gspo.py
+          --task customer_service
+          --no-dry-run
+          --output-dir /models/glm5-1
+        env:
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: hf_token
+        - name: HF_HOME
+          value: /models/hf
+        - name: TRANSFORMERS_CACHE
+          value: /models/hf
+        - name: WANDB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wandb-secret
+              key: api_key
+              optional: true
+        resources:
+          requests:
+            cpu: "32"
+            memory: "1500Gi"
+            ephemeral-storage: "2000Gi"
+            nvidia.com/gpu: "8"
+          limits:
+            cpu: "32"
+            memory: "1500Gi"
+            ephemeral-storage: "2000Gi"
+            nvidia.com/gpu: "8"
+        volumeMounts:
+        - name: models
+          mountPath: /models
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: stateset-models-pvc
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-h200

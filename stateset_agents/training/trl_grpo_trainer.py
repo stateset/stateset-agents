@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import logging
+import random
 from collections.abc import Callable
 from typing import Any
 
@@ -38,15 +39,18 @@ TRL_GRPO_AVAILABLE = False
 GRPOConfig = None
 TRLGRPOTrainer = None
 
+_wandb: Any | None
 try:
-    import wandb
+    import wandb as _wandb
 except ImportError:  # pragma: no cover - optional dependency
-    wandb = None  # type: ignore
+    _wandb = None
+wandb: Any | None = _wandb
 
 try:
-    from datasets import Dataset
+    from datasets import Dataset as _DatasetType
 except ImportError:  # pragma: no cover - optional dependency
-    Dataset = None  # type: ignore
+    _DatasetType = None
+Dataset: Any | None = _DatasetType
 
 try:
     from peft import (
@@ -56,10 +60,10 @@ try:
         prepare_model_for_kbit_training,
     )
 except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None  # type: ignore
-    TaskType = None  # type: ignore
-    get_peft_model = None  # type: ignore
-    prepare_model_for_kbit_training = None  # type: ignore
+    LoraConfig = None
+    TaskType = None
+    get_peft_model = None
+    prepare_model_for_kbit_training = None
 
 try:
     from trl import GRPOConfig as _GRPOConfig
@@ -73,8 +77,8 @@ except ImportError:  # pragma: no cover - optional dependency
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_loaded = False
-AutoModelForCausalLM = None
-AutoTokenizer = None
+AutoModelForCausalLM: Any | None = None
+AutoTokenizer: Any | None = None
 
 
 def _load_transformers():
@@ -219,8 +223,8 @@ try:
 
     VLLM_AVAILABLE = True
 except ImportError:  # pragma: no cover - optional dependency
-    LLM = None  # type: ignore
-    SamplingParams = None  # type: ignore
+    LLM = None
+    SamplingParams = None
     VLLM_AVAILABLE = False
 
 
@@ -233,7 +237,8 @@ class TrajectoryGenerator:
         self.config = config
         self.agent = agent
         self.environment = environment
-        self.vllm_engine = None
+        self.vllm_engine: Any | None = None
+        self.sampling_params: Any | None = None
 
         if self.config.use_vllm and VLLM_AVAILABLE:
             self._init_vllm()
@@ -267,17 +272,22 @@ class TrajectoryGenerator:
     async def generate_batch(self, num_episodes: int) -> list[MultiTurnTrajectory]:
         """Generate a batch of trajectories"""
         # Determine generation method
-        if self.vllm_engine:
+        if self.vllm_engine is not None:
             return await self._generate_vllm(num_episodes)
-        else:
-            return await self._generate_standard(num_episodes)
+        return await self._generate_standard(num_episodes)
 
     async def _generate_standard(self, num_episodes: int) -> list[MultiTurnTrajectory]:
         """Generate using standard agent loop"""
         logger.info(f"Generating {num_episodes} trajectories (standard)...")
-        trajectories = []
+        trajectories: list[MultiTurnTrajectory] = []
+
+        async def agent_fn(
+            history: list[dict[str, Any]], context: dict[str, Any] | None = None
+        ) -> Any:
+            return await self.agent.generate_response(history, context)
+
         for _ in range(num_episodes):
-            traj = await self.environment.run_episode(self.agent)
+            traj = await self.environment.run_episode(agent_fn)
             trajectories.append(traj)
         return trajectories
 
@@ -291,15 +301,18 @@ class TrajectoryGenerator:
         This implementation assumes a simplified 'prompt -> response' flow for speed.
         """
         logger.info(f"Generating {num_episodes} trajectories (vLLM)...")
+        vllm_engine = self.vllm_engine
+        sampling_params = self.sampling_params
+        if vllm_engine is None or sampling_params is None:
+            return await self._generate_standard(num_episodes)
 
         # Get prompts from environment scenarios
-        prompts = []
-        scenarios = []
+        prompts: list[str] = []
 
         # Naive sampling from environment scenarios
+        scenarios_pool = self.environment.scenarios or [{}]
         for _ in range(num_episodes):
-            scenario = self.environment._get_random_scenario()
-            scenarios.append(scenario)
+            scenario = random.choice(scenarios_pool)
             # Format prompt based on agent configuration
             # This mimics what MultiTurnAgent does internally
             msgs = [
@@ -316,10 +329,10 @@ class TrajectoryGenerator:
         # Run vLLM batch generation
         # Run in a thread to avoid blocking asyncio loop
         outputs = await asyncio.to_thread(
-            self.vllm_engine.generate, prompts, self.sampling_params
+            vllm_engine.generate, prompts, sampling_params
         )
 
-        trajectories = []
+        trajectories: list[MultiTurnTrajectory] = []
         for i, output in enumerate(outputs):
             generated_text = output.outputs[0].text
 
@@ -375,13 +388,19 @@ class ModelManager:
 
         try:
             # Load tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_cls = AutoTokenizer
+            model_cls = AutoModelForCausalLM
+            if tokenizer_cls is None or model_cls is None:
+                raise ImportError("transformers model classes are unavailable")
+
+            self.tokenizer = tokenizer_cls.from_pretrained(
                 self.config.model_name,
                 trust_remote_code=True,
                 padding_side="left",  # Important for generation
             )
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
+            tokenizer: Any = self.tokenizer
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
 
             # Model loading kwargs
             model_kwargs = {
@@ -403,7 +422,7 @@ class ModelManager:
                 model_kwargs["load_in_4bit"] = True
 
             # Load base model
-            base_model = AutoModelForCausalLM.from_pretrained(
+            base_model = model_cls.from_pretrained(
                 self.config.model_name, **model_kwargs
             )
 
@@ -426,11 +445,22 @@ class ModelManager:
 
             # Prepare model for training if using quantization
             if self.config.use_8bit or self.config.use_4bit:
+                if prepare_model_for_kbit_training is None:
+                    raise ImportError("PEFT k-bit helpers are unavailable")
                 base_model = prepare_model_for_kbit_training(base_model)
 
             # Add LoRA adapters
             if self.config.use_lora:
                 _require_peft()
+                lora_config_cls = LoraConfig
+                task_type = TaskType
+                peft_model_fn = get_peft_model
+                if (
+                    lora_config_cls is None
+                    or task_type is None
+                    or peft_model_fn is None
+                ):
+                    raise ImportError("PEFT LoRA components are unavailable")
                 # Determine target modules based on model architecture
                 if self.config.lora_target_modules:
                     target_modules = self.config.lora_target_modules
@@ -448,17 +478,18 @@ class ModelManager:
                     # Default modules
                     target_modules = ["q_proj", "v_proj"]
 
-                lora_config = LoraConfig(
+                lora_config = lora_config_cls(
                     r=self.config.lora_r,
                     lora_alpha=self.config.lora_alpha,
                     target_modules=target_modules,
                     lora_dropout=self.config.lora_dropout,
                     bias="none",
-                    task_type=TaskType.CAUSAL_LM,
+                    task_type=task_type.CAUSAL_LM,
                 )
 
-                self.model = get_peft_model(base_model, lora_config)
-                self.model.print_trainable_parameters()
+                model = peft_model_fn(base_model, lora_config)
+                self.model = model
+                model.print_trainable_parameters()
 
                 logger.info("LoRA adapters added to model")
             else:
@@ -467,12 +498,13 @@ class ModelManager:
             # Load reference model if using KL penalty
             if self.config.beta > 0 and self.config.use_reference_model:
                 logger.info("Loading reference model for KL penalty...")
-                self.ref_model = AutoModelForCausalLM.from_pretrained(
+                ref_model = model_cls.from_pretrained(
                     self.config.model_name,
                     torch_dtype=model_kwargs["torch_dtype"],
                     device_map="auto" if torch.cuda.device_count() > 1 else None,
                 )
-                self.ref_model.eval()
+                self.ref_model = ref_model
+                ref_model.eval()
 
             logger.info(f"Model loaded successfully on {self.device}")
             return self.model, self.tokenizer
@@ -491,27 +523,33 @@ class TRLGRPODatasetBuilder:
 
     def build_from_trajectories(
         self, trajectories: list[MultiTurnTrajectory]
-    ) -> Dataset:
+    ) -> Any:
         """Build dataset from multi-turn trajectories"""
         _require_dataset()
+        dataset_cls = Dataset
+        if dataset_cls is None:
+            raise ImportError("datasets is unavailable")
 
         formatted_data = []
         for trajectory in trajectories:
             # Extract conversation turns
             for i, turn in enumerate(trajectory.turns):
                 if turn.role == "user" and i + 1 < len(trajectory.turns):
-                    user_msg = turn.content
+                    user_msg = str(turn.content or "")
                     # Look for the assistant response
                     if trajectory.turns[i + 1].role == "assistant":
                         # Format as a prompt for GRPO
                         prompt = self._format_prompt(user_msg)
                         formatted_data.append({"prompt": prompt})
 
-        return Dataset.from_list(formatted_data)
+        return dataset_cls.from_list(formatted_data)
 
-    def build_from_conversations(self, conversations: list[dict[str, Any]]) -> Dataset:
+    def build_from_conversations(self, conversations: list[dict[str, Any]]) -> Any:
         """Build dataset from conversation data"""
         _require_dataset()
+        dataset_cls = Dataset
+        if dataset_cls is None:
+            raise ImportError("datasets is unavailable")
 
         formatted_data = []
         for conv in conversations:
@@ -521,10 +559,10 @@ class TRLGRPODatasetBuilder:
             for i, msg in enumerate(messages):
                 if msg["role"] == "user" and i + 1 < len(messages):
                     if messages[i + 1]["role"] == "assistant":
-                        prompt = self._format_prompt(msg["content"])
+                        prompt = self._format_prompt(str(msg["content"] or ""))
                         formatted_data.append({"prompt": prompt})
 
-        return Dataset.from_list(formatted_data)
+        return dataset_cls.from_list(formatted_data)
 
     def _format_prompt(self, user_query: str) -> str:
         """Format user query into a prompt"""
@@ -591,7 +629,7 @@ class TRLGRPOTrainerWrapper:
         config: TRLGRPOConfig,
         model: Any,
         tokenizer: Any,
-        train_dataset: Dataset,
+        train_dataset: Any,
         reward_function: Callable,
         ref_model: Any | None = None,
     ):
@@ -607,7 +645,10 @@ class TRLGRPOTrainerWrapper:
         self.grpo_config = self._create_grpo_config()
 
         # Initialize TRL trainer
-        self.trainer = TRLGRPOTrainer(
+        trainer_cls = TRLGRPOTrainer
+        if trainer_cls is None:
+            raise ImportError("TRL GRPO trainer is unavailable")
+        self.trainer = trainer_cls(
             model=self.model,
             ref_model=self.ref_model,
             args=self.grpo_config,
@@ -616,10 +657,12 @@ class TRLGRPOTrainerWrapper:
             tokenizer=self.tokenizer,
         )
 
-    def _create_grpo_config(self) -> GRPOConfig:
+    def _create_grpo_config(self) -> Any:
         """Create GRPOConfig from our training config"""
-
-        return GRPOConfig(
+        grpo_config_cls = GRPOConfig
+        if grpo_config_cls is None:
+            raise ImportError("TRL GRPO config is unavailable")
+        return grpo_config_cls(
             output_dir=self.config.output_dir,
             per_device_train_batch_size=self.config.per_device_train_batch_size,
             gradient_accumulation_steps=self.config.gradient_accumulation_steps,

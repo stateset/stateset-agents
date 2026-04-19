@@ -68,7 +68,7 @@ class SimilarityAwareReward(RewardFunction):
                     import difflib
 
                     similarity = difflib.SequenceMatcher(
-                        None, turn.content.lower(), expected.lower()
+                        None, str(turn.content or "").lower(), str(expected).lower()
                     ).ratio()
                     similarity_scores.append(similarity)
                     similarity_breakdown[f"turn_{i}_similarity"] = similarity

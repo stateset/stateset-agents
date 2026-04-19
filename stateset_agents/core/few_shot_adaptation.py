@@ -13,20 +13,29 @@ from typing import Any
 
 import numpy as np
 
+from .agent import Agent
+from .reward import RewardFunction
+from .trajectory import ConversationTurn
+
+torch: Any | None
+nn: Any | None
+F: Any | None
+Adam: Any | None
 try:
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-    from torch.optim import Adam
+    import torch as _torch
+    import torch.nn as _nn
+    import torch.nn.functional as _F
+    from torch.optim import Adam as _Adam
+
+    torch = _torch
+    nn = _nn
+    F = _F
+    Adam = _Adam
 except ImportError:
     torch = None
     nn = None
     F = None
     Adam = None
-
-from .agent import Agent
-from .reward import RewardFunction
-from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +150,9 @@ class PromptBasedAdaptation(AdaptationStrategy):
         if examples_with_reward:
             # Select high-reward examples
             sorted_examples = sorted(
-                examples_with_reward, key=lambda e: e.reward, reverse=True
+                examples_with_reward,
+                key=lambda e: float(e.reward or 0.0),
+                reverse=True,
             )
             selected = sorted_examples[:k]
         else:
@@ -199,10 +210,33 @@ class PromptBasedAdaptation(AdaptationStrategy):
                 if hasattr(self.base_agent, "initialize"):
                     await self.base_agent.initialize()
 
-            async def generate_response(self, prompt: str, **kwargs) -> str:
+            async def generate_response(
+                self,
+                prompt: str | list[dict[str, str]],
+                context: dict[str, Any] | None = None,
+            ) -> str:
                 # Prepend few-shot context
-                adapted_prompt = f"{self.adaptation_context}\n\n{prompt}"
-                return await self.base_agent.generate_response(adapted_prompt, **kwargs)
+                if isinstance(prompt, str):
+                    adapted_prompt = f"{self.adaptation_context}\n\n{prompt}"
+                    return str(
+                        await self.base_agent.generate_response(
+                            adapted_prompt, context=context
+                        )
+                    )
+
+                adapted_messages = list(prompt)
+                adapted_messages.insert(
+                    0,
+                    {
+                        "role": "system",
+                        "content": self.adaptation_context,
+                    },
+                )
+                return str(
+                    await self.base_agent.generate_response(
+                        adapted_messages, context=context
+                    )
+                )
 
         return PromptAdaptedAgent(base_agent, few_shot_prompt)
 
@@ -233,7 +267,7 @@ class LoRAAdaptation(AdaptationStrategy):
         self.num_epochs = num_epochs
         self.target_modules = target_modules or ["q_proj", "v_proj"]
         self.adaptation_count = 0
-        self.training_history: list[dict[str, float]] = []
+        self.training_history: list[dict[str, Any]] = []
 
     async def adapt(
         self,

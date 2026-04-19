@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import random
 import uuid
-from typing import Any, overload
+from typing import Any, cast
 
 from .environment_base import (
     ENVIRONMENT_EXCEPTIONS,
@@ -86,37 +86,24 @@ class ConversationEnvironment(Environment):
         self._last_state = state
         return state
 
-    @overload
     async def step(
         self,
-        state: EnvironmentState,
-        action: str | ConversationTurn,
-    ) -> tuple[EnvironmentState, float, bool, dict[str, Any]]:
-        ...
+        *args: Any,
+    ) -> Any:
+        """Advance the environment by one turn.
 
-    @overload
-    async def step(self, action: str | ConversationTurn) -> dict[str, Any]:
-        ...
-
-    async def step(
-        self,
-        state: EnvironmentState | str | ConversationTurn,
-        action: str | ConversationTurn | None = None,
-    ) -> tuple[EnvironmentState, float, bool, dict[str, Any]] | dict[str, Any]:
-        """Advance the environment by one turn."""
-        if action is None:
-            if isinstance(state, EnvironmentState):
-                raise TypeError(
-                    "ConversationEnvironment.step() missing required argument: 'action'"
-                )
-            return await self.step_stateful(state)
-
-        if not isinstance(state, EnvironmentState):
-            raise TypeError(
-                "ConversationEnvironment.step(state, action) requires state to be an EnvironmentState"
+        Supports both the explicit ``step(state, action)`` API used by training
+        loops and a convenience ``step(action)`` mode backed by the last known
+        environment state.
+        """
+        if len(args) == 1:
+            return await self.step_stateful(cast(str | ConversationTurn, args[0]))
+        if len(args) == 2:
+            return await self._step_impl(
+                cast(EnvironmentState, args[0]),
+                cast(str | ConversationTurn, args[1]),
             )
-
-        return await self._step_impl(state, action)
+        raise TypeError("step() expects either (action) or (state, action)")
 
     async def step_stateful(
         self,
@@ -126,7 +113,7 @@ class ConversationEnvironment(Environment):
         if self._last_state is None:
             raise ValueError("Call reset() before step_stateful()")
         new_state, reward, done, info = await self._step_impl(self._last_state, action)
-        payload = new_state.as_dict()
+        payload: dict[str, Any] = new_state.as_dict()
         payload.update(
             {
                 "state": new_state,
@@ -164,7 +151,7 @@ class ConversationEnvironment(Environment):
         step_reward = 0.0
         if self.reward_fn is not None and self._should_compute_step_reward():
             try:
-                reward_result = await self.reward_fn.compute_reward(  # type: ignore[arg-type]
+                reward_result = await self.reward_fn.compute_reward(
                     [agent_turn, user_response],
                     new_state.context,
                 )

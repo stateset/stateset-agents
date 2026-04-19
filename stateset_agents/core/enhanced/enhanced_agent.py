@@ -17,11 +17,12 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 try:
     import torch
 except ImportError:  # pragma: no cover - optional dependency
-    torch = None  # type: ignore
+    torch = None
 
 from ..agent import AgentConfig, MultiTurnAgent
 
@@ -88,8 +89,8 @@ class VectorMemory:
         self.embedding_model = embedding_model
         self.max_entries = max_entries
         self.entries: list[MemoryEntry] = []
-        self.tokenizer = None
-        self.model = None
+        self.tokenizer: Any | None = None
+        self.model: Any | None = None
         if torch is not None:
             cuda_available = False
             try:  # pragma: no cover - device probing
@@ -115,8 +116,11 @@ class VectorMemory:
             self.model = None
 
     async def add_entry(
-        self, content: str, context: dict[str, Any] = None, importance: float = 1.0
-    ):
+        self,
+        content: str,
+        context: dict[str, Any] | None = None,
+        importance: float = 1.0,
+    ) -> None:
         """Add a new memory entry"""
         entry = MemoryEntry(
             content=content, context=context or {}, importance=importance
@@ -166,7 +170,7 @@ class VectorMemory:
 
         return relevant_entries
 
-    async def _generate_embedding(self, text: str) -> np.ndarray:
+    async def _generate_embedding(self, text: str) -> NDArray[np.float64]:
         """Generate embedding for text"""
         if self.model:
             if torch is not None and hasattr(torch, "no_grad"):
@@ -174,10 +178,10 @@ class VectorMemory:
                     embedding = self.model.encode(text, convert_to_numpy=True)
             else:
                 embedding = self.model.encode(text, convert_to_numpy=True)
-            return embedding
+            return np.asarray(embedding, dtype=np.float64)
         else:
             # Simple fallback embedding
-            return np.random.rand(384)  # Match MiniLM dimension
+            return np.random.rand(384).astype(np.float64)  # Match MiniLM dimension
 
 
 class ReasoningEngine:
@@ -194,10 +198,10 @@ class ReasoningEngine:
         }
 
     async def reason(
-        self, query: str, context: dict[str, Any] = None
+        self, query: str, context: dict[str, Any] | None = None
     ) -> list[ReasoningStep]:
         """Perform chain-of-thought reasoning"""
-        steps = []
+        steps: list[ReasoningStep] = []
         current_context = context or {}
 
         # Determine reasoning type
@@ -331,9 +335,16 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
         logger.info("Enhanced MultiTurnAgent initialized with advanced capabilities")
 
     async def generate_response(
-        self, messages: list[dict[str, str]], context: dict[str, Any] | None = None
+        self,
+        messages_or_prompt: str | list[dict[str, str]],
+        context: dict[str, Any] | None = None,
     ) -> str:
         """Generate enhanced response with reasoning and memory"""
+
+        if isinstance(messages_or_prompt, str):
+            messages = [{"role": "user", "content": messages_or_prompt}]
+        else:
+            messages = messages_or_prompt
 
         # Extract current query
         current_query = messages[-1]["content"] if messages else ""
@@ -346,7 +357,9 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
         # Perform reasoning if needed
         reasoning_steps = []
         if self._should_reason(current_query):
-            reasoning_steps = await self.reasoning_engine.reason(current_query, context)
+            reasoning_steps = await self.reasoning_engine.reason(
+                current_query, context or {}
+            )
             self.reasoning_history.append(reasoning_steps)
 
         # Adapt persona based on context
@@ -362,7 +375,7 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
         }
 
         # Generate response using base agent
-        response = await super().generate_response(messages, enhanced_context)
+        response = str(await super().generate_response(messages, enhanced_context))
 
         # Store interaction in memory
         memory_content = f"Query: {current_query}\nResponse: {response}"
@@ -373,9 +386,9 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
         )
 
         # Update performance metrics
-        self._update_performance_metrics(response, context)
+        self._update_performance_metrics(response, context or {})
 
-        return response
+        return str(response)
 
     def _should_reason(self, query: str) -> bool:
         """Determine if complex reasoning is needed"""
@@ -573,5 +586,5 @@ def create_domain_specific_agent(
     config = domain_configs.get(domain, domain_configs["customer_service"])
 
     return create_enhanced_agent(
-        model_name=model_name, persona_name=config["persona_name"], **kwargs
+        model_name=model_name, persona_name=str(config["persona_name"]), **kwargs
     )

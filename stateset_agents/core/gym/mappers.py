@@ -7,11 +7,12 @@ Provides robust parsing with multiple fallback strategies for error handling.
 
 from __future__ import annotations
 
+import importlib
 import logging
 import random
 import re
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -264,7 +265,7 @@ class ContinuousActionMapper(ActionMapper):
         clipped = np.clip(action, self.action_low, self.action_high)
         if not np.allclose(action, clipped):
             logger.debug(f"Clipped action {action} to bounds.")
-        return clipped
+        return cast(np.ndarray, np.asarray(clipped, dtype=float))
 
     def get_action_space_size(self, gym_env: Any) -> int:
         """Get dimension of continuous action space."""
@@ -288,25 +289,25 @@ def create_action_mapper(gym_env: Any, **kwargs) -> ActionMapper:
         >>> mapper = create_action_mapper(env)
         >>> mapper = create_action_mapper(env, action_names=["LEFT", "RIGHT"])
     """
-    gym = None
+    gym_module: Any | None = None
     try:
-        import gymnasium as gym  # type: ignore[assignment]
+        gym_module = importlib.import_module("gymnasium")
     except ImportError:
         try:
-            import gym  # type: ignore[assignment]
+            gym_module = importlib.import_module("gym")
         except ImportError:
-            gym = None
+            gym_module = None
 
     action_space = getattr(gym_env, "action_space", None)
     if action_space is None:
         raise ValueError("gym_env.action_space is required to create an action mapper")
 
     # If gym/gymnasium is installed, prefer the canonical type checks.
-    if gym is not None:
-        if isinstance(action_space, gym.spaces.Discrete):
+    if gym_module is not None:
+        if isinstance(action_space, gym_module.spaces.Discrete):
             return DiscreteActionMapper(n_actions=action_space.n, **kwargs)
 
-        if isinstance(action_space, gym.spaces.Box):
+        if isinstance(action_space, gym_module.spaces.Box):
             action_dim = action_space.shape[0] if len(action_space.shape) > 0 else 1
             return ContinuousActionMapper(
                 action_dim=action_dim,
@@ -315,7 +316,7 @@ def create_action_mapper(gym_env: Any, **kwargs) -> ActionMapper:
                 **kwargs,
             )
 
-        if isinstance(action_space, gym.spaces.MultiDiscrete):
+        if isinstance(action_space, gym_module.spaces.MultiDiscrete):
             n_actions = int(np.prod(action_space.nvec))
             logger.warning(
                 "MultiDiscrete space with %s dims. Treating as single discrete with %s actions.",
@@ -325,9 +326,9 @@ def create_action_mapper(gym_env: Any, **kwargs) -> ActionMapper:
             return DiscreteActionMapper(n_actions=n_actions, **kwargs)
 
         # Heuristic fallback for mocked/spoofed spaces in tests.
-        n_actions = getattr(action_space, "n", None)
-        if isinstance(n_actions, int) and n_actions > 0:
-            return DiscreteActionMapper(n_actions=n_actions, **kwargs)
+        n_actions_value: Any = getattr(action_space, "n", None)
+        if isinstance(n_actions_value, int) and n_actions_value > 0:
+            return DiscreteActionMapper(n_actions=n_actions_value, **kwargs)
 
         nvec = getattr(action_space, "nvec", None)
         if nvec is not None:
@@ -351,9 +352,9 @@ def create_action_mapper(gym_env: Any, **kwargs) -> ActionMapper:
         )
 
     # Fallback when gym isn't installed (unit tests / optional dependency).
-    n_actions = getattr(action_space, "n", None)
-    if isinstance(n_actions, int) and n_actions > 0:
-        return DiscreteActionMapper(n_actions=n_actions, **kwargs)
+    fallback_n_actions: Any = getattr(action_space, "n", None)
+    if isinstance(fallback_n_actions, int) and fallback_n_actions > 0:
+        return DiscreteActionMapper(n_actions=fallback_n_actions, **kwargs)
 
     nvec = getattr(action_space, "nvec", None)
     if nvec is not None:

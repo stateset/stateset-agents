@@ -22,6 +22,37 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+QUICKSTART_STUB_RESPONSES = [
+    "I'd be happy to help you with that.",
+    "A good starting point is to focus on the fundamentals and practice often.",
+    "You can build confidence by trying a small project end to end.",
+    "That sounds like a solid next step.",
+]
+
+
+def create_quickstart_config(
+    system_prompt: str,
+    *,
+    temperature: float = 0.8,
+    max_new_tokens: int = 256,
+) -> AgentConfig:
+    """Return a portable default config for the quick-start examples.
+
+    The quick start should run on a fresh local machine without model downloads,
+    GPU kernels, or optional inference packages. Users can swap in a real model
+    by changing ``model_name`` and disabling ``use_stub_model``.
+    """
+    return AgentConfig(
+        model_name="stub://quickstart",
+        system_prompt=system_prompt,
+        temperature=temperature,
+        max_new_tokens=max_new_tokens,
+        use_stub_model=True,
+        stub_responses=QUICKSTART_STUB_RESPONSES,
+        attn_implementation="eager",
+    )
+
+
 async def basic_example():
     """Most basic example - train a helpful assistant"""
 
@@ -31,9 +62,8 @@ async def basic_example():
     # Step 1: Create an agent
     logger.info("Step 1: Creating agent...")
 
-    config = AgentConfig(
-        model_name="gpt2",  # Small default model; override for your setup
-        system_prompt="You are a helpful AI assistant. Be friendly and informative.",
+    config = create_quickstart_config(
+        "You are a helpful AI assistant. Be friendly and informative.",
         temperature=0.8,
         max_new_tokens=256,
     )
@@ -70,7 +100,7 @@ async def basic_example():
         },
     ]
 
-    environment = ConversationEnvironment(scenarios=scenarios, max_turns=8)
+    environment = ConversationEnvironment(scenarios=scenarios, max_turns=4)
 
     # Step 3: Define reward function (optional - can use defaults)
     logger.info("Step 3: Setting up rewards...")
@@ -88,8 +118,9 @@ async def basic_example():
         agent=agent,
         environment=environment,
         reward_fn=reward_fn,
-        num_episodes=20,  # Very small for demo
+        num_episodes=4,  # Keep the quick start genuinely quick
         profile="balanced",
+        training_mode="single_turn",
     )
 
     logger.info("Training completed!")
@@ -136,9 +167,8 @@ async def auto_training_example():
     from stateset_agents.training.train import AutoTrainer
 
     # Create agent and environment (same as before)
-    config = AgentConfig(
-        model_name="gpt2",
-        system_prompt="You are a helpful AI assistant.",
+    config = create_quickstart_config(
+        "You are a helpful AI assistant.",
         temperature=0.8,
     )
 
@@ -166,7 +196,7 @@ async def auto_training_example():
 
     logger.info("Starting automatic training...")
     trained_agent = await auto_trainer.train(
-        agent=agent, environment=environment, num_episodes=15  # Small for demo
+        agent=agent, environment=environment, num_episodes=4  # Fast smoke-sized demo
     )
 
     logger.info("Automatic training completed!")
@@ -219,9 +249,8 @@ async def custom_reward_example():
             )
 
     # Create agent with politeness emphasis
-    config = AgentConfig(
-        model_name="gpt2",
-        system_prompt="You are a very polite and courteous AI assistant. Always use please, thank you, and other polite expressions.",
+    config = create_quickstart_config(
+        "You are a very polite and courteous AI assistant. Always use please, thank you, and other polite expressions.",
         temperature=0.7,
     )
 
@@ -249,7 +278,7 @@ async def custom_reward_example():
         agent=agent,
         environment=environment,
         reward_fn=reward_fn,
-        num_episodes=10,
+        num_episodes=4,
         profile="conservative",  # More stable for custom rewards
     )
 
@@ -258,24 +287,15 @@ async def custom_reward_example():
 
 
 async def main():
-    """Run all examples"""
+    """Run the minimal onboarding example."""
 
-    # Basic example
     await basic_example()
 
-    # Auto training example
-    await auto_training_example()
-
-    # Custom reward example
-    await custom_reward_example()
-
-    logger.info("\n🎉 All examples completed successfully!")
+    logger.info("\nQuick start completed successfully!")
     logger.info("\nNext steps:")
-    logger.info(
-        "1. Try the customer service example: python -m stateset_agents.examples.customer_service_agent"
-    )
-    logger.info("2. Explore the documentation for advanced features")
-    logger.info("3. Create your own custom agents and environments")
+    logger.info("1. Run the auto-training variant inside this file if you want a larger demo")
+    logger.info("2. Run custom_reward_example() to experiment with custom rewards")
+    logger.info("3. Swap the stub model config for a real checkpoint when you're ready")
 
 
 if __name__ == "__main__":

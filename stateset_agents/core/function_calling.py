@@ -34,6 +34,7 @@ from typing import (
     Any,
     Literal,
     Union,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -150,7 +151,8 @@ class ToolCall:
     def parsed_arguments(self) -> dict[str, Any]:
         """Parse arguments as JSON."""
         try:
-            return json.loads(self.arguments)
+            parsed = json.loads(self.arguments)
+            return parsed if isinstance(parsed, dict) else {}
         except json.JSONDecodeError:
             return {}
 
@@ -282,7 +284,7 @@ def tool(
             else:
                 param_schema["default"] = param.default
 
-        parameters = {
+        parameters: dict[str, Any] = {
             "type": "object",
             "properties": properties,
             "required": required,
@@ -375,13 +377,8 @@ class FunctionCallingMixin:
         if isinstance(tool, FunctionDefinition):
             self._tools[tool.name] = tool
         elif callable(tool):
-            # Check if it's already a FunctionDefinition from decorator
-            if isinstance(tool, FunctionDefinition):
-                self._tools[tool.name] = tool
-            else:
-                # Wrap plain callable
-                wrapped = self._wrap_callable(tool)
-                self._tools[wrapped.name] = wrapped
+            wrapped = self._wrap_callable(tool)
+            self._tools[wrapped.name] = wrapped
         elif isinstance(tool, dict):
             # Parse OpenAI-format dict
             func_def = self._parse_tool_dict(tool)
@@ -391,7 +388,7 @@ class FunctionCallingMixin:
 
     def _wrap_callable(self, func: Callable) -> FunctionDefinition:
         """Wrap a plain callable as a FunctionDefinition."""
-        return tool()(func)
+        return cast(FunctionDefinition, tool()(func))
 
     def _parse_tool_dict(self, tool_dict: dict[str, Any]) -> FunctionDefinition:
         """Parse OpenAI-format tool dict into FunctionDefinition."""
@@ -602,27 +599,30 @@ def create_function_calling_agent_class():
             Returns:
                 Final response after all tool executions
             """
+            message_history: list[dict[str, Any]]
             if isinstance(messages, str):
-                messages = [{"role": "user", "content": messages}]
+                message_history = [{"role": "user", "content": messages}]
             else:
-                messages = list(messages)
+                message_history = list(messages)
 
             choice = tool_choice or self._tool_choice
 
             # Add tool instructions if using tools
             if choice != ToolChoiceMode.NONE and self._tools:
                 tool_prompt = self._build_tool_system_prompt()
-                if messages and messages[0].get("role") == "system":
-                    messages[0] = {
+                if message_history and message_history[0].get("role") == "system":
+                    message_history[0] = {
                         "role": "system",
-                        "content": messages[0]["content"] + "\n\n" + tool_prompt,
+                        "content": str(message_history[0]["content"]) + "\n\n" + tool_prompt,
                     }
                 else:
-                    messages.insert(0, {"role": "system", "content": tool_prompt})
+                    message_history.insert(0, {"role": "system", "content": tool_prompt})
 
             for _round_num in range(max_tool_rounds):
                 # Generate response
-                response = await self.generate_response(messages, context)
+                response = str(
+                    await self.generate_response(cast(Any, message_history), context)
+                )
 
                 # Check for tool calls
                 tool_calls = self._parse_tool_calls(response)
@@ -635,7 +635,7 @@ def create_function_calling_agent_class():
                 results = await self.execute_tool_calls(tool_calls)
 
                 # Add assistant message with tool calls
-                messages.append(
+                message_history.append(
                     {
                         "role": "assistant",
                         "content": response,
@@ -648,10 +648,10 @@ def create_function_calling_agent_class():
 
                 # Add tool results
                 for result in results:
-                    messages.append(result.to_message())
+                    message_history.append(result.to_message())
 
             # Max rounds reached
-            return await self.generate_response(messages, context)
+            return str(await self.generate_response(cast(Any, message_history), context))
 
     return FunctionCallingAgent
 

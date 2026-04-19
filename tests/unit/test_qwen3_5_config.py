@@ -232,6 +232,23 @@ class TestQwen35Config:
         assert actual.lora_target_modules == expected.lora_target_modules
         assert actual.save_steps == expected.save_steps
 
+    def test_generic_family_script_has_qwen3_5_27b_profile(self):
+        from examples import finetune_qwen3_gspo as family_module
+
+        config = family_module.get_qwen3_config(
+            model_name="Qwen/Qwen3.5-27B",
+            task="customer_service",
+            use_vllm=True,
+            output_dir="./outputs/qwen3_5_27b_shared_test",
+        )
+
+        assert config.use_vllm is True
+        assert config.use_reference_model is True
+        assert config.temperature == 1.0
+        assert config.top_p == 0.95
+        assert config.num_generations == 8
+        assert config.max_prompt_length == 4096
+
 
 class TestQwen35StarterScript:
     """Test the dedicated starter script surface."""
@@ -313,3 +330,49 @@ class TestQwen35StarterScript:
         assert payload["task"] == "sales"
         assert payload["profiles"]["quality"]["summary"]["num_generations"] == 6
         assert "memory" in payload["profiles"]
+
+
+class TestQwen3527BStarterScript:
+    """Test the dedicated Qwen3.5-27B starter surface."""
+
+    def test_training_function_signature(self):
+        from examples import finetune_qwen3_5_27b_gspo as training_module
+
+        sig = inspect.signature(training_module.finetune_qwen3_5_27b)
+        params = list(sig.parameters.keys())
+
+        assert "use_vllm" in params
+        assert "export_merged" in params
+        assert "language_model_only" in params
+        assert "dry_run" in params
+
+    def test_dry_run_preview(self):
+        from examples import finetune_qwen3_5_27b_gspo as training_module
+
+        preview = asyncio.run(training_module.finetune_qwen3_5_27b(dry_run=True))
+
+        assert preview["model_name"] == "Qwen/Qwen3.5-27B"
+        assert preview["gspo_overrides"]["use_vllm"] is True
+        assert preview["gspo_overrides"]["num_generations"] == 8
+        assert preview["serving_manifest"]["recommended"]["reasoning_parser"] == "qwen3"
+        assert (
+            preview["serving_manifest"]["recommended"]["language_model_only"] is True
+        )
+
+    def test_cli_dry_run_subprocess(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        output = subprocess.check_output(
+            [
+                sys.executable,
+                "examples/finetune_qwen3_5_27b_gspo.py",
+                "--dry-run",
+            ],
+            cwd=repo_root,
+            text=True,
+        )
+        payload = json.loads(output)
+
+        assert payload["model_name"] == "Qwen/Qwen3.5-27B"
+        assert payload["gspo_overrides"]["use_vllm"] is True
+        assert payload["serving_manifest"]["recommended"]["tool_call_parser"] == "qwen3_coder"
+        assert payload["serving_manifest"]["recommended"]["language_model_only"] is True

@@ -24,7 +24,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from collections.abc import Callable
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
@@ -273,7 +273,7 @@ def deprecate(
             return response
 
         # Store deprecation info on function
-        wrapper._deprecation_notice = notice
+        cast(Any, wrapper)._deprecation_notice = notice
         return wrapper
 
     return decorator
@@ -589,10 +589,10 @@ class RequestMigrator:
         path: list[MigrationStep] = []
         cur: APIVersion = to_version
         while True:
-            parent, step = prev[cur]
-            if parent is None or step is None:
+            parent, path_step = prev[cur]
+            if parent is None or path_step is None:
                 break
-            path.append(step)
+            path.append(path_step)
             cur = parent
         path.reverse()
         return path

@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from stateset_agents.core.agent import MultiTurnAgent
 from stateset_agents.core.environment import Environment
@@ -126,16 +126,16 @@ class GRPOHPOTrainer:
         backend_config = self.hpo_config.get_backend_config()
 
         if self.hpo_config.backend == "optuna":
-            return OptunaBackend(
+            return cast(HPOBackend, OptunaBackend(
                 search_space=self.search_space,
                 objective_metric=self.hpo_config.objective_metric,
                 direction=self.hpo_config.direction,
                 callbacks=self.callbacks,
                 study_name=self.hpo_config.study_name,
                 **backend_config,
-            )
+            ))
         elif self.hpo_config.backend == "ray_tune":
-            return RayTuneBackend(
+            return cast(HPOBackend, RayTuneBackend(
                 search_space=self.search_space,
                 objective_metric=self.hpo_config.objective_metric,
                 direction=self.hpo_config.direction,
@@ -150,9 +150,9 @@ class GRPOHPOTrainer:
                 cpu_per_trial=self.hpo_config.cpu_per_trial,
                 gpu_per_trial=self.hpo_config.gpu_per_trial,
                 ray_init_kwargs=backend_config.get("ray_init_kwargs"),
-            )
+            ))
         elif self.hpo_config.backend == "wandb":
-            return WandBSweepsBackend(
+            return cast(HPOBackend, WandBSweepsBackend(
                 search_space=self.search_space,
                 objective_metric=self.hpo_config.objective_metric,
                 direction=self.hpo_config.direction,
@@ -162,7 +162,7 @@ class GRPOHPOTrainer:
                 project=backend_config.get("project", "stateset-hpo"),
                 entity=backend_config.get("entity"),
                 sweep_name=self.hpo_config.study_name,
-            )
+            ))
         else:
             raise ValueError(f"Unknown backend: {self.hpo_config.backend}")
 
@@ -208,7 +208,7 @@ class GRPOHPOTrainer:
         trainer = MultiTurnGRPOTrainer(
             agent=self.agent,
             environment=self.environment,
-            reward_function=self.reward_function,
+            reward_fn=self.reward_function,
             config=training_config,
         )
 
@@ -220,10 +220,13 @@ class GRPOHPOTrainer:
         logger.info(f"Running {hpo_episodes} episodes for HPO trial")
 
         try:
-            metrics = await trainer.train(num_episodes=hpo_episodes)
+            original_num_episodes = getattr(training_config, "num_episodes", hpo_episodes)
+            training_config.num_episodes = hpo_episodes
+            metrics = await trainer.train()
+            training_config.num_episodes = original_num_episodes
 
             # Extract objective metric
-            metric_value = metrics.get(self.hpo_config.objective_metric, 0.0)
+            metric_value = float(metrics.get(self.hpo_config.objective_metric, 0.0))
 
             logger.info(
                 f"Trial completed: {self.hpo_config.objective_metric} = {metric_value:.4f}"
@@ -297,7 +300,7 @@ class GRPOHPOTrainer:
         trainer = MultiTurnGRPOTrainer(
             agent=self.agent,
             environment=self.environment,
-            reward_function=self.reward_function,
+            reward_fn=self.reward_function,
             config=training_config,
         )
 
@@ -309,7 +312,10 @@ class GRPOHPOTrainer:
 
         # Save best agent
         best_agent_path = self.hpo_config.output_dir / "best_agent"
-        self.best_agent.save(best_agent_path)
+        if self.best_agent is None:
+            raise RuntimeError("Trainer did not produce a best agent")
+        if hasattr(self.best_agent, "save"):
+            self.best_agent.save(best_agent_path)
         logger.info(f"Best agent saved to {best_agent_path}")
 
         return self.best_agent
@@ -385,7 +391,8 @@ class GRPOHPOTrainer:
         if self.hpo_summary is None:
             raise ValueError("Must call optimize() before getting best params")
 
-        return self.hpo_summary.best_params
+        best_params: dict[str, Any] = self.hpo_summary.best_params
+        return best_params
 
     def plot_results(self, save_dir: Path | None = None):
         """Generate and save HPO visualization plots.

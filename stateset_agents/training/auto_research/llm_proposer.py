@@ -13,6 +13,7 @@ import logging
 import os
 import re
 from typing import Any
+from collections.abc import Mapping
 
 from .proposer import ExperimentProposer
 
@@ -111,16 +112,17 @@ def _resolve_backend(
     backend: str | None,
     *,
     api_key: str | None = None,
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
     model: str | None = None,
 ) -> str:
-    env = env or os.environ
+    env_mapping = os.environ if env is None else env
     normalized = _normalize_backend(backend)
     if normalized != "auto":
         return normalized
 
     configured_backend = _normalize_backend(
-        env.get("LLM_PROPOSER_BACKEND") or env.get("STATESET_LLM_PROVIDER")
+        env_mapping.get("LLM_PROPOSER_BACKEND")
+        or env_mapping.get("STATESET_LLM_PROVIDER")
     )
     if configured_backend != "auto":
         return configured_backend
@@ -128,10 +130,12 @@ def _resolve_backend(
     for candidate in (
         _infer_backend_from_api_key(api_key),
         _infer_backend_from_model(model),
-        _infer_backend_from_model(env.get("LLM_PROPOSER_MODEL")),
-        _infer_backend_from_model(env.get("MODEL_NAME")),
-        "openai" if env.get("OPENAI_API_KEY") or env.get("OPENAI_TOKEN") else None,
-        "anthropic" if env.get("ANTHROPIC_API_KEY") else None,
+        _infer_backend_from_model(env_mapping.get("LLM_PROPOSER_MODEL")),
+        _infer_backend_from_model(env_mapping.get("MODEL_NAME")),
+        "openai"
+        if env_mapping.get("OPENAI_API_KEY") or env_mapping.get("OPENAI_TOKEN")
+        else None,
+        "anthropic" if env_mapping.get("ANTHROPIC_API_KEY") else None,
     ):
         if candidate is not None:
             return candidate
@@ -143,18 +147,18 @@ def _resolve_model_name(
     backend: str,
     model: str | None = None,
     *,
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> str:
     if model is not None:
         return model
 
-    env = env or os.environ
-    shared_model = env.get("LLM_PROPOSER_MODEL") or env.get("MODEL_NAME")
+    env_mapping = os.environ if env is None else env
+    shared_model = env_mapping.get("LLM_PROPOSER_MODEL") or env_mapping.get("MODEL_NAME")
     if shared_model:
         return shared_model
     if backend == "anthropic":
-        return env.get("ANTHROPIC_MODEL", _DEFAULT_MODELS["anthropic"])
-    return env.get("OPENAI_MODEL", _DEFAULT_MODELS["openai"])
+        return env_mapping.get("ANTHROPIC_MODEL", _DEFAULT_MODELS["anthropic"])
+    return env_mapping.get("OPENAI_MODEL", _DEFAULT_MODELS["openai"])
 
 
 def _format_search_space(search_space: Any) -> str:
@@ -219,7 +223,9 @@ def _extract_json(text: str) -> dict[str, Any]:
 
     # Strategy 1: direct parse
     try:
-        return json.loads(text)
+        parsed: object = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
     except json.JSONDecodeError:
         pass
 
@@ -230,7 +236,9 @@ def _extract_json(text: str) -> dict[str, Any]:
         stripped = re.sub(r"\n?\s*```\s*$", "", stripped)
         stripped = stripped.strip()
         try:
-            return json.loads(stripped)
+            parsed_fenced: object = json.loads(stripped)
+            if isinstance(parsed_fenced, dict):
+                return parsed_fenced
         except json.JSONDecodeError:
             pass
 
@@ -245,7 +253,9 @@ def _extract_json(text: str) -> dict[str, Any]:
                 depth -= 1
                 if depth == 0:
                     try:
-                        return json.loads(text[start : i + 1])
+                        parsed_block: object = json.loads(text[start : i + 1])
+                        if isinstance(parsed_block, dict):
+                            return parsed_block
                     except json.JSONDecodeError:
                         break
 
@@ -276,10 +286,10 @@ class LLMProposer(ExperimentProposer):
         self.backend = _resolve_backend(
             backend,
             api_key=api_key,
-            env=os.environ,
+            env=dict(os.environ),
             model=model,
         )
-        self.model = _resolve_model_name(self.backend, model, env=os.environ)
+        self.model = _resolve_model_name(self.backend, model, env=dict(os.environ))
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.system_prompt = system_prompt or _SYSTEM_PROMPT
@@ -366,7 +376,8 @@ class LLMProposer(ExperimentProposer):
                 system=self.system_prompt,
                 messages=[{"role": "user", "content": user_prompt}],
             )
-            return response.content[0].text
+            text: object = response.content[0].text
+            return text if isinstance(text, str) else str(text)
 
         elif self.backend == "openai":
             response = self._client.chat.completions.create(
@@ -378,7 +389,8 @@ class LLMProposer(ExperimentProposer):
                     {"role": "user", "content": user_prompt},
                 ],
             )
-            return response.choices[0].message.content
+            content: object = response.choices[0].message.content
+            return content if isinstance(content, str) else str(content)
 
         raise ValueError(f"Unknown backend: {self.backend!r}")
 

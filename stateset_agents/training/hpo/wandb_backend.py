@@ -13,7 +13,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from .base import (
     HPOBackend,
@@ -25,11 +25,13 @@ from .base import (
 )
 
 try:
-    import wandb  # type: ignore
+    import wandb as _wandb
+
+    wandb: Any = _wandb
 
     WANDB_AVAILABLE = True
 except ImportError:  # pragma: no cover
-    wandb = None  # type: ignore
+    wandb = None
     WANDB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -90,22 +92,34 @@ class WandBSweepsBackend(HPOBackend):
         if dim.type in (SearchSpaceType.CATEGORICAL, SearchSpaceType.CHOICE):
             return {"values": dim.choices}
         if dim.type == SearchSpaceType.INT:
+            low = dim.low
+            high = dim.high
+            if low is None or high is None:
+                raise ValueError(f"Integer dimension {dim.name} requires bounds")
             return {
                 "distribution": "int_uniform",
-                "min": int(dim.low),
-                "max": int(dim.high),
+                "min": int(low),
+                "max": int(high),
             }
         if dim.type == SearchSpaceType.LOGUNIFORM:
+            low = dim.low
+            high = dim.high
+            if low is None or high is None:
+                raise ValueError(f"Log-uniform dimension {dim.name} requires bounds")
             return {
                 "distribution": "log_uniform_values",
-                "min": float(dim.low),
-                "max": float(dim.high),
+                "min": float(low),
+                "max": float(high),
             }
         if dim.type in (SearchSpaceType.FLOAT, SearchSpaceType.UNIFORM):
+            low = dim.low
+            high = dim.high
+            if low is None or high is None:
+                raise ValueError(f"Float dimension {dim.name} requires bounds")
             return {
                 "distribution": "uniform",
-                "min": float(dim.low),
-                "max": float(dim.high),
+                "min": float(low),
+                "max": float(high),
             }
         raise ValueError(f"Unsupported search space type for W&B: {dim.type}")
 
@@ -137,23 +151,24 @@ class WandBSweepsBackend(HPOBackend):
 
     async def optimize(
         self,
-        objective_fn: Callable[[dict[str, Any]], float],
+        objective_fn: Callable[[dict[str, Any]], float | Awaitable[float]],
         n_trials: int = 100,
         timeout: float | None = None,
     ) -> HPOSummary:
         _require_wandb()
 
         sweep_config = self._build_sweep_config()
-        self.results = []
+        self.results: list[HPOResult] = []
         self._notify_hpo_start(n_trials)
         start_time = time.time()
 
-        sweep_id = wandb.sweep(  # type: ignore[attr-defined]
-            sweep_config, project=self.project, entity=self.entity
-        )
+        if wandb is None:
+            raise ImportError("wandb is required for this HPO backend")
+
+        sweep_id = wandb.sweep(sweep_config, project=self.project, entity=self.entity)
 
         def run_trial() -> None:
-            run = wandb.init(  # type: ignore[attr-defined]
+            run = wandb.init(
                 project=self.project,
                 entity=self.entity,
                 dir=str(self.output_dir),
@@ -189,7 +204,7 @@ class WandBSweepsBackend(HPOBackend):
 
         # wandb.agent is blocking; run in a worker thread if already in an event loop.
         def run_agent() -> None:
-            wandb.agent(  # type: ignore[attr-defined]
+            wandb.agent(
                 sweep_id,
                 function=run_trial,
                 count=n_trials,

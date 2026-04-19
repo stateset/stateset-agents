@@ -34,6 +34,7 @@ class TRLGRPOConfig(TrainingConfig):
     max_completion_length: int = 256
     temperature: float = 0.7
     top_p: float = 0.9
+    system_prompt: str | None = None
 
     use_lora: bool = True
     lora_r: int = 16
@@ -56,7 +57,7 @@ class TRLGRPOConfig(TrainingConfig):
 
     def validate(self) -> list[str]:
         """Validate configuration and return warnings."""
-        warnings = super().validate()
+        warnings: list[str] = list(super().validate())
 
         if self.gradient_checkpointing and self.use_lora:
             warnings.append(

@@ -40,11 +40,11 @@ except ImportError:
     MLFLOW_AVAILABLE = False
 
 try:
-    import psutil  # type: ignore[import-not-found]
+    import psutil
 
     PSUTIL_AVAILABLE = True
 except ImportError:  # pragma: no cover
-    psutil = None  # type: ignore[assignment]
+    psutil = None
     PSUTIL_AVAILABLE = False
 
 from stateset_agents.core.advanced_monitoring import (
@@ -359,8 +359,8 @@ class ExperimentTracker:
                 logger.error(f"Failed to log artifact to MLflow: {e}")
 
     async def finish_experiment(
-        self, experiment_id: str, final_metrics: dict[str, float] = None
-    ):
+        self, experiment_id: str, final_metrics: dict[str, float] | None = None
+    ) -> None:
         """Finish tracking an experiment"""
         if experiment_id not in self.experiments:
             return
@@ -479,14 +479,14 @@ class TrainingWorker:
             RetryConfig(
                 max_attempts=job.config.max_retries + 1,
                 base_delay=10.0,
-                exponential_backoff=True,
+                exponential_base=2.0,
             )
         )
         async def _training_loop():
             return await self._run_training_loop(job, experiment_tracker, experiment_id)
 
         try:
-            return await _training_loop()
+            return bool(await _training_loop())
         except TRAINING_ORCH_EXCEPTIONS as e:
             logger.error(f"Training failed after {job.config.max_retries} retries: {e}")
             return False
@@ -553,6 +553,7 @@ class TrainingWorker:
             if (
                 job.config.enable_checkpointing
                 and epoch % job.config.checkpoint_frequency == 0
+                and job.checkpoint_path is not None
             ):
                 checkpoint_path = (
                     Path(job.checkpoint_path) / f"checkpoint_epoch_{epoch}.pt"
@@ -747,7 +748,7 @@ class AdvancedTrainingOrchestrator:
         self._monitoring_task = loop.create_task(self._monitoring_loop())
 
     async def submit_training_job(
-        self, config: TrainingConfig, priority: int = 1, user_id: str = None
+        self, config: TrainingConfig, priority: int = 1, user_id: str | None = None
     ) -> str:
         """Submit a new training job"""
         self._start_background_tasks()

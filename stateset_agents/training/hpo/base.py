@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 
 class SearchSpaceType(str, Enum):
@@ -320,7 +320,7 @@ class HPOBackend(ABC):
     @abstractmethod
     async def optimize(
         self,
-        objective_fn: Callable[[dict[str, Any]], float],
+        objective_fn: Callable[[dict[str, Any]], float | Awaitable[float]],
         n_trials: int = 100,
         timeout: float | None = None,
     ) -> HPOSummary:

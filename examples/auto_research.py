@@ -154,7 +154,7 @@ async def main(max_experiments: int = 5, proposer: str = "perturbation"):
     print("=" * 60)
     print(f"  Proposer:        {proposer}")
     print(f"  Max experiments: {max_experiments}")
-    print(f"  Search space:    quick")
+    print("  Search space:    quick")
     print(f"  Output:          {config.output_dir}")
     print()
 
@@ -169,7 +169,7 @@ async def main(max_experiments: int = 5, proposer: str = "perturbation"):
 
     # The tracker prints its own summary, but we can also access results
     if tracker.best_record:
-        print(f"\nBest config found:")
+        print("\nBest config found:")
         for k, v in tracker.best_record.params.items():
             print(f"  {k}: {v}")
 

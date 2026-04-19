@@ -5,7 +5,7 @@ This module provides comprehensive type hints and protocols to improve
 type safety across the framework.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import (
     Any,
     Protocol,
@@ -99,7 +99,7 @@ class ConversationTurn:
     user_message: str
     assistant_response: str
     reward: float
-    metadata: MetadataDict = None
+    metadata: MetadataDict = field(default_factory=dict)
 
     def __post_init__(self):
         if self.metadata is None:
@@ -112,11 +112,9 @@ class Trajectory:
 
     turns: list[ConversationTurn]
     total_reward: float = 0.0
-    metadata: MetadataDict = None
+    metadata: MetadataDict = field(default_factory=dict)
 
     def __post_init__(self):
-        if self.metadata is None:
-            self.metadata = {}
         self._update_total_reward()
 
     def _update_total_reward(self):
@@ -140,7 +138,7 @@ class RewardResult:
 
     score: float
     components: dict[str, float]
-    metadata: MetadataDict = None
+    metadata: MetadataDict = field(default_factory=dict)
 
     def __post_init__(self):
         if self.metadata is None:

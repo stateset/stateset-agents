@@ -12,7 +12,7 @@ import time
 import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from collections.abc import Callable
 
 from .enhanced_state_cache import (
@@ -316,7 +316,10 @@ class ConversationStateManager:
         self.session_timeout = 3600  # 1 hour
 
     async def create_conversation(
-        self, conversation_id: str, user_id: str, initial_context: dict[str, Any] = None
+        self,
+        conversation_id: str,
+        user_id: str,
+        initial_context: dict[str, Any] | None = None,
     ) -> bool:
         """Create a new conversation"""
         conversation_key = f"{self.conversation_prefix}{conversation_id}"
@@ -337,14 +340,17 @@ class ConversationStateManager:
     async def get_conversation(self, conversation_id: str) -> dict[str, Any] | None:
         """Get conversation data"""
         conversation_key = f"{self.conversation_prefix}{conversation_id}"
-        return await self.state_manager.get(conversation_key)
+        conversation = await self.state_manager.get(conversation_key)
+        if conversation is None:
+            return None
+        return cast(dict[str, Any], conversation)
 
     async def add_turn(
         self,
         conversation_id: str,
         role: str,
         content: str,
-        metadata: dict[str, Any] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Add a turn to conversation"""
         conversation = await self.get_conversation(conversation_id)
@@ -388,7 +394,7 @@ class ConversationStateManager:
         # In practice, you'd maintain an index or use pattern matching
         user_key = f"{self.user_prefix}{user_id}:conversations"
         conversations = await self.state_manager.get(user_key, default=[])
-        return conversations
+        return cast(list[str], conversations)
 
     async def cleanup_expired_conversations(self) -> int:
         """Clean up expired conversations"""
@@ -443,7 +449,9 @@ class DistributedStateService:
             )
 
         if local_cache and redis_cache:
-            self.cache_backend = MultiCacheBackend(local_cache, redis_cache)
+            self.cache_backend: CacheBackend = MultiCacheBackend(
+                local_cache, redis_cache
+            )
         elif redis_cache:
             self.cache_backend = redis_cache
         elif local_cache:
@@ -463,7 +471,7 @@ class DistributedStateService:
         self.consistency_level = consistency_level
 
         # Background tasks
-        self._background_tasks = []
+        self._background_tasks: list[asyncio.Task[None]] = []
         self._start_background_tasks()
 
     def _start_background_tasks(self):

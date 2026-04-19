@@ -95,7 +95,9 @@ def _symmetry_score(
                 continue
             a, b = pair
             swapped = dict(values)
-            swapped[a], swapped[b] = swapped.get(b), swapped.get(a)
+            swapped_a = swapped[a]
+            swapped_b = swapped[b]
+            swapped[a], swapped[b] = swapped_b, swapped_a
             try:
                 swapped_val = safe_eval_expression(
                     expression, swapped, allowed_functions
@@ -313,7 +315,7 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
             else dict(DEFAULT_ALLOWED_FUNCTIONS)
         )
 
-    async def compute_reward(  # type: ignore[override]
+    async def compute_reward(
         self,
         turns: list[Any] | None = None,
         context: dict[str, Any] | None = None,
@@ -332,7 +334,7 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
             result.total_reward = 0.0
             return result
 
-        expression = extract_expression(assistant_turn.content)
+        expression = extract_expression(assistant_turn.content or "")
         if not expression:
             result = RewardResult(score=0.0, metadata={"error": "no_expression"})
             result.total_reward = 0.0

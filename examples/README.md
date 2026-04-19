@@ -32,17 +32,19 @@ python examples/hello_world.py
 
 ### Quick Start
 
-A simple example showing basic agent usage:
+A simple stub-backed onboarding example showing the first end-to-end
+training flow:
 
 ```bash
 python examples/quick_start.py
 ```
 
 **Features:**
-- Real model usage (GPT-2)
+- No model downloads required (uses stub mode by default)
 - Basic conversation handling
-- Environment setup
-- Reward computation
+- Environment setup and training loop wiring
+- Reward computation and post-training conversation smoke test
+- Clear upgrade path to swap in a real checkpoint later
 
 ## 🎓 Training Examples
 
@@ -211,9 +213,14 @@ Fine-tune Qwen models with GSPO:
 python examples/finetune_qwen3_5_0_8b_gspo.py --task customer_service
 python examples/finetune_qwen3_5_0_8b_gspo.py --starter-profile memory --dry-run
 python examples/finetune_qwen3_5_0_8b_gspo.py --list-profiles
+python examples/finetune_qwen3_5_27b_gspo.py --dry-run
+python examples/finetune_qwen3_5_27b_gspo.py --task customer_service --output-dir /models/qwen3-5-27b
 ```
 
 See [QWEN3_FINETUNING_GUIDE.md](../docs/QWEN3_FINETUNING_GUIDE.md) for a getting-started walkthrough for post-training `Qwen/Qwen3.5-0.8B`, including the built-in `balanced`, `memory`, and `quality` starter profiles and the new profile-discovery mode. The family-wide fallback script remains `examples/finetune_qwen3_gspo.py`.
+For `Qwen/Qwen3.5-27B`, the dedicated starter emits `serving_manifest.json`
+plus merged checkpoints so you can render Helm values or deploy the raw
+Kubernetes manifests in `deployment/kubernetes/`.
 
 #### Gemma Models
 
@@ -228,6 +235,23 @@ python examples/finetune_gemma4_31b_gspo.py --no-dry-run --task customer_service
 The dedicated Gemma 4 starter targets `google/gemma-4-31B-it` with GSPO-ready
 QLoRA defaults for StateSet Agents. The older family-wide fallback script remains
 `examples/finetune_gemma3_gspo.py` for Gemma 2 era checkpoints.
+
+#### GLM Models
+
+Fine-tune Zhipu AI's GLM 5.1 (754B MoE):
+
+```bash
+python examples/finetune_glm5_1_gspo.py --dry-run
+python examples/finetune_glm5_1_gspo.py --starter-profile memory --dry-run
+python examples/finetune_glm5_1_gspo.py --model zai-org/GLM-5.1-FP8 --fp8-serving --dry-run
+python examples/finetune_glm5_1_gspo.py --no-dry-run --task customer_service --output-dir /models/glm5-1
+```
+
+The dedicated GLM 5.1 starter targets `zai-org/GLM-5.1` (BF16) and
+`zai-org/GLM-5.1-FP8` for single-host serving. See
+[GLM5_1_HOSTING_PLAN.md](../docs/GLM5_1_HOSTING_PLAN.md) for the full
+deployment recipe (Helm values, K8s manifests, multi-node topology, and
+the Helm values renderer in `scripts/render_glm5_1_helm_values.py`).
 
 #### Llama Models
 
@@ -412,8 +436,11 @@ pip install stateset-agents[dev,api,trl,hpo]
 #### ...fine-tune a specific model
 → Choose from:
 - `finetune_qwen3_5_0_8b_gspo.py`
+- `finetune_qwen3_5_27b_gspo.py`
 - `finetune_qwen3_gspo.py`
 - `finetune_gemma3_gspo.py`
+- `finetune_gemma4_31b_gspo.py`
+- `finetune_glm5_1_gspo.py`
 - `finetune_llama3_gspo.py`
 - `finetune_mistral_gspo.py`
 
@@ -493,7 +520,7 @@ asyncio.run(example_module.main())
 ### Beginner
 
 1. `hello_world.py` - Understand basic concepts
-2. `quick_start.py` - Run your first real agent
+2. `quick_start.py` - Run your first end-to-end training example
 3. `api_client_simple.py` - Integrate with applications
 
 ### Intermediate
@@ -507,8 +534,11 @@ asyncio.run(example_module.main())
 7. `distributed_multi_gpu_training.py` - Scale to multiple GPUs ⭐
 8. `advanced_optimization_techniques.py` - Optimize performance ⭐
 9. `finetune_qwen3_5_0_8b_gspo.py` - Run the Qwen3.5-0.8B starter path
-10. `finetune_qwen3_gspo.py` - Fine-tune broader Qwen model variants
-11. `hpo_training_example.py` - Automated hyperparameter tuning
+10. `finetune_qwen3_5_27b_gspo.py` - Run the Qwen3.5-27B starter path for k8s/vLLM serving
+11. `finetune_qwen3_gspo.py` - Fine-tune broader Qwen model variants
+12. `finetune_gemma4_31b_gspo.py` - Run the Gemma 4 31B starter path
+13. `finetune_glm5_1_gspo.py` - Run the GLM 5.1 (754B MoE) starter path for multi-node vLLM serving
+14. `hpo_training_example.py` - Automated hyperparameter tuning
 
 ## 🐛 Troubleshooting
 

@@ -84,7 +84,7 @@ def _build_error_response(
 ) -> JSONResponse:
     """Build consistent error response."""
     request_id = getattr(request.state, "request_id", "unknown-request")
-    payload = {
+    payload: dict[str, Any] = {
         "error": {"message": message, "status_code": status_code},
         "request_id": request_id,
         "path": str(request.url.path),
@@ -213,22 +213,52 @@ async def lifespan(app: FastAPI):
     else:
         try:
             from stateset_agents.core.agent import Agent
+            from stateset_agents.core.agent_config import AgentConfig
             from stateset_agents.core.computational_engine import (
                 create_computational_engine,
             )
             from stateset_agents.core.environment import Environment
+            from stateset_agents.core.environment_base import (
+                EnvironmentState,
+                EpisodeStatus,
+            )
             from stateset_agents.core.reward import RewardFunction, RewardResult
+            from stateset_agents.core.trajectory import ConversationTurn
 
             class DemoAgent(Agent):
-                async def generate_response(self, prompt: str) -> str:
+                async def generate_response(
+                    self,
+                    messages: str | list[dict[str, str]],
+                    context: dict[str, Any] | None = None,
+                ) -> str:
+                    prompt = (
+                        messages
+                        if isinstance(messages, str)
+                        else messages[-1]["content"] if messages else ""
+                    )
                     return f"Response to: {prompt[:50]}..."
 
             class DemoEnvironment(Environment):
-                async def reset(self) -> dict[str, Any]:
-                    return {"state": "initial"}
+                async def reset(
+                    self, scenario: dict[str, Any] | None = None
+                ) -> EnvironmentState:
+                    return EnvironmentState(
+                        episode_id=str(uuid.uuid4()),
+                        turn_count=0,
+                        status=EpisodeStatus.ONGOING,
+                        context={"scenario": scenario or {}, "state": "initial"},
+                    )
 
-                async def step(self, action: str) -> dict[str, Any]:
-                    return {"reward": 0.5, "done": False}
+                async def step(
+                    self, state: EnvironmentState, action: ConversationTurn
+                ) -> tuple[EnvironmentState, float, bool, dict[str, Any]]:
+                    next_state = state.copy()
+                    next_state.turn_count += 1
+                    done = next_state.turn_count >= self.max_turns
+                    next_state.status = (
+                        EpisodeStatus.COMPLETED if done else EpisodeStatus.ONGOING
+                    )
+                    return next_state, 0.5, done, {"response": action.content}
 
                 async def get_reward(self, trajectory) -> float:
                     return 0.5
@@ -242,7 +272,12 @@ async def lifespan(app: FastAPI):
                 "model_name": "openai/gpt-oss-120b",
             }
             _services["demo_engine"] = create_computational_engine(
-                DemoAgent(model_config),
+                DemoAgent(
+                    AgentConfig(
+                        model_name=model_config["model_name"],
+                        use_stub_model=True,
+                    )
+                ),
                 DemoEnvironment(),
                 DemoReward(),
                 num_workers=1,

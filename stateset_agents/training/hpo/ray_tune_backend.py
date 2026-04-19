@@ -18,7 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from .base import (
     HPOBackend,
@@ -30,22 +30,22 @@ from .base import (
 )
 
 try:
-    import ray  # type: ignore
-    from ray import tune  # type: ignore
-    from ray.tune.schedulers import (  # type: ignore
+    import ray
+    from ray import tune
+    from ray.tune.schedulers import (
         ASHAScheduler,
         FIFOScheduler,
         HyperBandScheduler,
     )
-    from ray.tune.search.basic_variant import BasicVariantGenerator  # type: ignore
-    from ray.tune.search.bayesopt import BayesOptSearch  # type: ignore
+    from ray.tune.search.basic_variant import BasicVariantGenerator
+    from ray.tune.search.bayesopt import BayesOptSearch
 
     RAY_AVAILABLE = True
 except ImportError:  # pragma: no cover
-    ray = None  # type: ignore
-    tune = None  # type: ignore
-    ASHAScheduler = HyperBandScheduler = FIFOScheduler = None  # type: ignore
-    BasicVariantGenerator = BayesOptSearch = None  # type: ignore
+    ray = None
+    tune = None
+    ASHAScheduler = HyperBandScheduler = FIFOScheduler = None
+    BasicVariantGenerator = BayesOptSearch = None
     RAY_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -113,11 +113,15 @@ class RayTuneBackend(HPOBackend):
         """Convert SearchDimension to Ray Tune distribution."""
         _require_ray()
         if dim.type in (SearchSpaceType.FLOAT, SearchSpaceType.UNIFORM):
-            return tune.uniform(dim.low, dim.high)  # type: ignore[arg-type]
+            return tune.uniform(dim.low, dim.high)
         if dim.type == SearchSpaceType.LOGUNIFORM:
-            return tune.loguniform(dim.low, dim.high)  # type: ignore[arg-type]
+            return tune.loguniform(dim.low, dim.high)
         if dim.type == SearchSpaceType.INT:
-            return tune.randint(int(dim.low), int(dim.high) + 1)  # type: ignore[arg-type]
+            low = dim.low
+            high = dim.high
+            if low is None or high is None:
+                raise ValueError(f"Integer dimension {dim.name} requires bounds")
+            return tune.randint(int(low), int(high) + 1)
         if dim.type in (SearchSpaceType.CATEGORICAL, SearchSpaceType.CHOICE):
             return tune.choice(dim.choices)
         raise ValueError(f"Unsupported search space type for Ray Tune: {dim.type}")
@@ -171,7 +175,7 @@ class RayTuneBackend(HPOBackend):
 
     async def optimize(
         self,
-        objective_fn: Callable[[dict[str, Any]], float],
+        objective_fn: Callable[[dict[str, Any]], float | Awaitable[float]],
         n_trials: int = 100,
         timeout: float | None = None,
     ) -> HPOSummary:
@@ -179,13 +183,17 @@ class RayTuneBackend(HPOBackend):
         _require_ray()
 
         if ray is not None and not ray.is_initialized():
-            ray.init(ignore_reinit_error=True, include_dashboard=False, **self.ray_init_kwargs)  # type: ignore[arg-type]
+            ray.init(
+                ignore_reinit_error=True,
+                include_dashboard=False,
+                **self.ray_init_kwargs,
+            )
 
         param_space = self._convert_search_space()
         scheduler = self._create_scheduler()
         search_alg = self._create_search_alg()
 
-        self.results = []
+        self.results: list[HPOResult] = []
         self._notify_hpo_start(n_trials)
         start_time = time.time()
 
@@ -218,11 +226,11 @@ class RayTuneBackend(HPOBackend):
             self.results.append(result)
             self._notify_trial_end(result)
 
-        resources = {"cpu": self.cpu_per_trial}
+        resources: dict[str, int | float] = {"cpu": self.cpu_per_trial}
         if self.gpu_per_trial:
             resources["gpu"] = self.gpu_per_trial
 
-        tune_config = tune.TuneConfig(  # type: ignore[attr-defined]
+        tune_config = tune.TuneConfig(
             num_samples=n_trials,
             metric=self.objective_metric,
             mode=self._mode(),
@@ -231,13 +239,13 @@ class RayTuneBackend(HPOBackend):
             max_concurrent_trials=self.max_concurrent,
             time_budget_s=timeout,
         )
-        run_config = tune.RunConfig(  # type: ignore[attr-defined]
+        run_config = tune.RunConfig(
             name=self.study_name,
             local_dir=str(self.output_dir),
         )
 
-        tuner = tune.Tuner(  # type: ignore[attr-defined]
-            tune.with_resources(trainable, resources),  # type: ignore[arg-type]
+        tuner = tune.Tuner(
+            tune.with_resources(trainable, resources),
             tune_config=tune_config,
             run_config=run_config,
             param_space=param_space,

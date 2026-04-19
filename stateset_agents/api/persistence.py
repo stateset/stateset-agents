@@ -16,11 +16,12 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
+_BaseEntityT = TypeVar("_BaseEntityT", bound="BaseEntity")
+T = TypeVar("T", bound="BaseEntity")
 
 
 # ============================================================================
@@ -96,7 +97,9 @@ class BaseEntity:
         return result
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "BaseEntity":
+    def from_dict(
+        cls: type[_BaseEntityT], data: dict[str, Any]
+    ) -> _BaseEntityT:
         """Create from dictionary."""
         if "created_at" in data and isinstance(data["created_at"], str):
             data["created_at"] = datetime.fromisoformat(data["created_at"])
@@ -302,6 +305,10 @@ class SQLiteRepository(Repository[T]):
         self._initialized: bool = False
         self._init_lock = asyncio.Lock()
 
+    def _is_initialized(self) -> bool:
+        """Return initialization state without exposing internals."""
+        return self._initialized
+
     async def connect(self) -> None:
         """Connect to SQLite database.
 
@@ -310,11 +317,11 @@ class SQLiteRepository(Repository[T]):
         cross-thread loop wakeups can be unreliable. Each operation opens a new
         short-lived connection and performs work synchronously.
         """
-        if self._initialized:
+        if self._is_initialized():
             return
 
         async with self._init_lock:
-            if self._initialized:
+            if self._is_initialized():
                 return
             self._init_sync()
             self._initialized = True
@@ -389,7 +396,7 @@ class SQLiteRepository(Repository[T]):
             cursor.close()
             connection.close()
         if row:
-            return row[0]
+            return cast(str, row[0])
         return None
 
     async def get(self, id: str) -> T | None:
@@ -552,6 +559,10 @@ class UnitOfWork:
             await self._conversations.connect()
             await self._training_jobs.connect()
             await self._api_keys.connect()
+        else:
+            raise NotImplementedError(
+                f"Database backend {self.config.backend.value} is not implemented"
+            )
 
         logger.info(f"Database initialized with {self.config.backend.value} backend")
 
@@ -563,8 +574,8 @@ class UnitOfWork:
             self._training_jobs,
             self._api_keys,
         ]:
-            if hasattr(repo, "close"):
-                await repo.close()
+            if repo is not None and hasattr(repo, "close"):
+                await cast(Any, repo).close()
 
     @property
     def agents(self) -> Repository[Agent]:

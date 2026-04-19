@@ -14,6 +14,7 @@ Usage:
 """
 
 import logging
+from typing import Any, cast
 
 import numpy as np
 
@@ -27,7 +28,7 @@ try:
     _RUST_AVAILABLE = True
     logger.info("Rust acceleration enabled (stateset_rl_core)")
 except ImportError:
-    logger.warning(
+    logger.info(
         "Rust acceleration not available. Install with: "
         "cd rust_core && maturin develop --release"
     )
@@ -60,15 +61,18 @@ def compute_group_advantages(
     rewards = np.asarray(rewards, dtype=np.float64)
 
     if _RUST_AVAILABLE and rewards.ndim == 2:
-        return np.asarray(
-            _rust_core.compute_group_advantages(rewards, baseline_type, normalize)
+        return cast(
+            np.ndarray,
+            np.asarray(
+                _rust_core.compute_group_advantages(rewards, baseline_type, normalize)
+            ),
         )
 
     # Pure Python fallback
     if rewards.ndim == 1:
         rewards = rewards.reshape(1, -1)
 
-    all_advantages = []
+    all_advantages: list[float] = []
     for group_rewards in rewards:
         if baseline_type == "median":
             baseline = np.median(group_rewards)
@@ -84,9 +88,9 @@ def compute_group_advantages(
             if std > 1e-8:
                 advantages = (advantages - np.mean(advantages)) / (std + 1e-8)
 
-        all_advantages.extend(advantages)
+        all_advantages.extend(float(value) for value in advantages)
 
-    return np.array(all_advantages)
+    return cast(np.ndarray, np.array(all_advantages, dtype=np.float64))
 
 
 def compute_gae(
@@ -111,7 +115,10 @@ def compute_gae(
     values = np.asarray(values, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return np.asarray(_rust_core.compute_gae(rewards, values, gamma, gae_lambda))
+        return cast(
+            np.ndarray,
+            np.asarray(_rust_core.compute_gae(rewards, values, gamma, gae_lambda)),
+        )
 
     # Pure Python fallback
     n = len(rewards)
@@ -119,8 +126,8 @@ def compute_gae(
     gae = 0.0
 
     for t in reversed(range(n)):
-        next_value = values[t + 1] if t + 1 < len(values) else 0.0
-        current_value = values[t] if t < len(values) else 0.0
+        next_value = float(values[t + 1]) if t + 1 < len(values) else 0.0
+        current_value = float(values[t]) if t < len(values) else 0.0
 
         delta = rewards[t] + gamma * next_value - current_value
         gae = delta + gamma * gae_lambda * gae
@@ -152,7 +159,7 @@ def batch_compute_gae(
 
     if _RUST_AVAILABLE:
         return [
-            np.asarray(a)
+            cast(np.ndarray, np.asarray(a))
             for a in _rust_core.batch_compute_gae(
                 all_rewards, all_values, gamma, gae_lambda
             )
@@ -187,8 +194,14 @@ def normalize_rewards(
     rewards = np.asarray(rewards, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return _rust_core.normalize_rewards(
+        raw_normalized, raw_mean, raw_var, raw_count = _rust_core.normalize_rewards(
             rewards, running_mean, running_var, count, epsilon
+        )
+        return (
+            cast(np.ndarray, np.asarray(raw_normalized)),
+            float(raw_mean),
+            float(raw_var),
+            int(raw_count),
         )
 
     # Pure Python Welford's algorithm
@@ -219,9 +232,9 @@ def clip_rewards(
     rewards = np.asarray(rewards, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return np.asarray(_rust_core.clip_rewards(rewards, min_val, max_val))
+        return cast(np.ndarray, np.asarray(_rust_core.clip_rewards(rewards, min_val, max_val)))
 
-    return np.clip(rewards, min_val, max_val)
+    return cast(np.ndarray, np.clip(rewards, min_val, max_val))
 
 
 def compute_gspo_importance_ratios(
@@ -247,17 +260,20 @@ def compute_gspo_importance_ratios(
     sequence_lengths = np.asarray(sequence_lengths, dtype=np.int64)
 
     if _RUST_AVAILABLE:
-        return np.asarray(
-            _rust_core.compute_gspo_importance_ratios(
-                log_probs_new, log_probs_old, sequence_lengths
-            )
+        return cast(
+            np.ndarray,
+            np.asarray(
+                _rust_core.compute_gspo_importance_ratios(
+                    log_probs_new, log_probs_old, sequence_lengths
+                )
+            ),
         )
 
     # Pure Python fallback
     log_ratios = log_probs_new - log_probs_old
     lengths = np.maximum(sequence_lengths, 1)  # Avoid division by zero
     normalized_log_ratios = log_ratios / lengths
-    return np.exp(normalized_log_ratios)
+    return cast(np.ndarray, np.exp(normalized_log_ratios))
 
 
 def apply_gspo_clipping(
@@ -282,8 +298,11 @@ def apply_gspo_clipping(
     advantages = np.asarray(advantages, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return np.asarray(
-            _rust_core.apply_gspo_clipping(ratios, advantages, clip_left, clip_right)
+        return cast(
+            np.ndarray,
+            np.asarray(
+                _rust_core.apply_gspo_clipping(ratios, advantages, clip_left, clip_right)
+            ),
         )
 
     # Pure Python fallback
@@ -294,7 +313,7 @@ def apply_gspo_clipping(
         np.maximum(ratios, 1.0 - clip_left),
     )
     clipped = clipped_ratios * advantages
-    return np.minimum(unclipped, clipped)
+    return cast(np.ndarray, np.minimum(unclipped, clipped))
 
 
 def compute_ppo_surrogate(
@@ -317,19 +336,27 @@ def compute_ppo_surrogate(
     advantages = np.asarray(advantages, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return np.asarray(
-            _rust_core.compute_ppo_surrogate(ratios, advantages, clip_epsilon)
+        return cast(
+            np.ndarray,
+            np.asarray(
+                _rust_core.compute_ppo_surrogate(ratios, advantages, clip_epsilon)
+            ),
         )
 
     unclipped = ratios * advantages
     clipped = np.clip(ratios, 1 - clip_epsilon, 1 + clip_epsilon) * advantages
-    return np.minimum(unclipped, clipped)
+    return cast(np.ndarray, np.minimum(unclipped, clipped))
 
 
 def compute_reward_statistics(rewards: list[float]) -> dict[str, float]:
     """Compute comprehensive reward statistics."""
     if _RUST_AVAILABLE:
-        return _rust_core.compute_reward_statistics(rewards)
+        raw_stats = cast(dict[str, Any], _rust_core.compute_reward_statistics(rewards))
+        return {
+            key: float(value)
+            for key, value in raw_stats.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
 
     if not rewards:
         return {

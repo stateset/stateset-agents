@@ -221,7 +221,7 @@ class InputValidator:
     @classmethod
     def validate_string(
         cls,
-        value: str,
+        value: str | None,
         max_length: int = MAX_MESSAGE_LENGTH,
         field_name: str = "input",
         allow_empty: bool = False,

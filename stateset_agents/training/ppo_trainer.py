@@ -37,7 +37,9 @@ logger = logging.getLogger(__name__)
 REWARD_FN_EXCEPTIONS = (RuntimeError, TypeError, ValueError)
 
 try:
-    import numpy as np
+    import numpy as _np
+
+    np: Any = _np
 except ImportError:
     np = None
     logger.warning("NumPy not available")
@@ -331,6 +333,7 @@ class PPOTrainer:
             )
 
         # Adaptive KL controller
+        self.kl_controller: AdaptiveKLController | None
         if config.use_adaptive_kl and config.target_kl:
             self.kl_controller = AdaptiveKLController(
                 init_kl_coef=config.beta,
@@ -340,7 +343,7 @@ class PPOTrainer:
             self.kl_controller = None
 
         # Metrics tracking
-        self.metrics_history = {
+        self.metrics_history: dict[str, list[float]] = {
             "policy_loss": [],
             "value_loss": [],
             "entropy": [],

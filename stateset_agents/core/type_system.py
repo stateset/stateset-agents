@@ -364,7 +364,7 @@ class TypeValidator:
     """Type validation utilities"""
 
     @staticmethod
-    def validate_type(value: Any, expected_type: type) -> bool:
+    def validate_type(value: Any, expected_type: Any) -> bool:
         """Validate that value matches expected type"""
         try:
             if hasattr(expected_type, "__origin__"):
@@ -412,8 +412,10 @@ class TypeValidator:
                             for v in value.values()
                         )
                     return True
-                else:
+                elif isinstance(origin, type):
                     return isinstance(value, origin)
+                else:
+                    return False
             else:
                 return isinstance(value, expected_type)
         except TYPE_SYSTEM_EXCEPTIONS:
@@ -422,13 +424,13 @@ class TypeValidator:
     @staticmethod
     def validate_config(config: dict[str, Any], config_type: type) -> list[str]:
         """Validate configuration against TypedDict"""
-        errors = []
+        errors: list[str] = []
 
         if not hasattr(config_type, "__annotations__"):
             return errors
 
         annotations = get_type_hints(config_type)
-        required_keys = getattr(config_type, "__required_keys__", set())
+        required_keys: set[str] = set(getattr(config_type, "__required_keys__", set()))
 
         # Check required keys
         for key in required_keys:
@@ -470,7 +472,7 @@ class TypeValidator:
                     return False
 
             # Compare return type
-            return sig.return_annotation == expected_sig.return_annotation
+            return bool(sig.return_annotation == expected_sig.return_annotation)
         except TYPE_SYSTEM_EXCEPTIONS:
             return False
 
@@ -544,7 +546,7 @@ class ConfigValidator:
 
         return len(self.errors) == 0
 
-    def get_validation_report(self) -> dict[str, list[str]]:
+    def get_validation_report(self) -> dict[str, Any]:
         """Get validation report"""
         return {
             "errors": self.errors.copy(),

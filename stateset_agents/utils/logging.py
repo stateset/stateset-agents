@@ -97,6 +97,17 @@ class LogEntry:
         return json.dumps(self.to_dict())
 
 
+@dataclass
+class LoggingMetrics:
+    """Typed internal metrics for the logger."""
+
+    total_logs: int = 0
+    logs_by_level: dict[str, int] = field(default_factory=dict)
+    logs_by_category: dict[str, int] = field(default_factory=dict)
+    errors: list[dict[str, Any]] = field(default_factory=list)
+    performance_metrics: list[dict[str, Any]] = field(default_factory=list)
+
+
 class GRPOLogger:
     """Advanced logger for GRPO Agent Framework"""
 
@@ -139,13 +150,7 @@ class GRPOLogger:
             self._setup_tracing()
 
         # Metrics collection
-        self.metrics = {
-            "total_logs": 0,
-            "logs_by_level": {},
-            "logs_by_category": {},
-            "errors": [],
-            "performance_metrics": [],
-        }
+        self.metrics = LoggingMetrics()
 
     def _setup_console_handler(self):
         """Setup console handler with formatting"""
@@ -251,21 +256,21 @@ class GRPOLogger:
         """Log a structured entry"""
         # Update metrics
         if self.enable_metrics:
-            self.metrics["total_logs"] += 1
+            self.metrics.total_logs += 1
 
             level_key = entry.level.value
-            if level_key not in self.metrics["logs_by_level"]:
-                self.metrics["logs_by_level"][level_key] = 0
-            self.metrics["logs_by_level"][level_key] += 1
+            if level_key not in self.metrics.logs_by_level:
+                self.metrics.logs_by_level[level_key] = 0
+            self.metrics.logs_by_level[level_key] += 1
 
             category_key = entry.category.value
-            if category_key not in self.metrics["logs_by_category"]:
-                self.metrics["logs_by_category"][category_key] = 0
-            self.metrics["logs_by_category"][category_key] += 1
+            if category_key not in self.metrics.logs_by_category:
+                self.metrics.logs_by_category[category_key] = 0
+            self.metrics.logs_by_category[category_key] += 1
 
             # Track errors
             if entry.level in [LogLevel.ERROR, LogLevel.CRITICAL]:
-                self.metrics["errors"].append(
+                self.metrics.errors.append(
                     {
                         "timestamp": entry.timestamp.isoformat(),
                         "message": entry.message,
@@ -361,7 +366,7 @@ class GRPOLogger:
 
             # Add to performance metrics
             if self.enable_metrics:
-                self.metrics["performance_metrics"].append(
+                self.metrics.performance_metrics.append(
                     {
                         "operation": operation,
                         "duration_ms": duration_ms,
@@ -480,17 +485,17 @@ class GRPOLogger:
     def get_metrics(self) -> dict[str, Any]:
         """Get logging metrics"""
         return {
-            "total_logs": self.metrics["total_logs"],
-            "logs_by_level": self.metrics["logs_by_level"],
-            "logs_by_category": self.metrics["logs_by_category"],
-            "recent_errors": self.metrics["errors"][-10:],  # Last 10 errors
+            "total_logs": self.metrics.total_logs,
+            "logs_by_level": self.metrics.logs_by_level,
+            "logs_by_category": self.metrics.logs_by_category,
+            "recent_errors": self.metrics.errors[-10:],  # Last 10 errors
             "performance_summary": {
-                "total_operations": len(self.metrics["performance_metrics"]),
+                "total_operations": len(self.metrics.performance_metrics),
                 "average_duration_ms": sum(
-                    m["duration_ms"] for m in self.metrics["performance_metrics"]
+                    float(m["duration_ms"]) for m in self.metrics.performance_metrics
                 )
-                / len(self.metrics["performance_metrics"])
-                if self.metrics["performance_metrics"]
+                / len(self.metrics.performance_metrics)
+                if self.metrics.performance_metrics
                 else 0,
             },
         }
@@ -504,10 +509,10 @@ class GRPOLogger:
             "export_timestamp": datetime.now().isoformat(),
             "logger_name": self.name,
             "metrics": self.get_metrics(),
-            "recent_performance": self.metrics["performance_metrics"][
+            "recent_performance": self.metrics.performance_metrics[
                 -100:
             ],  # Last 100 operations
-            "recent_errors": self.metrics["errors"][-50:],  # Last 50 errors
+            "recent_errors": self.metrics.errors[-50:],  # Last 50 errors
         }
 
         if format == "json":

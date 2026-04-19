@@ -18,8 +18,7 @@
   - `pip install -e ".[dev,api]"`
 - Run tests: `pytest -q` (use `-k` to filter; async tests use `pytest-asyncio`).
 - Format & lint: `ruff check . && black . && isort .`
-- Type check (CI-gated surface): `mypy --config-file mypy.ini`
-- Type check (full package, WIP): `python scripts/check_types.py --all`
+- Type check: `python scripts/check_types.py --all`
 - Repo hygiene: `python scripts/check_repo_hygiene.py`
 - Run an example: `python examples/quick_start.py`
 - API (optional deps): `python -m stateset_agents.api.main` (requires `fastapi` and `uvicorn`).
@@ -39,7 +38,7 @@
 ## Commit & Pull Request Guidelines
 - Commits: clear, imperative subject; concise body. Prefer Conventional Commit prefixes when helpful (e.g., `feat:`, `fix:`, `docs:`).
 - PRs: include a summary, rationale, linked issues, test evidence (logs/screenshots), and any breaking-change notes.
-- Before opening a PR: run `black`, `isort`, `flake8`, `mypy`, and `pytest` with all tests passing.
+- Before opening a PR: run `ruff`, `black`, `isort`, `python scripts/check_types.py --all`, and `pytest` with all tests passing.
 
 ## Security & Configuration Tips
 - Do not hardcode secrets (e.g., model keys, W&B). Use environment variables (e.g., `WANDB_API_KEY`).

@@ -89,7 +89,7 @@ def _write_mapping_file(payload: dict[str, Any], path: Path) -> Path:
         return path
 
     try:
-        import yaml  # type: ignore
+        import yaml
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
             "PyYAML is required for YAML Gemma starter config files. Install with: pip install pyyaml"
@@ -175,7 +175,7 @@ def get_gemma4_31b_profile_description(starter_profile: str = "balanced") -> str
     return GEMMA4_31B_STARTER_PROFILE_DESCRIPTIONS[starter_profile]
 
 
-def summarize_gemma4_31b_config(config: "Gemma4Config") -> dict[str, Any]:
+def summarize_gemma4_31b_config(config: Gemma4Config) -> dict[str, Any]:
     """Summarize the most relevant first-run properties for a resolved config."""
     quantization_mode = "none"
     if config.use_4bit:
@@ -315,7 +315,7 @@ class Gemma4Config:
         return dict(self.__dict__)
 
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "Gemma4Config":
+    def from_dict(cls, config_dict: dict[str, Any]) -> Gemma4Config:
         return cls(**config_dict)
 
     def get_effective_batch_size(self) -> int:

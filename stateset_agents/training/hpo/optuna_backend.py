@@ -15,8 +15,8 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-from collections.abc import Callable
+from typing import Any
+from collections.abc import Awaitable, Callable
 
 from .base import (
     HPOBackend,
@@ -42,9 +42,7 @@ try:
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
-    optuna = None  # type: ignore
-    if TYPE_CHECKING:
-        import optuna
+    optuna = None
 
 
 logger = logging.getLogger(__name__)
@@ -218,8 +216,12 @@ class OptunaBackend(HPOBackend):
         elif dim.type == SearchSpaceType.LOGUNIFORM:
             return trial.suggest_float(dim.name, dim.low, dim.high, log=True)
         elif dim.type == SearchSpaceType.INT:
+            low = dim.low
+            high = dim.high
+            if low is None or high is None:
+                raise ValueError(f"Integer dimension {dim.name} requires bounds")
             return trial.suggest_int(
-                dim.name, int(dim.low), int(dim.high), log=dim.log_scale
+                dim.name, int(low), int(high), log=dim.log_scale
             )
         elif dim.type in [SearchSpaceType.CATEGORICAL, SearchSpaceType.CHOICE]:
             return trial.suggest_categorical(dim.name, dim.choices)
@@ -298,7 +300,7 @@ class OptunaBackend(HPOBackend):
                 # Allow objective function to report intermediate values
                 pass
 
-            return metric_value
+            return float(metric_value)
 
         except optuna.TrialPruned:
             training_time = time.time() - start_time
@@ -336,7 +338,7 @@ class OptunaBackend(HPOBackend):
 
     async def optimize(
         self,
-        objective_fn: Callable[[dict[str, Any]], float],
+        objective_fn: Callable[[dict[str, Any]], float | Awaitable[float]],
         n_trials: int = 100,
         timeout: float | None = None,
     ) -> HPOSummary:
@@ -360,7 +362,7 @@ class OptunaBackend(HPOBackend):
         """
         _require_optuna()
         self.study = self._create_study()
-        self.results = []
+        self.results: list[HPOResult] = []
 
         # Notify callbacks
         self._notify_hpo_start(n_trials)

@@ -10,14 +10,17 @@ This module implements multiple RL algorithms including:
 - Group Sequence Policy Optimization - Token variant (GSPO-token)
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeAlias, cast
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from numpy.typing import NDArray
 from torch.distributions import Categorical
 
 from ..environment import Environment
@@ -25,6 +28,47 @@ from ..trajectory import ConversationTurn, MultiTurnTrajectory
 from .enhanced_agent import EnhancedMultiTurnAgent
 
 logger = logging.getLogger(__name__)
+
+FloatArray: TypeAlias = NDArray[np.float32]
+
+
+def _require_tokenizer(agent: EnhancedMultiTurnAgent) -> Any:
+    """Return the agent tokenizer or raise if unavailable."""
+    tokenizer = getattr(agent, "tokenizer", None)
+    if tokenizer is None:
+        raise RuntimeError("Agent tokenizer is required for advanced RL trainers")
+    return tokenizer
+
+
+def _require_model(agent: EnhancedMultiTurnAgent) -> Any:
+    """Return the agent model or raise if unavailable."""
+    model = getattr(agent, "model", None)
+    if model is None:
+        raise RuntimeError("Agent model is required for advanced RL trainers")
+    return model
+
+
+def _extract_step_result(
+    step_result: Any,
+) -> tuple[Any, ConversationTurn | None, float, bool]:
+    """Normalize environment.step outputs across legacy and current contracts."""
+    if not isinstance(step_result, tuple) or len(step_result) != 4:
+        raise RuntimeError("Unsupported environment step result")
+
+    next_state = step_result[0]
+    second = step_result[1]
+    third = step_result[2]
+    fourth = step_result[3]
+
+    if isinstance(second, ConversationTurn):
+        return next_state, second, float(third), bool(fourth)
+
+    info = fourth if isinstance(fourth, dict) else {}
+    observation_turn = info.get("observation_turn")
+    normalized_turn = (
+        observation_turn if isinstance(observation_turn, ConversationTurn) else None
+    )
+    return next_state, normalized_turn, float(second), bool(third)
 
 
 @dataclass
@@ -140,6 +184,7 @@ class PPOTrainer:
     ):
         self.agent = agent
         self.config = config
+        tokenizer = _require_tokenizer(agent)
 
         self.device = torch.device(
             device
@@ -148,9 +193,7 @@ class PPOTrainer:
         )
 
         # Initialize networks
-        vocab_size = (
-            len(self.agent.tokenizer) if hasattr(self.agent, "tokenizer") else 50000
-        )
+        vocab_size = len(tokenizer)
         self.actor_critic = ActorCriticNetwork(
             input_size=768,  # BERT-like embedding size
             hidden_size=256,
@@ -170,12 +213,12 @@ class PPOTrainer:
         )
 
         # Storage for trajectories
-        self.states = []
-        self.actions = []
-        self.log_probs = []
-        self.values = []
-        self.rewards = []
-        self.dones = []
+        self.states: list[FloatArray] = []
+        self.actions: list[int] = []
+        self.log_probs: list[float] = []
+        self.values: list[float] = []
+        self.rewards: list[float] = []
+        self.dones: list[bool] = []
 
     async def collect_trajectory(
         self, environment: Environment, max_steps: int = 100
@@ -183,12 +226,13 @@ class PPOTrainer:
         """Collect a trajectory using current policy"""
 
         state = await environment.reset()
-        trajectory_turns = []
+        trajectory_turns: list[ConversationTurn] = []
+        trajectory_rewards: list[float] = []
 
         for _step in range(max_steps):
             # Get current conversation state
             messages = [
-                {"role": turn.role, "content": turn.content}
+                {"role": str(turn.role), "content": str(turn.content or "")}
                 for turn in trajectory_turns[-10:]  # Last 10 turns
             ]
 
@@ -201,28 +245,38 @@ class PPOTrainer:
             state_embedding = await self._get_state_embedding(messages)
 
             # Get action from policy
-            action_token, value = self.actor_critic.get_action(
+            state_tensor = (
                 torch.tensor(state_embedding, dtype=torch.float32)
                 .unsqueeze(0)
                 .to(self.device)
             )
+            with torch.no_grad():
+                logits, value_tensor = self.actor_critic(state_tensor)
+                dist = Categorical(logits=logits)
+                action_tensor = dist.sample()
+                action_token = int(action_tensor.item())
+                value = float(value_tensor.item())
+                log_prob = float(dist.log_prob(action_tensor).item())
 
             # Convert token to text
-            action_text = self.agent.tokenizer.decode([action_token])
+            tokenizer = _require_tokenizer(self.agent)
+            action_text = str(tokenizer.decode([action_token]))
 
             # Create conversation turn
             agent_turn = ConversationTurn(role="assistant", content=action_text)
 
             # Step environment
-            new_state, env_response, reward, done = await environment.step(
-                state, agent_turn
-            )
+            step_result = await environment.step(state, agent_turn)
+            new_state, env_response, reward, done = _extract_step_result(step_result)
 
             # Store transition
             self.states.append(state_embedding)
             self.actions.append(action_token)
+            self.log_probs.append(log_prob)
             self.values.append(value)
             self.rewards.append(reward)
+            self.dones.append(done)
+            trajectory_rewards.append(reward)
 
             trajectory_turns.append(agent_turn)
             if env_response:
@@ -235,39 +289,49 @@ class PPOTrainer:
 
         trajectory = MultiTurnTrajectory(
             turns=trajectory_turns,
-            total_reward=sum(self.rewards),
+            total_reward=sum(trajectory_rewards),
             metadata={"algorithm": "PPO"},
         )
 
         return trajectory
 
-    async def _get_state_embedding(self, messages: list[dict[str, str]]) -> np.ndarray:
+    async def _get_state_embedding(
+        self, messages: list[dict[str, str]]
+    ) -> FloatArray:
         """Get embedding representation of conversation state"""
         # Simple approach: concatenate last few messages
         conversation_text = " ".join([msg["content"] for msg in messages[-3:]])
+        tokenizer = _require_tokenizer(self.agent)
+        model = _require_model(self.agent)
 
         # Use tokenizer to get embeddings (simplified)
-        inputs = self.agent.tokenizer(
+        inputs = tokenizer(
             conversation_text, return_tensors="pt", truncation=True, max_length=512
         ).to(self.device)
 
         with torch.no_grad():
-            outputs = self.agent.model(**inputs, output_hidden_states=True)
+            outputs = model(**inputs, output_hidden_states=True)
+            hidden_states = getattr(outputs, "hidden_states", None)
+            if hidden_states is None:
+                raise RuntimeError("Model did not return hidden states")
             # Use last hidden state of [CLS] token or average pooling
-            embedding = outputs.hidden_states[-1][:, 0, :].cpu().numpy().flatten()
+            embedding = np.asarray(
+                hidden_states[-1][:, 0, :].cpu().numpy().flatten(),
+                dtype=np.float32,
+            )
 
-        return embedding
+        return cast(FloatArray, embedding)
 
     def compute_advantages(
         self, rewards: list[float], values: list[float], dones: list[bool]
-    ):
+    ) -> list[float]:
         """Compute Generalized Advantage Estimation (GAE)"""
-        advantages = []
-        gae = 0
+        advantages: list[float] = []
+        gae = 0.0
 
         for i in reversed(range(len(rewards))):
             if i == len(rewards) - 1:
-                next_value = 0  # Terminal state
+                next_value = 0.0  # Terminal state
             else:
                 next_value = values[i + 1]
 
@@ -379,6 +443,8 @@ class DPOTrainer:
     ):
         self.agent = agent
         self.config = config
+        model = _require_model(agent)
+        tokenizer = _require_tokenizer(agent)
 
         self.device = torch.device(
             device
@@ -387,18 +453,17 @@ class DPOTrainer:
         )
 
         # Optimizer
-        self.optimizer = torch.optim.AdamW(
-            self.agent.model.parameters(), lr=config.learning_rate
-        )
+        self.optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
 
         # Reference model (frozen copy)
         self.reference_model = self._create_reference_model()
+        self.tokenizer = tokenizer
 
     def _create_reference_model(self):
         """Create a frozen reference model"""
         import copy
 
-        reference_model = copy.deepcopy(self.agent.model)
+        reference_model = copy.deepcopy(_require_model(self.agent))
 
         # Freeze parameters
         for param in reference_model.parameters():
@@ -425,14 +490,14 @@ class DPOTrainer:
             rejected = pair["rejected"]
 
             # Tokenize inputs
-            chosen_tokens = self.agent.tokenizer(
+            chosen_tokens = self.tokenizer(
                 prompt + " " + chosen,
                 return_tensors="pt",
                 truncation=True,
                 max_length=self.config.max_length,
             ).to(self.device)
 
-            rejected_tokens = self.agent.tokenizer(
+            rejected_tokens = self.tokenizer(
                 prompt + " " + rejected,
                 return_tensors="pt",
                 truncation=True,
@@ -440,9 +505,10 @@ class DPOTrainer:
             ).to(self.device)
 
             # Get log probabilities from current model
+            model = _require_model(self.agent)
             with torch.no_grad():
-                chosen_logits = self.agent.model(**chosen_tokens).logits
-                rejected_logits = self.agent.model(**rejected_tokens).logits
+                chosen_logits = model(**chosen_tokens).logits
+                rejected_logits = model(**rejected_tokens).logits
 
                 chosen_log_probs = F.log_softmax(chosen_logits, dim=-1)
                 rejected_log_probs = F.log_softmax(rejected_logits, dim=-1)
@@ -471,8 +537,9 @@ class DPOTrainer:
             loss.backward()
 
         # Update parameters
+        model = _require_model(self.agent)
         torch.nn.utils.clip_grad_norm_(
-            self.agent.model.parameters(), self.config.max_grad_norm
+            model.parameters(), self.config.max_grad_norm
         )
         self.optimizer.step()
         self.optimizer.zero_grad()
@@ -490,6 +557,7 @@ class A2CTrainer:
     ):
         self.agent = agent
         self.config = config
+        tokenizer = _require_tokenizer(agent)
 
         self.device = torch.device(
             device
@@ -498,9 +566,7 @@ class A2CTrainer:
         )
 
         # Initialize actor-critic network
-        vocab_size = (
-            len(self.agent.tokenizer) if hasattr(self.agent, "tokenizer") else 50000
-        )
+        vocab_size = len(tokenizer)
         self.actor_critic = ActorCriticNetwork(
             input_size=768, hidden_size=256, output_size=vocab_size
         ).to(self.device)
@@ -514,17 +580,17 @@ class A2CTrainer:
         )
 
         # Storage
-        self.states = []
-        self.actions = []
-        self.rewards = []
-        self.values = []
-        self.log_probs = []
+        self.states: list[FloatArray] = []
+        self.actions: list[int] = []
+        self.rewards: list[float] = []
+        self.values: list[float] = []
+        self.log_probs: list[float] = []
 
     async def collect_experience(self, environment: Environment, n_steps: int):
         """Collect experience for n steps"""
 
         state = await environment.reset()
-        episode_rewards = []
+        episode_rewards: list[float] = []
 
         for _step in range(n_steps):
             # Get state embedding
@@ -539,13 +605,13 @@ class A2CTrainer:
             )
 
             # Convert to text
-            action_text = self.agent.tokenizer.decode([action_token])
+            tokenizer = _require_tokenizer(self.agent)
+            action_text = str(tokenizer.decode([action_token]))
 
             # Step environment
             agent_turn = ConversationTurn(role="assistant", content=action_text)
-            new_state, env_response, reward, done = await environment.step(
-                state, agent_turn
-            )
+            step_result = await environment.step(state, agent_turn)
+            new_state, env_response, reward, done = _extract_step_result(step_result)
 
             # Store transition
             self.states.append(state_embedding)
@@ -572,19 +638,29 @@ class A2CTrainer:
 
         return episode_rewards
 
-    async def _get_state_embedding(self, messages: list[dict[str, str]]) -> np.ndarray:
+    async def _get_state_embedding(
+        self, messages: list[dict[str, str]]
+    ) -> FloatArray:
         """Get embedding for state (simplified)"""
         conversation_text = messages[-1]["content"] if messages else ""
+        tokenizer = _require_tokenizer(self.agent)
+        model = _require_model(self.agent)
 
-        inputs = self.agent.tokenizer(
+        inputs = tokenizer(
             conversation_text, return_tensors="pt", truncation=True, max_length=512
         ).to(self.device)
 
         with torch.no_grad():
-            outputs = self.agent.model(**inputs, output_hidden_states=True)
-            embedding = outputs.hidden_states[-1][:, 0, :].cpu().numpy().flatten()
+            outputs = model(**inputs, output_hidden_states=True)
+            hidden_states = getattr(outputs, "hidden_states", None)
+            if hidden_states is None:
+                raise RuntimeError("Model did not return hidden states")
+            embedding = np.asarray(
+                hidden_states[-1][:, 0, :].cpu().numpy().flatten(),
+                dtype=np.float32,
+            )
 
-        return embedding
+        return cast(FloatArray, embedding)
 
     async def train_step(self):
         """Execute A2C training step"""
@@ -600,10 +676,9 @@ class A2CTrainer:
         values = torch.tensor(self.values, dtype=torch.float32).to(self.device)
 
         # Compute returns and advantages
-        returns = []
-        advantages = []
+        returns: list[float] = []
 
-        R = 0
+        R = 0.0
         for r in reversed(self.rewards):
             R = r + self.config.gamma * R
             returns.insert(0, R)
@@ -660,13 +735,13 @@ class AdvancedRLOrchestrator:
 
     def __init__(self, agent: EnhancedMultiTurnAgent):
         self.agent = agent
-        self.algorithms = {}
-        self.current_algorithm = None
-        self.performance_history = []
+        self.algorithms: dict[str, object] = {}
+        self.current_algorithm: str | None = None
+        self.performance_history: list[dict[str, Any]] = []
 
     def add_algorithm(
-        self, name: str, trainer: PPOTrainer | DPOTrainer | A2CTrainer
-    ):
+        self, name: str, trainer: PPOTrainer | DPOTrainer | A2CTrainer | GSPOTrainerStub
+    ) -> None:
         """Add an RL algorithm"""
         self.algorithms[name] = trainer
 
@@ -699,20 +774,25 @@ class AdvancedRLOrchestrator:
         # Select algorithm
         algorithm_name = self.select_algorithm(task_type, data_characteristics)
         trainer = self.algorithms.get(algorithm_name)
+        self.current_algorithm = algorithm_name
 
         if not trainer:
             logger.warning(f"Algorithm {algorithm_name} not available, using PPO")
             trainer = self.algorithms.get("ppo")
+            algorithm_name = "ppo"
 
         logger.info(f"Selected algorithm: {algorithm_name}")
 
         # Train with selected algorithm
-        if algorithm_name == "ppo":
+        if algorithm_name == "ppo" and isinstance(trainer, PPOTrainer):
             return await self._train_ppo(trainer, environment, **kwargs)
-        elif algorithm_name == "dpo":
+        elif algorithm_name == "dpo" and isinstance(trainer, DPOTrainer):
             return await self._train_dpo(trainer, training_data, **kwargs)
-        elif algorithm_name == "a2c":
+        elif algorithm_name == "a2c" and isinstance(trainer, A2CTrainer):
             return await self._train_a2c(trainer, environment, **kwargs)
+        elif algorithm_name == "gspo" and isinstance(trainer, GSPOTrainerStub):
+            return await trainer.train_step(environment, **kwargs)
+        return None
 
     def _analyze_data(self, training_data: dict[str, Any]) -> dict[str, Any]:
         """Analyze training data characteristics"""

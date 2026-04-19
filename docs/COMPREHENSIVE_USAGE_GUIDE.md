@@ -38,7 +38,7 @@ The framework follows the principle that **computation > hand-crafted knowledge*
 ### Installation
 
 ```bash
-pip install grpo-agent-framework
+pip install stateset-agents
 ```
 
 ### Basic Example
@@ -46,40 +46,58 @@ pip install grpo-agent-framework
 ```python
 import asyncio
 from stateset_agents import (
-    MultiTurnAgent, 
-    create_computational_engine,
-    create_customer_service_reward
+    ConversationEnvironment,
+    HelpfulnessReward,
+    MultiTurnAgent,
+    train,
 )
+from stateset_agents.core.agent import AgentConfig
 
 async def quick_start():
-    # 1. Create a multi-turn agent
     agent = MultiTurnAgent(
-        model_config={
-            "model_type": "gpt-oss",
-            "temperature": 0.7,
-            "max_tokens": 200
-        },
-        max_conversation_turns=15
+        AgentConfig(
+            model_name="stub://quickstart",
+            use_stub_model=True,
+            system_prompt="You are a helpful customer support assistant.",
+            temperature=0.7,
+            max_new_tokens=200,
+        )
     )
-    
-    # 2. Start a conversation
-    context = await agent.start_conversation(
-        user_id="demo_user",
-        initial_context={"topic": "customer_service"}
+    await agent.initialize()
+
+    environment = ConversationEnvironment(
+        scenarios=[
+            {
+                "id": "order_help",
+                "topic": "customer_service",
+                "user_responses": [
+                    "Hi, I need help with my order.",
+                    "It arrived later than expected.",
+                    "Thanks for checking on that.",
+                ],
+            }
+        ]
     )
-    
-    # 3. Handle user messages
-    response = await agent.generate_multiturn_response(
-        context.conversation_id,
-        "Hi, I need help with my order",
-        strategy="customer_service"
+
+    trained_agent = await train(
+        agent=agent,
+        environment=environment,
+        reward_fn=HelpfulnessReward(),
+        num_episodes=4,
+        profile="balanced",
+        training_mode="single_turn",
     )
-    
+
+    response = await trained_agent.generate_response(
+        [{"role": "user", "content": "Hi, I need help with my order."}]
+    )
     print(f"Agent: {response}")
 
 # Run the example
 asyncio.run(quick_start())
 ```
+
+For the maintained smoke-tested onboarding flow, run `python examples/quick_start.py`.
 
 ## Core Components
 
@@ -544,7 +562,7 @@ spec:
     spec:
       containers:
       - name: grpo-service
-        image: grpo-agent-framework:latest
+        image: stateset-agents:latest
         ports:
         - containerPort: 8001
         env:
@@ -770,7 +788,7 @@ python -m stateset_agents.examples.ultimate_customer_service_demo
 
 ## Support and Community
 
-- **Documentation**: [Framework Documentation](https://grpo-framework.readthedocs.io)
+- **Documentation**: Browse the guides in this repository's `docs/` directory
 - **Examples**: Check the `examples/` directory for complete working examples
 - **Issues**: Report bugs and request features on GitHub
 - **Discussions**: Join the community discussions for help and best practices

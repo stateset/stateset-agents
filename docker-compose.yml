@@ -29,7 +29,7 @@ services:
 
   # StateSet API (main commerce API)
   stateset-api:
-    image: stateset/stateset-api:latest
+    image: stateset/stateset-api:${STATESET_API_VERSION:-0.11.1}
     container_name: stateset-api
     restart: unless-stopped
     ports:

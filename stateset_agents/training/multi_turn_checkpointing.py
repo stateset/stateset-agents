@@ -106,7 +106,7 @@ def load_multi_turn_checkpoint(
                 weights_loaded = True
             elif safetensors_file.is_file():
                 try:
-                    from safetensors.torch import load_file  # type: ignore[import-not-found]
+                    from safetensors.torch import load_file
 
                     state_dict = load_file(str(safetensors_file))
                     trainer.agent.model.load_state_dict(state_dict, strict=False)

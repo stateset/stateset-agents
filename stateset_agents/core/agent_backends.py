@@ -327,7 +327,6 @@ class StubModel:
         output_hidden = kwargs.get("output_hidden_states", False)
 
         try:
-            import torch
             if input_ids is not None and hasattr(input_ids, "shape"):
                 batch_size, seq_len = input_ids.shape[0], input_ids.shape[1]
             elif input_ids is not None and isinstance(input_ids, (list, tuple)):

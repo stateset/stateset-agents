@@ -214,10 +214,11 @@ class ConstitutionalAI:
                 pad_token_id=self.tokenizer.eos_token_id,
             )
 
-        return self.tokenizer.decode(
+        decoded: object = self.tokenizer.decode(
             outputs[0][inputs.input_ids.shape[1] :],
             skip_special_tokens=True,
         )
+        return decoded if isinstance(decoded, str) else str(decoded)
 
     def critique(self, query: str, response: str) -> str:
         """
@@ -276,7 +277,7 @@ Revised response:"""
         query: str,
         response: str,
         num_iterations: int = 1,
-    ) -> tuple[str, list[dict[str, str]]]:
+    ) -> tuple[str, list[dict[str, Any]]]:
         """
         Apply iterative critique-revision loop.
 
@@ -344,7 +345,7 @@ class RLAIFTrainer:
         # Load model and tokenizer if not provided
         if model is None or tokenizer is None:
             _load_transformers_rlaif()
-            if AutoModelForCausalLM is None:
+            if AutoModelForCausalLM is None or AutoTokenizer is None:
                 raise ImportError("transformers required for RLAIF")
 
             self.tokenizer = AutoTokenizer.from_pretrained(config.model_name)
@@ -385,7 +386,7 @@ class RLAIFTrainer:
         self.policy_trainer = None
 
         # Metrics
-        self.metrics_history = {
+        self.metrics_history: dict[str, list[float]] = {
             "reward": [],
             "policy_loss": [],
             "value_loss": [],
@@ -410,7 +411,8 @@ class RLAIFTrainer:
             # Fallback to simple length-based reward
             return min(len(completion) / 200, 1.0)
 
-        return await self.judge.evaluate(prompt, completion)
+        reward = await self.judge.evaluate(prompt, completion)
+        return float(reward)
 
     def generate_completion(
         self,
@@ -437,10 +439,11 @@ class RLAIFTrainer:
                 pad_token_id=self.tokenizer.eos_token_id,
             )
 
-        return self.tokenizer.decode(
+        decoded: object = self.tokenizer.decode(
             outputs[0][inputs.input_ids.shape[1] :],
             skip_special_tokens=True,
         )
+        return decoded if isinstance(decoded, str) else str(decoded)
 
     async def collect_trajectories(
         self,

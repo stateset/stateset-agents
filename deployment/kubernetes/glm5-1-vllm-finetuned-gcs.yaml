@@ -1,0 +1,147 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: glm5-1-vllm-finetuned-gcs
+  namespace: stateset-agents
+  labels:
+    app: glm5-1-vllm-finetuned-gcs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: glm5-1-vllm-finetuned-gcs
+  template:
+    metadata:
+      labels:
+        app: glm5-1-vllm-finetuned-gcs
+    spec:
+      automountServiceAccountToken: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: model-sync
+        image: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        command: ["bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          if [ -z "${MODEL_GCS_URI:-}" ]; then
+            echo "MODEL_GCS_URI is required (e.g. gs://bucket/glm5-1/runs/<run>/merged)" >&2
+            exit 2
+          fi
+          mkdir -p "${MODEL_LOCAL_DIR}"
+          echo "Syncing model: ${MODEL_GCS_URI} -> ${MODEL_LOCAL_DIR}"
+          gcloud storage rsync --recursive "${MODEL_GCS_URI}" "${MODEL_LOCAL_DIR}"
+        env:
+        - name: MODEL_GCS_URI
+          value: "gs://YOUR_BUCKET/glm5-1/runs/YOUR_RUN_ID/merged"
+        - name: MODEL_LOCAL_DIR
+          value: "/models/glm5-1/merged"
+        volumeMounts:
+        - name: models
+          mountPath: /models
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:nightly
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: MODEL_ID
+          value: /models/glm5-1/merged
+        - name: HF_HOME
+          value: /models/hf
+        - name: TRANSFORMERS_CACHE
+          value: /models/hf
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: hf_token
+              optional: true
+        command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+        args:
+        - --model=$(MODEL_ID)
+        - --tensor-parallel-size=8
+        - --pipeline-parallel-size=2
+        - --max-model-len=131072
+        - --reasoning-parser=glm45
+        - --enable-auto-tool-choice
+        - --tool-call-parser=glm45
+        - --gpu-memory-utilization=0.92
+        - --enable-chunked-prefill
+        - --enable-prefix-caching
+        - --trust-remote-code
+        - --host=0.0.0.0
+        - --port=8000
+        resources:
+          requests:
+            cpu: "32"
+            memory: "1500Gi"
+            ephemeral-storage: "2000Gi"
+            nvidia.com/gpu: "8"
+          limits:
+            cpu: "32"
+            memory: "1500Gi"
+            ephemeral-storage: "2000Gi"
+            nvidia.com/gpu: "8"
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        - name: models
+          mountPath: /models
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          failureThreshold: 360
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 5
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      - name: models
+        persistentVolumeClaim:
+          claimName: stateset-models-pvc
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-h200
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: glm5-1-vllm-finetuned-gcs
+  namespace: stateset-agents
+spec:
+  selector:
+    app: glm5-1-vllm-finetuned-gcs
+  type: ClusterIP
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000

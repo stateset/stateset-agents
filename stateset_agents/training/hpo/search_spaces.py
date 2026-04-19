@@ -8,6 +8,7 @@ This module provides battle-tested search spaces for:
 - Domain-specific configurations
 """
 
+from collections.abc import Callable
 
 from .base import SearchDimension, SearchSpace, SearchSpaceType
 
@@ -107,9 +108,12 @@ def create_grpo_search_space(
     ]
 
     # Filter out None dimensions
-    dimensions = [d for d in dimensions if d is not None]
+    filtered_dimensions: list[SearchDimension] = []
+    for dimension in dimensions:
+        if dimension is not None:
+            filtered_dimensions.append(dimension)
 
-    return SearchSpace(dimensions)
+    return SearchSpace(filtered_dimensions)
 
 
 def create_optimizer_search_space() -> SearchSpace:
@@ -432,7 +436,7 @@ def create_aggressive_search_space() -> SearchSpace:
 # Utility Functions
 # ============================================================================
 
-PREDEFINED_SPACES: dict[str, callable] = {
+PREDEFINED_SPACES: dict[str, Callable[..., SearchSpace]] = {
     "grpo": create_grpo_search_space,
     "full": create_full_search_space,
     "optimizer": create_optimizer_search_space,

@@ -73,7 +73,7 @@ class EnvironmentState:
             "scenario": self.context.get("scenario"),
         }
 
-    def __contains__(self, key: str) -> bool:  # type: ignore[override]
+    def __contains__(self, key: str) -> bool:
         return key in self.as_dict() or key in self.context
 
     def __getitem__(self, key: str) -> Any:
@@ -224,33 +224,59 @@ class Environment(ABC):
             )
             turns.append(agent_turn)
 
-            step_result = await self.step(state, agent_turn)
-            if isinstance(step_result, tuple) and len(step_result) == 4:
-                if _is_reward(step_result[1]) and _is_done(step_result[2]):
-                    new_state, step_reward, done, info = step_result  # type: ignore[misc]
-                    env_response = (
-                        info.get("env_response") if isinstance(info, dict) else None
-                    )
-                elif _is_reward(step_result[2]) and _is_done(step_result[3]):
-                    new_state, env_response, step_reward, done = step_result  # type: ignore[misc]
-                    info = {}
-                elif isinstance(step_result[1], ConversationTurn):
-                    new_state, env_response, step_reward, done = step_result  # type: ignore[misc]
-                    info = {}
-                else:
-                    logger.warning(
-                        "Ambiguous Environment.step() return signature; "
-                        "assuming (state, reward, done, info)."
-                    )
-                    new_state, step_reward, done, info = step_result  # type: ignore[misc]
-                    env_response = (
-                        info.get("env_response") if isinstance(info, dict) else None
-                    )
-            else:
-                new_state, step_reward, done, info = step_result  # type: ignore[misc]
-                env_response = (
-                    info.get("env_response") if isinstance(info, dict) else None
+            raw_step_result = await self.step(state, agent_turn)
+            if not isinstance(raw_step_result, tuple) or len(raw_step_result) != 4:
+                raise TypeError(
+                    "Environment.step() must return a 4-tuple "
+                    "(state, reward, done, info) or legacy "
+                    "(state, env_response, reward, done)"
                 )
+
+            step_result: tuple[Any, Any, Any, Any] = raw_step_result
+            new_state: EnvironmentState
+            step_reward: float
+            done: bool
+            info: dict[str, Any]
+            env_response: ConversationTurn | None = None
+
+            if _is_reward(step_result[1]) and _is_done(step_result[2]):
+                new_state = step_result[0]
+                step_reward = float(step_result[1])
+                done = bool(step_result[2])
+                info = (
+                    dict(step_result[3]) if isinstance(step_result[3], dict) else {}
+                )
+                maybe_env_response = info.get("env_response")
+                if isinstance(maybe_env_response, ConversationTurn):
+                    env_response = maybe_env_response
+            elif _is_reward(step_result[2]) and _is_done(step_result[3]):
+                new_state = step_result[0]
+                env_response = (
+                    step_result[1] if isinstance(step_result[1], ConversationTurn) else None
+                )
+                step_reward = float(step_result[2])
+                done = bool(step_result[3])
+                info = {}
+            elif isinstance(step_result[1], ConversationTurn):
+                new_state = step_result[0]
+                env_response = step_result[1]
+                step_reward = float(step_result[2])
+                done = bool(step_result[3])
+                info = {}
+            else:
+                logger.warning(
+                    "Ambiguous Environment.step() return signature; "
+                    "assuming (state, reward, done, info)."
+                )
+                new_state = step_result[0]
+                step_reward = float(step_result[1])
+                done = bool(step_result[2])
+                info = (
+                    dict(step_result[3]) if isinstance(step_result[3], dict) else {}
+                )
+                maybe_env_response = info.get("env_response")
+                if isinstance(maybe_env_response, ConversationTurn):
+                    env_response = maybe_env_response
 
             total_reward += float(step_reward)
             turn_rewards.append(float(step_reward))
@@ -266,7 +292,7 @@ class Environment(ABC):
                 if hasattr(final_reward, "score"):
                     final_value = float(final_reward.score)
                 elif isinstance(final_reward, dict) and "score" in final_reward:
-                    final_value = float(final_reward["score"])  # type: ignore[arg-type]
+                    final_value = float(final_reward["score"])
                 else:
                     final_value = None
                 if final_value is not None:

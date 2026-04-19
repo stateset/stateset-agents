@@ -27,72 +27,14 @@ Usage:
 
 import argparse
 import asyncio
-import json
 import logging
 import os
-from pathlib import Path
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def _write_serving_manifest(
-    output_dir: str,
-    model_name: str,
-    *,
-    use_lora: bool,
-    use_vllm: bool,
-    merged_model_dir: str | None = None,
-) -> None:
-    """Write a lightweight manifest to aid vLLM deployment."""
-    manifest = {
-        "model": model_name,
-        "output_dir": output_dir,
-        "use_lora": use_lora,
-        "use_vllm": use_vllm,
-        "merged_model_dir": merged_model_dir,
-        "recommended": {
-            "tensor_parallel_size": 8,
-            "max_model_len": 256000,
-            "trust_remote_code": True,
-        },
-    }
-    path = Path(output_dir) / "serving_manifest.json"
-    path.write_text(json.dumps(manifest, indent=2))
-
-
-def _export_merged_model(
-    *,
-    base_model_name: str,
-    adapter_dir: str,
-    output_dir: str,
-) -> str:
-    """Merge LoRA adapters into base model for vLLM serving."""
-    try:
-        from peft import PeftModel
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-    except ImportError as exc:  # pragma: no cover
-        logger.warning("Missing dependencies for merge export: %s", exc)
-        return ""
-
-    logger.info("Exporting merged model for serving...")
-    model = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
-        torch_dtype="auto",
-        device_map="auto",
-        trust_remote_code=True,
-    )
-    model = PeftModel.from_pretrained(model, adapter_dir)
-    merged = model.merge_and_unload()
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    merged.save_pretrained(output_dir)
-    tokenizer = AutoTokenizer.from_pretrained(base_model_name, trust_remote_code=True)
-    tokenizer.save_pretrained(output_dir)
-    logger.info("Merged model saved to %s", output_dir)
-    return output_dir
 
 
 def get_kimi_k25_config(
@@ -223,6 +165,10 @@ async def finetune_kimi_k25(
         create_domain_reward,
     )
     from stateset_agents.training.gspo_trainer import train_with_gspo
+    from stateset_agents.training.serving_artifacts import (
+        export_merged_model_for_serving,
+        write_serving_manifest,
+    )
 
     logger.info("=" * 80)
     logger.info("🚀 Fine-tuning Kimi-K2.5 with GSPO")
@@ -327,18 +273,23 @@ async def finetune_kimi_k25(
 
     merged_dir = None
     if export_merged and use_lora:
-        merged_dir = _export_merged_model(
+        merged_dir = export_merged_model_for_serving(
             base_model_name=model_name,
             adapter_dir=output_dir,
             output_dir=os.path.join(output_dir, "merged"),
         )
 
-    _write_serving_manifest(
+    write_serving_manifest(
         output_dir,
         model_name,
         use_lora=use_lora,
         use_vllm=use_vllm,
         merged_model_dir=merged_dir,
+        recommended={
+            "tensor_parallel_size": 8,
+            "max_model_len": 256000,
+            "trust_remote_code": True,
+        },
     )
 
     logger.info("\n" + "=" * 80)

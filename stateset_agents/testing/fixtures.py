@@ -103,7 +103,7 @@ class RewardFixture:
         """Create a mock reward function."""
         reward = MagicMock()
         reward.compute = MagicMock(return_value=value)
-        reward.__call__ = MagicMock(return_value=value)
+        reward.return_value = value
         return reward
 
     @staticmethod

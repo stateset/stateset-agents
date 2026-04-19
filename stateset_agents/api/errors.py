@@ -124,7 +124,7 @@ class APIError(Exception):
 
     def to_response(self, request_id: str, path: str) -> dict[str, Any]:
         """Convert to response dictionary."""
-        response = {
+        response: dict[str, Any] = {
             "error": {
                 "code": self.code.value,
                 "message": self.message,
@@ -361,7 +361,7 @@ def build_error_response(
     """Build a standardized error response."""
     request_id = getattr(request.state, "request_id", "unknown")
 
-    response_body = {
+    response_body: dict[str, Any] = {
         "error": {
             "code": code.value,
             "message": message,

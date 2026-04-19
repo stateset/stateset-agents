@@ -32,7 +32,7 @@ RUN groupadd -r -g 10001 stateset && \
 
 FROM base AS builder
 
-ARG STATESET_EXTRAS="training,trl"
+ARG STATESET_EXTRAS="training,trl,vllm"
 
 # Reuse the CUDA-enabled PyTorch that ships with the base image. This avoids
 # pip downloading a CPU-only torch wheel into the venv (slow + wrong for GPUs).

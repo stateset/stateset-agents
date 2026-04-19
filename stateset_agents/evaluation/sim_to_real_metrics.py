@@ -199,17 +199,17 @@ def compute_distribution_divergence(
     Returns:
         Divergence value
     """
-    sim_values = np.asarray(sim_values)
-    real_values = np.asarray(real_values)
+    sim_array = np.asarray(sim_values)
+    real_array = np.asarray(real_values)
 
-    if len(sim_values) == 0 or len(real_values) == 0:
+    if len(sim_array) == 0 or len(real_array) == 0:
         return float("inf")
 
     if method == "mmd":
-        return compute_mmd(sim_values, real_values)
+        return compute_mmd(sim_array, real_array)
 
     # Create histograms for KL/JS
-    all_values = np.concatenate([sim_values, real_values])
+    all_values = np.concatenate([sim_array, real_array])
     min_val, max_val = all_values.min(), all_values.max()
 
     if min_val == max_val:
@@ -217,8 +217,8 @@ def compute_distribution_divergence(
 
     bins = np.linspace(min_val, max_val, num_bins + 1)
 
-    sim_hist, _ = np.histogram(sim_values, bins=bins, density=True)
-    real_hist, _ = np.histogram(real_values, bins=bins, density=True)
+    sim_hist, _ = np.histogram(sim_array, bins=bins, density=True)
+    real_hist, _ = np.histogram(real_array, bins=bins, density=True)
 
     if method == "kl":
         return compute_kl_divergence(real_hist, sim_hist)
@@ -244,7 +244,7 @@ def compute_response_statistics(
     """
     response_lengths = []
     turn_counts = []
-    vocabulary = set()
+    vocabulary: set[str] = set()
     rewards = []
 
     for traj in trajectories:
@@ -427,7 +427,7 @@ class SimToRealEvaluator:
                     likelihoods.append(likelihood)
 
         return {
-            "user_model_likelihood": np.mean(likelihoods) if likelihoods else 0.0,
+            "user_model_likelihood": float(np.mean(likelihoods)) if likelihoods else 0.0,
             "num_samples": len(likelihoods),
         }
 
@@ -507,7 +507,7 @@ class SimToRealEvaluator:
             metrics.vocabulary_js_divergence,
             1 - abs(metrics.reward_correlation),  # Convert correlation to gap
         ]
-        metrics.overall_gap = np.mean([g for g in gap_components if g > 0])
+        metrics.overall_gap = float(np.mean([g for g in gap_components if g > 0]))
 
         logger.info(f"Evaluation complete. Overall gap: {metrics.overall_gap:.4f}")
         return metrics

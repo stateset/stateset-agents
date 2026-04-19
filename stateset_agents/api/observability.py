@@ -45,7 +45,7 @@ class StructuredLogFormatter(logging.Formatter):
         # Get trace context
         trace_ctx = _trace_context.get()
 
-        log_entry = {
+        log_entry: dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "level": record.levelname,
             "logger": record.name,

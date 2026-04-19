@@ -7,9 +7,10 @@ Bayesian neural networks, Monte Carlo Dropout, and ensemble methods.
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
+from numpy.typing import NDArray
 
 try:
     import torch
@@ -18,11 +19,11 @@ try:
     from torch.distributions import Normal
     from torch.optim import Adam
 except ImportError:
-    torch = None
-    nn = None
-    F = None
-    Normal = None
-    Adam = None
+    torch = cast(Any, None)
+    nn = cast(Any, None)
+    F = cast(Any, None)
+    Normal = cast(Any, None)
+    Adam = cast(Any, None)
 
 from stateset_agents.core.reward import RewardFunction, RewardResult
 from stateset_agents.core.trajectory import ConversationTurn
@@ -143,8 +144,8 @@ class MCDropoutRewardModel(nn.Module):
         """
         self.train()  # Keep dropout active
 
-        means = []
-        log_vars = []
+        means: list[torch.Tensor] = []
+        log_vars: list[torch.Tensor] = []
 
         with torch.no_grad():
             for _ in range(num_samples):
@@ -152,15 +153,15 @@ class MCDropoutRewardModel(nn.Module):
                 means.append(mean)
                 log_vars.append(log_var)
 
-        means = torch.stack(means)
-        log_vars = torch.stack(log_vars)
+        mean_samples = torch.stack(means)
+        log_var_samples = torch.stack(log_vars)
 
         # Epistemic uncertainty: variance across MC samples
-        pred_mean = means.mean(dim=0)
-        epistemic_uncertainty = means.var(dim=0)
+        pred_mean = mean_samples.mean(dim=0)
+        epistemic_uncertainty = mean_samples.var(dim=0)
 
         # Aleatoric uncertainty: average predicted variance
-        aleatoric_uncertainty = torch.exp(log_vars).mean(dim=0)
+        aleatoric_uncertainty = torch.exp(log_var_samples).mean(dim=0)
 
         return pred_mean, epistemic_uncertainty, aleatoric_uncertainty
 
@@ -274,7 +275,7 @@ class VariationalBayesianRewardModel(nn.Module):
 
     def kl_divergence(self) -> torch.Tensor:
         """Total KL divergence for all Bayesian layers"""
-        kl = 0
+        kl = torch.tensor(0.0, device=self.output_layer.weight_mu.device)
         for layer in self.feature_net:
             if isinstance(layer, BayesianLinear):
                 kl += layer.kl_divergence()
@@ -293,16 +294,16 @@ class VariationalBayesianRewardModel(nn.Module):
             mean: Predicted mean
             uncertainty: Predictive uncertainty
         """
-        predictions = []
+        predictions: list[torch.Tensor] = []
 
         with torch.no_grad():
             for _ in range(num_samples):
                 pred = self.forward(x)
                 predictions.append(pred)
 
-        predictions = torch.stack(predictions)
-        pred_mean = predictions.mean(dim=0)
-        pred_uncertainty = predictions.var(dim=0)
+        prediction_samples = torch.stack(predictions)
+        pred_mean = prediction_samples.mean(dim=0)
+        pred_uncertainty = prediction_samples.var(dim=0)
 
         return pred_mean, pred_uncertainty
 
@@ -344,7 +345,7 @@ class EnsembleRewardModel:
         targets: torch.Tensor,
     ) -> dict[str, float]:
         """Train all models in ensemble"""
-        losses = []
+        losses: list[float] = []
 
         for model, optimizer in zip(self.models, self.optimizers, strict=False):
             optimizer.zero_grad()
@@ -359,9 +360,9 @@ class EnsembleRewardModel:
             loss.backward()
             optimizer.step()
 
-            losses.append(loss.item())
+            losses.append(float(loss.item()))
 
-        return {"ensemble_loss": np.mean(losses)}
+        return {"ensemble_loss": float(np.mean(losses))}
 
     def predict_with_uncertainty(
         self,
@@ -376,8 +377,8 @@ class EnsembleRewardModel:
             epistemic: Model uncertainty (ensemble disagreement)
             aleatoric: Data uncertainty (average predicted variance)
         """
-        all_means = []
-        all_aleatoric = []
+        all_means: list[torch.Tensor] = []
+        all_aleatoric: list[torch.Tensor] = []
 
         for model in self.models:
             mean, epistemic, aleatoric = model.predict_with_uncertainty(
@@ -386,17 +387,17 @@ class EnsembleRewardModel:
             all_means.append(mean)
             all_aleatoric.append(aleatoric)
 
-        all_means = torch.stack(all_means)
-        all_aleatoric = torch.stack(all_aleatoric)
+        mean_samples = torch.stack(all_means)
+        aleatoric_samples = torch.stack(all_aleatoric)
 
         # Ensemble mean
-        ensemble_mean = all_means.mean(dim=0)
+        ensemble_mean = mean_samples.mean(dim=0)
 
         # Epistemic: disagreement between models
-        epistemic_uncertainty = all_means.var(dim=0)
+        epistemic_uncertainty = mean_samples.var(dim=0)
 
         # Aleatoric: average data uncertainty
-        aleatoric_uncertainty = all_aleatoric.mean(dim=0)
+        aleatoric_uncertainty = aleatoric_samples.mean(dim=0)
 
         return ensemble_mean, epistemic_uncertainty, aleatoric_uncertainty
 
@@ -439,7 +440,11 @@ class BayesianRewardFunction(RewardFunction):
 
         self.calibration_data: list[tuple[float, float]] = []  # (predicted, actual)
 
-    async def compute_reward(self, turns: list[ConversationTurn]) -> RewardResult:
+    async def compute_reward(
+        self,
+        turns: list[ConversationTurn],
+        context: dict[str, Any] | None = None,
+    ) -> RewardResult:
         """
         Compute reward with uncertainty quantification.
 
@@ -453,15 +458,15 @@ class BayesianRewardFunction(RewardFunction):
         # Get prediction with uncertainty
         mean, epistemic, aleatoric = self._predict_with_uncertainty(features_tensor)
 
-        mean = mean.item()
-        epistemic = epistemic.item()
-        aleatoric = aleatoric.item()
+        mean = float(mean.item())
+        epistemic = float(epistemic.item())
+        aleatoric = float(aleatoric.item())
 
         # Total uncertainty
         total_uncertainty = epistemic + aleatoric
 
         # Confidence interval (95%)
-        std = np.sqrt(total_uncertainty)
+        std = float(np.sqrt(total_uncertainty))
         ci_lower = mean - 1.96 * std
         ci_upper = mean + 1.96 * std
 
@@ -499,7 +504,7 @@ class BayesianRewardFunction(RewardFunction):
         else:
             return self.model.predict_with_uncertainty(x, self.config.num_samples)
 
-    def _extract_features(self, turns: list[ConversationTurn]) -> np.ndarray:
+    def _extract_features(self, turns: list[ConversationTurn]) -> NDArray[np.float32]:
         """
         Extract features from conversation turns.
 
@@ -512,19 +517,19 @@ class BayesianRewardFunction(RewardFunction):
         features = []
 
         # Average length
-        avg_length = np.mean([len(turn.content) for turn in turns])
+        avg_length = float(np.mean([len(str(turn.content or "")) for turn in turns]))
         features.append(avg_length / 1000.0)  # Normalize
 
         # Number of turns
-        features.append(len(turns) / 20.0)
+        features.append(float(len(turns)) / 20.0)
 
         # Sentiment (placeholder - use actual sentiment in practice)
         features.append(0.5)
 
         # Pad to input_dim
-        features = np.array(features)
-        padded = np.zeros(768)
-        padded[: len(features)] = features
+        feature_array = np.array(features, dtype=np.float32)
+        padded: NDArray[np.float32] = np.zeros(768, dtype=np.float32)
+        padded[: len(feature_array)] = feature_array
 
         return padded
 
@@ -564,19 +569,24 @@ class BayesianRewardFunction(RewardFunction):
         predictions = np.array([p for p, _ in self.calibration_data])
         actuals = np.array([a for _, a in self.calibration_data])
 
-        mae = np.mean(np.abs(predictions - actuals))
-        rmse = np.sqrt(np.mean((predictions - actuals) ** 2))
+        mae = float(np.mean(np.abs(predictions - actuals)))
+        rmse = float(np.sqrt(np.mean((predictions - actuals) ** 2)))
 
-        return {"mae": mae, "rmse": rmse, "num_samples": len(self.calibration_data)}
+        return {
+            "mae": mae,
+            "rmse": rmse,
+            "num_samples": float(len(self.calibration_data)),
+        }
 
     async def compute_turn_reward(
         self,
         turn: ConversationTurn,
-        context: dict[str, Any],
-        history: list[ConversationTurn],
+        context: dict[str, Any] | None = None,
+        conversation_history: list[ConversationTurn] | None = None,
     ) -> RewardResult:
         """Compute reward for single turn"""
-        return await self.compute_reward(history + [turn])
+        history = conversation_history or []
+        return await self.compute_reward(history + [turn], context)
 
 
 class ActiveLearningSelector:
@@ -600,7 +610,7 @@ class ActiveLearningSelector:
         reward_result: RewardResult,
     ) -> bool:
         """Determine if sample should be labeled by human"""
-        total_uncertainty = reward_result.breakdown.get("total_uncertainty", 0)
+        total_uncertainty = float(reward_result.breakdown.get("total_uncertainty", 0.0))
         return total_uncertainty > self.uncertainty_threshold
 
     def select_batch_for_labeling(
@@ -633,7 +643,7 @@ class ActiveLearningSelector:
         ) * uncertainties + self.diversity_weight * diversity_scores
 
         # Select top batch_size
-        selected_indices = np.argsort(scores)[-batch_size:].tolist()
+        selected_indices = [int(idx) for idx in np.argsort(scores)[-batch_size:].tolist()]
 
         # Update selected samples (cap memory at 1000 recent samples)
         for idx in selected_indices:
@@ -697,7 +707,7 @@ class ActiveLearningSelector:
         optimizer = torch.optim.Adam(trainable.parameters(), lr=learning_rate)
         trainable.train()
 
-        for step in range(num_update_steps):
+        for _ in range(num_update_steps):
             optimizer.zero_grad()
             predictions = trainable(X).squeeze()
             loss = torch.nn.functional.mse_loss(predictions, y)

@@ -2,7 +2,8 @@
 Gym/Gymnasium Environment Adapter
 
 Wraps Gym/Gymnasium environments to work with the stateset-agents framework.
-Maps gym's (obs, reward, done, info) API to Environment's (state, turn, reward, done) API.
+Maps gym's (obs, reward, done, info) API to the framework's historical
+step contract of (state, observation_turn, reward, done).
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ class GymEnvironmentAdapter(Environment):
     Adapter that wraps Gym/Gymnasium environments for use with GRPO agents.
 
     This adapter converts between gym's (obs, reward, done, info) format and
-    the framework's (state, turn, reward, done) format. Each gym step becomes
+    the framework's (state, observation_turn, reward, done) format. Each gym step becomes
     a "turn" in a multi-turn episode.
 
     Args:
@@ -163,7 +164,7 @@ class GymEnvironmentAdapter(Environment):
 
     async def step(
         self, state: EnvironmentState, action: ConversationTurn
-    ) -> tuple[EnvironmentState, ConversationTurn, float, bool]:
+    ) -> Any:
         """
         Execute one step in the gym environment.
 
@@ -179,7 +180,7 @@ class GymEnvironmentAdapter(Environment):
         # Parse action from agent's text response
         try:
             gym_action = self.action_mapper.parse_action(
-                action.content, context={"state": state}
+                str(action.content or ""), context={"state": state}
             )
         except GYM_EXCEPTIONS as e:
             logger.error(f"Error parsing action from '{action.content}': {e}")
@@ -288,7 +289,8 @@ class GymEnvironmentAdapter(Environment):
         Returns:
             System prompt describing the gym task
         """
-        return self.observation_processor.get_system_prompt(self.gym_env)
+        prompt: str = self.observation_processor.get_system_prompt(self.gym_env)
+        return prompt
 
     def close(self):
         """Close the gym environment and cleanup resources."""

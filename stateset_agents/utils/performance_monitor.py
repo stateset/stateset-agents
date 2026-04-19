@@ -13,7 +13,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any
+from typing import Any, cast
 from collections.abc import Callable
 
 import psutil
@@ -109,12 +109,14 @@ class PerformanceMonitor:
 
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
-        return self.process.memory_info().rss / 1024 / 1024
+        rss = cast(float | int, self.process.memory_info().rss)
+        return float(rss) / 1024 / 1024
 
     def _get_gpu_memory_usage(self) -> float | None:
         """Get current GPU memory usage in MB."""
         if TORCH_AVAILABLE and torch.cuda.is_available():
-            return torch.cuda.memory_allocated() / 1024 / 1024
+            allocated = cast(float | int, torch.cuda.memory_allocated())
+            return float(allocated) / 1024 / 1024
         return None
 
     def get_metrics_summary(self) -> dict[str, Any]:
@@ -126,7 +128,7 @@ class PerformanceMonitor:
         for metrics in self._metrics_history:
             operations_by_name[metrics.operation_name].append(metrics)
 
-        summary = {
+        summary: dict[str, Any] = {
             "total_operations": len(self._metrics_history),
             "operations_by_type": {},
         }

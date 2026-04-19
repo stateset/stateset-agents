@@ -173,8 +173,8 @@ class CurriculumController:
         else:
             # Adaptive step size based on recent performance
             if len(self.difficulty_history) > 5:
-                variance = np.var(list(self.difficulty_history)[-5:])
-                return max(0.05, min(0.2, 0.1 / (1 + variance)))
+                variance = float(np.var(list(self.difficulty_history)[-5:]))
+                return float(max(0.05, min(0.2, 0.1 / (1 + variance))))
             return 0.1
 
     def _get_regression_step(self) -> float:
@@ -268,11 +268,11 @@ class ExplorationController:
             if self.action_counts[action] == 0:
                 ucb_values.append(float("inf"))
             else:
-                mean_reward = np.mean(self.action_rewards[action])
+                mean_reward = float(np.mean(self.action_rewards[action]))
                 confidence = math.sqrt(
                     2 * math.log(total_counts) / self.action_counts[action]
                 )
-                ucb_values.append(mean_reward + confidence)
+                ucb_values.append(float(mean_reward + confidence))
 
         # Check if highest UCB action is under-explored
         max_ucb_idx = np.argmax(ucb_values)
@@ -343,9 +343,9 @@ class ExplorationController:
         """Update curiosity scores based on prediction error"""
         # Simplified curiosity update - in practice, use intrinsic motivation models
         if action in self.action_rewards and len(self.action_rewards[action]) > 1:
-            expected_reward = np.mean(self.action_rewards[action][:-1])
+            expected_reward = float(np.mean(self.action_rewards[action][:-1]))
             prediction_error = abs(reward - expected_reward)
-            self.curiosity_scores[action] = (
+            self.curiosity_scores[action] = float(
                 0.9 * self.curiosity_scores[action] + 0.1 * prediction_error
             )
 
@@ -394,10 +394,10 @@ class HyperparameterOptimizer:
             else recent
         )
 
-        recent_avg = np.mean(recent)
-        earlier_avg = np.mean(earlier)
+        recent_avg = float(np.mean(recent))
+        earlier_avg = float(np.mean(earlier))
 
-        return (recent_avg - earlier_avg) / (earlier_avg + 1e-8)
+        return float((recent_avg - earlier_avg) / (earlier_avg + 1e-8))
 
     async def _optimize_single_parameter(
         self, param_name: str, current_value: float, performance_trend: float

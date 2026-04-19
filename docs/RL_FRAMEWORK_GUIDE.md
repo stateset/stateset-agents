@@ -80,7 +80,8 @@ from stateset_agents.core.reward import CompositeReward
 async def main():
     # 1. Create an agent
     config = AgentConfig(
-        model_name="gpt2",
+        model_name="stub://quickstart",
+        use_stub_model=True,
         system_prompt="You are a helpful AI assistant.",
         temperature=0.8,
         max_new_tokens=256,
@@ -192,7 +193,8 @@ from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 
 config = AgentConfig(
     # Model settings
-    model_name="gpt2",                    # HuggingFace model ID
+    model_name="stub://quickstart",       # Swap to a real model ID for full training
+    use_stub_model=True,
     system_prompt="You are helpful.",     # System prompt
 
     # Generation parameters
@@ -550,7 +552,7 @@ config = TrainingConfig(
 from stateset_agents.training.config import get_config_for_task
 
 # Get optimized config for specific domains
-config = get_config_for_task("customer_service", model_name="gpt2")
+config = get_config_for_task("customer_service", model_name="stub://quickstart")
 config = get_config_for_task("technical_support", model_name="llama-7b")
 config = get_config_for_task("sales", model_name="mistral-7b")
 ```
@@ -758,7 +760,7 @@ from stateset_agents.training.neural_reward_trainer import NeuralRewardTrainer
 
 # Train a neural reward model from human preferences
 reward_trainer = NeuralRewardTrainer(
-    model_name="gpt2",
+    model_name="your-real-model-id",
     preference_data=preference_dataset,  # Pairs of (better, worse) responses
 )
 
@@ -795,7 +797,8 @@ For long conversations that exceed context limits:
 
 ```python
 config = AgentConfig(
-    model_name="gpt2",
+    model_name="stub://quickstart",
+    use_stub_model=True,
     enable_context_compression=True,
     compression_ratio=0.5,          # Keep 50% of context
     compression_strategy="summary", # or "truncate", "sliding_window"

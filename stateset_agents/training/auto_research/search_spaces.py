@@ -260,7 +260,7 @@ def validate_params_against_space(
 
         val = params[dim.name]
         if dim.type in (SearchSpaceType.CATEGORICAL, SearchSpaceType.CHOICE):
-            if val not in dim.choices:
+            if dim.choices is not None and val not in dim.choices:
                 warnings.append(
                     f"{dim.name}={val!r} not in choices {dim.choices}"
                 )

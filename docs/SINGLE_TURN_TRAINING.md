@@ -21,7 +21,11 @@ from stateset_agents.training.config import TrainingConfig
 
 async def train_single_turn():
     # Create a basic agent
-    config = AgentConfig(model_name="gpt2", max_new_tokens=50)
+    config = AgentConfig(
+        model_name="stub://quickstart",
+        use_stub_model=True,
+        max_new_tokens=50,
+    )
     agent = Agent(config)
 
     # Create environment

@@ -23,10 +23,10 @@ import logging
 import os
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
-from collections.abc import Callable
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -99,15 +99,15 @@ def _resolve_judge_provider(
     *,
     model_name: str | None = None,
     api_key: str | None = None,
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> "JudgeProvider":
-    env = env or os.environ
+    env_vars = os.environ if env is None else env
     normalized = _normalize_judge_provider_name(provider)
     if normalized != "auto":
         return JudgeProvider(normalized)
 
     configured_provider = _normalize_judge_provider_name(
-        env.get("STATESET_JUDGE_PROVIDER") or env.get("LLM_JUDGE_PROVIDER")
+        env_vars.get("STATESET_JUDGE_PROVIDER") or env_vars.get("LLM_JUDGE_PROVIDER")
     )
     if configured_provider != "auto":
         return JudgeProvider(configured_provider)
@@ -116,12 +116,14 @@ def _resolve_judge_provider(
         _infer_judge_provider_from_api_key(api_key),
         _infer_judge_provider_from_model(model_name),
         _infer_judge_provider_from_model(
-            env.get("STATESET_JUDGE_MODEL")
-            or env.get("LLM_JUDGE_MODEL")
-            or env.get("MODEL_NAME")
+            env_vars.get("STATESET_JUDGE_MODEL")
+            or env_vars.get("LLM_JUDGE_MODEL")
+            or env_vars.get("MODEL_NAME")
         ),
-        "openai" if env.get("OPENAI_API_KEY") or env.get("OPENAI_TOKEN") else None,
-        "anthropic" if env.get("ANTHROPIC_API_KEY") else None,
+        "openai"
+        if env_vars.get("OPENAI_API_KEY") or env_vars.get("OPENAI_TOKEN")
+        else None,
+        "anthropic" if env_vars.get("ANTHROPIC_API_KEY") else None,
     ):
         if candidate is not None:
             return JudgeProvider(candidate)
@@ -133,42 +135,50 @@ def _resolve_judge_model_name(
     provider: "JudgeProvider",
     model_name: str | None = None,
     *,
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> str:
     if model_name:
         return model_name
 
-    env = env or os.environ
-    shared_model = env.get("STATESET_JUDGE_MODEL") or env.get("LLM_JUDGE_MODEL") or env.get(
+    env_vars = os.environ if env is None else env
+    shared_model = env_vars.get("STATESET_JUDGE_MODEL") or env_vars.get(
+        "LLM_JUDGE_MODEL"
+    ) or env_vars.get(
         "MODEL_NAME"
     )
     if shared_model:
         return shared_model
 
     if provider == JudgeProvider.ANTHROPIC:
-        return env.get("ANTHROPIC_MODEL") or _DEFAULT_JUDGE_MODEL_NAMES[provider.value]
+        return env_vars.get("ANTHROPIC_MODEL") or _DEFAULT_JUDGE_MODEL_NAMES[
+            provider.value
+        ]
     if provider == JudgeProvider.LOCAL:
-        return env.get("LOCAL_JUDGE_MODEL") or _DEFAULT_JUDGE_MODEL_NAMES[provider.value]
-    return env.get("OPENAI_MODEL") or _DEFAULT_JUDGE_MODEL_NAMES[provider.value]
+        return env_vars.get("LOCAL_JUDGE_MODEL") or _DEFAULT_JUDGE_MODEL_NAMES[
+            provider.value
+        ]
+    return env_vars.get("OPENAI_MODEL") or _DEFAULT_JUDGE_MODEL_NAMES[provider.value]
 
 
 def _resolve_judge_api_key(
     provider: "JudgeProvider",
     api_key: str | None = None,
     *,
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> str | None:
     if api_key:
         return api_key
 
-    env = env or os.environ
-    generic_key = env.get("STATESET_JUDGE_API_KEY") or env.get("LLM_JUDGE_API_KEY")
+    env_vars = os.environ if env is None else env
+    generic_key = env_vars.get("STATESET_JUDGE_API_KEY") or env_vars.get(
+        "LLM_JUDGE_API_KEY"
+    )
     if generic_key:
         return generic_key
     if provider == JudgeProvider.ANTHROPIC:
-        return env.get("ANTHROPIC_API_KEY")
+        return env_vars.get("ANTHROPIC_API_KEY")
     if provider in (JudgeProvider.OPENAI, JudgeProvider.TOGETHER, JudgeProvider.VLLM):
-        return env.get("OPENAI_API_KEY") or env.get("OPENAI_TOKEN")
+        return env_vars.get("OPENAI_API_KEY") or env_vars.get("OPENAI_TOKEN")
     return None
 
 
@@ -176,17 +186,19 @@ def _resolve_judge_api_base(
     provider: "JudgeProvider",
     api_base: str | None = None,
     *,
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> str | None:
     if api_base:
         return api_base
 
-    env = env or os.environ
-    generic_base = env.get("STATESET_JUDGE_API_BASE") or env.get("LLM_JUDGE_API_BASE")
+    env_vars = os.environ if env is None else env
+    generic_base = env_vars.get("STATESET_JUDGE_API_BASE") or env_vars.get(
+        "LLM_JUDGE_API_BASE"
+    )
     if generic_base:
         return generic_base
     if provider in (JudgeProvider.OPENAI, JudgeProvider.VLLM, JudgeProvider.TOGETHER):
-        return env.get("OPENAI_BASE_URL") or env.get("OPENAI_API_BASE")
+        return env_vars.get("OPENAI_BASE_URL") or env_vars.get("OPENAI_API_BASE")
     return None
 
 
@@ -410,7 +422,9 @@ class LLMJudgeBase(ABC):
         # Try to extract JSON from response
         try:
             # Direct JSON parse
-            return json.loads(response)
+            parsed = json.loads(response)
+            if isinstance(parsed, dict):
+                return cast(dict[str, Any], parsed)
         except json.JSONDecodeError:
             pass
 
@@ -418,7 +432,9 @@ class LLMJudgeBase(ABC):
         json_match = re.search(r"\{[^{}]*\}", response, re.DOTALL)
         if json_match:
             try:
-                return json.loads(json_match.group())
+                parsed = json.loads(json_match.group())
+                if isinstance(parsed, dict):
+                    return cast(dict[str, Any], parsed)
             except json.JSONDecodeError:
                 pass
 
@@ -450,7 +466,7 @@ class OpenAIJudge(LLMJudgeBase):
 
     def __init__(self, config: JudgeConfig):
         super().__init__(config)
-        self.client = None
+        self.client: Any | None = None
 
     async def _ensure_client(self):
         """Lazily initialize OpenAI client."""
@@ -470,10 +486,13 @@ class OpenAIJudge(LLMJudgeBase):
     async def _call_api(self, messages: list[dict[str, str]]) -> str:
         """Call OpenAI API."""
         await self._ensure_client()
+        client = self.client
+        if client is None:
+            raise RuntimeError("OpenAI client failed to initialize")
 
         try:
             response = await asyncio.wait_for(
-                self.client.chat.completions.create(
+                client.chat.completions.create(
                     model=self.config.model_name,
                     messages=messages,
                     temperature=self.config.temperature,
@@ -481,7 +500,7 @@ class OpenAIJudge(LLMJudgeBase):
                 ),
                 timeout=self.config.timeout,
             )
-            return response.choices[0].message.content
+            return str(response.choices[0].message.content or "")
         except asyncio.TimeoutError:
             logger.warning("OpenAI API call timed out")
             return '{"score": 0.5, "reasoning": "Timeout"}'
@@ -495,7 +514,7 @@ class AnthropicJudge(LLMJudgeBase):
 
     def __init__(self, config: JudgeConfig):
         super().__init__(config)
-        self.client = None
+        self.client: Any | None = None
 
     async def _ensure_client(self):
         """Lazily initialize Anthropic client."""
@@ -512,6 +531,9 @@ class AnthropicJudge(LLMJudgeBase):
     async def _call_api(self, messages: list[dict[str, str]]) -> str:
         """Call Anthropic API."""
         await self._ensure_client()
+        client = self.client
+        if client is None:
+            raise RuntimeError("Anthropic client failed to initialize")
 
         # Convert messages format
         system_msg = ""
@@ -524,7 +546,7 @@ class AnthropicJudge(LLMJudgeBase):
 
         try:
             response = await asyncio.wait_for(
-                self.client.messages.create(
+                client.messages.create(
                     model=self.config.model_name,
                     system=system_msg,
                     messages=user_messages,
@@ -533,7 +555,7 @@ class AnthropicJudge(LLMJudgeBase):
                 ),
                 timeout=self.config.timeout,
             )
-            return response.content[0].text
+            return str(response.content[0].text)
         except asyncio.TimeoutError:
             logger.warning("Anthropic API call timed out")
             return '{"score": 0.5, "reasoning": "Timeout"}'
@@ -547,8 +569,8 @@ class LocalJudge(LLMJudgeBase):
 
     def __init__(self, config: JudgeConfig, model=None, tokenizer=None):
         super().__init__(config)
-        self.model = model
-        self.tokenizer = tokenizer
+        self.model: Any | None = model
+        self.tokenizer: Any | None = tokenizer
 
     async def _call_api(self, messages: list[dict[str, str]]) -> str:
         """Generate using local model."""
@@ -589,7 +611,7 @@ class LocalJudge(LLMJudgeBase):
                 outputs[0][inputs.input_ids.shape[1] :],
                 skip_special_tokens=True,
             )
-            return response
+            return str(response)
 
         except LLM_JUDGE_EXCEPTIONS as e:
             logger.error(f"Local model error: {e}")
@@ -637,9 +659,14 @@ class LLMJudge:
             )
 
         self.config = config
+        self.backend: LLMJudgeBase
 
         # Initialize appropriate backend
-        if config.provider in (JudgeProvider.OPENAI, JudgeProvider.TOGETHER, JudgeProvider.VLLM):
+        if config.provider in (
+            JudgeProvider.OPENAI,
+            JudgeProvider.TOGETHER,
+            JudgeProvider.VLLM,
+        ):
             self.backend = OpenAIJudge(config)
         elif config.provider == JudgeProvider.ANTHROPIC:
             self.backend = AnthropicJudge(config)
@@ -673,7 +700,7 @@ class LLMJudge:
         if self.cache:
             cached = self.cache.get(query, response, criteria_key)
             if cached is not None:
-                return cached
+                return float(cached)
 
         # Build evaluation prompt
         system_prompt = self.config.system_prompt or DEFAULT_SYSTEM_PROMPT
@@ -735,7 +762,7 @@ class LLMJudge:
         # Run with concurrency limit
         semaphore = asyncio.Semaphore(self.config.max_concurrent)
 
-        async def bounded_task(task):
+        async def bounded_task(task: Awaitable[float]) -> float:
             async with semaphore:
                 return await task
 
@@ -743,13 +770,13 @@ class LLMJudge:
         results = await asyncio.gather(*bounded_tasks, return_exceptions=True)
 
         # Handle errors
-        scores = []
+        scores: list[float] = []
         for result in results:
             if isinstance(result, Exception):
                 logger.warning(f"Evaluation error: {result}")
                 scores.append(0.5)  # Default on error
             else:
-                scores.append(result)
+                scores.append(cast(float, result))
 
         return scores
 
@@ -788,7 +815,7 @@ class LLMJudge:
         result_text = await self.backend._call_api(messages)
         result = self.backend._parse_json_response(result_text)
 
-        winner = result.get("winner", "tie").upper()
+        winner = str(result.get("winner", "tie")).upper()
 
         # Assign scores based on winner
         if winner == "A":
@@ -806,7 +833,7 @@ def create_llm_judge_reward(
     api_key: str | None = None,
     criteria: list[str] | None = None,
     **kwargs,
-) -> Callable[[str, str], float]:
+) -> Callable[[str, str], Awaitable[float]]:
     """
     Create an LLM judge reward function for use with trainers.
 

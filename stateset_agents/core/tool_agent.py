@@ -31,19 +31,25 @@ class ToolAgent(MultiTurnAgent):
         **kwargs,
     ):
         super().__init__(config, **kwargs)
-        self.tools = []
-        self.tool_registry = {}
+        self.tools: list[dict[str, Any]] = []
+        self.tool_registry: dict[str, dict[str, Any]] = {}
         for tool in tools or []:
             self.add_tool(tool)
 
     async def generate_response(
-        self, messages: list[dict[str, str]], context: dict[str, Any] | None = None
+        self,
+        messages: str | list[dict[str, str]],
+        context: dict[str, Any] | None = None,
     ) -> str:
         """Generate response with potential tool usage"""
+        normalized_messages = (
+            [{"role": "user", "content": messages}] if isinstance(messages, str) else messages
+        )
 
-        if self._should_use_tools(messages, context):
-            return await self._generate_with_tools(messages, context)
-        return await super().generate_response(messages, context)
+        if self._should_use_tools(normalized_messages, context):
+            return await self._generate_with_tools(normalized_messages, context)
+        raw_response: object = await super().generate_response(normalized_messages, context)
+        return raw_response if isinstance(raw_response, str) else str(raw_response)
 
     def _should_use_tools(
         self, messages: list[dict[str, str]], context: dict[str, Any] | None = None
@@ -118,10 +124,12 @@ class ToolAgent(MultiTurnAgent):
         else:
             enhanced_messages = [{"role": "system", "content": system_msg}] + messages
 
-        response = await super().generate_response(enhanced_messages, context)
-        response = await self._process_tool_calls(response, context)
-
-        return response
+        raw_response: object = await super().generate_response(enhanced_messages, context)
+        response_text = (
+            raw_response if isinstance(raw_response, str) else str(raw_response)
+        )
+        processed_response = await self._process_tool_calls(response_text, context)
+        return processed_response
 
     def _format_tool_descriptions(self) -> str:
         """Format tool descriptions for model context"""
@@ -147,7 +155,7 @@ class ToolAgent(MultiTurnAgent):
         def _extract_json_objects(text: str) -> list[tuple[str, int, int]]:
             """Extract top-level JSON objects from a mixed text response."""
             decoder = json.JSONDecoder()
-            objects = []
+            objects: list[tuple[str, int, int]] = []
             start = 0
             while True:
                 next_obj_start = text.find("{", start)
@@ -316,9 +324,6 @@ class ToolAgent(MultiTurnAgent):
     @staticmethod
     def _filter_tool_kwargs(func: Any, params: dict[str, Any]) -> dict[str, Any]:
         """Keep only arguments accepted by the target tool function."""
-        if not isinstance(params, dict):
-            return {}
-
         try:
             signature = inspect.signature(func)
         except (TypeError, ValueError):

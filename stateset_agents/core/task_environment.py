@@ -30,21 +30,19 @@ class TaskEnvironment(Environment):
         super().__init__(max_turns, reward_fn, **kwargs)
         self.tasks = tasks
         self.success_criteria = success_criteria
-        self.current_task = None
+        self.current_task: dict[str, Any] | None = None
         self._last_state: EnvironmentState | None = None
 
     async def reset(
         self, scenario: dict[str, Any] | None = None
     ) -> EnvironmentState:
         """Reset for a new task"""
-        if scenario is None:
-            scenario = random.choice(self.tasks)
+        selected_scenario = scenario if scenario is not None else random.choice(self.tasks)
 
-        self.current_task = scenario
+        self.current_task = selected_scenario
         episode_id = str(uuid.uuid4())
         scenario_conv_id = None
-        if isinstance(scenario, dict):
-            scenario_conv_id = scenario.get("conversation_id")
+        scenario_conv_id = selected_scenario.get("conversation_id")
         conversation_id = (
             str(scenario_conv_id)
             if scenario_conv_id is not None and str(scenario_conv_id)
@@ -57,19 +55,18 @@ class TaskEnvironment(Environment):
             status=EpisodeStatus.ONGOING,
             context={
                 "conversation_id": conversation_id,
-                "task": scenario,
-                "task_goal": scenario.get("goal"),
-                "task_type": scenario.get("type"),
-                "required_actions": scenario.get("required_actions", []),
+                "task": selected_scenario,
+                "task_goal": selected_scenario.get("goal"),
+                "task_type": selected_scenario.get("type"),
+                "required_actions": selected_scenario.get("required_actions", []),
                 "completed_actions": [],
                 "task_progress": 0.0,
                 "turns": [],
             },
         )
-        if isinstance(scenario, dict):
-            task_id = scenario.get("task_id", scenario.get("id"))
-            if task_id is not None:
-                state.context["task_id"] = task_id
+        task_id = selected_scenario.get("task_id", selected_scenario.get("id"))
+        if task_id is not None:
+            state.context["task_id"] = task_id
 
         self.active_episodes[episode_id] = state
         self._last_state = state
@@ -77,7 +74,7 @@ class TaskEnvironment(Environment):
 
     async def step(
         self, state: EnvironmentState, action: ConversationTurn
-    ) -> tuple[EnvironmentState, ConversationTurn, float, bool]:
+    ) -> Any:
         """Process agent action and update task state"""
         new_state = state.copy()
         new_state.turn_count += 1
@@ -107,13 +104,14 @@ class TaskEnvironment(Environment):
         self, scenario: dict[str, Any] | None = None
     ) -> str:
         """Get initial task description"""
-        if not scenario:
-            scenario = self.current_task
+        active_scenario = scenario or self.current_task or {}
 
-        task_prompt = f"Task: {scenario.get('description', 'Complete the given task.')}"
+        task_prompt = (
+            f"Task: {active_scenario.get('description', 'Complete the given task.')}"
+        )
 
-        if scenario.get("instructions"):
-            task_prompt += f"\n\nInstructions: {scenario['instructions']}"
+        if active_scenario.get("instructions"):
+            task_prompt += f"\n\nInstructions: {active_scenario['instructions']}"
 
         return task_prompt
 
@@ -124,7 +122,7 @@ class TaskEnvironment(Environment):
         required_actions = state.context.get("required_actions", [])
         completed_actions = state.context.get("completed_actions", [])
 
-        action_content = action.content.lower()
+        action_content = (action.content or "").lower()
 
         for req_action in required_actions:
             if req_action not in completed_actions:
@@ -170,7 +168,7 @@ class TaskEnvironment(Environment):
         if progress == 1.0:
             reward += 5.0
 
-        return reward
+        return float(reward)
 
     async def _check_task_completion(self, state: EnvironmentState) -> bool:
         """Check if task is completed using success_criteria"""

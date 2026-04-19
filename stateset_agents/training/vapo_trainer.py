@@ -19,7 +19,7 @@ Reference: https://arxiv.org/abs/2504.05118
 import json
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import numpy as np
@@ -32,16 +32,22 @@ from .vapo_config import VAPOConfig
 logger = logging.getLogger(__name__)
 
 try:
-    import wandb
+    import wandb as _wandb
+
+    wandb: Any = _wandb
 except ImportError:  # pragma: no cover - optional dependency
-    wandb = None  # type: ignore
+    wandb = None
 
 try:
-    from peft import LoraConfig, TaskType, get_peft_model
+    from peft import LoraConfig as _LoraConfig, TaskType as _TaskType, get_peft_model as _get_peft_model
+
+    LoraConfig: Any = _LoraConfig
+    TaskType: Any = _TaskType
+    get_peft_model: Any = _get_peft_model
 except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None  # type: ignore
-    TaskType = None  # type: ignore
-    get_peft_model = None  # type: ignore
+    LoraConfig = None
+    TaskType = None
+    get_peft_model = None
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_vapo_loaded = False
@@ -115,15 +121,20 @@ class VAPOModelManager:
         """Load model and tokenizer with optional LoRA"""
         logger.info(f"Loading model: {self.config.model_name}")
         _require_transformers_vapo()
+        tokenizer_cls = AutoTokenizer
+        model_cls = AutoModelForCausalLM
+        if tokenizer_cls is None or model_cls is None:
+            raise ImportError("transformers is required for VAPO training")
 
         # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer = tokenizer_cls.from_pretrained(
             self.config.model_name,
             trust_remote_code=True,
             padding_side="left",
         )
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        self.tokenizer = tokenizer
 
         # Model loading kwargs
         model_kwargs = {
@@ -135,13 +146,16 @@ class VAPOModelManager:
         }
 
         # Load base model
-        base_model = AutoModelForCausalLM.from_pretrained(
+        base_model = model_cls.from_pretrained(
             self.config.model_name, **model_kwargs
         )
 
         # Add LoRA adapters if configured
         if self.config.use_lora:
             _require_peft()
+            peft_model_factory = get_peft_model
+            if peft_model_factory is None:
+                raise ImportError("PEFT is required for VAPO LoRA training")
             lora_config = LoraConfig(
                 r=self.config.lora_r,
                 lora_alpha=self.config.lora_alpha,
@@ -150,8 +164,9 @@ class VAPOModelManager:
                 bias="none",
                 task_type=TaskType.CAUSAL_LM,
             )
-            self.model = get_peft_model(base_model, lora_config)
-            self.model.print_trainable_parameters()
+            model = peft_model_factory(base_model, lora_config)
+            model.print_trainable_parameters()
+            self.model = model
         else:
             self.model = base_model
 
@@ -356,7 +371,7 @@ class VAPOTrainer:
         config: VAPOConfig,
         model: Any,
         tokenizer: Any,
-        reward_fn: Callable[[str, str], float],
+        reward_fn: Callable[[str, str], float | Awaitable[float]],
         verifier_fn: Callable[[str, str], bool] | None = None,
     ):
         # Ensure transformers is loaded for scheduler
@@ -437,7 +452,7 @@ class VAPOTrainer:
             )
 
         # Metrics
-        self.metrics_history = {
+        self.metrics_history: dict[str, list[float]] = {
             "policy_loss": [],
             "value_loss": [],
             "positive_lm_loss": [],
@@ -448,6 +463,13 @@ class VAPOTrainer:
 
         self.global_step = 0
         self.value_warmup_complete = False
+
+    async def _compute_reward(self, prompt: str, response: str) -> float:
+        """Resolve sync or async reward callbacks to a float."""
+        reward = self.reward_fn(prompt, response)
+        if isinstance(reward, Awaitable):
+            reward = await reward
+        return float(reward)
 
     def get_hidden_states(
         self,
@@ -580,7 +602,7 @@ class VAPOTrainer:
             # Compute rewards (Monte-Carlo returns)
             rewards = []
             for resp in responses:
-                reward = self.reward_fn(prompt, resp["response"])
+                reward = await self._compute_reward(prompt, resp["response"])
                 rewards.append(reward)
 
             # Prepare batch
@@ -652,7 +674,7 @@ class VAPOTrainer:
 
         return {
             "warmup_value_loss": total_value_loss / self.config.value_warmup_steps,
-            "warmup_explained_variance": np.mean(explained_variances)
+            "warmup_explained_variance": float(np.mean(explained_variances))
             if explained_variances
             else 0,
         }
@@ -771,7 +793,7 @@ class VAPOTrainer:
             is_correct = []
 
             for resp in responses:
-                reward = self.reward_fn(prompt, resp["response"])
+                reward = await self._compute_reward(prompt, resp["response"])
                 rewards.append(reward)
 
                 if self.verifier_fn:

@@ -8,7 +8,7 @@ domains and training stages.
 import logging
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -74,7 +74,7 @@ class RewardNormalizer:
         self.buffer_size = buffer_size
 
         # Running statistics
-        self.reward_buffer = deque(maxlen=buffer_size)
+        self.reward_buffer: deque[float] = deque(maxlen=buffer_size)
         self.stats = RewardStatistics()
 
     def add_reward(self, reward: float):
@@ -216,16 +216,18 @@ class CalibratedRewardFunction(RewardFunction):
         self.call_count += 1
 
         # Update breakdown
-        calibrated_breakdown = base_result.breakdown.copy()
+        calibrated_breakdown: dict[str, Any] = base_result.breakdown.copy()
         calibrated_breakdown["base_score"] = base_result.score
         calibrated_breakdown["calibrated_score"] = calibrated_score
         calibrated_breakdown["normalization_method"] = self.normalizer.method
 
         return RewardResult(
             score=calibrated_score,
-            breakdown=calibrated_breakdown,
+            components=base_result.components,
+            breakdown=cast(dict[str, float], calibrated_breakdown),
             metadata={
                 **base_result.metadata,
+                "normalization_method": self.normalizer.method,
                 "calibration_stats": {
                     "mean": self.normalizer.stats.mean,
                     "std": self.normalizer.stats.std,
@@ -254,7 +256,7 @@ class MultiRewardCalibrator:
     async def calibrate(
         self,
         episodes: list[list[ConversationTurn]],
-        contexts: list[dict[str, Any]] | None = None,
+        contexts: list[dict[str, Any] | None] | None = None,
     ) -> dict[str, RewardStatistics]:
         """
         Calibrate reward functions on a set of episodes
@@ -334,7 +336,7 @@ class AdaptiveRewardScaler:
         self.adaptation_rate = adaptation_rate
 
         # Track reward history for adaptation
-        self.reward_history = deque(maxlen=1000)
+        self.reward_history: deque[float] = deque(maxlen=1000)
 
     def scale_reward(self, reward: float) -> float:
         """Scale a reward value"""
@@ -359,14 +361,18 @@ class AdaptiveRewardScaler:
         # Adjust scale to move towards target distribution
         if current_mean > 0:
             mean_adjustment = target_mean / current_mean
-            self.scale *= 1.0 + (mean_adjustment - 1.0) * self.adaptation_rate
+            self.scale *= float(
+                1.0 + (mean_adjustment - 1.0) * self.adaptation_rate
+            )
 
         if current_std > 0:
             std_adjustment = target_std / current_std
-            self.scale *= 1.0 + (std_adjustment - 1.0) * self.adaptation_rate
+            self.scale *= float(
+                1.0 + (std_adjustment - 1.0) * self.adaptation_rate
+            )
 
         # Clip scale to valid range
-        self.scale = np.clip(self.scale, self.min_scale, self.max_scale)
+        self.scale = float(np.clip(self.scale, self.min_scale, self.max_scale))
 
     def get_statistics(self) -> dict[str, float]:
         """Get current scaling statistics"""
@@ -389,7 +395,7 @@ class AdaptiveRewardScaler:
 def calibrate_reward_functions(
     reward_functions: list[RewardFunction],
     calibration_episodes: list[list[ConversationTurn]],
-    contexts: list[dict[str, Any]] | None = None,
+    contexts: list[dict[str, Any] | None] | None = None,
 ) -> list[CalibratedRewardFunction]:
     """
     Calibrate a list of reward functions

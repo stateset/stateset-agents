@@ -211,7 +211,9 @@ from stateset_agents.training.trainer import GRPOTrainer
 from stateset_agents.training.config import TrainingConfig
 
 async def train_grpo():
-    agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+    agent = MultiTurnAgent(
+        AgentConfig(model_name="stub://quickstart", use_stub_model=True)
+    )
     await agent.initialize()
 
     environment = ConversationEnvironment(name="customer_service")
@@ -240,7 +242,9 @@ from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.training.gspo_trainer import GSPOConfig, train_with_gspo
 
 async def train_gspo():
-    agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+    agent = MultiTurnAgent(
+        AgentConfig(model_name="stub://quickstart", use_stub_model=True)
+    )
     await agent.initialize()
 
     environment = ConversationEnvironment(name="customer_service")

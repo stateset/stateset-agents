@@ -34,8 +34,8 @@ and are not maintained.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/grpo-agent-framework.git
-cd grpo-agent-framework
+git clone https://github.com/stateset/stateset-agents.git
+cd stateset-agents
 
 # Deploy with Docker Compose
 ./deployment/scripts/deploy.sh docker production

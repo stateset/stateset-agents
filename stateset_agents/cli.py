@@ -1038,7 +1038,7 @@ def serve(
         raise typer.Exit(code=2) from e
 
     try:
-        import uvicorn  # type: ignore
+        import uvicorn
     except ImportError as e:
         _echo("uvicorn not installed. Try: pip install 'stateset-agents[api]'")
         raise typer.Exit(code=2) from e
@@ -1087,7 +1087,7 @@ def doctor(
 
     # GPU info
     try:
-        import torch  # type: ignore
+        import torch
 
         cuda = torch.cuda.is_available()
         bf16 = torch.cuda.is_bf16_supported() if cuda else False
@@ -1506,7 +1506,7 @@ def init(
             serialized = json.dumps(cfg, indent=2) + "\n"
         else:
             try:
-                import yaml  # type: ignore
+                import yaml
             except ImportError as e:
                 _echo("PyYAML is required for YAML starter configs. Install with: pip install pyyaml")
                 raise typer.Exit(code=2) from e
@@ -1537,7 +1537,7 @@ def init(
             serialized = json.dumps(cfg, indent=2) + "\n"
         else:
             try:
-                import yaml  # type: ignore
+                import yaml
             except ImportError as e:
                 _echo("PyYAML is required for YAML starter configs. Install with: pip install pyyaml")
                 raise typer.Exit(code=2) from e

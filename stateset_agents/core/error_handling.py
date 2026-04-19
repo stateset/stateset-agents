@@ -243,7 +243,7 @@ class CircuitBreaker:
         )
         self.state = CircuitBreakerState.CLOSED
         self.failure_count = 0
-        self.last_failure_time = 0
+        self.last_failure_time = 0.0
 
     @property
     def is_open(self) -> bool:
@@ -374,9 +374,9 @@ class ErrorHandler:
             if time.time() - e.timestamp < 3600  # Last hour
         ]
 
-        by_category = {}
-        by_severity = {}
-        by_error_code = {}
+        by_category: dict[str, int] = {}
+        by_severity: dict[str, int] = {}
+        by_error_code: dict[str, int] = {}
 
         for error in recent_errors:
             category = error.category.value

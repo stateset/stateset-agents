@@ -114,7 +114,7 @@ class InputValidator:
         return threats
 
     @staticmethod
-    def validate_api_key(api_key: str, min_length: int = 32) -> bool:
+    def validate_api_key(api_key: Any, min_length: int = 32) -> bool:
         """Validate API key format."""
         if not isinstance(api_key, str):
             return False
@@ -188,7 +188,7 @@ class SecureConfig:
             key_bytes = hashlib.sha256(key_str.encode()).digest()
             fernet_key = base64.urlsafe_b64encode(key_bytes)
             cipher = Fernet(fernet_key)
-            return cipher.encrypt(value.encode()).decode()
+            return str(cipher.encrypt(value.encode()).decode())
         except ImportError:
             logger.warning(
                 "cryptography package not installed. Using base64 encoding only. "
@@ -221,7 +221,7 @@ class SecureConfig:
             fernet_key = base64.urlsafe_b64encode(key_bytes)
             cipher = Fernet(fernet_key)
             try:
-                return cipher.decrypt(value.encode()).decode()
+                return str(cipher.decrypt(value.encode()).decode())
             except (InvalidToken, UnicodeDecodeError, ValueError) as e:
                 logger.error(f"Failed to decrypt secret: {e}")
                 raise ValidationException(
@@ -313,7 +313,7 @@ class SecurityMonitor:
         recent_events = self.get_recent_events(hours=1)
 
         # Simple anomaly detection
-        event_counts = {}
+        event_counts: dict[str, int] = {}
         for event in recent_events:
             event_type = event["type"]
             event_counts[event_type] = event_counts.get(event_type, 0) + 1
@@ -343,7 +343,7 @@ class AuthService:
         self.monitor = SecurityMonitor()
 
     def register_user(
-        self, username: str, password: str, roles: list[str] = None
+        self, username: str, password: str, roles: list[str] | None = None
     ) -> bool:
         """Register a new user."""
         if username in self.users:

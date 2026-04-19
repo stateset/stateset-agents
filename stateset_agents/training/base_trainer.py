@@ -17,7 +17,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 from collections.abc import Callable
 
 import torch
@@ -39,13 +39,13 @@ ConfigT = TypeVar("ConfigT", bound="BaseTrainerConfig")
 
 # Lazy imports to avoid torch/torchvision compatibility issues
 _transformers_loaded = False
-_AutoModelForCausalLM = None
-_AutoTokenizer = None
-_get_cosine_schedule_with_warmup = None
-_get_constant_schedule = None
+_AutoModelForCausalLM: Any = None
+_AutoTokenizer: Any = None
+_get_cosine_schedule_with_warmup: Any = None
+_get_constant_schedule: Any = None
 
 
-def _load_transformers():
+def _load_transformers() -> bool:
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_loaded, _AutoModelForCausalLM, _AutoTokenizer
     global _get_cosine_schedule_with_warmup, _get_constant_schedule
@@ -151,12 +151,12 @@ def _require_bitsandbytes() -> None:
 
 # vLLM backend lazy loading
 _vllm_backend_loaded = False
-_VLLMConfig = None
-_VLLMGenerator = None
+_VLLMConfig: Any = None
+_VLLMGenerator: Any = None
 _VLLM_AVAILABLE = False
 
 
-def _load_vllm_backend():
+def _load_vllm_backend() -> bool:
     """Lazily load vLLM backend."""
     global _vllm_backend_loaded, _VLLMConfig, _VLLMGenerator, _VLLM_AVAILABLE
 
@@ -271,9 +271,9 @@ class BaseModelManager:
 
     def __init__(self, config: BaseTrainerConfig):
         self.config = config
-        self.model = None
-        self.tokenizer = None
-        self.ref_model = None
+        self.model: Any | None = None
+        self.tokenizer: Any | None = None
+        self.ref_model: Any | None = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def load_model_and_tokenizer(self) -> tuple[Any, Any]:
@@ -283,8 +283,13 @@ class BaseModelManager:
         if not _load_transformers():
             raise ImportError("transformers is required but failed to load")
 
+        auto_tokenizer = _AutoTokenizer
+        auto_model = _AutoModelForCausalLM
+        if auto_tokenizer is None or auto_model is None:
+            raise ImportError("transformers exports are unavailable")
+
         # Load tokenizer
-        self.tokenizer = _AutoTokenizer.from_pretrained(
+        self.tokenizer = auto_tokenizer.from_pretrained(
             self.config.model_name,
             trust_remote_code=True,
             padding_side="left",
@@ -296,9 +301,7 @@ class BaseModelManager:
         model_kwargs = self._build_model_kwargs()
 
         # Load base model
-        base_model = _AutoModelForCausalLM.from_pretrained(
-            self.config.model_name, **model_kwargs
-        )
+        base_model = auto_model.from_pretrained(self.config.model_name, **model_kwargs)
 
         # Enable gradient checkpointing
         if self.config.gradient_checkpointing:
@@ -409,7 +412,10 @@ class BaseModelManager:
     def _load_reference_model(self, model_kwargs: dict[str, Any]) -> None:
         """Load frozen reference model for KL penalty."""
         logger.info("Loading reference model for KL penalty...")
-        self.ref_model = _AutoModelForCausalLM.from_pretrained(
+        auto_model = _AutoModelForCausalLM
+        if auto_model is None:
+            raise ImportError("transformers exports are unavailable")
+        self.ref_model = auto_model.from_pretrained(
             self.config.model_name,
             torch_dtype=model_kwargs["torch_dtype"],
             device_map="auto" if torch.cuda.device_count() > 1 else None,
@@ -428,7 +434,7 @@ class BaseTrajectoryGenerator:
 
     def __init__(self, config: BaseTrainerConfig):
         self.config = config
-        self.vllm_generator = None
+        self.vllm_generator: Any | None = None
         self._vllm_initialized = False
 
         if config.use_vllm:
@@ -440,7 +446,13 @@ class BaseTrajectoryGenerator:
             logger.warning("vLLM not available, will use HuggingFace fallback")
             return
 
-        vllm_config = _VLLMConfig(
+        vllm_config_cls = _VLLMConfig
+        vllm_generator_cls = _VLLMGenerator
+        if vllm_config_cls is None or vllm_generator_cls is None:
+            logger.warning("vLLM backend exports unavailable, using HuggingFace fallback")
+            return
+
+        vllm_config = vllm_config_cls(
             model_name=self.config.model_name,
             gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
             tensor_parallel_size=self.config.vllm_tensor_parallel_size,
@@ -453,7 +465,7 @@ class BaseTrajectoryGenerator:
             else ("bfloat16" if self.config.bf16 else "auto"),
         )
 
-        self.vllm_generator = _VLLMGenerator(vllm_config)
+        self.vllm_generator = vllm_generator_cls(vllm_config)
 
     async def initialize_vllm(self) -> bool:
         """Initialize vLLM engine."""
@@ -464,7 +476,7 @@ class BaseTrajectoryGenerator:
             return True
 
         try:
-            success = await self.vllm_generator.initialize()
+            success = bool(await self.vllm_generator.initialize())
             self._vllm_initialized = success
             if success:
                 logger.info("vLLM initialized - 5-20x faster generation enabled!")
@@ -527,11 +539,14 @@ class BaseTrainer(ABC, Generic[ConfigT]):
     def _create_scheduler(self) -> Any:
         """Create learning rate scheduler."""
         _load_transformers()
+        scheduler_factory = _get_cosine_schedule_with_warmup
+        if scheduler_factory is None:
+            raise ImportError("transformers scheduler exports are unavailable")
 
         total_steps = self.config.num_episodes * self.config.num_epochs
         warmup_steps = int(total_steps * self.config.warmup_ratio)
 
-        return _get_cosine_schedule_with_warmup(
+        return scheduler_factory(
             self.optimizer,
             num_warmup_steps=warmup_steps,
             num_training_steps=total_steps,
@@ -620,10 +635,12 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         params = list(self.model.parameters())
         if not params:
             return 0.0
-        return torch.nn.utils.clip_grad_norm_(
+        return float(
+            torch.nn.utils.clip_grad_norm_(
             params,
             self.config.max_grad_norm,
-        ).item()
+            ).item()
+        )
 
     def get_gradient_stats(self) -> dict[str, float]:
         """Compute gradient statistics for monitoring.
@@ -659,8 +676,8 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         """Get current learning rate from optimizer/scheduler."""
         if self.optimizer is not None:
             for pg in self.optimizer.param_groups:
-                return pg.get("lr", 0.0)
-        return getattr(self.config, "learning_rate", 0.0)
+                return float(pg.get("lr", 0.0))
+        return float(getattr(self.config, "learning_rate", 0.0))
 
     def get_training_metrics(self) -> dict[str, float]:
         """Gather comprehensive training state metrics.
@@ -810,7 +827,7 @@ def compute_group_advantages(
         raise ValueError(f"Unknown baseline type: {baseline_type}")
 
     advantages = rewards_array - baseline
-    return advantages.tolist()
+    return cast(list[float], advantages.tolist())
 
 
 def create_response_mask(

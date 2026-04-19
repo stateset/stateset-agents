@@ -234,6 +234,7 @@ class GridProposer(ExperimentProposer):
         n = self.points_per_dim
 
         for dim in self.search_space.dimensions:
+            values: list[tuple[str, Any]]
             if dim.type in (SearchSpaceType.CATEGORICAL, SearchSpaceType.CHOICE):
                 values = [(dim.name, c) for c in dim.choices]
             elif dim.type == SearchSpaceType.INT:
@@ -245,11 +246,18 @@ class GridProposer(ExperimentProposer):
                 values = [(dim.name, p) for p in pts]
             elif dim.type == SearchSpaceType.LOGUNIFORM:
                 log_lo, log_hi = math.log(dim.low), math.log(dim.high)
-                pts = [math.exp(log_lo + i * (log_hi - log_lo) / (n - 1)) for i in range(n)]
-                values = [(dim.name, p) for p in pts]
+                values = [
+                    (
+                        dim.name,
+                        math.exp(log_lo + i * (log_hi - log_lo) / (n - 1)),
+                    )
+                    for i in range(n)
+                ]
             else:
-                pts = [dim.low + i * (dim.high - dim.low) / (n - 1) for i in range(n)]
-                values = [(dim.name, p) for p in pts]
+                values = [
+                    (dim.name, dim.low + i * (dim.high - dim.low) / (n - 1))
+                    for i in range(n)
+                ]
 
             dim_values.append(values)
 
@@ -581,6 +589,7 @@ def create_proposer(
     elif strategy == "llm":
         from .llm_proposer import LLMProposer
 
-        return LLMProposer(search_space, **kwargs)
+        proposer: ExperimentProposer = LLMProposer(search_space, **kwargs)
+        return proposer
     else:
         raise ValueError(f"Unknown proposer strategy: {strategy!r}")

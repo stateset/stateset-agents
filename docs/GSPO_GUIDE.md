@@ -97,7 +97,8 @@ from stateset_agents.training.config import get_config_for_task
 async def train_with_gspo_example():
     # Create agent
     agent = MultiTurnAgent(AgentConfig(
-        model_name="gpt2",
+        model_name="stub://quickstart",
+        use_stub_model=True,
         system_prompt="You are a helpful customer service representative.",
     ))
     await agent.initialize()
@@ -110,7 +111,10 @@ async def train_with_gspo_example():
     reward_model = create_customer_service_reward()
 
     # Create GSPO configuration
-    base_config = get_config_for_task("customer_service", model_name="gpt2")
+    base_config = get_config_for_task(
+        "customer_service",
+        model_name="stub://quickstart",
+    )
     gspo_config = GSPOConfig.from_training_config(
         base_config,
         num_outer_iterations=100,

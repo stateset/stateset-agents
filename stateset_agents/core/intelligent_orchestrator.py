@@ -66,7 +66,9 @@ ORCHESTRATOR_EXCEPTIONS = (
 class IntelligentOrchestrator:
     """Main intelligent orchestration system"""
 
-    def __init__(self, config: OrchestrationConfig = None, device: str = "cpu"):
+    def __init__(
+        self, config: OrchestrationConfig | None = None, device: str = "cpu"
+    ) -> None:
         self.config = config or OrchestrationConfig()
         self.device = device
 
@@ -101,10 +103,10 @@ class IntelligentOrchestrator:
 
     async def initialize(
         self,
-        enabled_modalities: list[str] = None,
-        training_function: Callable = None,
-        evaluation_function: Callable = None,
-    ):
+        enabled_modalities: list[str] | None = None,
+        training_function: Callable[..., Any] | None = None,
+        evaluation_function: Callable[..., Any] | None = None,
+    ) -> None:
         """Initialize the orchestration system"""
         logger.info(
             f"Initializing Intelligent Orchestrator (ID: {self.orchestration_id})"
@@ -164,7 +166,7 @@ class IntelligentOrchestrator:
         reward: float,
         success: bool,
         current_hyperparams: dict[str, float],
-        multimodal_inputs: list[ModalityInput] = None,
+        multimodal_inputs: list[ModalityInput] | None = None,
     ) -> tuple[dict[str, Any], OrchestrationDecision]:
         """Orchestrate a single training step with all components"""
 
@@ -296,7 +298,11 @@ class IntelligentOrchestrator:
             )
             self.decision_history.append(decision)
 
-            return optimal_architecture
+            return (
+                optimal_architecture
+                if isinstance(optimal_architecture, ArchitectureConfig)
+                else None
+            )
 
         except ORCHESTRATOR_EXCEPTIONS as e:
             self.error_handler.handle_error(e, "orchestrator", "optimize_architecture")
@@ -397,28 +403,28 @@ class IntelligentOrchestrator:
 
     def _calculate_recent_performance(self) -> float:
         """Calculate recent performance summary (robust to outliers)."""
-        return calculate_recent_performance(self.global_performance_history)
+        return float(calculate_recent_performance(self.global_performance_history))
 
     def _calculate_performance_trend(self) -> float:
         """Calculate performance trend (positive = improving)."""
-        return calculate_performance_trend(self.global_performance_history)
+        return float(calculate_performance_trend(self.global_performance_history))
 
     def _assess_resource_pressure(self) -> float:
         """Assess current resource pressure (0.0 = low, 1.0 = high)."""
-        return assess_resource_pressure(self.resource_usage_history)
+        return float(assess_resource_pressure(self.resource_usage_history))
 
     def _assess_adaptation_need(
         self, learning_insights: dict[str, Any], performance_trend: float
     ) -> bool:
         """Assess if adaptation is needed."""
-        return assess_adaptation_need(learning_insights, performance_trend)
+        return bool(assess_adaptation_need(learning_insights, performance_trend))
 
     def _update_component_state(
         self,
         component_id: str,
         status: ComponentStatus,
-        metrics: dict[str, float] = None,
-    ):
+        metrics: dict[str, float] | None = None,
+    ) -> None:
         """Update the state of a component"""
         if component_id not in self.component_states:
             self.component_states[component_id] = ComponentState(
@@ -527,7 +533,7 @@ class IntelligentOrchestrator:
 
     def get_optimization_insights(self) -> dict[str, Any]:
         """Get insights about optimization opportunities"""
-        insights = {
+        insights: dict[str, list[dict[str, Any]]] = {
             "performance_bottlenecks": [],
             "resource_optimization_opportunities": [],
             "architecture_improvement_suggestions": [],

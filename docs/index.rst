@@ -18,18 +18,44 @@ StateSet Agents is a production-ready framework that enables you to:
 
 .. code-block:: python
 
-   from stateset_agents import MultiTurnAgent, AgentConfig, train
+   import asyncio
 
-   # Create an agent
-   config = AgentConfig(model_name="gpt2", temperature=0.7)
-   agent = MultiTurnAgent(config)
+   from stateset_agents import ConversationEnvironment, MultiTurnAgent, train
+   from stateset_agents.core.agent import AgentConfig
 
-   # Train the agent
-   trained_agent = await train(
-       agent=agent,
-       environment=ConversationEnvironment(scenarios=your_scenarios),
-       num_episodes=1000
-   )
+   async def main() -> None:
+       config = AgentConfig(
+           model_name="stub://quickstart",
+           use_stub_model=True,
+           system_prompt="You are a helpful AI assistant.",
+       )
+       agent = MultiTurnAgent(config)
+       await agent.initialize()
+
+       environment = ConversationEnvironment(
+           scenarios=[
+               {
+                   "id": "welcome",
+                   "topic": "general_help",
+                   "user_responses": [
+                       "Hi there, can you help me learn Python?",
+                       "What should I build first?",
+                   ],
+               }
+           ]
+       )
+
+       await train(
+           agent=agent,
+           environment=environment,
+           num_episodes=4,
+           training_mode="single_turn",
+       )
+
+   if __name__ == "__main__":
+       asyncio.run(main())
+
+Run the maintained smoke-tested example with ``python examples/quick_start.py``.
 
 📚 **Contents**
 
@@ -40,6 +66,7 @@ StateSet Agents is a production-ready framework that enables you to:
    installation
    quickstart
    qwen3_5_starter
+   glm5_1_starter
    examples
 
 .. toctree::

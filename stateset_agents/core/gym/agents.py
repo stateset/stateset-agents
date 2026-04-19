@@ -52,19 +52,24 @@ class GymAgent(MultiTurnAgent):
     ):
         # Apply gym-specific defaults if config not fully specified
         if config is None:
-            config = AgentConfig()
+            config = AgentConfig(
+                model_name="gpt2",
+                max_new_tokens=10,
+                temperature=0.8,
+                do_sample=True,
+            )
 
         # Optimize for short generation (gym actions are typically 1-2 tokens)
-        if config.max_new_tokens is None or config.max_new_tokens > 20:
+        if config.max_new_tokens > 20:
             config.max_new_tokens = 10
             logger.info("Set max_new_tokens=10 for gym agent (short actions)")
 
         # Slightly higher temperature for exploration
-        if config.temperature is None:
+        if config.temperature == 0.0:
             config.temperature = 0.8
 
         # Enable sampling for exploration
-        if config.do_sample is None:
+        if not config.do_sample:
             config.do_sample = True
 
         super().__init__(config, **kwargs)
@@ -73,7 +78,7 @@ class GymAgent(MultiTurnAgent):
 
     async def generate_response(
         self,
-        messages: list[dict[str, str]],
+        messages: str | list[dict[str, str]],
         context: dict[str, Any] | None = None,
         **kwargs,
     ) -> str:
@@ -93,24 +98,28 @@ class GymAgent(MultiTurnAgent):
         Returns:
             Agent response (action as text)
         """
+        normalized_messages = (
+            [{"role": "user", "content": messages}] if isinstance(messages, str) else messages
+        )
+
         # Add gym-specific context to messages if needed
         if context and "observation_text" in context:
             # The observation is already in messages, just generate
             pass
 
         # Generate with parent method (handles all the model logic)
-        response = await super().generate_response(messages, context, **kwargs)
+        response = await super().generate_response(normalized_messages, context, **kwargs)
 
         # Post-process: extract just the action if agent was verbose
         # This helps when agents output "I choose action 1" instead of just "1"
-        response = response.strip()
+        response = str(response).strip()
 
         # If response is very short (1-3 chars), it's probably just the action
         if len(response) <= 3:
-            return response
+            return str(response)
 
         # Otherwise return as-is, mapper will parse it
-        return response
+        return str(response)
 
     def format_observation_for_prompt(self, observation_text: str) -> str:
         """

@@ -62,7 +62,7 @@ class TraceSpan:
     operation_name: str
     start_time: float
     end_time: float | None = None
-    tags: dict[str, str] = field(default_factory=dict)
+    tags: dict[str, Any] = field(default_factory=dict)
     logs: list[dict[str, Any]] = field(default_factory=list)
     duration: float | None = None
 

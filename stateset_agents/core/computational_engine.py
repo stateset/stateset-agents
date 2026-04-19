@@ -22,11 +22,12 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .agent import Agent
 from .environment import Environment
 from .reward import RewardFunction
-from .trajectory import Trajectory
+from .trajectory import ConversationTurn, Trajectory
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ class ComputationalGRPOEngine:
         self.use_learned_rewards = use_learned_rewards
 
         # Initialize components
-        self.trajectory_buffer = deque(maxlen=100000)
+        self.trajectory_buffer: deque[ComputationalTrajectory] = deque(maxlen=100000)
         self.generation_count = 0
         self.total_computation = 0.0
 
@@ -140,8 +141,8 @@ class ComputationalGRPOEngine:
                     # Use reward function to compute learned reward
                     reward_result = await self.reward_function.compute_reward(
                         [
-                            {"role": "user", "content": prompt},
-                            {"role": "assistant", "content": response},
+                            ConversationTurn(role="user", content=prompt),
+                            ConversationTurn(role="assistant", content=response),
                         ]
                     )
                     learned_reward = reward_result.score
@@ -162,7 +163,7 @@ class ComputationalGRPOEngine:
                 timestamp=datetime.now(),
                 metadata={
                     "generation_method": "parallel",
-                    "worker_id": f"worker_{asyncio.current_task().get_name() if asyncio.current_task() else 'main'}",
+                    "worker_id": self._get_worker_id(),
                 },
             )
 
@@ -185,7 +186,8 @@ class ComputationalGRPOEngine:
 
             # Get reward from environment
             reward = await self.environment.get_reward(trajectory)
-            return reward
+            reward_value = float(reward)
+            return reward_value
         except ENGINE_EXCEPTIONS as e:
             logger.warning(f"Failed to get environmental reward: {e}")
             # Return a neutral reward instead of random noise
@@ -249,7 +251,7 @@ class ComputationalGRPOEngine:
 
     def _compute_advantages(
         self, trajectories: list[ComputationalTrajectory]
-    ) -> np.ndarray:
+    ) -> NDArray[np.float64]:
         """Compute advantages for GRPO"""
         rewards = np.array([t.learned_reward for t in trajectories])
         baseline = np.mean(rewards)
@@ -259,7 +261,15 @@ class ComputationalGRPOEngine:
         if np.std(advantages) > 0:
             advantages = advantages / np.std(advantages)
 
-        return advantages
+        normalized_advantages: NDArray[np.float64] = np.asarray(advantages, dtype=float)
+        return normalized_advantages
+
+    def _get_worker_id(self) -> str:
+        """Return a stable worker identifier for async trajectory generation."""
+        current_task = asyncio.current_task()
+        if current_task is None:
+            return "worker_main"
+        return f"worker_{current_task.get_name()}"
 
     async def _update_policy(
         self, trajectories: list[ComputationalTrajectory], advantages: np.ndarray

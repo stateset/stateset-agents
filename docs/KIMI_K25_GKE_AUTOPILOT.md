@@ -78,12 +78,12 @@ spec that mounts a model PVC and requests 8x A100 GPUs on Autopilot.
 
 #### Build Trainer Image
 
-The Job references `stateset/stateset-agents-trainer:0.7.1`. Build it from this
+The Job references `stateset/stateset-agents-trainer:0.11.2`. Build it from this
 repo using `deployment/docker/Dockerfile.trainer`:
 
 ```bash
 docker build -f deployment/docker/Dockerfile.trainer \
-  -t stateset/stateset-agents-trainer:0.7.1 \
+  -t stateset/stateset-agents-trainer:0.11.2 \
   .
 ```
 
@@ -93,7 +93,7 @@ compatible CUDA build of PyTorch:
 ```bash
 docker build -f deployment/docker/Dockerfile.trainer \
   --build-arg BASE_IMAGE=pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime \
-  -t stateset/stateset-agents-trainer:0.7.1 \
+  -t stateset/stateset-agents-trainer:0.11.2 \
   .
 ```
 

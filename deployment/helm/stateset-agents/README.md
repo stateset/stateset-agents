@@ -13,7 +13,7 @@ Gateway image (FastAPI, `/v1/messages`):
 
 ```bash
 docker build -f deployment/docker/Dockerfile \
-  -t stateset/stateset-agents-api:0.7.1 \
+  -t stateset/stateset-agents-api:0.11.2 \
   .
 ```
 
@@ -21,7 +21,7 @@ Trainer image (Kubernetes Jobs):
 
 ```bash
 docker build -f deployment/docker/Dockerfile.trainer \
-  -t stateset/stateset-agents-trainer:0.7.1 \
+  -t stateset/stateset-agents-trainer:0.11.2 \
   .
 ```
 
@@ -93,6 +93,14 @@ helm upgrade --install stateset-agents deployment/helm/stateset-agents \
   -f values.kimi-k25.generated.yaml
 ```
 
+If you ran `examples/finetune_qwen3_5_27b_gspo.py`, use the Qwen renderer instead:
+
+```bash
+python scripts/render_qwen3_5_27b_helm_values.py \
+  --manifest /models/qwen3-5-27b/serving_manifest.json \
+  > values.qwen3-5-27b.generated.yaml
+```
+
 ## Fine-Tuned Serving (Local Path)
 
 If your merged weights are on the PVC at `/models/kimi-k25/merged`, enable
@@ -102,6 +110,40 @@ fine-tuned serving and the model name mapping with:
 helm upgrade --install stateset-agents deployment/helm/stateset-agents \
   --namespace stateset-agents \
   -f deployment/helm/stateset-agents/values-kimi-k25-finetuned.yaml
+```
+
+For Qwen3.5-27B, use the dedicated Qwen profile first and then the finetuned
+override once your merged weights are on the PVC:
+
+```bash
+helm upgrade --install stateset-agents deployment/helm/stateset-agents \
+  --namespace stateset-agents \
+  -f deployment/helm/stateset-agents/values-qwen3-5-27b.yaml \
+  -f deployment/helm/stateset-agents/values-qwen3-5-27b-finetuned.yaml
+```
+
+If you want the minimum internal serving footprint for the base model first,
+use the `2x L4` profile:
+
+```bash
+helm upgrade --install stateset-agents deployment/helm/stateset-agents \
+  --namespace stateset-agents \
+  -f deployment/helm/stateset-agents/values-qwen3-5-27b-minimal.yaml
+```
+
+The full runbook for that path is in:
+
+```text
+docs/QWEN3_5_27B_MINIMAL_HOSTING_PLAN.md
+```
+
+If you prefer raw Kubernetes manifests instead of Helm, the repo now includes:
+
+```bash
+kubectl apply -f deployment/kubernetes/qwen3-5-27b-vllm.yaml
+kubectl apply -f deployment/kubernetes/qwen3-5-27b-vllm-finetuned.yaml
+kubectl apply -f deployment/kubernetes/qwen3-5-27b-vllm-finetuned-gcs.yaml
+kubectl apply -f deployment/kubernetes/qwen3-5-27b-training-job.yaml
 ```
 
 ## Fine-Tuned Serving (Sync From GCS)
@@ -125,6 +167,15 @@ python scripts/render_kimi_k25_helm_values.py \
   --manifest /models/kimi-k25/serving_manifest.json \
   --gcs-uri gs://YOUR_BUCKET/kimi-k25/runs/YOUR_RUN_ID/merged \
   > values.kimi-k25.gcs.yaml
+```
+
+For Qwen3.5-27B, use:
+
+```bash
+python scripts/render_qwen3_5_27b_helm_values.py \
+  --manifest /models/qwen3-5-27b/serving_manifest.json \
+  --gcs-uri gs://YOUR_BUCKET/qwen3-5-27b/runs/YOUR_RUN_ID/merged \
+  > values.qwen3-5-27b.gcs.yaml
 ```
 
 3) Deploy:

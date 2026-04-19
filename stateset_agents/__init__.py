@@ -11,7 +11,7 @@ from importlib import import_module
 from importlib.util import find_spec
 from typing import Any
 
-__version__ = "0.11.1"
+__version__ = "0.11.2"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
 

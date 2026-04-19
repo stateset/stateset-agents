@@ -1,5 +1,7 @@
 """Backward-compatible re-export for the packaged Qwen3.5-0.8B starter helpers."""
 
+# ruff: noqa: E402
+
 from __future__ import annotations
 
 import sys

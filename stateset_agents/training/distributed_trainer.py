@@ -117,13 +117,13 @@ class DistributedGRPOTrainer:
         # Training state
         self.is_initialized = False
         self.is_master = False
-        self.device = None
-        self.model = None
-        self.optimizer = None
-        self.scaler = None
+        self.device: torch.device | None = None
+        self.model: Any | None = None
+        self.optimizer: Any | None = None
+        self.scaler: torch.cuda.amp.GradScaler | None = None
 
         # Metrics
-        self.training_metrics = {}
+        self.training_metrics: dict[str, Any] = {}
         self.step_count = 0
         self.epoch_count = 0
 
@@ -245,7 +245,7 @@ class DistributedGRPOTrainer:
             dist.barrier()
 
             # Save checkpoint (only master process)
-            if self.is_master and epoch % self.training_config.save_interval == 0:
+            if self.is_master and epoch % self.training_config.save_steps == 0:
                 await self._save_checkpoint(epoch)
 
         # Final cleanup
@@ -256,8 +256,14 @@ class DistributedGRPOTrainer:
 
     async def _train_epoch(self) -> dict[str, Any]:
         """Train for one epoch"""
-        self.model.train()
-        epoch_metrics = {
+        model = self.model
+        optimizer = self.optimizer
+        scaler = self.scaler
+        if model is None or optimizer is None:
+            raise RuntimeError("Distributed trainer is not initialized")
+
+        model.train()
+        epoch_metrics: dict[str, Any] = {
             "loss": 0.0,
             "rewards": [],
             "trajectories": 0,
@@ -283,7 +289,9 @@ class DistributedGRPOTrainer:
 
             # Backward pass
             if self.distributed_config.mixed_precision:
-                self.scaler.scale(loss).backward()
+                if scaler is None:
+                    raise RuntimeError("Mixed precision enabled without GradScaler")
+                scaler.scale(loss).backward()
             else:
                 loss.backward()
 
@@ -292,18 +300,24 @@ class DistributedGRPOTrainer:
                 step_idx + 1
             ) % self.distributed_config.gradient_accumulation_steps == 0:
                 if self.distributed_config.mixed_precision:
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
+                    if scaler is None:
+                        raise RuntimeError("Mixed precision enabled without GradScaler")
+                    scaler.step(optimizer)
+                    scaler.update()
                 else:
-                    self.optimizer.step()
+                    optimizer.step()
 
-                self.optimizer.zero_grad()
+                optimizer.zero_grad()
                 self.step_count += 1
 
             # Update metrics
             epoch_metrics["loss"] += loss.item()
-            epoch_metrics["rewards"].extend(step_metrics.get("rewards", []))
-            epoch_metrics["trajectories"] += step_metrics.get("trajectories", 0)
+            rewards = step_metrics.get("rewards", [])
+            if isinstance(rewards, list):
+                epoch_metrics["rewards"].extend(rewards)
+            trajectories = step_metrics.get("trajectories", 0)
+            if isinstance(trajectories, int):
+                epoch_metrics["trajectories"] += trajectories
             epoch_metrics["step_time"] += asyncio.get_event_loop().time() - step_start
 
             # Memory tracking
@@ -321,9 +335,10 @@ class DistributedGRPOTrainer:
         """Generate training data for the epoch"""
         # This should be implemented based on your specific training data requirements
         # For now, return placeholder data
+        batch_size = int(self.training_config.batch_size or 1)
         return [
             {"prompt": f"Training prompt {i}", "response": f"Response {i}"}
-            for i in range(self.training_config.batch_size)
+            for i in range(batch_size)
         ]
 
     def _distribute_data(self, data: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -378,21 +393,28 @@ class DistributedGRPOTrainer:
     def _reduce_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
         """Reduce metrics across all processes"""
         # Gather metrics from all processes
-        gathered_metrics = [None] * self.distributed_config.world_size
+        gathered_metrics: list[dict[str, Any] | None] = [None] * self.distributed_config.world_size
         dist.all_gather_object(gathered_metrics, metrics)
+        valid_metrics = [metric for metric in gathered_metrics if metric is not None]
 
         # Aggregate metrics
         if self.is_master:
-            aggregated = {}
+            aggregated: dict[str, Any] = {}
             for key in metrics:
                 if key == "rewards":
-                    aggregated[key] = [r for m in gathered_metrics for r in m[key]]
+                    aggregated[key] = [
+                        reward
+                        for metric in valid_metrics
+                        for reward in metric.get("rewards", [])
+                    ]
                 elif key == "trajectories":
-                    aggregated[key] = sum(m[key] for m in gathered_metrics)
-                elif isinstance(metrics[key], (int, float)):
-                    aggregated[key] = sum(m[key] for m in gathered_metrics) / len(
-                        gathered_metrics
+                    aggregated[key] = sum(
+                        int(metric.get("trajectories", 0)) for metric in valid_metrics
                     )
+                elif isinstance(metrics[key], (int, float)):
+                    aggregated[key] = sum(
+                        float(metric.get(key, 0.0)) for metric in valid_metrics
+                    ) / max(len(valid_metrics), 1)
                 else:
                     aggregated[key] = metrics[key]
 
@@ -428,29 +450,32 @@ class DistributedGRPOTrainer:
 
     async def _save_checkpoint(self, epoch: int):
         """Save training checkpoint"""
-        checkpoint_dir = Path(self.training_config.checkpoint_dir)
-        checkpoint_dir.mkdir(exist_ok=True)
+        model = self.model
+        optimizer = self.optimizer
+        if model is None or optimizer is None:
+            raise RuntimeError("Distributed trainer is not initialized")
+
+        checkpoint_dir = Path(self.training_config.output_dir) / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         checkpoint_path = checkpoint_dir / f"checkpoint_epoch_{epoch}.pt"
 
         # Save model state
         model_state = (
-            self.model.module.state_dict()
-            if hasattr(self.model, "module")
-            else self.model.state_dict()
+            model.module.state_dict() if hasattr(model, "module") else model.state_dict()
         )
 
         checkpoint = {
             "epoch": epoch,
             "model_state_dict": model_state,
-            "optimizer_state_dict": self.optimizer.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
             "training_config": self.training_config.to_dict(),
             "distributed_config": self.distributed_config.to_dict(),
             "step_count": self.step_count,
             "training_metrics": self.training_metrics,
         }
 
-        if self.scaler:
+        if self.scaler is not None:
             checkpoint["scaler_state_dict"] = self.scaler.state_dict()
 
         torch.save(checkpoint, checkpoint_path)

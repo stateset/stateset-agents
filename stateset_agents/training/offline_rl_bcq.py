@@ -8,16 +8,24 @@ Reference: Fujimoto et al. "Off-Policy Deep Reinforcement Learning
 without Exploration" (ICML 2019)
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
 try:
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-    from torch.optim import Adam
+    import torch as _torch
+    import torch.nn as _nn
+    import torch.nn.functional as _F
+    from torch.optim import Adam as _Adam
+
+    torch: Any = _torch
+    nn: Any = _nn
+    F: Any = _F
+    Adam: Any = _Adam
 except ImportError:
     torch = None
     nn = None
@@ -610,7 +618,7 @@ class BatchConstrainedQLearning:
     def select_action(
         self,
         state: torch.Tensor,
-        num_samples: int = None,
+        num_samples: int | None = None,
     ) -> torch.Tensor:
         """
         Select action using BCQ policy.
@@ -671,7 +679,7 @@ class BatchConstrainedQLearning:
 
             q1 = self.q1(state, action)
             q2 = self.q2(state, action)
-            return torch.min(q1, q2).item()
+            return float(torch.min(q1, q2).item())
 
     def save(self, path: str) -> None:
         """Save model checkpoint"""
@@ -782,11 +790,11 @@ class BCQTrainer:
                 epoch_metrics.append(metrics)
 
             # Average metrics for epoch
-            avg_metrics = {
-                key: np.mean([m[key] for m in epoch_metrics])
+            avg_metrics: dict[str, float] = {
+                key: float(np.mean([m[key] for m in epoch_metrics]))
                 for key in epoch_metrics[0].keys()
             }
-            avg_metrics["epoch"] = epoch
+            avg_metrics["epoch"] = float(epoch)
             self.training_metrics.append(avg_metrics)
 
             if epoch % 10 == 0:

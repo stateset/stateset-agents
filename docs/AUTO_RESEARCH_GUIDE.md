@@ -39,7 +39,9 @@ from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, Safe
 from stateset_agents.training.auto_research import AutoResearchConfig, run_auto_research
 
 async def main():
-    agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+    agent = MultiTurnAgent(
+        AgentConfig(model_name="stub://quickstart", use_stub_model=True)
+    )
     await agent.initialize()
 
     environment = ConversationEnvironment(scenarios=[...], max_turns=8)

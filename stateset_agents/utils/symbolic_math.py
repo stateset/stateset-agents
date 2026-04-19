@@ -26,7 +26,7 @@ DEFAULT_CONSTANTS: dict[str, float] = {
     "e": math.e,
 }
 
-_BIN_OPS = {
+_BIN_OPS: dict[type[ast.operator], Callable[[float, float], float]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -34,14 +34,14 @@ _BIN_OPS = {
     ast.Pow: operator.pow,
 }
 
-_UNARY_OPS = {
+_UNARY_OPS: dict[type[ast.unaryop], Callable[[float], float]] = {
     ast.UAdd: operator.pos,
     ast.USub: operator.neg,
 }
 
 
 def normalize_expression(expression: str) -> str:
-    """Normalize expression to Python syntax (e.g., convert ^ to **)."""
+    """Normalize expression to Python syntax (e.g., convert ``^`` to ``**``)."""
     if not expression:
         return ""
     return expression.replace("^", "**")
@@ -96,7 +96,7 @@ class _SafeEvaluator(ast.NodeVisitor):
         self.constants = dict(constants or DEFAULT_CONSTANTS)
 
     def visit_Expression(self, node: ast.Expression) -> float:
-        return self.visit(node.body)
+        return float(self.visit(node.body))
 
     def visit_Constant(self, node: ast.Constant) -> float:
         if isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
@@ -104,6 +104,8 @@ class _SafeEvaluator(ast.NodeVisitor):
         raise ValueError("Unsupported constant type")
 
     def visit_Num(self, node: ast.Num) -> float:  # pragma: no cover - py<3.8
+        if isinstance(node.n, complex):
+            raise ValueError("Complex numbers are not supported")
         return float(node.n)
 
     def visit_Name(self, node: ast.Name) -> float:
@@ -118,15 +120,15 @@ class _SafeEvaluator(ast.NodeVisitor):
         op_type = type(node.op)
         if op_type not in _UNARY_OPS:
             raise ValueError("Unsupported unary operator")
-        return _UNARY_OPS[op_type](self.visit(node.operand))
+        return float(_UNARY_OPS[op_type](float(self.visit(node.operand))))
 
     def visit_BinOp(self, node: ast.BinOp) -> float:
         op_type = type(node.op)
         if op_type not in _BIN_OPS:
             raise ValueError("Unsupported binary operator")
-        left = self.visit(node.left)
-        right = self.visit(node.right)
-        return _BIN_OPS[op_type](left, right)
+        left = float(self.visit(node.left))
+        right = float(self.visit(node.right))
+        return float(_BIN_OPS[op_type](left, right))
 
     def visit_Call(self, node: ast.Call) -> float:
         if node.keywords:
@@ -136,8 +138,9 @@ class _SafeEvaluator(ast.NodeVisitor):
         func_name = node.func.id
         if func_name not in self.functions:
             raise ValueError(f"Unsupported function: {func_name}")
-        args = [self.visit(arg) for arg in node.args]
-        return float(self.functions[func_name](*args))
+        args = [float(self.visit(arg)) for arg in node.args]
+        func = self.functions[func_name]
+        return float(func(*args))
 
     def generic_visit(self, node: ast.AST) -> float:
         raise ValueError(f"Unsupported expression node: {type(node).__name__}")

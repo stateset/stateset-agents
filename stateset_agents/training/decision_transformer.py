@@ -16,11 +16,17 @@ from typing import Any
 import numpy as np
 
 try:
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-    from torch.optim import AdamW
-    from torch.optim.lr_scheduler import LambdaLR
+    import torch as _torch
+    import torch.nn as _nn
+    import torch.nn.functional as _F
+    from torch.optim import AdamW as _AdamW
+    from torch.optim.lr_scheduler import LambdaLR as _LambdaLR
+
+    torch: Any = _torch
+    nn: Any = _nn
+    F: Any = _F
+    AdamW: Any = _AdamW
+    LambdaLR: Any = _LambdaLR
 except ImportError:
     torch = None
     nn = None
@@ -653,11 +659,11 @@ class DecisionTransformerTrainer:
                 epoch_metrics.append(metrics)
 
             # Average epoch metrics
-            avg_metrics = {
-                key: np.mean([m[key] for m in epoch_metrics])
+            avg_metrics: dict[str, float] = {
+                key: float(np.mean([m[key] for m in epoch_metrics]))
                 for key in epoch_metrics[0].keys()
             }
-            avg_metrics["epoch"] = epoch
+            avg_metrics["epoch"] = float(epoch)
             self.training_metrics.append(avg_metrics)
 
             if epoch % 10 == 0:
@@ -716,7 +722,7 @@ class DecisionTransformerTrainer:
                 rtg = traj.returns_to_go[:min_len]
             else:
                 rtg = (
-                    traj.compute_returns_to_go(self.config.discount_factor)[:min_len]
+                    traj.compute_returns_to_go()[:min_len]
                     if hasattr(traj, "compute_returns_to_go")
                     else [0.0] * min_len
                 )

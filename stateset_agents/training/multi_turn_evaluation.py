@@ -42,9 +42,9 @@ async def coerce_reward_result(
         return score, breakdown
 
     raw_score = getattr(reward_result, "score", None)
-    try:
+    if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
         score = float(raw_score)
-    except (TypeError, ValueError):
+    else:
         score = 0.0
 
     raw_breakdown = getattr(reward_result, "breakdown", None)
@@ -70,9 +70,10 @@ def format_trajectory_for_model(agent: Any, trajectory: Any) -> str:
 
     if hasattr(agent.tokenizer, "apply_chat_template"):
         messages = [_as_message(turn) for turn in trajectory.turns]
-        return agent.tokenizer.apply_chat_template(
+        rendered: object = agent.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=False
         )
+        return rendered if isinstance(rendered, str) else str(rendered)
 
     parts = []
     for turn in trajectory.turns:

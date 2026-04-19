@@ -409,6 +409,8 @@ class ConversationHandler:
             conversation_id = conversation_context.conversation_id
 
             # Track in state manager
+            if conversation_id is None:
+                raise ValueError("Conversation context missing conversation_id")
             self.state.create_conversation(
                 conversation_id=conversation_id,
                 user_id=effective_user_id,
@@ -564,7 +566,9 @@ class WebSocketHandler:
 
                 # Route message
                 message_type = message_data.get("type")
-                await self._route_message(websocket, message_type, message_data)
+                await self._route_message(
+                    websocket, str(message_type or ""), message_data
+                )
 
         except GRPO_WS_EXCEPTIONS as e:
             if "disconnect" not in str(e).lower():

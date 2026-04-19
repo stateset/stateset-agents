@@ -46,6 +46,8 @@ Available Backends:
     - wandb: W&B Sweeps integration, good for team collaboration
 """
 
+from typing import Any
+
 from .base import (
     HPOBackend,
     HPOCallback,
@@ -80,28 +82,35 @@ from .search_spaces import (
 )
 
 # Conditionally import backends based on availability
+OptunaBackend: Any | None = None
+RayTuneBackend: Any | None = None
+WandBSweepsBackend: Any | None = None
+
 try:
     from .optuna_backend import OPTUNA_AVAILABLE as __optuna_available__
-    from .optuna_backend import OptunaBackend
+    from .optuna_backend import OptunaBackend as _OptunaBackend
+    OptunaBackend = _OptunaBackend
 except ImportError:
     __optuna_available__ = False
 
 try:
     from .ray_tune_backend import RAY_AVAILABLE as __ray_tune_available__
-    from .ray_tune_backend import RayTuneBackend
+    from .ray_tune_backend import RayTuneBackend as _RayTuneBackend
+    RayTuneBackend = _RayTuneBackend
 except ImportError:  # pragma: no cover
     __ray_tune_available__ = False
-    RayTuneBackend = None  # type: ignore
+    RayTuneBackend = None
 
 try:
     from .wandb_backend import WANDB_AVAILABLE as __wandb_available__
-    from .wandb_backend import WandBSweepsBackend
+    from .wandb_backend import WandBSweepsBackend as _WandBSweepsBackend
+    WandBSweepsBackend = _WandBSweepsBackend
 except ImportError:  # pragma: no cover
     __wandb_available__ = False
-    WandBSweepsBackend = None  # type: ignore
+    WandBSweepsBackend = None
 
 
-__all__ = [
+_exports = [
     # Base classes
     "HPOBackend",
     "HPOCallback",
@@ -142,6 +151,7 @@ __all__ = [
     "__ray_tune_available__",
     "__wandb_available__",
 ]
+__all__: list[str] = [name for name in _exports if name is not None]
 
 # Remove None values from __all__
 __all__ = [x for x in __all__ if x is not None]

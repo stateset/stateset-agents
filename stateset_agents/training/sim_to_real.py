@@ -6,18 +6,26 @@ transfer techniques for bridging the gap between simulated and real
 conversation environments.
 """
 
+from __future__ import annotations
+
 import logging
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
 try:
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-    from torch.optim import Adam
+    import torch as _torch
+    import torch.nn as _nn
+    import torch.nn.functional as _F
+    from torch.optim import Adam as _Adam
+
+    torch: Any = _torch
+    nn: Any = _nn
+    F: Any = _F
+    Adam: Any = _Adam
 except ImportError:
     torch = None
     nn = None
@@ -219,7 +227,7 @@ class UserBehaviorModel(nn.Module):
             # Use negative MSE as proxy for likelihood
             mse = F.mse_loss(predicted, actual_response)
             likelihood = torch.exp(-mse)
-            return likelihood.item()
+            return float(likelihood.item())
 
 
 class DomainAdaptationModule(nn.Module):
@@ -253,7 +261,7 @@ class DomainAdaptationModule(nn.Module):
         self,
         sim_features: torch.Tensor,
         real_features: torch.Tensor,
-        lambda_: float = None,
+        lambda_: float | None = None,
     ) -> torch.Tensor:
         """
         Compute domain adversarial loss (DANN).
@@ -373,7 +381,7 @@ class SimToRealTransfer:
         config: SimToRealConfig,
         simulator: Any = None,  # ConversationSimulator
         real_dataset: Any = None,  # ConversationDataset
-        device: str = None,
+        device: str | None = None,
     ):
         _require_torch()
 
@@ -402,6 +410,7 @@ class SimToRealTransfer:
         self.training_step = 0
         self.gap_history: list[dict[str, float]] = []
         self.is_calibrated = False
+        self._encoder: Callable[[str], np.ndarray] | None = None
 
     async def identify_user_model(
         self,
@@ -448,7 +457,7 @@ class SimToRealTransfer:
                 )
 
         logger.info("User model identification complete")
-        return self.user_model
+        return cast(UserBehaviorModel, self.user_model)
 
     def _prepare_user_model_data(
         self,
@@ -492,14 +501,14 @@ class SimToRealTransfer:
 
         return training_data
 
-    def _get_text_encoder(self) -> "Callable[[str], np.ndarray]":
+    def _get_text_encoder(self) -> Callable[[str], np.ndarray]:
         """Get a text encoder function.
 
         Priority:
         1. sentence-transformers (best quality, 384-dim MiniLM)
         2. Bag-of-words hash (fast fallback, preserves some semantics)
         """
-        if hasattr(self, "_encoder"):
+        if self._encoder is not None:
             return self._encoder
 
         dim = self.config.state_dim
@@ -515,10 +524,10 @@ class SimToRealTransfer:
                 emb = model.encode(text, show_progress_bar=False)
                 if len(emb) != dim:
                     # Pad or truncate to match config dim
-                    result = np.zeros(dim, dtype=np.float32)
+                    result: np.ndarray = np.zeros(dim, dtype=np.float32)
                     result[: min(len(emb), dim)] = emb[:dim]
                     return result
-                return emb.astype(np.float32)
+                return cast(np.ndarray, np.asarray(emb, dtype=np.float32))
 
             self._encoder = _st_encode
             return self._encoder
@@ -534,7 +543,7 @@ class SimToRealTransfer:
         def _hash_encode(text: str) -> np.ndarray:
             import hashlib
 
-            result = np.zeros(dim, dtype=np.float32)
+            result: np.ndarray = np.zeros(dim, dtype=np.float32)
             words = text.lower().split()
             for word in words:
                 h = int(hashlib.md5(word.encode()).hexdigest(), 16)
@@ -584,8 +593,8 @@ class SimToRealTransfer:
 
     async def calibrate_simulator(
         self,
-        user_model: UserBehaviorModel = None,
-    ) -> dict[str, float]:
+        user_model: UserBehaviorModel | None = None,
+    ) -> dict[str, Any]:
         """
         Calibrate simulator using learned user model.
 
@@ -604,14 +613,15 @@ class SimToRealTransfer:
 
         # Calibrate simulator with real data statistics
         if self.real_dataset is not None:
-            metrics = await self.simulator.calibrate(self.real_dataset)
+            raw_metrics = await self.simulator.calibrate(self.real_dataset)
+            metrics = dict(raw_metrics) if isinstance(raw_metrics, dict) else {}
         else:
             metrics = {}
 
         self.is_calibrated = True
         return metrics
 
-    def get_calibration_metrics(self) -> dict[str, float]:
+    def get_calibration_metrics(self) -> dict[str, Any]:
         """Get current calibration metrics"""
         if not self.is_calibrated:
             return {"error": "Not calibrated"}
@@ -691,7 +701,7 @@ class SimToRealTransfer:
         sim_size = int(batch_size * sim_ratio)
         real_size = batch_size - sim_size
 
-        batch = {
+        batch: dict[str, Any] = {
             "sim_data": [],
             "real_data": [],
             "sim_ratio": sim_ratio,
@@ -730,13 +740,19 @@ class SimToRealTransfer:
         self.training_step = step
         return batch
 
-    def compute_transfer_gap(self) -> dict[str, float]:
+    def compute_transfer_gap(self) -> dict[str, Any]:
         """Compute current sim-to-real transfer gap"""
         if self.simulator is None or self.real_dataset is None:
             return {"error": "Simulator and real data required"}
 
-        gap_metrics = self.simulator.compute_sim_real_gap(self.real_dataset)
-        self.gap_history.append(gap_metrics)
+        raw_gap_metrics = self.simulator.compute_sim_real_gap(self.real_dataset)
+        gap_metrics = dict(raw_gap_metrics) if isinstance(raw_gap_metrics, dict) else {}
+        typed_gap_metrics = {
+            str(key): float(value)
+            for key, value in gap_metrics.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        self.gap_history.append(typed_gap_metrics)
 
         return gap_metrics
 

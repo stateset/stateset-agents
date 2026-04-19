@@ -471,9 +471,10 @@ def _format_trajectory_for_model(trajectory: Any, agent: Any) -> str:
 
     if hasattr(agent.tokenizer, "apply_chat_template"):
         # Use tokenizer's chat template
-        return agent.tokenizer.apply_chat_template(
+        rendered: object = agent.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=False
         )
+        return rendered if isinstance(rendered, str) else str(rendered)
     else:
         # Simple formatting
         parts = []

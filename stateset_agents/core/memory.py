@@ -31,12 +31,11 @@ import re
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from collections.abc import Awaitable
-
 logger = logging.getLogger(__name__)
 
 
@@ -397,7 +396,7 @@ class InMemoryStore(MemoryStore):
     ) -> list[MemoryEntry]:
         """Simple keyword-based search."""
         query_lower = query.lower()
-        results = []
+        results: list[tuple[float, MemoryEntry]] = []
 
         for entry in self._store.values():
             if memory_type and entry.memory_type != memory_type:
@@ -405,7 +404,9 @@ class InMemoryStore(MemoryStore):
 
             # Simple relevance scoring
             content_lower = entry.content.lower()
-            score = sum(1 for word in query_lower.split() if word in content_lower)
+            score: float = sum(
+                1 for word in query_lower.split() if word in content_lower
+            )
             score *= entry.importance
 
             if score > 0:
@@ -475,7 +476,7 @@ class ConversationMemory:
         """Estimate token count (roughly 4 chars per token)."""
         return len(text) // 4
 
-    def _schedule_background(self, coro: Awaitable[Any]) -> None:
+    def _schedule_background(self, coro: Coroutine[Any, Any, Any]) -> None:
         """Schedule background work safely in sync or async contexts."""
         try:
             loop = asyncio.get_running_loop()
@@ -644,7 +645,7 @@ class ConversationMemory:
         max_tokens = max_tokens or self.config.max_short_term_tokens
 
         # Get recent messages
-        messages = []
+        messages: list[dict[str, str]] = []
         total_tokens = 0
 
         for turn in reversed(self._short_term):

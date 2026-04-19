@@ -479,8 +479,8 @@ class ConversationDataset(TorchDataset):
                 return float((r - mean) / std)
 
         elif method == "minmax":
-            min_r = np.min(all_rewards)
-            max_r = np.max(all_rewards)
+            min_r: float = float(np.min(all_rewards))
+            max_r: float = float(np.max(all_rewards))
             range_r = max_r - min_r + 1e-8
 
             def normalize(r: float) -> float:
@@ -826,7 +826,7 @@ class EmbeddingCache:
     @property
     def embedding_dim(self) -> int:
         """Get embedding dimension"""
-        return self.model.get_sentence_embedding_dimension()
+        return int(self.model.get_sentence_embedding_dimension())
 
     def get_or_compute(self, key: str, text: str) -> Any:
         """

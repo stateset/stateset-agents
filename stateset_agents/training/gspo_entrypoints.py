@@ -39,10 +39,14 @@ async def train_with_gspo(
     os.makedirs(config.output_dir, exist_ok=True)
 
     use_wandb = config.report_to == "wandb"
+    wb = None
     if use_wandb:
         _require_wandb()
+        wb = wandb
         if config.wandb_project:
-            wandb.init(
+            if wb is None:
+                raise ImportError("wandb is unavailable")
+            wb.init(
                 project=config.wandb_project,
                 name=config.run_name
                 or f"gspo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
@@ -75,19 +79,16 @@ async def train_with_gspo(
         logger.info("Generating training queries from environment scenarios...")
         train_queries = []
         for scenario in environment.scenarios[: config.generations_per_iteration]:
-            if isinstance(scenario, dict):
-                query = scenario.get("context", "Hello")
-                query_context = None
-                if "task" in scenario:
-                    query_context = scenario.get("task")
-                elif "metadata" in scenario:
-                    query_context = scenario.get("metadata")
-                if query_context is not None:
-                    train_queries.append({"prompt": query, "context": query_context})
-                else:
-                    train_queries.append(query)
+            query = scenario.get("context", "Hello")
+            query_context = None
+            if "task" in scenario:
+                query_context = scenario.get("task")
+            elif "metadata" in scenario:
+                query_context = scenario.get("metadata")
+            if query_context is not None:
+                train_queries.append({"prompt": query, "context": query_context})
             else:
-                train_queries.append(str(scenario))
+                train_queries.append(query)
 
     logger.info("Training with %s queries", len(train_queries))
 
@@ -121,8 +122,8 @@ async def train_with_gspo(
 
         logger.info("Metrics: %s", json.dumps(metrics, indent=2))
 
-        if use_wandb:
-            wandb.log(metrics, step=iteration)
+        if use_wandb and wb is not None:
+            wb.log(metrics, step=iteration)
 
         # Periodic checkpoint
         if (iteration + 1) % config.save_steps == 0:
@@ -151,8 +152,8 @@ async def train_with_gspo(
     final_model_path = os.path.join(config.output_dir, "final_model")
     trainer.save_model(final_model_path)
 
-    if use_wandb:
-        wandb.finish()
+    if use_wandb and wb is not None:
+        wb.finish()
 
     if aborted:
         logger.info("GSPO training aborted early.")

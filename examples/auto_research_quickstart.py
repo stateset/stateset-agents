@@ -260,7 +260,7 @@ async def main(args: argparse.Namespace) -> None:
     print("Programmatic analysis:")
     print(f"  Best objective:      {analysis['best_value']}")
     print(f"  Improvement rate:    {analysis.get('improvement_rate', 0):.0%}")
-    print(f"  Parameter importance:")
+    print("  Parameter importance:")
     for param, score in analysis.get("parameter_importance", {}).items():
         print(f"    {param}: {score:.3f}")
 

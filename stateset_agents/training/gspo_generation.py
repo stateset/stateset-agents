@@ -86,7 +86,8 @@ class GSPOTrajectoryGenerator:
         self.config = config
         self.agent = agent
         self.environment = environment
-        self.vllm_generator = None
+        self.vllm_generator: Any | None = None
+        self.sampling_params: Any | None = None
         self._vllm_initialized = False
 
         if self.config.use_vllm and _load_vllm_backend():
@@ -99,8 +100,13 @@ class GSPOTrajectoryGenerator:
         if not _load_vllm_backend():
             logger.warning("vLLM backend failed to load, will use HuggingFace fallback")
             return
+        vllm_config_cls = VLLMConfig
+        vllm_generator_cls = VLLMGenerator
+        if vllm_config_cls is None or vllm_generator_cls is None:
+            logger.warning("vLLM backend symbols unavailable, using HuggingFace fallback")
+            return
 
-        vllm_config = VLLMConfig(
+        vllm_config = vllm_config_cls(
             model_name=self.config.model_name,
             gpu_memory_utilization=getattr(
                 self.config, "vllm_gpu_memory_utilization", 0.85
@@ -122,7 +128,7 @@ class GSPOTrajectoryGenerator:
             else ("bfloat16" if self.config.bf16 else "auto"),
         )
 
-        self.vllm_generator = VLLMGenerator(vllm_config)
+        self.vllm_generator = vllm_generator_cls(vllm_config)
 
     async def initialize_vllm(self) -> bool:
         """Initialize the vLLM engine before generation."""
@@ -133,13 +139,16 @@ class GSPOTrajectoryGenerator:
             return True
 
         try:
-            success = await self.vllm_generator.initialize()
+            generator = self.vllm_generator
+            if generator is None:
+                return False
+            success = await generator.initialize()
             self._vllm_initialized = success
             if success:
                 logger.info(
                     "vLLM generator initialized - 5-20x faster generation enabled!"
                 )
-            return success
+            return bool(success)
         except VLLM_EXCEPTIONS as e:
             logger.warning(f"Failed to initialize vLLM: {e}. Using HuggingFace fallback.")
             self._vllm_initialized = False
@@ -148,7 +157,7 @@ class GSPOTrajectoryGenerator:
     @property
     def using_vllm(self) -> bool:
         """Check if vLLM is being used for generation."""
-        return self._vllm_initialized and self.vllm_generator is not None
+        return bool(self._vllm_initialized and self.vllm_generator is not None)
 
     async def generate_group_responses(
         self, prompt: str, num_responses: int
@@ -163,7 +172,10 @@ class GSPOTrajectoryGenerator:
     ) -> list[tuple[str, float]]:
         """Generate responses using vLLM."""
         try:
-            grouped_results = await self.vllm_generator.generate_groups(
+            generator = self.vllm_generator
+            if generator is None:
+                return await self._generate_with_hf(prompt, num_responses)
+            grouped_results = await generator.generate_groups(
                 prompts=[prompt],
                 num_generations_per_prompt=num_responses,
             )
@@ -199,7 +211,15 @@ class GSPOTrajectoryGenerator:
         """Generate response groups for multiple prompts efficiently."""
         if self.using_vllm:
             try:
-                grouped_results = await self.vllm_generator.generate_groups(
+                generator = self.vllm_generator
+                if generator is None:
+                    return {
+                        prompt: await self._generate_with_hf(
+                            prompt, num_responses_per_prompt
+                        )
+                        for prompt in prompts
+                    }
+                grouped_results = await generator.generate_groups(
                     prompts=prompts,
                     num_generations_per_prompt=num_responses_per_prompt,
                 )
@@ -222,8 +242,13 @@ class GSPOTrajectoryGenerator:
 
     async def _compute_sequence_log_prob(self, prompt: str, response: str) -> float:
         """Compute the log probability of a sequence."""
+        tokenizer = getattr(self.agent, "tokenizer", None)
+        model = getattr(self.agent, "model", None)
+        if tokenizer is None or model is None:
+            raise RuntimeError("Agent tokenizer and model are required for GSPO scoring")
+
         full_text = prompt + " " + response
-        inputs = self.agent.tokenizer(
+        inputs = tokenizer(
             full_text,
             return_tensors="pt",
             truncation=True,
@@ -232,7 +257,7 @@ class GSPOTrajectoryGenerator:
             add_special_tokens=False,
         )
 
-        prompt_tokens = self.agent.tokenizer(
+        prompt_tokens = tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
@@ -241,12 +266,12 @@ class GSPOTrajectoryGenerator:
         )
         prompt_length = prompt_tokens["input_ids"].shape[1]
 
-        model_device = _get_model_device(self.agent.model)
+        model_device = _get_model_device(model)
         if model_device and hasattr(inputs, "to"):
             inputs = inputs.to(model_device)
 
         with torch.no_grad():
-            outputs = self.agent.model(**inputs)
+            outputs = model(**inputs)
             logits = outputs.logits
 
         shift_logits = logits[..., :-1, :].contiguous()
@@ -259,10 +284,10 @@ class GSPOTrajectoryGenerator:
 
         response_start = max(prompt_length - 1, 0)
         if response_start >= token_log_probs.shape[-1]:
-            return token_log_probs.sum().item()
+            return float(token_log_probs.sum().item())
 
         response_log_probs = token_log_probs[..., response_start:]
-        sequence_log_prob = response_log_probs.sum().item()
+        sequence_log_prob = float(response_log_probs.sum().item())
         return sequence_log_prob
 
 

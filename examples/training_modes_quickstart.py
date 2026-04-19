@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import sys
 import tempfile
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -122,7 +121,7 @@ async def demo_rlaif():
     print(f"  Judge available: {reward._judge_available}")
     print(f"  Mode: {'LLM Judge + heuristic' if reward._judge_available else 'heuristic fallback'}")
 
-    trained = await train(
+    await train(
         agent=agent,
         environment=env,
         reward_fn=reward,
@@ -149,7 +148,7 @@ async def demo_uncertainty():
     env = create_environment()
     reward = HelpfulnessReward()
 
-    trained = await train(
+    await train(
         agent=agent,
         environment=env,
         reward_fn=reward,
@@ -197,7 +196,7 @@ async def demo_offline():
     print(f"  Dataset: {dataset_path}")
 
     try:
-        trained = await train(
+        await train(
             agent=agent,
             environment=env,
             reward_fn=HelpfulnessReward(),
@@ -227,7 +226,7 @@ async def demo_hybrid():
     env = create_environment()
 
     try:
-        trained = await train(
+        await train(
             agent=agent,
             environment=env,
             reward_fn=HelpfulnessReward(),

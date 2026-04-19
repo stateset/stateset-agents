@@ -77,7 +77,10 @@ async def train_with_trl_grpo(
 
     if wandb_enabled:
         _require_wandb()
-        wandb.init(
+        wb = wandb
+        if wb is None:
+            raise ImportError("wandb is unavailable")
+        wb.init(
             project=config.wandb_project,
             name=config.run_name
             or f"trl-grpo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
@@ -94,10 +97,15 @@ async def train_with_trl_grpo(
         train_dataset = dataset_builder.build_from_conversations(train_data)
     else:
         logger.info("Generating training trajectories...")
-        trajectories = []
+        trajectories: list[Any] = []
+
+        async def agent_fn(
+            history: list[dict[str, Any]], context: dict[str, Any] | None = None
+        ) -> Any:
+            return await agent.generate_response(history, context)
 
         for _episode in range(min(100, config.num_episodes)):
-            trajectory = await environment.run_episode(agent)
+            trajectory = await environment.run_episode(agent_fn)
             trajectories.append(trajectory)
 
         train_dataset = dataset_builder.build_from_trajectories(trajectories)
@@ -131,7 +139,9 @@ async def train_with_trl_grpo(
     agent.tokenizer = tokenizer
 
     if wandb_enabled:
-        wandb.finish()
+        wb = wandb
+        if wb is not None:
+            wb.finish()
 
     logger.info("TRL GRPO training completed successfully.")
     return agent
@@ -217,7 +227,10 @@ async def train_iterative_grpo(
 
     if wandb_enabled:
         _require_wandb()
-        wandb.init(
+        wb = wandb
+        if wb is None:
+            raise ImportError("wandb is unavailable")
+        wb.init(
             project=config.wandb_project,
             name=config.run_name
             or f"iterative-grpo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
@@ -345,7 +358,9 @@ async def train_iterative_grpo(
 
     logger.info("Iterative training completed.")
     if wandb_enabled:
-        wandb.finish()
+        wb = wandb
+        if wb is not None:
+            wb.finish()
 
     return agent
 

@@ -11,7 +11,7 @@ import asyncio
 import contextlib
 import logging
 import math
-from typing import Any
+from typing import Any, TypeAlias
 
 import numpy as np
 
@@ -56,8 +56,9 @@ from .trainer_utils import (
     require_transformers,
 )
 
-MultiTurnTrajectory = core_trajectory.MultiTurnTrajectory
-TrajectoryGroup = core_trajectory.TrajectoryGroup
+Trajectory: TypeAlias = core_trajectory.Trajectory
+MultiTurnTrajectory: TypeAlias = core_trajectory.MultiTurnTrajectory
+TrajectoryGroup: TypeAlias = core_trajectory.TrajectoryGroup
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +105,9 @@ class MultiTurnGRPOTrainer:
         self._grad_accum_step = 0
 
         # HuggingFace components
-        self.optimizer = None
-        self.lr_scheduler = None
-        self.scaler = None
+        self.optimizer: Any | None = None
+        self.lr_scheduler: Any | None = None
+        self.scaler: Any | None = None
 
         # Training data
         self.train_dataset = None
@@ -234,6 +235,10 @@ class MultiTurnGRPOTrainer:
     def _setup_scheduler(self, num_training_steps: int):
         """Setup learning rate scheduler"""
         require_transformers()
+        cosine_schedule = get_cosine_schedule_with_warmup
+        linear_schedule = get_linear_schedule_with_warmup
+        if cosine_schedule is None or linear_schedule is None:
+            raise ImportError("transformers scheduler helpers are unavailable")
 
         num_warmup_steps = int(
             num_training_steps * getattr(self.config, "warmup_ratio", 0.1)
@@ -242,13 +247,13 @@ class MultiTurnGRPOTrainer:
         lr_scheduler_type = getattr(self.config, "lr_scheduler_type", "cosine")
 
         if lr_scheduler_type == "cosine":
-            self.lr_scheduler = get_cosine_schedule_with_warmup(
+            self.lr_scheduler = cosine_schedule(
                 self.optimizer,
                 num_warmup_steps=num_warmup_steps,
                 num_training_steps=num_training_steps,
             )
         elif lr_scheduler_type == "linear":
-            self.lr_scheduler = get_linear_schedule_with_warmup(
+            self.lr_scheduler = linear_schedule(
                 self.optimizer,
                 num_warmup_steps=num_warmup_steps,
                 num_training_steps=num_training_steps,
@@ -257,7 +262,7 @@ class MultiTurnGRPOTrainer:
             # Constant learning rate
             self.lr_scheduler = None
 
-        if self.lr_scheduler:
+        if self.lr_scheduler is not None:
             logger.info(
                 f"Scheduler initialized: {lr_scheduler_type} with {num_warmup_steps} warmup steps"
             )
@@ -271,19 +276,19 @@ class MultiTurnGRPOTrainer:
             return
 
         max_grad_norm = getattr(self.config, "max_grad_norm", 1.0)
-        if self.scaler:
+        if self.scaler is not None:
             self.scaler.unscale_(self.optimizer)
         torch.nn.utils.clip_grad_norm_(
             self.agent.model.parameters(),
             max_grad_norm,
         )
-        if self.scaler:
+        if self.scaler is not None:
             self.scaler.step(self.optimizer)
             self.scaler.update()
         else:
             self.optimizer.step()
 
-        if self.lr_scheduler:
+        if self.lr_scheduler is not None:
             self.lr_scheduler.step()
 
         self.optimizer.zero_grad()
@@ -294,7 +299,7 @@ class MultiTurnGRPOTrainer:
         try:
             # Prepare configuration for W&B
             config_dict = {
-                "framework": "grpo-agent-framework",
+                "framework": "stateset-agents",
                 "agent_type": type(self.agent).__name__,
                 "environment_type": type(self.environment).__name__,
             }
@@ -334,12 +339,14 @@ class MultiTurnGRPOTrainer:
         self, scenarios: list[dict[str, Any]], num_generations: int | None = None
     ) -> list[TrajectoryGroup]:
         """Generate trajectory groups for training"""
-        num_generations = num_generations or getattr(self.config, "num_generations", 16)
-        trajectory_groups = []
+        num_generations = int(
+            num_generations or getattr(self.config, "num_generations", 16) or 16
+        )
+        trajectory_groups: list[TrajectoryGroup] = []
 
         for scenario in scenarios:
             # Generate multiple trajectories for the same scenario
-            trajectories = []
+            trajectories: list[MultiTurnTrajectory] = []
 
             for _ in range(num_generations):
                 try:
@@ -374,11 +381,14 @@ class MultiTurnGRPOTrainer:
                     continue
 
             if trajectories:
+                group_trajectories: list[Trajectory | MultiTurnTrajectory] = list(
+                    trajectories
+                )
                 group = TrajectoryGroup(
                     scenario_id=scenario.get(
                         "id", f"scenario_{len(trajectory_groups)}"
                     ),
-                    trajectories=trajectories,
+                    trajectories=group_trajectories,
                     scenario_metadata=scenario,
                 )
                 trajectory_groups.append(group)
@@ -389,13 +399,16 @@ class MultiTurnGRPOTrainer:
         self, reward_result: Any
     ) -> tuple[float, dict[str, float]]:
         """Normalize reward outputs into (score, breakdown)."""
-        return await coerce_reward_result(reward_result, MULTI_TRAINER_EXCEPTIONS)
+        normalized_result: tuple[float, dict[str, float]] = await coerce_reward_result(
+            reward_result, MULTI_TRAINER_EXCEPTIONS
+        )
+        return normalized_result
 
     def compute_grpo_loss(
         self, trajectory_groups: list[TrajectoryGroup]
     ) -> dict[str, Any]:
         """Compute GRPO loss from trajectory groups"""
-        return compute_grpo_loss(
+        loss_dict: dict[str, Any] = compute_grpo_loss(
             trajectory_groups=trajectory_groups,
             config=self.config,
             agent=self.agent,
@@ -403,6 +416,7 @@ class MultiTurnGRPOTrainer:
             global_reward_count=self._global_reward_count,
             update_global_stats=self._update_global_stats,
         )
+        return loss_dict
 
     def _compute_group_policy_loss(
         self, group: TrajectoryGroup, advantages: Any
@@ -419,13 +433,14 @@ class MultiTurnGRPOTrainer:
         self, trajectory_groups: list[TrajectoryGroup], beta: float = 0.0
     ) -> dict[str, Any]:
         """Enhanced GRPO loss computation with KL penalty"""
-        return compute_enhanced_grpo_loss(
+        loss_dict: dict[str, Any] = compute_enhanced_grpo_loss(
             trajectory_groups=trajectory_groups,
             beta=beta,
             config=self.config,
             agent=self.agent,
             reference_model=self.reference_model,
         )
+        return loss_dict
 
     def _resolve_task_id(self, scenario: Any) -> str | None:
         """Extract a task id from scenario metadata when available."""
@@ -450,8 +465,9 @@ class MultiTurnGRPOTrainer:
             self.continual_manager.on_task_end(
                 agent=self.agent, task_id=self._current_task_id
             )
-            if self.continual_manager.reference_model is not None:
-                self.reference_model = self.continual_manager.reference_model
+            reference_model = getattr(self.continual_manager, "reference_model", None)
+            if reference_model is not None:
+                self.reference_model = reference_model
             self._current_task_id = task_id
 
     def _maybe_mix_replay(
@@ -486,12 +502,18 @@ class MultiTurnGRPOTrainer:
         )
 
     def _get_environment_scenarios(self) -> list[dict[str, Any]]:
-        return get_environment_scenarios(self.environment, self.config)
+        scenarios: list[dict[str, Any]] = get_environment_scenarios(
+            self.environment, self.config
+        )
+        return scenarios
 
     def _split_scenarios(
         self, scenarios: list[dict[str, Any]]
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        return split_scenarios(scenarios, self.config)
+        split_result: tuple[list[dict[str, Any]], list[dict[str, Any]]] = (
+            split_scenarios(scenarios, self.config)
+        )
+        return split_result
 
     def _apply_task_schedule(self, scenario: dict[str, Any], index: int) -> None:
         apply_task_schedule(self.config, scenario, index)
@@ -502,11 +524,15 @@ class MultiTurnGRPOTrainer:
         count: int,
         prefix: str,
     ) -> list[dict[str, Any]]:
-        return expand_scenarios(self.config, scenarios, count, prefix)
+        expanded: list[dict[str, Any]] = expand_scenarios(
+            self.config, scenarios, count, prefix
+        )
+        return expanded
 
     def _format_trajectory_for_model(self, trajectory: MultiTurnTrajectory) -> str:
         """Format trajectory into text for model input."""
-        return format_trajectory_for_model(self.agent, trajectory)
+        formatted: str = format_trajectory_for_model(self.agent, trajectory)
+        return formatted
 
     async def training_step(
         self, trajectory_groups: list[TrajectoryGroup]
@@ -524,8 +550,9 @@ class MultiTurnGRPOTrainer:
         device_type = "cuda" if torch.cuda.is_available() else "cpu"
         base_beta = float(getattr(self.config, "beta", 0.0))
         if self.continual_manager is not None:
-            if self.continual_manager.reference_model is not None:
-                self.reference_model = self.continual_manager.reference_model
+            reference_model = getattr(self.continual_manager, "reference_model", None)
+            if reference_model is not None:
+                self.reference_model = reference_model
             base_beta = self.continual_manager.get_effective_beta(base_beta)
 
         use_enhanced = bool(
@@ -560,7 +587,7 @@ class MultiTurnGRPOTrainer:
         scaled_loss = loss / grad_accum_steps
 
         # Backward pass with gradient scaling
-        if self.scaler:
+        if self.scaler is not None:
             self.scaler.scale(scaled_loss).backward()
 
         else:
@@ -573,10 +600,11 @@ class MultiTurnGRPOTrainer:
             optimizer_step = True
 
         # Prepare metrics
+        optimizer = self.optimizer
         metrics = {
             **{k: v.item() if torch.is_tensor(v) else v for k, v in loss_dict.items()},
-            "learning_rate": self.optimizer.param_groups[0]["lr"]
-            if self.optimizer
+            "learning_rate": optimizer.param_groups[0]["lr"]
+            if optimizer is not None
             else 0.0,
             "global_step": self.global_step,
             "optimizer_step": optimizer_step,
@@ -619,14 +647,15 @@ class MultiTurnGRPOTrainer:
         else:
             self.steps_without_improvement += 1
 
-        return eval_metrics
+        typed_eval_metrics: dict[str, float] = eval_metrics
+        return typed_eval_metrics
 
     async def train(self) -> Any:
         """Main training loop"""
         logger.info("Starting GRPO training")
 
         # Calculate total training steps
-        num_episodes = getattr(self.config, "num_episodes", 100)
+        num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
         grad_accum_steps = self._get_grad_accum_steps()
         total_steps = math.ceil(num_episodes / grad_accum_steps)
 
@@ -746,8 +775,9 @@ class MultiTurnGRPOTrainer:
                 self.continual_manager.on_task_end(
                     agent=self.agent, task_id=self._current_task_id
                 )
-                if self.continual_manager.reference_model is not None:
-                    self.reference_model = self.continual_manager.reference_model
+                reference_model = getattr(self.continual_manager, "reference_model", None)
+                if reference_model is not None:
+                    self.reference_model = reference_model
 
             # Final checkpoint
             await self.save_checkpoint()
@@ -779,7 +809,7 @@ class MultiTurnGRPOTrainer:
         detailed: bool = True,
     ) -> dict[str, Any]:
         """Run comprehensive post-training evaluation."""
-        return await run_post_training_evaluation(
+        evaluation: dict[str, Any] = await run_post_training_evaluation(
             self,
             eval_scenarios,
             num_samples,
@@ -787,14 +817,21 @@ class MultiTurnGRPOTrainer:
             MULTI_TRAINER_EXCEPTIONS,
             self._coerce_reward_result,
         )
+        return evaluation
 
     def _get_training_scenarios(self) -> list[dict[str, Any]]:
         """Get training scenarios."""
-        return build_training_scenarios(self.environment, self.config)
+        scenarios: list[dict[str, Any]] = build_training_scenarios(
+            self.environment, self.config
+        )
+        return scenarios
 
     def _get_eval_scenarios(self) -> list[dict[str, Any]]:
         """Get evaluation scenarios."""
-        return build_eval_scenarios(self.environment, self.config)
+        scenarios: list[dict[str, Any]] = build_eval_scenarios(
+            self.environment, self.config
+        )
+        return scenarios
 
     async def _log_training_metrics(
         self, metrics: dict[str, Any], trajectory_groups: list[TrajectoryGroup]
@@ -827,18 +864,19 @@ class MultiTurnGRPOTrainer:
             notify_checkpoint_saved_fn=notify_checkpoint_saved,
         )
 
-    def add_callback(self, callback):
+    def add_callback(self, callback: Any) -> None:
         """Add training callback"""
         self.callbacks.append(callback)
 
     def load_checkpoint(self, checkpoint_path: Any) -> bool:
         """Load model and training state from a checkpoint directory."""
-        return load_multi_turn_checkpoint(
+        loaded: bool = load_multi_turn_checkpoint(
             self,
             checkpoint_path,
             require_torch_fn=require_torch,
             trainer_exceptions=MULTI_TRAINER_EXCEPTIONS,
         )
+        return loaded
 
 
 # Alias for backwards compatibility

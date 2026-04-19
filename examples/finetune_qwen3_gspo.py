@@ -12,6 +12,7 @@ For a dedicated first-run path for Qwen3.5-0.8B, prefer
 
 Other supported examples:
 - Qwen/Qwen3.5-0.8B
+- Qwen/Qwen3.5-27B
 - Qwen/Qwen2.5-0.5B
 - Qwen/Qwen2.5-1.5B
 - Qwen/Qwen2.5-3B
@@ -27,13 +28,19 @@ Usage:
     # 0.8B on a smaller GPU
     python examples/finetune_qwen3_gspo.py --model Qwen/Qwen3.5-0.8B-Base --task customer_service --use-4bit
 
+    # Qwen3.5-27B tuned for vLLM-backed serving
+    python examples/finetune_qwen3_gspo.py --model Qwen/Qwen3.5-27B --task customer_service --use-vllm --export-merged --language-model-only
+
     # Larger Qwen model with LoRA
     python examples/finetune_qwen3_gspo.py --model Qwen/Qwen2.5-7B --task technical_support --use-lora
 """
 
+# ruff: noqa: E402
+
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -52,6 +59,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+QWEN35_27B_MODEL = "Qwen/Qwen3.5-27B"
+
+
+def get_qwen3_serving_recommendations(
+    *,
+    language_model_only: bool = False,
+    enable_auto_tool_choice: bool = True,
+) -> dict[str, object]:
+    """Return the recommended vLLM settings for Qwen3.5-27B serving."""
+    return {
+        "tensor_parallel_size": 8,
+        "max_model_len": 262144,
+        "trust_remote_code": True,
+        "reasoning_parser": "qwen3",
+        "tool_call_parser": "qwen3_coder" if enable_auto_tool_choice else None,
+        "enable_auto_tool_choice": enable_auto_tool_choice,
+        "language_model_only": language_model_only,
+        "gpu_memory_utilization": 0.90,
+    }
+
 
 def get_qwen3_config(
     model_name: str,
@@ -59,6 +86,7 @@ def get_qwen3_config(
     use_lora: bool = True,
     use_4bit: bool = False,
     use_8bit: bool = False,
+    use_vllm: bool = False,
     output_dir: str = "./outputs/qwen3_5_gspo",
 ):
     """
@@ -97,6 +125,7 @@ def get_qwen3_config(
             gradient_checkpointing=True,
             use_4bit=use_4bit,
             use_8bit=use_8bit,
+            use_vllm=use_vllm,
             # Generation
             max_prompt_length=512,
             max_completion_length=512,
@@ -120,6 +149,7 @@ def get_qwen3_config(
             save_steps_every=10,
         )
         config = get_qwen3_5_gspo_config(qwen35_config, base_config=base_config)
+        config.use_vllm = use_vllm
     elif (
         "1.5B" in model_name
         or "1.5b" in model_name
@@ -153,12 +183,53 @@ def get_qwen3_config(
             gradient_checkpointing=True,
             use_4bit=use_4bit,
             use_8bit=use_8bit,
+            use_vllm=use_vllm,
             max_prompt_length=1024,
             max_completion_length=1024,
             temperature=0.7,
             output_dir=output_dir,
             save_steps=10,
             logging_steps=1,
+        )
+    elif "qwen3.5-27b" in model_name.lower() or "27B" in model_name:
+        # Qwen3.5-27B is best handled with LoRA plus vLLM-backed generation.
+        config = GSPOConfig.from_training_config(
+            base_config,
+            num_generations=8,
+            clip_range_left=1.5e-4,
+            clip_range_right=2.5e-4,
+            beta=0.01,
+            learning_rate=3e-6,
+            num_outer_iterations=50,
+            generations_per_iteration=20,
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=16,
+            use_lora=use_lora,
+            lora_r=64,
+            lora_alpha=128,
+            lora_dropout=0.05,
+            lora_target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+            gradient_checkpointing=True,
+            use_4bit=use_4bit,
+            use_8bit=use_8bit if not use_4bit else False,
+            use_vllm=use_vllm,
+            use_reference_model=True,
+            max_prompt_length=4096,
+            max_completion_length=2048,
+            temperature=1.0,
+            top_p=0.95,
+            output_dir=output_dir,
+            save_steps=5,
+            logging_steps=1,
+            save_total_limit=3,
         )
     elif (
         "7B" in model_name
@@ -195,6 +266,7 @@ def get_qwen3_config(
             if use_4bit
             else use_8bit,  # Use quantization for large models
             use_8bit=use_8bit if not use_4bit else False,
+            use_vllm=use_vllm,
             max_prompt_length=2048,
             max_completion_length=2048,
             temperature=0.7,
@@ -229,6 +301,7 @@ def get_qwen3_config(
             ],
             gradient_checkpointing=True,
             use_4bit=True,  # Always use quantization for very large models
+            use_vllm=use_vllm,
             max_prompt_length=4096,
             max_completion_length=2048,
             temperature=0.7,
@@ -246,6 +319,10 @@ async def finetune_qwen3(
     use_lora: bool = True,
     use_4bit: bool = False,
     use_8bit: bool = False,
+    use_vllm: bool = False,
+    export_merged: bool = False,
+    language_model_only: bool = False,
+    enable_auto_tool_choice: bool = True,
     output_dir: str = "./outputs/qwen3_5_gspo",
     use_wandb: bool = False,
     wandb_project: str | None = None,
@@ -259,6 +336,10 @@ async def finetune_qwen3(
         use_lora: Use LoRA for efficient fine-tuning
         use_4bit: Use 4-bit quantization
         use_8bit: Use 8-bit quantization
+        use_vllm: Enable vLLM for faster generation during training
+        export_merged: Merge LoRA adapters into a standalone serving checkpoint
+        language_model_only: Skip the vision encoder at inference time to free KV cache
+        enable_auto_tool_choice: Enable vLLM auto tool choice for tool-calling agents
         output_dir: Output directory for checkpoints
         use_wandb: Enable Weights & Biases logging
         wandb_project: W&B project name
@@ -271,6 +352,10 @@ async def finetune_qwen3(
     )
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
     from stateset_agents.training.gspo_trainer import train_with_gspo
+    from stateset_agents.training.serving_artifacts import (
+        export_merged_model_for_serving,
+        write_serving_manifest,
+    )
 
     logger.info("=" * 80)
     logger.info("🚀 Fine-tuning Qwen3.5 with GSPO")
@@ -281,6 +366,8 @@ async def finetune_qwen3(
     logger.info(
         f"Quantization: {'4-bit' if use_4bit else '8-bit' if use_8bit else 'None'}"
     )
+    logger.info(f"vLLM: {use_vllm}")
+    logger.info(f"Export merged: {export_merged}")
     logger.info(f"Output: {output_dir}")
     logger.info("=" * 80)
 
@@ -296,7 +383,7 @@ async def finetune_qwen3(
     agent_config = AgentConfig(
         model_name=model_name,
         system_prompt=system_prompts.get(task, system_prompts["customer_service"]),
-        max_new_tokens=1024,
+        max_new_tokens=2048 if "27b" in model_name.lower() else 1024,
         trust_remote_code=True,
         attn_implementation="sdpa",
     )
@@ -327,6 +414,7 @@ async def finetune_qwen3(
         use_lora=use_lora,
         use_4bit=use_4bit,
         use_8bit=use_8bit,
+        use_vllm=use_vllm,
         output_dir=output_dir,
     )
 
@@ -344,6 +432,7 @@ async def finetune_qwen3(
     )
     logger.info(f"   - Learning rate: {gspo_config.learning_rate}")
     logger.info(f"   - Iterations: {gspo_config.num_outer_iterations}")
+    logger.info(f"   - vLLM backend: {gspo_config.use_vllm}")
 
     # Train
     logger.info("\n" + "=" * 80)
@@ -355,6 +444,34 @@ async def finetune_qwen3(
         agent=agent,
         environment=environment,
         reward_model=reward_model,
+    )
+
+    serving_recommendations = {}
+    if "27b" in model_name.lower():
+        serving_recommendations = get_qwen3_serving_recommendations(
+            language_model_only=language_model_only,
+            enable_auto_tool_choice=enable_auto_tool_choice,
+        )
+
+    merged_dir = None
+    if export_merged and use_lora:
+        merged_dir = export_merged_model_for_serving(
+            base_model_name=model_name,
+            adapter_dir=output_dir,
+            output_dir=os.path.join(output_dir, "merged"),
+        )
+    elif export_merged:
+        logger.warning(
+            "Skipping merged export because LoRA is disabled; no adapter weights were produced."
+        )
+
+    write_serving_manifest(
+        output_dir,
+        model_name,
+        use_lora=use_lora,
+        use_vllm=use_vllm,
+        merged_model_dir=merged_dir,
+        recommended=serving_recommendations,
     )
 
     logger.info("\n" + "=" * 80)
@@ -395,6 +512,9 @@ Examples:
 
   # 0.8B model with 4-bit quantization
   python examples/finetune_qwen3_gspo.py --model Qwen/Qwen3.5-0.8B-Base --use-4bit
+
+  # Qwen3.5-27B with vLLM-backed training and merged serving export
+  python examples/finetune_qwen3_gspo.py --model Qwen/Qwen3.5-27B --use-vllm --export-merged --language-model-only
 
   # 7B model with LoRA
   python examples/finetune_qwen3_gspo.py --model Qwen/Qwen2.5-7B --use-lora
@@ -439,6 +559,26 @@ Examples:
         help="Use 8-bit quantization",
     )
     parser.add_argument(
+        "--use-vllm",
+        action="store_true",
+        help="Enable vLLM for faster generation during training",
+    )
+    parser.add_argument(
+        "--export-merged",
+        action="store_true",
+        help="Merge LoRA adapters into a standalone checkpoint for vLLM serving",
+    )
+    parser.add_argument(
+        "--language-model-only",
+        action="store_true",
+        help="Recommend text-only vLLM serving mode for multimodal Qwen3.5 checkpoints",
+    )
+    parser.add_argument(
+        "--disable-auto-tool-choice",
+        action="store_true",
+        help="Do not recommend vLLM auto tool choice in the serving manifest",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default="./outputs/qwen3_5_gspo",
@@ -468,6 +608,10 @@ Examples:
             use_lora=use_lora,
             use_4bit=args.use_4bit,
             use_8bit=args.use_8bit,
+            use_vllm=args.use_vllm,
+            export_merged=args.export_merged,
+            language_model_only=args.language_model_only,
+            enable_auto_tool_choice=not args.disable_auto_tool_choice,
             output_dir=args.output_dir,
             use_wandb=args.wandb,
             wandb_project=args.wandb_project,

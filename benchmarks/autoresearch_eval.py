@@ -764,7 +764,7 @@ async def main() -> float:
     print(f"  numerical:       {numerical:.6f}  (weight 0.12)")
     print(f"  rlaif:           {rlaif:.6f}  (weight 0.12)")
     print(f"  offline:         {offline:.6f}  (weight 0.14)")
-    print(f"  ---")
+    print("  ---")
     print(f"  total_time:      {elapsed:.1f}s")
     print()
 

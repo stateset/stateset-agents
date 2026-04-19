@@ -44,9 +44,10 @@ logger = logging.getLogger(__name__)
 
 # Optional training dependencies
 try:
-    import wandb  # type: ignore
+    import wandb as _wandb
+    wandb: Any | None = _wandb
 except ImportError:  # pragma: no cover - optional dependency
-    wandb = None  # type: ignore
+    wandb = None
 
 try:
     from peft import (
@@ -56,10 +57,10 @@ try:
         prepare_model_for_kbit_training,
     )
 except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None  # type: ignore
-    TaskType = None  # type: ignore
-    get_peft_model = None  # type: ignore
-    prepare_model_for_kbit_training = None  # type: ignore
+    LoraConfig = None
+    TaskType = None
+    get_peft_model = None
+    prepare_model_for_kbit_training = None
 
 
 def _require_peft() -> None:
@@ -106,13 +107,13 @@ def _require_wandb() -> None:
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_loaded = False
-AutoModelForCausalLM = None
-AutoTokenizer = None
-TrainingArguments = None
-get_cosine_schedule_with_warmup = None
+AutoModelForCausalLM: Any | None = None
+AutoTokenizer: Any | None = None
+TrainingArguments: Any | None = None
+get_cosine_schedule_with_warmup: Any | None = None
 
 
-def _load_transformers():
+def _load_transformers() -> bool:
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_loaded, AutoModelForCausalLM, AutoTokenizer
     global TrainingArguments, get_cosine_schedule_with_warmup
@@ -181,9 +182,9 @@ class GSPOModelManager:
 
     def __init__(self, config: GSPOConfig):
         self.config = config
-        self.model = None
-        self.tokenizer = None
-        self.ref_model = None
+        self.model: Any | None = None
+        self.tokenizer: Any | None = None
+        self.ref_model: Any | None = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def load_model_and_tokenizer(self) -> tuple[Any, Any]:
@@ -216,6 +217,8 @@ class GSPOModelManager:
         # Load transformers lazily
         if not _load_transformers():
             raise ImportError("transformers is required but failed to load")
+        if AutoTokenizer is None or AutoModelForCausalLM is None:
+            raise RuntimeError("transformers GSPO loader did not initialize correctly")
 
         try:
             # Load tokenizer
@@ -299,7 +302,8 @@ class GSPOModelManager:
                 )
 
                 self.model = get_peft_model(base_model, lora_config)
-                self.model.print_trainable_parameters()
+                if self.model is not None:
+                    self.model.print_trainable_parameters()
 
                 logger.info("LoRA adapters added to model")
             else:
@@ -313,7 +317,8 @@ class GSPOModelManager:
                     torch_dtype=model_kwargs["torch_dtype"],
                     device_map="auto" if torch.cuda.device_count() > 1 else None,
                 )
-                self.ref_model.eval()
+                if self.ref_model is not None:
+                    self.ref_model.eval()
 
             logger.info(f"Model loaded successfully on {self.device}")
             return self.model, self.tokenizer
@@ -375,7 +380,7 @@ class GSPOTrainer:
         self.generator = GSPOTrajectoryGenerator(config, agent, environment)
 
         # Metrics
-        self.training_metrics = {
+        self.training_metrics: dict[str, list[float]] = {
             "policy_loss": [],
             "clipping_fraction": [],
             "average_reward": [],
@@ -541,13 +546,13 @@ class GSPOTrainer:
             Training metrics
         """
         self.model.train()
+        model_device = _get_model_device(self.model)
 
-        total_loss = 0.0
+        total_loss = torch.tensor(0.0, device=model_device)
         total_clipped = 0
         total_samples = 0
         all_rewards = []
         all_importance_ratios = []
-        model_device = _get_model_device(self.model)
 
         for query in queries[:num_groups]:
             if isinstance(query, dict):
@@ -558,6 +563,8 @@ class GSPOTrainer:
             else:
                 prompt = str(query)
                 query_context = {}
+            prompt_value = prompt
+            query_context_value = dict(query_context)
 
             # Generate group of responses for this query
             group_responses = await self.generator.generate_group_responses(
@@ -576,8 +583,8 @@ class GSPOTrainer:
             async def _compute_reward_for_response(
                 resp: str,
                 *,
-                _prompt: str = prompt,
-                _query_context: dict[str, Any] = query_context,
+                _prompt: str = prompt_value,
+                _query_context: dict[str, Any] = query_context_value,
             ) -> float:
                 turn = ConversationTurn(
                     role="assistant", content=resp, metadata={"generated": True}
@@ -589,7 +596,7 @@ class GSPOTrainer:
                     turn=turn,
                     context=reward_context,
                 )
-                return reward_info.total_reward
+                return float(reward_info.total_reward)
 
             rewards = list(
                 await asyncio.gather(
@@ -645,7 +652,7 @@ class GSPOTrainer:
             # Add KL penalty if specified
             if self.config.beta > 0 and self.ref_model is not None:
                 # Compute KL divergence with reference model (batched for efficiency)
-                ref_log_probs = self._compute_batch_ref_log_probs(query, responses)
+                ref_log_probs = self._compute_batch_ref_log_probs(prompt, responses)
                 if model_device is not None:
                     ref_log_probs = ref_log_probs.to(model_device)
 
@@ -720,8 +727,11 @@ class GSPOTrainer:
         if model_device and hasattr(inputs, "to"):
             inputs = inputs.to(model_device)
 
+        ref_model = self.ref_model
+        if ref_model is None:
+            raise RuntimeError("Reference model must be initialized before use")
         with torch.no_grad():
-            outputs = self.ref_model(**inputs)
+            outputs = ref_model(**inputs)
             logits = outputs.logits
 
         shift_logits = logits[..., :-1, :].contiguous()
@@ -734,10 +744,10 @@ class GSPOTrainer:
 
         response_start = max(prompt_length - 1, 0)
         if response_start >= token_log_probs.shape[-1]:
-            return token_log_probs.sum().item()
+            return float(token_log_probs.sum().item())
 
         response_log_probs = token_log_probs[..., response_start:]
-        sequence_log_prob = response_log_probs.sum().item()
+        sequence_log_prob = float(response_log_probs.sum().item())
 
         return sequence_log_prob
 
@@ -783,8 +793,11 @@ class GSPOTrainer:
                 for k, v in inputs.items()
             }
 
+        ref_model = self.ref_model
+        if ref_model is None:
+            raise RuntimeError("Reference model must be initialized before use")
         with torch.no_grad():
-            outputs = self.ref_model(**inputs)
+            outputs = ref_model(**inputs)
             logits = outputs.logits
 
         shift_logits = logits[:, :-1, :].contiguous()

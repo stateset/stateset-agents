@@ -35,7 +35,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, TypeVar, Union, get_args, get_origin
+from typing import Any, TypeVar, Union, cast, get_args, get_origin
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +49,8 @@ try:
     PYDANTIC_AVAILABLE = True
 except ImportError:
     PYDANTIC_AVAILABLE = False
-    BaseModel = object  # type: ignore
-    ValidationError = Exception  # type: ignore
+    BaseModel = cast(Any, object)
+    ValidationError = cast(Any, Exception)
 
 
 @dataclass
@@ -142,7 +142,7 @@ def json_schema_from_type(python_type: type) -> dict[str, Any]:
         and isinstance(python_type, type)
         and issubclass(python_type, BaseModel)
     ):
-        return python_type.model_json_schema()
+        return cast(dict[str, Any], cast(Any, python_type).model_json_schema())
 
     # Handle primitives
     type_mapping = {
@@ -258,6 +258,14 @@ class StructuredOutputMixin:
         ... )
     """
 
+    async def generate_response(
+        self,
+        messages: str | list[dict[str, str]],
+        context: dict[str, Any] | None = None,
+    ) -> str:
+        """Implemented by concrete agent classes mixing in structured output."""
+        raise NotImplementedError
+
     async def generate_structured(
         self,
         messages: str | list[dict[str, str]],
@@ -302,9 +310,9 @@ class StructuredOutputMixin:
                 raise TypeError(
                     f"response_model must be a Pydantic BaseModel, got {type(response_model)}"
                 )
-            schema = response_model.model_json_schema()
+            schema = cast(dict[str, Any], cast(Any, response_model).model_json_schema())
         else:
-            schema = json_schema
+            schema = cast(dict[str, Any], json_schema)
 
         # Normalize messages
         if isinstance(messages, str):
@@ -326,7 +334,7 @@ class StructuredOutputMixin:
 
         # Attempt generation with retries
         raw_outputs = []
-        last_error = None
+        last_error: Exception | None = None
 
         for attempt in range(config.max_retries):
             try:
@@ -344,11 +352,11 @@ class StructuredOutputMixin:
 
                 # Validate against schema
                 if response_model is not None:
-                    return response_model.model_validate(parsed)
+                    return cast(T, cast(Any, response_model).model_validate(parsed))
                 else:
                     # Basic JSON schema validation
                     self._validate_json_schema(parsed, schema)
-                    return parsed
+                    return cast(T, parsed)
 
             except json.JSONDecodeError as e:
                 last_error = e

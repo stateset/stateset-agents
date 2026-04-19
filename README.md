@@ -213,7 +213,11 @@ from stateset_agents.core.agent import AgentConfig
 
 async def main():
     agent = MultiTurnAgent(
-        AgentConfig(model_name="gpt2", max_new_tokens=128, temperature=0.7)
+        AgentConfig(
+            model_name="your-real-model-id",
+            max_new_tokens=128,
+            temperature=0.7,
+        )
     )
     await agent.initialize()
     messages = [{"role": "user", "content": "What is GRPO?"}]
@@ -221,6 +225,8 @@ async def main():
 
 asyncio.run(main())
 ```
+
+For the zero-download onboarding path, run `python examples/quick_start.py`.
 
 ---
 
@@ -242,7 +248,13 @@ from stateset_agents.core.agent import AgentConfig
 
 async def main():
     # 1) Agent
-    agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+    agent = MultiTurnAgent(
+        AgentConfig(
+            model_name="stub://quickstart",
+            use_stub_model=True,
+            system_prompt="You are a helpful customer support assistant.",
+        )
+    )
     await agent.initialize()
 
     # 2) Environment
@@ -270,8 +282,9 @@ async def main():
         agent=agent,
         environment=env,
         reward_fn=reward_fn,
-        num_episodes=50,
+        num_episodes=4,
         profile="balanced",
+        training_mode="single_turn",
         save_path="./outputs/refund_agent",
     )
 
@@ -295,7 +308,8 @@ Enable planning context and replay/LwF in the trainer with config overrides:
 ```python
 agent = MultiTurnAgent(
     AgentConfig(
-        model_name="gpt2",
+        model_name="stub://quickstart",
+        use_stub_model=True,
         enable_planning=True,
         planning_config={"max_steps": 4},
     )
@@ -305,7 +319,8 @@ trained_agent = await train(
     agent=agent,
     environment=env,
     reward_fn=reward_fn,
-    num_episodes=50,
+    num_episodes=4,
+    training_mode="single_turn",
     # resume_from_checkpoint="./outputs/checkpoint-100",
     config_overrides={
         "continual_strategy": "replay_lwf",
@@ -353,7 +368,7 @@ Minimal GSPO sketch:
 from stateset_agents.training import get_config_for_task, GSPOConfig, train_with_gspo
 from stateset_agents.rewards.multi_objective_reward import create_customer_service_reward
 
-base_cfg = get_config_for_task("customer_service", model_name="gpt2")
+base_cfg = get_config_for_task("customer_service", model_name="your-real-model-id")
 gspo_cfg = GSPOConfig.from_training_config(base_cfg, num_outer_iterations=5)
 
 trained_agent = await train_with_gspo(
@@ -615,7 +630,7 @@ For complex runs prefer the Python API and the examples folder.
 Good starting points:
 
 - `examples/hello_world.py` – stub mode walkthrough
-- `examples/quick_start.py` – basic agent + environment
+- `examples/quick_start.py` – stub-backed onboarding example with training + smoke test
 - `examples/complete_grpo_training.py` – end‑to‑end GRPO training
 - `examples/train_with_gspo.py` – GSPO + GSPO‑token training
 - `examples/train_with_trl_grpo.py` – Hugging Face TRL GRPO integration

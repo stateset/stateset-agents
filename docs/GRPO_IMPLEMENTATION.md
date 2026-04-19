@@ -341,7 +341,9 @@ from stateset_agents.training.config import TrainingConfig
 
 async def train():
     # 1. Create agent
-    agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+    agent = MultiTurnAgent(
+        AgentConfig(model_name="stub://quickstart", use_stub_model=True)
+    )
     await agent.initialize()
 
     # 2. Create environment

@@ -19,6 +19,7 @@ import numpy as np
 from stateset_agents.core.trajectory import (
     ConversationTurn,
     MultiTurnTrajectory,
+    Trajectory,
     TrajectoryGroup,
 )
 
@@ -98,9 +99,9 @@ class SingleTurnGRPOTrainer:
         self._grad_accum_step = 0
 
         # HuggingFace components
-        self.optimizer = None
-        self.lr_scheduler = None
-        self.scaler = None
+        self.optimizer: Any | None = None
+        self.lr_scheduler: Any | None = None
+        self.scaler: Any | None = None
 
         # GRPO enhancements
         self._global_reward_mean: float = 0.0
@@ -218,16 +219,23 @@ class SingleTurnGRPOTrainer:
             )
 
     def _get_environment_scenarios(self) -> list[dict[str, Any]]:
-        return get_environment_scenarios(self.environment, self.config)
+        scenarios: list[dict[str, Any]] = get_environment_scenarios(
+            self.environment, self.config
+        )
+        return scenarios
 
     def _apply_task_schedule(self, scenario: dict[str, Any], episode: int) -> None:
         apply_task_schedule(self.config, scenario, episode)
 
     def _get_episode_scenario(self, episode: int) -> dict[str, Any] | None:
-        return get_episode_scenario(self.environment, self.config, episode)
+        scenario: dict[str, Any] | None = get_episode_scenario(
+            self.environment, self.config, episode
+        )
+        return scenario
 
     def _resolve_task_id(self, context: dict[str, Any] | None) -> str | None:
-        return resolve_task_id(self.config, context)
+        task_id: str | None = resolve_task_id(self.config, context)
+        return task_id
 
     def _maybe_handle_task_switch(self, task_id: str | None) -> None:
         if self.continual_manager is None or task_id is None:
@@ -239,8 +247,9 @@ class SingleTurnGRPOTrainer:
             self.continual_manager.on_task_end(
                 agent=self.agent, task_id=self._current_task_id
             )
-            if self.continual_manager.reference_model is not None:
-                self.reference_model = self.continual_manager.reference_model
+            reference_model = getattr(self.continual_manager, "reference_model", None)
+            if reference_model is not None:
+                self.reference_model = reference_model
             self._current_task_id = task_id
 
     def _get_grad_accum_steps(self) -> int:
@@ -267,10 +276,12 @@ class SingleTurnGRPOTrainer:
 
     def _setup_scheduler(self, num_training_steps: int) -> None:
         """Set up learning rate scheduler."""
-        # require_transformers already called in initialize
+        require_transformers()
         if self.optimizer is None:
             self.lr_scheduler = None
             return
+        cosine_schedule = get_cosine_schedule_with_warmup
+        linear_schedule = get_linear_schedule_with_warmup
 
         num_warmup_steps = int(
             num_training_steps * getattr(self.config, "warmup_ratio", 0.1)
@@ -278,14 +289,14 @@ class SingleTurnGRPOTrainer:
         lr_scheduler_type = getattr(self.config, "lr_scheduler_type", "cosine")
 
         try:
-            if lr_scheduler_type == "cosine" and get_cosine_schedule_with_warmup:
-                self.lr_scheduler = get_cosine_schedule_with_warmup(
+            if lr_scheduler_type == "cosine" and cosine_schedule is not None:
+                self.lr_scheduler = cosine_schedule(
                     self.optimizer,
                     num_warmup_steps=num_warmup_steps,
                     num_training_steps=num_training_steps,
                 )
-            elif lr_scheduler_type == "linear" and get_linear_schedule_with_warmup:
-                self.lr_scheduler = get_linear_schedule_with_warmup(
+            elif lr_scheduler_type == "linear" and linear_schedule is not None:
+                self.lr_scheduler = linear_schedule(
                     self.optimizer,
                     num_warmup_steps=num_warmup_steps,
                     num_training_steps=num_training_steps,
@@ -327,7 +338,7 @@ class SingleTurnGRPOTrainer:
         if callable(get_reward):
             try:
                 trajectory = MultiTurnTrajectory(turns=turns, total_reward=0.0)
-                env_reward = await get_reward(trajectory)  # type: ignore[misc]
+                env_reward = await get_reward(trajectory)
                 return float(env_reward)
             except SINGLE_TRAINER_EXCEPTIONS:
                 pass
@@ -367,18 +378,21 @@ class SingleTurnGRPOTrainer:
                 best_reward = reward
                 best_response = str(response)
 
+        group_trajectories: list[Trajectory | MultiTurnTrajectory] = list(trajectories)
         group = TrajectoryGroup(
             scenario_id=f"prompt_{abs(hash(prompt))}",
-            trajectories=trajectories,
+            trajectories=group_trajectories,
             scenario_metadata={"prompt": prompt},
         )
         return group, best_response
 
     def _extract_context(self, state: Any) -> dict[str, Any] | None:
-        return extract_context(state)
+        context: dict[str, Any] | None = extract_context(state)
+        return context
 
     def _extract_prompt(self, state: Any, context: dict[str, Any] | None) -> str:
-        return extract_prompt(state, context)
+        prompt: str = extract_prompt(state, context)
+        return prompt
 
     def _merge_scenario_into_state(
         self,
@@ -460,8 +474,11 @@ class SingleTurnGRPOTrainer:
                 device_type = "cuda" if torch.cuda.is_available() else "cpu"
                 base_beta = float(getattr(self.config, "beta", 0.0))
                 if self.continual_manager is not None:
-                    if self.continual_manager.reference_model is not None:
-                        self.reference_model = self.continual_manager.reference_model
+                    reference_model = getattr(
+                        self.continual_manager, "reference_model", None
+                    )
+                    if reference_model is not None:
+                        self.reference_model = reference_model
                     base_beta = self.continual_manager.get_effective_beta(base_beta)
 
                 use_enhanced = bool(
@@ -520,18 +537,18 @@ class SingleTurnGRPOTrainer:
                         else 0.0,
                     }
 
-                policy_loss = loss_dict.get("total_loss") or loss_dict.get(
-                    "policy_loss"
-                )
+                policy_loss = loss_dict.get("total_loss")
+                if policy_loss is None:
+                    policy_loss = loss_dict.get("policy_loss")
                 update_applied = False
 
                 # Backprop/update
                 if self.optimizer is not None and policy_loss is not None:
                     scaled_loss = policy_loss / grad_accum_steps
                     if self.scaler is not None and use_amp:
-                        self.scaler.scale(scaled_loss).backward()  # type: ignore[arg-type]
+                        self.scaler.scale(scaled_loss).backward()
                     else:
-                        scaled_loss.backward()  # type: ignore[union-attr]
+                        scaled_loss.backward()
 
                     self._grad_accum_step += 1
                     if self._grad_accum_step % grad_accum_steps == 0:
@@ -633,8 +650,9 @@ class SingleTurnGRPOTrainer:
             self.continual_manager.on_task_end(
                 agent=self.agent, task_id=self._current_task_id
             )
-            if self.continual_manager.reference_model is not None:
-                self.reference_model = self.continual_manager.reference_model
+            reference_model = getattr(self.continual_manager, "reference_model", None)
+            if reference_model is not None:
+                self.reference_model = reference_model
 
         await notify_training_end(
             self.callbacks,
@@ -678,10 +696,11 @@ class SingleTurnGRPOTrainer:
 
     def load_checkpoint(self, checkpoint_path: str | Path) -> bool:
         """Load model and training state from a checkpoint directory."""
-        return load_checkpoint_artifacts(
+        loaded: bool = load_checkpoint_artifacts(
             self,
             checkpoint_path,
             require_torch,
             SINGLE_TRAINER_EXCEPTIONS,
             logger,
         )
+        return loaded

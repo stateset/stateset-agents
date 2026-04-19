@@ -104,7 +104,7 @@ class ConversationTurn:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format"""
-        data = {
+        data: dict[str, Any] = {
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp.isoformat(),
@@ -234,7 +234,13 @@ class MultiTurnTrajectory:
     @property
     def conversation_history(self) -> list[dict[str, str]]:
         """Get conversation in standard chat format"""
-        return [{"role": turn.role, "content": turn.content} for turn in self.turns]
+        return [
+            {
+                "role": turn.role or "assistant",
+                "content": turn.content or "",
+            }
+            for turn in self.turns
+        ]
 
     @property
     def user_turns(self) -> list[ConversationTurn]:
@@ -272,7 +278,10 @@ class MultiTurnTrajectory:
     def get_context_up_to_turn(self, turn_index: int) -> list[dict[str, str]]:
         """Get conversation context up to a specific turn"""
         return [
-            {"role": turn.role, "content": turn.content}
+            {
+                "role": turn.role or "assistant",
+                "content": turn.content or "",
+            }
             for turn in self.turns[:turn_index]
         ]
 
@@ -281,8 +290,8 @@ class MultiTurnTrajectory:
         if not self.turn_rewards:
             return []
 
-        cumulative = []
-        total = 0
+        cumulative: list[float] = []
+        total = 0.0
         for reward in self.turn_rewards:
             total += reward
             cumulative.append(total)
@@ -374,7 +383,7 @@ class TrajectoryGroup:
         import numpy as np
 
         rewards = self.rewards
-        return np.std(rewards) if len(rewards) > 1 else 0.0
+        return float(np.std(rewards)) if len(rewards) > 1 else 0.0
 
     def compute_advantages(self, baseline_method: str = "group_mean") -> list[float]:
         """Compute GRPO advantages for this group"""
@@ -394,7 +403,7 @@ class TrajectoryGroup:
             baseline = rewards.mean()
 
         advantages = rewards - baseline
-        return advantages.tolist()
+        return [float(value) for value in advantages.tolist()]
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format"""

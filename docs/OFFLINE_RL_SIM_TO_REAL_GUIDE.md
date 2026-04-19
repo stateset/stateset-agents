@@ -755,7 +755,9 @@ async def train_from_logs():
     print(f"Statistics: {dataset.get_statistics()}")
 
     # 2. Set up agent and environment
-    agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+    agent = MultiTurnAgent(
+        AgentConfig(model_name="stub://quickstart", use_stub_model=True)
+    )
     await agent.initialize()
 
     env = ConversationEnvironment(
@@ -820,7 +822,7 @@ async def sim_to_real_training():
 
     # 2. Set up conversation simulator
     sim_config = ConversationSimulatorConfig(
-        base_model="gpt2",
+        base_model="your-real-model-id",
         realism_level=0.7,
     )
     simulator = ConversationSimulator(sim_config)
@@ -841,7 +843,9 @@ async def sim_to_real_training():
     transfer = SimToRealTransfer(transfer_config)
 
     # 4. Set up agent
-    agent = MultiTurnAgent(AgentConfig(model_name="gpt2"))
+    agent = MultiTurnAgent(
+        AgentConfig(model_name="your-real-model-id")
+    )
     await agent.initialize()
 
     # 5. Training loop with progressive transfer

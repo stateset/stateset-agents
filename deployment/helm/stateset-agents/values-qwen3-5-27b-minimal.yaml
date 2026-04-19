@@ -1,0 +1,47 @@
+api:
+  env:
+    API_REQUIRE_AUTH: "false"
+    INFERENCE_DEFAULT_MODEL: "Qwen/Qwen3.5-27B"
+    INFERENCE_MODEL_MAP: '{"Qwen/Qwen3.5-27B":"Qwen/Qwen3.5-27B-GPTQ-Int4"}'
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  autoscaling:
+    enabled: false
+
+vllm:
+  modelId: "Qwen/Qwen3.5-27B-GPTQ-Int4"
+  finetuned: false
+  gpu:
+    count: 2
+    accelerator: "nvidia-l4"
+  resources:
+    requests:
+      cpu: "18"
+      memory: "72Gi"
+      ephemeral-storage: "200Gi"
+      "nvidia.com/gpu": "2"
+    limits:
+      cpu: "18"
+      memory: "72Gi"
+      ephemeral-storage: "200Gi"
+      "nvidia.com/gpu": "2"
+  args:
+  - "--tensor-parallel-size=2"
+  - "--max-model-len=8192"
+  - "--reasoning-parser=qwen3"
+  - "--language-model-only"
+  - "--gpu-memory-utilization=0.92"
+  - "--quantization=moe_wna16"
+  - "--enable-chunked-prefill"
+  - "--enable-prefix-caching"
+  - "--trust-remote-code"
+  - "--host=0.0.0.0"
+  - "--port=8000"
+
+pvc:
+  size: "200Gi"

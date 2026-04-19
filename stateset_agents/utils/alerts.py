@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from collections.abc import Callable
 
 import requests
@@ -288,7 +288,7 @@ class SlackNotificationHandler(NotificationHandler):
                 AlertSeverity.CRITICAL: "danger",
             }.get(alert.severity, "warning")
 
-            attachment = {
+            attachment: dict[str, Any] = {
                 "color": color,
                 "title": f"{alert.rule_name}",
                 "text": alert.message,
@@ -324,7 +324,7 @@ class SlackNotificationHandler(NotificationHandler):
                 channel=channel, attachments=[attachment]
             )
 
-            return response["ok"]
+            return bool(response["ok"])
 
         except SLACK_EXCEPTIONS as e:
             logger.error("Failed to send Slack notification: %s", e)
@@ -358,12 +358,12 @@ class WebhookNotificationHandler(NotificationHandler):
                     async with session.post(
                         url, json=payload, headers=headers
                     ) as response:
-                        return response.status < 400
+                        return cast(int, response.status) < 400
             else:
                 response = await _run_blocking(
                     requests.post, url, json=payload, headers=headers, timeout=10
                 )
-                return response.status_code < 400
+                return int(response.status_code) < 400
 
         except AIOHTTP_EXCEPTIONS as e:
             logger.error("Failed to send webhook notification: %s", e)
@@ -414,12 +414,12 @@ class PagerDutyNotificationHandler(NotificationHandler):
                     async with session.post(
                         url, json=payload, headers=headers
                     ) as response:
-                        return response.status < 400
+                        return cast(int, response.status) < 400
             else:
                 response = await _run_blocking(
                     requests.post, url, json=payload, headers=headers, timeout=10
                 )
-                return response.status_code < 400
+                return int(response.status_code) < 400
 
         except AIOHTTP_EXCEPTIONS as e:
             logger.error("Failed to send PagerDuty notification: %s", e)
@@ -762,7 +762,7 @@ def setup_email_notifications(
     password: str,
     from_email: str,
     to_emails: list[str],
-    severity_filter: list[AlertSeverity] = None,
+    severity_filter: list[AlertSeverity] | None = None,
 ) -> EmailNotificationHandler:
     """Setup email notifications"""
     config = NotificationConfig(
@@ -782,7 +782,7 @@ def setup_email_notifications(
 
 
 def setup_slack_notifications(
-    token: str, channel: str, severity_filter: list[AlertSeverity] = None
+    token: str, channel: str, severity_filter: list[AlertSeverity] | None = None
 ) -> SlackNotificationHandler:
     """Setup Slack notifications"""
     config = NotificationConfig(
@@ -796,8 +796,8 @@ def setup_slack_notifications(
 
 def setup_webhook_notifications(
     url: str,
-    headers: dict[str, str] = None,
-    severity_filter: list[AlertSeverity] = None,
+    headers: dict[str, str] | None = None,
+    severity_filter: list[AlertSeverity] | None = None,
 ) -> WebhookNotificationHandler:
     """Setup webhook notifications"""
     config = NotificationConfig(
@@ -810,7 +810,7 @@ def setup_webhook_notifications(
 
 
 def setup_pagerduty_notifications(
-    routing_key: str, severity_filter: list[AlertSeverity] = None
+    routing_key: str, severity_filter: list[AlertSeverity] | None = None
 ) -> PagerDutyNotificationHandler:
     """Setup PagerDuty notifications"""
     config = NotificationConfig(

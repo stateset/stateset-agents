@@ -5,16 +5,25 @@ Implements Conservative Q-Learning (CQL) and Implicit Q-Learning (IQL)
 for learning from fixed datasets without online interaction.
 """
 
+from __future__ import annotations
+
 import logging
+import math
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
 try:
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-    from torch.optim import Adam
+    import torch as _torch
+    import torch.nn as _nn
+    import torch.nn.functional as _F
+    from torch.optim import Adam as _Adam
+
+    torch: Any = _torch
+    nn: Any = _nn
+    F: Any = _F
+    Adam: Any = _Adam
 except ImportError:
     torch = None
     nn = None
@@ -427,7 +436,7 @@ class ConservativeQLearning:
         with torch.no_grad():
             q1 = self.q1(state.unsqueeze(0), action.unsqueeze(0))
             q2 = self.q2(state.unsqueeze(0), action.unsqueeze(0))
-            return torch.min(q1, q2).item()
+            return float(torch.min(q1, q2).item())
 
 
 class ImplicitQLearning:
@@ -602,7 +611,7 @@ class ImplicitQLearning:
             )
             v = self.value_net(state.unsqueeze(0))
             advantage = q - v
-            return advantage.item()
+            return float(advantage.item())
 
     def get_policy_weight(self, state: torch.Tensor, action: torch.Tensor) -> float:
         """
@@ -613,12 +622,12 @@ class ImplicitQLearning:
         advantage = self.get_advantage(state, action)
 
         # Advantage-weighted probability
-        weight = torch.exp(advantage / self.config.temperature)
+        weight = math.exp(advantage / self.config.temperature)
 
         if self.config.clip_score is not None:
-            weight = torch.clamp(weight, max=self.config.clip_score)
+            weight = min(weight, self.config.clip_score)
 
-        return weight.item()
+        return float(weight)
 
 
 class OfflineRLTrainer:
@@ -642,9 +651,13 @@ class OfflineRLTrainer:
         self.device = device
 
         if self.algorithm == "cql":
-            self.learner = ConservativeQLearning(state_dim, action_dim, config, device)
+            cql_config = config if isinstance(config, CQLConfig) else None
+            self.learner: ConservativeQLearning | ImplicitQLearning = ConservativeQLearning(
+                state_dim, action_dim, cql_config, device
+            )
         elif self.algorithm == "iql":
-            self.learner = ImplicitQLearning(state_dim, action_dim, config, device)
+            iql_config = config if isinstance(config, IQLConfig) else None
+            self.learner = ImplicitQLearning(state_dim, action_dim, iql_config, device)
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}. Choose 'cql' or 'iql'")
 
@@ -708,11 +721,11 @@ class OfflineRLTrainer:
                 epoch_metrics.append(metrics)
 
             # Average metrics for epoch
-            avg_metrics = {
-                key: np.mean([m[key] for m in epoch_metrics])
+            avg_metrics: dict[str, float] = {
+                key: float(np.mean([m[key] for m in epoch_metrics]))
                 for key in epoch_metrics[0].keys()
             }
-            avg_metrics["epoch"] = epoch
+            avg_metrics["epoch"] = float(epoch)
 
             self.training_metrics.append(avg_metrics)
 

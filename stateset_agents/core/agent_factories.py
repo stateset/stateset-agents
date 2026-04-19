@@ -96,9 +96,10 @@ async def save_agent_checkpoint(
     checkpoint_dir = Path(checkpoint_path)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    if save_model and agent.model:
+    if save_model and agent.model is not None:
         agent.model.save_pretrained(checkpoint_dir)
-        agent.tokenizer.save_pretrained(checkpoint_dir)
+        if agent.tokenizer is not None:
+            agent.tokenizer.save_pretrained(checkpoint_dir)
 
     config_path = checkpoint_dir / "agent_config.json"
     with open(config_path, "w") as f:

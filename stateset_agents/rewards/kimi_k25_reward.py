@@ -9,12 +9,12 @@ import logging
 from typing import Any
 
 from .multi_objective_reward import MultiObjectiveRewardFunction as MultiObjectiveReward
-from .multi_objective_reward import RewardComponent
+from .multi_objective_reward import BaseRewardComponent
 
 logger = logging.getLogger(__name__)
 
 
-class ThinkingModeReward(RewardComponent):
+class ThinkingModeReward(BaseRewardComponent):
     """
     Reward component for evaluating the quality of reasoning in thinking mode.
 
@@ -47,24 +47,28 @@ class ThinkingModeReward(RewardComponent):
         self.min_reasoning_length = min_reasoning_length
         self.max_reasoning_length = max_reasoning_length
 
-    async def compute(
+    async def compute_score(
         self,
-        trajectory: Any,
-        environment: Any,
-        **kwargs,
+        turns: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
     ) -> float:
         """
         Compute thinking mode reward.
 
         Args:
-            trajectory: Agent trajectory with reasoning_content
-            environment: Environment context
+            turns: Normalized conversation turns
+            context: Optional environment context
 
         Returns:
             Reward score [0, 1]
         """
         # Extract reasoning content from trajectory
-        reasoning_content = getattr(trajectory, "reasoning_content", "")
+        context = context or {}
+        reasoning_content = str(context.get("reasoning_content", ""))
+        if not reasoning_content:
+            assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
+            if assistant_turns:
+                reasoning_content = str(assistant_turns[-1].get("reasoning_content", ""))
 
         if not reasoning_content:
             # If no reasoning content, penalize
@@ -122,7 +126,7 @@ class ThinkingModeReward(RewardComponent):
         return min(base_reward, 1.0)
 
 
-class MultimodalConsistencyReward(RewardComponent):
+class MultimodalConsistencyReward(BaseRewardComponent):
     """
     Reward component for evaluating multimodal consistency.
 
@@ -154,29 +158,30 @@ class MultimodalConsistencyReward(RewardComponent):
         self.require_visual_ack = require_visual_ack
         self.min_visual_references = min_visual_references
 
-    async def compute(
+    async def compute_score(
         self,
-        trajectory: Any,
-        environment: Any,
-        **kwargs,
+        turns: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
     ) -> float:
         """
         Compute multimodal consistency reward.
 
         Args:
-            trajectory: Agent trajectory with multimodal context
-            environment: Environment context
+            turns: Normalized conversation turns
+            context: Optional environment context
 
         Returns:
             Reward score [0, 1]
         """
         # Check if there's visual content in the input
-        has_visual_input = kwargs.get("has_visual_input", False)
+        context = context or {}
+        has_visual_input = bool(context.get("has_visual_input", False))
 
         if not has_visual_input:
             return 1.0  # Not applicable, give full marks
 
-        response = getattr(trajectory, "response", "")
+        assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
+        response = str(assistant_turns[-1].get("content", "")) if assistant_turns else ""
 
         if not response:
             return 0.0
@@ -230,7 +235,7 @@ class MultimodalConsistencyReward(RewardComponent):
             return 0.3
 
 
-class CodeExecutionReward(RewardComponent):
+class CodeExecutionReward(BaseRewardComponent):
     """
     Reward component for evaluating code execution quality.
 
@@ -263,23 +268,24 @@ class CodeExecutionReward(RewardComponent):
         self.require_code_blocks = require_code_blocks
         self.require_explanation = require_explanation
 
-    async def compute(
+    async def compute_score(
         self,
-        trajectory: Any,
-        environment: Any,
-        **kwargs,
+        turns: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
     ) -> float:
         """
         Compute code execution reward.
 
         Args:
-            trajectory: Agent trajectory with potential code
-            environment: Environment context
+            turns: Normalized conversation turns
+            context: Optional environment context
 
         Returns:
             Reward score [0, 1]
         """
-        response = getattr(trajectory, "response", "")
+        context = context or {}
+        assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
+        response = str(assistant_turns[-1].get("content", "")) if assistant_turns else ""
 
         if not response:
             return 0.0
@@ -292,7 +298,7 @@ class CodeExecutionReward(RewardComponent):
             return 0.0
 
         # If not a coding task, give full marks
-        is_coding_task = kwargs.get("is_coding_task", False)
+        is_coding_task = bool(context.get("is_coding_task", False))
         if not is_coding_task:
             return 1.0
 
@@ -340,7 +346,7 @@ class CodeExecutionReward(RewardComponent):
         return min(base_score + explanation_bonus, 1.0)
 
 
-class LongContextReward(RewardComponent):
+class LongContextReward(BaseRewardComponent):
     """
     Reward component for evaluating long context handling.
 
@@ -373,31 +379,32 @@ class LongContextReward(RewardComponent):
         self.require_earlier_reference = require_earlier_reference
         self.context_retention_threshold = context_retention_threshold
 
-    async def compute(
+    async def compute_score(
         self,
-        trajectory: Any,
-        environment: Any,
-        **kwargs,
+        turns: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
     ) -> float:
         """
         Compute long context reward.
 
         Args:
-            trajectory: Agent trajectory
-            environment: Environment context
+            turns: Normalized conversation turns
+            context: Optional environment context
 
         Returns:
             Reward score [0, 1]
         """
         # Check conversation length
-        conversation_turns = kwargs.get("conversation_turns", 1)
+        context = context or {}
+        conversation_turns = int(context.get("conversation_turns", len(turns)))
 
         # For short conversations, give full marks
         if conversation_turns < 5:
             return 1.0
 
-        response = getattr(trajectory, "response", "")
-        earlier_messages = kwargs.get("earlier_messages", [])
+        assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
+        response = str(assistant_turns[-1].get("content", "")) if assistant_turns else ""
+        earlier_messages = context.get("earlier_messages", [])
 
         if not earlier_messages:
             return 1.0
@@ -449,7 +456,7 @@ def create_kimi_k25_customer_service_reward(
     Returns:
         MultiObjectiveReward with Kimi-K2.5 specific components
     """
-    components = []
+    components: list[BaseRewardComponent] = []
 
     if include_thinking:
         components.append(
@@ -487,10 +494,7 @@ def create_kimi_k25_customer_service_reward(
             )
         )
 
-    reward_function = MultiObjectiveReward(
-        name="kimi_k25_customer_service",
-        components=components,
-    )
+    reward_function = MultiObjectiveReward(components=components)
 
     return reward_function
 
@@ -513,7 +517,7 @@ def create_kimi_k25_conversational_reward(
     Returns:
         MultiObjectiveReward with Kimi-K2.5 specific components
     """
-    components = []
+    components: list[BaseRewardComponent] = []
 
     if include_thinking:
         components.append(
@@ -552,7 +556,6 @@ def create_kimi_k25_conversational_reward(
         )
 
     reward_function = MultiObjectiveReward(
-        name="kimi_k25_conversational",
         components=components,
     )
 

@@ -612,7 +612,7 @@ class DomainRandomizer:
     def add_response_noise(
         self,
         response: str,
-        noise_level: float = None,
+        noise_level: float | None = None,
     ) -> str:
         """
         Add realistic noise to a response.

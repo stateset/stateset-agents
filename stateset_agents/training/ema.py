@@ -19,6 +19,7 @@ Reference: https://arxiv.org/abs/1803.05407 (Mean teachers are better role model
 
 import logging
 import math
+from collections.abc import Mapping
 from contextlib import contextmanager
 from typing import Any
 
@@ -372,14 +373,15 @@ class MultiEMA:
             yield
 
     def state_dict(self) -> dict[str, Any]:
-        """Get combined state dict."""
-        return {decay: ema.state_dict() for decay, ema in self.emas.items()}
+        """Get combined state dict with serialization-safe string keys."""
+        return {str(decay): ema.state_dict() for decay, ema in self.emas.items()}
 
-    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
-        """Load combined state dict."""
+    def load_state_dict(self, state_dict: Mapping[str | float, Any]) -> None:
+        """Load combined state dict from float or serialized string decay keys."""
         for decay, ema_state in state_dict.items():
-            if decay in self.emas:
-                self.emas[decay].load_state_dict(ema_state)
+            resolved_decay = float(decay)
+            if resolved_decay in self.emas:
+                self.emas[resolved_decay].load_state_dict(ema_state)
 
 
 def create_ema_model(

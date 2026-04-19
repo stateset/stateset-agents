@@ -95,7 +95,7 @@ async def train_task_agent(
     env_config = TASK_CONFIGS.get(task_type, TASK_CONFIGS["data_analysis"])
 
     def success_criteria(turns: Any, context: dict[str, Any]) -> bool:
-        return context.get("task_progress", 0.0) >= 1.0
+        return float(context.get("task_progress", 0.0)) >= 1.0
 
     environment = TaskEnvironment(success_criteria=success_criteria, **env_config)
     task_criteria = env_config["tasks"][0] if env_config["tasks"] else {}

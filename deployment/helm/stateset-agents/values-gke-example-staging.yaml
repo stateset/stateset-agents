@@ -8,7 +8,7 @@ serviceAccount:
 api:
   image:
     repository: REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/stateset-agents-api
-    tag: "0.7.1-7"
+    tag: "0.11.2-7"
   env:
     API_ENVIRONMENT: "staging"
     API_REQUIRE_AUTH: "false"
@@ -24,4 +24,4 @@ trainingJob:
   enabled: false
   image:
     repository: REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/stateset-agents-trainer
-    tag: "0.7.1-7"
+    tag: "0.11.2-7"

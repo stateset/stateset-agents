@@ -312,4 +312,4 @@ This framework bridges the gap between research and production, providing both t
 
 ---
 
-*For technical support, documentation, and community discussions, visit our [GitHub repository](https://github.com/stateset/grpo-agent-framework) and [documentation portal](https://docs.stateset.ai).*
+*For technical support, documentation, and community discussions, visit our [GitHub repository](https://github.com/stateset/stateset-agents) and the guides in this repository's `docs/` directory.*

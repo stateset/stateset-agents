@@ -8,22 +8,33 @@ using Generalized Advantage Estimation (GAE) in GRPO training.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
 # Lazy imports for optional dependencies
-try:
+if TYPE_CHECKING:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
 
     TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    torch = None
-    nn = None
-    F = None
+else:
+    torch: Any | None = None
+    nn: Any | None = None
+    F: Any | None = None
+
+    try:
+        import torch as _torch
+        import torch.nn as _nn
+        import torch.nn.functional as _F
+
+        torch = _torch
+        nn = _nn
+        F = _F
+        TORCH_AVAILABLE = True
+    except ImportError:
+        TORCH_AVAILABLE = False
 
 
 def _require_torch() -> Any:

@@ -291,6 +291,7 @@ class PlanningManager:
         if isinstance(update, dict):
             self.apply_update(conversation_id, update)
 
+        goal: str | None
         explicit_goal = _extract_explicit_goal(context)
         if explicit_goal:
             goal = explicit_goal

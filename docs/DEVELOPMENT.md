@@ -144,7 +144,7 @@ ruff check --fix .
 
 ### Type Checking
 ```bash
-mypy stateset_agents
+python scripts/check_types.py --all
 ```
 
 ### Security Scanning
@@ -180,7 +180,7 @@ pre-commit run --all-files
 pytest
 
 # Type check
-mypy stateset_agents
+python scripts/check_types.py --all
 ```
 
 ### 4. Commit

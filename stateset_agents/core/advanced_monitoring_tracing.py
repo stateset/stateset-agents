@@ -29,7 +29,7 @@ class DistributedTracer:
         self.service_name = service_name
         self.active_spans: dict[str, TraceSpan] = {}
         self.completed_spans: list[TraceSpan] = []
-        self.tracer = None
+        self.tracer: Any | None = None
         self._opentelemetry_available = opentelemetry_available
         self._trace_module = trace_module
         self._jaeger_exporter_cls = jaeger_exporter_cls
@@ -61,7 +61,7 @@ class DistributedTracer:
         self,
         operation_name: str,
         parent_span_id: str | None = None,
-        tags: dict[str, str] | None = None,
+        tags: dict[str, Any] | None = None,
     ):
         """Create a trace span context manager."""
         span = self.start_span(operation_name, parent_span_id, tags)
@@ -86,7 +86,7 @@ class DistributedTracer:
         self,
         operation_name: str,
         parent_span_id: str | None = None,
-        tags: dict[str, str] | None = None,
+        tags: dict[str, Any] | None = None,
     ) -> TraceSpan:
         """Start a new trace span."""
         parent_span = (
@@ -106,7 +106,7 @@ class DistributedTracer:
 
         self.active_spans[span_id] = span
 
-        if self.tracer:
+        if self.tracer is not None:
             try:
                 otel_span = self.tracer.start_span(operation_name)
                 if tags:
@@ -143,9 +143,8 @@ class DistributedTracer:
         if not spans:
             return {}
 
-        total_duration = max(span.end_time for span in spans) - min(
-            span.start_time for span in spans
-        )
+        end_times = [span.end_time for span in spans if span.end_time is not None]
+        total_duration = max(end_times) - min(span.start_time for span in spans)
         return {
             "trace_id": trace_id,
             "total_duration": total_duration,

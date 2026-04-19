@@ -6,12 +6,18 @@ import sys
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(".."))
 
+# Keep autodoc imports side-effect-light during docs builds.
+os.environ.setdefault("API_REQUIRE_AUTH", "false")
+os.environ.setdefault("INFERENCE_BACKEND", "stub")
+
+from stateset_agents import __version__ as PACKAGE_VERSION
+
 # -- Project information -----------------------------------------------------
 project = "StateSet Agents"
 copyright = "2024, StateSet Team"
 author = "StateSet Team"
-version = "0.7.1"
-release = "0.7.1"
+version = PACKAGE_VERSION
+release = PACKAGE_VERSION
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -33,7 +39,13 @@ templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = [
+    "_build",
+    "Thumbs.db",
+    ".DS_Store",
+    "api/modules.rst",
+    "api/stateset_agents*.rst",
+]
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = "sphinx"

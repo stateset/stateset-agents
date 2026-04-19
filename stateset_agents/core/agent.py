@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import Any, cast
 
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
@@ -20,73 +20,89 @@ from .trajectory import ConversationTurn
 try:
     import torch
 except ImportError:  # pragma: no cover - allow stub mode without PyTorch
-    torch = None  # type: ignore
+    torch = None
 # Lazy imports for transformers to avoid torch/torchvision compatibility issues
-AutoModelForCausalLM = None
-AutoTokenizer = None
+AutoModelForCausalLM: Any | None = None
+AutoTokenizer: Any | None = None
 _transformers_agent_loaded = False
 
 
-class GenerationConfig:  # type: ignore[override]
+class _FallbackGenerationConfig:
     """Fallback GenerationConfig when transformers not available."""
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
 
-class StoppingCriteria:  # type: ignore[override]
+class _FallbackStoppingCriteria:
     """Fallback StoppingCriteria when transformers not available."""
 
     def __call__(self, *args, **kwargs):  # pragma: no cover - placeholder
         return False
 
 
-class StoppingCriteriaList(list):  # type: ignore[override]
+class _FallbackStoppingCriteriaList(list):
     """Fallback StoppingCriteriaList when transformers not available."""
 
     pass
 
 
-def _load_transformers_agent() -> bool:
-    """Lazily load transformers to avoid import-time errors."""
-    global _transformers_agent_loaded, AutoModelForCausalLM, AutoTokenizer
-    global GenerationConfig, StoppingCriteria, StoppingCriteriaList
-    if _transformers_agent_loaded:
-        # If tests inject new mocks via the shim, refresh globals.
-        try:
-            import sys as _sys
+GenerationConfig: Any = _FallbackGenerationConfig
+StoppingCriteria: Any = _FallbackStoppingCriteria
+StoppingCriteriaList: Any = _FallbackStoppingCriteriaList
 
-            shim = _sys.modules.get("stateset_agents.core.agent")
-            if shim is not None:
-                shim_model = getattr(shim, "AutoModelForCausalLM", None)
-                shim_tokenizer = getattr(shim, "AutoTokenizer", None)
-                if shim_model is not None and shim_tokenizer is not None:
-                    AutoModelForCausalLM = shim_model
-                    AutoTokenizer = shim_tokenizer
-        except AGENT_SHIM_EXCEPTIONS:
-            pass
-        if AutoModelForCausalLM is not None and AutoTokenizer is not None:
-            return True
-        _transformers_agent_loaded = False
-    # If tests or callers have already injected mocks, respect them.
-    if AutoModelForCausalLM is not None and AutoTokenizer is not None:
-        _transformers_agent_loaded = True
-        return True
-    # Also respect mocks injected via the `stateset_agents.core.agent` shim.
+
+def _adopt_shim_mocks() -> bool:
+    """Adopt test-injected mocks from the ``stateset_agents.core.agent`` shim.
+
+    Returns True when both ``AutoModelForCausalLM`` and ``AutoTokenizer`` were
+    replaced with shim values. Any exception typical of missing attributes is
+    swallowed since this path is a best-effort hook for test injection.
+    """
+    global AutoModelForCausalLM, AutoTokenizer
     try:
         import sys as _sys
 
         shim = _sys.modules.get("stateset_agents.core.agent")
-        if shim is not None:
-            shim_model = getattr(shim, "AutoModelForCausalLM", None)
-            shim_tokenizer = getattr(shim, "AutoTokenizer", None)
-            if shim_model is not None and shim_tokenizer is not None:
-                AutoModelForCausalLM = shim_model
-                AutoTokenizer = shim_tokenizer
-                _transformers_agent_loaded = True
-                return True
+        if shim is None:
+            return False
+        shim_model = getattr(shim, "AutoModelForCausalLM", None)
+        shim_tokenizer = getattr(shim, "AutoTokenizer", None)
+        if shim_model is not None and shim_tokenizer is not None:
+            AutoModelForCausalLM = shim_model
+            AutoTokenizer = shim_tokenizer
+            return True
     except AGENT_SHIM_EXCEPTIONS:
         pass
+    return False
+
+
+def _load_transformers_agent() -> bool:
+    """Lazily load transformers to avoid import-time errors.
+
+    Resolution order:
+      1. If already loaded and globals still valid, refresh from shim and return.
+      2. Honor caller/test-injected globals directly.
+      3. Honor mocks injected via the ``stateset_agents.core.agent`` shim.
+      4. Import from the real ``transformers`` package.
+    """
+    global _transformers_agent_loaded, AutoModelForCausalLM, AutoTokenizer
+    global GenerationConfig, StoppingCriteria, StoppingCriteriaList
+
+    if _transformers_agent_loaded:
+        _adopt_shim_mocks()
+        if AutoModelForCausalLM is not None and AutoTokenizer is not None:
+            return True
+        _transformers_agent_loaded = False
+
+    if AutoModelForCausalLM is not None and AutoTokenizer is not None:
+        _transformers_agent_loaded = True
+        return True
+
+    if _adopt_shim_mocks():
+        _transformers_agent_loaded = True
+        return True
+
     try:
         from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
         from transformers import AutoTokenizer as _AutoTokenizer
@@ -96,9 +112,9 @@ def _load_transformers_agent() -> bool:
 
         AutoModelForCausalLM = _AutoModelForCausalLM
         AutoTokenizer = _AutoTokenizer
-        GenerationConfig = _GenerationConfig
-        StoppingCriteria = _StoppingCriteria
-        StoppingCriteriaList = _StoppingCriteriaList
+        GenerationConfig = cast(Any, _GenerationConfig)
+        StoppingCriteria = cast(Any, _StoppingCriteria)
+        StoppingCriteriaList = cast(Any, _StoppingCriteriaList)
         _transformers_agent_loaded = True
         return True
     except (ImportError, RuntimeError) as e:  # pragma: no cover
@@ -106,8 +122,8 @@ def _load_transformers_agent() -> bool:
         return False
 
 
-LoraConfig = None
-get_peft_model = None
+LoraConfig: Any | None = None
+get_peft_model: Any | None = None
 _peft_loaded = False
 
 
@@ -115,7 +131,9 @@ def _load_peft() -> bool:
     """Lazily load PEFT to keep lightweight imports quiet in API-only usage."""
     global _peft_loaded, LoraConfig, get_peft_model
     if _peft_loaded:
-        return LoraConfig is not None and get_peft_model is not None
+        if LoraConfig is None:
+            return False
+        return get_peft_model is not None
     try:
         from peft import LoraConfig as _LoraConfig
         from peft import get_peft_model as _get_peft_model
@@ -150,7 +168,7 @@ PLANNING_EXCEPTIONS: tuple[type[BaseException], ...] = (
 try:
     from jinja2.exceptions import TemplateError as _Jinja2TemplateError
 except ImportError:  # pragma: no cover
-    _Jinja2TemplateError = ValueError  # type: ignore[assignment,misc]
+    _Jinja2TemplateError = ValueError
 
 CHAT_TEMPLATE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
@@ -256,10 +274,11 @@ class Agent:
         self.config = config or AgentConfig(
             model_name="stub://test", use_stub_model=True
         )
-        self.model = None
-        self.tokenizer = None
-        self.generation_config = None
+        self.model: Any | None = None
+        self.tokenizer: Any | None = None
+        self.generation_config: Any | None = None
         self.conversation_history: list[Any] = []
+        self._last_reasoning: str | None = None
         self._model_loader = model_loader
         self._tokenizer_loader = tokenizer_loader
         self._generation_config_factory = generation_config_factory
@@ -433,10 +452,11 @@ class Agent:
         Stores history as a list of dict messages `{role, content}` for
         compatibility with tests and simple consumers.
         """
+        msg: Any
         try:
             msg = {"role": turn.role, "content": turn.content}
         except (AttributeError, TypeError):
-            msg = turn  # type: ignore
+            msg = turn
         self.conversation_history.append(msg)
 
     def get_history(self) -> list[ConversationTurn]:
@@ -447,11 +467,7 @@ class Agent:
         """Create a generation config using current tokenizer/model."""
         if self.tokenizer is None:
             raise RuntimeError("Tokenizer must be available to build generation config")
-        if not _load_transformers_agent():
-            raise ImportError(
-                "transformers is required to build generation config. "
-                "Install with `pip install stateset-agents[training]`."
-            )
+        _load_transformers_agent()
 
         if self._generation_config_factory:
             return self._generation_config_factory(
@@ -574,6 +590,7 @@ class MultiTurnAgent(Agent):
         # Apply chat template if available
         if (
             self.config.use_chat_template
+            and self.tokenizer is not None
             and hasattr(self.tokenizer, "apply_chat_template")
             and self.tokenizer.chat_template is not None
         ):
@@ -687,8 +704,8 @@ class MultiTurnAgent(Agent):
     ) -> str:
         """Generate response using the language model"""
 
-        if self._is_stub_backend:
-            return self.model.generate(prompt, context)  # type: ignore[union-attr]
+        if self._is_stub_backend and isinstance(self.model, StubModel):
+            return str(self.model.generate(prompt, context))
 
         if (
             self.model is None
@@ -735,7 +752,9 @@ class MultiTurnAgent(Agent):
 
         # Decode response
         response_tokens = outputs.sequences[0][inputs["input_ids"].shape[1] :]
-        response = self.tokenizer.decode(response_tokens, skip_special_tokens=True)
+        response = str(
+            self.tokenizer.decode(response_tokens, skip_special_tokens=True)
+        )
 
         # Clean up response
         response = self._clean_response(response)
@@ -766,7 +785,7 @@ class MultiTurnAgent(Agent):
         """Compute a safe max_length for tokenization to avoid negative lengths."""
         model_max_length = getattr(self.tokenizer, "model_max_length", None)
         if isinstance(model_max_length, int):
-            max_len = model_max_length - self.config.max_new_tokens
+            max_len = int(model_max_length) - self.config.max_new_tokens
             if max_len < 1:
                 logger.warning(
                     "max_new_tokens (%s) exceeds or equals tokenizer.model_max_length (%s); "
@@ -776,7 +795,7 @@ class MultiTurnAgent(Agent):
                     model_max_length,
                 )
                 return 1
-            return max_len
+            return int(max_len)
         return 1024  # conservative fallback when tokenizer does not expose a limit
 
     async def generate_response_stream(
@@ -816,6 +835,7 @@ class MultiTurnAgent(Agent):
 
         if (
             self.config.use_chat_template
+            and self.tokenizer is not None
             and hasattr(self.tokenizer, "apply_chat_template")
             and self.tokenizer.chat_template is not None
         ):
@@ -831,8 +851,8 @@ class MultiTurnAgent(Agent):
         response_text = ""
 
         # For stub backend, yield the full response in chunks
-        if self._is_stub_backend:
-            response = self.model.generate(prompt, context)  # type: ignore[union-attr]
+        if self._is_stub_backend and isinstance(self.model, StubModel):
+            response = str(self.model.generate(prompt, context))
             # Simulate streaming by yielding word by word
             words = response.split()
             for i, word in enumerate(words):
@@ -883,11 +903,12 @@ class MultiTurnAgent(Agent):
                     "streamer": streamer,
                     "stopping_criteria": self._build_stopping_criteria(),
                 }
+                model = self.model
+                if model is None:
+                    raise RuntimeError("Agent model must be initialized before streaming")
 
                 # Run generation in separate thread
-                thread = threading.Thread(
-                    target=lambda: self.model.generate(**generation_kwargs)
-                )
+                thread = threading.Thread(target=lambda: model.generate(**generation_kwargs))
                 thread.start()
 
                 # Yield tokens as they arrive

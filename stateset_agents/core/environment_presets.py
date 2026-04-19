@@ -22,41 +22,41 @@ class LazyConfigRegistry(dict[str, Any]):
         if self._loaded:
             return
         loaded = self._loader()
-        dict.clear(self)
-        dict.update(self, loaded)
+        super().clear()
+        super().update(loaded)
         self._loaded = True
 
     def __getitem__(self, key: str) -> Any:
         self._ensure_loaded()
-        return dict.__getitem__(self, key)
+        return super().__getitem__(key)
 
     def __contains__(self, key: object) -> bool:
         self._ensure_loaded()
-        return dict.__contains__(self, key)
+        return super().__contains__(key)
 
     def __iter__(self):
         self._ensure_loaded()
-        return dict.__iter__(self)
+        return super().__iter__()
 
     def __len__(self) -> int:
         self._ensure_loaded()
-        return dict.__len__(self)
+        return super().__len__()
 
     def __bool__(self) -> bool:
         self._ensure_loaded()
-        return bool(dict.__len__(self))
+        return bool(super().__len__())
 
     def __setitem__(self, key: str, value: Any) -> None:
         self._ensure_loaded()
-        dict.__setitem__(self, key, value)
+        super().__setitem__(key, value)
 
     def __delitem__(self, key: str) -> None:
         self._ensure_loaded()
-        dict.__delitem__(self, key)
+        super().__delitem__(key)
 
     def clear(self) -> None:
         self._ensure_loaded()
-        dict.clear(self)
+        super().clear()
 
     def copy(self) -> dict[str, Any]:
         self._ensure_loaded()
@@ -64,31 +64,31 @@ class LazyConfigRegistry(dict[str, Any]):
 
     def get(self, key: str, default: Any = None) -> Any:
         self._ensure_loaded()
-        return dict.get(self, key, default)
+        return super().get(key, default)
 
     def items(self):
         self._ensure_loaded()
-        return dict.items(self)
+        return super().items()
 
     def keys(self):
         self._ensure_loaded()
-        return dict.keys(self)
+        return super().keys()
 
     def pop(self, key: str, default: Any = None) -> Any:
         self._ensure_loaded()
-        return dict.pop(self, key, default)
+        return super().pop(key, default)
 
     def setdefault(self, key: str, default: Any = None) -> Any:
         self._ensure_loaded()
-        return dict.setdefault(self, key, default)
+        return super().setdefault(key, default)
 
     def update(self, *args: Any, **kwargs: Any) -> None:
         self._ensure_loaded()
-        dict.update(self, *args, **kwargs)
+        super().update(*args, **kwargs)
 
     def values(self):
         self._ensure_loaded()
-        return dict.values(self)
+        return super().values()
 
     def __repr__(self) -> str:
         if not self._loaded:
