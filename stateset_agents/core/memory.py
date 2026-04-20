@@ -232,7 +232,7 @@ class EntityExtractor:
     # Name patterns (capitalized words)
     NAME_PATTERN = r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._compiled_patterns = {k: re.compile(v) for k, v in self.PATTERNS.items()}
         self._name_pattern = re.compile(self.NAME_PATTERN)
 
@@ -317,7 +317,7 @@ class FactExtractor:
         r"i'm looking for ([^.]+)",
     ]
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._patterns = [re.compile(p, re.IGNORECASE) for p in self.FACT_INDICATORS]
 
     def extract(self, text: str, role: str = "user") -> list[str]:
@@ -379,7 +379,7 @@ class MemoryStore(ABC):
 class InMemoryStore(MemoryStore):
     """In-memory storage backend."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._store: dict[str, MemoryEntry] = {}
 
     async def save(self, key: str, entry: MemoryEntry) -> None:
@@ -833,8 +833,8 @@ class ConversationMemory:
 
 # Convenience function to create memory with agent
 def create_memory_enhanced_agent(
-    agent_class, config, memory_config: MemoryConfig | None = None
-):
+    agent_class: type, config: Any, memory_config: MemoryConfig | None = None
+) -> type:
     """Create an agent with enhanced memory capabilities.
 
     Args:
@@ -847,11 +847,13 @@ def create_memory_enhanced_agent(
     """
 
     class MemoryEnhancedAgent(agent_class):
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             self.memory = ConversationMemory(memory_config)
 
-        async def generate_response(self, messages, context=None):
+        async def generate_response(
+            self, messages: Any, context: dict[str, Any] | None = None
+        ) -> Any:
             # Add messages to memory
             for msg in (
                 messages

@@ -232,7 +232,7 @@ class StubTokenizer:
 class StubModelConfig:
     """Configuration for StubModel to match PyTorch model interface."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.hidden_size = 768
         self.vocab_size = 50257
 
@@ -292,33 +292,39 @@ class StubModel:
     def device(self) -> str:
         return "cpu"
 
-    def named_parameters(self):
+    def named_parameters(self) -> Any:
         """Return empty iterator to match PyTorch interface."""
         return iter([])
 
-    def parameters(self):
+    def parameters(self) -> Any:
         """Return empty iterator to match PyTorch interface."""
         return iter([])
 
-    def train(self, mode: bool = True):
+    def train(self, mode: bool = True) -> "StubModel":
         """Set training mode to match PyTorch interface."""
         self._training = mode
         return self
 
-    def eval(self):
+    def eval(self) -> "StubModel":
         """Set evaluation mode to match PyTorch interface."""
         self._training = False
         return self
 
-    def to(self, device):
+    def to(self, device: Any) -> "StubModel":
         """No-op to match PyTorch interface."""
         return self
 
-    def save_pretrained(self, path: str):
+    def save_pretrained(self, path: str) -> None:
         """No-op save to match HuggingFace interface."""
         pass
 
-    def __call__(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
+    def __call__(
+        self,
+        input_ids: Any = None,
+        attention_mask: Any = None,
+        labels: Any = None,
+        **kwargs: Any,
+    ) -> Any:
         """Make model callable to match PyTorch interface."""
         batch_size = 1
         seq_len = 10
@@ -336,7 +342,12 @@ class StubModel:
             pass
 
         class MockOutput:
-            def __init__(self, bs, sl, vs, hs, include_hidden):
+            def __init__(
+                self, bs: int, sl: int, vs: int, hs: int, include_hidden: bool
+            ) -> None:
+                self.loss: Any
+                self.logits: Any
+                self.hidden_states: Any
                 try:
                     import torch
                     self.loss = torch.tensor(0.5, requires_grad=True)

@@ -33,7 +33,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 from re import Pattern
 from collections.abc import Callable
 
@@ -675,7 +675,9 @@ class SecureInputValidator:
         return sanitized.strip()
 
 
-def create_secure_agent_wrapper(validator: SecureInputValidator):
+def create_secure_agent_wrapper(
+    validator: SecureInputValidator,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Create a decorator that adds input validation to agent methods.
 
     Args:
@@ -694,8 +696,13 @@ def create_secure_agent_wrapper(validator: SecureInputValidator):
         ...     pass
     """
 
-    def decorator(func: Callable) -> Callable:
-        async def wrapper(self, messages, context=None, **kwargs):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        async def wrapper(
+            self: Any,
+            messages: Any,
+            context: dict[str, Any] | None = None,
+            **kwargs: Any,
+        ) -> Any:
             # Extract text content for validation
             if isinstance(messages, str):
                 text = messages
