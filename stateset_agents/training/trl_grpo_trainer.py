@@ -81,7 +81,7 @@ AutoModelForCausalLM: Any | None = None
 AutoTokenizer: Any | None = None
 
 
-def _load_transformers():
+def _load_transformers() -> bool:
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_loaded, AutoModelForCausalLM, AutoTokenizer
     if _transformers_loaded:
@@ -247,7 +247,7 @@ class TrajectoryGenerator:
                 "use_vllm=True but vllm is not installed; falling back to standard generation."
             )
 
-    def _init_vllm(self):
+    def _init_vllm(self) -> None:
         """Initialize vLLM engine"""
         logger.info("Initializing vLLM engine for fast generation...")
         try:
@@ -517,7 +517,7 @@ class ModelManager:
 class TRLGRPODatasetBuilder:
     """Builds datasets for TRL GRPO training"""
 
-    def __init__(self, tokenizer, config: TRLGRPOConfig):
+    def __init__(self, tokenizer: Any, config: TRLGRPOConfig) -> None:
         self.tokenizer = tokenizer
         self.config = config
 
@@ -586,7 +586,7 @@ class TRLGRPORewardFunction:
         self.environment = environment
 
     async def compute_rewards(
-        self, completions: list[str], prompts: list[str], **kwargs
+        self, completions: list[str], prompts: list[str], **kwargs: Any
     ) -> list[float]:
         """Compute rewards for generated completions"""
 
@@ -630,9 +630,9 @@ class TRLGRPOTrainerWrapper:
         model: Any,
         tokenizer: Any,
         train_dataset: Any,
-        reward_function: Callable,
+        reward_function: Callable[..., Any],
         ref_model: Any | None = None,
-    ):
+    ) -> None:
         _require_trl_grpo()
         self.config = config
         self.model = model
@@ -695,12 +695,12 @@ class TRLGRPOTrainerWrapper:
             gradient_checkpointing=self.config.gradient_checkpointing,
         )
 
-    def train(self):
+    def train(self) -> None:
         """Run training"""
         logger.info("Starting TRL GRPO training...")
         self.trainer.train()
 
-    def save_model(self, output_dir: str):
+    def save_model(self, output_dir: str) -> None:
         """Save the trained model"""
         self.trainer.save_model(output_dir)
         self.tokenizer.save_pretrained(output_dir)

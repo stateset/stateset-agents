@@ -10,7 +10,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -127,7 +127,7 @@ class RewardFunction(ABC):
         turns = turns + [turn]
         return await self.compute_reward(turns, context)
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> "RewardResult":
         """Make reward function callable (sync wrapper for async compute_reward).
 
         Warning: Do not call this from within an async context.
@@ -247,16 +247,20 @@ class CompositeReward(RewardFunction):
 # Custom reward function decorator
 def reward_function(
     weight: float = 1.0, reward_type: RewardType = RewardType.IMMEDIATE
-):
+) -> Callable[[Callable[..., Any]], "RewardFunction"]:
     """Decorator for creating custom reward functions"""
 
-    def decorator(func):
+    def decorator(func: Callable[..., Any]) -> "RewardFunction":
         class CustomReward(RewardFunction):
-            def __init__(self):
+            def __init__(self) -> None:
                 super().__init__(weight, reward_type, func.__name__)
                 self.func = func
 
-            async def compute_reward(self, turns, context=None):
+            async def compute_reward(
+                self,
+                turns: list["ConversationTurn"],
+                context: dict[str, Any] | None = None,
+            ) -> "RewardResult":
                 score = await self.func(turns, context)
                 return RewardResult(
                     score=score,
