@@ -3,4 +3,4 @@ name: stateset-agents
 description: StateSet Agents API + vLLM + training job
 type: application
 version: 0.1.0
-appVersion: "0.11.5"
+appVersion: "0.11.6"

@@ -5,6 +5,15 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.6] - 2026-04-20
+
+### Changed
+- Expanded the blocking mypy surface from 14 to 35 files, enforcing `disallow_untyped_defs` + `disallow_incomplete_defs` across the highest-traffic core and training modules: `agent`, `agent_backends`, `agent_config`, `trajectory`, `reward_base`, `basic_rewards`, `domain_rewards`, `reward_factories`, `environment`, `environment_base`, `conversation_environment`, `multiturn_agent`, `input_validation`, `memory`, `errors`, `base_trainer`, `trl_grpo_trainer`, `gspo_trainer`, `dapo_trainer`, `gepo_trainer`, and `vapo_trainer`.
+- Fixed ~64 strict-mode type violations across the newly gated modules (missing return annotations, untyped `*args`/`**kwargs`, bare `Callable`/`list` generics, `Any | None` declarations for lazy-loaded transformers/peft globals, and `None`-callable narrowing around the optional PEFT loader).
+
+### Fixed
+- Realigned deployment artifacts (helm chart, Kubernetes training/production manifests, README, benchmark/autopilot docs) with the released package version so `test_helm_values_use_current_package_version` and `test_selected_kubernetes_and_docs_refs_use_current_package_version` pass on `master`.
+
 ## [0.11.1] - 2026-04-02
 
 ### Added
