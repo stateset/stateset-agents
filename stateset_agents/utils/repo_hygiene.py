@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 import subprocess
 
@@ -28,6 +29,12 @@ TRACKED_GENERATED_BASENAMES = {
     "pytest.xml",
 }
 TRACKED_TEMP_SUFFIXES = (".backup", ".bak", ".orig", ".tmp")
+VERSION_SURFACE_PATHS = (
+    Path("pyproject.toml"),
+    Path("stateset_agents/__init__.py"),
+    Path("stateset_agents/api/__init__.py"),
+    Path("stateset_agents/core/enhanced/__init__.py"),
+)
 
 
 def normalize_repo_path(path: str) -> str:
@@ -71,6 +78,73 @@ def find_repo_hygiene_issues(paths: list[str]) -> list[str]:
     return sorted(issues)
 
 
+def extract_project_version(pyproject_path: str | Path) -> str:
+    """Return the package version declared in ``pyproject.toml``."""
+    match = re.search(
+        r"(?ms)^\[project\].*?^version\s*=\s*[\"']([^\"']+)[\"']\s*$",
+        Path(pyproject_path).read_text(encoding="utf-8"),
+    )
+    if match is None:
+        raise ValueError(f"Could not find [project].version in {pyproject_path}")
+    return match.group(1)
+
+
+def extract_dunder_version(module_path: str | Path) -> str:
+    """Return the assigned ``__version__`` string from a Python module."""
+    match = re.search(
+        r'(?m)^__version__\s*=\s*[\"\']([^\"\']+)[\"\']\s*$',
+        Path(module_path).read_text(encoding="utf-8"),
+    )
+    if match is None:
+        raise ValueError(f"Could not find __version__ in {module_path}")
+    return match.group(1)
+
+
+def uses_package_version_alias(module_path: str | Path) -> bool:
+    """Return whether ``__version__`` delegates to ``_PACKAGE_VERSION``."""
+    return bool(
+        re.search(
+            r"(?m)^__version__\s*=\s*_PACKAGE_VERSION\s*$",
+            Path(module_path).read_text(encoding="utf-8"),
+        )
+    )
+
+
+def find_version_hygiene_issues(
+    repo_root: str | Path,
+    *,
+    package_version: str | None = None,
+) -> list[str]:
+    """Return internal version mismatches for known public version surfaces."""
+    root = Path(repo_root)
+    expected_version = package_version or extract_project_version(root / "pyproject.toml")
+
+    issues: list[str] = []
+    for relative_path in VERSION_SURFACE_PATHS:
+        path = root / relative_path
+        if not path.exists():
+            issues.append(f"missing version surface: {normalize_repo_path(str(relative_path))}")
+            continue
+
+        actual_version = (
+            extract_project_version(path)
+            if path.name == "pyproject.toml"
+            else (
+                expected_version
+                if uses_package_version_alias(path)
+                else extract_dunder_version(path)
+            )
+        )
+        if actual_version != expected_version:
+            issues.append(
+                "version mismatch: "
+                f"{normalize_repo_path(str(relative_path))} -> "
+                f"{actual_version} (expected {expected_version})"
+            )
+
+    return sorted(issues)
+
+
 def get_tracked_git_paths(cwd: str | Path | None = None) -> list[str]:
     """Return tracked paths from git."""
     result = subprocess.run(
@@ -105,8 +179,13 @@ __all__ = [
     "TRACKED_GENERATED_BASENAMES",
     "TRACKED_GENERATED_PATH_PREFIXES",
     "TRACKED_TEMP_SUFFIXES",
+    "VERSION_SURFACE_PATHS",
+    "extract_dunder_version",
+    "extract_project_version",
     "find_repo_hygiene_issues",
+    "find_version_hygiene_issues",
     "get_tracked_git_paths",
     "normalize_repo_path",
     "render_repo_hygiene_report",
+    "uses_package_version_alias",
 ]

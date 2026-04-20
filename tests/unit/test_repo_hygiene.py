@@ -8,10 +8,14 @@ from unittest.mock import Mock, patch
 import pytest
 
 from stateset_agents.utils.repo_hygiene import (
+    extract_dunder_version,
+    extract_project_version,
     find_repo_hygiene_issues,
+    find_version_hygiene_issues,
     get_tracked_git_paths,
     normalize_repo_path,
     render_repo_hygiene_report,
+    uses_package_version_alias,
 )
 
 
@@ -86,3 +90,49 @@ def test_get_tracked_git_paths_raises_on_git_failure(tmp_path: Path) -> None:
     with patch("stateset_agents.utils.repo_hygiene.subprocess.run", return_value=completed):
         with pytest.raises(RuntimeError, match="fatal: not a git repository"):
             get_tracked_git_paths(tmp_path)
+
+
+def test_extract_project_version_reads_pyproject_metadata(tmp_path: Path) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[project]\nname = "stateset-agents"\nversion = "1.2.3"\n')
+
+    assert extract_project_version(pyproject) == "1.2.3"
+
+
+def test_extract_dunder_version_reads_python_module_version(tmp_path: Path) -> None:
+    module = tmp_path / "__init__.py"
+    module.write_text('__version__ = "1.2.3"\n')
+
+    assert extract_dunder_version(module) == "1.2.3"
+
+
+def test_uses_package_version_alias_detects_single_source_pattern(tmp_path: Path) -> None:
+    module = tmp_path / "__init__.py"
+    module.write_text("__version__ = _PACKAGE_VERSION\n")
+
+    assert uses_package_version_alias(module) is True
+
+
+def test_find_version_hygiene_issues_flags_mismatched_internal_versions(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path
+    (repo_root / "stateset_agents" / "api").mkdir(parents=True)
+    (repo_root / "stateset_agents" / "core" / "enhanced").mkdir(parents=True)
+    (repo_root / "pyproject.toml").write_text(
+        '[project]\nname = "stateset-agents"\nversion = "1.2.3"\n'
+    )
+    (repo_root / "stateset_agents" / "__init__.py").write_text('__version__ = "1.2.3"\n')
+    (repo_root / "stateset_agents" / "api" / "__init__.py").write_text(
+        '__version__ = "1.2.3"\n'
+    )
+    (repo_root / "stateset_agents" / "core" / "enhanced" / "__init__.py").write_text(
+        '__version__ = "0.5.0"\n'
+    )
+
+    issues = find_version_hygiene_issues(repo_root)
+
+    assert issues == [
+        "version mismatch: stateset_agents/core/enhanced/__init__.py -> 0.5.0 "
+        "(expected 1.2.3)"
+    ]

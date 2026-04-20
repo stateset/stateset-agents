@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from stateset_agents import __version__
+from stateset_agents.utils.repo_hygiene import find_version_hygiene_issues
 
 
 def test_makefile_uses_package_version_for_docker_tags() -> None:
@@ -104,3 +105,9 @@ def test_public_docs_and_examples_do_not_embed_internal_identifiers() -> None:
         contents = target.read_text()
         for marker in forbidden_markers:
             assert marker not in contents
+
+
+def test_internal_version_surfaces_match_package_version() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+
+    assert find_version_hygiene_issues(repo_root, package_version=__version__) == []

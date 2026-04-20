@@ -40,6 +40,7 @@ from .enhanced_agent import (
     create_domain_specific_agent,
     create_enhanced_agent,
 )
+from ... import __version__ as _PACKAGE_VERSION
 
 __all__ = [
     # Enhanced Agents
@@ -69,4 +70,4 @@ __all__ = [
     "quick_agent_comparison",
 ]
 
-__version__ = "0.5.0"
+__version__ = _PACKAGE_VERSION

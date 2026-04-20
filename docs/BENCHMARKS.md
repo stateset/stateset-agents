@@ -627,7 +627,7 @@ async def my_benchmark():
 
 ## Updates and Versioning
 
-**Current Version:** 0.11.3 (April 2026)
+**Current Version:** 0.11.4 (April 2026)
 
 **Benchmark Version History:**
 - v0.7.0 (Dec 2025): Added Evals / Callbacks
@@ -673,12 +673,12 @@ If you use these benchmarks in your research, please cite:
   author = {StateSet Team},
   year = {2025},
   url = {https://github.com/stateset/stateset-agents},
-  version = {0.11.3}
+  version = {0.11.4}
 }
 ```
 
 ---
 
-**Last Updated:** April 19, 2026
+**Last Updated:** April 20, 2026
 **Maintained By:** StateSet Team
 **Contact:** benchmarks@stateset.com

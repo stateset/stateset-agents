@@ -7,6 +7,7 @@ from pathlib import Path
 
 from stateset_agents.utils.repo_hygiene import (
     find_repo_hygiene_issues,
+    find_version_hygiene_issues,
     get_tracked_git_paths,
     render_repo_hygiene_report,
 )
@@ -22,6 +23,7 @@ def main() -> int:
         return 2
 
     issues = find_repo_hygiene_issues(tracked_paths)
+    issues.extend(find_version_hygiene_issues(Path(__file__).resolve().parents[1]))
     print(render_repo_hygiene_report(issues))
     return 1 if issues else 0
 
