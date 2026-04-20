@@ -66,6 +66,39 @@ stateset-agents qwen3-5-0-8b --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
+### `stateset-agents kimi-k2-6`
+
+Preview or run the dedicated starter path for `moonshotai/Kimi-K2.6`.
+The command defaults to a dry-run so you can inspect the resolved config before loading a model.
+
+```bash
+stateset-agents kimi-k2-6
+stateset-agents kimi-k2-6 --json-output
+stateset-agents kimi-k2-6 --starter-profile memory --json-output
+stateset-agents kimi-k2-6 --list-profiles --json-output
+stateset-agents kimi-k2-6 --write-config ./kimi_k2_6.json
+stateset-agents kimi-k2-6 --config ./kimi_k2_6.json --no-dry-run
+stateset-agents kimi-k2-6 --no-dry-run --task customer_service --use-4bit
+```
+
+#### Options
+
+- `--config PATH`: Load a saved Kimi starter config file (`json` or `yaml`).
+- `--task TEXT`: Starter task preset (`customer_service`, `technical_support`, `sales`, `conversational`).
+- `--starter-profile TEXT`: Starter profile (`balanced`, `memory`, `quality`).
+- `--list-profiles`: Describe all built-in starter profiles and exit.
+- `--model TEXT`: Model name (`moonshotai/Kimi-K2.6` recommended).
+- `--use-lora / --no-lora`: Override LoRA for the run.
+- `--use-4bit / --no-use-4bit`: Override 4-bit quantization.
+- `--use-8bit / --no-use-8bit`: Override 8-bit quantization.
+- `--output-dir PATH`: Override the output directory for checkpoints and adapters.
+- `--iterations INTEGER`: Override the outer GSPO iteration count (must be > 0).
+- `--wandb`: Enable Weights & Biases logging.
+- `--wandb-project TEXT`: Optional W&B project name.
+- `--write-config PATH`: Write the resolved starter config to `json`/`yaml` and exit.
+- `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
+- `--json-output`: Emit a machine-readable preview/result payload.
+
 ### `stateset-agents validate-config`
 
 Validate a training config without running training.

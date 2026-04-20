@@ -222,6 +222,19 @@ For `Qwen/Qwen3.5-27B`, the dedicated starter emits `serving_manifest.json`
 plus merged checkpoints so you can render Helm values or deploy the raw
 Kubernetes manifests in `deployment/kubernetes/`.
 
+#### Kimi Models
+
+Fine-tune Moonshot Kimi models with GSPO:
+
+```bash
+python examples/finetune_kimi_k2_6_gspo.py --dry-run
+python examples/finetune_kimi_k2_6_gspo.py --starter-profile memory --dry-run
+python examples/finetune_kimi_k2_6_gspo.py --list-profiles
+python examples/finetune_kimi_k25_gspo.py --model moonshotai/Kimi-K2.5 --task customer_service
+```
+
+Use `examples/finetune_kimi_k2_6_gspo.py` when you want the packaged starter path with the same `balanced`, `memory`, and `quality` preset flow as the Qwen starter.
+
 #### Gemma Models
 
 Fine-tune Google Gemma models:

@@ -290,6 +290,146 @@ def test_cli_qwen3_5_0_8b_rejects_list_profiles_with_config(tmp_path):
     assert "cannot be combined" in result.stdout.lower()
 
 
+def test_cli_kimi_k2_6_dry_run_json():
+    """Test the dedicated Kimi-K2.6 starter preview payload."""
+    result = runner.invoke(app, ["kimi-k2-6", "--json-output"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["config"]["model_name"] == "moonshotai/Kimi-K2.6"
+    assert payload["config"]["task"] == "customer_service"
+    assert payload["config"]["starter_profile"] == "balanced"
+    assert payload["gspo_overrides"]["use_lora"] is True
+    assert payload["gspo_overrides"]["output_dir"] == "./outputs/kimi_k2_6_gspo"
+
+
+def test_cli_kimi_k2_6_memory_profile_json():
+    """Test the low-memory Kimi starter profile."""
+    result = runner.invoke(
+        app,
+        ["kimi-k2-6", "--starter-profile", "memory", "--json-output"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["config"]["starter_profile"] == "memory"
+    assert payload["summary"]["quantization_mode"] == "4bit"
+    assert payload["gspo_overrides"]["use_4bit"] is True
+    assert payload["gspo_overrides"]["num_generations"] == 2
+    assert payload["gspo_overrides"]["num_outer_iterations"] == 10
+
+
+def test_cli_kimi_k2_6_list_profiles_json():
+    """Test the starter can describe all built-in Kimi profiles."""
+    result = runner.invoke(
+        app,
+        ["kimi-k2-6", "--task", "sales", "--list-profiles", "--json-output"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["task"] == "sales"
+    assert payload["default_profile"] == "balanced"
+    assert payload["profiles"]["memory"]["summary"]["quantization_mode"] == "4bit"
+    assert payload["profiles"]["quality"]["summary"]["num_generations"] == 6
+
+
+def test_cli_kimi_k2_6_list_profiles_text():
+    """Test the human-readable Kimi profile catalog output."""
+    result = runner.invoke(app, ["kimi-k2-6", "--list-profiles"])
+    assert result.exit_code == 0
+    assert "Available Kimi-K2.6 starter profiles:" in result.stdout
+    assert "- balanced:" in result.stdout
+    assert "- memory:" in result.stdout
+    assert "- quality:" in result.stdout
+    assert "quantization=4bit" in result.stdout
+
+
+def test_cli_kimi_k2_6_rejects_unknown_task():
+    """Test the dedicated Kimi starter rejects unsupported task names."""
+    result = runner.invoke(app, ["kimi-k2-6", "--task", "unknown_task"])
+    assert result.exit_code != 0
+    assert "unsupported task" in result.stdout.lower()
+
+
+def test_cli_kimi_k2_6_rejects_unknown_starter_profile():
+    """Test the dedicated Kimi starter rejects unsupported profile names."""
+    result = runner.invoke(app, ["kimi-k2-6", "--starter-profile", "unknown_profile"])
+    assert result.exit_code != 0
+    assert "unsupported starter profile" in result.stdout.lower()
+
+
+def test_cli_kimi_k2_6_write_config_json(tmp_path):
+    """Test the dedicated Kimi starter can write a reusable config file."""
+    cfg_path = tmp_path / "kimi_k2_6.json"
+    result = runner.invoke(app, ["kimi-k2-6", "--write-config", str(cfg_path)])
+    assert result.exit_code == 0
+    assert cfg_path.exists()
+    loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert loaded["model_name"] == "moonshotai/Kimi-K2.6"
+    assert loaded["task"] == "customer_service"
+
+
+def test_cli_kimi_k2_6_load_config_json(tmp_path):
+    """Test the dedicated Kimi starter can load a saved config file."""
+    cfg_path = tmp_path / "kimi_k2_6_custom.json"
+    cfg_path.write_text(
+        json.dumps(
+            {
+                "model_name": "moonshotai/Kimi-K2.6",
+                "task": "sales",
+                "output_dir": "./outputs/kimi_k2_6_loaded",
+                "learning_rate": 1e-5,
+                "use_lora": False,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    result = runner.invoke(
+        app,
+        ["kimi-k2-6", "--config", str(cfg_path), "--json-output"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["config"]["task"] == "sales"
+    assert payload["config"]["output_dir"] == "./outputs/kimi_k2_6_loaded"
+    assert payload["gspo_overrides"]["use_lora"] is False
+
+
+def test_cli_kimi_k2_6_rejects_config_with_overrides(tmp_path):
+    """Test the dedicated Kimi starter rejects config files mixed with override flags."""
+    cfg_path = tmp_path / "kimi_k2_6_conflict.json"
+    cfg_path.write_text(json.dumps({"model_name": "moonshotai/Kimi-K2.6"}), encoding="utf-8")
+    result = runner.invoke(
+        app,
+        ["kimi-k2-6", "--config", str(cfg_path), "--use-4bit"],
+    )
+    assert result.exit_code != 0
+    assert "cannot be combined" in result.stdout.lower()
+
+
+def test_cli_kimi_k2_6_rejects_config_with_profile_override(tmp_path):
+    """Test the dedicated Kimi starter rejects config files mixed with starter profiles."""
+    cfg_path = tmp_path / "kimi_k2_6_profile_conflict.json"
+    cfg_path.write_text(json.dumps({"model_name": "moonshotai/Kimi-K2.6"}), encoding="utf-8")
+    result = runner.invoke(
+        app,
+        ["kimi-k2-6", "--config", str(cfg_path), "--starter-profile", "memory"],
+    )
+    assert result.exit_code != 0
+    assert "cannot be combined" in result.stdout.lower()
+
+
+def test_cli_kimi_k2_6_rejects_list_profiles_with_config(tmp_path):
+    """Test Kimi profile discovery stays separate from config-file execution mode."""
+    cfg_path = tmp_path / "kimi_k2_6_list_profiles_conflict.json"
+    cfg_path.write_text(json.dumps({"model_name": "moonshotai/Kimi-K2.6"}), encoding="utf-8")
+    result = runner.invoke(
+        app,
+        ["kimi-k2-6", "--config", str(cfg_path), "--list-profiles"],
+    )
+    assert result.exit_code != 0
+    assert "cannot be combined" in result.stdout.lower()
+
+
 def test_cli_validate_config_command_success():
     """Test config validator accepts a valid config."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -744,6 +884,77 @@ def test_cli_init_qwen_preset_memory_profile_json(tmp_path):
     assert loaded["starter_profile"] == "memory"
     assert loaded["use_4bit"] is True
     assert loaded["max_prompt_length"] == 768
+
+
+def test_cli_init_kimi_preset_json(tmp_path):
+    """Test init can scaffold the Kimi-K2.6 starter preset."""
+    cfg_path = tmp_path / "kimi_k2_6.json"
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            "--preset",
+            "kimi-k2-6",
+            "--path",
+            str(cfg_path),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert loaded["model_name"] == "moonshotai/Kimi-K2.6"
+    assert loaded["task"] == "customer_service"
+    assert loaded["trust_remote_code"] is True
+    assert loaded["use_4bit"] is True
+    assert loaded["attn_implementation"] == "sdpa"
+
+
+def test_cli_init_kimi_preset_custom_task(tmp_path):
+    """Test init can scaffold the Kimi starter preset for another task."""
+    cfg_path = tmp_path / "kimi_k2_6_sales.json"
+    result = runner.invoke(
+        app,
+        [
+            "init-config",
+            "--preset",
+            "kimi-k2-6",
+            "--task",
+            "sales",
+            "--path",
+            str(cfg_path),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert loaded["task"] == "sales"
+    assert "sales assistant" in loaded["system_prompt"].lower()
+
+
+def test_cli_init_kimi_preset_memory_profile_json(tmp_path):
+    """Test init can scaffold the low-memory Kimi starter preset."""
+    cfg_path = tmp_path / "kimi_k2_6_memory.json"
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            "--preset",
+            "kimi-k2-6",
+            "--starter-profile",
+            "memory",
+            "--path",
+            str(cfg_path),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert loaded["starter_profile"] == "memory"
+    assert loaded["use_4bit"] is True
+    assert loaded["max_prompt_length"] == 2048
 
 
 def test_cli_init_gemma_preset_json(tmp_path):

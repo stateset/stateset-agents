@@ -143,6 +143,22 @@ Use `--list-profiles` when you want to compare the built-in `balanced`, `memory`
 
 For the repo-specific walkthrough, see `docs/QWEN3_FINETUNING_GUIDE.md`.
 
+### Kimi-K2.6 starter path
+
+If you want the fastest path to a first post-training run for `moonshotai/Kimi-K2.6`, use the dedicated CLI starter or the equivalent example script:
+
+```bash
+pip install "stateset-agents[training,trl]"
+stateset-agents kimi-k2-6 --json-output
+stateset-agents kimi-k2-6 --starter-profile memory --json-output
+stateset-agents kimi-k2-6 --list-profiles --json-output
+stateset-agents kimi-k2-6 --write-config ./kimi_k2_6.json
+stateset-agents kimi-k2-6 --config ./kimi_k2_6.json --no-dry-run
+python examples/finetune_kimi_k2_6_gspo.py --dry-run
+```
+
+Use `--list-profiles` when you want to compare the built-in `balanced`, `memory`, and `quality` presets before saving or running one.
+
 ### API serving (/v1/messages)
 
 ```bash
