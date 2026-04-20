@@ -817,7 +817,7 @@ class GSPOTrainer:
         sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
         return sequence_log_probs
 
-    def save_model(self, output_dir: str):
+    def save_model(self, output_dir: str) -> None:
         """Save the trained model"""
         os.makedirs(output_dir, exist_ok=True)
 

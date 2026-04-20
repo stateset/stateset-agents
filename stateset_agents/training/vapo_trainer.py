@@ -51,12 +51,12 @@ except ImportError:  # pragma: no cover - optional dependency
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_vapo_loaded = False
-AutoModelForCausalLM = None
-AutoTokenizer = None
-get_cosine_schedule_with_warmup = None
+AutoModelForCausalLM: Any | None = None
+AutoTokenizer: Any | None = None
+get_cosine_schedule_with_warmup: Any | None = None
 
 
-def _load_transformers_vapo():
+def _load_transformers_vapo() -> bool:
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_vapo_loaded, AutoModelForCausalLM, AutoTokenizer
     global get_cosine_schedule_with_warmup
@@ -968,7 +968,7 @@ class VAPOTrainer:
 
         return metrics
 
-    def save_checkpoint(self, output_dir: str):
+    def save_checkpoint(self, output_dir: str) -> None:
         """Save model checkpoint"""
         os.makedirs(output_dir, exist_ok=True)
 
@@ -999,7 +999,7 @@ class VAPOTrainer:
 
         logger.info(f"Checkpoint saved to {output_dir}")
 
-    def load_checkpoint(self, checkpoint_dir: str):
+    def load_checkpoint(self, checkpoint_dir: str) -> None:
         """Load checkpoint"""
         # Load value head
         value_head_path = os.path.join(checkpoint_dir, "value_head.pt")

@@ -149,7 +149,7 @@ def create_domain_reward(
     domain: str,
     weight: float = 1.0,
     expected_responses: dict[str, str] | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> RewardFunction:
     """Create a domain-specific reward function"""
 

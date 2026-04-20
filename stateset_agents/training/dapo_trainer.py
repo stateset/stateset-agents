@@ -301,7 +301,7 @@ class DynamicSamplingBuffer:
         """Check if buffer has enough samples for a batch"""
         return len(self.buffer) >= batch_size
 
-    def clear(self):
+    def clear(self) -> None:
         """Clear the buffer"""
         self.buffer = []
 
@@ -419,7 +419,7 @@ class DAPOTrainer:
             reward_value = cast(float, reward)
         return float(reward_value)
 
-    def _setup_vllm(self):
+    def _setup_vllm(self) -> None:
         """Setup vLLM generator"""
         logger.info("Setting up vLLM for fast DAPO generation...")
 
@@ -909,7 +909,7 @@ class DAPOTrainer:
 
         return metrics
 
-    def save_checkpoint(self, output_dir: str):
+    def save_checkpoint(self, output_dir: str) -> None:
         """Save model checkpoint"""
         os.makedirs(output_dir, exist_ok=True)
 

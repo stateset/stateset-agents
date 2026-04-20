@@ -113,7 +113,7 @@ class GEPOConfig(TrainingConfig):
     use_group_baseline: bool = True  # Use within-group baseline normalization
 
     @classmethod
-    def from_training_config(cls, config: TrainingConfig, **kwargs) -> "GEPOConfig":
+    def from_training_config(cls, config: TrainingConfig, **kwargs: Any) -> "GEPOConfig":
         """Create GEPO config from standard training config"""
         config_dict = config.to_dict()
         config_dict.update(kwargs)
@@ -576,7 +576,7 @@ class GEPOTrainer:
 
         return metrics
 
-    def save_checkpoint(self, output_dir: str):
+    def save_checkpoint(self, output_dir: str) -> None:
         """Save model checkpoint"""
         os.makedirs(output_dir, exist_ok=True)
 
@@ -599,7 +599,7 @@ class GEPOTrainer:
 
         logger.info(f"Checkpoint saved to {output_dir}")
 
-    def load_checkpoint(self, checkpoint_dir: str):
+    def load_checkpoint(self, checkpoint_dir: str) -> None:
         """Load model checkpoint"""
         state_path = os.path.join(checkpoint_dir, "training_state.pt")
         if os.path.exists(state_path):
