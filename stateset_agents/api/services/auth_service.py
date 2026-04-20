@@ -12,6 +12,7 @@ from stateset_agents.utils.security import AuthService
 from ..config import get_config
 
 _auth_service: AuthService | None = None
+_auth_service_secret: str | None = None
 
 
 async def get_auth_service() -> AuthService:
@@ -20,12 +21,13 @@ async def get_auth_service() -> AuthService:
     This dependency is async to avoid FastAPI running it in a threadpool, which
     can deadlock under certain middleware/test transports.
     """
-    global _auth_service
-    if _auth_service is None:
-        config = get_config()
-        # SECURITY: Fallback secret is for development/testing ONLY.
-        # In production, API_JWT_SECRET environment variable MUST be set.
-        # The config.security validation enforces this in production mode.
-        secret_key = config.security.jwt_secret or "temporary-secret-for-dev"
+    global _auth_service, _auth_service_secret
+    config = get_config()
+    # SECURITY: Fallback secret is for development/testing ONLY.
+    # In production, API_JWT_SECRET environment variable MUST be set.
+    # The config.security validation enforces this in production mode.
+    secret_key = config.security.jwt_secret or "temporary-secret-for-dev"
+    if _auth_service is None or _auth_service_secret != secret_key:
         _auth_service = AuthService(secret_key)
+        _auth_service_secret = secret_key
     return _auth_service

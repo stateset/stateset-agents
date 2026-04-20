@@ -99,11 +99,14 @@ async def list_models(
     try:
         payload = await service.list_models()
         return JSONResponse(content=payload)
-    except Exception as exc:
-        logger.error("OpenAI models listing failed: %s", exc)
+    except httpx.HTTPError as exc:
+        logger.warning("OpenAI models listing backend unavailable: %s", exc)
         raise HTTPException(
             status_code=502, detail="Inference backend unavailable"
         ) from exc
+    except Exception as exc:
+        logger.exception("OpenAI models listing failed internally")
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @router.post(
@@ -222,7 +225,5 @@ async def chat_completions(
             status_code=502, detail="Inference backend unavailable"
         ) from exc
     except Exception as exc:
-        logger.error("OpenAI inference failed: %s", exc)
-        raise HTTPException(
-            status_code=502, detail="Inference backend unavailable"
-        ) from exc
+        logger.exception("OpenAI chat.completions internal request handling failed")
+        raise HTTPException(status_code=500, detail="Internal server error") from exc

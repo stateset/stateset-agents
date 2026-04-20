@@ -691,9 +691,7 @@ async def chat_v1(
                 "user_id": ctx.user.user_id,
             },
         )
-        raise HTTPException(
-            status_code=502, detail="Inference backend unavailable"
-        ) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
     response_text = _extract_response_text(openai_payload)
     if not response_text:

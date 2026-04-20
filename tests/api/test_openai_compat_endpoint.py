@@ -1,5 +1,6 @@
 import httpx
 import pytest
+from unittest.mock import AsyncMock
 
 from stateset_agents.api import config as api_config
 
@@ -210,6 +211,34 @@ async def test_openai_chat_completions_returns_public_model_id_when_mapped(
     assert response.status_code == 200
     payload = response.json()
     assert payload["model"] == "public-model"
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completions_returns_500_for_internal_failures(
+    monkeypatch, preserve_api_config
+):
+    monkeypatch.setenv("API_REQUIRE_AUTH", "false")
+    monkeypatch.setenv("INFERENCE_BACKEND", "stub")
+    monkeypatch.setenv("INFERENCE_DEFAULT_MODEL", "moonshotai/Kimi-K2.5")
+    api_config.reload_config()
+
+    from stateset_agents.api.main import create_app
+
+    app = create_app()
+    app.state.inference_service.create_openai_response = AsyncMock(
+        side_effect=RuntimeError("boom")
+    )
+    async with _client_for_app(app) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "moonshotai/Kimi-K2.5",
+                "messages": [{"role": "user", "content": "Hello"}],
+            },
+        )
+
+    assert response.status_code == 500
+    assert "Internal server error" in response.text
 
 
 @pytest.mark.asyncio

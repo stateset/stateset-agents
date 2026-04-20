@@ -175,6 +175,41 @@ class TestMultiTurnGRPOTrainer:
         saved_state = torch_module.save.call_args.args[0]
         assert "optimizer_state_dict" not in saved_state
 
+    @pytest.mark.asyncio
+    async def test_trainer_does_not_mask_training_error_with_final_checkpoint_failure(
+        self, trainer
+    ):
+        """Original training errors should survive cleanup."""
+        trainer.config.num_episodes = 1
+        trainer.config.gradient_accumulation_steps = 1
+        trainer.config.eval_steps = 50
+        trainer.config.save_steps = 100
+        trainer.config.early_stopping = False
+        trainer.config.patience = 50
+        trainer._setup_scheduler = MagicMock()
+        trainer._get_training_scenarios = MagicMock(return_value=[{"id": "scenario"}])
+        trainer._get_eval_scenarios = MagicMock(return_value=[])
+        trainer._resolve_task_id = MagicMock(return_value=None)
+        trainer._maybe_handle_task_switch = MagicMock()
+        trainer.generate_trajectories = AsyncMock(return_value=[MagicMock()])
+        trainer._maybe_mix_replay = MagicMock(return_value=([MagicMock()], []))
+        trainer.training_step = AsyncMock(side_effect=RuntimeError("boom"))
+        trainer.save_checkpoint = AsyncMock(side_effect=AssertionError("checkpoint should be skipped"))
+        trainer.wandb_logger = MagicMock()
+
+        with patch(
+            "stateset_agents.training.multi_turn_trainer.notify_training_start",
+            new=AsyncMock(),
+        ), patch(
+            "stateset_agents.training.multi_turn_trainer.notify_training_end",
+            new=AsyncMock(),
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                await trainer.train()
+
+        trainer.save_checkpoint.assert_not_awaited()
+        trainer.wandb_logger.finish_run.assert_called_once()
+
 
 class TestTrainerOptimizer:
     """Test trainer optimizer setup."""

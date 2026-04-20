@@ -1,7 +1,8 @@
 import json
 import tempfile
+import importlib
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
@@ -102,6 +103,55 @@ def test_cli_train_invalid_profile():
     result = runner.invoke(app, ["train", "--stub", "--profile", "invalid-profile"])
     assert result.exit_code != 0
     assert "unsupported profile" in result.stdout.lower()
+
+
+def test_cli_train_accepts_canonical_profile_names():
+    """Test train accepts canonical trainer profile names."""
+    result = runner.invoke(app, ["train", "--stub", "--profile", "conservative"])
+    assert result.exit_code == 0
+
+
+def test_cli_train_maps_legacy_profile_alias_to_canonical_name():
+    """Test legacy CLI profile aliases normalize before calling train()."""
+    config_path = None
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(
+            {
+                "agent": {"model_name": "stub://test", "max_new_tokens": 32},
+                "environment": {"type": "conversation", "scenarios": []},
+                "training": {"num_episodes": 1, "max_turns": 2},
+            },
+            f,
+        )
+        config_path = f.name
+
+    try:
+        train_module = importlib.import_module("stateset_agents.training.train")
+        with patch.object(
+            train_module,
+            "train",
+            new=AsyncMock(),
+        ) as mock_train, patch(
+            "stateset_agents.core.agent.MultiTurnAgent.initialize",
+            new=AsyncMock(),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "train",
+                    "--config",
+                    config_path,
+                    "--no-dry-run",
+                    "--profile",
+                    "speed",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_train.await_args.kwargs["profile"] == "aggressive"
+    finally:
+        if config_path is not None:
+            Path(config_path).unlink(missing_ok=True)
 
 
 def test_cli_train_invalid_config_extension():

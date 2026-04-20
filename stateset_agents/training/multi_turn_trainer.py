@@ -779,23 +779,33 @@ class MultiTurnGRPOTrainer:
                 if reference_model is not None:
                     self.reference_model = reference_model
 
-            # Final checkpoint
-            await self.save_checkpoint()
+            final_metrics = {
+                "final_step": self.global_step,
+                "best_eval_metric": self.best_eval_metric,
+            }
 
-            await notify_training_end(
-                self.callbacks,
-                metrics={
-                    "final_step": self.global_step,
-                    "best_eval_metric": self.best_eval_metric,
-                },
-            )
+            if errored:
+                logger.info("Skipping final checkpoint and success callbacks after training failure")
+            else:
+                try:
+                    await self.save_checkpoint()
+                except MULTI_TRAINER_EXCEPTIONS as checkpoint_error:
+                    logger.warning(
+                        "Final checkpoint skipped during trainer shutdown: %s",
+                        checkpoint_error,
+                    )
 
-            # Finish W&B run
+                await notify_training_end(
+                    self.callbacks,
+                    metrics=final_metrics,
+                )
+
+            # Finish W&B run regardless so runs do not remain open after failure.
             if self.wandb_logger:
                 self.wandb_logger.finish_run(
                     {
-                        "final_step": self.global_step,
-                        "best_eval_metric": self.best_eval_metric,
+                        **final_metrics,
+                        "errored": bool(errored),
                     }
                 )
 

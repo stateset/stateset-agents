@@ -13,6 +13,16 @@ app = typer.Typer(add_completion=False, help="StateSet Agents CLI")
 CLI_IMPORT_EXCEPTIONS = (AttributeError, ImportError, OSError, RuntimeError)
 CLI_CONFIG_EXCEPTIONS = (OSError, TypeError, ValueError)
 CLI_TRAIN_EXCEPTIONS = INFERENCE_EXCEPTIONS
+TRAIN_PROFILE_CHOICES = (
+    "conservative",
+    "balanced",
+    "aggressive",
+    "experimental",
+)
+TRAIN_PROFILE_ALIASES = {
+    "speed": "aggressive",
+    "quality": "conservative",
+}
 
 
 def _echo(s: str) -> None:
@@ -34,6 +44,18 @@ def _coerce_positive_int(value: t.Any, name: str, default: int) -> int:
         raise typer.Exit(code=2)
 
     return value_int
+
+
+def _normalize_training_profile(profile: t.Any) -> str | None:
+    """Return the canonical training profile name, or ``None`` if invalid."""
+    normalized = str(profile).strip().lower()
+    if not normalized:
+        return None
+    if normalized in TRAIN_PROFILE_ALIASES:
+        return TRAIN_PROFILE_ALIASES[normalized]
+    if normalized in TRAIN_PROFILE_CHOICES:
+        return normalized
+    return None
 
 
 def _load_config(config_path: str | None) -> dict[str, t.Any]:
@@ -183,8 +205,11 @@ def _validate_config(cfg: t.Any) -> tuple[list[str], list[str]]:
                 if value <= 0:
                     errors.append("`training.max_turns` must be a positive integer.")
 
-    if "profile" in cfg and cfg["profile"] not in {"balanced", "speed", "quality"}:
-        errors.append("`profile` must be one of: balanced, speed, quality.")
+    if "profile" in cfg and _normalize_training_profile(cfg["profile"]) is None:
+        errors.append(
+            "`profile` must be one of: conservative, balanced, aggressive, "
+            "experimental (aliases: speed, quality)."
+        )
 
     return errors, warnings
 
@@ -282,7 +307,13 @@ def train(
         "--stub",
         help="Run a lightweight stub demonstration without downloading models.",
     ),
-    profile: str = typer.Option("balanced", help="Training profile (balanced, speed, quality)."),
+    profile: str = typer.Option(
+        "balanced",
+        help=(
+            "Training profile "
+            "(conservative, balanced, aggressive, experimental; aliases: speed, quality)."
+        ),
+    ),
 ) -> None:
     """Guide or launch training (lightweight)."""
     cfg = _load_config(config)
@@ -302,9 +333,12 @@ def train(
     if episodes is not None:
         _ = _coerce_positive_int(episodes, "episodes", 1)
 
-    resolved_profile = cfg.get("profile", profile)
-    if resolved_profile not in {"balanced", "speed", "quality"}:
-        _echo("Unsupported profile. Use one of: balanced, speed, quality.")
+    resolved_profile = _normalize_training_profile(cfg.get("profile", profile))
+    if resolved_profile is None:
+        _echo(
+            "Unsupported profile. Use one of: conservative, balanced, aggressive, "
+            "experimental (aliases: speed, quality)."
+        )
         raise typer.Exit(code=2)
 
     if dry_run and not stub:

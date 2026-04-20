@@ -188,7 +188,5 @@ async def create_message(
             status_code=502, detail="Inference backend unavailable"
         ) from exc
     except Exception as exc:
-        logger.error("Messages inference failed: %s", exc)
-        raise HTTPException(
-            status_code=502, detail="Inference backend unavailable"
-        ) from exc
+        logger.exception("Messages internal request handling failed")
+        raise HTTPException(status_code=500, detail="Internal server error") from exc

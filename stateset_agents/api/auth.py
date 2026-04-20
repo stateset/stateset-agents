@@ -153,16 +153,23 @@ class JWTHandler:
 
 # Global JWT handler (initialized lazily)
 _jwt_handler: JWTHandler | None = None
+_jwt_handler_config: tuple[str, str] | None = None
 
 
 def get_jwt_handler() -> JWTHandler:
     """Get the global JWT handler."""
-    global _jwt_handler
-    if _jwt_handler is None:
-        config = get_config()
-        if not config.security.jwt_secret:
-            raise RuntimeError("JWT secret not configured")
-        _jwt_handler = JWTHandler(config.security.jwt_secret)
+    global _jwt_handler, _jwt_handler_config
+    config = get_config()
+    jwt_secret = config.security.jwt_secret
+    jwt_algorithm = config.security.jwt_algorithm
+
+    if not jwt_secret:
+        raise RuntimeError("JWT secret not configured")
+
+    handler_config = (jwt_secret, jwt_algorithm)
+    if _jwt_handler is None or _jwt_handler_config != handler_config:
+        _jwt_handler = JWTHandler(jwt_secret, jwt_algorithm)
+        _jwt_handler_config = handler_config
     return _jwt_handler
 
 
