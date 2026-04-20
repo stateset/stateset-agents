@@ -4,7 +4,7 @@ Compatibility facade for environment types, factories, and preset registries.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from .conversation_environment import ConversationEnvironment
 from .environment_base import (
@@ -23,7 +23,7 @@ def create_environment(env_type: str, config: dict[str, Any]) -> Environment:
     if env_type == "conversation":
         return ConversationEnvironment(**config)
     if env_type == "task":
-        return TaskEnvironment(**config)
+        return cast(Environment, TaskEnvironment(**config))
     raise ValueError(f"Unknown environment type: {env_type}")
 
 

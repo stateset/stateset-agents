@@ -125,7 +125,7 @@ class StateSetError(Exception):
 class ConfigurationError(StateSetError):
     """Raised when configuration is invalid."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
             code=ErrorCode.CFG_INVALID,
@@ -143,8 +143,8 @@ class ModelError(StateSetError):
         message: str,
         code: ErrorCode = ErrorCode.MDL_LOAD_FAILED,
         model_name: str | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         details = {"model_name": model_name, **kwargs}
         super().__init__(
             message,
@@ -163,8 +163,8 @@ class TrainingError(StateSetError):
         message: str,
         code: ErrorCode = ErrorCode.TRN_STEP_FAILED,
         step: int | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         details = {"step": step, **kwargs}
         super().__init__(
             message,
@@ -183,8 +183,8 @@ class OutOfMemoryError(TrainingError):
         message: str = "Out of memory",
         allocated_gb: float | None = None,
         reserved_gb: float | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         details = {"allocated_gb": allocated_gb, "reserved_gb": reserved_gb, **kwargs}
         super().__init__(message, code=ErrorCode.TRN_OOM, **details)
 
@@ -192,7 +192,7 @@ class OutOfMemoryError(TrainingError):
 class EnvironmentError(StateSetError):
     """Raised when environment operations fail."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
             code=ErrorCode.ENV_STEP_FAILED,
@@ -205,7 +205,7 @@ class EnvironmentError(StateSetError):
 class DataError(StateSetError):
     """Raised when data loading or processing fails."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
             code=ErrorCode.DAT_LOAD_FAILED,
@@ -218,7 +218,7 @@ class DataError(StateSetError):
 class RewardError(StateSetError):
     """Raised when reward computation fails."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
             code=ErrorCode.RWD_COMPUTE_FAILED,
@@ -236,8 +236,8 @@ class NetworkError(StateSetError):
         message: str,
         code: ErrorCode = ErrorCode.NET_CONNECTION_FAILED,
         url: str | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         details = {"url": url, **kwargs}
         super().__init__(
             message,
@@ -251,7 +251,7 @@ class NetworkError(StateSetError):
 class ValidationError(StateSetError):
     """Raised when input validation fails."""
 
-    def __init__(self, message: str, field: str | None = None, **kwargs):
+    def __init__(self, message: str, field: str | None = None, **kwargs: Any) -> None:
         details = {"field": field, **kwargs}
         super().__init__(
             message,
@@ -267,7 +267,7 @@ def wrap_exception(
     new_type: type[StateSetError],
     message: str | None = None,
     code: ErrorCode | None = None,
-    **context_kwargs,
+    **context_kwargs: Any,
 ) -> StateSetError:
     """Wrap an exception in a StateSetError with proper chaining.
 

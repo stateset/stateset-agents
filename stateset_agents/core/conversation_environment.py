@@ -30,8 +30,8 @@ class ConversationEnvironment(Environment):
         max_turns: int = 10,
         reward_fn: RewardFunction | None = None,
         persona: str | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(max_turns, reward_fn, **kwargs)
         self.scenarios = scenarios
         self.persona = persona

@@ -76,8 +76,8 @@ class MultiTurnAgent(Agent):
         dialogue_database: DialogueDatabase | None = None,
         cache_service: CacheService | None = None,
         planning_manager: PlanningManager | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         agent_config_kwargs = {
             field_name: value
             for field_name, value in model_config.items()
@@ -610,7 +610,7 @@ class MultiTurnAgent(Agent):
 
     async def _analyze_user_input(
         self, context: ConversationContext, user_message: str
-    ):
+    ) -> None:
         """Analyze user input for intent and entities"""
         analyze_user_input(context, user_message)
 
@@ -651,7 +651,7 @@ class MultiTurnAgent(Agent):
         reference = extract_document_reference(text)
         return None if reference is None else str(reference)
 
-    async def _compress_context(self, context: ConversationContext):
+    async def _compress_context(self, context: ConversationContext) -> None:
         """Compress conversation context to manage memory"""
         compress_conversation_context(context, self.max_conversation_turns)
 
