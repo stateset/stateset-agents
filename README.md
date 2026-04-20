@@ -159,6 +159,50 @@ python examples/finetune_kimi_k2_6_gspo.py --dry-run
 
 Use `--list-profiles` when you want to compare the built-in `balanced`, `memory`, and `quality` presets before saving or running one.
 
+### Gemma 4 31B starter path
+
+If you want the fastest path to a first post-training run for `google/gemma-4-31B-it`, use the dedicated CLI starter or the equivalent example script:
+
+```bash
+pip install "stateset-agents[training,trl]"
+stateset-agents gemma-4-31b --json-output
+stateset-agents gemma-4-31b --starter-profile memory --json-output
+stateset-agents gemma-4-31b --list-profiles --json-output
+stateset-agents gemma-4-31b --write-config ./gemma4_31b.json
+stateset-agents gemma-4-31b --config ./gemma4_31b.json --no-dry-run
+python examples/finetune_gemma4_31b_gspo.py --dry-run
+```
+
+The `memory` profile uses 4-bit quantization and smaller context/group sizes for tighter GPU budgets.
+
+### GLM 5.1 starter path
+
+`zai-org/GLM-5.1` is a 754B-parameter MoE model (QLoRA-only, vLLM generation, multi-node or 8× H200/B200 serving). It ships as a starter module + example script rather than a CLI command:
+
+```bash
+pip install "stateset-agents[training,trl,vllm]"
+python examples/finetune_glm5_1_gspo.py --dry-run
+python examples/finetune_glm5_1_gspo.py --config ./glm5_1.json --no-dry-run
+```
+
+Import the helpers directly for programmatic use:
+
+```python
+from stateset_agents.training.glm5_1_starter import (
+    get_glm5_1_config,
+    describe_glm5_1_starter_profiles,
+    run_glm5_1_config,
+)
+```
+
+See `docs/GLM5_1_HOSTING_PLAN.md` for the FP8 multi-node topology.
+
+### Supported models
+
+First-class starters ship for **Qwen 3.5 0.8B**, **Gemma 4 31B IT**, **Kimi-K2.6**, and **GLM 5.1**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
+
+See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
+
 ### API serving (/v1/messages)
 
 ```bash
