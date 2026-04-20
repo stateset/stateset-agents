@@ -72,7 +72,7 @@ def _load_transformers() -> bool:
         return False
 
 
-def _load_peft():
+def _load_peft() -> tuple[Any, Any, Any, Any]:
     """Lazily load PEFT for LoRA support."""
     try:
         from peft import (

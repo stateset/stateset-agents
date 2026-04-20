@@ -38,7 +38,7 @@ class ConversationTurn:
     tool_calls: list[dict[str, Any]] | None = None
     tool_results: list[dict[str, Any]] | None = None
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         # Initialize defaults
         self.role = None
         self.content = None
@@ -216,7 +216,7 @@ class MultiTurnTrajectory:
     conversation_quality_score: float | None = None
     task_completion_score: float | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.episode_length = len(self.turns)
         if self.turn_rewards is None and self.rewards is not None:
             self.turn_rewards = list(self.rewards)
@@ -259,7 +259,7 @@ class MultiTurnTrajectory:
                 return turn
         return None
 
-    def add_turn(self, turn: ConversationTurn, reward: float | None = None):
+    def add_turn(self, turn: ConversationTurn, reward: float | None = None) -> None:
         """Add a new turn to the trajectory"""
         self.turns.append(turn)
         self.episode_length = len(self.turns)
@@ -337,7 +337,7 @@ class MultiTurnTrajectory:
         data.pop("episode_length", None)
         return cls(**data)
 
-    def save(self, filepath: str):
+    def save(self, filepath: str) -> None:
         """Save trajectory to file"""
         with open(filepath, "w") as f:
             json.dump(self.to_dict(), f, indent=2, default=str)

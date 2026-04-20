@@ -30,18 +30,18 @@ _transformers_agent_loaded = False
 class _FallbackGenerationConfig:
     """Fallback GenerationConfig when transformers not available."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.__dict__.update(kwargs)
 
 
 class _FallbackStoppingCriteria:
     """Fallback StoppingCriteria when transformers not available."""
 
-    def __call__(self, *args, **kwargs):  # pragma: no cover - placeholder
+    def __call__(self, *args: Any, **kwargs: Any) -> bool:  # pragma: no cover - placeholder
         return False
 
 
-class _FallbackStoppingCriteriaList(list):
+class _FallbackStoppingCriteriaList(list[Any]):
     """Fallback StoppingCriteriaList when transformers not available."""
 
     pass
@@ -188,7 +188,7 @@ TOOL_EXEC_EXCEPTIONS: tuple[type[BaseException], ...] = (
 class StopOnSpecialTokens(StoppingCriteria):
     """Custom stopping criteria for conversation agents"""
 
-    def __init__(self, stop_tokens: list[str], tokenizer):
+    def __init__(self, stop_tokens: list[str], tokenizer: Any) -> None:
         self.stop_tokens = stop_tokens
         self.tokenizer = tokenizer
         self.stop_token_ids: list[list[int]] = []
@@ -200,7 +200,7 @@ class StopOnSpecialTokens(StoppingCriteria):
             if token_ids:
                 self.stop_token_ids.append(token_ids)
 
-    def __call__(self, input_ids: Any, scores: Any, **kwargs) -> bool:
+    def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> bool:
         # Check if any stop token was generated
         if torch is not None and hasattr(input_ids, "tolist"):
             sequence = input_ids[0].tolist()
@@ -289,7 +289,7 @@ class Agent:
         """Whether the agent is running with a stub model (read-only)."""
         return isinstance(self.model, StubModel)
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the agent (load models, etc.).
 
         Loads a tokenizer/model using the provided `AgentConfig`. Subclasses
@@ -442,11 +442,11 @@ class Agent:
             return [{"role": "user", "content": messages}]
         return messages
 
-    async def reset(self):
+    async def reset(self) -> None:
         """Reset agent state for new conversation"""
         self.conversation_history = []
 
-    def add_to_history(self, turn: ConversationTurn):
+    def add_to_history(self, turn: ConversationTurn) -> None:
         """Add a turn to conversation history.
 
         Stores history as a list of dict messages `{role, content}` for
@@ -536,7 +536,7 @@ class MultiTurnAgent(Agent):
                 logger.warning("Failed to init PlanningManager: %s", exc)
         self.planning_manager = planning_manager
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the multi-turn agent"""
         await super().initialize()
 
@@ -548,7 +548,7 @@ class MultiTurnAgent(Agent):
 
         # Apply PEFT if configured
         if self.config.use_peft and self.config.peft_config and self.model is not None:
-            if not _load_peft():
+            if not _load_peft() or LoraConfig is None or get_peft_model is None:
                 raise ImportError(
                     "PEFT library not available. Install with: pip install peft"
                 )
