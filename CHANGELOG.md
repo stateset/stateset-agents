@@ -5,6 +5,15 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.2] - 2026-05-15 — Docs polish
+
+### Documentation
+- **README "Start here" section** now links `CHANGELOG.md` alongside `PLATFORM_TOUR.md`, `COOKBOOK.md`, and `notebooks/README.md` — four discoverability entry points.
+- **`docs/PLATFORM_TOUR.md` FAQ** version-upgrade hint bumped from "0.11.7" to "0.12.0" (was stale after the 0.12.x releases).
+- **`docs/COOKBOOK.md` Recipe 6** example `stateset-agents version --json` output now shows `version: 0.12.1` (was `0.11.8`). The other fields (git_commit, dependencies) remain illustrative and don't depend on the release.
+
+No functional changes; no test changes; pure docs maintenance from a grep audit of "0.11" references across the repo.
+
 ## [0.12.1] - 2026-05-15 — Batch evaluation + sample eval set
 
 ### Added
