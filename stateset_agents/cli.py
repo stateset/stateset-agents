@@ -1747,16 +1747,63 @@ def publish_check(
 @app.command()
 def evaluate(
     checkpoint: str | None = typer.Option(None, "--checkpoint", help="Path to a saved checkpoint directory"),
-    message: str = typer.Option("Hello", help="Message to evaluate"),
+    message: str = typer.Option("Hello", help="Single message to evaluate (ignored when --scenarios is set)"),
+    scenarios: str | None = typer.Option(
+        None, "--scenarios",
+        help="JSONL of scenarios for batch mode. Each line: {\"user_query\": ..., <reward-specific context>}.",
+    ),
+    reward: str | None = typer.Option(
+        None, "--reward",
+        help="Reward name for batch mode: gsm8k, customer_support, tool_calling.",
+    ),
+    output: str | None = typer.Option(
+        None, "--output", "-o",
+        help="Write the batch-mode markdown report to this path (default: stdout).",
+    ),
+    threshold: float = typer.Option(
+        0.7, "--threshold",
+        help="Pass/fail threshold for the markdown summary (just informational).",
+    ),
     dry_run: bool = typer.Option(False, help="Show evaluation plan without loading checkpoint."),
 ) -> None:
-    """Load a saved agent checkpoint and run a single evaluation message."""
+    """Evaluate a saved checkpoint — single message or batch with reward.
+
+    Single-message mode (the original behavior):
+
+        stateset-agents evaluate --checkpoint outputs/v1 --message "Hello"
+
+    Batch mode — score every scenario in a JSONL against a reward function:
+
+        stateset-agents evaluate --checkpoint outputs/v1 \\
+            --scenarios eval_set.jsonl --reward customer_support \\
+            --output eval_report.md
+
+    The batch markdown report shows mean score, perfect/zero counts, and
+    a per-scenario table. Same shape as ``grade_transcript`` output so the
+    two reports compose naturally.
+    """
+    import asyncio
+
     if dry_run:
         _echo("Dry-run: evaluation was not executed.")
         if checkpoint:
             _echo(f"Checkpoint: {checkpoint}")
-        _echo(f"Message: {message}")
+        if scenarios:
+            _echo(f"Scenarios: {scenarios}")
+            _echo(f"Reward: {reward}")
+            _echo(f"Output: {output or '(stdout)'}")
+        else:
+            _echo(f"Message: {message}")
         return
+
+    # Argument validation before filesystem checks — gives clearer errors.
+    if scenarios:
+        if not reward:
+            print("--reward is required with --scenarios.", file=sys.stderr)
+            raise typer.Exit(code=2)
+        if reward not in {"gsm8k", "customer_support", "tool_calling"}:
+            print(f"Unknown reward: {reward!r}. Options: gsm8k, customer_support, tool_calling.", file=sys.stderr)
+            raise typer.Exit(code=2)
 
     if not checkpoint:
         _echo("checkpoint is required unless --dry-run is used.")
@@ -1773,9 +1820,87 @@ def evaluate(
         _echo(f"Failed to import loader: {e}")
         raise typer.Exit(code=2) from e
 
-    import asyncio
+    # Batch mode — score every scenario.
+    if scenarios:
+        scenarios_path = Path(scenarios)
+        if not scenarios_path.exists():
+            print(f"Scenarios file not found: {scenarios}", file=sys.stderr)
+            raise typer.Exit(code=2)
 
-    async def _run():
+        rows = [json.loads(line) for line in scenarios_path.read_text().splitlines() if line.strip()]
+        if not rows:
+            print("No scenarios loaded.", file=sys.stderr)
+            raise typer.Exit(code=2)
+
+        # Build the reward function.
+        if reward == "gsm8k":
+            from stateset_agents.data.gsm8k import GSM8KReward
+            reward_fn = GSM8KReward()
+        elif reward == "customer_support":
+            from stateset_agents.data.customer_support_bench import SupportRewardComposite
+            reward_fn = SupportRewardComposite()
+        else:
+            from stateset_agents.data.tool_calling_bench import ToolCallReward
+            reward_fn = ToolCallReward()
+
+        async def _run_batch():
+            from stateset_agents.core.trajectory import ConversationTurn
+            agent = await load_agent_from_checkpoint(checkpoint, load_model=True)
+            results = []
+            for row in rows:
+                query = row.get("user_query") or row.get("question") or row.get("prompt") or ""
+                response = await agent.generate_response([{"role": "user", "content": query}])
+                turns = [ConversationTurn(role="assistant", content=response)]
+                result = await reward_fn.compute_reward(turns, context=row)
+                results.append({
+                    "query": query,
+                    "response": response,
+                    "score": float(result.score),
+                })
+            return results
+
+        try:
+            results = asyncio.run(_run_batch())
+        except CLI_TRAIN_EXCEPTIONS as e:
+            _echo(f"Batch evaluation failed: {e}")
+            raise typer.Exit(code=2) from e
+
+        # Render markdown summary.
+        scores = [r["score"] for r in results]
+        mean = sum(scores) / len(scores) if scores else 0.0
+        import statistics
+        std = statistics.stdev(scores) if len(scores) > 1 else 0.0
+        n_pass = sum(1 for s in scores if s >= threshold)
+
+        lines = [
+            f"# Batch evaluation — `{reward}`",
+            "",
+            f"**Checkpoint:** `{checkpoint}`",
+            f"**Scenarios:** {len(results)}",
+            f"**Mean score:** {mean:.3f} ± {std:.3f}",
+            f"**Pass rate (≥ {threshold}):** {n_pass}/{len(results)} ({100 * n_pass / len(results):.1f}%)",
+            "",
+            "| # | Score | Query | Response (head) |",
+            "|---|-------|-------|-----------------|",
+        ]
+        for i, r in enumerate(results):
+            marker = "✅" if r["score"] >= threshold else ("⚠️ " if r["score"] >= 0.1 else "❌")
+            q_preview = r["query"][:50].replace("|", "\\|").replace("\n", " ")
+            r_preview = r["response"][:50].replace("|", "\\|").replace("\n", " ")
+            lines.append(f"| {i} | {marker} {r['score']:.3f} | {q_preview} | {r_preview} |")
+
+        md = "\n".join(lines) + "\n"
+        if output:
+            out_path = Path(output)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(md)
+            _echo(f"Wrote batch eval report → {output}")
+        else:
+            print(md)
+        return
+
+    # Single-message mode (preserved behavior).
+    async def _run() -> str:
         agent = await load_agent_from_checkpoint(checkpoint, load_model=True)
         resp = await agent.generate_response([{"role": "user", "content": message}])
         return resp

@@ -160,6 +160,7 @@ smoke-fast: ## Quick inner-loop smoke: just the platform-pipeline unit tests (~2
 		tests/unit/test_recipe_cli.py \
 		tests/unit/test_agent_config_peft_path.py \
 		tests/unit/test_checkpoint_agent_registration.py \
+		tests/unit/test_evaluate_batch.py \
 		-q --no-header
 
 smoke-cli: ## Verify every CLI subcommand's --help loads without error (catches arg-parsing regressions)
