@@ -5,11 +5,23 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-05-15 — Batch evaluation + sample eval set
+
+### Added
+- **`stateset-agents evaluate --scenarios <jsonl> --reward <name>`** — batch-evaluation mode against a saved checkpoint. Scores every row in the JSONL with the named reward (`gsm8k` / `customer_support` / `tool_calling`) and emits a markdown report: mean ± std, pass rate at `--threshold`, per-scenario table with ✅/⚠️/❌ markers. The single-message mode is preserved. Suitable for nightly / PR-blocking evaluation in CI.
+- **`examples/sample_eval_set.jsonl`** — 10 bundled customer-support scenarios across 4 intents (refund / technical / billing / general). Drop-in input for the new batch-evaluate mode. See [Cookbook Recipe 5](./docs/COOKBOOK.md).
+- **`make smoke-fast`** — runs only the 15 platform-pipeline unit test modules (~60s, ~222 tests, no integration tests, no CLI subprocess overhead). Inner-loop alternative to the full `make smoke`.
+- **`notebooks/README.md`** — map of the 6 bundled Colab notebooks with an ASCII flowchart for "which notebook to open for which goal" + a stage/runtime/cost table.
+
+### Fixed
+- CHANGELOG 0.12.0 entry claimed "7 self-contained recipes" — Recipe 5 (batch evaluation) brought the count to 8. Updated the 0.12.0 entry to reflect what actually shipped.
+- `tests/unit/test_recipe_cli.py::test_list_default_with_no_args` checked for "7 recipes" via a 7-keyword list; updated to 8 with the new `batch` keyword. Also `test_by_short_substring` updated since "debug" now matches Recipe 6 (not 5).
+
 ## [0.12.0] - 2026-05-15 — Developer experience + discoverability
 
 ### Added
 - **`stateset-agents recipe <name>`** — open a cookbook recipe in `$PAGER`. Supports `list`, numeric (`recipe 1`), full slug, and substring match. Sources from `docs/COOKBOOK.md`.
-- **`docs/COOKBOOK.md`** — 7 self-contained, copy-paste recipes covering: first fine-tune, iterating from production logs, reproducing a whitepaper number, building a tool-using agent, debugging a stuck reward, handing off to a colleague, running the demos. Sphinx-integrated via `docs/cookbook.rst`.
+- **`docs/COOKBOOK.md`** — 8 self-contained, copy-paste recipes covering: first fine-tune, iterating from production logs, reproducing a whitepaper number, building a tool-using agent, running a batch evaluation, debugging a stuck reward, handing off to a colleague, running the demos. Sphinx-integrated via `docs/cookbook.rst`. The bundled `examples/sample_eval_set.jsonl` (10 scenarios across 4 intents) gives users a ready-to-run input for the batch-evaluate recipe.
 - **`notebooks/quickstart_first_finetune.ipynb`** — Colab mirror of Cookbook Recipe 1. The 6th bundled notebook; covers install → scaffold → train → REPL sanity-check → provenance hand-off.
 - **Chat REPL `readline` integration** — up-arrow recalls previous commands; input history persists across sessions at `${XDG_STATE_HOME:-$HOME/.local/state}/stateset-agents/chat_input_history`. Linux/macOS automatic; Windows users can `pip install pyreadline3`.
 - **`make smoke-cli`** — verify every CLI subcommand's `--help` loads cleanly. Catches argument-parsing regressions across the now-15 commands.
