@@ -220,6 +220,8 @@ id_ed25519.pub
 *.keras
 *.gguf
 *.jsonl
+# Allow checked-in sample/eval datasets — these are tiny + documented
+!examples/sample_eval_set.jsonl
 *.npz
 *.npy
 *.pkl

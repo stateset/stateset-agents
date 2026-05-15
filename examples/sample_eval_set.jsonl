@@ -1,0 +1,10 @@
+{"user_query": "I want a refund for order #4521", "intent": "refund", "must_acknowledge": ["refund", "order"], "must_avoid": ["impossible"]}
+{"user_query": "The app crashes every time I open it", "intent": "technical", "must_acknowledge": ["app", "crash"], "must_avoid": ["your fault"]}
+{"user_query": "I can't log in — keeps saying invalid password", "intent": "technical", "must_acknowledge": ["password", "login"], "must_avoid": ["your fault"]}
+{"user_query": "Why is my bill higher this month?", "intent": "billing", "must_acknowledge": ["bill", "month"], "must_avoid": ["impossible"]}
+{"user_query": "I need a copy of last month's invoice", "intent": "billing", "must_acknowledge": ["invoice"], "must_avoid": ["impossible"]}
+{"user_query": "What are your business hours?", "intent": "general", "must_acknowledge": ["hours"], "must_avoid": []}
+{"user_query": "How do I contact a human agent?", "intent": "general", "must_acknowledge": ["agent", "human"], "must_avoid": []}
+{"user_query": "I was charged twice — please refund the duplicate", "intent": "refund", "must_acknowledge": ["refund", "duplicate"], "must_avoid": ["impossible"]}
+{"user_query": "Update my credit card on file", "intent": "billing", "must_acknowledge": ["credit card"], "must_avoid": ["impossible"]}
+{"user_query": "My order arrived damaged — I want a refund", "intent": "refund", "must_acknowledge": ["refund", "damaged"], "must_avoid": ["impossible"]}
