@@ -443,6 +443,108 @@ See `docs/GSPO_GUIDE.md`, `docs/ADVANCED_RL_ALGORITHMS.md`, and `examples/train_
 
 ---
 
+## Scaffold a fine‑tuning project in 30 seconds
+
+If you're building a fine‑tune for a client, start from a template instead of from scratch:
+
+```bash
+# See what's available
+stateset-agents starter list
+
+# Multi-turn customer support agent (the framework's differentiator)
+stateset-agents starter customer-support ./my-client
+
+# Single-turn math reasoner with verifiable rewards
+stateset-agents starter gsm8k-math ./math-bench
+
+# Agent that learns to invoke tools/APIs (weather, calculator, search stubs)
+stateset-agents starter tool-calling-agent ./tool-agent
+
+# Bare scaffold — edit everything
+stateset-agents starter minimal ./hack
+```
+
+Each scaffold lands a runnable project: `config.yaml`, `scenarios.jsonl` (where applicable), `reward.py`, `train.py`, `eval.py`, `serve.sh`, plus a tailored `README.md`. From clone to running endpoint in three commands:
+
+```bash
+cd my-client
+pip install -r requirements.txt
+python train.py                          # trains on the bundled sample data
+./serve.sh outputs/customer_support_v1   # serves via FastAPI gateway
+```
+
+Replace `scenarios.jsonl` with your client's data — same schema — and you're consulting.
+
+---
+
+## Chat with your fine‑tune locally
+
+```bash
+# Interactive REPL — no API server needed, exits cleanly with /quit or Ctrl+D
+stateset-agents chat --model Qwen/Qwen3.5-0.8B --checkpoint outputs/acme_v1
+
+# With live reward grading — see scores after every assistant turn
+stateset-agents chat --grade customer_support --history conversation.jsonl
+```
+
+The chat REPL is the fastest path from "did my fine-tune even load?" to "let me feel how it behaves on the queries that matter." The optional `--history` flag captures every turn to JSONL for later grading or replay; `--grade` shows live composite-reward scores so you can spot reward-function disagreements with your intuition in real time.
+
+## Curate good examples — build the next training set
+
+After capturing many conversations, score them with the same reward function used during training, and curate the high-scoring ones as new training data:
+
+```bash
+# Grade every transcript in a directory + collect good examples into one JSONL
+make grade-batch DIR=transcripts/ REWARD=customer_support \
+                 CURATED=curated.jsonl THRESHOLD=0.7
+
+# One-shot summary across all graded sessions
+make grade-batch-summary GRADED_DIR=transcripts/graded
+```
+
+The curated file is **idempotent across reruns** — duplicate (prompt, response) pairs are skipped, so you can re-grade as your reward function evolves without polluting the curated set.
+
+This closes the **human-in-the-loop curation cycle**: train → eval → chat → capture → grade → curate → train again.
+
+## Benchmark your fine‑tune
+
+After training, you usually want a defensible number: *did this actually improve over the base model, by how much, and is it reproducible?* The framework ships a Phase‑0 benchmark pipeline that produces publication‑grade results across **three tasks** (GSM8K, the bundled customer‑support corpus, and the tool‑calling corpus).
+
+**Quick path:** open one of the bundled Colab notebooks.
+
+| Notebook | Task | Runtime on A100 |
+|---|---|---|
+| `notebooks/whitepaper_v1_gsm8k_benchmark.ipynb` | GSM8K (single‑turn math) | ~45 min |
+| `notebooks/customer_support_4h.ipynb` | Multi‑turn customer support | ~3 h |
+
+**CLI path** (local A100 / H100):
+
+```bash
+# 6-second pipeline health check (no GPU)
+make benchmark-smoke
+
+# Run one configuration
+make benchmark-phase0 TRAINER=gspo SEED=42
+
+# Full matrix: 3 trainers × 3 seeds × 1 task = 9 runs
+make benchmark-phase0-all
+
+# Aggregate JSONs → markdown + CSV + PNG figures + gate report
+make release-whitepaper-v1
+```
+
+The pipeline:
+
+- **Reproducibility.** `set_all_seeds()` covers Python random, NumPy, PyTorch (CPU + CUDA), and Transformers in one call. Every result JSON carries the git commit hash.
+- **Schema.** Each run produces a single JSON conforming to `benchmark_results/SCHEMA.md`. Every published number traces back to a file.
+- **Publication gates.** 3 seeds, σ < 0.10, +0.03 improvement, single commit. Use `make benchmark-aggregate-strict` in CI to enforce.
+- **Figures.** `make benchmark-plot` produces two whitepaper‑ready PNGs (pass@1 per trainer, improvement ranking) plus a matplotlib‑free text fallback.
+- **One‑shot release.** `make release-whitepaper-v1` aggregates → plots → generates the whitepaper §11.7 markdown snippet → copies figures into `docs/figures/` → writes a release manifest. Six artifacts in one command.
+
+See `benchmark_results/README.md` for the full pipeline reference.
+
+---
+
 ## Offline RL: Learn from logged conversations
 
 Train agents from historical conversation logs without online interaction. Useful when:
@@ -687,7 +789,11 @@ For complex runs prefer the Python API and the examples folder.
 
 ## Examples and docs
 
-Good starting points:
+**Start here:**
+- [`docs/PLATFORM_TOUR.md`](docs/PLATFORM_TOUR.md) — a guided walk from `pip install` to a published v1.0 whitepaper revision (linear, journey-style).
+- [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 7 common workflows (look up what you need).
+
+Other entry points:
 
 - `examples/hello_world.py` – stub mode walkthrough
 - `examples/quick_start.py` – stub-backed onboarding example with training + smoke test

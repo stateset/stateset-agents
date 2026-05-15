@@ -101,6 +101,25 @@ async def lifespan(app: FastAPI):
         agent_service = AgentService(_SecurityMonitor())
         app.state.agent_service = agent_service
 
+    # Honor STATESET_DEFAULT_CHECKPOINT — set by `stateset-agents serve --checkpoint`.
+    default_ckpt = os.environ.get("STATESET_DEFAULT_CHECKPOINT")
+    if default_ckpt:
+        default_base = os.environ.get("STATESET_DEFAULT_BASE_MODEL")
+        logger.info(
+            "Loading default checkpoint at startup",
+            extra={"checkpoint": default_ckpt, "base_model": default_base},
+        )
+        try:
+            await agent_service.register_default_checkpoint_agent(
+                checkpoint_path=default_ckpt,
+                base_model=default_base,
+            )
+        except Exception as exc:  # noqa: BLE001 — log and continue; don't kill the API
+            logger.error(
+                "Failed to load default checkpoint at startup",
+                extra={"checkpoint": default_ckpt, "error": str(exc)},
+            )
+
     # Initialize training service
     from .services.training_service import TrainingService
 

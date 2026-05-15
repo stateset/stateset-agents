@@ -1,0 +1,163 @@
+name: Benchmark Smoke
+
+# Runs the Phase 0 / whitepaper-v1 benchmark pipeline in smoke-test mode on every
+# PR that touches the benchmark scaffolding. This catches regressions in the
+# pipeline (dataset loader, seed control, answer parsing, aggregator) without
+# needing GPU compute. Real GPU runs happen on demand via the Colab notebook
+# or local `make benchmark-phase0-all`.
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'stateset_agents/data/gsm8k.py'
+      - 'stateset_agents/data/customer_support_bench.py'
+      - 'stateset_agents/utils/reproducibility.py'
+      - 'stateset_agents/scaffolding/**'
+      - 'scripts/run_phase0_benchmark.py'
+      - 'scripts/aggregate_phase0_results.py'
+      - 'scripts/plot_phase0_results.py'
+      - 'scripts/release_v1_whitepaper.py'
+      - 'tests/unit/test_gsm8k.py'
+      - 'tests/unit/test_reproducibility.py'
+      - 'tests/unit/test_aggregate_phase0_results.py'
+      - 'tests/unit/test_customer_support_bench.py'
+      - 'tests/unit/test_task_adapters.py'
+      - 'tests/unit/test_scaffolding.py'
+      - 'benchmark_results/**'
+      - 'notebooks/whitepaper_v1_gsm8k_benchmark.ipynb'
+      - 'notebooks/customer_support_4h.ipynb'
+      - 'notebooks/tool_calling_agent_demo.ipynb'
+      - 'notebooks/grade_and_curate_demo.ipynb'
+      - 'notebooks/sft_from_curated_demo.ipynb'
+      - 'notebooks/quickstart_first_finetune.ipynb'
+      - '.github/workflows/benchmark-smoke.yml'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'stateset_agents/data/gsm8k.py'
+      - 'stateset_agents/data/customer_support_bench.py'
+      - 'stateset_agents/utils/reproducibility.py'
+      - 'stateset_agents/scaffolding/**'
+      - 'scripts/run_phase0_benchmark.py'
+      - 'scripts/aggregate_phase0_results.py'
+      - 'scripts/plot_phase0_results.py'
+      - 'scripts/release_v1_whitepaper.py'
+      - 'tests/unit/test_gsm8k.py'
+      - 'tests/unit/test_reproducibility.py'
+      - 'tests/unit/test_aggregate_phase0_results.py'
+      - 'tests/unit/test_customer_support_bench.py'
+      - 'tests/unit/test_task_adapters.py'
+      - 'tests/unit/test_scaffolding.py'
+      - 'benchmark_results/**'
+      - 'notebooks/whitepaper_v1_gsm8k_benchmark.ipynb'
+      - 'notebooks/customer_support_4h.ipynb'
+      - 'notebooks/tool_calling_agent_demo.ipynb'
+      - 'notebooks/grade_and_curate_demo.ipynb'
+      - 'notebooks/sft_from_curated_demo.ipynb'
+      - 'notebooks/quickstart_first_finetune.ipynb'
+      - '.github/workflows/benchmark-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Phase 0 pipeline smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install (no torch needed — smoke runs on CPU)
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install datasets
+
+      - name: Unit tests for benchmark + scaffolding pipelines
+        run: |
+          pytest tests/unit/test_gsm8k.py \
+                 tests/unit/test_reproducibility.py \
+                 tests/unit/test_aggregate_phase0_results.py \
+                 tests/unit/test_customer_support_bench.py \
+                 tests/unit/test_task_adapters.py \
+                 tests/unit/test_scaffolding.py \
+                 -v --no-header
+
+      - name: End-to-end smoke (loads real GSM8K, parses, seeds, schema)
+        run: make benchmark-smoke
+
+      - name: Scaffold smoke (each starter template materializes correctly)
+        run: |
+          rm -rf /tmp/scaffold_smoke
+          mkdir -p /tmp/scaffold_smoke
+          for tmpl in customer-support gsm8k-math tool-calling-agent minimal; do
+            python -m stateset_agents.cli starter "$tmpl" "/tmp/scaffold_smoke/$tmpl"
+            test -f "/tmp/scaffold_smoke/$tmpl/config.yaml" || (echo "missing config.yaml for $tmpl" && exit 1)
+            test -f "/tmp/scaffold_smoke/$tmpl/train.py"    || (echo "missing train.py for $tmpl" && exit 1)
+            test -f "/tmp/scaffold_smoke/$tmpl/README.md"   || (echo "missing README.md for $tmpl" && exit 1)
+            python -c "import yaml,pathlib; yaml.safe_load(pathlib.Path('/tmp/scaffold_smoke/$tmpl/config.yaml').read_text())"
+          done
+          python -m stateset_agents.cli starter list
+
+      - name: Aggregator round-trip with synthetic results
+        run: |
+          mkdir -p /tmp/fake_results
+          for trainer in grpo gspo; do
+            for seed in 42 1337 2026; do
+              cat > /tmp/fake_results/${trainer}_seed${seed}.json <<EOF
+          {
+            "trainer": "${trainer}",
+            "model": "Qwen/Qwen3.5-0.8B",
+            "seed": ${seed},
+            "commit": "ci-smoke",
+            "timestamp": "2026-05-13T00:00:00Z",
+            "config": {},
+            "metrics": {
+              "eval_pass_at_1": 0.40,
+              "eval_pass_at_1_baseline": 0.32,
+              "wall_clock_seconds": 2700
+            }
+          }
+          EOF
+            done
+          done
+          python scripts/aggregate_phase0_results.py \
+            --results-dir /tmp/fake_results \
+            --output-dir /tmp/fake_results
+          cat /tmp/fake_results/summary.md
+
+      - name: Validate all benchmark notebooks are well-formed JSON
+        run: |
+          for nb in notebooks/whitepaper_v1_gsm8k_benchmark.ipynb \
+                   notebooks/customer_support_4h.ipynb \
+                   notebooks/tool_calling_agent_demo.ipynb \
+                   notebooks/grade_and_curate_demo.ipynb \
+                   notebooks/sft_from_curated_demo.ipynb \
+                   notebooks/quickstart_first_finetune.ipynb; do
+            python -c "import json; json.loads(open('$nb').read()); print('$nb: OK')"
+          done
+
+      - name: Changelog gate — version in pyproject.toml must be documented
+        run: make changelog-check
+
+      - name: CLI smoke — every subcommand --help loads
+        run: make smoke-cli
+
+      - name: Comprehensive health check
+        run: make health
+
+      - name: Local-CI parity — make starter-test
+        run: make starter-test
+
+      - name: Umbrella — make smoke (everything in one shot)
+        run: make smoke
+
+      - name: Live demo — make demo (the end-to-end pipeline showcase)
+        run: make demo

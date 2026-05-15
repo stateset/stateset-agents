@@ -155,6 +155,94 @@ class AgentService:
 
         return agent_id
 
+    async def register_default_checkpoint_agent(
+        self,
+        checkpoint_path: str,
+        base_model: str | None = None,
+        agent_id: str = "default",
+    ) -> str:
+        """Register a pre-trained checkpoint as a named agent.
+
+        Called at API startup when ``STATESET_DEFAULT_CHECKPOINT`` is set
+        (typically by ``stateset-agents serve --checkpoint <path>``). The
+        resulting agent is stored under ``agent_id`` (default: ``"default"``)
+        and is immediately reachable via ``GET /agents/default``.
+
+        Args:
+            checkpoint_path: Filesystem path to a LoRA adapter directory or a
+                full model directory.
+            base_model: When the checkpoint is a LoRA adapter, the base model
+                name to load it on top of. Pass None for a full-model
+                checkpoint.
+            agent_id: Stable ID under which the agent is registered.
+
+        Returns:
+            The registered ``agent_id``.
+
+        Raises:
+            FileNotFoundError: if ``checkpoint_path`` does not exist on disk.
+            RuntimeError: if agent initialization fails and we're in
+                production mode (no stub fallback).
+        """
+        from pathlib import Path
+
+        ckpt = Path(checkpoint_path).expanduser().resolve()
+        if not ckpt.exists():
+            raise FileNotFoundError(
+                f"Checkpoint path does not exist: {ckpt}"
+            )
+
+        # Use the base model name when supplied (LoRA case); fall back to the
+        # checkpoint dir name (full-model case). When base_model is set, treat
+        # the checkpoint as a LoRA adapter and load it on top of the base.
+        model_name = base_model or str(ckpt)
+        is_stub = self._should_use_stub_model(model_name)
+        agent_config = AgentConfig(
+            model_name=model_name,
+            peft_path=str(ckpt) if (base_model and not is_stub) else None,
+            use_stub_model=is_stub,
+        )
+        agent_metadata_path = str(ckpt)
+
+        agent = MultiTurnAgent(agent_config)
+        try:
+            await agent.initialize()
+        except AGENT_SERVICE_EXCEPTIONS as exc:
+            environment = os.getenv("API_ENVIRONMENT", "production").lower()
+            if environment != "production":
+                logger.warning(
+                    "Checkpoint-agent initialization failed; falling back to stub backend",
+                    extra={"checkpoint": str(ckpt), "base_model": base_model},
+                    exc_info=True,
+                )
+                agent_config = replace(agent_config, use_stub_model=True)
+                agent = MultiTurnAgent(agent_config)
+                await agent.initialize()
+            else:
+                raise RuntimeError(
+                    f"Failed to register checkpoint agent at {ckpt}: {exc}"
+                ) from exc
+
+        # Attach the checkpoint path as metadata so /v1/agents/{id} can
+        # surface what was loaded.
+        try:
+            agent.metadata = getattr(agent, "metadata", {}) or {}
+            agent.metadata["checkpoint_path"] = agent_metadata_path
+            agent.metadata["base_model"] = base_model
+        except Exception:  # noqa: BLE001 — metadata is best-effort
+            pass
+
+        self.agents[agent_id] = agent
+        logger.info(
+            "Registered checkpoint agent",
+            extra={
+                "agent_id": agent_id,
+                "checkpoint": str(ckpt),
+                "base_model": base_model,
+            },
+        )
+        return agent_id
+
     def delete_agent(self, agent_id: str) -> bool:
         """Delete an agent and clear associated conversation state."""
         agent = self.agents.get(agent_id)

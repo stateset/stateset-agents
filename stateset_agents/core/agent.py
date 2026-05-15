@@ -124,22 +124,25 @@ def _load_transformers_agent() -> bool:
 
 LoraConfig: Any | None = None
 get_peft_model: Any | None = None
+PeftModel: Any | None = None
 _peft_loaded = False
 
 
 def _load_peft() -> bool:
     """Lazily load PEFT to keep lightweight imports quiet in API-only usage."""
-    global _peft_loaded, LoraConfig, get_peft_model
+    global _peft_loaded, LoraConfig, get_peft_model, PeftModel
     if _peft_loaded:
         if LoraConfig is None:
             return False
         return get_peft_model is not None
     try:
         from peft import LoraConfig as _LoraConfig
+        from peft import PeftModel as _PeftModel
         from peft import get_peft_model as _get_peft_model
 
         LoraConfig = _LoraConfig
         get_peft_model = _get_peft_model
+        PeftModel = _PeftModel
         _peft_loaded = True
         return True
     except ImportError:  # pragma: no cover
@@ -546,8 +549,22 @@ class MultiTurnAgent(Agent):
             )
             return
 
-        # Apply PEFT if configured
-        if self.config.use_peft and self.config.peft_config and self.model is not None:
+        # Load a pre-trained LoRA adapter from disk, if configured.
+        if self.config.peft_path and self.model is not None:
+            if not _load_peft() or PeftModel is None:
+                raise ImportError(
+                    "PEFT library not available. Install with: pip install peft"
+                )
+            from pathlib import Path
+            adapter_path = Path(self.config.peft_path).expanduser().resolve()
+            if not adapter_path.exists():
+                raise FileNotFoundError(
+                    f"peft_path does not exist: {adapter_path}"
+                )
+            self.model = PeftModel.from_pretrained(self.model, str(adapter_path))
+            logger.info("Loaded LoRA adapter from %s", adapter_path)
+        # Otherwise apply a fresh PEFT config if requested (training-time path).
+        elif self.config.use_peft and self.config.peft_config and self.model is not None:
             if not _load_peft() or LoraConfig is None or get_peft_model is None:
                 raise ImportError(
                     "PEFT library not available. Install with: pip install peft"

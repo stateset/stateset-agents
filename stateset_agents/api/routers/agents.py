@@ -4,6 +4,7 @@ Agents Router Module
 API endpoints for agent management and conversations.
 """
 
+import os
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from typing import Any
@@ -427,8 +428,20 @@ async def converse_with_agent(
         # Use a default agent for demo purposes
         agent_id = getattr(request, "agent_id", "default")
 
-        # Create a temporary agent if none exists
+        # Create a temporary agent if none exists.
         if agent_id not in svc.agents:
+            # If STATESET_DEFAULT_CHECKPOINT was set, the startup hook should
+            # have registered an agent under id "default". Falling through
+            # to the gpt2 demo agent silently would hide a real failure.
+            if agent_id == "default" and os.environ.get("STATESET_DEFAULT_CHECKPOINT"):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Request asked for the default agent, but no agent named 'default' "
+                    "is registered, yet STATESET_DEFAULT_CHECKPOINT=%s was set. "
+                    "The startup hook likely failed — check the API logs. "
+                    "Falling back to a demo gpt2 agent.",
+                    os.environ.get("STATESET_DEFAULT_CHECKPOINT"),
+                )
             config = AgentConfigRequest(model_name="gpt2")
             agent_id = await svc.create_agent(config)
 

@@ -1,5 +1,6 @@
 import importlib
 import json
+import os
 import sys
 import typing as t
 from pathlib import Path
@@ -273,24 +274,73 @@ def version(
         help="Output machine-readable JSON",
     )
 ) -> None:
-    """Show installed version and basic environment info."""
+    """Show installed version, git commit, and key dependency versions.
+
+    Useful for bug reports and verifying installs:
+
+        stateset-agents version          # human-readable
+        stateset-agents version --json   # machine-readable
+    """
     try:
         from stateset_agents import __version__
     except CLI_IMPORT_EXCEPTIONS:
         __version__ = "unknown"
 
-    payload = {
+    # Resolve git commit from the install source tree if we're a -e install.
+    git_commit: str | None = None
+    try:
+        import subprocess
+        import pathlib
+        pkg_root = pathlib.Path(__import__("stateset_agents").__file__).resolve().parent.parent
+        if (pkg_root / ".git").exists():
+            result = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=pkg_root, capture_output=True, text=True, check=False, timeout=2,
+            )
+            if result.returncode == 0:
+                git_commit = result.stdout.strip()
+    except Exception:  # noqa: BLE001 — best-effort
+        pass
+
+    # Probe key optional deps without failing the call.
+    def _safe_version(modname: str) -> str | None:
+        try:
+            mod = importlib.import_module(modname)
+            return getattr(mod, "__version__", None) or "installed"
+        except CLI_IMPORT_EXCEPTIONS:
+            return None
+
+    deps = {
+        "torch": _safe_version("torch"),
+        "transformers": _safe_version("transformers"),
+        "peft": _safe_version("peft"),
+        "trl": _safe_version("trl"),
+        "datasets": _safe_version("datasets"),
+        "fastapi": _safe_version("fastapi"),
+        "vllm": _safe_version("vllm"),
+    }
+
+    payload: dict[str, Any] = {
         "name": "stateset-agents",
         "version": __version__,
+        "git_commit": git_commit,
         "python": sys.version.split()[0],
+        "dependencies": deps,
     }
 
     if json_output:
         _echo(json.dumps(payload, indent=2, sort_keys=True))
         return
 
-    _echo(f"stateset-agents version: {payload['version']}")
-    _echo(f"python: {payload['python']}")
+    _echo(f"stateset-agents {payload['version']}")
+    if git_commit:
+        _echo(f"  commit:  {git_commit}")
+    _echo(f"  python:  {payload['python']}")
+    _echo(f"  deps:")
+    for name, ver in deps.items():
+        marker = "✓" if ver else "—"
+        ver_str = ver if ver else "not installed"
+        _echo(f"    {marker} {name:<14} {ver_str}")
 
 
 @app.command()
@@ -1313,15 +1363,44 @@ def serve(
     port: int = typer.Option(8000, help="Bind port"),
     reload: bool = typer.Option(False, help="Enable auto-reload (development)"),
     dry_run: bool = typer.Option(False, help="Print startup command without running the server."),
+    checkpoint: str | None = typer.Option(
+        None,
+        "--checkpoint",
+        "-c",
+        help="Path to a trained checkpoint (LoRA adapter or full model).",
+    ),
+    base_model: str | None = typer.Option(
+        None,
+        "--base-model",
+        help="Base model name when --checkpoint is a LoRA adapter (defaults to the value baked into the adapter).",
+    ),
 ) -> None:
-    """Run the FastAPI gateway (`stateset_agents.api.main:app`)."""
+    """Run the FastAPI gateway (`stateset_agents.api.main:app`).
+
+    Pass ``--checkpoint`` to serve a freshly-trained agent — this closes the
+    loop from ``make benchmark-phase0`` straight to a running endpoint.
+    """
     _ = _coerce_positive_int(port, "port", 8000)
+
+    if checkpoint:
+        ckpt_path = Path(checkpoint)
+        if not ckpt_path.exists():
+            print(f"Checkpoint path not found: {checkpoint}", file=sys.stderr)
+            raise typer.Exit(code=2)
+        os.environ["STATESET_DEFAULT_CHECKPOINT"] = str(ckpt_path.resolve())
+        if base_model:
+            os.environ["STATESET_DEFAULT_BASE_MODEL"] = base_model
+        _echo(f"Will load checkpoint: {ckpt_path.resolve()}")
+        if base_model:
+            _echo(f"Base model: {base_model}")
 
     if dry_run:
         _echo("Dry-run: serve command did not start API.")
         _echo(
             f"Preview: uvicorn stateset_agents.api.main:app --host {host} --port {port}"
         )
+        if checkpoint:
+            _echo(f"Preview: STATESET_DEFAULT_CHECKPOINT={ckpt_path.resolve()}")
         if reload:
             _echo("Preview: --reload")
         return
@@ -1393,6 +1472,13 @@ def doctor(
     except CLI_IMPORT_EXCEPTIONS:
         pass
 
+    # Checkpoint/serve env vars — surfaces "why isn't my checkpoint loading?"
+    default_checkpoint = os.environ.get("STATESET_DEFAULT_CHECKPOINT")
+    default_base_model = os.environ.get("STATESET_DEFAULT_BASE_MODEL")
+    checkpoint_exists: bool | None = None
+    if default_checkpoint:
+        checkpoint_exists = Path(default_checkpoint).exists()
+
     if json_output:
         payload = {
             "name": "stateset-agents",
@@ -1405,6 +1491,11 @@ def doctor(
             "bfloat16_supported": bf16,
             "gpu_count": gpu_count,
             "gpu_name": gpu_name,
+            "checkpoint": {
+                "STATESET_DEFAULT_CHECKPOINT": default_checkpoint,
+                "STATESET_DEFAULT_BASE_MODEL": default_base_model,
+                "path_exists": checkpoint_exists,
+            },
         }
         _echo(json.dumps(payload, sort_keys=True))
         if strict and False in required_status.values():
@@ -1414,6 +1505,19 @@ def doctor(
     _echo(f"CUDA available: {cuda}; bfloat16: {bf16}")
     if cuda and gpu_name is not None:
         _echo(f"GPU count: {gpu_count}; name: {gpu_name}")
+
+    # Surface the checkpoint env vars — common source of "why doesn't this work?"
+    if default_checkpoint:
+        if checkpoint_exists:
+            _echo(f"✅ STATESET_DEFAULT_CHECKPOINT={default_checkpoint} (exists)")
+        else:
+            _echo(f"❌ STATESET_DEFAULT_CHECKPOINT={default_checkpoint} (path does not exist!)")
+        if default_base_model:
+            _echo(f"   STATESET_DEFAULT_BASE_MODEL={default_base_model}")
+        else:
+            _echo("   ⚠️  STATESET_DEFAULT_BASE_MODEL not set — LoRA loading will be skipped.")
+    else:
+        _echo("ℹ️  No STATESET_DEFAULT_CHECKPOINT set (use `stateset-agents serve --checkpoint` to serve a trained adapter).")
 
     _echo("StateSet Agents - Environment Doctor")
     _echo(f"python: {sys.version.split()[0]} ({platform.platform()})")
@@ -2157,6 +2261,704 @@ def auto_research(
     except CLI_TRAIN_EXCEPTIONS as e:
         _echo(f"Auto-research failed: {e}")
         raise typer.Exit(code=2) from e
+
+
+@app.command("fine-tune")
+def fine_tune(
+    curated: str = typer.Argument(
+        ...,
+        help="Path to a curated JSONL (from `stateset-agents grade-batch ... CURATED=...`).",
+    ),
+    base_model: str = typer.Option(
+        "Qwen/Qwen3.5-0.8B", "--base-model", "-m",
+        help="HF base model to fine-tune.",
+    ),
+    output_dir: str = typer.Option(
+        "outputs/sft_v1", "--output-dir", "-o",
+        help="Where the LoRA adapter is saved.",
+    ),
+    min_score: float = typer.Option(
+        0.7, "--min-score",
+        help="Drop curated examples below this score before SFT.",
+    ),
+    num_epochs: int = typer.Option(
+        3, "--num-epochs", "-e",
+        help="Training epochs.",
+    ),
+    lora_r: int = typer.Option(
+        16, "--lora-r",
+        help="LoRA rank.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Print the training plan without running it (forced when no GPU).",
+    ),
+) -> None:
+    """Fine-tune from a curated JSONL in one command.
+
+    Convenience wrapper around `make full-loop` — runs prepare_sft_dataset.py
+    then sft_from_curated.py. Produces a LoRA adapter consumable by
+    `stateset-agents chat --checkpoint` and `stateset-agents serve --checkpoint`.
+
+    Examples:
+
+        stateset-agents fine-tune curated.jsonl
+        stateset-agents fine-tune curated.jsonl --base-model Qwen/Qwen3.5-0.8B --num-epochs 5
+        stateset-agents fine-tune curated.jsonl --dry-run
+    """
+    import subprocess
+    import tempfile
+
+    curated_path = Path(curated)
+    if not curated_path.exists():
+        print(f"Curated file not found: {curated}", file=sys.stderr)
+        raise typer.Exit(code=2)
+
+    script_dir = Path(__file__).resolve().parents[1] / "scripts"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sft_jsonl = Path(tmp) / "sft_train.jsonl"
+
+        _echo("▶ Step 1/2: prepare-sft (curated → chat format)")
+        result = subprocess.run(
+            [
+                sys.executable, str(script_dir / "prepare_sft_dataset.py"),
+                "--input", str(curated_path),
+                "--format", "chat",
+                "--output", str(sft_jsonl),
+                "--min-score", str(min_score),
+                "--dedup",
+                "--stats",
+            ],
+            check=False,
+        )
+        if result.returncode != 0:
+            raise typer.Exit(code=result.returncode)
+
+        _echo("")
+        _echo("▶ Step 2/2: sft-from-curated (chat format → trained adapter)")
+        cmd = [
+            sys.executable, str(script_dir / "sft_from_curated.py"),
+            "--dataset", str(sft_jsonl),
+            "--base-model", base_model,
+            "--output-dir", output_dir,
+            "--num-epochs", str(num_epochs),
+            "--lora-r", str(lora_r),
+        ]
+        if dry_run:
+            cmd.append("--dry-run")
+        result = subprocess.run(cmd, check=False)
+        raise typer.Exit(code=result.returncode)
+
+
+@app.command("chat")
+def chat(
+    model: str = typer.Option(
+        "stub://chat", "--model", "-m",
+        help="HF model name or stub://<id> for the in-process REPL.",
+    ),
+    checkpoint: str | None = typer.Option(
+        None, "--checkpoint", "-c",
+        help="Path to a LoRA adapter to load on top of --model.",
+    ),
+    system_prompt: str | None = typer.Option(
+        None, "--system",
+        help="Optional system prompt prepended to every conversation.",
+    ),
+    max_new_tokens: int = typer.Option(
+        256, "--max-new-tokens",
+        help="Generation length cap per response.",
+    ),
+    history: str | None = typer.Option(
+        None, "--history",
+        help="Path to a JSONL file to APPEND each turn (one JSON object per line). "
+             "Capture interesting conversations to replay or grade later with "
+             "`make grade-transcript`.",
+    ),
+    replay: str | None = typer.Option(
+        None, "--replay",
+        help="Path to a JSONL transcript to replay as initial conversation context. "
+             "Useful for resuming a debugging session.",
+    ),
+    grade: str | None = typer.Option(
+        None, "--grade",
+        help="Score each assistant turn live with the named reward function. "
+             "Options: gsm8k, customer_support, tool_calling. "
+             "Mismatches between intuition and score surface reward-function bugs.",
+    ),
+) -> None:
+    """Open an interactive REPL against an in-process agent.
+
+    The fastest way to sanity-check a fine-tune locally without spinning up
+    the FastAPI gateway. Loads the agent in-process and lets you talk to it
+    line by line. Type ``/reset`` to clear conversation history, ``/quit`` or
+    Ctrl+D to exit.
+
+    Examples:
+
+        # Stub agent — no GPU, instant
+        stateset-agents chat
+
+        # Real HF model
+        stateset-agents chat --model Qwen/Qwen3.5-0.8B
+
+        # Fine-tuned LoRA adapter
+        stateset-agents chat --model Qwen/Qwen3.5-0.8B --checkpoint outputs/acme_v1
+
+        # With a system prompt
+        stateset-agents chat --system "You are a helpful customer support agent."
+    """
+    import asyncio
+
+    from stateset_agents.core.agent_config import AgentConfig
+    from stateset_agents.core.agent import MultiTurnAgent
+
+    if checkpoint:
+        ckpt_path = Path(checkpoint)
+        if not ckpt_path.exists():
+            print(f"Checkpoint path not found: {checkpoint}", file=sys.stderr)
+            raise typer.Exit(code=2)
+
+    is_stub = model.startswith("stub://") or model == "gpt2"
+    config = AgentConfig(
+        model_name=model,
+        max_new_tokens=max_new_tokens,
+        system_prompt=system_prompt,
+        use_stub_model=is_stub,
+        peft_path=checkpoint if (checkpoint and not is_stub) else None,
+    )
+
+    _echo(f"Initializing agent (model={model}, stub={is_stub})…")
+    agent = MultiTurnAgent(config)
+    try:
+        asyncio.run(agent.initialize())
+    except Exception as e:  # noqa: BLE001 — surface the error to the user
+        print(f"Failed to initialize agent: {type(e).__name__}: {e}", file=sys.stderr)
+        raise typer.Exit(code=2) from e
+
+    # Set up live grader if requested.
+    live_reward = None
+    if grade:
+        try:
+            if grade == "gsm8k":
+                from stateset_agents.data.gsm8k import GSM8KReward
+                live_reward = GSM8KReward()
+            elif grade == "customer_support":
+                from stateset_agents.data.customer_support_bench import SupportRewardComposite
+                live_reward = SupportRewardComposite()
+            elif grade == "tool_calling":
+                from stateset_agents.data.tool_calling_bench import ToolCallReward
+                live_reward = ToolCallReward()
+            else:
+                print(
+                    f"Unknown --grade reward: {grade!r}. "
+                    f"Options: gsm8k, customer_support, tool_calling.",
+                    file=sys.stderr,
+                )
+                raise typer.Exit(code=2)
+        except ImportError as e:
+            print(f"Failed to load grader: {e}", file=sys.stderr)
+            raise typer.Exit(code=2) from e
+
+    # Wire up readline for up-arrow recall + persistent input history.
+    # The "input history" (one file per user) is separate from the conversation
+    # transcript (`--history` flag). Only sets up if readline is available
+    # (Linux/macOS by default; Windows ships pyreadline3 separately).
+    _readline_history_path: Path | None = None
+    try:
+        import readline
+
+        # Use XDG_STATE_HOME if set, else ~/.local/state, else ~ as fallback.
+        state_dir = os.environ.get("XDG_STATE_HOME")
+        if state_dir:
+            base = Path(state_dir) / "stateset-agents"
+        else:
+            base = Path.home() / ".local" / "state" / "stateset-agents"
+        base.mkdir(parents=True, exist_ok=True)
+        _readline_history_path = base / "chat_input_history"
+        if _readline_history_path.exists():
+            try:
+                readline.read_history_file(str(_readline_history_path))
+            except OSError:
+                pass
+        readline.set_history_length(1000)
+    except ImportError:
+        pass  # readline unavailable — REPL still works, just no up-arrow
+
+    _echo("")
+    _echo("=" * 60)
+    _echo("StateSet Agents — Interactive Chat")
+    _echo("Type /reset to clear history, /quit or Ctrl+D to exit.")
+    if _readline_history_path:
+        _echo(f"Input history: {_readline_history_path} (up-arrow recalls)")
+    if history:
+        _echo(f"Appending each turn to: {history}")
+    if grade:
+        _echo(f"Live grading enabled: {grade}")
+    _echo("=" * 60)
+
+    messages: list[dict[str, str]] = []
+    history_path = Path(history).expanduser() if history else None
+    if history_path:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Optional replay — preload conversation from a saved transcript.
+    if replay:
+        replay_path = Path(replay).expanduser()
+        if not replay_path.exists():
+            print(f"Replay path not found: {replay}", file=sys.stderr)
+            raise typer.Exit(code=2)
+        for line in replay_path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "role" in entry and "content" in entry:
+                messages.append({"role": entry["role"], "content": entry["content"]})
+        _echo(f"Loaded {len(messages)} turn(s) from {replay}")
+
+    def _append_history(role: str, content: str) -> None:
+        if history_path is None:
+            return
+        with history_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"role": role, "content": content}, ensure_ascii=False) + "\n")
+
+    async def _send(user_text: str) -> str:
+        messages.append({"role": "user", "content": user_text})
+        _append_history("user", user_text)
+        response = await agent.generate_response(messages)
+        messages.append({"role": "assistant", "content": response})
+        _append_history("assistant", response)
+        return response
+
+    while True:
+        try:
+            user_input = input("\nyou> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+
+        if not user_input:
+            continue
+        if user_input in ("/quit", "/exit"):
+            break
+        if user_input == "/reset":
+            messages = []
+            _echo("(conversation reset)")
+            continue
+
+        try:
+            response = asyncio.run(_send(user_input))
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠️  generation failed: {e}", file=sys.stderr)
+            continue
+
+        print(f"agent> {response}")
+
+        # Live grading: score this turn against the reward function.
+        if live_reward is not None:
+            try:
+                from stateset_agents.core.trajectory import ConversationTurn
+                # Score using the full conversation so far (matches training-time eval).
+                turns_for_reward = [
+                    ConversationTurn(role=m["role"], content=m["content"]) for m in messages
+                ]
+                reward_result = asyncio.run(
+                    live_reward.compute_reward(turns_for_reward, context=None)
+                )
+                score = float(reward_result.score)
+                # Color-code: green for ≥0.5, yellow for 0.1–0.5, red for <0.1.
+                if score >= 0.5:
+                    marker = "✅"
+                elif score >= 0.1:
+                    marker = "⚠️ "
+                else:
+                    marker = "❌"
+                print(f"  {marker} reward[{grade}] = {score:.3f}")
+            except Exception as e:  # noqa: BLE001 — grading failure shouldn't kill the REPL
+                print(f"  ⚠️  grading failed: {e}", file=sys.stderr)
+
+    # Persist input history for the next chat session.
+    if _readline_history_path is not None:
+        try:
+            import readline
+            readline.write_history_file(str(_readline_history_path))
+        except (ImportError, OSError):
+            pass
+
+    _echo("Bye.")
+
+
+@app.command("recipe")
+def recipe(
+    name: str = typer.Argument(
+        "list",
+        help="Recipe name to open (e.g. `first-fine-tune`) or `list` to see all.",
+    ),
+) -> None:
+    """Open a cookbook recipe in $PAGER, or `list` them all.
+
+    Recipes are sourced from ``docs/COOKBOOK.md`` — self-contained, copy-paste
+    workflows for the 7 most common things you'll want to do with the platform.
+
+    Examples:
+
+        stateset-agents recipe list                     # show every recipe
+        stateset-agents recipe first-fine-tune          # open recipe 1
+        stateset-agents recipe iterate-from-logs        # open recipe 2
+        stateset-agents recipe debug-stuck-reward       # open recipe 5
+    """
+    import re
+    import shutil
+
+    # Locate the cookbook
+    candidates = [
+        Path(__file__).resolve().parents[1] / "docs" / "COOKBOOK.md",
+        Path(__file__).resolve().parent / "docs" / "COOKBOOK.md",
+    ]
+    cookbook = next((p for p in candidates if p.exists()), None)
+    if cookbook is None:
+        _echo(
+            "Cookbook not bundled in this install. Read it on GitHub:\n"
+            "  https://github.com/stateset/stateset-agents/blob/master/docs/COOKBOOK.md"
+        )
+        return
+
+    body = cookbook.read_text()
+
+    # Extract every recipe by matching "## Recipe N — <title>" headers
+    recipe_re = re.compile(r"^## Recipe (\d+) — (.+?)$", re.MULTILINE)
+    matches = list(recipe_re.finditer(body))
+
+    def _slug(title: str) -> str:
+        s = title.lower()
+        s = re.sub(r"[^a-z0-9]+", "-", s)
+        return s.strip("-")
+
+    if name == "list":
+        _echo("Available cookbook recipes:")
+        for m in matches:
+            num, title = m.group(1), m.group(2)
+            slug = _slug(title)
+            _echo(f"  {num}. {slug:<28} — {title}")
+        _echo("")
+        _echo("Open one with: stateset-agents recipe <slug>")
+        _echo("Read the full cookbook: cat docs/COOKBOOK.md")
+        return
+
+    # Find the matching recipe (by slug or numeric prefix)
+    name_norm = name.lower().strip()
+    chosen_idx: int | None = None
+    for i, m in enumerate(matches):
+        slug = _slug(m.group(2))
+        if slug == name_norm or slug.startswith(name_norm) or m.group(1) == name_norm:
+            chosen_idx = i
+            break
+
+    if chosen_idx is None:
+        print(f"No recipe matches {name!r}. Run `stateset-agents recipe list`.", file=sys.stderr)
+        raise typer.Exit(code=2)
+
+    # Extract the recipe content (header through to the next ## or end)
+    start = matches[chosen_idx].start()
+    end = matches[chosen_idx + 1].start() if chosen_idx + 1 < len(matches) else len(body)
+    section = body[start:end]
+
+    # Route through $PAGER if available + TTY
+    pager = os.environ.get("PAGER")
+    if pager is None:
+        pager = "less -R" if shutil.which("less") else None
+    if pager and sys.stdout.isatty():
+        import subprocess
+        try:
+            subprocess.run(pager, shell=True, check=False, input=section, text=True)
+            return
+        except Exception:
+            pass
+    print(section)
+
+
+@app.command("tour")
+def tour() -> None:
+    """Open the platform tour — the one document that walks the full developer journey.
+
+    Tries (in order): the bundled `docs/PLATFORM_TOUR.md` next to the installed
+    package, the source-tree copy, and finally a URL to the GitHub copy as a
+    fallback. Routes through ``$PAGER`` when stdout is a TTY.
+    """
+    import shutil
+
+    candidates: list[Path] = []
+    # Source-tree copy (developer install).
+    src = Path(__file__).resolve().parents[1] / "docs" / "PLATFORM_TOUR.md"
+    candidates.append(src)
+    # Installed-package copy (if we package the docs).
+    pkg = Path(__file__).resolve().parent / "docs" / "PLATFORM_TOUR.md"
+    candidates.append(pkg)
+
+    tour_path = next((p for p in candidates if p.exists()), None)
+    if tour_path is None:
+        _echo(
+            "Platform tour not found in this install. Read it on GitHub:\n"
+            "  https://github.com/stateset/stateset-agents/blob/master/docs/PLATFORM_TOUR.md"
+        )
+        return
+
+    pager = os.environ.get("PAGER")
+    if pager is None:
+        pager = "less -R" if shutil.which("less") else None
+
+    if pager and sys.stdout.isatty():
+        # Pipe through PAGER for TTY users.
+        import subprocess
+        try:
+            subprocess.run(f"{pager} {tour_path}", shell=True, check=False)
+            return
+        except Exception:
+            pass
+
+    # Fallback: dump to stdout (CI / non-TTY).
+    print(tour_path.read_text())
+
+
+@app.command("starter")
+def starter(
+    template: str = typer.Argument(
+        ...,
+        help="Template name (or `list` to see options).",
+    ),
+    output: str = typer.Argument(
+        "",
+        help="Output directory for the scaffolded project (not needed for `list`).",
+    ),
+    project_name: str | None = typer.Option(
+        None, "--name", "-n",
+        help="Project name (defaults to the basename of the output directory).",
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Overwrite an existing non-empty directory.",
+    ),
+    client_name: str | None = typer.Option(
+        None, "--client-name",
+        help="Client name (slugified) — patches output_dir paths and the W&B project name throughout the scaffold.",
+    ),
+) -> None:
+    """Scaffold a fork-and-go fine-tuning project.
+
+    Available templates:
+      * customer-support  — multi-turn dialogue agent (the differentiator)
+      * gsm8k-math        — single-turn math reasoner, verifiable rewards
+      * minimal           — bare scaffold
+
+    Examples:
+
+        stateset-agents starter customer-support ./client-acme
+        stateset-agents starter gsm8k-math ./math-bench --force
+        stateset-agents starter list
+    """
+    from stateset_agents.scaffolding import (
+        SCAFFOLD_TEMPLATES,
+        list_templates,
+        scaffold_project,
+    )
+
+    if template == "list":
+        _echo("Available starter templates:")
+        for t in list_templates():
+            _echo(f"  {t.name:18s}  {t.description}")
+        return
+
+    if not output:
+        print(
+            "OUTPUT directory is required when scaffolding. "
+            "Use `stateset-agents starter list` to see available templates.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=2)
+
+    if template not in SCAFFOLD_TEMPLATES:
+        available = ", ".join(sorted(SCAFFOLD_TEMPLATES))
+        print(
+            f"Unknown template {template!r}. Available: {available}",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=2)
+
+    try:
+        created = scaffold_project(
+            template_name=template,
+            output_dir=output,
+            project_name=project_name,
+            force=force,
+            client_name=client_name,
+        )
+    except FileExistsError as e:
+        print(str(e), file=sys.stderr)
+        raise typer.Exit(code=2) from e
+
+    _echo(f"Created {len(created)} files in {output}/")
+    _echo("")
+    _echo("Next steps:")
+    _echo(f"  cd {output}")
+    _echo("  pip install -r requirements.txt")
+    if template == "customer-support":
+        _echo("  # Edit scenarios.jsonl with your customer data, then:")
+        _echo("  python train.py")
+        _echo("  ./serve.sh outputs/customer_support_v1")
+    elif template == "gsm8k-math":
+        _echo("  python train.py    # downloads GSM8K and trains")
+    else:
+        _echo("  python train.py")
+
+
+benchmark_app = typer.Typer(
+    add_completion=False,
+    help="Run and aggregate Phase 0 / whitepaper-v1 benchmarks.",
+)
+
+
+@benchmark_app.command("smoke")
+def benchmark_smoke() -> None:
+    """Quick end-to-end smoke test of the GSM8K benchmark pipeline (no training).
+
+    Verifies that the dataset loads, answers parse, seeds initialize, and the
+    runner is importable. Takes about 6 seconds; needs no GPU.
+    """
+    import subprocess
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "run_phase0_benchmark.py"
+    if not script.exists():
+        _echo(f"Benchmark script not found at {script}", err=True)
+        raise typer.Exit(code=1)
+
+    result = subprocess.run(
+        [
+            sys.executable, str(script),
+            "--trainer", "gspo",
+            "--smoke-test",
+            "--output", "/tmp/stateset_smoke.json",
+        ],
+        check=False,
+    )
+    raise typer.Exit(code=result.returncode)
+
+
+@benchmark_app.command("phase0")
+def benchmark_phase0(
+    trainer: str = typer.Option("gspo", "--trainer", "-t",
+                                help="Trainer to benchmark: grpo, gspo, dapo."),
+    model: str = typer.Option("Qwen/Qwen3.5-0.8B", "--model", "-m"),
+    seed: int = typer.Option(42, "--seed", "-s"),
+    output: str = typer.Option(
+        "benchmark_results/whitepaper_v1/run.json",
+        "--output", "-o",
+        help="Path for the JSON result file.",
+    ),
+    num_train_examples: int = typer.Option(200, "--num-train-examples"),
+    num_eval_examples: int = typer.Option(100, "--num-eval-examples"),
+) -> None:
+    """Run a single Phase 0 benchmark and emit a schema-compliant JSON result.
+
+    The result file conforms to benchmark_results/SCHEMA.md and is suitable
+    for aggregation via `stateset-agents benchmark aggregate`.
+    """
+    import subprocess
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "run_phase0_benchmark.py"
+    if not script.exists():
+        _echo(f"Benchmark script not found at {script}", err=True)
+        raise typer.Exit(code=1)
+
+    result = subprocess.run(
+        [
+            sys.executable, str(script),
+            "--trainer", trainer,
+            "--model", model,
+            "--seed", str(seed),
+            "--output", output,
+            "--num-train-examples", str(num_train_examples),
+            "--num-eval-examples", str(num_eval_examples),
+        ],
+        check=False,
+    )
+    raise typer.Exit(code=result.returncode)
+
+
+@benchmark_app.command("plot")
+def benchmark_plot(
+    results_dir: str = typer.Option(
+        "benchmark_results/whitepaper_v1",
+        "--results-dir", "-d",
+    ),
+    output_dir: str | None = typer.Option(None, "--output-dir", "-o"),
+    no_matplotlib: bool = typer.Option(
+        False, "--no-matplotlib",
+        help="Skip PNG figures; emit only text_plots.md.",
+    ),
+) -> None:
+    """Generate publication figures from aggregated benchmark results.
+
+    Reads ``summary.csv`` from the results directory and writes two PNGs plus
+    a text-table fallback. Run ``aggregate`` first to produce the CSV.
+    """
+    import subprocess
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "plot_phase0_results.py"
+    if not script.exists():
+        _echo(f"Plot script not found at {script}", err=True)
+        raise typer.Exit(code=1)
+
+    cmd = [sys.executable, str(script), "--results-dir", results_dir]
+    if output_dir:
+        cmd += ["--output-dir", output_dir]
+    if no_matplotlib:
+        cmd += ["--no-matplotlib"]
+    result = subprocess.run(cmd, check=False)
+    raise typer.Exit(code=result.returncode)
+
+
+@benchmark_app.command("aggregate")
+def benchmark_aggregate(
+    results_dir: str = typer.Option(
+        "benchmark_results/whitepaper_v1",
+        "--results-dir", "-d",
+    ),
+    output_dir: str | None = typer.Option(None, "--output-dir", "-o"),
+    strict: bool = typer.Option(
+        False, "--strict",
+        help="Exit non-zero if any (trainer, model) group fails publication gates.",
+    ),
+) -> None:
+    """Aggregate all *.json results in a directory into summary.md + summary.csv.
+
+    The publication gates (3 seeds, σ < 0.1, +0.03 improvement) are defined in
+    benchmark_results/SCHEMA.md. Use --strict to fail CI on any gate violation.
+    """
+    import subprocess
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "aggregate_phase0_results.py"
+    if not script.exists():
+        _echo(f"Aggregate script not found at {script}", err=True)
+        raise typer.Exit(code=1)
+
+    cmd = [sys.executable, str(script), "--results-dir", results_dir]
+    if output_dir:
+        cmd += ["--output-dir", output_dir]
+    if strict:
+        cmd += ["--strict"]
+    result = subprocess.run(cmd, check=False)
+    raise typer.Exit(code=result.returncode)
+
+
+app.add_typer(benchmark_app, name="benchmark")
 
 
 def _register_advanced_cli() -> None:
