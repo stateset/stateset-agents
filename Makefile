@@ -1,4 +1,4 @@
-.PHONY: help install install-dev install-all dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
+.PHONY: help install install-dev install-all dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
 
 PYTHON_BIN := $(shell command -v python3 >/dev/null 2>&1 && echo python3 || command -v python)
 PACKAGE_VERSION := $(shell $(PYTHON_BIN) -c "import stateset_agents; print(stateset_agents.__version__)")
@@ -145,6 +145,23 @@ benchmark: ## Run performance benchmarks
 	python scripts/benchmark.py
 
 # Phase 0 / whitepaper-v1 empirical-results pipeline
+smoke-fast: ## Quick inner-loop smoke: just the platform-pipeline unit tests (~20s, no integration tests)
+	@python -m pytest tests/unit/test_gsm8k.py \
+		tests/unit/test_reproducibility.py \
+		tests/unit/test_aggregate_phase0_results.py \
+		tests/unit/test_customer_support_bench.py \
+		tests/unit/test_tool_calling_bench.py \
+		tests/unit/test_task_adapters.py \
+		tests/unit/test_scaffolding.py \
+		tests/unit/test_chat_cli.py \
+		tests/unit/test_grade_transcript.py \
+		tests/unit/test_prepare_sft_dataset.py \
+		tests/unit/test_sft_from_curated.py \
+		tests/unit/test_recipe_cli.py \
+		tests/unit/test_agent_config_peft_path.py \
+		tests/unit/test_checkpoint_agent_registration.py \
+		-q --no-header
+
 smoke-cli: ## Verify every CLI subcommand's --help loads without error (catches arg-parsing regressions)
 	@echo "==> Verifying CLI subcommands load"
 	@FAILED=0; \
