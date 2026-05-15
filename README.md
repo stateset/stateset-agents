@@ -793,6 +793,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/PLATFORM_TOUR.md`](docs/PLATFORM_TOUR.md) — a guided walk from `pip install` to a published v1.0 whitepaper revision (linear, journey-style).
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the 6 bundled Colab notebooks: which to open when.
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (currently `v0.12.1`).
 
 Other entry points:
 

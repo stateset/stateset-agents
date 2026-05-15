@@ -228,7 +228,7 @@ python scripts/run_phase0_benchmark.py \
 # 1. Capture your environment provenance
 stateset-agents version --json > version.json
 # {
-#   "version": "0.11.8",
+#   "version": "0.12.1",
 #   "git_commit": "14c0e65",
 #   "python": "3.10.16",
 #   "dependencies": {"torch": "2.6.0+cu124", ...}

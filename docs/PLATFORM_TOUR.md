@@ -268,7 +268,7 @@ A: Run `stateset-agents doctor` — it'll show the `STATESET_DEFAULT_CHECKPOINT`
 A: The runner checks `torch.cuda.is_available()`. If that returns False, `torch` either isn't installed, isn't CUDA-built, or your driver/CUDA mismatch. Run `stateset-agents doctor` to verify — it explicitly reports CUDA availability and the GPU name.
 
 **Q: I'm getting `TypeError: AgentConfig.__init__() got an unexpected keyword argument 'peft_path'`.**
-A: You're on an older version of the package than the tour describes. Either install from source (the tour pins `14c0e65`) or upgrade past `0.11.7`.
+A: You're on an older version of the package than the tour describes. Either install from source (the tour pins `14c0e65`) or upgrade past `0.12.0`.
 
 **Q: GSPO with `clip_range_left=0.2` gives weird results.**
 A: GSPO ratios are length-normalized — exp of a small per-token quantity — so the effective clip needs to be tighter than token-level PPO's `0.2`. The whitepaper-recommended defaults are `clip_range_left=3e-4, clip_range_right=4e-4`. See [whitepaper §5.2](./WHITEPAPER.md#52-gspo-group-sequence-policy-optimization) and the "If you see no exploration, this is the first knob to widen" note.
