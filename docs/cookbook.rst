@@ -20,6 +20,7 @@ Recipes covered
 2. Iterate from production conversation logs
 3. Reproduce a whitepaper number
 4. Build a tool-using agent
-5. Debug a stuck reward
-6. Hand off to a colleague
-7. Run the demos for a stakeholder
+5. Run a batch evaluation against a trained checkpoint
+6. Debug a stuck reward
+7. Hand off to a colleague
+8. Run the demos for a stakeholder

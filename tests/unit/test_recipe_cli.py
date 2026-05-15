@@ -50,9 +50,11 @@ class TestRecipeLookup:
         assert "Recipe 2" in result.stdout
 
     def test_by_short_substring(self) -> None:
+        # After 0.12.0 added "Run a batch evaluation" as Recipe 5,
+        # debug-a-stuck-reward is now Recipe 6.
         result = _run("debug")
         assert result.returncode == 0
-        assert "Recipe 5" in result.stdout
+        assert "Recipe 6" in result.stdout
 
     def test_unknown_recipe_exits_2(self) -> None:
         result = _run("does-not-exist")

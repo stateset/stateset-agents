@@ -147,7 +147,49 @@ stateset-agents chat --model Qwen/Qwen3.5-0.8B --checkpoint outputs/tool_agent_v
 
 ---
 
-## Recipe 5 — Debug a stuck reward
+## Recipe 5 — Run a batch evaluation against a trained checkpoint
+
+**You want:** a single command that scores a fine-tuned checkpoint against a fixed eval set and produces a markdown report. The same one you'd run nightly or in a PR check.
+
+```bash
+# 1. Use the bundled sample eval set (10 scenarios across 4 intents)
+#    Or replace with your own JSONL — same schema as scenarios.jsonl.
+ls examples/sample_eval_set.jsonl
+
+# 2. Score every scenario against the customer-support reward
+stateset-agents evaluate \
+    --checkpoint outputs/acme_corp_v1 \
+    --scenarios examples/sample_eval_set.jsonl \
+    --reward customer_support \
+    --output eval_report.md \
+    --threshold 0.7
+
+# 3. Read the report
+cat eval_report.md
+```
+
+**Output shape** (excerpt):
+
+```markdown
+# Batch evaluation — `customer_support`
+**Scenarios:** 10
+**Mean score:** 0.74 ± 0.18
+**Pass rate (≥ 0.7):** 7/10 (70.0%)
+
+| # | Score | Query | Response (head) |
+|---|-------|-------|-----------------|
+| 0 | ✅ 0.92 | I want a refund for order #4521 | I'd be happy to help with your refund... |
+| 1 | ⚠️  0.43 | The app crashes every time...   | Let me look into that for you...      |
+| ... |
+```
+
+**Use it in CI:** the markdown report makes the threshold check grep-able. For a PR gate that fails when mean score regresses, see [`docs/PLATFORM_TOUR.md` §FAQ](./PLATFORM_TOUR.md).
+
+**Iteration:** failing scenarios become candidates for the next curation pass — capture them in a transcript, grade them, curate the corrected examples, re-train.
+
+---
+
+## Recipe 6 — Debug a stuck reward
 
 **You want:** your training run isn't improving over baseline. What now?
 
@@ -178,7 +220,7 @@ python scripts/run_phase0_benchmark.py \
 
 ---
 
-## Recipe 6 — Hand off to a colleague
+## Recipe 7 — Hand off to a colleague
 
 **You want:** your colleague to reproduce a result without a knowledge handoff.
 
@@ -208,7 +250,7 @@ make release-whitepaper-v1   # generates summary.md + summary.csv + figures + ma
 
 ---
 
-## Recipe 7 — Run the demos for a stakeholder
+## Recipe 8 — Run the demos for a stakeholder
 
 **You want:** show a colleague or prospect what the platform does, in ~10 seconds, no GPU needed.
 
@@ -235,9 +277,10 @@ Each produces formatted output suitable for a screen share or asciinema cast, wi
 | 2 — Iterate from logs | `scripts/grade_transcript.py`, `scripts/sft_from_curated.py`, `stateset_agents.cli.fine_tune` |
 | 3 — Reproduce whitepaper | `scripts/run_phase0_benchmark.py`, `scripts/release_v1_whitepaper.py` |
 | 4 — Tool-using agent | `stateset_agents.data.tool_calling_bench`, `stateset_agents.core.tool_agent` |
-| 5 — Debug stuck reward | `stateset_agents.utils.cli.doctor`, whitepaper §11.5 |
-| 6 — Hand off | `stateset_agents.utils.reproducibility`, `stateset_agents.cli.version` |
-| 7 — Demos | `Makefile` targets `demo`, `demo-curation`, `demo-full-loop` |
+| 5 — Batch evaluation | `stateset_agents.cli.evaluate` (batch mode), `examples/sample_eval_set.jsonl` |
+| 6 — Debug stuck reward | `stateset_agents.utils.cli.doctor`, whitepaper §11.5 |
+| 7 — Hand off | `stateset_agents.utils.reproducibility`, `stateset_agents.cli.version` |
+| 8 — Demos | `Makefile` targets `demo`, `demo-curation`, `demo-full-loop`, `demo-all` |
 
 ---
 
