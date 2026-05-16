@@ -592,8 +592,7 @@ class GSPOTrainer:
                 reward_context = {"user_query": _prompt}
                 reward_context.update(_query_context)
                 reward_info = await self.reward_model.compute_reward(
-                    trajectory=None,
-                    turn=turn,
+                    turns=[turn],
                     context=reward_context,
                 )
                 return float(reward_info.total_reward)
