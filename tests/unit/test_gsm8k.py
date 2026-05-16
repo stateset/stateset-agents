@@ -8,6 +8,7 @@ from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.data.gsm8k import (
     GSM8KExample,
     GSM8KReward,
+    PartialCreditGSM8KReward,
     extract_gold_answer,
     extract_predicted_answer,
     make_gsm8k_scenarios,
@@ -136,3 +137,72 @@ class TestMakeScenarios:
         assert len(scenarios) == 2
         assert scenarios[0]["gold_answer"] == 1.0
         assert scenarios[1]["gold_answer"] == 2.0
+
+
+class TestPartialCreditGSM8KReward:
+    @pytest.mark.asyncio
+    async def test_correct_full_credit(self) -> None:
+        reward = PartialCreditGSM8KReward()
+        turns = [ConversationTurn(role="assistant", content="The answer is 42.")]
+        result = await reward.compute_reward(turns, context={"gold_answer": 42.0})
+        assert result.score == 1.0
+        assert result.breakdown.get("tier_correct") == 1.0
+
+    @pytest.mark.asyncio
+    async def test_close_partial_credit(self) -> None:
+        reward = PartialCreditGSM8KReward()
+        turns = [ConversationTurn(role="assistant", content="The answer is 45.")]
+        result = await reward.compute_reward(turns, context={"gold_answer": 42.0})
+        # 45 vs 42 -> relative error 0.07, within default 0.1 tolerance.
+        assert result.score == 0.5
+        assert result.breakdown.get("tier_close") == 1.0
+
+    @pytest.mark.asyncio
+    async def test_parseable_wrong(self) -> None:
+        reward = PartialCreditGSM8KReward()
+        turns = [ConversationTurn(role="assistant", content="The answer is 100.")]
+        result = await reward.compute_reward(turns, context={"gold_answer": 42.0})
+        # 100 vs 42 -> way out of tolerance, but parseable.
+        assert result.score == 0.2
+        assert result.breakdown.get("tier_parseable_wrong") == 1.0
+
+    @pytest.mark.asyncio
+    async def test_unparseable(self) -> None:
+        reward = PartialCreditGSM8KReward()
+        turns = [ConversationTurn(role="assistant", content="I cannot solve this problem.")]
+        result = await reward.compute_reward(turns, context={"gold_answer": 42.0})
+        assert result.score == 0.0
+        assert result.breakdown.get("unparseable") == 1.0
+
+    @pytest.mark.asyncio
+    async def test_no_gold(self) -> None:
+        reward = PartialCreditGSM8KReward()
+        turns = [ConversationTurn(role="assistant", content="42")]
+        result = await reward.compute_reward(turns, context={})
+        assert result.score == 0.0
+        assert result.breakdown.get("no_gold") == 1.0
+
+    @pytest.mark.asyncio
+    async def test_no_turns(self) -> None:
+        reward = PartialCreditGSM8KReward()
+        result = await reward.compute_reward([], context={"gold_answer": 42.0})
+        assert result.score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_zero_gold_falls_back_to_absolute(self) -> None:
+        # Avoid divide-by-zero when gold is 0.
+        reward = PartialCreditGSM8KReward()
+        turns = [ConversationTurn(role="assistant", content="0.05")]
+        result = await reward.compute_reward(turns, context={"gold_answer": 0.0})
+        # abs_error 0.05 > 1e-3 tolerance -> not correct; relative_error 0.05 < 0.1 -> close.
+        assert result.score == 0.5
+
+    @pytest.mark.asyncio
+    async def test_custom_weights(self) -> None:
+        reward = PartialCreditGSM8KReward(parseable_weight=0.3, close_weight=0.7)
+        turns = [ConversationTurn(role="assistant", content="The answer is 100.")]
+        result = await reward.compute_reward(turns, context={"gold_answer": 42.0})
+        assert result.score == 0.3
+        turns = [ConversationTurn(role="assistant", content="The answer is 45.")]
+        result = await reward.compute_reward(turns, context={"gold_answer": 42.0})
+        assert result.score == 0.7

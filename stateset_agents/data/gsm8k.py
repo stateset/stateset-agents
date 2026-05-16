@@ -222,9 +222,104 @@ class GSM8KReward(RewardFunction):
         )
 
 
+class PartialCreditGSM8KReward(RewardFunction):
+    """Dense-reward variant of GSM8KReward.
+
+    Gives partial credit so the gradient signal doesn't collapse when most
+    rollouts are incorrect — which is the dominant regime for weak base
+    models on GSM8K. Reward schedule:
+
+    - ``0.0`` if the response has no parseable numeric answer.
+    - ``parseable_weight`` (default 0.2) if a number was parsed but is wrong
+      and not "close" to gold.
+    - ``close_weight`` (default 0.5) if the parsed answer is within
+      ``close_relative_tolerance`` of the gold value (default 10%).
+    - ``1.0`` if exactly correct within ``tolerance`` (default 1e-3).
+
+    The motivation is to keep within-group variance above zero on early
+    training when the model can produce numbers but rarely the right one.
+    With a binary 0/1 reward, those groups are all-zero and contribute no
+    gradient. With this shaped reward, "parseable but wrong" sits at 0.2,
+    "close" at 0.5, "correct" at 1.0 — so even a group of (unparseable,
+    wrong, wrong, close) has spread (0.0, 0.2, 0.2, 0.5) and a non-zero
+    advantage signal.
+    """
+
+    name = "gsm8k_partial"
+
+    def __init__(
+        self,
+        weight: float = 1.0,
+        tolerance: float = 1e-3,
+        close_relative_tolerance: float = 0.1,
+        parseable_weight: float = 0.2,
+        close_weight: float = 0.5,
+    ) -> None:
+        super().__init__(weight=weight, reward_type=RewardType.SPARSE, name=self.name)
+        self.tolerance = tolerance
+        self.close_relative_tolerance = close_relative_tolerance
+        self.parseable_weight = parseable_weight
+        self.close_weight = close_weight
+
+    async def compute_reward(
+        self,
+        turns: list[ConversationTurn],
+        context: dict[str, Any] | None = None,
+    ) -> RewardResult:
+        if not turns:
+            return RewardResult(score=0.0, breakdown={"no_response": 1.0})
+
+        response = turns[-1].content or ""
+        gold = (context or {}).get("gold_answer")
+
+        if gold is None:
+            return RewardResult(
+                score=0.0,
+                breakdown={"no_gold": 1.0},
+                explanation="No gold_answer in context",
+            )
+
+        predicted = extract_predicted_answer(response)
+        if predicted is None:
+            return RewardResult(
+                score=0.0,
+                breakdown={"unparseable": 1.0, "gold": float(gold)},
+                explanation=f"Could not parse a numeric answer from response of length {len(response)}",
+            )
+
+        gold_f = float(gold)
+        abs_error = abs(predicted - gold_f)
+
+        if abs_error <= self.tolerance:
+            score = 1.0
+            tier = "correct"
+        else:
+            # Relative tolerance — for gold == 0 fall back to absolute.
+            denom = abs(gold_f) if abs(gold_f) > self.tolerance else 1.0
+            relative_error = abs_error / denom
+            if relative_error <= self.close_relative_tolerance:
+                score = self.close_weight
+                tier = "close"
+            else:
+                score = self.parseable_weight
+                tier = "parseable_wrong"
+
+        return RewardResult(
+            score=score,
+            breakdown={
+                "tier_" + tier: 1.0,
+                "predicted": float(predicted),
+                "gold": gold_f,
+                "abs_error": abs_error,
+            },
+            explanation=f"{tier}: predicted {predicted}, expected {gold_f}",
+        )
+
+
 __all__ = [
     "GSM8KExample",
     "GSM8KReward",
+    "PartialCreditGSM8KReward",
     "extract_gold_answer",
     "extract_predicted_answer",
     "load_gsm8k",
