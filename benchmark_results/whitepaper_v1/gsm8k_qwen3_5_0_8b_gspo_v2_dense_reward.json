@@ -1,0 +1,47 @@
+{
+  "trainer": "gspo",
+  "reward": "partial_credit_gsm8k",
+  "model": "Qwen/Qwen3.5-0.8B",
+  "seed": 42,
+  "commit": "7f19362",
+  "timestamp": "2026-05-16T18:53:40.317084+00:00",
+  "config": {
+    "num_generations": 4,
+    "clip_range_left": 0.0003,
+    "clip_range_right": 0.0004,
+    "learning_rate": 5e-06,
+    "lora_r": 16
+  },
+  "reward_config": {
+    "parseable_weight": 0.2,
+    "close_weight": 0.5,
+    "close_relative_tolerance": 0.1
+  },
+  "metrics": {
+    "eval_pass_at_1": 0.0,
+    "eval_pass_at_1_baseline": 0.0,
+    "improvement": 0.0,
+    "eval_parse_rate": 0.9,
+    "eval_parse_rate_baseline": 0.05,
+    "wall_clock_seconds": 1115.187622308731,
+    "train_examples": 200,
+    "eval_examples": 100,
+    "peak_vram_mb": 10189
+  },
+  "hardware": {
+    "gpu": "NVIDIA A100-SXM4-40GB",
+    "cuda": "12.8"
+  },
+  "notes": {
+    "classification": "negative-result A/B",
+    "compared_to": "gsm8k_qwen3_5_0_8b_gspo_proof_of_life.json",
+    "interpretation": "Identical trainer/hparams/compute/model/seed/data as v1; only the reward shape changed (binary 0/1 -> dense 0/0.2/0.5/1). pass@1 stayed at 0.0 and parse rate is statistically indistinguishable (0.87 vs 0.90). The dense-reward hypothesis (all-zero-groups -> zero advantage -> no gradient) is therefore not the dominant cause of v1's flat pass@1.",
+    "remaining_hypotheses": [
+      "GSPO clip range 3e-4/4e-4 is too tight at this compute scale (200 examples x group_size 4 x 1 epoch = ~800 rollouts -> too few updates for any meaningful policy drift under such tight bounds).",
+      "Base model Qwen3.5-0.8B has effectively zero GSM8K capability under this prompt; no amount of reward shaping fixes a model that can't approach the answer.",
+      "1 epoch over 200 examples is below the threshold needed to observe accuracy gain regardless of trainer/reward.",
+      "Prompt is too sparse — no in-context examples or chain-of-thought scaffolding."
+    ],
+    "next_actionable_change": "Widen GSPO clip range from 3e-4/4e-4 to ~1e-2/1e-2 (still tighter than PPO's 0.2). The paper-recommended bounds are for production-scale training; at 800 rollouts the effective policy step size is essentially zero."
+  }
+}
