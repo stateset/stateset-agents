@@ -12,7 +12,7 @@ StateSet Agents is a reinforcement learning framework for training and serving l
 
 ## Versioning and Reproducibility
 
-This whitepaper describes **version 0.12.2** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`c0dbd68`** on `master`.
+This whitepaper describes **version 0.12.2** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`a2bdde4`** on `master`.
 
 **PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.12.2 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.12.2 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.12.x is pending.
 
@@ -21,11 +21,11 @@ This whitepaper describes **version 0.12.2** of the framework. The implementatio
 ```bash
 git clone https://github.com/stateset/stateset-agents
 cd stateset-agents
-git checkout c0dbd68          # the commit this whitepaper describes
+git checkout a2bdde4          # the commit this whitepaper describes
 grep -n "compute_sequence_importance_ratio" stateset_agents/training/gspo_trainer.py
 ```
 
-**Errata.** Corrections published after this revision are tracked in [`docs/WHITEPAPER_ERRATA.md`](./WHITEPAPER_ERRATA.md). If `git log` shows commits more recent than `c0dbd68`, check the errata file before citing this document.
+**Errata.** Corrections published after this revision are tracked in [`docs/WHITEPAPER_ERRATA.md`](./WHITEPAPER_ERRATA.md). If `git log` shows commits more recent than `a2bdde4`, check the errata file before citing this document.
 
 A complete reproducibility command list is in **Appendix C**.
 
@@ -403,7 +403,7 @@ where $\rho_t = \pi_\theta(y_t \mid x, y_{<t}) / \pi_{\theta_{\text{old}}}(y_t \
 
 ### 5.2 GSPO (Group Sequence Policy Optimization)
 
-**Source.** Zheng et al. [1], Qwen team. StateSet Agents implements this in-house: `GSPOTrainer` (`training/gspo_trainer.py`, 853 LOC).
+**Source.** Zheng et al. [1], Qwen team. StateSet Agents implements this in-house: `GSPOTrainer` (`training/gspo_trainer.py`, 852 LOC).
 
 **Key innovation.** Replace the token-level importance ratio with a **length-normalized sequence-level** one:
 
@@ -443,7 +443,7 @@ for response, A in zip(responses, advantages):
     loss.backward(); optimizer.step()
 ```
 
-**Implementation citations.** Sequence ratio computed at `gspo_trainer.py:390-419` (log-sum, length-normalize, exponentiate as separate steps to retain numerical stability). Clipped surrogate at `gspo_trainer.py:640-650`. Per-sequence KL penalty (only when `beta > 0`) at lines 653-661. Right-padding is enforced for stable prompt-boundary detection across the batch.
+**Implementation citations.** Sequence ratio computed at `gspo_trainer.py:390-419` (log-sum, length-normalize, exponentiate as separate steps to retain numerical stability). Clipped surrogate at `gspo_trainer.py:639-649`. Per-sequence KL penalty (only when `beta > 0`) at lines 652-660. Right-padding is enforced for stable prompt-boundary detection across the batch.
 
 **Defaults.** `num_generations=4`, `clip_range_left=3e-4`, `clip_range_right=4e-4`, `warmup_ratio=0.1`. These clip bounds are taken from the original GSPO paper and are roughly three orders of magnitude tighter than token-level PPO — necessary because the length-normalized ratio lives close to 1.0. **If you see no exploration, this is the first knob to widen.** Single gradient step per rollout (no inner PPO epochs) — a deliberate choice for stability with on-policy data.
 
@@ -1420,14 +1420,14 @@ This means a 7B model with QLoRA + reference model fits in ~25 GB during trainin
 
 ## Appendix C: Reproducibility Commands
 
-Every claim in this whitepaper that names a file path, line number, default value, or test count is verifiable from a checkout of commit `c0dbd68`. The commands below are the canonical way to verify each class of claim.
+Every claim in this whitepaper that names a file path, line number, default value, or test count is verifiable from a checkout of commit `a2bdde4`. The commands below are the canonical way to verify each class of claim.
 
 ### C.1 Checkout
 
 ```bash
 git clone https://github.com/stateset/stateset-agents
 cd stateset-agents
-git checkout c0dbd68
+git checkout a2bdde4
 ```
 
 ### C.2 Verify implementation citations

@@ -48,6 +48,29 @@ The comment `# Test count (claimed: 1,624)` is updated to `# Test count (claimed
 
 ---
 
+## Corrections to v0.12.2 anchor `c0dbd68`
+
+Re-anchored to commit `a2bdde4`. Triggered by a single-line fix in `stateset_agents/training/gspo_trainer.py` (canonical reward signature — see issue #16) that shifted lines after 596 up by one.
+
+### §5.2 — GSPO trainer LOC count
+
+> "GSPOTrainer (training/gspo_trainer.py, 853 LOC)"
+
+Now **852 LOC** at `a2bdde4` (`wc -l stateset_agents/training/gspo_trainer.py`).
+
+### §5.2 — Implementation citations
+
+> "Clipped surrogate at gspo_trainer.py:640-650. Per-sequence KL penalty (only when beta > 0) at lines 653-661."
+
+At `a2bdde4`:
+
+- Clipped surrogate: **lines 639-649**
+- Per-sequence KL penalty: **lines 652-660**
+
+The sequence-ratio citation (`gspo_trainer.py:390-419`) is unchanged — those lines are upstream of the shifted region.
+
+---
+
 ## Reporting new errata
 
 If a `grep`, `sed`, or `wc -l` command from Appendix C disagrees with what the whitepaper says, open an issue referencing:
