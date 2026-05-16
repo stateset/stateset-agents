@@ -161,7 +161,13 @@ logs/
 *.log
 coverage/
 benchmarks/*.log
-benchmark_results/
+benchmark_results/*
+# Canonical whitepaper benchmark results are tracked (cf. SCHEMA.md).
+!benchmark_results/whitepaper_v1/
+!benchmark_results/whitepaper_v1/**
+!benchmark_results/SCHEMA.md
+!benchmark_results/README.md
+!benchmark_results/benchmark_summary.json
 hpo_results/
 
 # Python package/typing artifacts

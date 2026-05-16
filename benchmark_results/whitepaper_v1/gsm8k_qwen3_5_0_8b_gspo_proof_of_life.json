@@ -1,0 +1,33 @@
+{
+  "trainer": "gspo",
+  "model": "Qwen/Qwen3.5-0.8B",
+  "seed": 42,
+  "commit": "a2bdde4",
+  "timestamp": "2026-05-16T16:59:16.373445+00:00",
+  "config": {
+    "num_generations": 4,
+    "clip_range_left": 0.0003,
+    "clip_range_right": 0.0004,
+    "learning_rate": 5e-06,
+    "lora_r": 16
+  },
+  "metrics": {
+    "eval_pass_at_1": 0.0,
+    "eval_pass_at_1_baseline": 0.0,
+    "improvement": 0.0,
+    "eval_parse_rate": 0.87,
+    "eval_parse_rate_baseline": 0.05,
+    "wall_clock_seconds": 1071.066071987152,
+    "train_examples": 200,
+    "eval_examples": 100,
+    "peak_vram_mb": 10189
+  },
+  "hardware": {
+    "gpu": "NVIDIA A100-SXM4-40GB",
+    "cuda": "12.8"
+  },
+  "notes": {
+    "classification": "proof-of-life",
+    "interpretation": "Pipeline runs end-to-end with reasonable wall clock (~18 min A100) and memory (~10 GB). pass@1 = 0 on both baseline and trained means no algorithmic effect can be claimed from this run. The 17x parse-rate jump (0.05 -> 0.87) shows the LoRA adapter learned answer-format conformance but not arithmetic. With 200 training examples x 1 epoch and a sparse 0/1 reward, the trained model's groups were predominantly all-zero -> zero variance -> zero advantage -> minimal gradient signal on correctness. See issue #16 for the canonical-result follow-up plan."
+  }
+}
