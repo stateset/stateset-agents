@@ -1,7 +1,7 @@
 # StateSet Agents: A Reinforcement Learning Framework for Multi-Turn Conversational AI
 
 **Technical Whitepaper**
-Version 0.11.6 · May 2026
+Version 0.12.2 · May 2026
 StateSet Team · `team@stateset.ai`
 
 ---
@@ -12,18 +12,20 @@ StateSet Agents is a reinforcement learning framework for training and serving l
 
 ## Versioning and Reproducibility
 
-This whitepaper describes **version 0.11.6** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`14c0e65`** on `master`.
+This whitepaper describes **version 0.12.2** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`c0dbd68`** on `master`.
 
-**PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.11.6 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.11.6 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.11.6 is pending.
+**PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.12.2 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.12.2 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.12.x is pending.
 
 **What's named here is anchored in code.** Implementation citations (`gspo_trainer.py:390-419`, etc.) reference the named commit. To verify any specific claim:
 
 ```bash
 git clone https://github.com/stateset/stateset-agents
 cd stateset-agents
-git checkout 14c0e65          # the commit this whitepaper describes
+git checkout c0dbd68          # the commit this whitepaper describes
 grep -n "compute_sequence_importance_ratio" stateset_agents/training/gspo_trainer.py
 ```
+
+**Errata.** Corrections published after this revision are tracked in [`docs/WHITEPAPER_ERRATA.md`](./WHITEPAPER_ERRATA.md). If `git log` shows commits more recent than `c0dbd68`, check the errata file before citing this document.
 
 A complete reproducibility command list is in **Appendix C**.
 
@@ -229,7 +231,7 @@ Two fields are critical for the framework's testability:
 - `use_stub_model: bool = False`
 - `stub_responses: list[str] | None = None`
 
-Setting `use_stub_model=True` skips all Hugging Face loading and substitutes a deterministic in-memory backend. This is what enables the 1,624-test suite to run in seconds without GPU hardware.
+Setting `use_stub_model=True` skips all Hugging Face loading and substitutes a deterministic in-memory backend. This is what enables the 2,438-test suite to run in seconds without GPU hardware.
 
 ### 3.3 Backends: The `ModelBackend` Protocol
 
@@ -901,9 +903,9 @@ A core engineering principle of StateSet Agents is that **conversational RL infr
 
 2. **Property-based stub detection.** Agents expose `_is_stub_backend` as a property that checks `isinstance(self.model, StubModel)`. Inference services expose `is_stub` analogously. This avoids brittle string-matching on model names.
 
-3. **Canonical exception tuples.** All retry/fallback logic catches from a small set of canonical exception tuples in `stateset_agents/exceptions.py` (`IMPORT_EXCEPTIONS`, `GPU_EXCEPTIONS`, `MODEL_IO_EXCEPTIONS`, `INFERENCE_EXCEPTIONS`, `NETWORK_EXCEPTIONS`, `SERIALIZATION_EXCEPTIONS`, `ENVIRONMENT_EXCEPTIONS`, `SERIALIZATION_EXCEPTIONS`). This makes the failure surface explicit and testable.
+3. **Canonical exception tuples.** All retry/fallback logic catches from a small set of canonical exception tuples in `stateset_agents/exceptions.py` (`IMPORT_EXCEPTIONS`, `GPU_EXCEPTIONS`, `MODEL_IO_EXCEPTIONS`, `INFERENCE_EXCEPTIONS`, `ATTRIBUTE_VALUE_EXCEPTIONS`, `NETWORK_EXCEPTIONS`, `SERIALIZATION_EXCEPTIONS`, `MODEL_DEVICE_EXCEPTIONS`). This makes the failure surface explicit and testable.
 
-The test suite contains 1,624 tests organized into `tests/unit/`, `tests/integration/`, `tests/api/`, `tests/e2e/`, and `tests/performance/`, with pytest-benchmark regression tests gating reward throughput and manifest build time. Helm chart rendering is smoke-tested against every values overlay (skipping gracefully if `helm` is not installed).
+The test suite contains 2,438 tests organized into `tests/unit/`, `tests/integration/`, `tests/api/`, `tests/e2e/`, and `tests/performance/`, with pytest-benchmark regression tests gating reward throughput and manifest build time. Helm chart rendering is smoke-tested against every values overlay (skipping gracefully if `helm` is not installed).
 
 ---
 
@@ -1418,14 +1420,14 @@ This means a 7B model with QLoRA + reference model fits in ~25 GB during trainin
 
 ## Appendix C: Reproducibility Commands
 
-Every claim in this whitepaper that names a file path, line number, default value, or test count is verifiable from a checkout of commit `14c0e65`. The commands below are the canonical way to verify each class of claim.
+Every claim in this whitepaper that names a file path, line number, default value, or test count is verifiable from a checkout of commit `c0dbd68`. The commands below are the canonical way to verify each class of claim.
 
 ### C.1 Checkout
 
 ```bash
 git clone https://github.com/stateset/stateset-agents
 cd stateset-agents
-git checkout 14c0e65
+git checkout c0dbd68
 ```
 
 ### C.2 Verify implementation citations
@@ -1463,7 +1465,7 @@ grep -n "value_warmup_steps\|lambda_policy_alpha" stateset_agents/training/vapo_
 ### C.4 Verify test count and coverage methodology
 
 ```bash
-# Test count (claimed: 1,624)
+# Test count (claimed: 2,438)
 pytest --collect-only -q tests/ 2>&1 | tail -1
 
 # Coverage (claimed: ~49% overall on in-process paths)
