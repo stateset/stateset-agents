@@ -1,0 +1,43 @@
+{
+  "trainer": "gspo",
+  "task": "customer_support",
+  "model": "Qwen/Qwen3.5-0.8B",
+  "seed": 42,
+  "commit": "71786b9",
+  "timestamp": "2026-05-17T14:46:06.192165+00:00",
+  "config": {
+    "num_generations": 4,
+    "clip_range_left": 0.0003,
+    "clip_range_right": 0.0004,
+    "learning_rate": 5e-06,
+    "lora_r": 16,
+    "num_epochs": 3,
+    "gradient_checkpointing": false,
+    "max_turns": 4
+  },
+  "metrics": {
+    "eval_pass_at_1": 0.15,
+    "eval_pass_at_1_baseline": 0.54375,
+    "improvement": -0.39374999999999993,
+    "wall_clock_seconds": 1137.5883693695068,
+    "train_examples": 16,
+    "eval_examples": 8,
+    "peak_vram_mb": 9469
+  },
+  "hardware": {
+    "gpu": "NVIDIA A100-SXM4-40GB",
+    "cuda": "12.8"
+  },
+  "notes": {
+    "classification": "negative-result (overfitting)",
+    "interpretation": "Training had clear measurable effect — composite score moved -0.39 from a baseline of 0.54. Unlike the GSM8K runs (gradient effectively zero), this shows GSPO is actively updating the policy on the bundled support corpus. The direction is wrong: most likely overfitting — 3 epochs over 16 training scenarios x group_size=4 = ~192 rollouts on a rule-based rubric (keyword acknowledgement, length-window politeness check, safety multiplier) is enough to push LoRA r=16 into a degenerate optimum that no longer matches the keyword-based grading. The baseline of 0.54 already shows Qwen3.5-0.8B handles a substantial fraction of these rubric items zero-shot.",
+    "remaining_hypotheses": [
+      "Overfitting on tiny corpus (most likely): drop num_epochs 3 -> 1, or expand the bundled corpus past 24 total scenarios.",
+      "GSPO clip range 3e-4/4e-4 at this rollout count produces sharp updates that overshoot for keyword-based rewards (which have discrete cliffs in the score landscape — present/absent terms).",
+      "Reward function is keyword-brittle; a paraphrase-tolerant LLM-judge reward (also shipped) might score the trained model's actual quality differently.",
+      "8 eval scenarios = 12.5% resolution per example -> high variance; even -0.39 needs multiple seeds to confirm direction."
+    ],
+    "framework_evidence": "This is the first run in the session where the policy actually moved — proving the gradient path (GSPO clipped surrogate -> LoRA backward) works end-to-end. The two GSM8K runs both showed pass@1 0.0 -> 0.0; this run shows 0.54 -> 0.15. Wrong direction, but the training loop is functional.",
+    "v1_publication_gates": "FAIL — improvement is negative; requires positive improvement with three seeds in agreement per benchmark_results/SCHEMA.md."
+  }
+}
