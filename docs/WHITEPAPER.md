@@ -29,7 +29,7 @@ grep -n "compute_sequence_importance_ratio" stateset_agents/training/gspo_traine
 
 A complete reproducibility command list is in **Appendix C**.
 
-**Notably absent from this revision:** end-to-end experimental results — reward curves, head-to-head trainer comparisons, vLLM speedup measurements on specific hardware. The benchmark *methodology* is described in §7.5 and the runnable suite is in `benchmarks/`; running it on your target hardware and configuration is the recommended path. A v1.0 follow-up to this whitepaper will include canonical numbers from a fixed environment, hardware, and seed configuration.
+**First-party experimental results.** §11.7 ("First-Party Reproduction") presents a canonical three-seed GSPO result on a customer-support task: Qwen2.5-0.5B-Instruct trained with the safe-default GSPOConfig produces +0.079 mean improvement on a paraphrase-tolerant LLM-judge with three-seed agreement (`benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json`). A negative-result companion artifact (Qwen3.5-0.8B trainee, baseline at ceiling 0.90) documents the framework's stability behavior when no headroom exists. Head-to-head trainer comparisons (GRPO vs GSPO vs DAPO vs VAPO) and vLLM speedup measurements remain pending and will land in a v1.1 revision.
 
 ## How to Read This Document
 
@@ -875,7 +875,7 @@ Not every module in the framework is at the same level of production-readiness. 
 | `ModelBackend` Protocol + `StubBackend` / HuggingFace backend | **Stable** | |
 | vLLM backend | **Beta** | Sync semantics for policy-weight reloading are still hardening |
 | TRL GRPO trainer | **Stable** | Delegates to TRL; matches upstream stability |
-| GSPO trainer | **Beta** | Heavily tested; awaiting longer-horizon production data |
+| GSPO trainer | **Beta** | Heavily tested; first-party three-seed positive transfer result documented in §11.7 |
 | DAPO trainer | **Beta** | Same |
 | GEPO trainer | **Beta** | Same |
 | VAPO trainer | **Experimental** | Largest surface area; warmup and decoupled-GAE paths still being tuned |
@@ -1140,6 +1140,29 @@ Four proposer strategies are built in:
 `ExperimentTracker` logs all runs with their objective metric and direction (min/max). `CheckpointManager` persists artifacts to the filesystem (no git dependency). `EarlyAbortManager` monitors convergence per-run and aborts trials that aren't improving — saving compute on dead-end configurations.
 
 The whole module is loaded via the optional `[auto-research]` extra. A typical use is overnight HPO sweeps over learning rate, KL coefficient, group size, and LoRA rank for a fixed environment + reward function. The LLM proposer is particularly valuable for irregular, non-numeric search spaces (e.g., "should we enable positive-LM loss?").
+
+### 11.7 First-Party Reproduction (Customer Support, GSPO)
+
+This is the **canonical first-party benchmark** for the v1.0 whitepaper. Result file: [`benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json`](../benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json). Reference notebook: [`notebooks/customer_support_3seed_judge.ipynb`](../notebooks/customer_support_3seed_judge.ipynb). Hardware: Colab A100-40GB. Wall clock: ~11 min for three-seed training + dual eval.
+
+| | Baseline | Trained (mean) | Δ | σ across seeds | 3-seed agreement |
+|---|---|---|---|---|---|
+| Composite rubric (keyword-based) | 0.506 | 0.578 | **+0.072** | 0.067 | ✅ |
+| LLM-judge (paraphrase-tolerant) | 0.750 | 0.829 | **+0.079** | 0.058 | ✅ |
+
+**Methodology.** Three seeds: 42, 1337, 2026. Trainee: `Qwen/Qwen2.5-0.5B-Instruct` with LoRA (r=16). Judge: `Qwen/Qwen2.5-1.5B-Instruct` loaded locally (no API key required). Training corpus: 16 customer-support scenarios from `stateset_agents.data.customer_support_bench`; eval: held-out 8 scenarios. Trainer: GSPO with **safe defaults from §B.1** (`use_reference_model=True`, `beta=0.05`, `num_epochs=1`). Identical config across all three seeds — the only thing that varies is the RNG state.
+
+**Publication gate.** The protocol from [`benchmark_results/SCHEMA.md`](../benchmark_results/SCHEMA.md) requires judge improvement > 0.03 with three-seed agreement in the positive direction. Both conditions hold (Δ = +0.079 > 0.03; all three seeds positive). The rubric satisfies the gate independently (Δ = +0.072 > 0.03; all three positive).
+
+**What this result supports.**
+
+1. **§5.1 — GSPO objective.** Group-relative advantages produce reproducible positive transfer across three seeds on a small (16-scenario) corpus.
+2. **§10.5 — Reference-model drift.** The framework now has documented evidence across the full headroom spectrum. With no KL anchor on this corpus the policy destabilizes to gibberish (Δ = −0.39, [artifact](../benchmark_results/whitepaper_v1/customer_support_qwen3_5_0_8b_gspo.json)). With anchor + a near-ceiling base (Qwen3.5-0.8B baseline judge = 0.90) the policy stays within 0.03 of baseline (Δ = −0.03, σ = 0.007, [artifact](../benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen35_08b.json)). With anchor + a base that has headroom (Qwen2.5-0.5B-Instruct baseline judge = 0.75) the policy improves (Δ = +0.08, this artifact). The KL anchor's "stay close to π_ref" property is now first-party-verified across both regimes — *desirable stability* when no headroom, *positive transfer* when headroom exists.
+3. **§B.1 — Hyperparameter defaults.** The recommended safe combination (`use_reference_model=True`, `beta=0.05`, all other GSPO defaults paper-recommended) produces the canonical result with zero tuning.
+
+**What this result does not support.** It does *not* claim that GSPO with these defaults is the best trainer for customer-support tasks at this scale — only that it is *one* configuration that produces reproducible positive transfer. Comparative claims against GRPO / DAPO / VAPO require running the same three-seed protocol against each.
+
+**How to reproduce.** From a fresh Colab A100 runtime: `Runtime → Run all` on the reference notebook. The notebook is pinned to a specific framework commit (cell 2) and uses `set_all_seeds()` for canonical determinism on all RNGs.
 
 ---
 
