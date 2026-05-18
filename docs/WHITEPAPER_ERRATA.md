@@ -48,6 +48,19 @@ The comment `# Test count (claimed: 1,624)` is updated to `# Test count (claimed
 
 ---
 
+## Re-anchor `a2bdde4` → `4744c76`
+
+The whitepaper acquired §11.7 ("First-Party Reproduction") and several supporting edits (§8.1 maturity matrix, front-matter, §10.3, §10.5, §11.5, §B.1) between `a2bdde4` and `4744c76`. The new anchor `4744c76` is the commit that landed §11.7 with the canonical three-seed positive-transfer result.
+
+No line-number citations shifted in this re-anchor — `stateset_agents/training/gspo_trainer.py` is unchanged between the two commits (852 LOC; clipped surrogate lines 639-649; per-sequence KL lines 652-660 — all still valid).
+
+The single substantive addition for readers verifying claims:
+
+- Section §11.7 references `benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json` — the canonical positive result.
+- The companion negative-result artifacts at `benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen35_08b.json` and `customer_support_qwen3_5_0_8b_gspo.json` are also referenced from §10.5.
+
+---
+
 ## Corrections to v0.12.2 anchor `c0dbd68`
 
 Re-anchored to commit `a2bdde4`. Triggered by a single-line fix in `stateset_agents/training/gspo_trainer.py` (canonical reward signature — see issue #16) that shifted lines after 596 up by one.

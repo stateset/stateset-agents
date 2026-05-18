@@ -12,7 +12,7 @@ StateSet Agents is a reinforcement learning framework for training and serving l
 
 ## Versioning and Reproducibility
 
-This whitepaper describes **version 0.12.2** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`a2bdde4`** on `master`.
+This whitepaper describes **version 0.12.2** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`4744c76`** on `master`.
 
 **PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.12.2 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.12.2 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.12.x is pending.
 
@@ -21,11 +21,11 @@ This whitepaper describes **version 0.12.2** of the framework. The implementatio
 ```bash
 git clone https://github.com/stateset/stateset-agents
 cd stateset-agents
-git checkout a2bdde4          # the commit this whitepaper describes
+git checkout 4744c76          # the commit this whitepaper describes
 grep -n "compute_sequence_importance_ratio" stateset_agents/training/gspo_trainer.py
 ```
 
-**Errata.** Corrections published after this revision are tracked in [`docs/WHITEPAPER_ERRATA.md`](./WHITEPAPER_ERRATA.md). If `git log` shows commits more recent than `a2bdde4`, check the errata file before citing this document.
+**Errata.** Corrections published after this revision are tracked in [`docs/WHITEPAPER_ERRATA.md`](./WHITEPAPER_ERRATA.md). If `git log` shows commits more recent than `4744c76`, check the errata file before citing this document.
 
 A complete reproducibility command list is in **Appendix C**.
 
@@ -1446,14 +1446,14 @@ This means a 7B model with QLoRA + reference model fits in ~25 GB during trainin
 
 ## Appendix C: Reproducibility Commands
 
-Every claim in this whitepaper that names a file path, line number, default value, or test count is verifiable from a checkout of commit `a2bdde4`. The commands below are the canonical way to verify each class of claim.
+Every claim in this whitepaper that names a file path, line number, default value, or test count is verifiable from a checkout of commit `4744c76`. The commands below are the canonical way to verify each class of claim.
 
 ### C.1 Checkout
 
 ```bash
 git clone https://github.com/stateset/stateset-agents
 cd stateset-agents
-git checkout a2bdde4
+git checkout 4744c76
 ```
 
 ### C.2 Verify implementation citations
