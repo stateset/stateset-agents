@@ -1,0 +1,30 @@
+{
+  "function": "batch_compute_gae",
+  "python_ref": "Python loop over batch, per-trajectory inner backward recurrence (not NumPy-vectorizable)",
+  "rust_path": "stateset_rl_core.batch_compute_gae \u2014 Rayon-parallel across batch dimension",
+  "iterations_per_measurement": 20,
+  "results": [
+    {
+      "batch": 8,
+      "T": 256,
+      "python_ms": 1.492,
+      "rust_ms": 0.056,
+      "speedup": 26.5
+    },
+    {
+      "batch": 32,
+      "T": 512,
+      "python_ms": 7.048,
+      "rust_ms": 0.098,
+      "speedup": 72.2
+    },
+    {
+      "batch": 128,
+      "T": 1024,
+      "python_ms": 52.777,
+      "rust_ms": 1.505,
+      "speedup": 35.1
+    }
+  ],
+  "notes": "GAE's backward recurrence is the canonical example of a Python-loop-dominated kernel where Rust's advantage compounds with batch size. For vectorizable kernels (e.g. plain group-mean normalization), NumPy/BLAS is competitive with Rust at typical batch sizes \u2014 the Rust core is included for the recurrence-heavy paths, not as a blanket speedup over NumPy."
+}

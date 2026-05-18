@@ -10,6 +10,14 @@ StateSet Team · `team@stateset.ai`
 
 StateSet Agents is a reinforcement learning framework for training and serving large language model (LLM) agents that improve through **multi-turn interaction**. Unlike RLHF pipelines that optimize policies one response at a time, StateSet Agents treats the full conversational trajectory as the unit of optimization. The framework implements a family of **group-based policy optimization** algorithms — GRPO, GSPO, GEPO, DAPO, and VAPO — that reduce gradient variance by sampling multiple trajectories per prompt and computing advantages relative to a group baseline. This whitepaper describes the framework's architecture: the algorithmic foundations of each trainer, the agent and environment abstractions, the composable reward modeling system, and the operational layer (FastAPI serving, Helm/Kubernetes deployment, distributed training). We also present a comparative analysis of the five trainer variants and discuss the engineering tradeoffs that make conversational RL practical at scale.
 
+> ⚠️ **Read this before `pip install`.** The latest PyPI release is **0.7.1** (an early-2025 cut). It predates every named trainer in this paper, the Rust core, the dashboard, the auto-research loop, and most of the §11.7 publication-gate machinery. **Until a 0.13.x PyPI publish lands, install from source:**
+>
+> ```bash
+> pip install git+https://github.com/stateset/stateset-agents@v0.13.0
+> ```
+>
+> If your tooling pins PyPI versions and you can't install from a tag, treat this paper as describing a *near-future* PyPI release rather than the current one. The framework's behavior is anchored to the named source commit, not to PyPI.
+
 ## Versioning and Reproducibility
 
 This whitepaper describes **version 0.13.0** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`4744c76`** on `master`.
@@ -69,7 +77,9 @@ StateSet Agents packages this research into a coherent, deployable framework:
 - **Sim-to-real transfer**, **continual learning**, **long-term planning** modules.
 - **Operational layer**: FastAPI service, OpenAI-compatible endpoints, Prometheus metrics, Helm charts, Kubernetes manifests.
 
-The framework is licensed under **BUSL-1.1** (transitioning to Apache 2.0 on 2029-09-03), distributed on PyPI as `stateset-agents`, and supports Python 3.10–3.13 on Linux and Windows.
+Not all components are at the same level of production readiness. The framework ships with an explicit **[Component Maturity matrix in §8.1](#81-component-maturity)** distinguishing *stable* (API-stable across point releases), *beta* (functionally complete, API may change), and *experimental* (works in tests, not yet recommended for production). New readers should check that matrix before designing a production deployment — VAPO, offline GRPO, continual learning, and the auto-research loop are all marked experimental as of v0.13.0.
+
+The framework is licensed under **BUSL-1.1** (transitioning to Apache 2.0 on 2029-09-03), distributed on PyPI as `stateset-agents`, and supports Python 3.10–3.13 on Linux and Windows. The BUSL period prevents direct competitors from offering a hosted derivative of the framework before the four-year transition window closes; individual users, academic researchers, and customers building on top of it have always-permitted use under the [Additional Use Grant](../LICENSE). After 2029-09-03 the framework converts to Apache 2.0 with no opt-out — a binding contractual commitment, not a marketing line. See [Component Maturity (§8.1)](#81-component-maturity) for which surfaces are stable, beta, or experimental — relevant when planning a production deployment under this license.
 
 ---
 
@@ -77,32 +87,27 @@ The framework is licensed under **BUSL-1.1** (transitioning to Apache 2.0 on 202
 
 ### 2.1 Layered Design
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  FastAPI Service Layer                                           │
-│  /v1/messages · /v1/chat/completions · /training · /metrics      │
-└────────────────┬─────────────────────────────────────────────────┘
-                 │
-   ┌─────────────┼──────────────┬──────────────────┐
-   │             │              │                  │
-┌──▼──────┐  ┌───▼──────┐  ┌────▼─────────┐  ┌─────▼────────┐
-│ Agent   │  │ Training │  │ Inference    │  │ Memory       │
-│ Service │  │ Service  │  │ Service      │  │ (Redis/SQL)  │
-└──┬──────┘  └───┬──────┘  └────┬─────────┘  └──────────────┘
-   │             │              │
-   │       ┌─────▼──────┐       │
-   │       │ BaseTrainer│       │
-   │       │ GRPO·GSPO  │       │
-   │       │ GEPO·DAPO  │       │
-   │       │ VAPO       │       │
-   │       └─────┬──────┘       │
-   │             │              │
-┌──▼──────┐ ┌────▼──────┐ ┌─────▼────────┐
-│ Agent   │ │ Environ-  │ │ ModelBackend │
-│ (Multi  │ │ ment      │ │ (HF·vLLM·    │
-│  Turn / │ │ + Reward  │ │  Stub)       │
-│  Tool)  │ │ Function  │ │              │
-└─────────┘ └───────────┘ └──────────────┘
+```mermaid
+flowchart TB
+    API["FastAPI Service Layer<br/>/v1/messages · /v1/chat/completions · /training · /metrics"]
+    AgentSvc["Agent Service"]
+    TrainSvc["Training Service"]
+    InfSvc["Inference Service"]
+    Mem["Memory<br/>(Redis / SQL)"]
+    BaseTrainer["BaseTrainer<br/>GRPO · GSPO · GEPO<br/>DAPO · VAPO"]
+    Agent["Agent<br/>(MultiTurn / Tool)"]
+    Env["Environment<br/>+ Reward Function"]
+    Backend["ModelBackend<br/>(HF · vLLM · Stub)"]
+
+    API --> AgentSvc
+    API --> TrainSvc
+    API --> InfSvc
+    API --> Mem
+    TrainSvc --> BaseTrainer
+    AgentSvc --> Agent
+    BaseTrainer --> Env
+    InfSvc --> Backend
+    Agent --> Backend
 ```
 
 Each layer communicates through stable, typed interfaces. The serving and training layers can be deployed independently; the core abstractions (agents, environments, rewards) are usable as a Python library without any FastAPI or Kubernetes dependency.
@@ -222,6 +227,15 @@ async def generate_response(
 
 This uniformity allows the same training loop to drive plain chat agents, tool-using agents, and planning agents without branching.
 
+**Tool-call semantics in training.** When `ToolAgent` makes a tool call during a rollout, four pieces of behavior need to be pinned down because they materially affect what the trainer optimizes:
+
+- **A tool call is *part of* an assistant turn, not a separate turn.** The `ConversationTurn` for the assistant carries `tool_calls: list[ToolCall]` and `tool_results: list[ToolResult]` as fields alongside `content`. The trainer's response-token mask covers the assistant text *and* the JSON-encoded tool call; the tool *result* is masked out (it's a "tool" role from the environment, not from the policy).
+- **Credit assignment is per-turn, not per-call.** Group-relative advantages are computed at the turn level. A turn that contains "say X" + "call tool Y with args Z" gets one scalar advantage that flows through all the policy-emitted tokens in that turn. There is no per-tool-call advantage signal; cross-tool credit assignment is an open problem (§10.6).
+- **Tool errors are graded by the reward function, not the trainer.** The framework's design choice: if a tool raises, the `ToolResult.error` field is populated; the trainer makes no policy-level distinction between "successful call" and "errored call." Whether that's penalized is the reward function's job — typically via a component like `TaskCompletionReward` or a custom rubric that reads `tool_results`.
+- **Tool outputs are excluded from the policy gradient.** Only assistant-emitted tokens contribute to the loss. Tool outputs (potentially long, often verbatim API responses) sit in the context for the next turn but aren't optimized over. This is what allows training against tools with large or non-stationary output spaces (search results, database query responses) without polluting the gradient.
+
+These semantics are stable in v0.13 and apply to all group-based trainers. Tool-use as a first-class RL signal — per-call advantages, tool-selection learning under uncertainty — is the open work in §10.6.
+
 ### 3.2 Configuration: `AgentConfig`
 
 `AgentConfig` (defined in `core/agent_config.py`) is a 22-field dataclass covering model selection, generation hyperparameters, PEFT/LoRA settings, reasoning tags (DeepSeek-R1-style), and planning configuration. Validation logic enforces bounds and emits remediation suggestions for misconfigurations.
@@ -339,7 +353,7 @@ The `NeuralRewardModel` (lines 137-176) is a deliberately small MLP:
 - **Output.** A single scalar (the reward).
 - **Initialization.** Xavier uniform for stable early training.
 
-The trainer fits this network to a labeling source — typically the output of an existing `CompositeReward` running offline, or scored data from a stronger LLM-judge — and produces a fast, differentiable, GPU-resident reward function that doesn't require network calls during rollout scoring. This is the "Bitter Lesson" applied to rewards: stop encoding domain knowledge by hand once you have enough data to learn it.
+The trainer fits this network to a labeling source — typically the output of an existing `CompositeReward` running offline, or scored data from a stronger LLM-judge — and produces a fast, differentiable, GPU-resident reward function that doesn't require network calls during rollout scoring. This is the "Bitter Lesson" [Sutton, 2019][20] applied to rewards: stop encoding domain knowledge by hand once you have enough data to learn it. The caveat is that *learned* rewards have well-known failure modes — reward hacking against the learner's blind spots, judge gaming, and miscalibration on distribution shift — that hand-crafted composites are structurally resistant to. The framework's bias toward composites as the *default* (with learned rewards as the escalation when data scale justifies it) is a deliberate hedge, not a stylistic choice.
 
 Use cases: speeding up training when an LLM-judge reward is the bottleneck (a hosted gpt-4o-class judge can dominate step time at >$50/run); enabling differentiable reward shaping in algorithms that want gradient flow through the reward signal.
 
@@ -414,10 +428,10 @@ $$
 The objective then applies standard symmetric PPO clipping over the sequence-level ratio:
 
 $$
-\mathcal{L}_{\text{GSPO}} = -\mathbb{E}\left[\min\left(s_i(\theta) A_i,\ \text{clip}(s_i(\theta), 1-\varepsilon_L, 1+\varepsilon_R) A_i\right)\right]
+\mathcal{L}_{\text{GSPO}} = -\mathbb{E}\left[\min\left(s_i(\theta) A_i,\ \text{clip}(s_i(\theta), 1-\varepsilon_L, 1+\varepsilon_H) A_i\right)\right]
 $$
 
-The framework allows $\varepsilon_L \neq \varepsilon_R$ in the config, but the shipped defaults are symmetric — Clip-Higher asymmetry is reserved for DAPO and VAPO (§5.4–5.5). The critical thing about the GSPO clip bounds is not their symmetry but their *magnitude*: because $s_i$ is already exp-of-a-small-per-token-quantity, the bounds must be much tighter than token-level PPO's `0.2`. See the defaults note below.
+The framework allows $\varepsilon_L \neq \varepsilon_H$ in the config, but the shipped defaults are symmetric — Clip-Higher asymmetry is reserved for DAPO and VAPO (§5.4–5.5). The critical thing about the GSPO clip bounds is not their symmetry but their *magnitude*: because $s_i$ is already exp-of-a-small-per-token-quantity, the bounds must be much tighter than token-level PPO's `0.2`. See the defaults note below.
 
 **Why it matters.** Token-level ratios accumulate variance multiplicatively across the sequence; on long outputs and Mixture-of-Experts models, this manifests as training collapse. Length normalization keeps the importance weight in a stable regime regardless of $|y_i|$.
 
@@ -475,7 +489,7 @@ The denominator $E_q[q]$ is computed once per group as a scalar; every member of
 
 **Four innovations.**
 
-1. **Clip-Higher (asymmetric clipping).** $\text{clip}(\rho_t) \in [1 - \varepsilon_L, 1 + \varepsilon_R]$ with $\varepsilon_L = 0.2,\ \varepsilon_R = 0.28$. Allowing more upside than downside encourages exploration without sacrificing stability.
+1. **Clip-Higher (asymmetric clipping).** $\text{clip}(\rho_t) \in [1 - \varepsilon_L, 1 + \varepsilon_H]$ with $\varepsilon_L = 0.2,\ \varepsilon_H = 0.28$. Allowing more upside than downside encourages exploration without sacrificing stability.
 
 2. **Token-level loss normalization.** Divide the surrogate sum by **total response tokens** across the batch, not by sample count. This prevents the implicit bias toward shorter sequences that arises when each sample contributes equally regardless of length:
 
@@ -571,15 +585,23 @@ with four supporting mechanisms:
 | Memory cost | Medium | Medium | Medium | Medium | **High** |
 | Best for | General | Long outputs, MoE | Async/off-policy | Reasoning | SOTA reasoning |
 
-### 5.7 A Note on KL Divergence
+### 5.7 Exact Forward KL — a quiet technical differentiator
 
-The framework's KL implementation (`base_trainer.py:600-631`, `compute_kl_divergence`) departs from a common shortcut. Most open implementations use either PyTorch's `F.kl_div` (which computes the *reverse* direction $\mathrm{KL}(\pi_{\text{ref}} \| \pi_\theta)$ — wrong for policy gradients) or Schulman's k3 estimator $r - 1 - \log r$ (a low-variance Monte Carlo estimator). StateSet Agents computes the **exact analytical forward KL** directly:
+The framework's KL regularizer (`base_trainer.py:600-631`, `compute_kl_divergence`) departs from a shortcut common across the open-source RL stack. There are three patterns in widespread use, and only the first is correct under the policy-gradient signal:
+
+1. **The analytical forward KL** — what we ship. $\sum_v \pi_\theta(v) \cdot (\log \pi_\theta(v) - \log \pi_{\text{ref}}(v))$ over the full vocabulary at every response position.
+2. **Schulman's $k_1$ approximation** — `0.5 * (log_p - log_q)**2`. The current TRL PPO and RLOO trainers use this (verifiable at [`trl/trainer/ppo_trainer.py:517`](https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py) and [`trl/trainer/rloo_trainer.py:436`](https://github.com/huggingface/trl/blob/main/trl/trainer/rloo_trainer.py): `approxkl = 0.5 * (logprobs_diff**2).mean()`). It's a single-sample second-order approximation — fast, low-memory, but biased: the bias is $O(\Delta \log p^3)$ which becomes material once the policy moves more than a few nats from the reference, and it's *strictly non-negative* by construction even when the true KL is small.
+3. **Schulman's $k_3$ estimator** — $r - 1 - \log r$ where $r = \pi/\pi_{\text{ref}}$. Lower-variance than $k_1$ but still a single-sample Monte Carlo estimator, and several open implementations of $k_3$ get the direction wrong (computing $\mathrm{KL}(\pi_{\text{ref}} \| \pi_\theta)$ instead of $\mathrm{KL}(\pi_\theta \| \pi_{\text{ref}})$). PyTorch's `F.kl_div` has this same direction problem if you don't read its signature carefully.
+
+The analytical forward KL we use:
 
 $$
 \mathrm{KL}(\pi_\theta \| \pi_{\text{ref}}) = \sum_v \pi_\theta(v) \cdot \bigl(\log \pi_\theta(v) - \log \pi_{\text{ref}}(v)\bigr)
 $$
 
-evaluated over the full vocabulary at every response position, then masked to response tokens and normalized by the response length. The cost is one extra `softmax(logits)` per step (already cached when computing log-probs); the benefit is that the KL term is **unbiased and exact**, not a single-sample estimator. For small group sizes this materially reduces variance in the regularization signal — relevant whenever `beta > 0`. The trade-off is memory: the materialized `current_probs` tensor is $|\text{batch}| \times |\text{seq}| \times |V|$, which can be ~1 GB at 32k vocab and 2k sequence length. The framework supports gradient checkpointing of this term for long-context training.
+evaluated over the full vocabulary at every response position, then masked to response tokens and normalized by the response length. The cost is one extra `softmax(logits)` per step (already cached when computing log-probs); the benefit is that the KL term is **unbiased and exact**, not an estimator. For small group sizes this materially reduces variance in the regularization signal — exactly when you most need the KL anchor to be reliable. The trade-off is memory: the materialized `current_probs` tensor is $|\text{batch}| \times |\text{seq}| \times |V|$, which can be ~1 GB at 32k vocab and 2k sequence length. The framework supports gradient checkpointing of this term for long-context training.
+
+Why this matters for the §10.5 / §11.7 KL-anchor story: the destabilization-to-gibberish failure that §10.5 documents was caused by *no anchor at all* (`beta=0.0`). When the anchor is engaged (`beta > 0`), the difference between "biased $k_1$ estimator" and "exact analytical forward KL" determines whether the anchor pulls the policy in the right direction or drifts off the SFT manifold over many gradient steps. The framework's choice is the structurally correct one — and it's invisible in the §11.7 result table only because §11.7 doesn't yet probe the regime where it dominates.
 
 ---
 
@@ -614,6 +636,8 @@ The framework integrates with **Hugging Face Accelerate** for single-node multi-
 For trainers that support it (TRL GRPO, DAPO), the rollout phase can be offloaded to vLLM [14]. The trainer's policy weights are synced to a vLLM engine at the start of each rollout round; vLLM generates the batch with paged attention; sampler log-probs are passed back to the trainer to avoid a redundant forward pass.
 
 The speedup is real but variable. The benchmark suite under `benchmarks/performance_benchmarks.py` measures it for a given (model, hardware, batch, sequence-length) combination — we publish the methodology rather than a single multiplier because reported numbers from comparable frameworks span roughly 3× to 20× depending on configuration. Practitioners should measure on their own workload before assuming a specific factor. The dominant variable is batch size: vLLM's edge over HF `generate` widens substantially as `group_size × prompt_batch_size` grows.
+
+**Validated configuration.** The framework's vLLM integration is validated against `Qwen/Qwen2.5-0.5B-Instruct` on A100-40GB at `prompt_batch_size=32`, `num_generations=4`, `max_completion_length=512`. Reproduce via [`notebooks/vllm_speedup_benchmark.ipynb`](../notebooks/vllm_speedup_benchmark.ipynb). The result artifact at `benchmark_results/whitepaper_v1/vllm_speedup_qwen25_05b_instruct.json` records the measured (HF, vLLM, ratio) triple for that configuration plus sweeps over `prompt_batch_size ∈ {1, 8, 32, 128}` so readers can verify the "speedup grows with batch size" claim.
 
 ### 6.5 The Training Data Flow
 
@@ -696,9 +720,19 @@ A subset of the framework's hottest paths — group-advantage computation, GAE, 
 | `compute_ppo_clipped_surrogate` | The standard PPO clipped objective |
 | `normalize_with_running_stats` | Streaming Welford normalization for cross-batch advantage statistics |
 
-The performance rationale is twofold. First, these operations are pure numerical kernels — no Python objects, no I/O — so they benefit directly from compiled code, SIMD, and Rayon's work-stealing parallelism without GIL contention. Second, NumPy arrays are zero-copied through `ndarray`, keeping the Python ↔ Rust boundary cost low relative to the per-call work.
+The performance rationale: Python's overhead dominates when the inner loop isn't NumPy-vectorizable. GAE's backward recurrence is the canonical example — each step depends on the next, defeating BLAS — and that's where the Rust core's advantage compounds with batch size.
 
-The Rust core is **optional**. The framework includes pure-Python fallbacks for every accelerated function. CI builds the Rust core via `maturin` and tests both paths; users who can't compile Rust still get a working framework, just slower on advantage computation in large batches.
+**Measured speedup** (`benchmark_results/whitepaper_v1/rust_vs_python_microbenchmark.json`, single-process CPU microbenchmark, float64):
+
+| Function | Batch × T | Python-loop | Rust (Rayon) | Speedup |
+|---|---|---|---|---|
+| `batch_compute_gae` | 8 × 256 | 1.49 ms | 0.06 ms | **26×** |
+| `batch_compute_gae` | 32 × 512 | 7.05 ms | 0.10 ms | **72×** |
+| `batch_compute_gae` | 128 × 1024 | 52.8 ms | 1.51 ms | **35×** |
+
+For *vectorizable* kernels (e.g. `compute_group_advantages` on a 2-D ndarray), NumPy with BLAS is competitive with the Rust path — at typical batch sizes the function-call boundary and ndarray conversion overhead can leave Rust slightly behind plain NumPy. The Rust core is included for the recurrence-heavy paths (GAE, importance-ratio backward sums) — *not* as a blanket NumPy replacement. Be honest about this with your profiler: a per-step `time.perf_counter()` around each kernel will tell you which side is the bottleneck on your hardware.
+
+The Rust core is **optional**. The framework includes pure-Python fallbacks for every accelerated function. CI builds the Rust core via `maturin` and tests both paths; users who can't compile Rust still get a working framework, just slower on GAE.
 
 **Configuration in `Cargo.toml`:** release builds use `opt-level=3`, LTO=fat, codegen-units=1, panic=abort — standard Rust release settings.
 
@@ -816,7 +850,7 @@ Prometheus export is gated by the `API_ENABLE_PROMETHEUS` environment variable s
 
 ### 7.4 The Dashboard
 
-A React 19 + Vite + TypeScript dashboard ships in `dashboard/` for interactive monitoring and experiment management. It is a thin client over the FastAPI service — no direct database access — and provides six views:
+A React 19 + Vite + TypeScript dashboard ships in `dashboard/` for interactive monitoring and experiment management. It is a thin client over the FastAPI service — no direct database access — and provides six views (screenshots in [`dashboard/README.md`](../dashboard/README.md); run locally with `make dashboard` to see the UI directly):
 
 1. **Dashboard** — overview of recent experiments
 2. **Create Experiment** — submit a new training run with a configuration form
@@ -1189,16 +1223,37 @@ This is the **canonical first-party benchmark** for the v1.0 whitepaper. Result 
 
 ## 13. Related Work
 
-| Framework | Focus | Where StateSet Agents differs |
-|-----------|-------|-------------------------------|
-| **TRL** (Hugging Face) | General RLHF library; provides PPO, DPO, GRPO | StateSet Agents wraps TRL GRPO and adds four additional group-based algorithms (GSPO, GEPO, DAPO, VAPO), multi-turn environments, composable rewards, and a serving layer. |
-| **OpenRLHF** | Production-grade RLHF on Ray | Comparable on distributed training; StateSet Agents adds first-class multi-turn semantics, tool-using agents, and a FastAPI serving layer. |
-| **TRLX** (CarperAI) | RLHF with offline RL support | Similar offline RL coverage; StateSet Agents emphasizes group-based methods and conversational environments rather than single-turn preference data. |
-| **NeMo-Aligner** (NVIDIA) | Large-scale RLHF on Megatron | Optimized for the largest models; StateSet Agents is lighter-weight and Hugging Face-native. |
-| **AgentBench / LangChain Agents** | Agent orchestration | These are inference-time agent frameworks without training. StateSet Agents both trains and serves agents in one stack. |
-| **Verl** (ByteDance) | The framework that introduced DAPO and VAPO | Reference implementations of DAPO/VAPO; StateSet Agents re-implements these with consistent abstractions and adds GSPO, GEPO, multi-turn environments, and a deployable service. |
+### 13.1 Feature comparison matrix
 
-The framework's distinctive position is the *combination*: recent algorithm coverage + multi-turn-first abstractions + a serving layer in one library, with a stub-backend testing seam that keeps the development loop tight.
+| Capability | StateSet Agents | TRL (HF) | OpenRLHF | TRLX | NeMo-Aligner | Verl (ByteDance) |
+|---|---|---|---|---|---|---|
+| **Group-based trainers shipped** | GRPO, GSPO, GEPO, DAPO, VAPO | GRPO (only) | GRPO | — | GRPO | DAPO, VAPO (reference impls) |
+| **Single-turn RLHF** (PPO/DPO) | ✓ (PPO baseline; DPO via TRL passthrough) | ✓ (canonical) | ✓ | ✓ | ✓ | ✓ |
+| **Multi-turn `ConversationEnvironment`** | ✓ (first-class, `max_turns`, scenarios, async `step`) | ✗ | partial (Ray actors, no env abstraction) | ✗ | ✗ | ✗ |
+| **Tool-using agent (`ToolAgent`)** | ✓ (OpenAI-compat function calling, parallel exec) | ✗ | ✗ | ✗ | ✗ | ✗ |
+| **Offline RL** (CQL/IQL/BCQ/BEAR/DT) | ✓ (5 algos, blended online/offline schedule) | ✗ | ✗ | ✓ (one algorithm, ILQL) | ✗ | ✗ |
+| **Composable reward functions** | ✓ (`CompositeReward`, async, graceful degradation) | partial (callable rewards, no composition primitives) | partial | partial | ✗ | ✗ |
+| **LLM-as-Judge built-in** | ✓ (`LLMJudge`, OpenAI/Anthropic/local providers) | ✗ (user wires it) | ✗ | ✗ | ✗ | ✗ |
+| **Serving layer** | ✓ (FastAPI, OpenAI-compat endpoints, Helm chart) | ✗ | ✗ | ✗ | partial (Triton recipe) | ✗ |
+| **Stub-backend testing seam** | ✓ (`StubBackend`, 2,438-test suite, no GPU) | ✗ | ✗ | ✗ | ✗ | ✗ |
+| **Forward-KL analytical** (not $k_1$/$k_3$ approx — see §5.7) | ✓ | ✗ ($k_1$, see [ppo_trainer.py:517](https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py)) | $k_1$ | $k_3$ | varies by recipe | $k_3$ |
+| **Rust-accelerated kernels** | ✓ (PyO3, GAE + advantage + GSPO ratio) | ✗ | ✗ | ✗ | ✗ (CUDA kernels) | ✗ |
+| **License** | BUSL-1.1 → Apache 2.0 (2029) | Apache 2.0 | Apache 2.0 | MIT | Apache 2.0 | Apache 2.0 |
+| **Distributed training** (DeepSpeed / Megatron / Ray) | ✓ (Accelerate, DeepSpeed ZeRO 1–3, Ray HPO) | ✓ (Accelerate) | ✓ (Ray-native) | ✓ (Accelerate) | ✓ (Megatron-native) | ✓ (Ray + FSDP) |
+| **vLLM rollout integration** | ✓ (TRL GRPO + DAPO paths) | ✓ (recent) | ✓ | ✗ | partial | ✓ |
+| **Production multi-turn conversation memory** | ✓ (5-tier; Redis/SQLite backends) | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+✓ = first-class supported. partial = supported through user wiring. ✗ = not present.
+
+### 13.2 Distinguishing position
+
+The matrix is unsentimental about where StateSet Agents adds nothing: distributed training, single-turn RLHF, basic vLLM integration are all well-served elsewhere. The framework's *distinctive* position lives in the column-pairs:
+
+1. **Five group-based trainers + multi-turn environments + serving layer** in one library. No other framework ships all three.
+2. **Composable async rewards + LLM-judge built-in + stub-backend testing**. Lets you iterate on reward design at full speed without needing a GPU.
+3. **Tool-using agents as first-class RL targets**, with the tool-call semantics pinned down (§3.1) instead of left to user interpretation.
+
+If your problem is single-turn preference data on Llama, use DPO in TRL. If your problem is multi-turn dialogue with tools, where the reward function is itself an experimental artifact, the matrix above explains why this framework exists.
 
 ---
 
@@ -1237,6 +1292,7 @@ The framework's design philosophy can be summarized in five principles that recu
 17. Chen et al. *Decision Transformer: Reinforcement Learning via Sequence Modeling*. NeurIPS 2021.
 18. Kirkpatrick et al. *Overcoming Catastrophic Forgetting in Neural Networks*. PNAS 2017. (EWC)
 19. Li & Hoiem. *Learning without Forgetting*. ECCV 2016. (LwF)
+20. Sutton, R. *The Bitter Lesson*. Personal essay, 2019. <http://www.incompleteideas.net/IncIdeas/BitterLesson.html>
 
 ---
 
@@ -1339,7 +1395,7 @@ Defaults are taken verbatim from the corresponding config dataclasses in `states
 |-------|---------|-------|
 | `num_generations` | `4` | Group size $G$ |
 | `clip_range_left` | `3e-4` | $\varepsilon_L$ for sequence-level ratio (note: very tight) |
-| `clip_range_right` | `4e-4` | $\varepsilon_R$ for sequence-level ratio |
+| `clip_range_right` | `4e-4` | $\varepsilon_H$ for sequence-level ratio |
 | `num_iterations` | `1` | No inner PPO epochs |
 | `mini_batch_size` | `1` | — |
 | `use_gspo_token` | `False` | Token-level variant (off by default; sequence-level wins) |
@@ -1491,8 +1547,9 @@ grep -n "value_warmup_steps\|lambda_policy_alpha" stateset_agents/training/vapo_
 ### C.4 Verify test count and coverage methodology
 
 ```bash
-# Test count (claimed: 2,438)
-pytest --collect-only -q tests/ 2>&1 | tail -1
+# Test count + green status. Confirms both the count AND that the suite passes —
+# what readers actually care about for an audit trail.
+pytest tests/unit -q --no-header 2>&1 | tail -2
 
 # Coverage (claimed: ~49% overall on in-process paths)
 pytest --cov=stateset_agents --cov-report=term tests/unit tests/integration 2>&1 | tail -5
