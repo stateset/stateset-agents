@@ -937,7 +937,7 @@ Multi-turn conversational RL has structural difficulties that single-turn RLHF c
 
 1. **Credit assignment across turns.** Reward arrives at the end of a conversation (problem resolved? user satisfied?), but the agent's *individual decisions* are distributed across turns. Group-relative advantages handle inter-trajectory credit but not intra-trajectory credit; that's still an open problem.
 2. **The user-model gap.** Training against a simulated user is fundamentally different from training against a real one. The framework mitigates this with domain randomization and sim-to-real transfer (§6.9), but the residual gap is the largest source of deploy-time surprise.
-3. **Reward gaming.** Composite rewards encode an *implicit* utility function. Policies are excellent at finding the cheapest way to maximize a literal reward — often producing outputs that score high but feel wrong. The framework's bias toward composite rewards (rather than a single learned scalar) is a partial mitigation; the deeper fix is iteration on the reward function itself.
+3. **Reward gaming.** Composite rewards encode an *implicit* utility function. Policies are excellent at finding the cheapest way to maximize a literal reward — often producing outputs that score high but feel wrong. The framework's bias toward composite rewards (rather than a single learned scalar) is a partial mitigation; the deeper fix is iteration on the reward function itself. *Inverse case (rule-based-rubric blindness):* the bundled customer-support benchmark's keyword-presence rubric scores a coherently-trained policy *lower* than its untuned baseline (0.34 vs 0.54) because the trained model learned to pivot to clarifying questions instead of dropping rubric keywords verbatim. The trained model is qualitatively better — see the live-demo evidence in `benchmark_results/whitepaper_v1/customer_support_qwen3_5_0_8b_gspo_klanchor.json` — but the rubric can't see it. Rule-based rewards are bias-stable but blindness-stable in opposite directions; a paraphrase-tolerant LLM-judge is the natural complement.
 4. **Online + multi-turn + tool use.** Each of these is a hard problem in isolation; their interaction is harder. Tool calls add hidden state and stochastic latency; multi-turn adds long-horizon credit assignment; on-policy RL adds non-stationarity.
 
 ### 10.4 When StateSet Agents Is the Wrong Choice
@@ -960,7 +960,7 @@ A framework for training online conversational agents has a real safety surface.
 - **Reward hacking.** All on-policy RL is susceptible to policies that find unintended ways to maximize reward. The framework's bias toward **composite rewards** (multiple components combined with `weighted_sum`) makes this harder than a single learned scalar — gaming one component often hurts another. But it does not eliminate the risk. Operational guidance: always include a `SafetyReward` component, periodically inspect raw generations from the latest checkpoint, and treat rapid reward climbs (especially without corresponding eval-set improvement) as a flag, not a victory.
 - **Unsafe exploration.** Group-based methods sample $G$ trajectories per prompt; in production-facing deployment, this means $G$ user-visible outputs per query during training. Do not train against real users without (a) a `SafetyReward` filter on the response distribution, (b) a hard length / content cap before the user sees anything, and (c) a circuit breaker that aborts a training run if any safety metric crosses threshold. The framework provides the hooks; the policy decisions are yours.
 - **Data privacy and logging.** Conversation trajectories are PII by default. The `ConversationMemory` Redis/SQLite backends and the `total_trajectories` Prometheus counter both touch user content. Operators should: (a) configure log retention to match their privacy posture, (b) ensure trajectory data is encrypted at rest in any persistence backend, (c) scrub PII before any cross-region replication, and (d) maintain a clear data-deletion path for user erasure requests.
-- **Reference-model drift.** The reference model anchors the KL regularizer. If it's the wrong reference (e.g., an outdated SFT checkpoint), the regularizer pulls toward outdated behavior. Re-anchor the reference after major fine-tuning rounds.
+- **Reference-model drift.** The reference model anchors the KL regularizer. If it's the wrong reference (e.g., an outdated SFT checkpoint), the regularizer pulls toward outdated behavior. Re-anchor the reference after major fine-tuning rounds. **Absence is worse than drift:** running GSPO with `use_reference_model=False` and `beta=0.0` on a small corpus is the canonical "policy goes off the rails" setup. A documented first-party case is in `benchmark_results/whitepaper_v1/customer_support_qwen3_5_0_8b_gspo.json` — 3 epochs over 16 scenarios under the bundled defaults destabilized the model to the point of emitting token soup, while a single-variable fix (`use_reference_model=True, beta=0.05`) restored coherent customer-service English (`customer_support_qwen3_5_0_8b_gspo_klanchor.json`). `train_with_gspo` now emits a runtime warning when the unsafe combination is detected on small corpora.
 - **Tool-use blast radius.** `ToolAgent` invokes tools with real-world side effects. During training, restrict the registered tool set to read-only or sandboxed variants; only enable write/destructive tools after the policy has demonstrated stable tool-call patterns in evaluation. The framework does not enforce this — it's a deployment-time decision.
 - **Judge-model power asymmetry.** RLAIF (§4.5) bootstraps from a stronger judge. If the judge model itself has biases or failure modes, the policy will inherit them. KL regularization against a frozen reference (`beta > 0`) is the primary mitigation; periodic human spot-checks of high-reward / low-reward judge calls are the secondary one.
 
@@ -1108,6 +1108,7 @@ Group-based RL has characteristic failure modes that look different from supervi
 | **Training works on stub, fails on HF** | A test-only assumption leaked into production code. | Verify `_is_stub_backend` checks are not gating production behavior; check that tokenization handles real chat templates. |
 | **Loss spikes at episode boundaries** | Multi-turn context not being reset properly between episodes. | Confirm `await agent.reset()` is being awaited (it's async — see Project Memory). |
 | **Reward function raises but training continues** | Default `CompositeReward` graceful-degradation behavior; one component is failing silently. | Check W&B for per-component reward breakdowns; failures log warnings but don't abort. |
+| **Trained model emits token soup; rubric score still nonzero** | No KL anchor + small corpus + rule-based reward → policy drifts off the coherent-text manifold while still hitting rubric keywords. | Set `use_reference_model=True, beta=0.05`; `train_with_gspo` emits a runtime warning when this combination is detected on a small corpus. See §10.5 and `benchmark_results/whitepaper_v1/customer_support_qwen3_5_0_8b_gspo.json`. |
 
 **Key W&B / metric panels to watch:**
 
@@ -1285,8 +1286,8 @@ Defaults are taken verbatim from the corresponding config dataclasses in `states
 | `vllm_gpu_memory_utilization` | `0.85` | vLLM memory cap |
 | `vllm_tensor_parallel_size` | `1` | TP shards |
 | `vllm_enable_prefix_caching` | `True` | vLLM prompt-prefix cache |
-| `beta` | `0.0` | KL penalty coefficient (off by default) |
-| `use_reference_model` | `False` | Frozen $\pi_{\text{ref}}$ for KL |
+| `beta` | `0.0` | KL penalty coefficient (off by default). **See warning below.** |
+| `use_reference_model` | `False` | Frozen $\pi_{\text{ref}}$ for KL. **See warning below.** |
 | `max_prompt_length` | `256` | Prompt token cap |
 | `max_completion_length` | `512` | Response token cap |
 | `temperature` | `0.7` | Sampling temperature |
@@ -1295,6 +1296,8 @@ Defaults are taken verbatim from the corresponding config dataclasses in `states
 | `save_steps` | `500` | Checkpoint interval |
 | `eval_steps` | `100` | Evaluation interval |
 | `report_to` | `"wandb"` | Logging backend |
+
+> **Warning on `beta=0.0 / use_reference_model=False`.** These defaults are correct for production-scale training where the rollout count is large enough that group-relative advantages alone handle policy drift. On **small corpora** (rule of thumb: fewer than ~100 training queries) this combination has been observed to destabilize the policy — the trained model emits incoherent token soup while still scoring nonzero on rule-based rewards (see §10.5 for the worked example). A safe default for small-corpus runs is `use_reference_model=True, beta=0.05`. `train_with_gspo` emits a runtime warning when the unsafe combination is detected on a corpus below the threshold.
 
 ### B.2 TRL GRPO
 
