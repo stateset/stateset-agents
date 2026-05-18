@@ -36,6 +36,27 @@ async def train_with_gspo(
     logger.info("Initializing GSPO training")
     logger.info("Configuration: %s", json.dumps(config.to_dict(), indent=2))
 
+    # Foot-gun guard: training without a KL anchor on a small corpus is the
+    # canonical "policy goes off the rails" setup. See whitepaper §10.5
+    # ('Reference-model drift') and benchmark_results/whitepaper_v1/
+    # customer_support_qwen3_5_0_8b_gspo.json for a documented case.
+    _has_kl_anchor = config.use_reference_model and config.beta > 0.0
+    _corpus_size = len(train_queries) if train_queries else (
+        len(environment.scenarios) if hasattr(environment, "scenarios") else None
+    )
+    if not _has_kl_anchor and _corpus_size is not None and _corpus_size < 100:
+        logger.warning(
+            "GSPO is running without a KL anchor (use_reference_model=%s, beta=%s) "
+            "on a small corpus (%s queries). This combination has been observed to "
+            "destabilize the policy on keyword-based rewards — the trained model "
+            "starts emitting incoherent token soup while still scoring nonzero on "
+            "the rubric. Recommended fix: set use_reference_model=True and beta>=0.05. "
+            "See whitepaper §10.5 'Reference-model drift'.",
+            config.use_reference_model,
+            config.beta,
+            _corpus_size,
+        )
+
     os.makedirs(config.output_dir, exist_ok=True)
 
     use_wandb = config.report_to == "wandb"
