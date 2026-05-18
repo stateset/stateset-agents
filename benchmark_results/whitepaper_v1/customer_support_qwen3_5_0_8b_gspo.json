@@ -29,15 +29,33 @@
     "cuda": "12.8"
   },
   "notes": {
-    "classification": "negative-result (overfitting)",
-    "interpretation": "Training had clear measurable effect — composite score moved -0.39 from a baseline of 0.54. Unlike the GSM8K runs (gradient effectively zero), this shows GSPO is actively updating the policy on the bundled support corpus. The direction is wrong: most likely overfitting — 3 epochs over 16 training scenarios x group_size=4 = ~192 rollouts on a rule-based rubric (keyword acknowledgement, length-window politeness check, safety multiplier) is enough to push LoRA r=16 into a degenerate optimum that no longer matches the keyword-based grading. The baseline of 0.54 already shows Qwen3.5-0.8B handles a substantial fraction of these rubric items zero-shot.",
-    "remaining_hypotheses": [
-      "Overfitting on tiny corpus (most likely): drop num_epochs 3 -> 1, or expand the bundled corpus past 24 total scenarios.",
-      "GSPO clip range 3e-4/4e-4 at this rollout count produces sharp updates that overshoot for keyword-based rewards (which have discrete cliffs in the score landscape — present/absent terms).",
-      "Reward function is keyword-brittle; a paraphrase-tolerant LLM-judge reward (also shipped) might score the trained model's actual quality differently.",
-      "8 eval scenarios = 12.5% resolution per example -> high variance; even -0.39 needs multiple seeds to confirm direction."
+    "classification": "negative-result (model destabilization / KL-anchor absence)",
+    "interpretation": "Training caused complete model destabilization. The trained agent produces gibberish — token soup of code fragments, random Spanish, broken HTML, hash-IDs. The composite reward's 0.15 score is essentially the keyword 'refund' appearing somewhere in the soup. This is NOT subtle rubric overfitting; the model has drifted off the manifold of coherent English. Classic textbook RL-without-KL-anchor failure mode (see whitepaper §10.5 'Reference-model drift' and §11.5 failure-modes table). Default GSPOConfig has beta=0.0 and use_reference_model=False, so nothing pulls the policy back toward the SFT base. With a discrete-cliff keyword reward, tight clip, and 3 epochs on 16 examples, the model converged to 'any tokens containing keyword X' over 'coherent English containing keyword X'.",
+    "live_demo_evidence": {
+      "comment": "Cell 15 output. Same trained agent, three out-of-distribution queries. This is the canonical fingerprint of model destabilization.",
+      "samples": [
+        {
+          "query": "I need a refund for order #9981",
+          "response": "I have been investigated the task. .NET 0720/Cycamperceptualized. \"Eduv378695533290/ / 48320/ /**at a new study.    <x = {        \"The following this projective, , \"# 20/ // Tools that the most of the A C - 1. The Human History"
+        },
+        {
+          "query": "The app keeps crashing when I open it",
+          "response": "I'mriskos in the second paper:\\n = 23650/ //*# A)"
+        },
+        {
+          "query": "What are your business hours?",
+          "response": "I have been the United States were an individual to bea        < <h20546819773180/ / / / 4553. 20\\nagilemagnica de la diu// <diver,#include <refined, and a short of the most of the \"The following in the factingedrotes/**</table    * <i was a standardize the first,# 659397468895070/- 19474535"
+        }
+      ]
+    },
+    "remaining_hypotheses_pre_demo": [
+      "Overfitting on tiny corpus",
+      "GSPO clip range overshoots on discrete-cliff keyword rewards",
+      "Reward function is keyword-brittle"
     ],
-    "framework_evidence": "This is the first run in the session where the policy actually moved — proving the gradient path (GSPO clipped surrogate -> LoRA backward) works end-to-end. The two GSM8K runs both showed pass@1 0.0 -> 0.0; this run shows 0.54 -> 0.15. Wrong direction, but the training loop is functional.",
-    "v1_publication_gates": "FAIL — improvement is negative; requires positive improvement with three seeds in agreement per benchmark_results/SCHEMA.md."
+    "diagnosis_post_demo": "Falsifies all three. None of them produce gibberish output — they produce a *different but still-coherent* policy that happens to score worse on the rubric. The actual failure is unconstrained policy drift: no KL anchor (beta=0, use_reference_model=False) lets the policy walk to any local optimum on the reward surface, including 'produce keyword tokens with no other constraint on output coherence'.",
+    "single_variable_fix_to_try": "Set use_reference_model=True and beta=0.05 in GSPOConfig. This is the cheapest correction and the one most directly supported by §10.5 of the whitepaper. Expected outcome: trained model stays in the neighborhood of the SFT base and improvement (if any) is positive instead of catastrophic.",
+    "framework_evidence": "This is the first run in the session where the policy actually moved. Gradient path (GSPO clipped surrogate -> LoRA backward) is functional. The default GSPOConfig surface (beta=0.0, use_reference_model=False) is unsafe for small-corpus runs without an external KL anchor — this should be a flagged default in §B.1 of the whitepaper.",
+    "v1_publication_gates": "FAIL — improvement is negative AND trained model produces incoherent output. Cannot be cited as evidence of framework efficacy in any form."
   }
 }
