@@ -5,6 +5,43 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-05-18 — First-party canonical benchmark + KL-anchor safety
+
+The release that lands the v1.0 whitepaper's first canonical first-party benchmark result and codifies a previously-undocumented training foot-gun as a runtime warning. Driven by [issue #16](https://github.com/stateset/stateset-agents/issues/16) — a multi-day debugging session running the bundled benchmarks end-to-end on Colab A100.
+
+### Added
+
+- **`PartialCreditGSM8KReward`** in `stateset_agents.data.gsm8k` — dense-reward variant of `GSM8KReward` with four tiers (`0.0` unparseable / `0.2` parseable / `0.5` within 10% / `1.0` correct). Eliminates the all-zero-groups pathology where the binary reward gives no gradient signal on weak base models. 8 new unit tests covering all four tiers and edge cases.
+- **`train_with_gspo` runtime warning** — emits a loud warning when `use_reference_model=False` AND `beta=0.0` AND `len(train_queries) < 100`. This combination destabilizes the policy to gibberish output (see whitepaper §10.5 and `benchmark_results/whitepaper_v1/customer_support_qwen3_5_0_8b_gspo.json`). Warning quotes the safe-default fix and points to the artifact.
+- **`notebooks/whitepaper_v1_gsm8k_benchmark_v2.ipynb`** — dense-reward A/B variant of the GSM8K benchmark notebook.
+- **`notebooks/customer_support_3seed_judge.ipynb`** — the canonical whitepaper §11.7 publication-gate notebook. Three seeds (42 / 1337 / 2026), both rubric and LLM-judge eval (local `Qwen2.5-1.5B-Instruct` judge — no API key), KL anchor enabled.
+- **First-party benchmark artifacts** under `benchmark_results/whitepaper_v1/` (un-ignored via `.gitignore` negation): 5 result files spanning the full headroom spectrum — proof-of-life GSM8K, dense-reward A/B, gibberish KL-anchor-absent failure, near-ceiling stability finding, and the canonical positive result (`customer_support_3seed_judge_qwen25_05b_instruct.json`: judge improvement +0.079, 3-seed agreement).
+- **Whitepaper §11.7 "First-Party Reproduction"** — methodology, result table, publication-gate verification, cross-references to §5.1 / §10.5 / §B.1.
+
+### Fixed
+
+- **`gspo_trainer.py:594`** now calls `reward_model.compute_reward(turns=[turn], context=...)` — the canonical `RewardFunction` API documented in §4.1 of the whitepaper. The previous call shape (`trajectory=None, turn=turn, ...`) was only accepted by `MultiObjectiveRewardFunction`'s compatibility shim; every other `RewardFunction` subclass raised `TypeError`. 35/35 `tests/unit/test_gspo_trainer.py` pass; 248/248 `-k "gspo or reward"` sweep passes.
+- **`notebooks/customer_support_4h.ipynb`** — eight bug patterns from the GSM8K v1 debug session pre-applied: stale commit pin, missing `transformers/peft/torchao` upgrade, `asyncio.run` in Jupyter, abstract `Agent` base used instead of `MultiTurnAgent`, missing `attn_implementation='sdpa'`, no explicit `train_queries` (rubric context dropped), gradient-checkpointing-incompatible bf16 conv1d backward on Qwen3.5's hybrid layer, and the unsafe default GSPOConfig.
+- **Whitepaper §B.1 hyperparameter table** — `beta=0.0` and `use_reference_model=False` defaults carry a "See warning below" flag with an inline warning block.
+- **Whitepaper §10.3 "Reward gaming"** — adds the inverse case from the canonical run: rule-based rubric scoring a qualitatively better trained policy *lower* than baseline because the trained model pivots to clarifying questions.
+- **Whitepaper §10.5 "Reference-model drift"** — adds documented evidence across the full headroom spectrum (no anchor → gibberish; anchor + ceiling → stable; anchor + headroom → positive transfer).
+- **Whitepaper §11.5 failure-modes table** — new row for "trained model emits token soup; rubric score still nonzero".
+- **Whitepaper §8.1 maturity matrix** — GSPO trainer entry references the first-party result.
+- **Whitepaper anchor** rebased twice this release: `c0dbd68` → `a2bdde4` → `4744c76`. `docs/WHITEPAPER_ERRATA.md` records both re-anchorings.
+
+### Changed
+
+- **`notebooks/customer_support_4h.ipynb`** ships with safe defaults: `use_reference_model=True`, `beta=0.05`, `num_epochs=1`.
+- **`.gitignore`** — `benchmark_results/` rule changed from whole-tree-ignore to selective: tracks `whitepaper_v1/**` plus the schema/README/summary files, still ignores ad-hoc local dumps.
+- **`docs/WHITEPAPER.md`** front-matter — "experimental results absent" caveat replaced with a concrete summary of §11.7.
+- **`notebooks/README.md`** — eight core notebooks (was six in 0.12.0).
+- **Whitepaper test-suite count** refreshed in §3.2 and §9 — 2,438 collected (was 1,624 in the v0.11.6 anchor).
+- **Whitepaper §9 exception-tuple list** — fixed double-listed `SERIALIZATION_EXCEPTIONS` and removed non-existent `ENVIRONMENT_EXCEPTIONS`; correct names from `stateset_agents/exceptions.py` substituted.
+
+### Documentation
+
+- **`docs/WHITEPAPER_ERRATA.md`** — net-new errata document tracking three anchor rebases (`14c0e65` → `c0dbd68` → `a2bdde4` → `4744c76`) and the v0.11.6 → v0.12.2 corrections.
+
 ## [0.12.2] - 2026-05-15 — Docs polish
 
 ### Documentation
