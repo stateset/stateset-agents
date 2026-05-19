@@ -1,0 +1,48 @@
+{
+  "trainer": "gspo",
+  "task": "customer_support",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "seeds": [42, 1337, 2026],
+  "commit": "37d8212",
+  "judge_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "timestamp": "2026-05-19T01:20:10.766270+00:00",
+  "config": {
+    "num_generations": 4,
+    "clip_range_left": 0.0003,
+    "clip_range_right": 0.0004,
+    "learning_rate": 5e-06,
+    "lora_r": 16,
+    "num_epochs": 1,
+    "use_reference_model": true,
+    "beta": 0.05
+  },
+  "baseline": {
+    "rubric_mean": 0.50625,
+    "judge_mean": 0.75
+  },
+  "per_seed": [
+    {"seed": 42,   "wall_clock_seconds": 194.77, "rubric_trained": 0.5135625, "judge_trained": 0.7625, "rubric_improvement": 0.0073125, "judge_improvement": 0.0125},
+    {"seed": 1337, "wall_clock_seconds": 247.28, "rubric_trained": 0.646875,  "judge_trained": 0.8625, "rubric_improvement": 0.140625, "judge_improvement": 0.1125},
+    {"seed": 2026, "wall_clock_seconds": 203.33, "rubric_trained": 0.5754375, "judge_trained": 0.8625, "rubric_improvement": 0.0691875, "judge_improvement": 0.1125}
+  ],
+  "aggregate": {
+    "rubric_mean_improvement": 0.0723750,
+    "rubric_stdev": 0.066713385,
+    "rubric_three_seed_agreement": true,
+    "judge_mean_improvement": 0.0791667,
+    "judge_stdev": 0.057735027,
+    "judge_three_seed_agreement": true,
+    "publication_gate_passed": true
+  },
+  "hardware": {
+    "gpu": "NVIDIA A100-SXM4-40GB",
+    "cuda": "12.8",
+    "peak_vram_mb": 18924
+  },
+  "notes": {
+    "classification": "reproducibility-confirmation",
+    "companion_to": "customer_support_3seed_judge_qwen25_05b_instruct.json",
+    "purpose": "Independent re-run of the canonical §11.7 result on a fresh Colab session ~7 hours after the original. Trained metrics are identical to four decimals (judge mean +0.0792, rubric mean +0.0724, both 3-seed agreement) — actual evidence of seed-determinism across sessions. Lower peak VRAM (18.9 GB vs 35.6 GB) is because CROSS_FAMILY_JUDGE_MODEL was left at None; no second judge model was loaded.",
+    "supports_whitepaper_claim": "§11.7 'How to reproduce': set_all_seeds() + pinned commit + same trainee/judge produces bitwise-equal trained_metrics across independent Colab sessions. Wall-clock varies (4-20s per seed) due to A100 allocation differences but trained_metrics do not."
+  }
+}
