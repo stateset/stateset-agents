@@ -5,6 +5,32 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.3] - 2026-05-18 — Third-reviewer polish + README refresh (A → unblocking-to-A+)
+
+The third reviewer round graded the v0.13.2 whitepaper at **A (up from A−)** with three small polish items and two Colab-bound run asks. This release lands the three polish items and refreshes the README to reflect the PyPI parity from v0.13.2.
+
+### Changed
+
+- **WP §14 trimmed.** The five-principles block in the conclusion was duplicated nearly verbatim from §1.0 (Design Philosophy preface). §14 now ends with a one-line reference back to §1.0 — saves ~150 words and gives the conclusion more punch.
+- **WP §6.8 reordered.** The "<1% end-to-end" honest framing now appears *above* the kernel-speedup table, not below. The table also gains an explicit "End-to-end §11.7 impact" column (all <1%) so skimmers can't pick up the 26–72× number without the calibration. Pre-empts the misread the reviewer flagged.
+- **WP §11.3 decision-tree caveat.** Added a parallel caveat to §11.7's "what this result does not support": the trainer-selection decision tree summarizes literature + implementation experience, but **first-party head-to-head numbers are pending** — the harness exists in `whitepaper_v1_comparative_trainers.ipynb`, the result row hasn't landed in §5.6 yet. Closes the last unsupported-authority surface in the document.
+
+### Documentation
+
+- **README.md substantial refresh:**
+  - Header badges: replaced `badge.fury.io` with `shields.io/pypi/v` (auto-updates from PyPI), added Whitepaper version badge and §11.7 first-party-result badge.
+  - New top-of-doc "What's new in v0.13.2" section listing the six headline changes since v0.13.0.
+  - Install section now reflects the PyPI parity: `pip install stateset-agents` gets v0.13.2, no longer stuck at v0.7.1. Old PyPI lag callout retained as historical context.
+  - Benchmark notebook table expanded from 2 rows to 6, headed by `customer_support_3seed_judge.ipynb` as the canonical §11.7 notebook. Pointer to the lint script and issue #16.
+  - "Start here" section bumped: whitepaper + errata + benchmark_results/whitepaper_v1/ now linked above the cookbook/platform-tour entries. CHANGELOG version reference: v0.12.1 → v0.13.2.
+
+### Still pending (Colab-bound — explicit in the docs, not in this release)
+
+Two runs would move the grade from **A** to **A+**:
+
+- **Head-to-head trainer comparison.** The notebook (`whitepaper_v1_comparative_trainers.ipynb`) is in v0.13.1; the run is a few hours of Colab compute. Output JSON fills §5.6's comparative table.
+- **Cross-family judge sanity check.** Set `CROSS_FAMILY_JUDGE_MODEL='meta-llama/Meta-Llama-3-8B-Instruct'` in `customer_support_3seed_judge.ipynb` (the knob is shipped in v0.13.2). Re-run on the same 24 generations. The third reviewer was explicit: "either direction is more important than not knowing."
+
 ## [0.13.2] - 2026-05-18 — Second PhD-reviewer round (calibration + scoping fixes)
 
 Addresses every item from the second reviewer pass. Patch bump: no API removed, additions are doc clarifications, one framework warning, and a notebook extension. Items map 1:1 to the reviewer's numbered list.

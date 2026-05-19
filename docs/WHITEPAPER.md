@@ -1,7 +1,7 @@
 # StateSet Agents: A Reinforcement Learning Framework for Multi-Turn Conversational AI
 
 **Technical Whitepaper**
-Version 0.13.2 · May 2026
+Version 0.13.3 · May 2026
 StateSet Team · `team@stateset.ai`
 
 ---
@@ -13,16 +13,16 @@ StateSet Agents is a reinforcement learning framework for training and serving l
 > ⚠️ **Read this before `pip install`.** The latest PyPI release is **0.7.1** (an early-2025 cut). It predates every named trainer in this paper, the Rust core, the dashboard, the auto-research loop, and most of the §11.7 publication-gate machinery. **Until a 0.13.x PyPI publish lands, install from source:**
 >
 > ```bash
-> pip install git+https://github.com/stateset/stateset-agents@v0.13.2
+> pip install git+https://github.com/stateset/stateset-agents@v0.13.3
 > ```
 >
 > If your tooling pins PyPI versions and you can't install from a tag, treat this paper as describing a *near-future* PyPI release rather than the current one. The framework's behavior is anchored to the named source commit, not to PyPI.
 
 ## Versioning and Reproducibility
 
-This whitepaper describes **version 0.13.2** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`4744c76`** on `master`.
+This whitepaper describes **version 0.13.3** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`4744c76`** on `master`.
 
-**PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.13.2 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.13.2 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.13.x is pending.
+**PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.13.3 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.13.3 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.13.x is pending.
 
 **What's named here is anchored in code.** Implementation citations (`gspo_trainer.py:390-419`, etc.) reference the named commit. To verify any specific claim:
 
@@ -89,7 +89,7 @@ StateSet Agents packages this research into a coherent, deployable framework:
 - **Sim-to-real transfer**, **continual learning**, **long-term planning** modules.
 - **Operational layer**: FastAPI service, OpenAI-compatible endpoints, Prometheus metrics, Helm charts, Kubernetes manifests.
 
-Not all components are at the same level of production readiness. The framework ships with an explicit **[Component Maturity matrix in §8.1](#81-component-maturity)** distinguishing *stable* (API-stable across point releases), *beta* (functionally complete, API may change), and *experimental* (works in tests, not yet recommended for production). New readers should check that matrix before designing a production deployment — VAPO, offline GRPO, continual learning, and the auto-research loop are all marked experimental as of v0.13.2.
+Not all components are at the same level of production readiness. The framework ships with an explicit **[Component Maturity matrix in §8.1](#81-component-maturity)** distinguishing *stable* (API-stable across point releases), *beta* (functionally complete, API may change), and *experimental* (works in tests, not yet recommended for production). New readers should check that matrix before designing a production deployment — VAPO, offline GRPO, continual learning, and the auto-research loop are all marked experimental as of v0.13.3.
 
 The framework is licensed under **BUSL-1.1**, converts to Apache 2.0 on 2029-09-03, distributed on PyPI as `stateset-agents`, and supports Python 3.10–3.13 on Linux and Windows.[^busl] See [Component Maturity (§8.1)](#81-component-maturity) for which surfaces are stable, beta, or experimental — relevant when planning a production deployment under this license.
 
@@ -749,17 +749,17 @@ A subset of the framework's hottest paths — group-advantage computation, GAE, 
 
 The performance rationale: Python's overhead dominates when the inner loop isn't NumPy-vectorizable. GAE's backward recurrence is the canonical example — each step depends on the next, defeating BLAS — and that's where the Rust core's advantage compounds with batch size.
 
+**Read this before the speedup table below.** The numbers in the next table are *isolated-kernel* microbenchmarks. They are not a framework-level speedup claim. In an actual §11.7 training step on Colab A100, Phase 2 (generation) consumes roughly 70–85% of wall-clock (§6.5), the GAE/advantage Phase 4 is ~1–3%, and Phase 5 forward+backward is ~10–20%. **A 30× speedup on Phase 4 translates to <1% improvement in end-to-end step time on this configuration.** The Rust core is the right primitive for Phase-4-dominated workloads (very large group sizes, long trajectories, value-net actor-critic training) and for keeping the recurrence-heavy paths *off* the bottleneck heat map. It is *not* a blanket framework speedup. Be honest about this with your profiler: a per-step `time.perf_counter()` around each kernel will tell you which side is the bottleneck on your hardware.
+
 **Measured speedup** (`benchmark_results/whitepaper_v1/rust_vs_python_microbenchmark.json`, single-process CPU microbenchmark, float64):
 
-| Function | Batch × T | Python-loop | Rust (Rayon) | Speedup |
-|---|---|---|---|---|
-| `batch_compute_gae` | 8 × 256 | 1.49 ms | 0.06 ms | **26×** |
-| `batch_compute_gae` | 32 × 512 | 7.05 ms | 0.10 ms | **72×** |
-| `batch_compute_gae` | 128 × 1024 | 52.8 ms | 1.51 ms | **35×** |
+| Function | Batch × T | Python-loop | Rust (Rayon) | Kernel speedup | End-to-end §11.7 impact |
+|---|---|---|---|---|---|
+| `batch_compute_gae` | 8 × 256 | 1.49 ms | 0.06 ms | **26×** | <1% |
+| `batch_compute_gae` | 32 × 512 | 7.05 ms | 0.10 ms | **72×** | <1% |
+| `batch_compute_gae` | 128 × 1024 | 52.8 ms | 1.51 ms | **35×** | <1% |
 
 For *vectorizable* kernels (e.g. `compute_group_advantages` on a 2-D ndarray), NumPy with BLAS is competitive with the Rust path — at typical batch sizes the function-call boundary and ndarray conversion overhead can leave Rust slightly behind plain NumPy. The Rust core is included for the recurrence-heavy paths (GAE, importance-ratio backward sums) — *not* as a blanket NumPy replacement.
-
-**Honest end-to-end framing.** The 26–72× numbers above are *isolated-kernel* microbenchmarks. In an actual training step, Phase 2 (generation) typically dominates wall-clock (§6.5) — for the §11.7 configuration on Colab A100, generation is roughly 70–85% of step time, the GAE/advantage Phase 4 is ~1–3%, and the Phase 5 forward+backward is ~10–20%. So a 30× speedup on Phase 4 typically translates to **<1% improvement in end-to-end step time** on this configuration. The Rust core is the right primitive for Phase-4-dominated workloads (very large group sizes, long trajectories, value-net actor-critic training) and for keeping the recurrence-heavy paths off the bottleneck heat map. It is *not* a blanket framework speedup. Be honest about this with your profiler: a per-step `time.perf_counter()` around each kernel will tell you which side is the bottleneck on your hardware.
 
 The Rust core is **optional**. The framework includes pure-Python fallbacks for every accelerated function. CI builds the Rust core via `maturin` and tests both paths; users who can't compile Rust still get a working framework, just slower on GAE.
 
@@ -1148,6 +1148,8 @@ Start
  └─ Need maximum reasoning accuracy, have GPU headroom? ──→ VAPO
 ```
 
+> **What this decision tree is and isn't.** The branches summarize the *literature* on each trainer's design intent (GSPO paper's length-normalization argument, DAPO paper's Clip-Higher + dynamic-sampling story, etc.) plus our own implementation experience. **First-party head-to-head numbers across these trainers on a shared task are pending — the [`notebooks/whitepaper_v1_comparative_trainers.ipynb`](../notebooks/whitepaper_v1_comparative_trainers.ipynb) protocol is the harness, but the result row isn't in §5.6 or §11.7 yet.** Use this tree as starting advice; replace any branch with measured guidance once your own §5.6 comparison run lands.
+
 ### 11.4 Operational Recipes
 
 | Goal | Setting |
@@ -1300,13 +1302,7 @@ If your problem is single-turn preference data on Llama, use DPO in TRL. If your
 
 StateSet Agents packages recent advances in group-based policy optimization into a single, deployable framework. By treating multi-turn conversations as the unit of optimization, by making rewards composable and async, by separating algorithm from environment from agent from backend, and by investing in both training and serving, the framework lets practitioners go from a Hugging Face checkpoint to a trained, served, monitored conversational agent without crossing a tool boundary. The five trainers — GRPO, GSPO, GEPO, DAPO, VAPO — cover a spectrum from baseline simplicity to the strongest reported reasoning results, and the stub-backend testing pattern keeps the iteration loop tight even without GPU access.
 
-The framework's design philosophy can be summarized in five principles that recur throughout the codebase:
-
-1. **The trajectory is the unit of work.** Not the token, not the prompt — the trajectory. Every abstraction in the framework is shaped around this commitment.
-2. **Algorithms are interchangeable; environments are not.** A `ConversationEnvironment` with a well-designed reward function is a long-lived asset; the choice of GSPO vs. DAPO is a tuning decision.
-3. **Async-first, everywhere.** Rewards, environments, agent generation, tool calls — all async-native. This is what makes batched rollouts with composite rewards practical.
-4. **Stubs are first-class.** The `ModelBackend` protocol and `StubBackend` aren't testing afterthoughts; they're the seam that makes the framework usable without GPUs.
-5. **Failure surfaces are explicit.** Eight canonical exception tuples cover every retryable failure mode. Code that catches them retries; code that doesn't, doesn't. There is no middle ground.
+The five design principles that anchor the framework are stated in **§1.0 (Design Philosophy)** at the top of this document. They are the same five principles whether you read them as a preface or as a closing summary; we put them up front because they constrain everything between.
 
 ---
 

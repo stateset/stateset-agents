@@ -4,9 +4,11 @@
 
 **Reinforcement‑learning framework for multi‑turn conversational AI agents.**
 
-[![PyPI version](https://badge.fury.io/py/stateset-agents.svg)](https://pypi.org/project/stateset-agents/)
+[![PyPI version](https://img.shields.io/pypi/v/stateset-agents.svg)](https://pypi.org/project/stateset-agents/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-green.svg)](LICENSE)
+[![Whitepaper v0.13.3](https://img.shields.io/badge/whitepaper-v0.13.3-blue)](docs/WHITEPAPER.md)
+[![First-party result](https://img.shields.io/badge/§11.7-judge%20%2B0.079%20%E2%9C%93-brightgreen)](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json)
 
 </div>
 
@@ -23,6 +25,19 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - Optional **performance layers** (vLLM generation, Rust acceleration, distributed training, HPO, FastAPI service).
 
 If you want a framework that treats conversations as first‑class RL episodes (rather than single turns), this is it.
+
+---
+
+## What's new in v0.13.2
+
+- **First-party canonical benchmark.** Whitepaper §11.7 ships a three-seed positive-transfer result on customer support: judge improvement **+0.079** (2.6× the publication-gate threshold) with 3-seed agreement. [Artifact](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json).
+- **KL-anchor safety.** `train_with_gspo` now warns when `use_reference_model=False AND beta=0.0` on small corpora — the canonical "policy goes off the rails into token soup" failure mode (whitepaper §10.5).
+- **`NeuralRewardModel` honest defaults.** The hash-based fallback encoder now emits a loud warning that it can't learn useful rewards; reframed in §4.4 as smoke-test-only.
+- **PyPI parity.** `pip install stateset-agents` now gets v0.13.2 — the same surface the whitepaper describes. The long PyPI lag is closed.
+- **Notebook CI lint.** `scripts/lint_notebooks.py` codifies the eight foot-gun patterns from [issue #16](https://github.com/stateset/stateset-agents/issues/16) and runs in CI.
+- **Rust core, honestly characterized.** 26–72× speedup on `batch_compute_gae` (recurrence-heavy kernel), but **<1% end-to-end** on §11.7 configurations since generation dominates wall-clock (whitepaper §6.8).
+
+Full breakdown in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -104,8 +119,10 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents
+pip install stateset-agents          # latest on PyPI (v0.13.2 — matches this whitepaper revision)
 ```
+
+> Older readers of this repo will remember a long PyPI lag where source was at v0.13.x while PyPI sat at v0.7.1. **That gap is now closed.** A fresh `pip install` gets the same surface the whitepaper describes (named trainers, Rust core, dashboard, auto-research loop). If your environment pins to an older version, `pip install -U stateset-agents` or pin explicitly to `==0.13.2`.
 
 ### Training / real models
 
@@ -510,12 +527,18 @@ This closes the **human-in-the-loop curation cycle**: train → eval → chat �
 
 After training, you usually want a defensible number: *did this actually improve over the base model, by how much, and is it reproducible?* The framework ships a Phase‑0 benchmark pipeline that produces publication‑grade results across **three tasks** (GSM8K, the bundled customer‑support corpus, and the tool‑calling corpus).
 
-**Quick path:** open one of the bundled Colab notebooks.
+**Quick path:** open one of the bundled Colab notebooks. The whitepaper §11.7 canonical result was produced by `customer_support_3seed_judge.ipynb` — judge improvement **+0.079** with three-seed agreement on Qwen2.5-0.5B-Instruct ([artifact](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json)).
 
 | Notebook | Task | Runtime on A100 |
 |---|---|---|
-| `notebooks/whitepaper_v1_gsm8k_benchmark.ipynb` | GSM8K (single‑turn math) | ~45 min |
-| `notebooks/customer_support_4h.ipynb` | Multi‑turn customer support | ~3 h |
+| **`notebooks/customer_support_3seed_judge.ipynb`** | **Whitepaper §11.7 publication-gate notebook — 3 seeds × dual eval (rubric + LLM judge)** | ~25 min |
+| `notebooks/whitepaper_v1_comparative_trainers.ipynb` | TRL GRPO vs GSPO vs DAPO head-to-head on §11.7 protocol | ~45 min |
+| `notebooks/whitepaper_v1_gsm8k_benchmark.ipynb` | GSM8K (single‑turn math) — binary reward | ~45 min |
+| `notebooks/whitepaper_v1_gsm8k_benchmark_v2.ipynb` | GSM8K — dense-reward A/B variant | ~45 min |
+| `notebooks/customer_support_4h.ipynb` | Multi‑turn customer support (single-seed) | ~3 h |
+| `notebooks/vllm_speedup_benchmark.ipynb` | HF generate vs vLLM throughput sweep for §6.4 | ~20 min |
+
+See [`notebooks/README.md`](notebooks/README.md) for all ten core notebooks (the four above plus quickstart, tool-calling, curate, SFT-closure, and the standard GSM8K variant). Every notebook is JSON-validated **and lint-checked** in CI via [`scripts/lint_notebooks.py`](scripts/lint_notebooks.py) — pre-flighting against the eight foot-gun patterns from [issue #16](https://github.com/stateset/stateset-agents/issues/16) (asyncio.run in Jupyter, abstract `Agent` base, flash-attn defaults, etc.).
 
 **CLI path** (local A100 / H100):
 
@@ -790,10 +813,13 @@ For complex runs prefer the Python API and the examples folder.
 ## Examples and docs
 
 **Start here:**
+- [`docs/WHITEPAPER.md`](docs/WHITEPAPER.md) — the v0.13.2 technical whitepaper. Anchored to a specific git commit; every claim is verifiable via Appendix C.
+- [`docs/WHITEPAPER_ERRATA.md`](docs/WHITEPAPER_ERRATA.md) — corrections published after each whitepaper revision.
 - [`docs/PLATFORM_TOUR.md`](docs/PLATFORM_TOUR.md) — a guided walk from `pip install` to a published v1.0 whitepaper revision (linear, journey-style).
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
-- [`notebooks/README.md`](notebooks/README.md) — a map of the 6 bundled Colab notebooks: which to open when.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (currently `v0.12.1`).
+- [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
+- [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (currently `v0.13.2`).
 
 Other entry points:
 
