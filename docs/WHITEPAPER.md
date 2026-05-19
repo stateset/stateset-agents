@@ -1,7 +1,7 @@
 # StateSet Agents: A Reinforcement Learning Framework for Multi-Turn Conversational AI
 
 **Technical Whitepaper**
-Version 0.13.0 · May 2026
+Version 0.13.1 · May 2026
 StateSet Team · `team@stateset.ai`
 
 ---
@@ -13,16 +13,16 @@ StateSet Agents is a reinforcement learning framework for training and serving l
 > ⚠️ **Read this before `pip install`.** The latest PyPI release is **0.7.1** (an early-2025 cut). It predates every named trainer in this paper, the Rust core, the dashboard, the auto-research loop, and most of the §11.7 publication-gate machinery. **Until a 0.13.x PyPI publish lands, install from source:**
 >
 > ```bash
-> pip install git+https://github.com/stateset/stateset-agents@v0.13.0
+> pip install git+https://github.com/stateset/stateset-agents@v0.13.1
 > ```
 >
 > If your tooling pins PyPI versions and you can't install from a tag, treat this paper as describing a *near-future* PyPI release rather than the current one. The framework's behavior is anchored to the named source commit, not to PyPI.
 
 ## Versioning and Reproducibility
 
-This whitepaper describes **version 0.13.0** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`4744c76`** on `master`.
+This whitepaper describes **version 0.13.1** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`4744c76`** on `master`.
 
-**PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.13.0 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.13.0 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.13.x is pending.
+**PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.13.1 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.13.1 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.13.x is pending.
 
 **What's named here is anchored in code.** Implementation citations (`gspo_trainer.py:390-419`, etc.) reference the named commit. To verify any specific claim:
 
@@ -77,7 +77,7 @@ StateSet Agents packages this research into a coherent, deployable framework:
 - **Sim-to-real transfer**, **continual learning**, **long-term planning** modules.
 - **Operational layer**: FastAPI service, OpenAI-compatible endpoints, Prometheus metrics, Helm charts, Kubernetes manifests.
 
-Not all components are at the same level of production readiness. The framework ships with an explicit **[Component Maturity matrix in §8.1](#81-component-maturity)** distinguishing *stable* (API-stable across point releases), *beta* (functionally complete, API may change), and *experimental* (works in tests, not yet recommended for production). New readers should check that matrix before designing a production deployment — VAPO, offline GRPO, continual learning, and the auto-research loop are all marked experimental as of v0.13.0.
+Not all components are at the same level of production readiness. The framework ships with an explicit **[Component Maturity matrix in §8.1](#81-component-maturity)** distinguishing *stable* (API-stable across point releases), *beta* (functionally complete, API may change), and *experimental* (works in tests, not yet recommended for production). New readers should check that matrix before designing a production deployment — VAPO, offline GRPO, continual learning, and the auto-research loop are all marked experimental as of v0.13.1.
 
 The framework is licensed under **BUSL-1.1** (transitioning to Apache 2.0 on 2029-09-03), distributed on PyPI as `stateset-agents`, and supports Python 3.10–3.13 on Linux and Windows. The BUSL period prevents direct competitors from offering a hosted derivative of the framework before the four-year transition window closes; individual users, academic researchers, and customers building on top of it have always-permitted use under the [Additional Use Grant](../LICENSE). After 2029-09-03 the framework converts to Apache 2.0 with no opt-out — a binding contractual commitment, not a marketing line. See [Component Maturity (§8.1)](#81-component-maturity) for which surfaces are stable, beta, or experimental — relevant when planning a production deployment under this license.
 

@@ -5,6 +5,41 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] - 2026-05-18 — Whitepaper PhD-reviewer round + comparative-trainer notebook + notebook-lint
+
+Closes the v1.0 whitepaper review feedback (A− → unblocking-to-A): comparative trainer notebook, vLLM-speedup notebook, related-work feature matrix, Rust-core measured speedup, §5.7 KL note promotion with TRL line citation, notation consistency, and the issue #16 CI smoke ask.
+
+### Added
+
+- **`notebooks/whitepaper_v1_comparative_trainers.ipynb`** — TRL GRPO vs GSPO vs DAPO on the §11.7 customer-support protocol. Three trainers × three seeds = nine training runs, same baseline, same rubric + LLM-judge eval. Fills the §5.6 comparative trainer table that's been empty since v0.11.6. Skips GEPO (async-oriented) and VAPO (experimental warmup) per the reviewer's recommendation.
+- **`notebooks/vllm_speedup_benchmark.ipynb`** — HF generate vs vLLM throughput sweep over `prompt_batch_size ∈ {1, 8, 32, 128}` × `num_generations=4` × `max_tokens=512` on `Qwen2.5-0.5B-Instruct`. Produces the §6.4 "Validated configuration" number with sweep data so readers see the speedup-grows-with-batch claim is verifiable.
+- **`scripts/lint_notebooks.py`** + **`make notebook-lint`** — codifies issue #16's lessons into a CI-friendly lint. Checks all ten bundled notebooks for: `asyncio.run()` in Jupyter, `Agent(config=...)` (abstract base), `attn_implementation='flash_attention_2'` (Colab incompatibility). Wired into `make smoke` and `.github/workflows/benchmark-smoke.yml`. Trigger paths simplified to `notebooks/**`.
+- **`benchmark_results/whitepaper_v1/rust_vs_python_microbenchmark.json`** — first-party measurement backing §6.8's Rust-core speedup claim. `batch_compute_gae` runs 26-72× faster than the equivalent Python loop across three batch sizes; vectorizable kernels (`compute_group_advantages`) don't see the same benefit. Honestly characterized.
+
+### Fixed
+
+- **`stateset_agents/training/trl_grpo_trainer.py:604`** — mirror of the `gspo_trainer.py` canonical-signature fix from `a2bdde4`. TRL GRPO's reward call was using `compute_reward(trajectory=None, turn=turn, ...)`, only accepted by `MultiObjectiveRewardFunction`. Now uses `compute_reward(turns=[turn], context=...)` so any `RewardFunction` subclass works — required by the new comparative-trainer notebook.
+- **`notebooks/quickstart_first_finetune.ipynb`** — three `asyncio.run()` calls in the test-prompt loop converted to top-level await (caught by `notebook-lint`).
+- **`notebooks/grade_and_curate_demo.ipynb`** — `asyncio.run()` over scenarios refactored to an `async def` + top-level await.
+- **`notebooks/sft_from_curated_demo.ipynb`** — two `asyncio.run()` in inline generate/eval calls converted to top-level await.
+- **`.github/workflows/benchmark-smoke.yml`** — notebook validation step now lints all ten bundled notebooks (was six) via `python scripts/lint_notebooks.py` in addition to JSON validity.
+
+### Documentation (PhD reviewer round)
+
+- **§13 Related Work** — replaced the prose paragraph with a 15-capability × 6-framework feature matrix (StateSet Agents vs TRL, OpenRLHF, TRLX, NeMo-Aligner, Verl). New "Distinguishing position" subsection naming the three column-pairs where the framework adds something the others don't.
+- **§5.7 "Exact Forward KL"** — promoted from "A Note on KL Divergence" with a three-way comparison (analytical / Schulman k1 / Schulman k3) and TRL line citations (`trl/trainer/ppo_trainer.py:517` and `rloo_trainer.py:436` — both use k1 `0.5 * (logprobs_diff**2).mean()`). Closes the "is that really true of all open implementations?" loophole.
+- **§3.1 Tool-call semantics** — new paragraph documenting the four behavior decisions: tool call is part of assistant turn (not separate), credit assignment is per-turn (not per-call), tool errors are reward's responsibility, tool outputs excluded from policy gradient.
+- **§6.8 Rust Acceleration Core** — replaces the unbacked performance claim with a measured speedup table: 26-72× on `batch_compute_gae`. Explicit that vectorizable kernels don't see the same benefit; the Rust core is included for recurrence-heavy paths, not as a blanket NumPy replacement.
+- **§6.4 vLLM speedup** — adds a "Validated configuration" paragraph naming the specific (model, batch, seq-len, hardware) tuple the integration is validated against, pointing at `vllm_speedup_benchmark.ipynb`.
+- **PyPI install-path warning** moved from §"Versioning and Reproducibility" body to a prominent callout immediately after the abstract, with a concrete `pip install git+...` command.
+- **Notation consistency** — `ε_R` → `ε_H` throughout §5.2 (GSPO) to match §5.0 notation table and §5.4 (DAPO).
+- **§4.4 "Bitter Lesson"** — Sutton citation (new reference [20]) plus a caveat about neural-reward failure modes (reward hacking, judge gaming, calibration drift).
+- **§1.2** now cross-references §8.1 Component Maturity so new readers encounter the experimental/beta/stable classification before §8.
+- **§1.2 BUSL→Apache 2.0** transition gets a rationale paragraph (no-hosted-derivative protection during the 4-year window, always-permitted use for individual/academic/customer cases, binding contractual conversion in 2029).
+- **§2.1 layered-design diagram** upgraded from ASCII to Mermaid (matches the §3 class diagram's quality).
+- **§7.4 dashboard** description points readers at `dashboard/README.md` for screenshots and `make dashboard` for the live UI.
+- **Appendix C.4 test-count verification** — changed from `pytest --collect-only` (counts but doesn't verify green) to `pytest tests/unit -q --no-header | tail -2` (counts AND confirms pass).
+
 ## [0.13.0] - 2026-05-18 — First-party canonical benchmark + KL-anchor safety
 
 The release that lands the v1.0 whitepaper's first canonical first-party benchmark result and codifies a previously-undocumented training foot-gun as a runtime warning. Driven by [issue #16](https://github.com/stateset/stateset-agents/issues/16) — a multi-day debugging session running the bundled benchmarks end-to-end on Colab A100.
