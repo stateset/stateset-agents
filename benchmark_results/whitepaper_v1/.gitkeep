@@ -1,0 +1,5 @@
+# Benchmark run outputs land here. Add result JSONs via:
+#   make benchmark-phase0 TRAINER=gspo SEED=42
+# or via the Colab notebooks under notebooks/.
+# Aggregation: make benchmark-aggregate
+# Full release: make release-whitepaper-v1

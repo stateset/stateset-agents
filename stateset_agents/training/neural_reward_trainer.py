@@ -146,12 +146,38 @@ class NeuralRewardModel(nn.Module):
         num_layers: int = 2,
         dropout: float = 0.1,
         activation: str = "relu",
+        encoder: Any | None = None,
+        suppress_smoke_encoder_warning: bool = False,
     ):
+        """Neural reward model.
+
+        ``encoder`` should be a sentence-transformer or compatible callable
+        ``encoder(text: str) -> torch.Tensor`` of dim ``embedding_dim``. When
+        ``encoder`` is ``None`` the model falls back to a hash-based
+        ``_embed_text`` for **smoke-testing the training loop only**. The hash
+        encoder does NOT produce useful gradients for reward learning — it
+        emits a near-random fixed embedding per input string. Passing
+        ``suppress_smoke_encoder_warning=True`` silences the loud warning;
+        do not enable that in production code.
+        """
         super().__init__()
 
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
+        self.encoder = encoder
+        if encoder is None and not suppress_smoke_encoder_warning:
+            logger.warning(
+                "NeuralRewardModel is using the hash-based smoke-test encoder "
+                "(no `encoder` passed). This encoder produces a fixed pseudo-random "
+                "embedding per input and CANNOT learn a useful reward function — "
+                "the loss curve will look like noise. Use only for verifying that "
+                "the training loop runs end-to-end. For real reward learning, pass "
+                "an `encoder=` (e.g. a sentence-transformers SentenceTransformer or "
+                "any callable text -> tensor of shape (embedding_dim,)). "
+                "Pass suppress_smoke_encoder_warning=True only if you really want "
+                "the smoke-test path."
+            )
 
         # Input projection
         self.input_proj = nn.Linear(

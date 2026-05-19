@@ -1,7 +1,7 @@
 # StateSet Agents: A Reinforcement Learning Framework for Multi-Turn Conversational AI
 
 **Technical Whitepaper**
-Version 0.13.1 · May 2026
+Version 0.13.2 · May 2026
 StateSet Team · `team@stateset.ai`
 
 ---
@@ -13,16 +13,16 @@ StateSet Agents is a reinforcement learning framework for training and serving l
 > ⚠️ **Read this before `pip install`.** The latest PyPI release is **0.7.1** (an early-2025 cut). It predates every named trainer in this paper, the Rust core, the dashboard, the auto-research loop, and most of the §11.7 publication-gate machinery. **Until a 0.13.x PyPI publish lands, install from source:**
 >
 > ```bash
-> pip install git+https://github.com/stateset/stateset-agents@v0.13.1
+> pip install git+https://github.com/stateset/stateset-agents@v0.13.2
 > ```
 >
 > If your tooling pins PyPI versions and you can't install from a tag, treat this paper as describing a *near-future* PyPI release rather than the current one. The framework's behavior is anchored to the named source commit, not to PyPI.
 
 ## Versioning and Reproducibility
 
-This whitepaper describes **version 0.13.1** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`4744c76`** on `master`.
+This whitepaper describes **version 0.13.2** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`4744c76`** on `master`.
 
-**PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.13.1 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.13.1 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.13.x is pending.
+**PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.13.2 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.13.2 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.13.x is pending.
 
 **What's named here is anchored in code.** Implementation citations (`gspo_trainer.py:390-419`, etc.) reference the named commit. To verify any specific claim:
 
@@ -55,6 +55,18 @@ The appendices (file map, hyperparameter reference) are designed as standalone r
 
 ## 1. Introduction
 
+### 1.0 Design Philosophy
+
+Five principles recur throughout the framework. They are spelled out in detail with code-pattern references in §14, but it helps to state them up front because they constrain every later design decision:
+
+1. **The trajectory is the unit of work.** Not the token, not the prompt — the trajectory. Every abstraction is shaped around this commitment.
+2. **Algorithms are interchangeable; environments are not.** A `ConversationEnvironment` + reward function is a long-lived asset; choosing GSPO vs. DAPO is a tuning decision.
+3. **Async-first, everywhere.** Rewards, environments, agent generation, tool calls — all async-native. This is what makes batched rollouts with composite rewards practical.
+4. **Stubs are first-class.** `StubBackend` isn't a testing afterthought; it's the seam that makes the framework usable without GPUs.
+5. **Failure surfaces are explicit.** Eight canonical exception tuples cover every retryable failure mode. Code that catches them retries; code that doesn't, doesn't.
+
+If a section feels like it's pulling in a different direction from these, that's a bug — please file an issue.
+
 ### 1.1 The Multi-Turn Problem
 
 Conventional Reinforcement Learning from Human Feedback (RLHF) — popularized by PPO-based training of InstructGPT-class models — treats each prompt-completion pair as an independent episode. This works well for short, single-turn tasks, but it breaks down in two important regimes:
@@ -77,9 +89,11 @@ StateSet Agents packages this research into a coherent, deployable framework:
 - **Sim-to-real transfer**, **continual learning**, **long-term planning** modules.
 - **Operational layer**: FastAPI service, OpenAI-compatible endpoints, Prometheus metrics, Helm charts, Kubernetes manifests.
 
-Not all components are at the same level of production readiness. The framework ships with an explicit **[Component Maturity matrix in §8.1](#81-component-maturity)** distinguishing *stable* (API-stable across point releases), *beta* (functionally complete, API may change), and *experimental* (works in tests, not yet recommended for production). New readers should check that matrix before designing a production deployment — VAPO, offline GRPO, continual learning, and the auto-research loop are all marked experimental as of v0.13.1.
+Not all components are at the same level of production readiness. The framework ships with an explicit **[Component Maturity matrix in §8.1](#81-component-maturity)** distinguishing *stable* (API-stable across point releases), *beta* (functionally complete, API may change), and *experimental* (works in tests, not yet recommended for production). New readers should check that matrix before designing a production deployment — VAPO, offline GRPO, continual learning, and the auto-research loop are all marked experimental as of v0.13.2.
 
-The framework is licensed under **BUSL-1.1** (transitioning to Apache 2.0 on 2029-09-03), distributed on PyPI as `stateset-agents`, and supports Python 3.10–3.13 on Linux and Windows. The BUSL period prevents direct competitors from offering a hosted derivative of the framework before the four-year transition window closes; individual users, academic researchers, and customers building on top of it have always-permitted use under the [Additional Use Grant](../LICENSE). After 2029-09-03 the framework converts to Apache 2.0 with no opt-out — a binding contractual commitment, not a marketing line. See [Component Maturity (§8.1)](#81-component-maturity) for which surfaces are stable, beta, or experimental — relevant when planning a production deployment under this license.
+The framework is licensed under **BUSL-1.1**, converts to Apache 2.0 on 2029-09-03, distributed on PyPI as `stateset-agents`, and supports Python 3.10–3.13 on Linux and Windows.[^busl] See [Component Maturity (§8.1)](#81-component-maturity) for which surfaces are stable, beta, or experimental — relevant when planning a production deployment under this license.
+
+[^busl]: The BUSL period reserves hosted-derivative offering for StateSet; individual users, academic research, and customers building on top of the framework have always-permitted use under the [Additional Use Grant](../LICENSE). The Apache 2.0 conversion on 2029-09-03 is a binding contractual term, not a marketing statement.
 
 ---
 
@@ -278,6 +292,8 @@ The atomic unit of data is `ConversationTurn`, supporting both a legacy `(user_m
 
 ### 3.6 The Memory Subsystem
 
+*Skim on first read — relevant only for production deployments where conversations exceed the model's native context window. Algorithm details matter when you're integrating Redis / SQLite backends; the trainer treats memory as transparent context.*
+
 Long conversations exceed the context windows of even modern models. `core/memory.py` provides a multi-tier memory system that lets agents reference earlier context selectively, without naively passing every prior turn into every generation call.
 
 `MemoryConfig` declares the tiers:
@@ -288,9 +304,18 @@ Long conversations exceed the context windows of even modern models. `core/memor
 - **`SEMANTIC`** — extracted entities and facts (names, dates, IDs, preferences) for structured lookup.
 - **`WORKING`** — current-task context: open subgoals, intermediate results, pending tool calls.
 
-A `ConversationMemory` instance owns these tiers and decides — on each `add_turn` — what to keep verbatim, what to summarize, and what to discard. Triggers are configurable: `summary_threshold` for when to compact a window into a summary, `importance_decay` for how aggressively to demote old content. The retrieval path supports both dense (all in-window content) and sparse (summary + top-k retrieved long-term items) prompt construction.
+**The actual algorithm** — `ConversationMemory.add_turn` in [`core/memory.py`](../stateset_agents/core/memory.py) executes the following sequence on every turn:
 
-The persistence backend is pluggable: in-memory (default, ephemeral), Redis (for distributed agent fleets), or SQLite (for single-host durability). Long-term memory survives process restarts under Redis/SQLite, which is what enables continuity across sessions for production deployments.
+1. **Append** the turn to short-term with a per-turn importance score (default 0.5) and ISO timestamp.
+2. **Extract entities** (default: regex over name / date / id / email / phone patterns) into a `dict[entity_key → Entity]`. Duplicates are deduplicated by `f"{entity_type}:{value.lower()}"`.
+3. **Extract facts** (default: heuristic sentence-level filter for declarative statements). Facts are deduplicated and capped at the most recent 50.
+4. **Summarize** if `turn_count - last_summarization >= summary_threshold` (default 10): an async `_maybe_summarize()` is scheduled in the background, which compacts the oldest `summary_threshold` turns into a single `Summary` object and pushes it into the long-term tier.
+5. **Decay** the `importance` of every turn already in short-term by `importance_decay` (default 0.95) — exponential demotion over time.
+6. **Trim** short-term to at most `max_short_term_turns` (default by token budget); turns trimmed with `importance > 0.3` get promoted to long-term, the rest are discarded.
+
+**Retrieval** (`get_context_for_generation`) reverses through short-term newest-first, accumulating turns until `max_short_term_tokens` is reached, then optionally appends the latest summary and the entity/fact tables. Long-term semantic retrieval (top-k by relevance) is supported via `get_relevant_memories(query)` but is *not* automatically wired into `get_context_for_generation` — callers opt in.
+
+**Persistence backends** are pluggable: in-memory (default, ephemeral), Redis (for distributed agent fleets), or SQLite (for single-host durability). Long-term memory survives process restarts under Redis/SQLite, which is what enables continuity across sessions for production deployments. **Pending engineering work**: the semantic-tier retrieval uses string-overlap heuristics by default rather than embedding similarity; swapping in a sentence-transformer–backed semantic store is the v1.1 follow-up. Until that lands, treat semantic retrieval as "useful for entity/fact pulls" but not "useful for paraphrase retrieval of arbitrary content."
 
 ---
 
@@ -348,7 +373,7 @@ Hand-crafted rewards have a ceiling: they capture exactly what their designer en
 
 The `NeuralRewardModel` (lines 137-176) is a deliberately small MLP:
 
-- **Input.** Concatenated prompt + response embeddings (128-dimensional by default, derived from a hash-based encoder so the trainer works without a sentence-transformer dependency at training start; production setups swap in a real encoder).
+- **Input.** Concatenated prompt + response embeddings (128-dimensional by default). The default `encoder=None` path uses a hash-based pseudo-embedding that exists **purely to smoke-test the training loop**. It cannot learn a useful reward function: the same string always hashes to the same vector and that vector is uncorrelated with text semantics, so the model has nothing to fit against. The constructor emits a `WARNING` when `encoder=None` for exactly this reason. **For real reward learning**, pass `encoder=` a `sentence_transformers.SentenceTransformer` or any callable `text -> tensor(embedding_dim,)`. The framework will not catch you if you ignore the warning, but the resulting loss curve will look like noise — the failure is loud in W&B but silent in the absence of monitoring. Make `sentence-transformers` part of your requirements if you use this path.
 - **Body.** A configurable stack of hidden layers (default 2 layers, hidden_dim=256) with ReLU/GELU activations and dropout=0.1.
 - **Output.** A single scalar (the reward).
 - **Initialization.** Xavier uniform for stable early training.
@@ -473,7 +498,7 @@ $$
 w_{\text{GEIW}}(y \mid x) \;=\; \frac{p(y \mid x)}{E_q[q]}, \qquad E_q[q] \;\approx\; \sum_{i=1}^{G} \tilde{q}_i \cdot q_i, \qquad \tilde{q}_i \;=\; \frac{q_i}{\sum_{j=1}^{G} q_j}
 $$
 
-The denominator $E_q[q]$ is computed once per group as a scalar; every member of the group is divided by the *same* value, which is what amortizes importance-weight variance across the group. Standard PPO clipping is then applied over $w_{\text{GEIW}}$.
+The denominator $E_q[q]$ is the **self-normalized importance-sampling denominator** under the empirical normalized distribution $\{\tilde{q}_i\}$ over the group — same primitive that appears in particle-filter resampling and population Monte Carlo. It is computed once per group as a scalar; every member of the group is divided by the *same* value, which is what amortizes importance-weight variance across the group. Standard PPO clipping is then applied over $w_{\text{GEIW}}$.
 
 **Why it matters.** Group-level aggregation amortizes importance-weight variance across the group, which is especially valuable when sampler and learner policies diverge (e.g., heterogeneous compute, network-delayed actors, off-policy data). The denominator is scalar, avoiding per-sequence division instabilities.
 
@@ -689,6 +714,8 @@ State and action embeddings come from a configurable sentence-transformer (`embe
 
 ### 6.7 Continual Learning
 
+*Skim on first read — opt-in via `[continual]` extra; not on the §11.7 critical path. Read when planning a streaming-data deployment.*
+
 Production agents see distribution shift: new product categories, new user demographics, new policies. Catastrophic forgetting — where fine-tuning on new tasks erases prior capabilities — is the canonical failure mode.
 
 `stateset_agents/training/continual_learning.py` provides seven configurable strategies via a single `strategy` enum:
@@ -730,13 +757,17 @@ The performance rationale: Python's overhead dominates when the inner loop isn't
 | `batch_compute_gae` | 32 × 512 | 7.05 ms | 0.10 ms | **72×** |
 | `batch_compute_gae` | 128 × 1024 | 52.8 ms | 1.51 ms | **35×** |
 
-For *vectorizable* kernels (e.g. `compute_group_advantages` on a 2-D ndarray), NumPy with BLAS is competitive with the Rust path — at typical batch sizes the function-call boundary and ndarray conversion overhead can leave Rust slightly behind plain NumPy. The Rust core is included for the recurrence-heavy paths (GAE, importance-ratio backward sums) — *not* as a blanket NumPy replacement. Be honest about this with your profiler: a per-step `time.perf_counter()` around each kernel will tell you which side is the bottleneck on your hardware.
+For *vectorizable* kernels (e.g. `compute_group_advantages` on a 2-D ndarray), NumPy with BLAS is competitive with the Rust path — at typical batch sizes the function-call boundary and ndarray conversion overhead can leave Rust slightly behind plain NumPy. The Rust core is included for the recurrence-heavy paths (GAE, importance-ratio backward sums) — *not* as a blanket NumPy replacement.
+
+**Honest end-to-end framing.** The 26–72× numbers above are *isolated-kernel* microbenchmarks. In an actual training step, Phase 2 (generation) typically dominates wall-clock (§6.5) — for the §11.7 configuration on Colab A100, generation is roughly 70–85% of step time, the GAE/advantage Phase 4 is ~1–3%, and the Phase 5 forward+backward is ~10–20%. So a 30× speedup on Phase 4 typically translates to **<1% improvement in end-to-end step time** on this configuration. The Rust core is the right primitive for Phase-4-dominated workloads (very large group sizes, long trajectories, value-net actor-critic training) and for keeping the recurrence-heavy paths off the bottleneck heat map. It is *not* a blanket framework speedup. Be honest about this with your profiler: a per-step `time.perf_counter()` around each kernel will tell you which side is the bottleneck on your hardware.
 
 The Rust core is **optional**. The framework includes pure-Python fallbacks for every accelerated function. CI builds the Rust core via `maturin` and tests both paths; users who can't compile Rust still get a working framework, just slower on GAE.
 
 **Configuration in `Cargo.toml`:** release builds use `opt-level=3`, LTO=fat, codegen-units=1, panic=abort — standard Rust release settings.
 
 ### 6.9 Sim-to-Real Transfer
+
+*Skim on first read — relevant if you're bridging templated/scripted user models to real user populations. The trainer doesn't require either module.*
 
 Most production agents are trained against *simulated* users (templated personas, scripted user models) and then deployed against real ones. The simulator-to-reality gap is real: real users are more variable, less cooperative, less articulate.
 
@@ -926,6 +957,8 @@ Not every module in the framework is at the same level of production-readiness. 
 | Dashboard | **Beta** | |
 
 Treat this matrix as part of the public contract: changes to **stable** components follow semantic versioning; **beta** components may change their config schemas in minor releases (with migration notes); **experimental** components may change their public API in patch releases.
+
+> **Note on the apparent inversion** — the operational layer (FastAPI service, observability) is `Stable` while the trainers are `Beta` / `Experimental`. This reflects the framework's deployment history rather than any value judgment: the serving layer hardened first against StateSet's own commercial customer-support deployments, where API stability is a hard requirement. The trainer surface is currently in active hardening — the v0.13 release line is closing first-party benchmark gates (see §11.7) ahead of promoting any of GSPO/DAPO/GEPO to `Stable` in v0.14. VAPO remains `Experimental` because the value-net warmup + decoupled-GAE tuning surface is still being validated against §5.5's reproduced numbers.
 
 ---
 
@@ -1144,6 +1177,8 @@ Group-based RL has characteristic failure modes that look different from supervi
 | **Reward function raises but training continues** | Default `CompositeReward` graceful-degradation behavior; one component is failing silently. | Check W&B for per-component reward breakdowns; failures log warnings but don't abort. |
 | **Trained model emits token soup; rubric score still nonzero** | No KL anchor + small corpus + rule-based reward → policy drifts off the coherent-text manifold while still hitting rubric keywords. | Set `use_reference_model=True, beta=0.05`; `train_with_gspo` emits a runtime warning when this combination is detected on a small corpus. See §10.5 and `benchmark_results/whitepaper_v1/customer_support_qwen3_5_0_8b_gspo.json`. |
 
+> 🚨 **The token-soup failure deserves its own callout.** If the rubric score is nonzero but the live-demo output is gibberish, that's a *coherence collapse*, not a training success. The trained policy has found a way to hit rubric keywords without producing intelligible English. This is the canonical "RL without KL anchor on small corpus" failure mode. **Never accept a rubric improvement without spot-checking the actual generations.** §11.7's protocol does this via the LLM-judge eval; the keyword rubric alone cannot distinguish "good response that mentions refund" from "random tokens that contain the word 'refund'."
+
 **Key W&B / metric panels to watch:**
 
 - `reward/mean`, `reward/std` — primary signal. `std` collapsing toward 0 within a group means the policy has converged to a single response per prompt — usually bad.
@@ -1154,6 +1189,8 @@ Group-based RL has characteristic failure modes that look different from supervi
 - `gradient_stats/grad_norm`, `grad_max`, `num_zero_grads` — `BaseTrainer` tracks these; spikes are precursors to instability.
 
 ### 11.6 Autonomous Research Loops
+
+*Skim on first read — opt-in via `[auto-research]` extra. Useful for overnight HPO sweeps, not required for any §11.7 result.*
 
 For practitioners who want to *automate* the hyperparameter search itself, the framework ships `training/auto_research/` — a self-driving experiment loop. The core `AutoResearchLoop` class orchestrates four phases on a repeating schedule:
 
@@ -1185,6 +1222,8 @@ This is the **canonical first-party benchmark** for the v1.0 whitepaper. Result 
 | LLM-judge (paraphrase-tolerant) | 0.750 | 0.829 | **+0.079** | 0.058 | ✅ |
 
 **Methodology.** Three seeds: 42, 1337, 2026. Trainee: `Qwen/Qwen2.5-0.5B-Instruct` with LoRA (r=16). Judge: `Qwen/Qwen2.5-1.5B-Instruct` loaded locally (no API key required). Training corpus: 16 customer-support scenarios from `stateset_agents.data.customer_support_bench`; eval: held-out 8 scenarios. Trainer: GSPO with **safe defaults from §B.1** (`use_reference_model=True`, `beta=0.05`, `num_epochs=1`). Identical config across all three seeds — the only thing that varies is the RNG state.
+
+**Known methodology limitation — in-family judge bias.** The trainee is Qwen2.5-0.5B-Instruct and the judge is Qwen2.5-1.5B-Instruct. The two models share a training data distribution, tokenizer, and instruction-tuning lineage. In-family LLM-judge evaluation is known to bias toward outputs that match the judge's own stylistic prior — the judge "recognizes" its sibling's voice. This does not invalidate the direction of the result (the rubric agrees independently with +0.072) or its three-seed stability (σ = 0.058) — but the absolute magnitude of `judge_improvement = +0.079` should be read as an upper bound on what a cross-family judge would report. The reference notebook supports an optional `CROSS_FAMILY_JUDGE_MODEL` constant (e.g. `meta-llama/Meta-Llama-3-8B-Instruct`) for a sanity check on the same generations; rerun with that set to surface the cross-family number. The v1.1 revision is expected to include the cross-family result inline.
 
 **Publication gate.** The protocol from [`benchmark_results/SCHEMA.md`](../benchmark_results/SCHEMA.md) requires judge improvement > 0.03 with three-seed agreement in the positive direction. Both conditions hold (Δ = +0.079 > 0.03; all three seeds positive). The rubric satisfies the gate independently (Δ = +0.072 > 0.03; all three positive).
 
@@ -1249,7 +1288,7 @@ This is the **canonical first-party benchmark** for the v1.0 whitepaper. Result 
 
 The matrix is unsentimental about where StateSet Agents adds nothing: distributed training, single-turn RLHF, basic vLLM integration are all well-served elsewhere. The framework's *distinctive* position lives in the column-pairs:
 
-1. **Five group-based trainers + multi-turn environments + serving layer** in one library. No other framework ships all three.
+1. **Five group-based trainers + multi-turn environments + serving layer** in one library. No other framework in the matrix treats all three as first-class concerns in a single deployable package — OpenRLHF has Ray actors and a serving recipe, NeMo-Aligner has a Triton recipe, TRL has GRPO; each treats one or two of these as primary and the others as user-wired.
 2. **Composable async rewards + LLM-judge built-in + stub-backend testing**. Lets you iterate on reward design at full speed without needing a GPU.
 3. **Tool-using agents as first-class RL targets**, with the tool-call semantics pinned down (§3.1) instead of left to user interpretation.
 

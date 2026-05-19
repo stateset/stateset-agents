@@ -5,6 +5,38 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.2] - 2026-05-18 — Second PhD-reviewer round (calibration + scoping fixes)
+
+Addresses every item from the second reviewer pass. Patch bump: no API removed, additions are doc clarifications, one framework warning, and a notebook extension. Items map 1:1 to the reviewer's numbered list.
+
+### Added
+
+- **§1.0 Design Philosophy preface** — the five principles previously only in §14 now lead §1, anchoring the rest of the document. §14 retains the detailed treatment.
+- **§11.7 in-family-judge-bias disclosure** — explicit acknowledgment that Qwen-trainee + Qwen-judge has known in-family bias. Points readers at the new `CROSS_FAMILY_JUDGE_MODEL` knob in the reference notebook.
+- **`CROSS_FAMILY_JUDGE_MODEL` constant** in `notebooks/customer_support_3seed_judge.ipynb` — opt-in second judge (Llama-3-8B-Instruct or similar) for the cross-family sanity check. Disabled by default (saves ~6 GB VRAM + ~5 min wall clock); set to enable. Evaluate() function now reports `cross_judge_mean` alongside the primary `judge_mean` when enabled.
+- **§6.8 end-to-end framing** — explicit caveat that the 26–72× kernel speedup translates to <1% of end-to-end step time at typical §11.7 configurations. Pre-empts "framework is 26× faster" misreading.
+- **§3.6 memory algorithm pin-down** — replaces the vague "configurable triggers" with the actual `add_turn` sequence (append → extract entities → extract facts → maybe summarize → decay → trim) plus the retrieval order. Flags semantic-tier embedding-similarity as v1.1 pending work.
+- **§8.1 maturity-inversion acknowledgment** — one paragraph explaining why serving is `Stable` while trainers are `Beta`/`Experimental` (the operational layer hardened first against StateSet's commercial deployments).
+- **§5.3 GEPO math clarification** — names $E_q[q]$ as the self-normalized importance-sampling denominator, connecting the symbol to particle-filter/population-Monte-Carlo primitives.
+- **§11.5 token-soup callout** — promotes the issue #16 failure mode from a table row to a prose callout that reminds readers never to accept a rubric improvement without spot-checking generations.
+- **"Skim on first read" labels** on §3.6, §6.7, §6.9, §11.6 — improves navigation for readers using the document as reference.
+
+### Changed
+
+- **`NeuralRewardModel` constructor** in `stateset_agents/training/neural_reward_trainer.py` now takes an `encoder=None` parameter and emits a `WARNING` when the default hash-based smoke-test encoder is used without `suppress_smoke_encoder_warning=True`. The hash encoder cannot learn useful rewards (deterministic pseudo-random per string); the warning quotes the fix and the smoke-test rationale. §4.4 prose updated accordingly: the default path is now explicitly framed as "smoke-test the training loop only."
+- **§13.2 prose** — softened from "no other framework ships all three" to "no other framework in the matrix treats all three as first-class concerns in a single deployable package," with concrete examples of which competitors treat which subset as first-class.
+- **§1.2 BUSL framing** — trimmed the positioning paragraph to a one-line license declaration; the four-year rationale moves to a footnote.
+
+### Documentation
+
+- All eleven reviewer items above plus the smaller notes (BUSL trim, dense Mermaid diagram in §3 — flagged but not yet split; "skim" labels; principles preface).
+
+### Still pending (Colab-bound, for v1.0/v1.1 first-party results)
+
+- Comparative trainer benchmark run (`whitepaper_v1_comparative_trainers.ipynb` — authored in v0.13.1, awaiting Colab execution).
+- vLLM speedup measurement run (`vllm_speedup_benchmark.ipynb` — authored in v0.13.1, awaiting Colab execution).
+- Cross-family judge result on the §11.7 generations (notebook supports it in this release; needs a run).
+
 ## [0.13.1] - 2026-05-18 — Whitepaper PhD-reviewer round + comparative-trainer notebook + notebook-lint
 
 Closes the v1.0 whitepaper review feedback (A− → unblocking-to-A): comparative trainer notebook, vLLM-speedup notebook, related-work feature matrix, Rust-core measured speedup, §5.7 KL note promotion with TRL line citation, notation consistency, and the issue #16 CI smoke ask.
