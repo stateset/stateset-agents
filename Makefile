@@ -206,6 +206,9 @@ health: ## Comprehensive platform health check: smoke-cli + doctor + version + c
 	@echo "║   ✓ Health check complete.                                             ║"
 	@echo "╚═══════════════════════════════════════════════════════════════════════╝"
 
+notebook-lint: ## Lint bundled notebooks for the foot-gun patterns from issue #16
+	@python3 scripts/lint_notebooks.py
+
 smoke: ## Run the full local smoke pipeline: unit tests + benchmark smoke + starter smoke + notebook validation
 	@echo "==> Unit tests for benchmark + scaffolding pipelines"
 	@python -m pytest tests/unit/test_gsm8k.py \
@@ -223,10 +226,8 @@ smoke: ## Run the full local smoke pipeline: unit tests + benchmark smoke + star
 	@echo "==> Starter scaffold smoke (all 4 templates)"
 	@$(MAKE) -s starter-test
 	@echo ""
-	@echo "==> Notebook JSON validity"
-	@for nb in notebooks/whitepaper_v1_gsm8k_benchmark.ipynb notebooks/customer_support_4h.ipynb notebooks/tool_calling_agent_demo.ipynb; do \
-		python -c "import json; json.load(open('$$nb')); print('  $$nb: OK')" || exit 1; \
-	done
+	@echo "==> Notebook lint (foot-gun patterns from issue #16)"
+	@$(MAKE) -s notebook-lint
 	@echo ""
 	@echo "✓ All smoke checks passed."
 

@@ -25,12 +25,8 @@ on:
       - 'tests/unit/test_task_adapters.py'
       - 'tests/unit/test_scaffolding.py'
       - 'benchmark_results/**'
-      - 'notebooks/whitepaper_v1_gsm8k_benchmark.ipynb'
-      - 'notebooks/customer_support_4h.ipynb'
-      - 'notebooks/tool_calling_agent_demo.ipynb'
-      - 'notebooks/grade_and_curate_demo.ipynb'
-      - 'notebooks/sft_from_curated_demo.ipynb'
-      - 'notebooks/quickstart_first_finetune.ipynb'
+      - 'notebooks/**'
+      - 'scripts/lint_notebooks.py'
       - '.github/workflows/benchmark-smoke.yml'
   pull_request:
     branches: [master, main]
@@ -50,12 +46,8 @@ on:
       - 'tests/unit/test_task_adapters.py'
       - 'tests/unit/test_scaffolding.py'
       - 'benchmark_results/**'
-      - 'notebooks/whitepaper_v1_gsm8k_benchmark.ipynb'
-      - 'notebooks/customer_support_4h.ipynb'
-      - 'notebooks/tool_calling_agent_demo.ipynb'
-      - 'notebooks/grade_and_curate_demo.ipynb'
-      - 'notebooks/sft_from_curated_demo.ipynb'
-      - 'notebooks/quickstart_first_finetune.ipynb'
+      - 'notebooks/**'
+      - 'scripts/lint_notebooks.py'
       - '.github/workflows/benchmark-smoke.yml'
   workflow_dispatch:
 
@@ -133,16 +125,25 @@ jobs:
             --output-dir /tmp/fake_results
           cat /tmp/fake_results/summary.md
 
-      - name: Validate all benchmark notebooks are well-formed JSON
+      - name: Validate all bundled notebooks (JSON + foot-gun lint)
         run: |
-          for nb in notebooks/whitepaper_v1_gsm8k_benchmark.ipynb \
+          # JSON validity — all ten bundled notebooks
+          for nb in notebooks/quickstart_first_finetune.ipynb \
+                   notebooks/whitepaper_v1_gsm8k_benchmark.ipynb \
+                   notebooks/whitepaper_v1_gsm8k_benchmark_v2.ipynb \
                    notebooks/customer_support_4h.ipynb \
+                   notebooks/customer_support_3seed_judge.ipynb \
+                   notebooks/whitepaper_v1_comparative_trainers.ipynb \
+                   notebooks/vllm_speedup_benchmark.ipynb \
                    notebooks/tool_calling_agent_demo.ipynb \
                    notebooks/grade_and_curate_demo.ipynb \
-                   notebooks/sft_from_curated_demo.ipynb \
-                   notebooks/quickstart_first_finetune.ipynb; do
+                   notebooks/sft_from_curated_demo.ipynb; do
             python -c "import json; json.loads(open('$nb').read()); print('$nb: OK')"
           done
+          # Foot-gun lint — catches the bug classes from issue #16
+          # (asyncio.run in Jupyter, abstract Agent base, flash_attention_2 default)
+          # so the next contributor doesn't re-live the v0.13.0 debug session.
+          python scripts/lint_notebooks.py
 
       - name: Changelog gate — version in pyproject.toml must be documented
         run: make changelog-check
