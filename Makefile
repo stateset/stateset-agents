@@ -212,6 +212,9 @@ notebook-lint: ## Lint bundled notebooks for the foot-gun patterns from issue #1
 whitepaper-pdf: ## Build docs/WHITEPAPER.pdf from docs/WHITEPAPER.md via weasyprint
 	@python3.10 scripts/build_whitepaper_pdf.py
 
+getting-started-smoke: ## Run examples/getting_started/smoke.sh against the installed PyPI package
+	@PYTHON=python3.10 examples/getting_started/smoke.sh
+
 smoke: ## Run the full local smoke pipeline: unit tests + benchmark smoke + starter smoke + notebook validation
 	@echo "==> Unit tests for benchmark + scaffolding pipelines"
 	@python -m pytest tests/unit/test_gsm8k.py \

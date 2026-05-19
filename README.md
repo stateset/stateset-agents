@@ -823,6 +823,7 @@ For complex runs prefer the Python API and the examples folder.
 
 Other entry points:
 
+- **[`examples/getting_started/`](examples/getting_started/)** — **start here after `pip install`**: five small examples (stub hello, custom reward, first GSPO fine-tune, LLM-judge eval, serve via FastAPI). All target the published PyPI version; the GPU-free three smoke-test the install end-to-end. Run `make getting-started-smoke` to verify all three at once.
 - `examples/hello_world.py` – stub mode walkthrough
 - `examples/quick_start.py` – stub-backed onboarding example with training + smoke test
 - `examples/complete_grpo_training.py` – end‑to‑end GRPO training
