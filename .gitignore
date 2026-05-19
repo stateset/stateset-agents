@@ -156,6 +156,10 @@ semgrep-report.txt
 trivy-report.json
 trivy-report.txt
 
+# Whitepaper draft preview (built by scripts/build_whitepaper_pdf.py via weasyprint).
+# Canonical PDF at docs/WHITEPAPER.pdf is LaTeX-typeset and tracked.
+docs/WHITEPAPER.preview.pdf
+
 # Logs
 logs/
 *.log

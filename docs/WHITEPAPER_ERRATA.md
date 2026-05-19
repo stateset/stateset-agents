@@ -48,6 +48,22 @@ The comment `# Test count (claimed: 1,624)` is updated to `# Test count (claimed
 
 ---
 
+## Note on `docs/WHITEPAPER.pdf` (LaTeX-typeset, v0.13.4)
+
+The canonical published PDF at `docs/WHITEPAPER.pdf` is **typeset with `pdfTeX` / LaTeX** (54 pages, proper table of contents, running headers, real math symbols, dotted page numbers). It was produced from `docs/WHITEPAPER.md` via a `pandoc` → LaTeX pipeline run on the v0.13.4 anchor commit.
+
+**Minor drift between PDF and source markdown:** the LaTeX PDF was rendered slightly before the very last v0.13.4 markdown edits landed. The PDF therefore omits three small additions that the markdown source has:
+
+- **§10.3** — the one-line audit note saying we audited the other bundled rubrics (`GSM8KReward`, `PartialCreditGSM8KReward`, `ToolCallingReward`) for similar blindness patterns.
+- **§C.7** — the "Reproducing the §11.7 result" command block (Colab URL + `jupyter nbconvert --execute` invocation).
+- **Front-matter PyPI callout** — the markdown uses the rewritten "✅ `pip install stateset-agents` is current as of v0.13.2" phrasing; the PDF retains an earlier wording that still correctly states the current PyPI status.
+
+These edits will land in the next typeset cut. None of them change any headline claim; all three are small clarifications layered on top of unchanged content. Authoritative reading order is unchanged: code wins over doc; markdown source wins over PDF when they disagree on minor edits like these.
+
+The `scripts/build_whitepaper_pdf.py` weasyprint-based build is **not** the canonical pipeline — it produces a draft preview from the current markdown source. The LaTeX-typeset PDF is what should be linked from publications, press, and external citations.
+
+---
+
 ## Re-anchor `a2bdde4` → `4744c76`
 
 The whitepaper acquired §11.7 ("First-Party Reproduction") and several supporting edits (§8.1 maturity matrix, front-matter, §10.3, §10.5, §11.5, §B.1) between `a2bdde4` and `4744c76`. The new anchor `4744c76` is the commit that landed §11.7 with the canonical three-seed positive-transfer result.

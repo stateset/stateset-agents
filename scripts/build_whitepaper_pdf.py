@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
-"""Build a PDF of docs/WHITEPAPER.md.
+"""Build a DRAFT-PREVIEW PDF of docs/WHITEPAPER.md.
+
+⚠️ This is NOT the canonical published PDF. The canonical PDF at
+docs/WHITEPAPER.pdf is typeset with pdfTeX/LaTeX (proper ToC, running
+headers, real math symbols, dotted page numbers) and is the version
+that should be linked from publications, press, and external citations.
+
+This script's purpose is a quick local rebuild when the markdown changes
+and you want a "what would this look like as a PDF?" preview without
+running the LaTeX pipeline. Output goes to docs/WHITEPAPER.preview.pdf
+to avoid overwriting the canonical artifact.
 
 Pipeline:
   Markdown (with extensions) → HTML → CSS-styled HTML → PDF (via weasyprint)
 
-Mermaid diagrams render as code blocks in the PDF (interactive diagrams are
-HTML-only). The two mermaid blocks in §2.1 and §3 are intentionally lossy
-in print; the PDF gets a footnote pointing readers at the HTML/Markdown
-source for the rendered versions.
+Mermaid diagrams: rendered via mermaid.ink to inline SVG with on-disk
+caching. Falls back to a fenced code block if the service is unreachable.
 
 LaTeX math (single $..$ and block $$..$$) is preserved as-is so a reader
-on a math-aware PDF viewer (most modern ones) sees the formulae. For pixel-
-perfect math rendering, the GitHub web view is canonical.
+on a math-aware PDF viewer sees the formulae. The LaTeX-typeset canonical
+PDF renders math properly; this draft does not.
 
-Output: docs/WHITEPAPER.pdf
+Output: docs/WHITEPAPER.preview.pdf
 """
 
 from __future__ import annotations
@@ -32,7 +40,7 @@ from weasyprint import CSS, HTML
 
 REPO = Path(__file__).resolve().parent.parent
 MD = REPO / "docs" / "WHITEPAPER.md"
-OUT = REPO / "docs" / "WHITEPAPER.pdf"
+OUT = REPO / "docs" / "WHITEPAPER.preview.pdf"
 
 CSS_STR = """
 @page {

@@ -209,7 +209,7 @@ health: ## Comprehensive platform health check: smoke-cli + doctor + version + c
 notebook-lint: ## Lint bundled notebooks for the foot-gun patterns from issue #16
 	@python3 scripts/lint_notebooks.py
 
-whitepaper-pdf: ## Build docs/WHITEPAPER.pdf from docs/WHITEPAPER.md via weasyprint
+whitepaper-pdf-preview: ## Build a DRAFT preview at docs/WHITEPAPER.preview.pdf (canonical PDF is the LaTeX-typeset docs/WHITEPAPER.pdf)
 	@python3.10 scripts/build_whitepaper_pdf.py
 
 getting-started-smoke: ## Run examples/getting_started/smoke.sh against the installed PyPI package
