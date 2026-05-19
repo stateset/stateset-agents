@@ -600,10 +600,12 @@ class TRLGRPORewardFunction:
                 role="assistant", content=completion, metadata={"generated": True}
             )
 
-            # Compute reward using the framework's reward model
+            # Compute reward using the framework's reward model.
+            # Uses the canonical RewardFunction.compute_reward(turns, context) API
+            # documented in §4.1 of the whitepaper, so any RewardFunction subclass
+            # (not just MultiObjectiveRewardFunction) works.
             reward_info = await self.reward_model.compute_reward(
-                trajectory=None,  # Single turn evaluation
-                turn=turn,
+                turns=[turn],
                 context={"user_query": user_query},
             )
 
