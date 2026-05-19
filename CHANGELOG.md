@@ -5,6 +5,39 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.4] - 2026-05-18 — Fourth-reviewer round: factual fixes + PDF rendering + reproducibility re-run
+
+A fourth reviewer graded v0.13.3 at A−, primarily citing factual inconsistencies in §5.2 (clip-range "symmetric" vs the actual 3e-4/4e-4 values; "three orders of magnitude" vs the actual 2.8), a stale PyPI-lag note still claiming PyPI was at 0.7.1, and Mermaid diagrams rendered as fenced code in the PDF. This release lands those fixes plus three smaller asks. Items map 1:1 to the reviewer's numbered list.
+
+### Fixed (factual)
+
+- **WP §5.2 GSPO clip range.** Was: "the shipped defaults are symmetric — Clip-Higher asymmetry is reserved for DAPO and VAPO" with defaults `3e-4 / 4e-4`. Now correctly describes the defaults as **mildly asymmetric** with a slight upside bias, contrasted against DAPO's deliberate 40% Clip-Higher asymmetry. Also fixes the "three orders of magnitude tighter than 0.2" claim — the actual ratio is `0.2 / 3e-4 ≈ 667× = 2.8 orders of magnitude`.
+
+- **WP front-matter PyPI callout + §"Versioning and Reproducibility".** Both still said PyPI was at 0.7.1 — stale since we shipped 0.13.2 to PyPI in this same release line. Updated to the current state: PyPI is at 0.13.2, source ahead by a patch, lag-window closed.
+
+- **WP §5.6 comparative summary table.** The "Reported AIME score" row had empty cells for GRPO/GSPO/GEPO that highlighted the gap rather than mitigated it. Replaced with two rows: "Source-paper reasoning benchmark" (cites the paper-reported numbers with links) and "First-party (this framework)" (only GSPO has an entry, all others honestly marked "pending §5.6 v1.1"). Also added explicit "design-intent map, not a head-to-head benchmark" framing at the top of the section.
+
+- **WP §6.7 Continual Learning.** Reviewer flagged this as "shaped like a feature list, not a guide." Demoted from a full subsection with a strategy table to a single paragraph explicitly labeled "primitive, evaluation harness pending."
+
+### Added
+
+- **`make whitepaper-pdf` Mermaid rendering.** The build script now fetches SVG from `mermaid.ink` (no install required, no JS execution) with on-disk caching at `/tmp/mermaid_svg_cache/`. The two diagrams in §2.1 and §3 now render as actual SVG in the PDF instead of fenced code blocks. Falls back to the code-block placeholder if the service is unreachable.
+
+- **WP §C.7 audit-trail update.** Added the missing reproduction command for the §11.7 canonical result — both the Colab notebook URL and the headless `jupyter nbconvert --execute` invocation.
+
+- **WP §10.3 rubric-blindness audit note.** One-line acknowledgment that the other bundled rubrics (`GSM8KReward`, `PartialCreditGSM8KReward`, `ToolCallingReward`) were audited for similar blindness patterns; tool-calling has its own structural failure mode (well-formed JSON for the wrong tool) that the §11.7 LLM-judge protocol would catch.
+
+- **`benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct_rerun.json`** — independent re-run of the canonical §11.7 result on a fresh Colab session ~7 hours after the original. `trained_metrics` are bitwise-identical to four decimals across both runs — empirical evidence of seed-determinism, not just claimed.
+
+- **`docs/WHITEPAPER.pdf`** rebuilt at this version (v0.13.4). 60 pages, ~390 KB. Cover page, header/footer pagination, Charter serif body / Inter sans headings / JetBrains Mono code, rendered Mermaid diagrams.
+
+### Still pending (Colab-bound — explicit in the docs)
+
+The fourth reviewer's "what would push it to A" list:
+- **Head-to-head trainer benchmark.** `whitepaper_v1_comparative_trainers.ipynb` is ready; needs ~$1.30 of Colab time. Fills the new "First-party" row in §5.6.
+- **Cross-family judge sanity check.** `CROSS_FAMILY_JUDGE_MODEL` knob is shipped; needs ~$0.85 of Colab time. Validates §11.7's in-family bound.
+- **Framework-vs-framework benchmark.** Optional A+ target — TRL on the same customer-support task. Not currently scheduled.
+
 ## [0.13.3] - 2026-05-18 — Third-reviewer polish + README refresh (A → unblocking-to-A+)
 
 The third reviewer round graded the v0.13.2 whitepaper at **A (up from A−)** with three small polish items and two Colab-bound run asks. This release lands the three polish items and refreshes the README to reflect the PyPI parity from v0.13.2.

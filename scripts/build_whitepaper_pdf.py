@@ -18,8 +18,12 @@ Output: docs/WHITEPAPER.pdf
 
 from __future__ import annotations
 
+import base64
+import json as _json
 import re
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,7 +45,7 @@ CSS_STR = """
     color: #666;
   }
   @top-right {
-    content: "StateSet Agents — Whitepaper v0.13.3";
+    content: "StateSet Agents — Whitepaper v0.13.4";
     font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
     font-size: 8.5pt;
     color: #999;
@@ -204,35 +208,86 @@ blockquote p:first-child { font-weight: 600; }
   color: #888;
 }
 
-/* Mermaid placeholder note */
+/* Mermaid placeholder note (used only when SVG render fails) */
 .mermaid-note {
   font-style: italic;
   color: #666;
   font-size: 9pt;
   margin-bottom: 4pt;
 }
+
+/* Mermaid SVG rendered inline via mermaid.ink */
+.mermaid-rendered {
+  margin: 0.15in 0;
+  text-align: center;
+  page-break-inside: avoid;
+}
+.mermaid-rendered svg {
+  max-width: 100%;
+  height: auto;
+}
 """
 
 
+def _mermaid_to_svg(diagram: str, *, timeout: float = 15.0) -> str | None:
+    """Render a mermaid diagram via mermaid.ink, return the SVG markup or None on failure.
+
+    Uses the public service's base64-URL endpoint. No JS execution required;
+    pure HTTP. We cache results on disk to keep PDF builds reproducible
+    even if mermaid.ink is unreachable.
+    """
+    encoded = base64.urlsafe_b64encode(diagram.encode("utf-8")).decode("ascii").rstrip("=")
+    cache_dir = Path("/tmp") / "mermaid_svg_cache"
+    cache_dir.mkdir(exist_ok=True)
+    cache_path = cache_dir / f"{encoded[:32]}.svg"
+    if cache_path.exists():
+        return cache_path.read_text()
+    url = f"https://mermaid.ink/svg/{encoded}"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "stateset-agents-whitepaper-build/0.13.4 (+https://github.com/stateset/stateset-agents)"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                return None
+            svg = resp.read().decode("utf-8")
+    except (urllib.error.URLError, OSError) as e:
+        print(f"  [mermaid] fetch failed for diagram (len={len(diagram)}): {e}")
+        return None
+    cache_path.write_text(svg)
+    return svg
+
+
 def preprocess_markdown(src: str) -> str:
-    """Pre-process the markdown source before it hits the markdown library."""
-    # Replace mermaid fences with a note + the raw source. The diagrams are
-    # decorative (architecture + class diagram); readable as code.
+    """Pre-process the markdown source before it hits the markdown library.
+
+    Mermaid blocks are rendered via mermaid.ink to inline SVG when reachable;
+    falls back to a fenced code block + note if the service is unavailable.
+    """
     def mermaid_replace(m: re.Match[str]) -> str:
         body = m.group(1)
+        svg = _mermaid_to_svg(body)
+        if svg is not None:
+            # Strip the XML declaration if present so it slots cleanly into HTML.
+            svg = re.sub(r"<\?xml[^?]*\?>", "", svg).strip()
+            return (
+                "<div class='mermaid-rendered'>\n"
+                + svg
+                + "\n</div>\n"
+            )
         return (
             "<div class='mermaid-note'>"
-            "[Mermaid diagram — for the rendered SVG see docs/WHITEPAPER.md on GitHub.]"
+            "[Mermaid diagram — render failed; see docs/WHITEPAPER.md on GitHub for the SVG.]"
             "</div>\n\n```\n" + body + "\n```\n"
         )
 
-    src = re.sub(
+    return re.sub(
         r"```mermaid\n(.*?)\n```",
         mermaid_replace,
         src,
         flags=re.DOTALL,
     )
-    return src
 
 
 def build_cover_html() -> str:
@@ -242,7 +297,7 @@ def build_cover_html() -> str:
   <div class="title">StateSet Agents</div>
   <div class="subtitle">A Reinforcement Learning Framework<br/>for Multi-Turn Conversational AI</div>
   <div class="version">
-    <strong>Version 0.13.3</strong> · {today}<br/>
+    <strong>Version 0.13.4</strong> · {today}<br/>
     <a href="mailto:team@stateset.ai">team@stateset.ai</a> · <a href="https://github.com/stateset/stateset-agents">github.com/stateset/stateset-agents</a>
   </div>
   <div class="footer">
@@ -281,7 +336,7 @@ def main() -> int:
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>StateSet Agents — Whitepaper v0.13.3</title>
+  <title>StateSet Agents — Whitepaper v0.13.4</title>
 </head>
 <body>
 {build_cover_html()}

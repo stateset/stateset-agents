@@ -210,7 +210,7 @@ notebook-lint: ## Lint bundled notebooks for the foot-gun patterns from issue #1
 	@python3 scripts/lint_notebooks.py
 
 whitepaper-pdf: ## Build docs/WHITEPAPER.pdf from docs/WHITEPAPER.md via weasyprint
-	@python3 scripts/build_whitepaper_pdf.py
+	@python3.10 scripts/build_whitepaper_pdf.py
 
 smoke: ## Run the full local smoke pipeline: unit tests + benchmark smoke + starter smoke + notebook validation
 	@echo "==> Unit tests for benchmark + scaffolding pipelines"

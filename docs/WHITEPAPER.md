@@ -1,7 +1,7 @@
 # StateSet Agents: A Reinforcement Learning Framework for Multi-Turn Conversational AI
 
 **Technical Whitepaper**
-Version 0.13.3 · May 2026
+Version 0.13.4 · May 2026
 StateSet Team · `team@stateset.ai`
 
 ---
@@ -10,19 +10,23 @@ StateSet Team · `team@stateset.ai`
 
 StateSet Agents is a reinforcement learning framework for training and serving large language model (LLM) agents that improve through **multi-turn interaction**. Unlike RLHF pipelines that optimize policies one response at a time, StateSet Agents treats the full conversational trajectory as the unit of optimization. The framework implements a family of **group-based policy optimization** algorithms — GRPO, GSPO, GEPO, DAPO, and VAPO — that reduce gradient variance by sampling multiple trajectories per prompt and computing advantages relative to a group baseline. This whitepaper describes the framework's architecture: the algorithmic foundations of each trainer, the agent and environment abstractions, the composable reward modeling system, and the operational layer (FastAPI serving, Helm/Kubernetes deployment, distributed training). We also present a comparative analysis of the five trainer variants and discuss the engineering tradeoffs that make conversational RL practical at scale.
 
-> ⚠️ **Read this before `pip install`.** The latest PyPI release is **0.7.1** (an early-2025 cut). It predates every named trainer in this paper, the Rust core, the dashboard, the auto-research loop, and most of the §11.7 publication-gate machinery. **Until a 0.13.x PyPI publish lands, install from source:**
+> ✅ **`pip install stateset-agents` is current as of v0.13.2** ([PyPI listing](https://pypi.org/project/stateset-agents/)). The long-standing gap between source and PyPI is closed: a fresh install gets the same surface this paper describes (named trainers, Rust core, dashboard, auto-research loop, §11.7 publication-gate machinery).
+>
+> If you want to track an exact source commit instead of PyPI:
 >
 > ```bash
-> pip install git+https://github.com/stateset/stateset-agents@v0.13.3
+> pip install git+https://github.com/stateset/stateset-agents@v0.13.4   # current source
+> # — or —
+> pip install stateset-agents==0.13.2                                    # current PyPI
 > ```
 >
-> If your tooling pins PyPI versions and you can't install from a tag, treat this paper as describing a *near-future* PyPI release rather than the current one. The framework's behavior is anchored to the named source commit, not to PyPI.
+> The framework's *behavior* is anchored to the named source commit in §"Versioning and Reproducibility"; the PyPI release is a lagging publish of that source.
 
 ## Versioning and Reproducibility
 
-This whitepaper describes **version 0.13.3** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`4744c76`** on `master`.
+This whitepaper describes **version 0.13.4** of the framework. The implementation references — file paths, line numbers, default hyperparameters, LOC counts — are all taken from commit **`4744c76`** on `master`.
 
-**PyPI lag.** At the time of writing, the latest PyPI release is **0.7.1**, which predates substantial parts of the surface described here (the named trainers, the Rust core, the dashboard, the auto-research loop). The 0.7.1 release also declares `Python >=3.8` in its classifiers, while the 0.13.3 source tree requires **Python ≥3.10** (with classifiers through 3.13) — when reading public PyPI metadata against this whitepaper, expect this gap. The full 0.13.3 surface can be obtained by installing from source (`pip install -e .` against the repository); a PyPI publication of 0.13.x is pending.
+**PyPI status.** Current PyPI release is **0.13.2** ([listing](https://pypi.org/project/stateset-agents/)), which contains the named trainers (GRPO/GSPO/GEPO/DAPO/VAPO), the Rust core, the dashboard, and the auto-research loop. Source is at **0.13.4** (this paper's anchor commit) and may run ahead of PyPI by a patch version while doc/notebook work lands; major framework changes always cut a PyPI publish before merging. Historical PyPI lag (0.7.1 → 0.13.2) was closed in v0.13.2.
 
 **What's named here is anchored in code.** Implementation citations (`gspo_trainer.py:390-419`, etc.) reference the named commit. To verify any specific claim:
 
@@ -89,7 +93,7 @@ StateSet Agents packages this research into a coherent, deployable framework:
 - **Sim-to-real transfer**, **continual learning**, **long-term planning** modules.
 - **Operational layer**: FastAPI service, OpenAI-compatible endpoints, Prometheus metrics, Helm charts, Kubernetes manifests.
 
-Not all components are at the same level of production readiness. The framework ships with an explicit **[Component Maturity matrix in §8.1](#81-component-maturity)** distinguishing *stable* (API-stable across point releases), *beta* (functionally complete, API may change), and *experimental* (works in tests, not yet recommended for production). New readers should check that matrix before designing a production deployment — VAPO, offline GRPO, continual learning, and the auto-research loop are all marked experimental as of v0.13.3.
+Not all components are at the same level of production readiness. The framework ships with an explicit **[Component Maturity matrix in §8.1](#81-component-maturity)** distinguishing *stable* (API-stable across point releases), *beta* (functionally complete, API may change), and *experimental* (works in tests, not yet recommended for production). New readers should check that matrix before designing a production deployment — VAPO, offline GRPO, continual learning, and the auto-research loop are all marked experimental as of v0.13.4.
 
 The framework is licensed under **BUSL-1.1**, converts to Apache 2.0 on 2029-09-03, distributed on PyPI as `stateset-agents`, and supports Python 3.10–3.13 on Linux and Windows.[^busl] See [Component Maturity (§8.1)](#81-component-maturity) for which surfaces are stable, beta, or experimental — relevant when planning a production deployment under this license.
 
@@ -456,7 +460,7 @@ $$
 \mathcal{L}_{\text{GSPO}} = -\mathbb{E}\left[\min\left(s_i(\theta) A_i,\ \text{clip}(s_i(\theta), 1-\varepsilon_L, 1+\varepsilon_H) A_i\right)\right]
 $$
 
-The framework allows $\varepsilon_L \neq \varepsilon_H$ in the config, but the shipped defaults are symmetric — Clip-Higher asymmetry is reserved for DAPO and VAPO (§5.4–5.5). The critical thing about the GSPO clip bounds is not their symmetry but their *magnitude*: because $s_i$ is already exp-of-a-small-per-token-quantity, the bounds must be much tighter than token-level PPO's `0.2`. See the defaults note below.
+The framework allows $\varepsilon_L \neq \varepsilon_H$ in the config. The shipped defaults are **mildly asymmetric** (`3e-4 / 4e-4`, inherited from the original GSPO paper) — the upper bound is slightly looser than the lower so a tiny exploration bias toward upside is preserved at the sequence level. This is not "Clip-Higher" in the DAPO/VAPO sense (§5.4–5.5), where the asymmetry is on the order of 40% (`0.2 / 0.28`) and meant to drive exploration; here the asymmetry is on the order of 33% but on already-tiny clip magnitudes — see the defaults note below. The critical thing about the GSPO clip bounds is not their asymmetry but their *magnitude*: because $s_i$ is exp-of-a-small-per-token-quantity, the bounds must be much tighter than token-level PPO's `0.2`.
 
 **Why it matters.** Token-level ratios accumulate variance multiplicatively across the sequence; on long outputs and Mixture-of-Experts models, this manifests as training collapse. Length normalization keeps the importance weight in a stable regime regardless of $|y_i|$.
 
@@ -484,7 +488,7 @@ for response, A in zip(responses, advantages):
 
 **Implementation citations.** Sequence ratio computed at `gspo_trainer.py:390-419` (log-sum, length-normalize, exponentiate as separate steps to retain numerical stability). Clipped surrogate at `gspo_trainer.py:639-649`. Per-sequence KL penalty (only when `beta > 0`) at lines 652-660. Right-padding is enforced for stable prompt-boundary detection across the batch.
 
-**Defaults.** `num_generations=4`, `clip_range_left=3e-4`, `clip_range_right=4e-4`, `warmup_ratio=0.1`. These clip bounds are taken from the original GSPO paper and are roughly three orders of magnitude tighter than token-level PPO — necessary because the length-normalized ratio lives close to 1.0. **If you see no exploration, this is the first knob to widen.** Single gradient step per rollout (no inner PPO epochs) — a deliberate choice for stability with on-policy data.
+**Defaults.** `num_generations=4`, `clip_range_left=3e-4`, `clip_range_right=4e-4`, `warmup_ratio=0.1`. These clip bounds are taken from the original GSPO paper and are roughly **2.8 orders of magnitude** ($0.2/3 \times 10^{-4} \approx 667\times$) tighter than token-level PPO's `0.2` — necessary because the length-normalized ratio lives close to 1.0. **If you see no exploration, this is the first knob to widen.** Single gradient step per rollout (no inner PPO epochs) — a deliberate choice for stability with on-policy data.
 
 **When to use.** Long outputs (CoT, code, structured generation), MoE models, any case where token-level GRPO is unstable.
 
@@ -598,17 +602,22 @@ with four supporting mechanisms:
 
 ### 5.6 Comparative Summary
 
+The table below is a **design-intent map**, not a head-to-head benchmark. Cells marked "Best for" reflect each algorithm's published purpose plus our implementation experience; they are *not* first-party measurements on a shared task. The reference notebook for producing those measurements is [`notebooks/whitepaper_v1_comparative_trainers.ipynb`](../notebooks/whitepaper_v1_comparative_trainers.ipynb) — running it on the §11.7 protocol fills the gap.
+
 | Property | GRPO | GSPO | GEPO | DAPO | VAPO |
 |----------|------|------|------|------|------|
 | Importance weight | Token | **Sequence (length-norm.)** | **Group expectation** | Token | Token + value |
-| Clipping | Symmetric | Symmetric | Symmetric | **Asymmetric (Clip-Higher)** | **Asymmetric** |
+| Clipping | Symmetric | Mildly asymmetric (`3e-4 / 4e-4`) | Symmetric | **Asymmetric (Clip-Higher, `0.2 / 0.28`)** | **Asymmetric (`0.2 / 0.28`)** |
 | Loss normalization | Sample | Sequence | Group | **Token** | **Token** |
 | Advantage baseline | Group | Group | Group | Group | **Decoupled GAE** |
 | Value network | No | No | No | No | **Yes (warmup + decoupled λ)** |
 | Defining mechanism | Library baseline | Length normalization | Group expectation | Dynamic sampling + overlong shaping | Length-adaptive GAE + positive LM |
-| Reported AIME score | — | — | — | 50/60 | **60.4** |
+| Source-paper reasoning benchmark | — | — | — | 50/60 AIME 2024 (Qwen-2.5-32B, [Yu et al.](https://arxiv.org/abs/2503.14476)) | 60.4 AIME 2024 (Qwen-2.5-32B, [Yue et al.](https://arxiv.org/abs/2504.05118)) |
+| First-party (this framework) | pending §5.6 v1.1 | **+0.079 judge Δ, customer support (§11.7)** | pending §5.6 v1.1 | pending §5.6 v1.1 | pending §5.6 v1.1 |
 | Memory cost | Medium | Medium | Medium | Medium | **High** |
-| Best for | General | Long outputs, MoE | Async/off-policy | Reasoning | SOTA reasoning |
+| Best for (design intent) | General | Long outputs, MoE | Async/off-policy | Reasoning | SOTA reasoning |
+
+The empty cells in the "First-party" row are honest: §11.7 ships a positive-transfer result for GSPO only. The comparative-trainer protocol notebook is the path to filling them; v1.1 of this paper is expected to include {GRPO, GSPO, DAPO} on the same protocol. Until that lands, treat "Best for" as advisory (literature + implementation experience), not measured.
 
 ### 5.7 Exact Forward KL — a quiet technical differentiator
 
@@ -712,25 +721,11 @@ State and action embeddings come from a configurable sentence-transformer (`embe
 
 **When to use.** Bootstrapping from logged conversations; environments where rollouts are expensive (real users, real money); safety-constrained training where you want a behavior-policy regularizer.
 
-### 6.7 Continual Learning
+### 6.7 Continual Learning (primitive, evaluation harness pending)
 
-*Skim on first read — opt-in via `[continual]` extra; not on the §11.7 critical path. Read when planning a streaming-data deployment.*
+*Skim on first read — opt-in via `[continual]` extra; not on the §11.7 critical path.*
 
-Production agents see distribution shift: new product categories, new user demographics, new policies. Catastrophic forgetting — where fine-tuning on new tasks erases prior capabilities — is the canonical failure mode.
-
-`stateset_agents/training/continual_learning.py` provides seven configurable strategies via a single `strategy` enum:
-
-| Strategy | Mechanism | Memory cost |
-|----------|-----------|-------------|
-| `none` | Standard fine-tuning baseline | 0 |
-| `replay` | Sample from a `TrajectoryReplayBuffer` of past tasks; mix into current batches | Buffer size |
-| `lwf` | Learning without Forgetting: KL penalty against a frozen snapshot of the pre-task model | 1× model weights |
-| `ewc` | Elastic Weight Consolidation: per-parameter Fisher-information regularizer pulling toward pre-task weights | 1× model weights + Fisher diagonal |
-| `replay+lwf` | Replay + LwF | Buffer + 1× weights |
-| `replay+ewc` | Replay + EWC | Buffer + 1× weights + Fisher |
-| `replay+lwf+ewc` | All three | Maximum |
-
-The `TrajectoryReplayBuffer` supports four sampling modes — uniform, recent-biased, reward-weighted, and balanced-by-task — and two storage policies (reservoir for unbounded streams, FIFO for fixed-window). Reward-weighted sampling is particularly useful when high-reward trajectories are rare: they get preferentially preserved across task boundaries.
+`stateset_agents/training/continual_learning.py` provides primitive support for streaming-data fine-tuning under distribution shift: a `TrajectoryReplayBuffer` (four sampling modes: uniform / recent-biased / reward-weighted / balanced-by-task; reservoir or FIFO storage), plus three regularizers selectable via `strategy ∈ {none, replay, lwf, ewc, replay+lwf, replay+ewc, replay+lwf+ewc}`: **LwF** (KL penalty against a frozen pre-task snapshot), **EWC** (per-parameter Fisher-information regularizer pulling toward pre-task weights), and their compositions with replay. **The component is marked `Experimental` in §8.1** because the framework lacks a unified dialogue-specific evaluation harness for catastrophic forgetting (§10.6 calls this out). Treat the API as available primitive surface, *not* as a validated training mode — running it on your own task is fine, treating the results as evidence of the framework's continual-learning behavior is premature until v1.1 ships the harness.
 
 ### 6.8 The Rust Acceleration Core
 
@@ -1004,7 +999,7 @@ Multi-turn conversational RL has structural difficulties that single-turn RLHF c
 
 1. **Credit assignment across turns.** Reward arrives at the end of a conversation (problem resolved? user satisfied?), but the agent's *individual decisions* are distributed across turns. Group-relative advantages handle inter-trajectory credit but not intra-trajectory credit; that's still an open problem.
 2. **The user-model gap.** Training against a simulated user is fundamentally different from training against a real one. The framework mitigates this with domain randomization and sim-to-real transfer (§6.9), but the residual gap is the largest source of deploy-time surprise.
-3. **Reward gaming.** Composite rewards encode an *implicit* utility function. Policies are excellent at finding the cheapest way to maximize a literal reward — often producing outputs that score high but feel wrong. The framework's bias toward composite rewards (rather than a single learned scalar) is a partial mitigation; the deeper fix is iteration on the reward function itself. *Inverse case (rule-based-rubric blindness):* the bundled customer-support benchmark's keyword-presence rubric scores a coherently-trained policy *lower* than its untuned baseline (0.34 vs 0.54) because the trained model learned to pivot to clarifying questions instead of dropping rubric keywords verbatim. The trained model is qualitatively better — see the live-demo evidence in `benchmark_results/whitepaper_v1/customer_support_qwen3_5_0_8b_gspo_klanchor.json` — but the rubric can't see it. Rule-based rewards are bias-stable but blindness-stable in opposite directions; a paraphrase-tolerant LLM-judge is the natural complement.
+3. **Reward gaming.** Composite rewards encode an *implicit* utility function. Policies are excellent at finding the cheapest way to maximize a literal reward — often producing outputs that score high but feel wrong. The framework's bias toward composite rewards (rather than a single learned scalar) is a partial mitigation; the deeper fix is iteration on the reward function itself. *Inverse case (rule-based-rubric blindness):* the bundled customer-support benchmark's keyword-presence rubric scores a coherently-trained policy *lower* than its untuned baseline (0.34 vs 0.54) because the trained model learned to pivot to clarifying questions instead of dropping rubric keywords verbatim. The trained model is qualitatively better — see the live-demo evidence in `benchmark_results/whitepaper_v1/customer_support_qwen3_5_0_8b_gspo_klanchor.json` — but the rubric can't see it. Rule-based rewards are bias-stable but blindness-stable in opposite directions; a paraphrase-tolerant LLM-judge is the natural complement. We audited the other bundled rubrics (`GSM8KReward` exact-match, `PartialCreditGSM8KReward` numeric proximity, `ToolCallingReward` JSON-schema validity) for similar blindness patterns: GSM8K rewards are strictly correctness-bound and don't have the keyword/coherence axis to mis-weight; the tool-calling reward is structural and has its own failure mode (well-formed JSON for the wrong tool) that the §11.7 LLM-judge protocol *would* catch — relevant for v1.1 expansion.
 4. **Online + multi-turn + tool use.** Each of these is a hard problem in isolation; their interaction is harder. Tool calls add hidden state and stochastic latency; multi-turn adds long-horizon credit assignment; on-policy RL adds non-stationarity.
 
 ### 10.4 When StateSet Agents Is the Wrong Choice
@@ -1627,6 +1622,28 @@ helm template deployment/helm/ -f deployment/helm/values-h100.yaml > /tmp/h100.y
 | Prometheus metric names | `grep -rn "Counter\|Histogram\|Gauge" stateset_agents/api/` |
 | Helm values overlays | `ls deployment/helm/values-*.yaml` |
 | K8s manifests | `ls deployment/kubernetes/` |
+| §11.7 canonical result JSON | `cat benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json` |
+
+**Reproducing the §11.7 result end-to-end.** From a fresh Colab A100 runtime:
+
+```bash
+# Either open the notebook in Colab (recommended):
+#   https://colab.research.google.com/github/stateset/stateset-agents/blob/master/notebooks/customer_support_3seed_judge.ipynb
+# and run all cells — wall clock ~25 min, cost ~$0.70.
+
+# Or run headless on an A100 / H100 host you control:
+git clone https://github.com/stateset/stateset-agents
+cd stateset-agents
+git checkout v0.13.4
+pip install -e '.[training,api]' transformers accelerate peft trl torchao
+jupyter nbconvert --to notebook --execute \
+    notebooks/customer_support_3seed_judge.ipynb \
+    --output customer_support_3seed_judge.executed.ipynb
+# The result JSON lands at /content/customer_support_3seed_judge.json (Colab)
+# or under the notebook's working directory.
+```
+
+The independent re-run artifact (`..._rerun.json`) is empirical evidence that this command produces bitwise-identical `trained_metrics` across independent sessions when `set_all_seeds()` runs at the canonical seed values.
 
 If any of these commands return output that disagrees with what this whitepaper says, **the code wins** — please open an issue referencing this whitepaper version and commit hash so we can correct the document.
 
