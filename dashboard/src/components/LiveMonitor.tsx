@@ -28,15 +28,26 @@ export function LiveMonitor({ experiment: initialExp, onBack }: LiveMonitorProps
   const { metrics: wsMetrics, latestEpisode, connected } = useExperimentWs(experiment?.id ?? null);
   const toast = useToast();
 
-  // Editable config state
+  // Editable config state — initialized when the user enters edit mode,
+  // never synced via effect (which would cascade renders on every poll).
   const [editingConfig, setEditingConfig] = useState(false);
   const [editNumEpisodes, setEditNumEpisodes] = useState(0);
   const [editLearningRate, setEditLearningRate] = useState(0);
   const [editBatchSize, setEditBatchSize] = useState(0);
   const [editTemperature, setEditTemperature] = useState(0);
 
+  const startEditing = () => {
+    if (!experiment) return;
+    setEditNumEpisodes(experiment.training.num_episodes);
+    setEditLearningRate(experiment.training.learning_rate);
+    setEditBatchSize(experiment.training.batch_size);
+    setEditTemperature(experiment.agent.temperature);
+    setEditingConfig(true);
+  };
+
+  // Refresh from REST as a fallback for when the WebSocket is not connected.
   useEffect(() => {
-    if (!experiment?.id) return;
+    if (!experiment?.id || connected) return;
     const interval = setInterval(async () => {
       try {
         const exp = await api.getExperiment(experiment.id);
@@ -44,16 +55,7 @@ export function LiveMonitor({ experiment: initialExp, onBack }: LiveMonitorProps
       } catch { /* ignore */ }
     }, 3000);
     return () => clearInterval(interval);
-  }, [experiment?.id]);
-
-  // Sync editable config when experiment changes
-  useEffect(() => {
-    if (!experiment) return;
-    setEditNumEpisodes(experiment.training.num_episodes);
-    setEditLearningRate(experiment.training.learning_rate);
-    setEditBatchSize(experiment.training.batch_size);
-    setEditTemperature(experiment.agent.temperature);
-  }, [experiment?.id]);
+  }, [experiment?.id, connected]);
 
   const metrics: TrainingMetrics = wsMetrics ?? experiment?.metrics ?? {
     total_episodes: 0, total_reward: 0, avg_reward: 0, best_reward: 0,
@@ -315,7 +317,7 @@ export function LiveMonitor({ experiment: initialExp, onBack }: LiveMonitorProps
               </div>
             ) : (
               <button
-                onClick={() => setEditingConfig(true)}
+                onClick={startEditing}
                 style={smallBtnStyle}
               >
                 Edit Config

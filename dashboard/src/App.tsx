@@ -8,8 +8,9 @@ import { CompareExperiments } from './components/CompareExperiments';
 import { Playground } from './components/Playground';
 import { Leaderboard } from './components/Leaderboard';
 import { CommandPalette } from './components/CommandPalette';
-import { ToastProvider } from './hooks/useToast';
+import { ToastProvider } from './components/ToastProvider';
 import { useHotkeys } from './hooks/useHotkeys';
+import { useTrackExperimentNotifications } from './hooks/useTrackExperimentNotifications';
 import { api } from './api';
 import type { Experiment } from './types';
 
@@ -28,6 +29,9 @@ function AppContent() {
     const interval = setInterval(fetch, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Push status-change notifications into the global store.
+  useTrackExperimentNotifications(experiments);
 
   const handleSelectExperiment = (exp: Experiment) => {
     setSelectedExperiment(exp);

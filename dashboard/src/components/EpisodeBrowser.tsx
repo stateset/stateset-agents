@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, MessageSquare, Search, X, SlidersHorizontal } from 'lucide-react';
-import { Card } from './Card';
 import { EpisodeViewer } from './EpisodeViewer';
 import { api } from '../api';
 import type { Episode } from '../types';

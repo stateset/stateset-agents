@@ -174,9 +174,9 @@ export function MetricsCharts({ metrics }: MetricsChartsProps) {
                 <XAxis dataKey="episode" stroke="#71717a" fontSize={11} />
                 <YAxis
                   stroke="#71717a" fontSize={11}
-                  tickFormatter={(v: number) => v.toExponential(1)}
+                  tickFormatter={(v: number) => Number(v).toExponential(1)}
                 />
-                <Tooltip {...tooltipStyle} formatter={(v: number) => v.toExponential(3)} />
+                <Tooltip {...tooltipStyle} formatter={(v) => (typeof v === 'number' ? v.toExponential(3) : String(v))} />
                 <Line type="monotone" dataKey="lr" stroke="#14b8a6" strokeWidth={2} dot={false} name="LR" />
               </LineChart>
             </ResponsiveContainer>

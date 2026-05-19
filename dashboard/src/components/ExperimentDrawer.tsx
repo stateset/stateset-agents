@@ -16,21 +16,29 @@ interface ExperimentDrawerProps {
 }
 
 export function ExperimentDrawer({ experiment, onClose, onNavigate, onClone, onRefresh }: ExperimentDrawerProps) {
-  const [exp, setExp] = useState<Experiment | null>(experiment);
+  // Polled overlay on the prop. When the prop's id changes we reset the
+  // overlay during render (React's documented "adjusting state on prop change"
+  // pattern) rather than from inside an effect.
+  const [override, setOverride] = useState<Experiment | null>(null);
+  const [trackedId, setTrackedId] = useState<string | undefined>(experiment?.id);
+  if (experiment?.id !== trackedId) {
+    setTrackedId(experiment?.id);
+    setOverride(null);
+  }
+  const exp = override ?? experiment;
   const toast = useToast();
 
-  // Refresh experiment data
+  // Poll fresh data while the drawer is open.
   useEffect(() => {
-    if (!experiment) { setExp(null); return; }
-    setExp(experiment);
+    if (!experiment) return;
     const interval = setInterval(async () => {
       try {
         const fresh = await api.getExperiment(experiment.id);
-        setExp(fresh);
+        setOverride(fresh);
       } catch { /* ignore */ }
     }, 3000);
     return () => clearInterval(interval);
-  }, [experiment?.id]);
+  }, [experiment?.id, experiment]);
 
   if (!exp) return null;
 
@@ -46,7 +54,7 @@ export function ExperimentDrawer({ experiment, onClose, onNavigate, onClone, onR
       toast.success(successMsg);
       onRefresh();
       const fresh = await api.getExperiment(exp.id);
-      setExp(fresh);
+      setOverride(fresh);
     } catch {
       toast.error('Action failed');
     }

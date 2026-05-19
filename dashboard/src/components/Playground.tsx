@@ -100,7 +100,7 @@ export function Playground() {
         reward_breakdown: data.reward_breakdown,
         timestamp: Date.now() / 1000,
       }]);
-    } catch (e) {
+    } catch {
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: 'Error: Could not reach the API.',

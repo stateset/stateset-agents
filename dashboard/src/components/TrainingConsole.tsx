@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Terminal, Search, Download, X, Filter } from 'lucide-react';
+import { Terminal, Search, Download, X } from 'lucide-react';
 import { Card } from './Card';
 
 interface TrainingConsoleProps {
@@ -196,7 +196,7 @@ export function TrainingConsole({ experimentId }: TrainingConsoleProps) {
         ) : (
           filtered.map((log, i) => {
             const date = new Date(log.ts * 1000);
-            const time = date.toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 0 });
+            const time = date.toLocaleTimeString('en-US', { hour12: false });
             const highlighted = search && log.message.toLowerCase().includes(search.toLowerCase());
             return (
               <div key={i} style={{ display: 'flex', gap: 10 }}>

@@ -5,6 +5,27 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-05-19 — Dashboard A+ pass: build/lint/test/CI green, accessibility, external-store notifications
+
+A focused quality push on `dashboard/`. The lab UI previously had a broken `tsc -b` (30+ TS errors), 13 lint errors, 0 tests, no CI coverage, and the default Vite README. This release fixes all of that, hardens accessibility, and trims runtime overhead.
+
+### Fixed
+
+- **Build.** `useToast` API mismatch (`toast.success` / `error` / `info` called everywhere but never exposed) was the dominant error class — eliminated by splitting `toast-context.ts` (context), `useToast.ts` (hook), and `components/ToastProvider.tsx` (provider) with a 4-method API. `verbatimModuleSyntax` violations resolved with `import type`. Recharts 3 `ValueType | undefined` narrowed in `MetricsCharts` and `RewardHistogram`. Invalid `fractionalSecondDigits: 0` removed from `TrainingConsole`.
+- **Lint.** 13 errors → 0. Dead imports (`Zap`, `X`, `BarChart3`, `StatCard`, `Card`, `Filter`) removed across 6 files. `react-hooks/set-state-in-effect` resolved in `LiveMonitor` (form state initialized in click handler), `ExperimentDrawer` (React 19 "adjust state on prop change" pattern), and `NotificationCenter` (rewritten to consume a module-level store via `useSyncExternalStore`; status-transition diffing moved to a new `useTrackExperimentNotifications` hook that dispatches to the external store).
+- **WS + polling overlap.** `LiveMonitor` now only polls REST when `connected === false`.
+
+### Added
+
+- **CI.** `.github/workflows/dashboard.yml` runs lint → typecheck → test → build on every PR touching `dashboard/` and uploads the bundle.
+- **Tests.** Vitest + jsdom + Testing Library. Three suites (`useToast`, `notifications-store`, `App` smoke), 7 passing tests. `npm test` and `npm run typecheck` scripts added.
+- **Accessibility.** Command palette is now a focus-trapped `role="dialog"` with `aria-modal`, `aria-activedescendant`, `aria-controls`, `role="listbox"` / `role="option"`, `aria-selected`, `Home`/`End` keys, scroll-into-view on the active item, and focus restoration on close. Dashboard icon buttons gained `aria-label`. Toast region is `aria-live="polite"`.
+- **README.** Replaced the Vite boilerplate with a real architecture doc (feature matrix, run instructions, data-flow notes, code-quality bar).
+
+### Notes
+
+- Library/API code in `stateset_agents/` is unchanged in this release. The minor version bump reflects the dashboard hardening as a deliberate UX milestone.
+
 ## [0.13.4] - 2026-05-18 — Fourth-reviewer round: factual fixes + PDF rendering + reproducibility re-run
 
 A fourth reviewer graded v0.13.3 at A−, primarily citing factual inconsistencies in §5.2 (clip-range "symmetric" vs the actual 3e-4/4e-4 values; "three orders of magnitude" vs the actual 2.8), a stale PyPI-lag note still claiming PyPI was at 0.7.1, and Mermaid diagrams rendered as fenced code in the PDF. This release lands those fixes plus three smaller asks. Items map 1:1 to the reviewer's numbered list.

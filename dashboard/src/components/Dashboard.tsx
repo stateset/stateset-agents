@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Play, Pause, Trash2, Clock, Zap, BarChart3, Copy, Square,
+  Play, Pause, Trash2, Clock, Zap, Copy, Square,
   Search, Filter, X, Info,
 } from 'lucide-react';
 import { Card, StatCard } from './Card';
@@ -528,6 +528,7 @@ function IconButton({ onClick, title, children, danger }: {
     <button
       onClick={onClick}
       title={title}
+      aria-label={title}
       style={{
         display: 'flex',
         alignItems: 'center',

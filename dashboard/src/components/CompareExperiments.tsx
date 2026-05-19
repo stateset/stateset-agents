@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, Legend, RadarChart, Radar, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis, Brush,
 } from 'recharts';
-import { Card, StatCard } from './Card';
+import { Card } from './Card';
 import { api } from '../api';
 import { useToast } from '../hooks/useToast';
 import type { Experiment } from '../types';

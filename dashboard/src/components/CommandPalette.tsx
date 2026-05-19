@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutDashboard, FlaskConical, Activity, MessageCircle,
-  GitCompareArrows, Trophy, Search, X,
+  GitCompareArrows, Trophy, Search,
 } from 'lucide-react';
 
 const COMMANDS = [
@@ -20,40 +20,65 @@ interface CommandPaletteProps {
 export function CommandPalette({ onNavigate }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [trackedQuery, setTrackedQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
 
-  const filtered = COMMANDS.filter(c =>
+  const filtered = useMemo(() => COMMANDS.filter(c =>
     c.label.toLowerCase().includes(query.toLowerCase())
-  );
+  ), [query]);
 
+  // Reset selection when the query changes — done during render via the
+  // "adjust state on prop change" pattern (cheaper than an effect, and
+  // avoids react-hooks/set-state-in-effect).
+  if (query !== trackedQuery) {
+    setTrackedQuery(query);
+    setSelectedIndex(0);
+  }
+
+  const close = useCallback(() => {
+    setOpen(false);
+    previousFocus.current?.focus?.();
+  }, []);
+
+  // Global hotkey: Cmd/Ctrl + K
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        setOpen(prev => !prev);
+        setOpen(prev => {
+          if (!prev) {
+            previousFocus.current = (document.activeElement as HTMLElement) ?? null;
+          }
+          return !prev;
+        });
         setQuery('');
-        setSelectedIndex(0);
       }
-      if (e.key === 'Escape') setOpen(false);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // Autofocus the input on open
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
 
+  // Keep the highlighted item in view
   useEffect(() => {
-    setSelectedIndex(0);
-  }, [query]);
+    if (!open || !listRef.current) return;
+    const el = listRef.current.querySelector<HTMLElement>(`[data-index="${selectedIndex}"]`);
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [open, selectedIndex]);
 
   const handleSelect = useCallback((id: string) => {
     onNavigate(id);
-    setOpen(false);
     setQuery('');
-  }, [onNavigate]);
+    close();
+  }, [onNavigate, close]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -62,12 +87,40 @@ export function CommandPalette({ onNavigate }: CommandPaletteProps) {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      setSelectedIndex(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      setSelectedIndex(Math.max(0, filtered.length - 1));
     } else if (e.key === 'Enter' && filtered[selectedIndex]) {
+      e.preventDefault();
       handleSelect(filtered[selectedIndex].id);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    } else if (e.key === 'Tab') {
+      // Trap focus inside the dialog.
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button, [href], input, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   };
 
   if (!open) return null;
+
+  const listboxId = 'command-palette-listbox';
+  const activeOptionId = filtered[selectedIndex] ? `cmd-opt-${filtered[selectedIndex].id}` : undefined;
 
   return (
     <div
@@ -77,10 +130,15 @@ export function CommandPalette({ onNavigate }: CommandPaletteProps) {
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         paddingTop: '20vh',
       }}
-      onClick={() => setOpen(false)}
+      onClick={close}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         onClick={e => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
         style={{
           width: 480, background: 'var(--bg-secondary)',
           border: '1px solid var(--border-light)',
@@ -89,18 +147,20 @@ export function CommandPalette({ onNavigate }: CommandPaletteProps) {
           animation: 'palette-in 0.15s ease-out',
         }}
       >
-        {/* Search input */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10,
           padding: '12px 16px', borderBottom: '1px solid var(--border)',
         }}>
-          <Search size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          <Search size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} aria-hidden />
           <input
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
             placeholder="Search commands..."
+            aria-label="Search commands"
+            aria-controls={listboxId}
+            aria-activedescendant={activeOptionId}
+            aria-autocomplete="list"
             style={{
               flex: 1, background: 'none', border: 'none', outline: 'none',
               color: 'var(--text-primary)', fontSize: 14,
@@ -114,8 +174,13 @@ export function CommandPalette({ onNavigate }: CommandPaletteProps) {
           </div>
         </div>
 
-        {/* Results */}
-        <div style={{ maxHeight: 320, overflow: 'auto', padding: '4px 0' }}>
+        <div
+          ref={listRef}
+          id={listboxId}
+          role="listbox"
+          aria-label="Commands"
+          style={{ maxHeight: 320, overflow: 'auto', padding: '4px 0' }}
+        >
           {filtered.length === 0 ? (
             <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
               No commands found
@@ -124,6 +189,10 @@ export function CommandPalette({ onNavigate }: CommandPaletteProps) {
             filtered.map((cmd, i) => (
               <button
                 key={cmd.id}
+                id={`cmd-opt-${cmd.id}`}
+                data-index={i}
+                role="option"
+                aria-selected={i === selectedIndex}
                 onClick={() => handleSelect(cmd.id)}
                 onMouseEnter={() => setSelectedIndex(i)}
                 style={{
@@ -134,7 +203,7 @@ export function CommandPalette({ onNavigate }: CommandPaletteProps) {
                   fontSize: 13, textAlign: 'left', cursor: 'pointer',
                 }}
               >
-                <cmd.icon size={15} style={{ color: 'var(--text-muted)' }} />
+                <cmd.icon size={15} style={{ color: 'var(--text-muted)' }} aria-hidden />
                 <span style={{ flex: 1 }}>{cmd.label}</span>
                 <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{cmd.group}</span>
               </button>
@@ -142,7 +211,6 @@ export function CommandPalette({ onNavigate }: CommandPaletteProps) {
           )}
         </div>
 
-        {/* Footer */}
         <div style={{
           padding: '8px 16px', borderTop: '1px solid var(--border)',
           display: 'flex', gap: 12, fontSize: 10, color: 'var(--text-muted)',

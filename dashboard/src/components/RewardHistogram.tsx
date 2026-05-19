@@ -78,8 +78,8 @@ export function RewardHistogram({ rewards, bins = 20 }: RewardHistogramProps) {
           <YAxis stroke="#71717a" fontSize={11} allowDecimals={false} />
           <Tooltip
             {...tooltipStyle}
-            formatter={(value: number) => [`${value} episodes`, 'Count']}
-            labelFormatter={(label: string) => `Reward: ${label}`}
+            formatter={(value) => [`${value} episodes`, 'Count'] as [string, string]}
+            labelFormatter={(label) => `Reward: ${String(label)}`}
           />
           <Bar dataKey="count" radius={[3, 3, 0, 0]}>
             {data.map((entry, i) => {
