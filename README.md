@@ -119,10 +119,10 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest on PyPI (v0.13.2 — matches this whitepaper revision)
+pip install stateset-agents          # latest on PyPI (v0.15.0 — matches this whitepaper revision)
 ```
 
-> Older readers of this repo will remember a long PyPI lag where source was at v0.13.x while PyPI sat at v0.7.1. **That gap is now closed.** A fresh `pip install` gets the same surface the whitepaper describes (named trainers, Rust core, dashboard, auto-research loop). If your environment pins to an older version, `pip install -U stateset-agents` or pin explicitly to `==0.13.2`.
+> Older readers of this repo will remember a long PyPI lag where source was at v0.13.x while PyPI sat at v0.7.1. **That gap is now closed.** A fresh `pip install` gets the same surface the whitepaper describes (named trainers, Rust core, dashboard, auto-research loop). If your environment pins to an older version, `pip install -U stateset-agents` or pin explicitly to `==0.15.0`.
 
 ### Training / real models
 

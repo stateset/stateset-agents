@@ -1,4 +1,4 @@
-.PHONY: help install install-dev install-all dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
+.PHONY: help install install-dev install-all dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
 
 PYTHON_BIN := $(shell command -v python3 >/dev/null 2>&1 && echo python3 || command -v python)
 PACKAGE_VERSION := $(shell $(PYTHON_BIN) -c "import stateset_agents; print(stateset_agents.__version__)")
@@ -215,6 +215,9 @@ whitepaper-pdf-preview: ## Build a DRAFT preview at docs/WHITEPAPER.preview.pdf 
 getting-started-smoke: ## Run examples/getting_started/smoke.sh against the installed PyPI package
 	@PYTHON=python3.10 examples/getting_started/smoke.sh
 
+example-tests: ## Run the reusable testing patterns in examples/testing/ (56 tests, ~4s, no GPU)
+	@python -m pytest examples/testing/ -q --no-header
+
 smoke: ## Run the full local smoke pipeline: unit tests + benchmark smoke + starter smoke + notebook validation
 	@echo "==> Unit tests for benchmark + scaffolding pipelines"
 	@python -m pytest tests/unit/test_gsm8k.py \
@@ -225,6 +228,9 @@ smoke: ## Run the full local smoke pipeline: unit tests + benchmark smoke + star
 		tests/unit/test_task_adapters.py \
 		tests/unit/test_scaffolding.py \
 		-q --no-header
+	@echo ""
+	@echo "==> Example-testing patterns (examples/testing/)"
+	@$(MAKE) -s example-tests
 	@echo ""
 	@echo "==> Benchmark pipeline smoke (no GPU)"
 	@$(MAKE) -s benchmark-smoke

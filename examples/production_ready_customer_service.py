@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
-from stateset_agents.core.error_handling import CircuitBreaker, RetryWithBackoff
+from stateset_agents.core.error_handling import CircuitBreaker, RetryConfig, retry_async
 
 # Setup logging
 logging.basicConfig(
@@ -70,12 +70,13 @@ class ProductionCustomerServiceAgent:
         self.is_healthy = False
         self.shutdown_requested = False
 
-        # Error handling
-        self.retry_handler = RetryWithBackoff(
-            max_retries=3, base_delay=1.0, max_delay=10.0, exponential_base=2
+        # Error handling — wrap calls with `retry_async` (decorator) +
+        # `CircuitBreaker.call(...)` (direct invocation).
+        self.retry_config = RetryConfig(
+            max_attempts=3, base_delay=1.0, max_delay=10.0, exponential_base=2.0,
         )
         self.circuit_breaker = CircuitBreaker(
-            failure_threshold=5, recovery_timeout=60.0, expected_exception=Exception
+            failure_threshold=5, recovery_timeout=60.0, expected_exception=Exception,
         )
 
         # Setup signal handlers for graceful shutdown
@@ -168,16 +169,13 @@ class ProductionCustomerServiceAgent:
         logger.info(f"Handling conversation {conversation_id}")
 
         try:
-            # Use circuit breaker to prevent cascading failures
-            @self.circuit_breaker
-            async def generate_response_with_retry():
-                # Use retry logic for transient failures
-                return await self.retry_handler.execute(
-                    self.agent.generate_response, messages, conversation_context
-                )
+            # Retry transient failures (`retry_async` decorator) and protect the
+            # downstream call with the circuit breaker (`CircuitBreaker.call`).
+            @retry_async(self.retry_config)
+            async def generate_with_retry():
+                return await self.agent.generate_response(messages, conversation_context)
 
-            # Generate response
-            response = await generate_response_with_retry()
+            response = await self.circuit_breaker.call(generate_with_retry)
 
             # Calculate response time
             response_time = (datetime.now() - start_time).total_seconds()

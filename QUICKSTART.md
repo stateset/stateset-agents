@@ -50,7 +50,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ```bash
 python -c "import stateset_agents; print(stateset_agents.__version__)"
-# Should print: 0.5.0 (or later)
+# Should print: 0.15.0 (or later)
 ```
 
 ---
