@@ -5,6 +5,20 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.1] - 2026-05-20 — CI/release hardening: reproducible installs, nightly perf alerts, full Helm coverage
+
+Infrastructure-only patch. No public API change. Tightens four CI/release dimensions to A+: coverage is now enforced from a single source of truth, installs are reproducible from committed lock files, performance regressions are caught on a nightly schedule with PR comments, and every published Helm values profile is rendered in CI.
+
+### Added
+
+- **`requirements-lock.txt` + `requirements-dev-lock.txt`** — pip-compile output committed to the tree, giving fully-pinned reproducible installs (`make install-locked`). `pip-tools` added to the `[dev]` extra. `make lock` regenerates; `make lock-check` is wired into `ci.yml` and fails the build if either lock drifts from `pyproject.toml`.
+- **`.github/workflows/benchmark-nightly.yml`** — cron `0 7 * * *` runs the full `benchmarks/` + `tests/performance/` suites via `pytest-benchmark`, with `benchmark-action/github-action-benchmark` configured for `fail-on-alert: true`, `alert-threshold: 150%`, and PR comments on regression. Raw JSON archived for 30 days. The existing per-PR `benchmark.yml` and Phase-0 `benchmark-smoke.yml` are unchanged.
+
+### Changed
+
+- **Coverage gate moved to `pyproject.toml`** (`[tool.coverage.report] fail_under = 70`) — `pytest-cov` reads it automatically, so `pytest --cov` enforces the same floor locally and in CI. Redundant `--cov-fail-under=70` CLI flag removed from `ci.yml`. Added `precision = 2`, `show_missing = true`, and standard `exclude_lines` (`raise NotImplementedError`, `if TYPE_CHECKING:`).
+- **Helm CI now renders every published profile** (`ci.yml` `helm` job) — was 4 (default + A100/H100/B200/Kimi-finetuned), now all 13 `values-*.yaml` including GKE staging/prod, vllm-A100, the full GLM5.1 trio (base/fp8/finetuned), and the full Qwen3.5-27B trio (base/minimal/finetuned). Profile count is asserted; rendered manifests uploaded as a 7-day artifact.
+
 ## [0.15.0] - 2026-05-20 — Onboarding & scenario coverage: 5 examples, 5 test patterns, 3 scenario notebooks
 
 Triples the surface area of runnable onboarding content. Adds five new GPU-free `examples/getting_started/` scripts that smoke-test in <5s, a five-file `examples/testing/` directory (56 passing pytest cases in ~4s) covering the patterns most useful when writing tests against the framework, and three new Colab-ready training notebooks for scenarios the existing notebooks didn't cover (multi-turn × tool-calling, judge-driven RLHF loop, RAG grounding).

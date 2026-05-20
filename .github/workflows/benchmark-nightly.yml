@@ -1,0 +1,77 @@
+name: Benchmark Nightly
+
+# Full pytest-benchmark sweep on a nightly schedule, with regression alerting.
+# Per-PR coverage stays in `benchmark.yml` (push/PR) and `benchmark-smoke.yml`
+# (Phase 0 pipeline smoke). This job:
+#   - Runs the complete `benchmarks/` suite without `paths:` filters
+#   - Compares against the rolling baseline on gh-pages
+#   - Opens a CI failure + comment when any metric regresses >15%
+# Manual `workflow_dispatch` is available for ad-hoc runs.
+
+permissions:
+  contents: write       # benchmark-action pushes results to gh-pages
+  pull-requests: write  # comment on PRs if alert-threshold is breached
+
+on:
+  schedule:
+    # 07:00 UTC daily — after most US PRs land, before EU morning.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      alert_threshold:
+        description: 'Fail when any metric regresses by this ratio (e.g. 150% = 1.5x slower)'
+        required: false
+        default: '150%'
+
+jobs:
+  benchmark:
+    name: Nightly pytest-benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run full benchmark suite
+        run: |
+          python -m pytest benchmarks/ tests/performance/ \
+            -v \
+            --benchmark-only \
+            --benchmark-json=benchmark-results.json \
+            --benchmark-columns=min,mean,median,stddev,rounds,iterations \
+            --benchmark-group-by=group
+
+      - name: Store benchmark result & alert on regression
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Python Benchmark (nightly)
+          tool: 'pytest'
+          output-file-path: benchmark-results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          # 1.5x slower = regression. Tighten over time once the baseline stabilises.
+          alert-threshold: ${{ github.event.inputs.alert_threshold || '150%' }}
+          comment-on-alert: true
+          fail-on-alert: true
+          alert-comment-cc-users: '@domsteil'
+
+      - name: Upload raw benchmark JSON as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.run_id }}
+          path: benchmark-results.json
+          retention-days: 30

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateset-agents"
-version = "0.15.0"
+version = "0.15.1"
 description = "Production-ready RL framework for training multi-turn conversational AI agents using GRPO and GSPO"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -53,6 +53,7 @@ dev = [
     "bandit>=1.7.0",
     "safety>=2.0.0",
     "semgrep>=1.0.0",
+    "pip-tools>=7.0.0",
     "torch>=2.0.0",
     "transformers>=4.57.1",
     "datasets>=2.0.0",
@@ -190,8 +191,17 @@ omit = [
 ]
 
 [tool.coverage.report]
+# Source of truth for the coverage gate — pytest-cov picks this up from
+# pyproject.toml, so both local `pytest --cov` and CI enforce the same floor.
+fail_under = 70
+precision = 2
+show_missing = true
+skip_covered = false
 exclude_lines = [
     "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
 ]
 
 # Ruff configuration (fast Python linter)

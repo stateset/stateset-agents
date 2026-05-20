@@ -31,6 +31,11 @@ jobs:
       run: |
         python scripts/check_repo_hygiene.py
 
+    - name: Verify lock files are in sync with pyproject.toml
+      run: |
+        pip install pip-tools
+        make lock-check
+
     - name: Run publish readiness checks
       run: |
         make publish-readiness
@@ -110,8 +115,10 @@ jobs:
         mypy --config-file mypy.ini
 
     - name: Run tests
+      # Coverage threshold (`fail_under`) is set in pyproject.toml's
+      # [tool.coverage.report] section — pytest-cov reads it automatically.
       run: |
-        pytest --cov=stateset_agents --cov-report=xml --cov-fail-under=70
+        pytest --cov=stateset_agents --cov-report=xml --cov-report=term
 
     - name: Run example-testing patterns (examples/testing/)
       run: |
@@ -225,21 +232,36 @@ jobs:
           > /tmp/stateset-agents-rendered.yaml
         test -s /tmp/stateset-agents-rendered.yaml
 
-    - name: Helm template (GPU profiles)
+    - name: Helm template (all published profiles)
       run: |
-        helm template stateset-agents deployment/helm/stateset-agents \
-          -f deployment/helm/stateset-agents/values-a100.yaml \
-          --namespace stateset-agents \
-          > /tmp/stateset-agents-rendered-a100.yaml
-        helm template stateset-agents deployment/helm/stateset-agents \
-          -f deployment/helm/stateset-agents/values-kimi-k25-finetuned.yaml \
-          --namespace stateset-agents \
-          > /tmp/stateset-agents-rendered-finetuned.yaml
-        helm template stateset-agents deployment/helm/stateset-agents \
-          -f deployment/helm/stateset-agents/values-h100.yaml \
-          --namespace stateset-agents \
-          > /tmp/stateset-agents-rendered-h100.yaml
-        helm template stateset-agents deployment/helm/stateset-agents \
-          -f deployment/helm/stateset-agents/values-b200.yaml \
-          --namespace stateset-agents \
-          > /tmp/stateset-agents-rendered-b200.yaml
+        # Renders every values-*.yaml under deployment/helm/stateset-agents/ so
+        # chart drift breaks CI for any published profile, not just the GPU set.
+        set -e
+        chart_dir=deployment/helm/stateset-agents
+        out_dir=/tmp/stateset-agents-rendered
+        mkdir -p "$out_dir"
+        shopt -s nullglob
+        for vf in "$chart_dir"/values-*.yaml; do
+          profile=$(basename "$vf" .yaml)
+          echo "::group::helm template $profile"
+          helm template stateset-agents "$chart_dir" \
+            -f "$vf" \
+            --namespace stateset-agents \
+            > "$out_dir/$profile.yaml"
+          test -s "$out_dir/$profile.yaml"
+          echo "::endgroup::"
+        done
+        # Render count must match the number of values files committed.
+        rendered=$(ls "$out_dir"/*.yaml | wc -l)
+        committed=$(ls "$chart_dir"/values-*.yaml | wc -l)
+        test "$rendered" -eq "$committed" || { \
+          echo "::error:: rendered $rendered profile(s), expected $committed" >&2; exit 1; }
+        echo "Rendered $rendered Helm profiles successfully."
+
+    - name: Upload rendered manifests
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: helm-rendered-manifests
+        path: /tmp/stateset-agents-rendered/
+        retention-days: 7

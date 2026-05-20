@@ -1,4 +1,4 @@
-.PHONY: help install install-dev install-all dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
+.PHONY: help install install-dev install-all install-locked lock lock-check dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
 
 PYTHON_BIN := $(shell command -v python3 >/dev/null 2>&1 && echo python3 || command -v python)
 PACKAGE_VERSION := $(shell $(PYTHON_BIN) -c "import stateset_agents; print(stateset_agents.__version__)")
@@ -17,6 +17,32 @@ install-dev: ## Install package with development dependencies
 
 install-all: ## Install package with all optional dependencies
 	pip install -e ".[dev,api,examples,training,trl]"
+
+install-locked: ## Install from requirements-dev-lock.txt (reproducible, what CI uses)
+	pip install -r requirements-dev-lock.txt
+	pip install -e . --no-deps
+
+lock: ## Regenerate requirements-lock.txt and requirements-dev-lock.txt from pyproject.toml
+	@command -v pip-compile >/dev/null 2>&1 || { echo "pip-compile not found. Run: pip install pip-tools" >&2; exit 1; }
+	pip-compile --quiet --resolver=backtracking --output-file=requirements-lock.txt pyproject.toml
+	pip-compile --quiet --resolver=backtracking --extra=dev --extra=api --output-file=requirements-dev-lock.txt pyproject.toml
+	@echo "Lock files regenerated. Commit both requirements-lock.txt and requirements-dev-lock.txt."
+
+lock-check: ## Verify lock files are in sync with pyproject.toml (used in CI)
+	@command -v pip-compile >/dev/null 2>&1 || { echo "pip-compile not found. Run: pip install pip-tools" >&2; exit 1; }
+	@cp requirements-lock.txt requirements-lock.txt.bak
+	@cp requirements-dev-lock.txt requirements-dev-lock.txt.bak
+	@pip-compile --quiet --resolver=backtracking --output-file=requirements-lock.txt pyproject.toml >/dev/null
+	@pip-compile --quiet --resolver=backtracking --extra=dev --extra=api --output-file=requirements-dev-lock.txt pyproject.toml >/dev/null
+	@if ! diff -q requirements-lock.txt requirements-lock.txt.bak >/dev/null || \
+	    ! diff -q requirements-dev-lock.txt requirements-dev-lock.txt.bak >/dev/null; then \
+	  echo "::error:: Lock files are stale. Run 'make lock' and commit the result." >&2; \
+	  mv requirements-lock.txt.bak requirements-lock.txt; \
+	  mv requirements-dev-lock.txt.bak requirements-dev-lock.txt; \
+	  exit 1; \
+	fi
+	@rm -f requirements-lock.txt.bak requirements-dev-lock.txt.bak
+	@echo "Lock files are in sync with pyproject.toml."
 
 dev-setup: ## Install development dependencies and pre-commit hooks
 	$(MAKE) install-dev
