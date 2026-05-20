@@ -653,7 +653,7 @@ python examples/customer_service_agent.py
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture
 - **[GRPO_IMPLEMENTATION.md](GRPO_IMPLEMENTATION.md)** - Algorithm details
 - **[TRL_GRPO_TRAINING_GUIDE.md](docs/TRL_GRPO_TRAINING_GUIDE.md)** - Advanced training
-- **[USAGE_GUIDE.md](docs/USAGE_GUIDE.md)** - Comprehensive usage
+- **[RL_FRAMEWORK_GUIDE.md](docs/RL_FRAMEWORK_GUIDE.md)** - Comprehensive usage (canonical)
 
 ### 3. Customize for Your Domain
 

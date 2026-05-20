@@ -5,6 +5,22 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.1] - 2026-05-19 — Docs canonicalization
+
+Tightened the documentation surface by consolidating overlapping guides into a single canonical set, removing the "which guide do I read?" ambiguity.
+
+### Changed
+
+- **Canonical guide picks:** `/QUICKSTART.md` (15-min), `docs/RL_FRAMEWORK_GUIDE.md` (usage), `/OVERVIEW.md` + `docs/FRAMEWORK_OVERVIEW.md` (overview), `docs/COOKBOOK.md` (recipes).
+- **Archived under `docs/archive/`** (with redirect stubs at the original paths so inbound links don't 404): `QUICKSTART_5MIN.md`, `USAGE_GUIDE.md`, `COMPREHENSIVE_USAGE_GUIDE.md`, `STATESET_RL_AGENTS_OVERVIEW.md`. The first two used stale "GRPO Agent Framework" branding; `RL_FRAMEWORK_GUIDE.md` supersedes them with current branding plus the CLI reference, GRPO-vs-GSPO comparison, and HPO coverage.
+- **Cross-refs updated** in `README.md`, `QUICKSTART.md`, and `docs/API_EXAMPLES.md` to point at the canonical guide.
+
+### Tests
+
+- Removed `tests/unit/test_usage_guide.py` and `tests/unit/test_comprehensive_usage_guide.py` (asserted against archived files).
+- Added `tests/unit/test_rl_framework_guide.py` consolidating the surviving regressions (stub-quickstart flow present, old package name absent) against the canonical guide.
+- Patched `tests/unit/test_advanced_docs_alignment.py` to drop archived targets and point at the canonical.
+
 ## [0.14.0] - 2026-05-19 — Dashboard A+ pass: build/lint/test/CI green, accessibility, external-store notifications
 
 A focused quality push on `dashboard/`. The lab UI previously had a broken `tsc -b` (30+ TS errors), 13 lint errors, 0 tests, no CI coverage, and the default Vite README. This release fixes all of that, hardens accessibility, and trims runtime overhead.

@@ -1755,7 +1755,7 @@ except Exception as e:
 ## Additional Resources
 
 - [API Reference Documentation](./API_REFERENCE.md)
-- [Comprehensive Usage Guide](./COMPREHENSIVE_USAGE_GUIDE.md)
+- [Usage Guide](./RL_FRAMEWORK_GUIDE.md)
 - [Architecture Overview](./ARCHITECTURE.md)
 - [OpenAPI Specification](https://api.stateset.io/openapi.json)
 - [Interactive API Docs](https://api.stateset.io/docs)

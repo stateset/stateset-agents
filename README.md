@@ -834,8 +834,7 @@ Other entry points:
 Key docs:
 
 - `docs/AUTO_RESEARCH_GUIDE.md`
-- `docs/USAGE_GUIDE.md`
-- `docs/RL_FRAMEWORK_GUIDE.md`
+- `docs/RL_FRAMEWORK_GUIDE.md` — canonical usage guide
 - `docs/GSPO_GUIDE.md`
 - `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md`
 - `docs/HPO_GUIDE.md`
