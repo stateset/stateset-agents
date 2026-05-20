@@ -39,6 +39,9 @@ BUNDLED_NOTEBOOKS = [
     "tool_calling_agent_demo.ipynb",
     "grade_and_curate_demo.ipynb",
     "sft_from_curated_demo.ipynb",
+    "ecommerce_returns_agent.ipynb",
+    "judge_driven_training_loop.ipynb",
+    "rag_agent_finetune.ipynb",
 ]
 
 # Pattern → human-readable diagnostic. False positives can be suppressed

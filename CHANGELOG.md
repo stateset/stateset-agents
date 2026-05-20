@@ -5,6 +5,35 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-05-20 — Onboarding & scenario coverage: 5 examples, 5 test patterns, 3 scenario notebooks
+
+Triples the surface area of runnable onboarding content. Adds five new GPU-free `examples/getting_started/` scripts that smoke-test in <5s, a five-file `examples/testing/` directory (56 passing pytest cases in ~4s) covering the patterns most useful when writing tests against the framework, and three new Colab-ready training notebooks for scenarios the existing notebooks didn't cover (multi-turn × tool-calling, judge-driven RLHF loop, RAG grounding).
+
+### Added
+
+- **`examples/getting_started/` 06–10** (all GPU-free, all run via `smoke.sh`):
+  - `06_multi_turn_episode.py` — drives `env.reset()` → loop `env.step()` against the stub backend; same shape as a real trainer rollout.
+  - `07_tool_calling.py` — `ToolAgent` + bundled `ToolCallReward`, scoring well-formed, wrong-tool, and malformed responses.
+  - `08_eval_driven_loop.py` — the §11.7 dev rhythm (baseline → change → measure) with two policies.
+  - `09_curate_dataset.py` — chat → grade → curate, writes an SFT-ready JSONL.
+  - `10_scenario_testing.py` — must-acknowledge / must-avoid / rubric-floor assertions; non-zero exit on regression.
+
+- **`examples/testing/`** — new directory with 56 passing pytest cases (~4s on CPU) across five patterns:
+  - `test_custom_reward.py` (table-driven), `test_stub_integration.py` (no-mock integration), `test_hypothesis_properties.py` (property-based, uses `stateset_agents.testing` strategies), `test_env_smoke.py` (parametrized over every bundled scenario), `test_judge_stability.py` (judge noise-floor + 2σ-separation gate from §11.7).
+  - `README.md` documents the "which pattern when" matrix and the explicit anti-patterns (no mocking the model, no `time.sleep`, no asserting on free-form text).
+
+- **Three scenario notebooks** (all pinned, seeded, lint-clean, `train_with_gspo` + `attn_implementation='sdpa'` + `use_reference_model=True, beta=0.05`):
+  - `ecommerce_returns_agent.ipynb` (~2h on A100) — multi-turn × tool-calling under a 60% rubric / 40% tool composite reward.
+  - `judge_driven_training_loop.ipynb` (~90 min) — closed-loop `train → judge → retrain` with a local Qwen2.5-1.5B-Instruct judge.
+  - `rag_agent_finetune.ipynb` (~75 min) — BM25 retriever + 10-doc KB + `GroundingReward` that penalizes uncited claims.
+
+### Changed
+
+- `scripts/lint_notebooks.py` — added the three new notebooks to `BUNDLED_NOTEBOOKS`; CI now lints 13 notebooks (was 10).
+- `examples/getting_started/README.md` — expanded to a 10-row table (was 5).
+- `examples/getting_started/smoke.sh` — runs all 8 GPU-free examples (was 3).
+- `notebooks/README.md` — "thirteen core notebooks" (was ten), with three new rows and three new "when to use what" entries.
+
 ## [0.14.1] - 2026-05-19 — Docs canonicalization
 
 Tightened the documentation surface by consolidating overlapping guides into a single canonical set, removing the "which guide do I read?" ambiguity.

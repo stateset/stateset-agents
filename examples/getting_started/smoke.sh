@@ -29,6 +29,26 @@ echo "==> 04 llm_judge_eval --stub"
 "$PYTHON" "$HERE/04_llm_judge_eval.py" --stub
 echo
 
+echo "==> 06 multi_turn_episode"
+"$PYTHON" "$HERE/06_multi_turn_episode.py"
+echo
+
+echo "==> 07 tool_calling"
+"$PYTHON" "$HERE/07_tool_calling.py"
+echo
+
+echo "==> 08 eval_driven_loop"
+"$PYTHON" "$HERE/08_eval_driven_loop.py"
+echo
+
+echo "==> 09 curate_dataset"
+"$PYTHON" "$HERE/09_curate_dataset.py"
+echo
+
+echo "==> 10 scenario_testing"
+"$PYTHON" "$HERE/10_scenario_testing.py"
+echo
+
 echo "✓ All GPU-free getting-started examples passed."
 echo
 echo "GPU examples (not run here):"

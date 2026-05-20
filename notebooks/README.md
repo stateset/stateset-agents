@@ -38,7 +38,7 @@ Six runnable Colab notebooks covering the full developer journey. Each pins to a
                                             └──► back to top of pipeline
 ```
 
-## The ten core notebooks
+## The thirteen core notebooks
 
 | Notebook | Stage | A100 runtime | Cost | What it produces |
 |----------|-------|--------------|------|------------------|
@@ -52,8 +52,11 @@ Six runnable Colab notebooks covering the full developer journey. Each pins to a
 | [`tool_calling_agent_demo.ipynb`](./tool_calling_agent_demo.ipynb) | RL train, function calling | ~2 h | ~$1.20 | Tool-using agent with the bundled 3 sample tools (weather, calculator, search). |
 | [`grade_and_curate_demo.ipynb`](./grade_and_curate_demo.ipynb) | Curate | ~5 min | <$0.10 | Curated JSONL of high-scoring (prompt, response) pairs from your captured transcripts. |
 | [`sft_from_curated_demo.ipynb`](./sft_from_curated_demo.ipynb) | SFT closure | ~15 min | ~$0.30 | LoRA adapter trained on the curated examples. Closes the chat → grade → curate → SFT loop. |
+| [`ecommerce_returns_agent.ipynb`](./ecommerce_returns_agent.ipynb) | RL train, multi-turn × tool calling | ~2 h | ~$1.20 | Returns specialist that **combines both pillars**: multi-turn dialogue *and* the right tool call against a composite (60% rubric, 40% tool) reward. Replaces the stub tools with real Shopify/Stripe in production. |
+| [`judge_driven_training_loop.ipynb`](./judge_driven_training_loop.ipynb) | Closed-loop RLHF approximation | ~90 min | ~$0.80 | Two consecutive GSPO iterations, each evaluated by a local `Qwen2.5-1.5B-Instruct` judge. The cheapest realistic version of the RLHF loop short of human labels — `train → judge → curate → retrain`. |
+| [`rag_agent_finetune.ipynb`](./rag_agent_finetune.ipynb) | RL train, retrieval-augmented | ~75 min | ~$0.50 | Tiny BM25 retriever + a 10-doc KB + a `GroundingReward` that penalizes uncited claims. Teaches the agent *when* to lean on retrieved context and *not* to hallucinate when retrieval fails. |
 
-Three legacy notebooks (`00_environment_setup.ipynb`, `01_qwen_support_agent_gspo.ipynb`, `02_qwen_sales_agent_gspo.ipynb`) remain for backward compatibility but are superseded by the ten above.
+Three legacy notebooks (`00_environment_setup.ipynb`, `01_qwen_support_agent_gspo.ipynb`, `02_qwen_sales_agent_gspo.ipynb`) remain for backward compatibility but are superseded by the thirteen above.
 
 ## Common patterns across notebooks
 
@@ -76,6 +79,9 @@ Every notebook:
 | "My agent needs to call APIs" | `tool_calling_agent_demo` |
 | "I have transcripts to grade" | `grade_and_curate_demo` |
 | "I have curated examples to SFT on" | `sft_from_curated_demo` |
+| "Build a returns agent that calls APIs" | `ecommerce_returns_agent` |
+| "Approximate RLHF with no human labels" | `judge_driven_training_loop` |
+| "Train a RAG-grounded agent" | `rag_agent_finetune` |
 | "I want to see what the platform does in 5 seconds, no GPU" | Run `make demo-all` from a clone (not in Colab) |
 
 ## Running locally instead of Colab

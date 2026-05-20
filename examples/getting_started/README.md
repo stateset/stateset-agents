@@ -1,6 +1,6 @@
 # Getting started — runnable examples after `pip install`
 
-Five small, self-contained scripts. Each one starts with a comment block
+Ten small, self-contained scripts. Each one starts with a comment block
 listing the exact `pip install` it needs and the expected output. Read them
 in order; each builds on the previous.
 
@@ -11,6 +11,11 @@ in order; each builds on the previous.
 | 03 | [`03_first_finetune.py`](./03_first_finetune.py) | Your first real GSPO fine-tune. Small base (Qwen2.5-0.5B-Instruct), 16 train scenarios, safe-default config from whitepaper §B.1. | **A100** | `[training]` |
 | 04 | [`04_llm_judge_eval.py`](./04_llm_judge_eval.py) | LLM-as-judge eval pattern from §11.7 — load a 1.5B instruction-tuned model as a judge, score (query, intent, response) triples. `--stub` flag for GPU-free smoke testing. | A100 (or `--stub`) | `[training]` |
 | 05 | [`05_serve_agent.py`](./05_serve_agent.py) | Wire an agent into the OpenAI-compatible FastAPI service. Hit `/v1/chat/completions` with curl or the OpenAI Python SDK. | No (stub-backed) | `[api]` |
+| 06 | [`06_multi_turn_episode.py`](./06_multi_turn_episode.py) | Drive a multi-turn episode through `ConversationEnvironment` — `reset()` → loop `step()` → terminal reward. The same loop a GSPO trainer runs internally. | No | core |
+| 07 | [`07_tool_calling.py`](./07_tool_calling.py) | `ToolAgent` + bundled `ToolCallReward` — score well-formed, wrong-tool, and malformed responses against the function-calling rubric. | No | core |
+| 08 | [`08_eval_driven_loop.py`](./08_eval_driven_loop.py) | The §11.7 development rhythm: pick a rubric, score baseline, change one thing, measure. No GPU — two pure-Python policies stand in for two agent checkpoints. | No | core |
+| 09 | [`09_curate_dataset.py`](./09_curate_dataset.py) | Close the chat → grade → curate loop: score 8 synthetic transcripts with the support rubric, write an SFT-ready JSONL of the high-scoring ones. | No | core |
+| 10 | [`10_scenario_testing.py`](./10_scenario_testing.py) | Regression-style assertions: must-acknowledge, must-avoid, rubric floors. Exits non-zero on the first regression — pin into your CI. | No | core |
 
 ## Common path
 
@@ -35,6 +40,13 @@ curl -X POST http://localhost:8001/v1/chat/completions \
      -H "Content-Type: application/json" \
      -d '{"model": "stub", "messages": [{"role": "user", "content": "hello"}]}'
 # (terminal 2)
+
+# 5. The rest of the loop — multi-turn, tools, eval-driven dev, curation, CI:
+python 06_multi_turn_episode.py
+python 07_tool_calling.py
+python 08_eval_driven_loop.py
+python 09_curate_dataset.py
+python 10_scenario_testing.py     # exits non-zero on assertion regression
 ```
 
 ## Which version?
