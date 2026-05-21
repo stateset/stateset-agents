@@ -5,6 +5,28 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.2] - 2026-05-20 — cli.py decomposition + deployment-version sync
+
+Internal restructure. No public API change — all `stateset_agents.cli` imports, the `stateset-agents` entry point, the `python -m stateset_agents.cli` invocation, and every CLI subcommand behave exactly as before.
+
+### Changed
+
+- **`stateset_agents/cli.py` split from 3,118 → 1,150 LOC** (a 63% reduction in the worst-offender file). Twenty-three subcommands moved into focused sibling modules:
+  - `cli_train.py` (998 LOC) — `train`, `qwen3-5-0-8b`, `kimi-k2-6`, `gemma-4-31b`
+  - `cli_meta.py` (353 LOC) — `doctor`, `preflight`, `publish-check`
+  - `cli_research.py` (360 LOC) — `auto-research`, `fine-tune`
+  - `cli_chat.py` (272 LOC) — `chat`
+  - `cli_benchmark.py` (172 LOC) — `benchmark` sub-app + four subcommands
+  - Existing `cli_advanced.py` (390 LOC) untouched
+- The remaining `cli.py` keeps the helpers, exception tuples, profile constants, `app` instance, and the small commands (`version`, `serve`, `evaluate`, `validate-config`, `init`, `init-config`, `starter`, `recipe`, `tour`).
+- Test patches on `stateset_agents.cli._collect_dependency_status` and `_collect_import_status` continue to work — the meta module accesses these via late binding (`_cli._collect_…`) rather than locally rebinding them.
+- `python -m stateset_agents.cli` keeps working via a one-line `sys.modules.setdefault("stateset_agents.cli", sys.modules[__name__])` alias at the top of `cli.py` that prevents a duplicate module load (and a second orphan `app` instance) when invoked as `__main__`.
+
+### Fixed
+
+- **Helm/K8s/docs version drift.** `deployment/helm/stateset-agents/values.yaml`, `Chart.yaml`, three Kubernetes training-job manifests, the Helm chart README, and `docs/KIMI_K25_GKE_AUTOPILOT.md` were pinned to image tag `0.11.6` (the last release that updated them). All bumped to `0.15.2` in lock-step with the package version. Closes the pre-existing `test_helm_values_use_current_package_version` and `test_selected_kubernetes_and_docs_refs_use_current_package_version` failures.
+- **`test_cli_version_outputs_version`** asserted on the pre-v0.12.0 output format (`stateset-agents version X.Y.Z`); aligned with the actual current format (`stateset-agents X.Y.Z`, set in v0.12.0).
+
 ## [0.15.1] - 2026-05-20 — CI/release hardening: reproducible installs, nightly perf alerts, full Helm coverage
 
 Infrastructure-only patch. No public API change. Tightens four CI/release dimensions to A+: coverage is now enforced from a single source of truth, installs are reproducible from committed lock files, performance regressions are caught on a nightly schedule with PR comments, and every published Helm values profile is rendered in CI.

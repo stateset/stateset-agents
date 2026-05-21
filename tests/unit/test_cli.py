@@ -21,7 +21,10 @@ def test_cli_version_outputs_version():
     """Test version command shows correct version"""
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "stateset-agents version" in result.stdout
+    # Output format (set in v0.12.0): "stateset-agents <version>" on the first
+    # line, then commit/python/deps. The leading token + the actual version
+    # number are both required.
+    assert "stateset-agents" in result.stdout
     assert __version__ in result.stdout
 
 
