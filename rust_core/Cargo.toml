@@ -17,8 +17,12 @@ name = "stateset_rl_core"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Python bindings
-pyo3 = { version = "0.22", features = ["extension-module"] }
+# Python bindings.
+# `abi3-py310` opts into the stable Python ABI from 3.10 onward, so a single
+# wheel per (OS, arch) supports Python 3.10–3.13 (and forward). This shrinks
+# the CI matrix dramatically; the runtime overhead vs version-specific
+# extensions is negligible for this workload.
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py310"] }
 numpy = "0.22"
 
 # Performance

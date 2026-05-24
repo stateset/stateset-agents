@@ -7,40 +7,44 @@
     "panels": [
       {
         "id": 1,
-        "title": "Requests Per Second",
+        "title": "HTTP Requests Per Second",
         "type": "graph",
         "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
         "targets": [
           {
-            "expr": "rate(http_requests_total{job=\"stateset-agents\"}[5m])",
+            "expr": "sum by (method, endpoint) (rate(stateset_http_requests_total{job=\"stateset-agents\"}[5m]))",
             "legendFormat": "{{method}} {{endpoint}}"
           }
         ]
       },
       {
         "id": 2,
-        "title": "Response Time (P95, P99)",
+        "title": "HTTP Response Time (P50/P95/P99)",
         "type": "graph",
         "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
         "targets": [
           {
-            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"stateset-agents\"}[5m]))",
+            "expr": "histogram_quantile(0.50, sum by (le) (rate(stateset_http_request_duration_seconds_bucket{job=\"stateset-agents\"}[5m])))",
+            "legendFormat": "P50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum by (le) (rate(stateset_http_request_duration_seconds_bucket{job=\"stateset-agents\"}[5m])))",
             "legendFormat": "P95"
           },
           {
-            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job=\"stateset-agents\"}[5m]))",
+            "expr": "histogram_quantile(0.99, sum by (le) (rate(stateset_http_request_duration_seconds_bucket{job=\"stateset-agents\"}[5m])))",
             "legendFormat": "P99"
           }
         ]
       },
       {
         "id": 3,
-        "title": "Error Rate",
+        "title": "HTTP Error Rate (5xx)",
         "type": "graph",
         "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
         "targets": [
           {
-            "expr": "rate(http_requests_total{job=\"stateset-agents\",status=~\"5..\"}[5m]) / rate(http_requests_total{job=\"stateset-agents\"}[5m])",
+            "expr": "sum(rate(stateset_http_requests_total{job=\"stateset-agents\",status_code=~\"5..\"}[5m])) / sum(rate(stateset_http_requests_total{job=\"stateset-agents\"}[5m]))",
             "legendFormat": "Error Rate"
           }
         ]
@@ -118,6 +122,108 @@
           {
             "expr": "stateset_concurrent_conversations{job=\"stateset-agents\"}",
             "legendFormat": "Concurrent"
+          }
+        ]
+      },
+      {
+        "id": 100,
+        "title": "Serving — Inference RPS (by model & route)",
+        "type": "graph",
+        "description": "Requests reaching the model backend. Note: anthropic_* routes internally invoke openai_* routes; filter on one route to avoid double-counting.",
+        "gridPos": {"x": 0, "y": 30, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by (model, route) (rate(stateset_inference_requests_total{job=\"stateset-agents\"}[5m]))",
+            "legendFormat": "{{model}} / {{route}}"
+          }
+        ]
+      },
+      {
+        "id": 101,
+        "title": "Serving — Inference Error Rate",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 30, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by (model) (rate(stateset_inference_requests_total{job=\"stateset-agents\",status=\"error\"}[5m])) / clamp_min(sum by (model) (rate(stateset_inference_requests_total{job=\"stateset-agents\"}[5m])), 1e-9)",
+            "legendFormat": "{{model}}"
+          }
+        ]
+      },
+      {
+        "id": 102,
+        "title": "Serving — End-to-End Latency (P50/P95/P99)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 38, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum by (le, model) (rate(stateset_inference_duration_seconds_bucket{job=\"stateset-agents\"}[5m])))",
+            "legendFormat": "{{model}} P50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum by (le, model) (rate(stateset_inference_duration_seconds_bucket{job=\"stateset-agents\"}[5m])))",
+            "legendFormat": "{{model}} P95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum by (le, model) (rate(stateset_inference_duration_seconds_bucket{job=\"stateset-agents\"}[5m])))",
+            "legendFormat": "{{model}} P99"
+          }
+        ]
+      },
+      {
+        "id": 103,
+        "title": "Serving — Time-To-First-Token (P50/P95)",
+        "type": "graph",
+        "description": "Only populated for streaming routes (openai_stream, anthropic_stream).",
+        "gridPos": {"x": 12, "y": 38, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum by (le, model) (rate(stateset_inference_ttft_seconds_bucket{job=\"stateset-agents\"}[5m])))",
+            "legendFormat": "{{model}} P50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum by (le, model) (rate(stateset_inference_ttft_seconds_bucket{job=\"stateset-agents\"}[5m])))",
+            "legendFormat": "{{model}} P95"
+          }
+        ]
+      },
+      {
+        "id": 104,
+        "title": "Serving — Output Throughput (tokens/sec, P50/P95)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 46, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum by (le, model) (rate(stateset_inference_tokens_per_second_bucket{job=\"stateset-agents\"}[5m])))",
+            "legendFormat": "{{model}} P50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum by (le, model) (rate(stateset_inference_tokens_per_second_bucket{job=\"stateset-agents\"}[5m])))",
+            "legendFormat": "{{model}} P95"
+          }
+        ]
+      },
+      {
+        "id": 105,
+        "title": "Serving — In-flight Inferences",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 46, "w": 6, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by (model) (stateset_inference_inflight{job=\"stateset-agents\"})",
+            "legendFormat": "{{model}}"
+          }
+        ]
+      },
+      {
+        "id": 106,
+        "title": "Serving — Token Volume (per direction)",
+        "type": "graph",
+        "gridPos": {"x": 18, "y": 46, "w": 6, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by (direction) (rate(stateset_inference_tokens_total{job=\"stateset-agents\"}[5m]))",
+            "legendFormat": "{{direction}}"
           }
         ]
       }

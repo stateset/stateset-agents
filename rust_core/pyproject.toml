@@ -1,0 +1,48 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "stateset-rl-core"
+# Keep this in lock-step with rust_core/Cargo.toml [package].version — the
+# CI publish workflow asserts they match before uploading to PyPI.
+version = "0.1.0"
+description = "High-performance Rust core for StateSet Agents (GAE, group advantages, GSPO importance ratios, reward normalization). Optional accelerator for the stateset-agents Python framework."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "BUSL-1.1" }
+license-files = ["LICENSE"]
+authors = [
+    { name = "StateSet", email = "engineering@stateset.io" },
+]
+keywords = ["rl", "reinforcement-learning", "gae", "ppo", "grpo", "gspo"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "numpy>=1.21.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/stateset/stateset-agents/tree/master/rust_core"
+Repository = "https://github.com/stateset/stateset-agents"
+Documentation = "https://github.com/stateset/stateset-agents/blob/master/rust_core/README.md"
+Issues = "https://github.com/stateset/stateset-agents/issues"
+
+[tool.maturin]
+# Pure-Rust extension module — no separate Python package directory.
+module-name = "stateset_rl_core"
+# Build with the PyO3 stable ABI from 3.10 onward (matches Cargo.toml's
+# abi3-py310 feature). One wheel per (OS, arch) covers Python 3.10–3.13.
+features = ["pyo3/extension-module"]
+strip = true

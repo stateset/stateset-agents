@@ -16,6 +16,13 @@ from collections.abc import AsyncIterator
 
 import httpx
 
+from .. import inference_metrics
+from ..inference_metrics import (
+    ROUTE_ANTHROPIC_RESPONSE,
+    ROUTE_ANTHROPIC_STREAM,
+    ROUTE_OPENAI_RESPONSE,
+    ROUTE_OPENAI_STREAM,
+)
 from ..messages_models import MessagesRequest
 from ..messages_utils import (
     anthropic_messages_to_openai,
@@ -106,8 +113,7 @@ def _parse_model_map(raw_map: str) -> dict[str, str]:
         loaded = json.loads(raw_map)
     except json.JSONDecodeError:
         logger.warning(
-            "Invalid JSON in INFERENCE_MODEL_MAP; "
-            "falling back to key=value parsing"
+            "Invalid JSON in INFERENCE_MODEL_MAP; " "falling back to key=value parsing"
         )
         for pair in raw_map.split(","):
             if "=" not in pair:
@@ -430,100 +436,174 @@ class InferenceService:
         """Return OpenAI-style response dict."""
         public_model = request.model
         internal_model = self.config.resolve_model(request.model)
+        metric_model = public_model or internal_model or "unknown"
 
-        if self.is_stub:
-            stub_payload = await self._stub_response(request)
-            self._rewrite_model_name(
-                stub_payload, public_model=public_model, internal_model=internal_model
-            )
-            return stub_payload
-
-        payload = self._build_openai_payload(request)
-        client = await self._get_client()
-
-        for attempt in range(self.config.max_retries + 1):
-            try:
-                http_response = await client.post("/v1/chat/completions", json=payload)
-                http_response.raise_for_status()
-                data = cast(dict[str, Any], http_response.json())
+        with inference_metrics.track_request(
+            model=metric_model, route=ROUTE_OPENAI_RESPONSE
+        ) as call:
+            if self.is_stub:
+                stub_payload = await self._stub_response(request)
                 self._rewrite_model_name(
-                    data, public_model=public_model, internal_model=internal_model
+                    stub_payload,
+                    public_model=public_model,
+                    internal_model=internal_model,
                 )
-                return data
-            except INFERENCE_EXCEPTIONS as exc:
-                if attempt >= self.config.max_retries:
-                    logger.error("Inference backend failed: %s", exc)
-                    raise
-                await asyncio.sleep(0.5 * (attempt + 1))
+                _record_usage_from_response(call, stub_payload)
+                return stub_payload
 
-        raise RuntimeError("Inference backend unavailable")
+            payload = self._build_openai_payload(request)
+            client = await self._get_client()
+
+            for attempt in range(self.config.max_retries + 1):
+                try:
+                    http_response = await client.post(
+                        "/v1/chat/completions", json=payload
+                    )
+                    http_response.raise_for_status()
+                    data = cast(dict[str, Any], http_response.json())
+                    self._rewrite_model_name(
+                        data,
+                        public_model=public_model,
+                        internal_model=internal_model,
+                    )
+                    _record_usage_from_response(call, data)
+                    return data
+                except INFERENCE_EXCEPTIONS as exc:
+                    if attempt >= self.config.max_retries:
+                        logger.error("Inference backend failed: %s", exc)
+                        raise
+                    await asyncio.sleep(0.5 * (attempt + 1))
+
+            raise RuntimeError("Inference backend unavailable")
 
     async def stream_openai(self, request: MessagesRequest) -> AsyncIterator[str]:
         """Yield OpenAI-style SSE lines from the backend."""
         public_model = request.model
         internal_model = self.config.resolve_model(request.model)
+        metric_model = public_model or internal_model or "unknown"
+        route = ROUTE_OPENAI_STREAM
 
-        if self.is_stub:
-            stub_response = await self._stub_response(request)
-            data = _compact_json(
-                {
-                    "id": stub_response["id"],
-                    "object": "chat.completion.chunk",
-                    "model": public_model,
-                    "choices": [
+        started = time.monotonic()
+        ttft_recorded = False
+        backend_usage: dict[str, Any] | None = None
+        status = inference_metrics.STATUS_SUCCESS
+
+        with inference_metrics.track_inflight(model=metric_model, route=route):
+            try:
+                if self.is_stub:
+                    stub_response = await self._stub_response(request)
+                    data = _compact_json(
                         {
-                            "index": 0,
-                            "delta": {
-                                "content": stub_response["choices"][0]["message"][
-                                    "content"
-                                ]
-                            },
-                            "finish_reason": "stop",
+                            "id": stub_response["id"],
+                            "object": "chat.completion.chunk",
+                            "model": public_model,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {
+                                        "content": stub_response["choices"][0][
+                                            "message"
+                                        ]["content"]
+                                    },
+                                    "finish_reason": "stop",
+                                }
+                            ],
                         }
-                    ],
-                }
-            )
-            yield f"data: {data}\n\n"
-            yield "data: [DONE]\n\n"
-            return
+                    )
+                    if not ttft_recorded:
+                        inference_metrics.record_ttft(
+                            model=metric_model,
+                            route=route,
+                            seconds=time.monotonic() - started,
+                        )
+                        ttft_recorded = True
+                    backend_usage = stub_response.get("usage")
+                    yield f"data: {data}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
 
-        payload = self._build_openai_payload(request)
-        payload["stream"] = True
-        if self.config.include_stream_usage:
-            stream_options = payload.get("stream_options")
-            if not isinstance(stream_options, dict):
-                stream_options = {}
-            stream_options.setdefault("include_usage", True)
-            payload["stream_options"] = stream_options
-        client = await self._get_client()
+                payload = self._build_openai_payload(request)
+                payload["stream"] = True
+                if self.config.include_stream_usage:
+                    stream_options = payload.get("stream_options")
+                    if not isinstance(stream_options, dict):
+                        stream_options = {}
+                    stream_options.setdefault("include_usage", True)
+                    payload["stream_options"] = stream_options
+                client = await self._get_client()
 
-        async with client.stream(
-            "POST", "/v1/chat/completions", json=payload
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line:
-                    continue
-                if line.startswith("data:"):
-                    raw = line.replace("data:", "", 1).strip()
-                    if raw and raw != "[DONE]":
-                        try:
-                            chunk = json.loads(raw)
-                        except json.JSONDecodeError:
+                async with client.stream(
+                    "POST", "/v1/chat/completions", json=payload
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        if line.startswith("data:"):
+                            raw = line.replace("data:", "", 1).strip()
+                            if raw and raw != "[DONE]":
+                                try:
+                                    chunk = json.loads(raw)
+                                except json.JSONDecodeError:
+                                    if not ttft_recorded:
+                                        inference_metrics.record_ttft(
+                                            model=metric_model,
+                                            route=route,
+                                            seconds=time.monotonic() - started,
+                                        )
+                                        ttft_recorded = True
+                                    yield f"{line}\n\n"
+                                    continue
+                                if isinstance(chunk, dict):
+                                    self._rewrite_model_name(
+                                        chunk,
+                                        public_model=public_model,
+                                        internal_model=internal_model,
+                                    )
+                                    if not ttft_recorded:
+                                        inference_metrics.record_ttft(
+                                            model=metric_model,
+                                            route=route,
+                                            seconds=time.monotonic() - started,
+                                        )
+                                        ttft_recorded = True
+                                    if isinstance(chunk.get("usage"), dict):
+                                        backend_usage = cast(
+                                            dict[str, Any], chunk["usage"]
+                                        )
+                                    yield f"data: {_compact_json(chunk)}\n\n"
+                                    continue
                             yield f"{line}\n\n"
-                            continue
-                        if isinstance(chunk, dict):
-                            self._rewrite_model_name(
-                                chunk,
-                                public_model=public_model,
-                                internal_model=internal_model,
-                            )
-                            yield f"data: {_compact_json(chunk)}\n\n"
-                            continue
-                    yield f"{line}\n\n"
+            except BaseException:
+                status = inference_metrics.STATUS_ERROR
+                raise
+            finally:
+                duration = time.monotonic() - started
+                inference_metrics.record_duration(
+                    model=metric_model, route=route, seconds=duration
+                )
+                inference_metrics.record_request(
+                    model=metric_model, route=route, status=status
+                )
+                if isinstance(backend_usage, dict):
+                    _record_usage(model=metric_model, route=route, usage=backend_usage)
+                    completion_tokens = backend_usage.get("completion_tokens")
+                    if isinstance(completion_tokens, int) and completion_tokens > 0:
+                        inference_metrics.record_throughput(
+                            model=metric_model,
+                            route=route,
+                            tokens=completion_tokens,
+                            seconds=duration,
+                        )
 
     async def stream_anthropic(self, request: MessagesRequest) -> AsyncIterator[str]:
         """Yield Anthropic-style SSE lines derived from OpenAI stream."""
+        metric_model = request.model or self.config.default_model or "unknown"
+        route = ROUTE_ANTHROPIC_STREAM
+        started = time.monotonic()
+        ttft_recorded = False
+        status = inference_metrics.STATUS_SUCCESS
+
         message_id = f"msg_{uuid.uuid4().hex}"
         block_id = f"block_{uuid.uuid4().hex[:8]}"
         stop_sent = False
@@ -532,127 +612,200 @@ class InferenceService:
         tool_block_indices: dict[int, int] = {}
         tool_block_ids: dict[int, str] = {}
 
-        yield _sse_event(
-            "message_start",
-            {
-                "type": "message",
-                "id": message_id,
-                "role": "assistant",
-                "model": request.model,
-                "content": [],
-                "stop_reason": None,
-                "stop_sequence": None,
-                "usage": {"input_tokens": 0, "output_tokens": 0},
-            },
-        )
-        yield _sse_event(
-            "content_block_start",
-            {
-                "index": 0,
-                "content_block": {"type": "text", "text": "", "id": block_id},
-            },
-        )
+        if inference_metrics.PROM_INFERENCE_INFLIGHT is not None:
+            inference_metrics.PROM_INFERENCE_INFLIGHT.labels(
+                model=metric_model, route=route
+            ).inc()
+        try:
+            yield _sse_event(
+                "message_start",
+                {
+                    "type": "message",
+                    "id": message_id,
+                    "role": "assistant",
+                    "model": request.model,
+                    "content": [],
+                    "stop_reason": None,
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 0, "output_tokens": 0},
+                },
+            )
+            yield _sse_event(
+                "content_block_start",
+                {
+                    "index": 0,
+                    "content_block": {"type": "text", "text": "", "id": block_id},
+                },
+            )
 
-        async for line in self.stream_openai(request):
-            if not line.startswith("data:"):
-                continue
-            payload = line.replace("data:", "", 1).strip()
-            if payload == "[DONE]":
-                break
-            try:
-                chunk = json.loads(payload)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(chunk.get("usage"), dict):
-                backend_usage = cast(dict[str, Any], chunk["usage"])
+            async for line in self.stream_openai(request):
+                if not line.startswith("data:"):
+                    continue
+                payload = line.replace("data:", "", 1).strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(chunk.get("usage"), dict):
+                    backend_usage = cast(dict[str, Any], chunk["usage"])
 
-            choices = chunk.get("choices") or []
-            if not choices:
-                continue
-            delta = choices[0].get("delta") or {}
-            text_delta = delta.get("content")
-            if text_delta:
-                output_tokens += max(1, len(text_delta.split()))
-                yield _sse_event(
-                    "content_block_delta",
-                    {
-                        "index": 0,
-                        "delta": {"type": "text_delta", "text": text_delta},
-                    },
-                )
-
-            tool_calls = delta.get("tool_calls") or []
-            for tool in tool_calls:
-                tool_index = tool.get("index", 0)
-                if tool_index not in tool_block_indices:
-                    tool_block_indices[tool_index] = 1 + len(tool_block_indices)
-                    tool_block_ids[tool_index] = (
-                        tool.get("id") or f"tool_{uuid.uuid4().hex[:8]}"
-                    )
-                    function = tool.get("function") or {}
-                    yield _sse_event(
-                        "content_block_start",
-                        {
-                            "index": tool_block_indices[tool_index],
-                            "content_block": {
-                                "type": "tool_use",
-                                "id": tool_block_ids[tool_index],
-                                "name": function.get("name", ""),
-                                "input": {},
-                            },
-                        },
-                    )
-                function = tool.get("function") or {}
-                args_delta = function.get("arguments")
-                if args_delta:
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                text_delta = delta.get("content")
+                if text_delta:
+                    if not ttft_recorded:
+                        inference_metrics.record_ttft(
+                            model=metric_model,
+                            route=route,
+                            seconds=time.monotonic() - started,
+                        )
+                        ttft_recorded = True
+                    output_tokens += max(1, len(text_delta.split()))
                     yield _sse_event(
                         "content_block_delta",
                         {
-                            "index": tool_block_indices[tool_index],
-                            "delta": {
-                                "type": "input_json_delta",
-                                "partial_json": args_delta,
-                            },
+                            "index": 0,
+                            "delta": {"type": "text_delta", "text": text_delta},
                         },
                     )
 
-            finish_reason = choices[0].get("finish_reason")
-            if finish_reason:
-                stop_reason = {
-                    "stop": "end_turn",
-                    "length": "max_tokens",
-                    "tool_calls": "tool_use",
-                    "content_filter": "content_filter",
-                }.get(finish_reason, finish_reason)
-                reported_output_tokens = output_tokens
-                if backend_usage is not None:
-                    completion_tokens = backend_usage.get("completion_tokens")
-                    if isinstance(completion_tokens, int) and completion_tokens >= 0:
-                        reported_output_tokens = completion_tokens
-                yield _sse_event("content_block_stop", {"index": 0})
-                for _tool_index, block_index in tool_block_indices.items():
-                    yield _sse_event("content_block_stop", {"index": block_index})
-                yield _sse_event(
-                    "message_delta",
-                    {
-                        "delta": {
-                            "stop_reason": stop_reason,
-                            "stop_sequence": None,
-                        },
-                        "usage": {"output_tokens": reported_output_tokens},
-                    },
-                )
-                yield _sse_event("message_stop", {"id": message_id})
-                stop_sent = True
+                tool_calls = delta.get("tool_calls") or []
+                for tool in tool_calls:
+                    tool_index = tool.get("index", 0)
+                    if tool_index not in tool_block_indices:
+                        tool_block_indices[tool_index] = 1 + len(tool_block_indices)
+                        tool_block_ids[tool_index] = (
+                            tool.get("id") or f"tool_{uuid.uuid4().hex[:8]}"
+                        )
+                        function = tool.get("function") or {}
+                        yield _sse_event(
+                            "content_block_start",
+                            {
+                                "index": tool_block_indices[tool_index],
+                                "content_block": {
+                                    "type": "tool_use",
+                                    "id": tool_block_ids[tool_index],
+                                    "name": function.get("name", ""),
+                                    "input": {},
+                                },
+                            },
+                        )
+                    function = tool.get("function") or {}
+                    args_delta = function.get("arguments")
+                    if args_delta:
+                        yield _sse_event(
+                            "content_block_delta",
+                            {
+                                "index": tool_block_indices[tool_index],
+                                "delta": {
+                                    "type": "input_json_delta",
+                                    "partial_json": args_delta,
+                                },
+                            },
+                        )
 
-        if not stop_sent:
-            yield _sse_event("message_stop", {"id": message_id})
+                finish_reason = choices[0].get("finish_reason")
+                if finish_reason:
+                    stop_reason = {
+                        "stop": "end_turn",
+                        "length": "max_tokens",
+                        "tool_calls": "tool_use",
+                        "content_filter": "content_filter",
+                    }.get(finish_reason, finish_reason)
+                    reported_output_tokens = output_tokens
+                    if backend_usage is not None:
+                        completion_tokens = backend_usage.get("completion_tokens")
+                        if (
+                            isinstance(completion_tokens, int)
+                            and completion_tokens >= 0
+                        ):
+                            reported_output_tokens = completion_tokens
+                    yield _sse_event("content_block_stop", {"index": 0})
+                    for _tool_index, block_index in tool_block_indices.items():
+                        yield _sse_event("content_block_stop", {"index": block_index})
+                    yield _sse_event(
+                        "message_delta",
+                        {
+                            "delta": {
+                                "stop_reason": stop_reason,
+                                "stop_sequence": None,
+                            },
+                            "usage": {"output_tokens": reported_output_tokens},
+                        },
+                    )
+                    yield _sse_event("message_stop", {"id": message_id})
+                    stop_sent = True
+
+            if not stop_sent:
+                yield _sse_event("message_stop", {"id": message_id})
+        except BaseException:
+            status = inference_metrics.STATUS_ERROR
+            raise
+        finally:
+            if inference_metrics.PROM_INFERENCE_INFLIGHT is not None:
+                inference_metrics.PROM_INFERENCE_INFLIGHT.labels(
+                    model=metric_model, route=route
+                ).dec()
+            duration = time.monotonic() - started
+            inference_metrics.record_duration(
+                model=metric_model, route=route, seconds=duration
+            )
+            inference_metrics.record_request(
+                model=metric_model, route=route, status=status
+            )
+            reported_tokens = output_tokens
+            if isinstance(backend_usage, dict):
+                _record_usage(model=metric_model, route=route, usage=backend_usage)
+                completion_tokens = backend_usage.get("completion_tokens")
+                if isinstance(completion_tokens, int) and completion_tokens >= 0:
+                    reported_tokens = completion_tokens
+            if reported_tokens > 0:
+                inference_metrics.record_throughput(
+                    model=metric_model,
+                    route=route,
+                    tokens=reported_tokens,
+                    seconds=duration,
+                )
 
     async def create_anthropic_response(
         self, request: MessagesRequest
     ) -> dict[str, Any]:
-        openai_response = await self.create_openai_response(request)
-        return openai_response_to_anthropic(openai_response)
+        metric_model = request.model or self.config.default_model or "unknown"
+        with inference_metrics.track_request(
+            model=metric_model, route=ROUTE_ANTHROPIC_RESPONSE
+        ) as call:
+            openai_response = await self.create_openai_response(request)
+            _record_usage_from_response(call, openai_response)
+            return openai_response_to_anthropic(openai_response)
+
+
+def _record_usage(*, model: str, route: str, usage: dict[str, Any]) -> None:
+    prompt = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+    completion = usage.get("completion_tokens") or usage.get("output_tokens") or 0
+    inference_metrics.record_tokens(
+        model=model,
+        route=route,
+        prompt_tokens=int(prompt) if isinstance(prompt, int) else 0,
+        completion_tokens=(int(completion) if isinstance(completion, int) else 0),
+    )
+
+
+def _record_usage_from_response(
+    call: inference_metrics._InferenceCall, response: dict[str, Any]
+) -> None:
+    usage = response.get("usage")
+    if not isinstance(usage, dict):
+        return
+    prompt = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+    completion = usage.get("completion_tokens") or usage.get("output_tokens") or 0
+    call.tokens(
+        prompt=int(prompt) if isinstance(prompt, int) else 0,
+        completion=int(completion) if isinstance(completion, int) else 0,
+    )
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:

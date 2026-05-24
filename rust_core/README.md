@@ -13,6 +13,23 @@ High-performance Rust implementations of reinforcement learning operations, with
 
 ## Installation
 
+### As a Python extension (recommended)
+
+Pre-built abi3 wheels are published to PyPI on each `rust-core-v*` tag.
+Install directly or via the `[rust]` extra on `stateset-agents`:
+
+```bash
+# Standalone
+pip install stateset-rl-core
+
+# Bundled with the framework
+pip install "stateset-agents[rust]"
+```
+
+One wheel per (OS, arch) covers Python 3.10–3.13 via the stable PyO3 ABI.
+Supported targets: Linux x86_64/aarch64 (manylinux2014), macOS x86_64/arm64,
+Windows x86_64.
+
 ### As a Rust crate
 
 ```toml
@@ -20,7 +37,7 @@ High-performance Rust implementations of reinforcement learning operations, with
 stateset-rl-core = "0.1"
 ```
 
-### As a Python extension
+### From source (development)
 
 ```bash
 cd rust_core

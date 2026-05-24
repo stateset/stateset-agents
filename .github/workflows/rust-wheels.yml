@@ -1,0 +1,220 @@
+name: Rust wheels (stateset-rl-core)
+
+# Builds abi3 wheels for the optional Rust accelerator and ships them to
+# PyPI when a `rust-core-v*` tag is pushed. Decoupled from the main
+# stateset-agents release cadence on purpose — the crate version
+# (rust_core/Cargo.toml + rust_core/pyproject.toml) moves independently.
+#
+# Triggers:
+#   * push to master or a PR that touches rust_core/ → build wheels for
+#     every target as a smoke test, but do not publish.
+#   * push of a tag matching `rust-core-v*` → build everything and publish
+#     to PyPI (gated on the PYPI_API_TOKEN secret).
+#   * workflow_dispatch → manual build for debugging.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "rust_core/**"
+      - ".github/workflows/rust-wheels.yml"
+    tags:
+      - "rust-core-v*"
+  pull_request:
+    paths:
+      - "rust_core/**"
+      - ".github/workflows/rust-wheels.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: rust_core
+
+jobs:
+  # --------------------------------------------------------------------
+  # Build matrix. With pyo3's abi3-py310 feature one wheel per (OS, arch)
+  # covers Python 3.10–3.13, so we only need five wheel jobs total.
+  # --------------------------------------------------------------------
+  linux:
+    name: build / linux-${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Build wheel (manylinux2014, abi3)
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: rust_core
+          target: ${{ matrix.target }}
+          # abi3 keeps a single wheel per (OS, arch) covering 3.10-3.13.
+          args: --release --out dist --interpreter "3.10"
+          manylinux: "2014"
+
+      - name: Smoke-import on x86_64
+        if: matrix.target == 'x86_64'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          python -c "import numpy as np; import stateset_rl_core as r; print('ok', r.compute_gae(np.array([1.,0.,1.]), np.array([.5,.5,.5,0.])))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}
+          path: rust_core/dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: build / macos-${{ matrix.target }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Build wheel (abi3)
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: rust_core
+          target: ${{ matrix.target }}
+          args: --release --out dist --interpreter "3.10"
+
+      - name: Smoke-import on host arch
+        # On macos-latest (arm64), the aarch64 wheel matches the host.
+        if: matrix.target == 'aarch64'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          python -c "import numpy as np; import stateset_rl_core as r; print('ok', r.compute_gae(np.array([1.,0.,1.]), np.array([.5,.5,.5,0.])))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.target }}
+          path: rust_core/dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: build / windows-x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Build wheel (abi3)
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: rust_core
+          target: x86_64
+          args: --release --out dist --interpreter "3.10"
+
+      - name: Smoke-import
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install (Get-ChildItem dist\*.whl).FullName
+          python -c "import numpy as np; import stateset_rl_core as r; print('ok', r.compute_gae(np.array([1.,0.,1.]), np.array([.5,.5,.5,0.])))"
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-x86_64
+          path: rust_core/dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  sdist:
+    name: build / sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: rust_core
+          command: sdist
+          args: --out dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: rust_core/dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # --------------------------------------------------------------------
+  # Publish to PyPI on rust-core-v* tag push. Asserts the tag, Cargo.toml,
+  # and pyproject.toml version agree before uploading.
+  # --------------------------------------------------------------------
+  publish:
+    name: publish to PyPI
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/rust-core-v')
+    needs: [linux, macos, windows, sdist]
+    runs-on: ubuntu-latest
+    environment: pypi-rust-core
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Verify tag matches crate + pyproject versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#rust-core-v}"
+          cargo_version=$(grep -E '^version\s*=' rust_core/Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          py_version=$(grep -E '^version\s*=' rust_core/pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "tag=$tag_version cargo=$cargo_version pyproject=$py_version"
+          if [ "$tag_version" != "$cargo_version" ] || [ "$tag_version" != "$py_version" ]; then
+            echo "::error::Version mismatch — tag=$tag_version, Cargo.toml=$cargo_version, pyproject.toml=$py_version"
+            exit 1
+          fi
+
+      - name: Download all wheels + sdist
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-staging
+          pattern: "{wheels-*,sdist}"
+          merge-multiple: true
+
+      - name: Show what will be published
+        run: ls -la dist-staging
+
+      - name: Publish to PyPI
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: rust_core
+          command: upload
+          # --skip-existing makes a re-run on the same tag idempotent.
+          args: --skip-existing --non-interactive ../dist-staging/*
+        env:
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}

@@ -1,7 +1,13 @@
 # StateSet Agents - Technical Architecture
 
-**Version:** 0.5.0
-**Last Updated:** December 2024
+**Source version:** 0.15.3
+**Last updated:** May 2026
+
+> **Versioning note.** Like the whitepaper, this document is pinned to the
+> source tree at the version above. The PyPI release may lag the source by
+> one or two patch versions; check `stateset_agents.__version__` for the
+> installed version. Section-level claims about file paths and line counts
+> are valid as of 0.15.3 — open an issue if they drift.
 
 ---
 
@@ -10,10 +16,12 @@
 - [Overview](#overview)
 - [System Architecture](#system-architecture)
 - [Core Components](#core-components)
-- [GRPO Algorithm Implementation](#grpo-algorithm-implementation)
+- [Algorithm Coverage](#algorithm-coverage)
+- [GRPO / GSPO Algorithm Implementation](#grpo--gspo-algorithm-implementation)
 - [Training Pipeline](#training-pipeline)
 - [Data Flow](#data-flow)
 - [API Architecture](#api-architecture)
+- [Observability](#observability)
 - [Deployment Architecture](#deployment-architecture)
 - [Design Patterns](#design-patterns)
 - [Performance Optimization](#performance-optimization)
@@ -23,16 +31,29 @@
 
 ## Overview
 
-StateSet Agents is a production-ready reinforcement learning framework for training multi-turn conversational AI agents using **Group Relative Policy Optimization (GRPO)**. The framework is built with a modular, async-first architecture designed for scale and extensibility.
+StateSet Agents is a production-ready reinforcement learning framework for
+training multi-turn conversational AI agents. It implements the full family of
+sequence-level policy optimizers — **GRPO**, **GSPO**, **GEPO**, **DAPO**, and
+**VAPO** — plus offline RL baselines (BCQ, BEAR, CQL, IQL, Decision
+Transformer), RLAIF, and an OpenAI/Anthropic-compatible serving layer in front
+of a vLLM backend. The framework is built with a modular, async-first
+architecture designed for scale and extensibility.
 
-### Key Statistics
+### Key Statistics (0.15.3)
 
-- **~50,000 lines** of production Python code
-- **98% test coverage** on core components
-- **5+ RL algorithms** (GRPO, PPO, DPO, A2C, TRPO)
-- **10+ pre-built reward functions**
-- **Async-first** design for high concurrency
-- **Production deployments** on Kubernetes with auto-scaling
+- **~104,000 lines** of production Python in `stateset_agents/` (243 modules)
+- **~43,000 lines** of tests across `tests/` (162 files; 70% coverage gate
+  enforced in CI via `[tool.coverage.report] fail_under = 70`)
+- **9 RL algorithms** with dedicated trainer classes: GRPO (TRL bridge),
+  GSPO, GEPO, DAPO, VAPO, PPO, RLAIF, plus offline RL (BCQ/BEAR/CQL/IQL/DT)
+- **10+ pre-built reward functions** plus composable LLM-judge and rule
+  adapters under `stateset_agents/rewards/`
+- **13 Helm value profiles** (A100/H100/B200; per-model Kimi-K2.5,
+  GLM-5.1, Qwen-3.5 variants) rendered on every CI run
+- **Async-first** design throughout the API, agent, and trainer surfaces
+- **Reproducibility-first releases:** lock files (`requirements-lock.txt`,
+  `requirements-dev-lock.txt`) checked in CI; nightly benchmark regression
+  alerts at 150% threshold
 
 ### Design Philosophy
 
@@ -41,6 +62,8 @@ StateSet Agents is a production-ready reinforcement learning framework for train
 3. **Production-Ready**: Enterprise features from day one
 4. **Modular**: Easy to extend and customize
 5. **Type-Safe**: Runtime validation and safe serialization
+6. **Reproducible**: Whitepaper, configs, and benchmark results are anchored
+   to specific commits; nightly perf alerts catch regressions automatically
 
 ---
 
@@ -81,65 +104,81 @@ StateSet Agents is a production-ready reinforcement learning framework for train
 
 ```
 stateset-agents/
-├── core/                          # Core RL abstractions (~13K lines)
-│   ├── agent.py                   # Agent orchestration (900+ lines)
-│   ├── environment.py             # Training environments
-│   ├── trajectory.py              # Conversation data structures
-│   ├── reward.py                  # Reward modeling (1000+ lines)
-│   ├── value_function.py          # GAE and value estimation
-│   ├── computational_engine.py    # Parallel trajectory generation
-│   ├── multiturn_agent.py         # Advanced dialogue management
-│   ├── performance_optimizer.py   # Hardware optimization
-│   ├── agent_backends.py          # Stub backends for fast demos
-│   └── enhanced/                  # Advanced algorithms
-│       ├── advanced_rl_algorithms.py
-│       └── advanced_evaluation.py
-│
-├── training/                      # Training infrastructure
-│   ├── trainer.py                 # Main GRPO trainer (1500+ lines)
-│   ├── trl_grpo_trainer.py        # TRL integration (800+ lines)
-│   ├── config.py                  # Training configurations
-│   ├── train.py                   # High-level training interface
-│   ├── distributed_trainer.py     # Multi-GPU training
-│   └── neural_reward_trainer.py   # Learned reward models
-│
-├── api/                           # REST API services
-│   ├── main.py                    # FastAPI app and router assembly
-│   ├── routers/                   # Endpoint routers
-│   ├── security.py                # Authentication and threat monitoring
-│   └── dependencies.py            # Shared FastAPI dependencies
-│
-├── rewards/                       # Multi-objective reward system
-│   ├── llm_reward.py              # LLM-based rewards
-│   ├── ruler_reward.py            # Rule-based rewards
-│   └── multi_objective_reward.py  # Compositional rewards
-│
-├── utils/                         # Production utilities
-│   ├── monitoring.py              # Real-time metrics
-│   ├── wandb_integration.py       # W&B integration
-│   ├── logging.py                 # Structured logging
-│   ├── cache.py                   # Caching service
-│   ├── alerts.py                  # Alert system
-│   ├── performance_monitor.py     # Performance tracking
-│   └── security.py                # Security utilities
+├── stateset_agents/               # Importable package (~104K LOC, 243 modules)
+│   ├── core/                      # RL abstractions (~23K lines, 62 modules)
+│   │   ├── agent.py               # Agent orchestration
+│   │   ├── multiturn_agent.py     # Stateful dialogue agent
+│   │   ├── function_calling.py    # ToolAgent + JSON tool-calling
+│   │   ├── environment.py         # Training environments
+│   │   ├── trajectory.py          # Conversation data structures
+│   │   ├── reward_base.py         # Reward ABC + result types
+│   │   ├── basic_rewards.py       # Helpfulness/safety/concision/etc.
+│   │   ├── domain_rewards.py      # Customer-service / sales / support
+│   │   ├── reward_factories.py    # Composite-reward factories
+│   │   ├── value_function.py      # GAE and value estimation
+│   │   ├── computational_engine.py # Parallel trajectory generation
+│   │   ├── agent_backends.py      # StubModel/StubTokenizer for CI
+│   │   └── rust_accelerator.py    # Optional Rust GAE (falls back to NumPy)
+│   │
+│   ├── training/                  # Trainers (~29K lines, 58 modules)
+│   │   ├── trl_grpo_trainer.py    # GRPO via Hugging Face TRL
+│   │   ├── gspo_trainer.py        # Sequence-level GSPO (852 LOC)
+│   │   ├── dapo_trainer.py        # Decoupled clip + dynamic sampling
+│   │   ├── gepo_trainer.py        # Expectation-based GEPO
+│   │   ├── vapo_trainer.py        # Value-augmented (1036 LOC)
+│   │   ├── ppo_trainer.py         # PPO baseline (833 LOC)
+│   │   ├── rlaif_trainer.py       # RL from AI feedback
+│   │   ├── offline_rl_bcq.py      # BCQ / BEAR / CQL / IQL / DT
+│   │   ├── single_turn_trainer.py # Single-turn convenience wrapper
+│   │   ├── distributed_trainer.py # Multi-GPU
+│   │   └── neural_reward_trainer.py # Learned reward models
+│   │
+│   ├── api/                       # FastAPI service + OpenAI/Anthropic compat
+│   │   ├── main.py                # App assembly
+│   │   ├── routers/               # Health, metrics, completions, etc.
+│   │   ├── services/inference_service.py # vLLM proxy / stub backend
+│   │   ├── middleware.py          # Request ID + HTTP Prometheus metrics
+│   │   ├── inference_metrics.py   # Model-level Prometheus metrics
+│   │   ├── observability.py       # Tracing + structured-log glue
+│   │   ├── security.py            # Auth + threat monitor
+│   │   └── dependencies.py        # FastAPI dependency providers
+│   │
+│   ├── rewards/                   # Multi-objective reward system
+│   │   ├── llm_reward.py          # LLM-judge adapter
+│   │   ├── ruler_reward.py        # Rule-based rewards
+│   │   ├── neural_reward_model.py # Learned reward models
+│   │   └── multi_objective_reward.py # Composition
+│   │
+│   ├── cli/                       # CLI (post-0.15.2 decomposition)
+│   │   ├── cli_train.py           # `stateset-agents train`
+│   │   ├── cli_research.py        # Auto-research loops
+│   │   ├── cli_meta.py            # doctor, version, starter
+│   │   └── cli_benchmark.py       # Phase-0 / aggregate / plot
+│   │
+│   └── utils/                     # Monitoring, logging, caching, security
 │
 ├── deployment/                    # Production deployment
-│   ├── kubernetes/                # K8s manifests
+│   ├── helm/stateset-agents/      # Helm chart + 13 value profiles
+│   ├── kubernetes/                # K8s manifests + per-model training jobs
 │   ├── docker/                    # Docker configurations
-│   ├── monitoring/                # Grafana dashboards
-│   └── cloud/                     # Cloud scripts
+│   └── monitoring/                # grafana-dashboard.json (HTTP + serving)
 │
-├── examples/                      # 13+ complete examples
+├── examples/                      # 76 runnable scripts incl. model starters
+│   ├── getting_started/           # GPU-free smoke-test examples (06–10)
 │   ├── quick_start.py
 │   ├── complete_grpo_training.py
-│   ├── train_with_trl_grpo.py
-│   └── customer_service_agent.py
+│   ├── production_ready_customer_service.py
+│   └── starters/                  # Qwen-3.5 / Kimi-K2.6 / Gemma-4 / GLM-5.1
 │
-└── tests/                         # Comprehensive test suite
+├── notebooks/                     # 13 Colab notebooks (lint-gated in CI)
+├── docs/                          # 53 markdown guides + Sphinx site
+├── rust_core/                     # Optional Rust accelerator (maturin)
+└── tests/                         # 162 test files, 43K LOC
     ├── unit/
     ├── integration/
     ├── e2e/
-    └── performance/
+    ├── performance/               # pytest-benchmark regression suite
+    └── security/
 ```
 
 ---
@@ -510,7 +549,36 @@ class ComputationalGRPOEngine:
 
 ---
 
-## GRPO Algorithm Implementation
+## Algorithm Coverage
+
+The framework ships dedicated trainers for the full family of sequence-level
+policy optimizers plus offline-RL baselines and an RLAIF loop. All trainers
+share a common surface (`config`, `train()`, `step()`, checkpoint helpers)
+and live alongside their `XxxConfig` dataclass.
+
+| Algorithm | Module | Notes |
+|---|---|---|
+| GRPO | `training/trl_grpo_trainer.py` | Hugging Face TRL integration; the default for "train a GRPO agent" |
+| GSPO | `training/gspo_trainer.py` | Sequence-level importance ratios with explicit length normalization (refs [GSPO paper](https://arxiv.org/abs/2507.18071v2)) |
+| GEPO | `training/gepo_trainer.py` | Expectation-based variant; useful when GSPO's variance is too high |
+| DAPO | `training/dapo_trainer.py` | Decoupled clip + dynamic sampling |
+| VAPO | `training/vapo_trainer.py` | Value-augmented; pairs well with a separate value head |
+| PPO  | `training/ppo_trainer.py` | Reference / baseline |
+| RLAIF | `training/rlaif_trainer.py` | RL-from-AI-feedback via an LLM judge |
+| BCQ / BEAR / CQL / IQL / Decision Transformer | `training/offline_rl_*.py` | Offline-RL baselines for log-replay training |
+
+Default entry points:
+
+* `from stateset_agents.training import train` — auto-selects single-turn vs
+  multi-turn GRPO based on the agent shape.
+* `train_with_gspo()`, `train_with_dapo()`, etc. — explicit per-algorithm
+  shortcuts.
+* `stateset-agents train --stub --config config.yaml` — CLI front-door,
+  scaffolded by `stateset-agents starter <template>`.
+
+---
+
+## GRPO / GSPO Algorithm Implementation
 
 ### Algorithm Overview
 
@@ -818,8 +886,62 @@ async def train_agent(config: TrainingConfig):
 - **WebSocket**: Real-time streaming
 - **Rate Limiting**: Protect against abuse
 - **Authentication**: API key or JWT
-- **Monitoring**: Prometheus metrics
+- **Monitoring**: Prometheus metrics (HTTP + model-level)
 - **Health Checks**: Liveness and readiness probes
+
+---
+
+## Observability
+
+The serving layer ships two complementary metric families. Both expose on
+the same `/metrics` endpoint (Prometheus text format) registered by
+`stateset_agents.api.routers.metrics` and are scraped by the dashboard at
+`deployment/monitoring/grafana-dashboard.json`.
+
+### HTTP-level metrics (`stateset_agents/api/middleware.py`)
+
+These cover every request that hits the FastAPI app, including health
+checks, completions, and admin endpoints.
+
+| Metric | Type | Labels |
+|---|---|---|
+| `stateset_http_requests_total` | Counter | `method`, `endpoint`, `status_code` |
+| `stateset_http_request_duration_seconds` | Histogram | `method`, `endpoint` |
+| `stateset_http_requests_in_progress` | Gauge | `method`, `endpoint` |
+
+### Inference-level metrics (`stateset_agents/api/inference_metrics.py`)
+
+These are emitted only when the request reaches the model backend (vLLM or
+stub). They are the right surface for SLOs on generation quality of
+service.
+
+| Metric | Type | Labels |
+|---|---|---|
+| `stateset_inference_requests_total` | Counter | `model`, `route`, `status` |
+| `stateset_inference_duration_seconds` | Histogram | `model`, `route` |
+| `stateset_inference_ttft_seconds` | Histogram | `model`, `route` |
+| `stateset_inference_tokens_per_second` | Histogram | `model`, `route` |
+| `stateset_inference_tokens_total` | Counter | `model`, `route`, `direction` (prompt\|completion) |
+| `stateset_inference_inflight` | Gauge | `model`, `route` |
+
+`route` is one of `openai_response`, `openai_stream`, `anthropic_response`,
+`anthropic_stream`. When an Anthropic-shaped request internally calls the
+OpenAI path, both routes increment — sum by `model` (and filter on one
+route) to avoid double-counting in dashboards.
+
+The metrics module follows the same optional-import pattern as the HTTP
+middleware: when `prometheus_client` is not installed, every helper becomes
+a no-op, so the inference service never has to guard its call sites.
+
+### Training observability
+
+* **W&B** for run-level metrics (loss, reward, KL, gradient norms) — opt-in
+  via `wandb_project=` on the training config.
+* **Structured logs** for trainer events; `utils/logging.py` centralizes
+  JSON formatting and correlation IDs.
+* **Nightly benchmark workflow** posts a regression PR comment when a known
+  benchmark exceeds 150% of its baseline (see `.github/workflows/
+  benchmark-nightly.yml`).
 
 ---
 
@@ -1012,23 +1134,34 @@ class BusinessMetricReward(RewardFunction):
 
 ### Dependencies
 
-**Core (always required):**
-- Python 3.8+
+**Core (always required, see `pyproject.toml`):**
+- Python 3.10–3.13
 - numpy >= 1.21.0
 - pydantic >= 2.0.0
 - rich >= 13.0.0
+- typer >= 0.9.0
 - typing-extensions >= 4.0.0
 
-**Training (optional):**
+**Training (optional, `pip install stateset-agents[training]`):**
 - torch >= 2.0.0
-- transformers >= 4.30.0
-- accelerate >= 0.20.0
-- trl >= 0.7.0
-- peft >= 0.4.0
+- transformers >= 4.57.1
+- accelerate, peft, trl, datasets
 
-**API (optional):**
-- fastapi >= 0.110.0
-- uvicorn >= 0.23.0
+**API (optional, `pip install stateset-agents[api]`):**
+- fastapi, uvicorn, httpx
+- prometheus-client (enables both HTTP and inference-level metrics)
+
+**Rust accelerator (optional, `pip install stateset-agents[rust]`):**
+- `stateset-rl-core` — pure-Rust PyO3 extension providing 10–100× speedups
+  on GAE / group-advantage / GSPO importance-ratio paths. The Python
+  framework gracefully falls back to NumPy when this is not installed
+  (see `stateset_agents/core/rust_accelerator.py`). Wheels are built by
+  `.github/workflows/rust-wheels.yml` and published to PyPI on
+  `rust-core-v*` tag push (separate cadence from `stateset-agents` tags).
+
+**Reproducible installs:** pinned via `requirements-lock.txt` and
+`requirements-dev-lock.txt`. CI runs `make lock-check` to fail any PR that
+modifies `pyproject.toml` without regenerating the locks.
 
 ### System Requirements
 
@@ -1054,6 +1187,6 @@ class BusinessMetricReward(RewardFunction):
 
 ---
 
-**Version**: 0.5.0
-**Last Updated**: December 2024
-**Status**: Production Ready
+**Source version**: 0.15.3
+**Last updated**: May 2026
+**Status**: Production-ready (BUSL-1.1)

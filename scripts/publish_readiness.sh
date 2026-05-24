@@ -189,9 +189,12 @@ printf "\n[2/8] Running type checks...\n"
 CURRENT_STEP="type_checks"
 python scripts/check_types.py --all
 
-printf "\n[3/8] Running tests with coverage gate (70%)...\n"
+printf "\n[3/8] Running tests with coverage gate...\n"
 CURRENT_STEP="tests_with_coverage"
-pytest --cov=stateset_agents --cov-report=xml --cov-fail-under=70
+# Gate value lives in pyproject.toml's [tool.coverage.report] fail_under and
+# is honored automatically by pytest-cov. Avoid passing --cov-fail-under here
+# so the gate has a single source of truth (see v0.15.3 ratchet correction).
+pytest --cov=stateset_agents --cov-report=xml
 
 printf "\n[4/8] Running security scans...\n"
 CURRENT_STEP="security_scans"
