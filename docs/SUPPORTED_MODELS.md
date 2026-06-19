@@ -21,6 +21,7 @@ Each first-class starter provides:
 | **Gemma 4 31B IT** | `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` | `examples/finetune_gemma4_31b_gspo.py` | QLoRA 4-bit by default |
 | **Kimi-K2.6** | `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | `examples/finetune_kimi_k2_6_gspo.py` | GKE Autopilot + Standard manifests shipped |
 | **GLM 5.1** | `zai-org/GLM-5.1` (754B MoE) | — (module + example only) | `examples/finetune_glm5_1_gspo.py` | QLoRA-only; vLLM generation; FP8 alias supported |
+| **GLM 5.2** | `zai-org/GLM-5.2` (754B MoE) | — (module + example only) | `examples/finetune_glm5_2_gspo.py` | QLoRA-only; vLLM generation; FP8 alias supported |
 
 Each CLI command supports `--list-profiles`, `--write-config`, `--config`,
 `--starter-profile {balanced,memory,quality}`, `--task`, `--json-output`, and

@@ -45,6 +45,7 @@ def test_selected_kubernetes_and_docs_refs_use_current_package_version() -> None
         repo_root / "deployment" / "kubernetes" / "production-deployment.yaml",
         repo_root / "deployment" / "kubernetes" / "kimi-k25-training-job.yaml",
         repo_root / "deployment" / "kubernetes" / "glm5-1-training-job.yaml",
+        repo_root / "deployment" / "kubernetes" / "glm5-2-training-job.yaml",
         repo_root / "deployment" / "kubernetes" / "qwen3-5-27b-training-job.yaml",
         repo_root / "deployment" / "helm" / "stateset-agents" / "README.md",
         repo_root / "docs" / "KIMI_K25_GKE_AUTOPILOT.md",
@@ -68,6 +69,11 @@ def test_public_deployment_examples_require_auth_by_default() -> None:
         / "deployment"
         / "helm"
         / "stateset-agents"
+        / "values-glm5-2-fp8.yaml",
+        repo_root
+        / "deployment"
+        / "helm"
+        / "stateset-agents"
         / "values-qwen3-5-27b-minimal.yaml",
         repo_root
         / "deployment"
@@ -87,11 +93,16 @@ def test_public_docs_and_examples_do_not_embed_internal_identifiers() -> None:
     targets = [
         repo_root / "docs" / "GLM5_1_HOSTING_PLAN.md",
         repo_root / "docs" / "glm5_1_starter.rst",
+        repo_root / "docs" / "GLM5_2_HOSTING_PLAN.md",
+        repo_root / "docs" / "glm5_2_starter.rst",
         repo_root / "examples" / "README.md",
         repo_root / "examples" / "finetune_glm5_1_gspo.py",
+        repo_root / "examples" / "finetune_glm5_2_gspo.py",
         repo_root / "scripts" / "gke" / "publish_model_to_gcs.sh",
         repo_root / "deployment" / "helm" / "stateset-agents" / "values-glm5-1-fp8.yaml",
+        repo_root / "deployment" / "helm" / "stateset-agents" / "values-glm5-2-fp8.yaml",
         repo_root / "deployment" / "kubernetes" / "glm5-1-vllm-fp8.yaml",
+        repo_root / "deployment" / "kubernetes" / "glm5-2-vllm-fp8.yaml",
     ]
 
     forbidden_markers = [
@@ -99,6 +110,7 @@ def test_public_docs_and_examples_do_not_embed_internal_identifiers() -> None:
         "gs://stateset-models-prod",
         "gs://stateset-models-dev",
         "zai-org/GLM-5.1-FP8",
+        "zai-org/GLM-5.2-FP8",
     ]
 
     for target in targets:

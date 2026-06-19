@@ -70,6 +70,7 @@ Run the maintained smoke-tested example with ``python examples/quick_start.py``.
    qwen3_5_starter
    kimi_k2_6_starter
    glm5_1_starter
+   glm5_2_starter
    examples
 
 .. toctree::
