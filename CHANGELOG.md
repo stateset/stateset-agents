@@ -5,6 +5,26 @@ All notable changes to the StateSet RL Agent Framework will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — GLM 5.2 starter path
+
+- **`stateset_agents/training/glm5_2_starter.py`** — packaged GSPO starter for
+  `zai-org/GLM-5.2` (754B MoE, `glm_moe_dsa` architecture), mirroring the GLM 5.1
+  surface: `Glm52Config`, `get_glm5_2_config`, profile matrix
+  (balanced/memory/quality), `get_glm5_2_serving_recommendations`, JSON/YAML
+  config round-trip, and `finetune_glm5_2`. Exported lazily from
+  `stateset_agents.training`.
+- **`examples/finetune_glm5_2_gspo.py`** and **`examples/glm5_2_config.py`** —
+  dedicated CLI starter + re-export helper.
+- **`scripts/render_glm5_2_helm_values.py`** — renders Helm values from a GLM 5.2
+  `serving_manifest.json`.
+- Deployment: `values-glm5-2{,-fp8,-finetuned}.yaml` Helm overrides and
+  `glm5-2-vllm{,-fp8,-finetuned,-finetuned-gcs}.yaml` + `glm5-2-training-job.yaml`
+  Kubernetes manifests.
+- Docs: `docs/glm5_2_starter.rst`, `docs/GLM5_2_HOSTING_PLAN.md`, plus
+  `SUPPORTED_MODELS.md` / README / Sphinx toctree entries.
+
 ## [0.15.3] - 2026-05-24 — A+ polish: inference observability, honest coverage gate, Rust wheel pipeline
 
 ### Added — Rust accelerator on PyPI

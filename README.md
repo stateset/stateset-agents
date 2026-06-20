@@ -214,9 +214,31 @@ from stateset_agents.training.glm5_1_starter import (
 
 See `docs/GLM5_1_HOSTING_PLAN.md` for the FP8 multi-node topology.
 
+### GLM 5.2 starter path
+
+`zai-org/GLM-5.2` is a 754B-parameter MoE model (QLoRA-only, vLLM generation, multi-node or 8× H200/B200 serving). It ships as a starter module + example script rather than a CLI command:
+
+```bash
+pip install "stateset-agents[training,trl,vllm]"
+python examples/finetune_glm5_2_gspo.py --dry-run
+python examples/finetune_glm5_2_gspo.py --config ./glm5_2.json --no-dry-run
+```
+
+Import the helpers directly for programmatic use:
+
+```python
+from stateset_agents.training.glm5_2_starter import (
+    get_glm5_2_config,
+    describe_glm5_2_starter_profiles,
+    run_glm5_2_config,
+)
+```
+
+See `docs/GLM5_2_HOSTING_PLAN.md` for the FP8 multi-node topology.
+
 ### Supported models
 
-First-class starters ship for **Qwen 3.5 0.8B**, **Gemma 4 31B IT**, **Kimi-K2.6**, and **GLM 5.1**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
+First-class starters ship for **Qwen 3.5 0.8B**, **Gemma 4 31B IT**, **Kimi-K2.6**, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
 
 See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
 
