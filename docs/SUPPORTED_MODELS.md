@@ -22,6 +22,7 @@ Each first-class starter provides:
 | **Kimi-K2.6** | `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | `examples/finetune_kimi_k2_6_gspo.py` | GKE Autopilot + Standard manifests shipped |
 | **GLM 5.1** | `zai-org/GLM-5.1` (754B MoE) | — (module + example only) | `examples/finetune_glm5_1_gspo.py` | QLoRA-only; vLLM generation; FP8 alias supported |
 | **GLM 5.2** | `zai-org/GLM-5.2` (754B MoE) | — (module + example only) | `examples/finetune_glm5_2_gspo.py` | QLoRA-only; vLLM generation; FP8 alias supported |
+| **Kimi-K3** | `moonshotai/Kimi-K3` *(provisional — HF weights pending as of 2026-07-16)* | `stateset-agents kimi-k3` | `examples/finetune_kimi_k3_gspo.py` | Mirrors K2.6 presets pending official specs |
 
 Each CLI command supports `--list-profiles`, `--write-config`, `--config`,
 `--starter-profile {balanced,memory,quality}`, `--task`, `--json-output`, and

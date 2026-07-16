@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Kimi-K3 starter path
+
+- **`stateset_agents/training/kimi_k3_starter.py`** — packaged GSPO starter for
+  `moonshotai/Kimi-K3` (provisional ID — HF weights, model card, and license not
+  yet published as of 2026-07-16), mirroring the Kimi-K2.6 surface: `KimiK3Config`,
+  `get_kimi_k3_config`, profile matrix (balanced/memory/quality), JSON/YAML config
+  round-trip, and lazy exports from `stateset_agents.training`.
+- **`stateset-agents kimi-k3`** CLI command (`cli_train.py`) and
+  `stateset-agents init --preset kimi-k3` scaffold preset (`cli.py`).
+- Examples: `examples/finetune_kimi_k3_gspo.py`, `examples/kimi_k3_config.py`.
+- Docs: `docs/kimi_k3_starter.rst`, CLI reference section, SUPPORTED_MODELS row,
+  README starter section.
+- Tests: `tests/unit/test_kimi_k3_config.py`, `tests/unit/test_kimi_k3_module_exports.py`,
+  `kimi-k3` command + init-preset tests in `tests/unit/test_cli.py`.
+
 ### Added — GLM 5.2 starter path
 
 - **`stateset_agents/training/glm5_2_starter.py`** — packaged GSPO starter for

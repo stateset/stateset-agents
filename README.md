@@ -176,6 +176,19 @@ python examples/finetune_kimi_k2_6_gspo.py --dry-run
 
 Use `--list-profiles` when you want to compare the built-in `balanced`, `memory`, and `quality` presets before saving or running one.
 
+### Kimi-K3 starter path
+
+The same starter flow ships for `moonshotai/Kimi-K3`. Note: Kimi K3 weights are not yet published on HuggingFace (as of 2026-07-16); the model ID and presets are provisional mirrors of the Kimi-K2.6 starter pending the official release.
+
+```bash
+stateset-agents kimi-k3 --json-output
+stateset-agents kimi-k3 --starter-profile memory --json-output
+stateset-agents kimi-k3 --list-profiles --json-output
+stateset-agents kimi-k3 --write-config ./kimi_k3.json
+stateset-agents kimi-k3 --config ./kimi_k3.json --no-dry-run
+python examples/finetune_kimi_k3_gspo.py --dry-run
+```
+
 ### Gemma 4 31B starter path
 
 If you want the fastest path to a first post-training run for `google/gemma-4-31B-it`, use the dedicated CLI starter or the equivalent example script:
@@ -238,7 +251,7 @@ See `docs/GLM5_2_HOSTING_PLAN.md` for the FP8 multi-node topology.
 
 ### Supported models
 
-First-class starters ship for **Qwen 3.5 0.8B**, **Gemma 4 31B IT**, **Kimi-K2.6**, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
+First-class starters ship for **Qwen 3.5 0.8B**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
 
 See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
 

@@ -230,10 +230,12 @@ Fine-tune Moonshot Kimi models with GSPO:
 python examples/finetune_kimi_k2_6_gspo.py --dry-run
 python examples/finetune_kimi_k2_6_gspo.py --starter-profile memory --dry-run
 python examples/finetune_kimi_k2_6_gspo.py --list-profiles
+python examples/finetune_kimi_k3_gspo.py --dry-run
+python examples/finetune_kimi_k3_gspo.py --list-profiles
 python examples/finetune_kimi_k25_gspo.py --model moonshotai/Kimi-K2.5 --task customer_service
 ```
 
-Use `examples/finetune_kimi_k2_6_gspo.py` when you want the packaged starter path with the same `balanced`, `memory`, and `quality` preset flow as the Qwen starter.
+Use `examples/finetune_kimi_k2_6_gspo.py` when you want the packaged starter path with the same `balanced`, `memory`, and `quality` preset flow as the Qwen starter. `examples/finetune_kimi_k3_gspo.py` is the same flow for the provisional `moonshotai/Kimi-K3` ID (HF weights pending as of 2026-07-16).
 
 #### Gemma Models
 
