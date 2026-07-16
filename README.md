@@ -7,7 +7,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/stateset-agents.svg)](https://pypi.org/project/stateset-agents/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-green.svg)](LICENSE)
-[![Whitepaper v0.13.3](https://img.shields.io/badge/whitepaper-v0.13.3-blue)](docs/WHITEPAPER.md)
+[![Whitepaper v0.13.4](https://img.shields.io/badge/whitepaper-v0.13.4-blue)](docs/WHITEPAPER.md)
 [![First-party result](https://img.shields.io/badge/§11.7-judge%20%2B0.079%20%E2%9C%93-brightgreen)](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json)
 
 </div>
@@ -28,14 +28,20 @@ If you want a framework that treats conversations as first‑class RL episodes (
 
 ---
 
-## What's new in v0.13.2
+## What's new
 
-- **First-party canonical benchmark.** Whitepaper §11.7 ships a three-seed positive-transfer result on customer support: judge improvement **+0.079** (2.6× the publication-gate threshold) with 3-seed agreement. [Artifact](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json).
-- **KL-anchor safety.** `train_with_gspo` now warns when `use_reference_model=False AND beta=0.0` on small corpora — the canonical "policy goes off the rails into token soup" failure mode (whitepaper §10.5).
-- **`NeuralRewardModel` honest defaults.** The hash-based fallback encoder now emits a loud warning that it can't learn useful rewards; reframed in §4.4 as smoke-test-only.
-- **PyPI parity.** `pip install stateset-agents` now gets v0.13.2 — the same surface the whitepaper describes. The long PyPI lag is closed.
-- **Notebook CI lint.** `scripts/lint_notebooks.py` codifies the eight foot-gun patterns from [issue #16](https://github.com/stateset/stateset-agents/issues/16) and runs in CI.
-- **Rust core, honestly characterized.** 26–72× speedup on `batch_compute_gae` (recurrence-heavy kernel), but **<1% end-to-end** on §11.7 configurations since generation dominates wall-clock (whitepaper §6.8).
+**On master (unreleased):**
+
+- **Kimi-K3 starter path.** First-class starter for `moonshotai/Kimi-K3`: `stateset-agents kimi-k3` CLI command, `init --preset kimi-k3`, packaged module, examples, docs, and tests. The model ID and presets are provisional mirrors of the Kimi-K2.6 starter until Moonshot publishes HF weights (not out as of 2026-07-16).
+- **GLM 5.2 starter path.** Full parallel surface for `zai-org/GLM-5.2` (754B MoE): starter module, examples, Helm values, vLLM/training Kubernetes manifests, and hosting plan.
+
+**In v0.15.3 (latest release):**
+
+- **Rust accelerator wheels.** The `stateset-rl-core` crate ships as maturin-built wheels (abi3-py310 — one wheel covers Python 3.10–3.13) with a new `[rust]` extra.
+- **Inference observability.** Model-level Prometheus metrics (RPS, latency, TTFT, tokens/s, in-flight) across the OpenAI/Anthropic routes, plus a Grafana serving row.
+- **Honest coverage gate.** `fail_under` now tracks the measured floor (54%) with the ratchet policy documented inline; `pyproject.toml` is the single source of truth.
+
+Earlier highlights: v0.15.2 split the 3,118-line `cli.py` into focused modules; v0.15.0 added the five-example getting-started path; v0.13.2 shipped the whitepaper §11.7 three-seed canonical benchmark (judge improvement **+0.079**, [artifact](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json)).
 
 Full breakdown in [CHANGELOG.md](CHANGELOG.md).
 
@@ -119,10 +125,14 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest on PyPI (v0.15.0 — matches this whitepaper revision)
+pip install stateset-agents          # latest on PyPI (currently v0.13.4)
 ```
 
-> Older readers of this repo will remember a long PyPI lag where source was at v0.13.x while PyPI sat at v0.7.1. **That gap is now closed.** A fresh `pip install` gets the same surface the whitepaper describes (named trainers, Rust core, dashboard, auto-research loop). If your environment pins to an older version, `pip install -U stateset-agents` or pin explicitly to `==0.15.0`.
+> **PyPI currently lags the source tree.** `pip install stateset-agents` gets **v0.13.4**, while this repo is at **v0.15.3** plus unreleased starters (Kimi-K3, GLM 5.2) on master. For the newest surface, install from source:
+>
+> ```bash
+> pip install "git+https://github.com/stateset/stateset-agents@master"
+> ```
 
 ### Training / real models
 
@@ -178,7 +188,7 @@ Use `--list-profiles` when you want to compare the built-in `balanced`, `memory`
 
 ### Kimi-K3 starter path
 
-The same starter flow ships for `moonshotai/Kimi-K3`. Note: Kimi K3 weights are not yet published on HuggingFace (as of 2026-07-16); the model ID and presets are provisional mirrors of the Kimi-K2.6 starter pending the official release.
+The same starter flow ships for `moonshotai/Kimi-K3`. Note: Kimi K3 weights are not yet published on HuggingFace (as of 2026-07-16); the model ID and presets are provisional mirrors of the Kimi-K2.6 starter pending the official release. The `kimi-k3` command lives on master (not yet in a PyPI release) — install from source as shown above.
 
 ```bash
 stateset-agents kimi-k3 --json-output
@@ -848,13 +858,13 @@ For complex runs prefer the Python API and the examples folder.
 ## Examples and docs
 
 **Start here:**
-- [`docs/WHITEPAPER.md`](docs/WHITEPAPER.md) — the v0.13.2 technical whitepaper. Anchored to a specific git commit; every claim is verifiable via Appendix C.
+- [`docs/WHITEPAPER.md`](docs/WHITEPAPER.md) — the v0.13.4 technical whitepaper. Anchored to a specific git commit; every claim is verifiable via Appendix C.
 - [`docs/WHITEPAPER_ERRATA.md`](docs/WHITEPAPER_ERRATA.md) — corrections published after each whitepaper revision.
 - [`docs/PLATFORM_TOUR.md`](docs/PLATFORM_TOUR.md) — a guided walk from `pip install` to a published v1.0 whitepaper revision (linear, journey-style).
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (currently `v0.13.2`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.15.3`; Kimi-K3 and GLM 5.2 starters are on master, unreleased).
 
 Other entry points:
 
