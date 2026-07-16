@@ -723,7 +723,7 @@ def init(
     preset: str = typer.Option(
         "default",
         "--preset",
-        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, or gemma-4-31b",
+        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, or gemma-4-31b",
     ),
     task: str = typer.Option(
         "customer_service",
@@ -741,15 +741,15 @@ def init(
         _echo("format must be yaml or json")
         raise typer.Exit(code=2)
 
-    if preset not in {"default", "qwen3-5-0-8b", "kimi-k2-6", "gemma-4-31b"}:
+    if preset not in {"default", "qwen3-5-0-8b", "kimi-k2-6", "kimi-k3", "gemma-4-31b"}:
         _echo(
-            "Unsupported preset. Use one of: default, qwen3-5-0-8b, kimi-k2-6, gemma-4-31b."
+            "Unsupported preset. Use one of: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b."
         )
         raise typer.Exit(code=2)
 
     if preset == "default" and starter_profile != "balanced":
         _echo(
-            "`--starter-profile` only applies to --preset qwen3-5-0-8b, kimi-k2-6, or gemma-4-31b."
+            "`--starter-profile` only applies to --preset qwen3-5-0-8b, kimi-k2-6, kimi-k3, or gemma-4-31b."
         )
         raise typer.Exit(code=2)
 
@@ -870,6 +870,39 @@ def init(
                 )
                 raise typer.Exit(code=2) from e
             serialized = yaml.safe_dump(cfg, sort_keys=False)
+    elif preset == "kimi-k3":
+        try:
+            from stateset_agents.training.kimi_k3_starter import (
+                KIMI_K3_STARTER_PROFILE_CHOICES,
+                KIMI_K3_TASK_CHOICES,
+                get_kimi_k3_config,
+            )
+        except CLI_IMPORT_EXCEPTIONS as e:
+            _echo("Kimi-K3 starter helpers unavailable. Install training extras.")
+            _echo(f"Details: {e}")
+            raise typer.Exit(code=2) from e
+
+        if task not in KIMI_K3_TASK_CHOICES:
+            _echo(f"Unsupported task. Use one of: {', '.join(KIMI_K3_TASK_CHOICES)}.")
+            raise typer.Exit(code=2)
+        if starter_profile not in KIMI_K3_STARTER_PROFILE_CHOICES:
+            _echo(
+                f"Unsupported starter profile. Use one of: {', '.join(KIMI_K3_STARTER_PROFILE_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+
+        cfg = get_kimi_k3_config(task=task, starter_profile=starter_profile).to_dict()
+        if format == "json":
+            serialized = json.dumps(cfg, indent=2) + "\n"
+        else:
+            try:
+                import yaml
+            except ImportError as e:
+                _echo(
+                    "PyYAML is required for YAML starter configs. Install with: pip install pyyaml"
+                )
+                raise typer.Exit(code=2) from e
+            serialized = yaml.safe_dump(cfg, sort_keys=False)
     else:
         try:
             from stateset_agents.training.gemma4_starter import (
@@ -934,7 +967,7 @@ def init_config(
     preset: str = typer.Option(
         "default",
         "--preset",
-        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, or gemma-4-31b",
+        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, or gemma-4-31b",
     ),
     task: str = typer.Option(
         "customer_service",
