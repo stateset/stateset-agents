@@ -359,10 +359,10 @@ class APIConfig:
         """Validate configuration and return list of warnings."""
         warnings = []
 
-        if self.environment == Environment.PRODUCTION:
-            if not self.security.api_keys and self.security.require_auth:
-                warnings.append("No API keys configured but authentication is required")
+        if self.security.require_auth and not self.security.api_keys:
+            warnings.append("No API keys configured but authentication is required")
 
+        if self.environment == Environment.PRODUCTION:
             if not self.cors.allowed_origins:
                 warnings.append(
                     "No CORS origins configured - API won't be accessible from browsers"
@@ -372,6 +372,15 @@ class APIConfig:
                 warnings.append("JWT secret not configured")
 
         return warnings
+
+    def has_no_auth_credentials(self) -> bool:
+        """Whether auth is required but no credential source (API keys or JWT
+        secret) is configured at all — the security-critical combination."""
+        return (
+            self.security.require_auth
+            and not self.security.api_keys
+            and not self.security.jwt_secret
+        )
 
     def is_production(self) -> bool:
         """Check if running in production."""

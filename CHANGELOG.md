@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `collections.deque` (`MAX_EPISODES_PER_EXPERIMENT = 1000`,
   `MAX_LOGS_PER_EXPERIMENT = 5000`). Stopping or deleting an experiment now
   cancels its background training task.
+- **`config.validate()` is now enforced at startup**: `create_app()` logs
+  every configuration warning (e.g. missing API keys while auth is required)
+  at `WARNING` level, and fails closed in production — raising
+  `ConfigurationError` — when auth is required but no credential source at
+  all (no API keys and no JWT secret) is configured.
 
 ### Added — Kimi-K3 starter path
 

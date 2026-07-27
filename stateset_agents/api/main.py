@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from .config import get_config
+from .config import ConfigurationError, get_config
 from .errors import setup_exception_handlers
 from .middleware import setup_middleware
 from .openapi import add_documentation_routes, setup_openapi
@@ -160,6 +160,17 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     config = get_config()
+
+    for warning in config.validate():
+        logger.warning("Configuration warning: %s", warning)
+
+    if config.is_production() and config.has_no_auth_credentials():
+        raise ConfigurationError(
+            "Authentication is required but no credential source is configured "
+            "(no API keys and no JWT secret). Set API_KEYS or API_JWT_SECRET, "
+            "or disable auth with API_REQUIRE_AUTH=false."
+        )
+
     health_checker = HealthChecker()
     app = FastAPI(
         title=config.title,
