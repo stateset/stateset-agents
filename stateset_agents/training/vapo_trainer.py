@@ -27,6 +27,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ..core.rust_accelerator import compute_gae as _rust_compute_gae
+from ..core.rust_accelerator import is_rust_available as _rust_gae_available
 from .vapo_config import VAPOConfig
 
 logger = logging.getLogger(__name__)
@@ -278,6 +280,11 @@ class LengthAdaptiveGAE:
         batch_size, seq_len = rewards.shape
         device = rewards.device
 
+        rust_advantages = self._try_rust_gae(rewards, values, dones, lambda_value)
+        if rust_advantages is not None:
+            returns = rust_advantages + values
+            return rust_advantages, returns
+
         advantages = torch.zeros_like(rewards)
         last_gae = torch.zeros(batch_size, device=device)
 
@@ -299,6 +306,49 @@ class LengthAdaptiveGAE:
         returns = advantages + values
 
         return advantages, returns
+
+    def _try_rust_gae(
+        self,
+        rewards: torch.Tensor,
+        values: torch.Tensor,
+        dones: torch.Tensor,
+        lambda_value: float,
+    ) -> torch.Tensor | None:
+        """Optional fast path using the Rust ``compute_gae`` kernel.
+
+        Only used when every row has at most one termination step (the
+        common single-episode-per-response case used by VAPO). Rows are
+        truncated at their terminal step before delegating to the Rust
+        kernel (a single termination at the end of a sequence is
+        equivalent to simply not bootstrapping past it), and any padding
+        after termination is left as zero advantage. Returns ``None`` to
+        signal the caller should fall back to the pure-torch loop, either
+        because the Rust extension isn't installed or a row has more than
+        one termination flag (a case the vectorized kernel can't express).
+        """
+        if not _rust_gae_available():
+            return None
+
+        batch_size, seq_len = rewards.shape
+        rewards_np = rewards.detach().cpu().numpy()
+        values_np = values.detach().cpu().numpy()
+        dones_np = dones.detach().cpu().numpy()
+
+        advantages_np = np.zeros((batch_size, seq_len), dtype=np.float64)
+        for i in range(batch_size):
+            done_indices = np.nonzero(dones_np[i])[0]
+            if len(done_indices) > 1:
+                # Multiple terminations within one row aren't representable
+                # by the plain (no-dones) GAE kernel; bail out entirely so
+                # the whole batch uses the torch fallback for consistency.
+                return None
+            end = int(done_indices[0]) + 1 if len(done_indices) else seq_len
+            row_advantages = _rust_compute_gae(
+                rewards_np[i, :end], values_np[i, :end], self.gamma, lambda_value
+            )
+            advantages_np[i, :end] = row_advantages
+
+        return torch.as_tensor(advantages_np, dtype=rewards.dtype, device=rewards.device)
 
     def compute_decoupled_gae(
         self,
