@@ -58,6 +58,43 @@ def _load_vllm_backend() -> bool:
         return False
 
 
+def render_prompt_for_scoring(
+    tokenizer: Any, prompt: str, system_prompt: str | None = None
+) -> str:
+    """Render a user prompt into the exact text a chat-template model conditions on.
+
+    Both generation (`_generate_with_hf` / vLLM rescoring) and scoring
+    (current-log-prob and reference-log-prob computation in the trainer) MUST
+    call this helper so the importance-ratio numerator and denominator share
+    one tokenization convention. Falls back to the raw prompt when the
+    tokenizer has no chat template.
+
+    When ``system_prompt`` is truthy it is included as a leading system
+    message, matching ``MultiTurnAgent``'s own message construction
+    (``core/agent.py`` inserts the system prompt at index 0 before calling
+    the model). This is a best-effort parity measure only: it does not
+    capture memory-window truncation or any other agent-side post-processing
+    of the conversation history, so the rendered text scored here can still
+    diverge from what the agent actually conditioned on when generating the
+    response. See `_generate_with_hf`'s docstring for the residual
+    limitation.
+    """
+    chat_template = getattr(tokenizer, "chat_template", None) if tokenizer else None
+    if tokenizer is None or not chat_template:
+        return prompt
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    return tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+
+
 def build_scoring_text(prompt_text: str, response: str) -> str:
     """Concatenate rendered prompt text and response with no injected separator.
 
@@ -100,6 +137,7 @@ class GSPOTrajectoryGenerator:
         self.sampling_params: Any | None = None
         self._vllm_initialized = False
         self._temperature_bias_warned = False
+        self._post_processing_warned = False
 
         if self.config.use_vllm and _load_vllm_backend():
             self._setup_vllm_generator()
@@ -212,10 +250,16 @@ class GSPOTrajectoryGenerator:
             results = grouped_results[prompt]
 
             if getattr(self.config, "rescore_old_log_probs", True):
+                tokenizer = getattr(self.agent, "tokenizer", None)
+                agent_config = getattr(self.agent, "config", None)
+                system_prompt = getattr(agent_config, "system_prompt", None)
+                rendered_prompt = render_prompt_for_scoring(
+                    tokenizer, prompt, system_prompt
+                )
                 responses = []
                 for result in results:
                     log_prob = await self._compute_sequence_log_prob(
-                        prompt, result.response
+                        rendered_prompt, result.response
                     )
                     responses.append((result.response, log_prob))
             else:
@@ -231,22 +275,50 @@ class GSPOTrajectoryGenerator:
             logger.warning(f"vLLM generation failed: {e}. Falling back to HuggingFace.")
             return await self._generate_with_hf(prompt, num_responses)
 
+    def _warn_post_processing_divergence_once(self) -> None:
+        """One-time warning that the rendered scoring prompt may not exactly
+        match what the agent conditioned on when generating the response.
+        """
+        if self._post_processing_warned:
+            return
+        self._post_processing_warned = True
+        logger.warning(
+            "GSPO: agent exposes a conversation memory window "
+            "(memory_window=%s); scoring renders only the current user turn "
+            "(plus system prompt when set) and cannot reconstruct any "
+            "prior-turn context or other agent-side post-processing the live "
+            "agent may have used when generating this response. This is a "
+            "residual scoring/generation mismatch — see `_generate_with_hf`'s "
+            "docstring.",
+            getattr(self.agent, "memory_window", None),
+        )
+
     async def _generate_with_hf(
         self, prompt: str, num_responses: int
     ) -> list[tuple[str, float]]:
-        """Generate responses using HuggingFace sequentially."""
+        """Generate responses using HuggingFace sequentially.
+
+        Limitation: the text scored by `_compute_sequence_log_prob` is the
+        prompt rendered via `render_prompt_for_scoring` — a single user turn
+        (plus the agent's system prompt, when set) run through the
+        tokenizer's chat template. This is NOT guaranteed to be byte-identical
+        to what `MultiTurnAgent.generate_response` actually conditioned on:
+        the live agent may fold in conversation memory/history, truncate to a
+        context window, or otherwise post-process messages before generation.
+        Full parity would require threading the agent's exact rendered input
+        back out of `generate_response`, which is out of scope here. Treat
+        the resulting old-policy log prob as an approximation that is exact
+        only for stateless, system-prompt-only agents.
+        """
         responses = []
 
         tokenizer = getattr(self.agent, "tokenizer", None)
-        chat_template = getattr(tokenizer, "chat_template", None) if tokenizer else None
-        if tokenizer is not None and chat_template:
-            rendered_prompt = tokenizer.apply_chat_template(
-                [{"role": "user", "content": prompt}],
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        else:
-            rendered_prompt = prompt
+        agent_config = getattr(self.agent, "config", None)
+        system_prompt = getattr(agent_config, "system_prompt", None)
+        rendered_prompt = render_prompt_for_scoring(tokenizer, prompt, system_prompt)
+
+        if getattr(self.agent, "memory_window", 0):
+            self._warn_post_processing_divergence_once()
 
         for _ in range(num_responses):
             messages = [{"role": "user", "content": prompt}]
@@ -277,6 +349,28 @@ class GSPOTrajectoryGenerator:
                     num_generations_per_prompt=num_responses_per_prompt,
                 )
 
+                if getattr(self.config, "rescore_old_log_probs", True):
+                    tokenizer = getattr(self.agent, "tokenizer", None)
+                    agent_config = getattr(self.agent, "config", None)
+                    system_prompt = getattr(agent_config, "system_prompt", None)
+                    batch_results: dict[str, list[tuple[str, float]]] = {}
+                    for prompt, results in grouped_results.items():
+                        rendered_prompt = render_prompt_for_scoring(
+                            tokenizer, prompt, system_prompt
+                        )
+                        batch_results[prompt] = [
+                            (
+                                r.response,
+                                await self._compute_sequence_log_prob(
+                                    rendered_prompt, r.response
+                                ),
+                            )
+                            for r in results
+                        ]
+                    return batch_results
+
+                if self.config.temperature != 1.0:
+                    self._warn_vllm_temperature_bias_once()
                 return {
                     prompt: [(r.response, r.cumulative_logprob) for r in results]
                     for prompt, results in grouped_results.items()
@@ -353,6 +447,8 @@ class GSPOTrajectoryGenerator:
 
 __all__ = [
     "GSPOTrajectoryGenerator",
+    "build_scoring_text",
+    "render_prompt_for_scoring",
     "GenerationResult",
     "HuggingFaceGeneratorFallback",
     "VLLM_AVAILABLE",

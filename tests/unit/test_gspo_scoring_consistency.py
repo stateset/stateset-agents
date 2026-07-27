@@ -129,6 +129,158 @@ def test_rescore_old_log_probs_default_true():
     assert config.rescore_old_log_probs is True
 
 
+class _ChatTemplateTokenizer:
+    """Minimal tokenizer stub exposing a chat template, shared by the
+    trainer-parity and batch-rescoring tests below."""
+
+    chat_template = "{{ messages }}"
+
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True):
+        rendered = ""
+        for m in messages:
+            rendered += f"<{m['role']}>{m['content']}"
+        return rendered + "<assistant>"
+
+    def __call__(self, text, **kwargs):
+        if isinstance(text, list):
+            texts = text
+        else:
+            texts = [text]
+        n = max(max((len(t.split()) for t in texts), default=1), 1)
+        return {
+            "input_ids": torch.ones(len(texts), n, dtype=torch.long),
+            "attention_mask": torch.ones(len(texts), n, dtype=torch.long),
+        }
+
+
+def test_trainer_scoring_text_matches_generation_scoring_text():
+    """The trainer's current-log-prob scoring text
+    (`_compute_group_sequence_log_probs`) must equal the generation-side
+    scoring text (`render_prompt_for_scoring` + `build_scoring_text`) for a
+    chat-template tokenizer, so the importance-ratio numerator and
+    denominator are tokenized identically."""
+    from stateset_agents.training import gspo_generation as gg
+
+    tokenizer = _ChatTemplateTokenizer()
+    prompt = "hi"
+    response = "there"
+
+    # Generation-side convention (used to build old_log_probs).
+    rendered_prompt = gg.render_prompt_for_scoring(tokenizer, prompt, None)
+    generation_scoring_text = gg.build_scoring_text(rendered_prompt, response)
+
+    # Trainer-side convention (used to build current_log_probs), replicated
+    # exactly as `_compute_group_sequence_log_probs` computes it.
+    from stateset_agents.training.gspo_trainer import build_scoring_text as trainer_bst
+    from stateset_agents.training.gspo_trainer import (
+        render_prompt_for_scoring as trainer_rps,
+    )
+
+    trainer_rendered_prompt = trainer_rps(tokenizer, prompt, None)
+    trainer_scoring_text = trainer_bst(trainer_rendered_prompt, response)
+
+    assert trainer_scoring_text == generation_scoring_text
+    assert trainer_scoring_text == "<user>hi<assistant>there"
+
+
+def test_render_prompt_for_scoring_includes_system_prompt():
+    from stateset_agents.training import gspo_generation as gg
+
+    tokenizer = _ChatTemplateTokenizer()
+    rendered = gg.render_prompt_for_scoring(tokenizer, "hi", "be nice")
+    assert rendered == "<system>be nice<user>hi<assistant>"
+
+    rendered_no_system = gg.render_prompt_for_scoring(tokenizer, "hi", None)
+    assert rendered_no_system == "<user>hi<assistant>"
+
+
+@pytest.mark.asyncio
+async def test_generate_batch_groups_vllm_rescores_when_enabled(monkeypatch):
+    """vLLM's batch generation path must rescore rollouts with the HF forward
+    pass (same as the single-prompt path) when rescore_old_log_probs is
+    enabled, instead of returning raw cumulative_logprob unconditionally."""
+    from stateset_agents.training import gspo_generation as gg
+    from stateset_agents.training.gspo_config import GSPOConfig
+
+    class FakeResult:
+        def __init__(self, response, cumulative_logprob):
+            self.response = response
+            self.cumulative_logprob = cumulative_logprob
+
+    class FakeVLLMGenerator:
+        async def generate_groups(self, prompts, num_generations_per_prompt):
+            return {p: [FakeResult("there", -99.0)] for p in prompts}
+
+    class FakeAgent:
+        def __init__(self):
+            self.tokenizer = _ChatTemplateTokenizer()
+            self.model = None
+
+    config = GSPOConfig(model_name="fake-model", use_vllm=False, rescore_old_log_probs=True)
+    generator = gg.GSPOTrajectoryGenerator.__new__(gg.GSPOTrajectoryGenerator)
+    generator.config = config
+    generator.agent = FakeAgent()
+    generator.environment = None
+    generator.vllm_generator = FakeVLLMGenerator()
+    generator.sampling_params = None
+    generator._vllm_initialized = True
+    generator._temperature_bias_warned = False
+
+    rescored_calls = []
+
+    async def fake_compute_sequence_log_prob(self, prompt_text, response):
+        rescored_calls.append((prompt_text, response))
+        return -1.0
+
+    monkeypatch.setattr(
+        gg.GSPOTrajectoryGenerator,
+        "_compute_sequence_log_prob",
+        fake_compute_sequence_log_prob,
+    )
+
+    results = await generator.generate_batch_groups(["hi"], 1)
+
+    assert results["hi"] == [("there", -1.0)]
+    # Must NOT return the raw, unrescored cumulative_logprob (-99.0).
+    assert rescored_calls == [("<user>hi<assistant>", "there")]
+
+
+@pytest.mark.asyncio
+async def test_generate_batch_groups_vllm_returns_raw_logprob_when_rescore_disabled():
+    from stateset_agents.training import gspo_generation as gg
+    from stateset_agents.training.gspo_config import GSPOConfig
+
+    class FakeResult:
+        def __init__(self, response, cumulative_logprob):
+            self.response = response
+            self.cumulative_logprob = cumulative_logprob
+
+    class FakeVLLMGenerator:
+        async def generate_groups(self, prompts, num_generations_per_prompt):
+            return {p: [FakeResult("there", -42.0)] for p in prompts}
+
+    class FakeAgent:
+        def __init__(self):
+            self.tokenizer = _ChatTemplateTokenizer()
+            self.model = None
+
+    config = GSPOConfig(
+        model_name="fake-model", use_vllm=False, rescore_old_log_probs=False, temperature=1.0
+    )
+    generator = gg.GSPOTrajectoryGenerator.__new__(gg.GSPOTrajectoryGenerator)
+    generator.config = config
+    generator.agent = FakeAgent()
+    generator.environment = None
+    generator.vllm_generator = FakeVLLMGenerator()
+    generator.sampling_params = None
+    generator._vllm_initialized = True
+    generator._temperature_bias_warned = False
+
+    results = await generator.generate_batch_groups(["hi"], 1)
+
+    assert results["hi"] == [("there", -42.0)]
+
+
 def test_vllm_temperature_warning_when_rescore_disabled(caplog):
     from stateset_agents.training import gspo_generation as gg
     from stateset_agents.training.gspo_config import GSPOConfig
