@@ -38,7 +38,13 @@ from stateset_agents.rewards.multi_objective_reward import (
 )
 
 from .gspo_config import GSPOConfig
-from .gspo_generation import GSPOTrajectoryGenerator, VLLM_AVAILABLE, _get_model_device
+from .gspo_generation import (
+    GSPOTrajectoryGenerator,
+    VLLM_AVAILABLE,
+    _get_model_device,
+    build_scoring_text,
+    render_prompt_for_scoring,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +181,16 @@ def _enable_input_require_grads(model: Any) -> None:
         model._stateset_input_grads_enabled = True
     except INPUT_GRADS_EXCEPTIONS as e:  # pragma: no cover
         logger.debug("Failed to register input grad hook: %s", e)
+
+
+def normalize_total_loss(total_loss: torch.Tensor, num_groups: int) -> torch.Tensor:
+    """Normalize accumulated per-group loss by the number of query groups.
+
+    Without this, the accumulated loss (and hence its gradient magnitude)
+    scales with `num_groups`, making the effective learning rate depend on
+    batch composition.
+    """
+    return total_loss / max(num_groups, 1)
 
 
 class GSPOModelManager:
@@ -352,11 +368,13 @@ class GSPOTrainer:
         self.reward_model = reward_model
         self.ref_model = ref_model
 
-        # Optimizer — stub models have no parameters; use a dummy param.
+        # Optimizer
         params = list(self.model.parameters())
         if not params:
-            self._stub_param = torch.nn.Parameter(torch.zeros(1))
-            params = [self._stub_param]
+            raise ValueError(
+                "GSPOTrainer requires a model with at least one trainable "
+                "parameter; got a parameterless model."
+            )
         self.optimizer = torch.optim.AdamW(params, lr=config.learning_rate)
 
         # Scheduler — fallback to constant LR when transformers unavailable.
@@ -467,8 +485,22 @@ class GSPOTrainer:
         Returns:
             sequence_log_probs: Sum of response token log probs [group_size]
             response_lengths: Number of response tokens used for normalization [group_size]
+
+        `prompt` is rendered via `render_prompt_for_scoring` — the same
+        helper the generation side (`gspo_generation._generate_with_hf` /
+        vLLM rescoring) uses — so current-log-prob scoring tokenizes exactly
+        the text the response was sampled to continue, and the importance
+        ratio numerator (current log prob) and denominator (old log prob)
+        share one tokenization convention.
         """
-        full_texts = [f"{prompt} {response}" for response in responses]
+        agent_config = getattr(getattr(self, "agent", None), "config", None)
+        system_prompt = getattr(agent_config, "system_prompt", None)
+        rendered_prompt = render_prompt_for_scoring(
+            self.tokenizer, prompt, system_prompt
+        )
+        full_texts = [
+            build_scoring_text(rendered_prompt, response) for response in responses
+        ]
 
         # Use right-padding for stable response_start_idx across the batch.
         original_padding_side = getattr(self.tokenizer, "padding_side", "right")
@@ -490,7 +522,7 @@ class GSPOTrainer:
                 self.tokenizer.padding_side = original_padding_side
 
         prompt_tokens = self.tokenizer(
-            prompt,
+            rendered_prompt,
             return_tensors="pt",
             truncation=True,
             max_length=self.config.max_prompt_length,
@@ -554,7 +586,9 @@ class GSPOTrainer:
         all_rewards = []
         all_importance_ratios = []
 
+        processed_groups = 0
         for query in queries[:num_groups]:
+            processed_groups += 1
             if isinstance(query, dict):
                 prompt = str(query.get("prompt", ""))
                 query_context = query.get("context")
@@ -666,6 +700,10 @@ class GSPOTrainer:
             # Accumulate loss
             total_loss += total_loss_item
 
+        # Normalize accumulated loss by the number of processed query groups
+        # so gradient magnitude does not scale with batch composition.
+        total_loss = normalize_total_loss(total_loss, processed_groups)
+
         # Backward pass
         self.optimizer.zero_grad()
         total_loss.backward()
@@ -702,8 +740,18 @@ class GSPOTrainer:
         return metrics
 
     async def _compute_ref_log_prob(self, prompt: str, response: str) -> float:
-        """Compute log probability under reference model"""
-        full_text = prompt + " " + response
+        """Compute log probability under reference model.
+
+        Uses the same `render_prompt_for_scoring` + `build_scoring_text`
+        convention as current-log-prob scoring, so KL(current || ref) is
+        computed over identically tokenized sequences.
+        """
+        agent_config = getattr(getattr(self, "agent", None), "config", None)
+        system_prompt = getattr(agent_config, "system_prompt", None)
+        rendered_prompt = render_prompt_for_scoring(
+            self.tokenizer, prompt, system_prompt
+        )
+        full_text = build_scoring_text(rendered_prompt, response)
         inputs = self.tokenizer(
             full_text,
             return_tensors="pt",
@@ -714,7 +762,7 @@ class GSPOTrainer:
         )
 
         prompt_tokens = self.tokenizer(
-            prompt,
+            rendered_prompt,
             return_tensors="pt",
             truncation=True,
             max_length=self.config.max_prompt_length,
@@ -753,8 +801,20 @@ class GSPOTrainer:
     def _compute_batch_ref_log_probs(
         self, prompt: str, responses: list[str]
     ) -> torch.Tensor:
-        """Compute log probabilities under reference model for a batch of responses."""
-        full_texts = [f"{prompt} {response}" for response in responses]
+        """Compute log probabilities under reference model for a batch of responses.
+
+        Uses the same `render_prompt_for_scoring` + `build_scoring_text`
+        convention as `_compute_group_sequence_log_probs` so the KL penalty
+        is computed over identically tokenized current/reference sequences.
+        """
+        agent_config = getattr(getattr(self, "agent", None), "config", None)
+        system_prompt = getattr(agent_config, "system_prompt", None)
+        rendered_prompt = render_prompt_for_scoring(
+            self.tokenizer, prompt, system_prompt
+        )
+        full_texts = [
+            build_scoring_text(rendered_prompt, response) for response in responses
+        ]
 
         # Batch tokenize with padding
         original_padding_side = getattr(self.tokenizer, "padding_side", "right")
@@ -776,7 +836,7 @@ class GSPOTrainer:
                 self.tokenizer.padding_side = original_padding_side
 
         prompt_tokens = self.tokenizer(
-            prompt,
+            rendered_prompt,
             return_tensors="pt",
             truncation=True,
             max_length=self.config.max_prompt_length,

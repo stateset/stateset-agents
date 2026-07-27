@@ -27,6 +27,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ..core.rust_accelerator import compute_gae as _rust_compute_gae
+from ..core.rust_accelerator import is_rust_available as _rust_gae_available
 from .vapo_config import VAPOConfig
 
 logger = logging.getLogger(__name__)
@@ -278,6 +280,11 @@ class LengthAdaptiveGAE:
         batch_size, seq_len = rewards.shape
         device = rewards.device
 
+        rust_advantages = self._try_rust_gae(rewards, values, dones, lambda_value)
+        if rust_advantages is not None:
+            returns = rust_advantages + values
+            return rust_advantages, returns
+
         advantages = torch.zeros_like(rewards)
         last_gae = torch.zeros(batch_size, device=device)
 
@@ -299,6 +306,49 @@ class LengthAdaptiveGAE:
         returns = advantages + values
 
         return advantages, returns
+
+    def _try_rust_gae(
+        self,
+        rewards: torch.Tensor,
+        values: torch.Tensor,
+        dones: torch.Tensor,
+        lambda_value: float,
+    ) -> torch.Tensor | None:
+        """Optional fast path using the Rust ``compute_gae`` kernel.
+
+        Only used when every row has at most one termination step (the
+        common single-episode-per-response case used by VAPO). Rows are
+        truncated at their terminal step before delegating to the Rust
+        kernel (a single termination at the end of a sequence is
+        equivalent to simply not bootstrapping past it), and any padding
+        after termination is left as zero advantage. Returns ``None`` to
+        signal the caller should fall back to the pure-torch loop, either
+        because the Rust extension isn't installed or a row has more than
+        one termination flag (a case the vectorized kernel can't express).
+        """
+        if not _rust_gae_available():
+            return None
+
+        batch_size, seq_len = rewards.shape
+        rewards_np = rewards.detach().cpu().numpy()
+        values_np = values.detach().cpu().numpy()
+        dones_np = dones.detach().cpu().numpy()
+
+        advantages_np = np.zeros((batch_size, seq_len), dtype=np.float64)
+        for i in range(batch_size):
+            done_indices = np.nonzero(dones_np[i])[0]
+            if len(done_indices) > 1:
+                # Multiple terminations within one row aren't representable
+                # by the plain (no-dones) GAE kernel; bail out entirely so
+                # the whole batch uses the torch fallback for consistency.
+                return None
+            end = int(done_indices[0]) + 1 if len(done_indices) else seq_len
+            row_advantages = _rust_compute_gae(
+                rewards_np[i, :end], values_np[i, :end], self.gamma, lambda_value
+            )
+            advantages_np[i, :end] = row_advantages
+
+        return torch.as_tensor(advantages_np, dtype=rewards.dtype, device=rewards.device)
 
     def compute_decoupled_gae(
         self,
@@ -679,6 +729,73 @@ class VAPOTrainer:
             else 0,
         }
 
+    def compute_value_loss(
+        self,
+        values: torch.Tensor,
+        old_values: torch.Tensor,
+        returns: torch.Tensor,
+        response_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Value loss (MSE with optional PPO-style clipping).
+
+        Clipping compares fresh ``values`` against the *rollout-time* value
+        predictions (``old_values``), not against a detached copy of
+        ``values`` itself (which would make the clipped and unclipped
+        branches identical).
+        """
+        value_pred = values * response_mask
+        value_target = returns * response_mask
+
+        if self.config.value_clip > 0:
+            clipped_values = old_values + torch.clamp(
+                values - old_values,
+                -self.config.value_clip,
+                self.config.value_clip,
+            )
+            value_loss_unclipped = (value_pred - value_target) ** 2
+            value_loss_clipped = (clipped_values * response_mask - value_target) ** 2
+            value_loss = torch.max(value_loss_unclipped, value_loss_clipped)
+        else:
+            value_loss = (value_pred - value_target) ** 2
+
+        return value_loss.sum() / response_mask.sum().clamp(min=1)
+
+    def build_token_rewards(
+        self,
+        scalar_reward: float | torch.Tensor,
+        response_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Place a scalar (episode-level) reward on the terminal response token
+        of each row only, instead of broadcasting it across every response
+        token (which inflates GAE returns).
+
+        ``scalar_reward`` may be a python float (applied to every row) or a
+        1-D tensor of per-row rewards.
+        """
+        if not torch.is_tensor(scalar_reward):
+            scalar_reward = torch.tensor(
+                scalar_reward, dtype=response_mask.dtype, device=response_mask.device
+            )
+        scalar_reward = scalar_reward.to(dtype=response_mask.dtype, device=response_mask.device)
+        if scalar_reward.dim() == 0:
+            scalar_reward = scalar_reward.expand(response_mask.shape[0])
+
+        batch_size, seq_len = response_mask.shape
+        rewards = torch.zeros_like(response_mask)
+        mask_bool = response_mask > 0
+
+        idx = torch.arange(seq_len, device=response_mask.device).unsqueeze(0).expand(
+            batch_size, seq_len
+        )
+        last_idx = torch.where(mask_bool, idx, torch.full_like(idx, -1)).max(dim=1).values
+        valid = last_idx >= 0
+        rows = torch.arange(batch_size, device=response_mask.device)[valid]
+        rewards[rows, last_idx[valid]] = scalar_reward[valid]
+
+        return rewards
+
     def compute_vapo_losses(
         self,
         current_log_probs: torch.Tensor,
@@ -686,14 +803,14 @@ class VAPOTrainer:
         policy_advantages: torch.Tensor,
         critic_advantages: torch.Tensor,
         values: torch.Tensor,
-        returns: torch.Tensor,
+        old_values: torch.Tensor,
         response_mask: torch.Tensor,
         positive_mask: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Compute VAPO losses:
         1. Policy loss with Clip-Higher and token-level normalization
-        2. Value loss
+        2. Value loss (decoupled GAE: value target from critic-lambda GAE)
         3. Positive example LM loss
         """
         # Importance ratios
@@ -707,7 +824,7 @@ class VAPOTrainer:
             1.0 + self.config.clip_eps_high,
         )
 
-        # Policy surrogate
+        # Policy surrogate (uses the policy-lambda GAE advantages)
         unclipped_obj = ratio * policy_advantages
         clipped_obj = clipped_ratio * policy_advantages
         surrogate = torch.min(unclipped_obj, clipped_obj)
@@ -722,25 +839,10 @@ class VAPOTrainer:
         else:
             policy_loss = -masked_surrogate.sum(dim=-1).mean()
 
-        # Value loss (MSE with optional clipping)
-        value_pred = values * response_mask
-        value_target = returns * response_mask
-
-        if self.config.value_clip > 0:
-            # Clipped value loss
-            old_values = values.detach()
-            clipped_values = old_values + torch.clamp(
-                values - old_values,
-                -self.config.value_clip,
-                self.config.value_clip,
-            )
-            value_loss_unclipped = (value_pred - value_target) ** 2
-            value_loss_clipped = (clipped_values * response_mask - value_target) ** 2
-            value_loss = torch.max(value_loss_unclipped, value_loss_clipped)
-        else:
-            value_loss = (value_pred - value_target) ** 2
-
-        value_loss = value_loss.sum() / response_mask.sum().clamp(min=1)
+        # Decoupled GAE: value target is built from the critic-lambda
+        # advantages, not the policy-lambda advantages used above.
+        returns = critic_advantages + old_values
+        value_loss = self.compute_value_loss(values, old_values, returns, response_mask)
 
         # Positive example LM loss
         if self.config.use_positive_lm_loss and positive_mask.sum() > 0:
@@ -780,6 +882,9 @@ class VAPOTrainer:
         all_rewards = []
         all_accuracies = []
         all_explained_variances = []
+
+        accumulated_loss: torch.Tensor | None = None
+        prompt_count = 0
 
         for prompt in prompts[: self.config.per_device_train_batch_size]:
             # Generate group responses
@@ -841,10 +946,13 @@ class VAPOTrainer:
                 )
                 old_values = self.compute_values(batch_input_ids, batch_attention_mask)
 
-            # Create reward tensor (same reward at each response token)
+            # Create reward tensor: place each episode reward on the terminal
+            # response token only (broadcasting it across every response
+            # token would inflate GAE returns).
             rewards_tensor = torch.tensor(rewards, device=self.device)
-            reward_sequence = rewards_tensor.unsqueeze(1).expand(batch_size, max_len)
-            reward_sequence = reward_sequence * batch_response_mask
+            reward_sequence = self.build_token_rewards(
+                rewards_tensor, batch_response_mask
+            )
 
             # Terminal mask (1 at last token of each response)
             dones = torch.zeros(batch_size, max_len, device=self.device)
@@ -879,7 +987,7 @@ class VAPOTrainer:
             shifted_response_mask = batch_response_mask[:, 1:]
             shifted_policy_adv = policy_advantages[:, :-1]
             shifted_critic_adv = critic_advantages[:, :-1]
-            shifted_returns = returns[:, :-1]
+            shifted_old_values = old_values[:, :-1]
             shifted_values = current_values[:, :-1]
 
             # Compute VAPO losses
@@ -889,34 +997,23 @@ class VAPOTrainer:
                 shifted_policy_adv,
                 shifted_critic_adv,
                 shifted_values,
-                shifted_returns,
+                shifted_old_values,
                 shifted_response_mask,
                 positive_mask,
             )
 
-            # Total loss
+            # Total loss for this prompt, accumulated (not stepped) so the
+            # optimizer sees a single averaged update per train_step instead
+            # of one partial update per prompt.
             total_loss = (
                 policy_loss
                 + self.config.value_loss_coef * value_loss
                 + self.config.positive_lm_weight * positive_lm_loss
             )
-
-            # Backward and update
-            self.actor_optimizer.zero_grad()
-            self.critic_optimizer.zero_grad()
-            total_loss.backward()
-
-            _params = list(self.model.parameters())
-            if _params:
-                torch.nn.utils.clip_grad_norm_(
-                    _params, self.config.max_grad_norm
-                )
-            torch.nn.utils.clip_grad_norm_(
-                self.value_head.parameters(), self.config.max_grad_norm
+            accumulated_loss = (
+                total_loss if accumulated_loss is None else accumulated_loss + total_loss
             )
-
-            self.actor_optimizer.step()
-            self.critic_optimizer.step()
+            prompt_count += 1
 
             all_policy_losses.append(policy_loss.item())
             all_value_losses.append(value_loss.item())
@@ -932,6 +1029,25 @@ class VAPOTrainer:
                     if var_returns > 1e-8:
                         explained_var = 1 - var_residual / var_returns
                         all_explained_variances.append(explained_var.item())
+
+        # Single optimizer update per train_step: average the accumulated
+        # loss over prompts, then one backward()/step() pair.
+        if prompt_count > 0 and accumulated_loss is not None:
+            mean_loss = accumulated_loss / prompt_count
+
+            self.actor_optimizer.zero_grad()
+            self.critic_optimizer.zero_grad()
+            mean_loss.backward()
+
+            _params = list(self.model.parameters())
+            if _params:
+                torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
+            torch.nn.utils.clip_grad_norm_(
+                self.value_head.parameters(), self.config.max_grad_norm
+            )
+
+            self.actor_optimizer.step()
+            self.critic_optimizer.step()
 
         # Update schedulers
         self.actor_scheduler.step()

@@ -257,6 +257,29 @@ class GEPOTrainer:
 
         self.global_step = 0
 
+    @staticmethod
+    def build_response_mask(
+        attention_mask: torch.Tensor,
+        response_start_idx: int,
+    ) -> torch.Tensor:
+        """
+        Build a mask (on the shifted next-token-prediction axis) that selects
+        response tokens only, excluding prompt tokens and padding.
+
+        `response_start_idx` is the (unshifted) index of the first response
+        token; the shifted axis has length `seq_len - 1`, so the equivalent
+        shifted start index is `max(response_start_idx - 1, 0)`, matching the
+        convention used in gspo_trainer.py.
+        """
+        shift_mask = attention_mask[:, 1:].contiguous()
+        shifted_start = max(response_start_idx - 1, 0)
+
+        response_mask = torch.zeros_like(shift_mask)
+        if shifted_start < response_mask.shape[1]:
+            response_mask[:, shifted_start:] = shift_mask[:, shifted_start:]
+
+        return response_mask
+
     def compute_sequence_log_probs(
         self,
         input_ids: torch.Tensor,
@@ -277,7 +300,6 @@ class GEPOTrainer:
         # Shift for next-token prediction
         shift_logits = logits[:, :-1, :].contiguous()
         shift_labels = input_ids[:, 1:].contiguous()
-        shift_mask = attention_mask[:, 1:].contiguous()
 
         # Compute log probs
         log_probs = F.log_softmax(shift_logits, dim=-1)
@@ -288,8 +310,7 @@ class GEPOTrainer:
         ).squeeze(-1)
 
         # Mask out prompt tokens and padding
-        response_mask = torch.zeros_like(shift_mask)
-        response_mask[:, response_start_idx:] = shift_mask[:, response_start_idx:]
+        response_mask = self.build_response_mask(attention_mask, response_start_idx)
 
         masked_log_probs = token_log_probs * response_mask
 
@@ -298,10 +319,39 @@ class GEPOTrainer:
 
         return token_log_probs, sequence_log_probs
 
+    @staticmethod
+    def compute_gepo_coefficient_static(
+        learner_seq_log_probs: torch.Tensor,
+        sampler_seq_log_probs: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute GEPO coefficient using Group Expectation Importance Weights,
+        entirely in log space to avoid underflow for realistic (very negative)
+        sequence log-probability sums.
+
+        coef_i = p_i / E_qhat[q], where E_qhat[q] = sum(q^2) / sum(q)
+
+        Args:
+            learner_seq_log_probs: Sequence log-probs from current policy [group_size]
+            sampler_seq_log_probs: Sequence log-probs from sampling policy [group_size]
+
+        Returns:
+            GEPO coefficients (linear space) for each sequence [group_size]
+        """
+        sampler_lp = sampler_seq_log_probs.detach()
+
+        # log E_qhat[q] = log( sum(q^2)/sum(q) ) = logsumexp(2*lq) - logsumexp(lq)
+        log_group_expectation = torch.logsumexp(
+            2 * sampler_lp, dim=0
+        ) - torch.logsumexp(sampler_lp, dim=0)
+
+        log_coef = learner_seq_log_probs - log_group_expectation
+        return torch.exp(torch.clamp(log_coef, min=-30.0, max=30.0))
+
     def compute_gepo_coefficient(
         self,
-        learner_seq_probs: torch.Tensor,
-        sampler_seq_probs: torch.Tensor,
+        learner_seq_log_probs: torch.Tensor,
+        sampler_seq_log_probs: torch.Tensor,
     ) -> torch.Tensor:
         """
         Compute GEPO coefficient using Group Expectation Importance Weights.
@@ -316,25 +366,15 @@ class GEPOTrainer:
         importance weights.
 
         Args:
-            learner_seq_probs: Sequence probabilities from current policy [group_size]
-            sampler_seq_probs: Sequence probabilities from sampling policy [group_size]
+            learner_seq_log_probs: Sequence log-probs from current policy [group_size]
+            sampler_seq_log_probs: Sequence log-probs from sampling policy [group_size]
 
         Returns:
             GEPO coefficients for each sequence [group_size]
         """
-        # Detach sampler probs for stable computation
-        sampler_detached = sampler_seq_probs.detach()
-
-        # Compute normalized within-group probabilities: q_hat = q / sum(q)
-        q_hat = sampler_detached / sampler_detached.sum()
-
-        # Compute group expectation denominator: E_q[q] ≈ sum(q_hat * q)
-        group_expectation = (q_hat * sampler_detached).sum()
-
-        # GEPO coefficient: p / E_q[q]
-        gepo_coef = learner_seq_probs / group_expectation
-
-        return gepo_coef
+        return self.compute_gepo_coefficient_static(
+            learner_seq_log_probs, sampler_seq_log_probs
+        )
 
     def compute_group_advantages(
         self,
@@ -422,8 +462,7 @@ class GEPOTrainer:
                         "response": response_text,
                         "input_ids": outputs[0],
                         "attention_mask": torch.ones_like(outputs[0]),
-                        "response_start_idx": prompt_length
-                        - 1,  # -1 for shift in log prob
+                        "response_start_idx": prompt_length,
                     }
                 )
 
@@ -504,7 +543,6 @@ class GEPOTrainer:
             _, learner_seq_log_probs = self.compute_sequence_log_probs(
                 batch_input_ids, batch_attention_mask, response_start_idx
             )
-            learner_seq_probs = torch.exp(learner_seq_log_probs)
 
             # Compute old policy log probs (detached, from generation time)
             # In practice, we use the same model but detached
@@ -512,11 +550,10 @@ class GEPOTrainer:
                 _, sampler_seq_log_probs = self.compute_sequence_log_probs(
                     batch_input_ids, batch_attention_mask, response_start_idx
                 )
-                sampler_seq_probs = torch.exp(sampler_seq_log_probs)
 
-            # Compute GEPO coefficients
+            # Compute GEPO coefficients (log-space, safe against underflow)
             gepo_coefs = self.compute_gepo_coefficient(
-                learner_seq_probs, sampler_seq_probs
+                learner_seq_log_probs, sampler_seq_log_probs
             )
             all_gepo_coefs.extend(gepo_coefs.detach().tolist())
 

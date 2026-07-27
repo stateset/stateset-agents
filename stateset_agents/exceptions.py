@@ -84,3 +84,13 @@ MODEL_DEVICE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     TypeError,
 )
+
+#: RL loss-computation forward pass — genuine runtime failures (OOM, shape
+#: mismatch, bad numeric input). Deliberately excludes AttributeError/KeyError/
+#: TypeError so programming bugs (e.g. malformed trajectory objects) surface
+#: instead of being silently swallowed into a zero loss.
+LOSS_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    RuntimeError,
+    ValueError,
+    OSError,
+)
