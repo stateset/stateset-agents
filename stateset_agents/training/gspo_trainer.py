@@ -177,6 +177,16 @@ def _enable_input_require_grads(model: Any) -> None:
         logger.debug("Failed to register input grad hook: %s", e)
 
 
+def normalize_total_loss(total_loss: torch.Tensor, num_groups: int) -> torch.Tensor:
+    """Normalize accumulated per-group loss by the number of query groups.
+
+    Without this, the accumulated loss (and hence its gradient magnitude)
+    scales with `num_groups`, making the effective learning rate depend on
+    batch composition.
+    """
+    return total_loss / max(num_groups, 1)
+
+
 class GSPOModelManager:
     """Manages model loading and LoRA configuration for GSPO training"""
 
@@ -352,11 +362,13 @@ class GSPOTrainer:
         self.reward_model = reward_model
         self.ref_model = ref_model
 
-        # Optimizer — stub models have no parameters; use a dummy param.
+        # Optimizer
         params = list(self.model.parameters())
         if not params:
-            self._stub_param = torch.nn.Parameter(torch.zeros(1))
-            params = [self._stub_param]
+            raise ValueError(
+                "GSPOTrainer requires a model with at least one trainable "
+                "parameter; got a parameterless model."
+            )
         self.optimizer = torch.optim.AdamW(params, lr=config.learning_rate)
 
         # Scheduler — fallback to constant LR when transformers unavailable.
@@ -554,7 +566,9 @@ class GSPOTrainer:
         all_rewards = []
         all_importance_ratios = []
 
+        processed_groups = 0
         for query in queries[:num_groups]:
+            processed_groups += 1
             if isinstance(query, dict):
                 prompt = str(query.get("prompt", ""))
                 query_context = query.get("context")
@@ -665,6 +679,10 @@ class GSPOTrainer:
 
             # Accumulate loss
             total_loss += total_loss_item
+
+        # Normalize accumulated loss by the number of processed query groups
+        # so gradient magnitude does not scale with batch composition.
+        total_loss = normalize_total_loss(total_loss, processed_groups)
 
         # Backward pass
         self.optimizer.zero_grad()

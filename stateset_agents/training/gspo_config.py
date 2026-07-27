@@ -50,6 +50,13 @@ class GSPOConfig(TrainingConfig):
     use_vllm: bool = False
     use_gspo_token: bool = False
 
+    # When True (default), vLLM rollouts are rescored with an HF forward pass
+    # at the true policy temperature to compute the old-policy log prob used
+    # in the sequence importance ratio. vLLM's raw cumulative_logprob is a
+    # temperature-scaled quantity and is biased as an old-policy log prob
+    # when sampling temperature != 1.0.
+    rescore_old_log_probs: bool = True
+
     @classmethod
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> GSPOConfig:
         """Create GSPO config from standard training config."""

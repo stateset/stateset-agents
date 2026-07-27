@@ -58,6 +58,16 @@ def _load_vllm_backend() -> bool:
         return False
 
 
+def build_scoring_text(prompt_text: str, response: str) -> str:
+    """Concatenate rendered prompt text and response with no injected separator.
+
+    Generation continues directly from the rendered prompt, so scoring must
+    concatenate the exact same way — inserting a space would score a token
+    that was never actually sampled, biasing the importance ratio.
+    """
+    return prompt_text + response
+
+
 def _get_model_device(model: Any) -> torch.device | None:
     """Best-effort helper to locate a model's device without assuming attributes."""
     if model is None:
@@ -89,6 +99,7 @@ class GSPOTrajectoryGenerator:
         self.vllm_generator: Any | None = None
         self.sampling_params: Any | None = None
         self._vllm_initialized = False
+        self._temperature_bias_warned = False
 
         if self.config.use_vllm and _load_vllm_backend():
             self._setup_vllm_generator()
@@ -167,6 +178,24 @@ class GSPOTrajectoryGenerator:
             return await self._generate_with_vllm(prompt, num_responses)
         return await self._generate_with_hf(prompt, num_responses)
 
+    def _warn_vllm_temperature_bias_once(self) -> None:
+        """Emit a one-time warning that vLLM's cumulative_logprob is biased as an
+        old-policy log prob when sampling temperature != 1.0 and rescoring is
+        disabled.
+        """
+        if self._temperature_bias_warned:
+            return
+        self._temperature_bias_warned = True
+        logger.warning(
+            "GSPO: rescore_old_log_probs is disabled and sampling temperature "
+            "(%.3f) != 1.0. vLLM's cumulative_logprob is a temperature-scaled "
+            "log prob and is biased as an old-policy log prob for the "
+            "importance ratio; residual bias will not be corrected. Set "
+            "config.rescore_old_log_probs=True to rescore rollouts with an "
+            "HF forward pass at the true policy temperature.",
+            self.config.temperature,
+        )
+
     async def _generate_with_vllm(
         self, prompt: str, num_responses: int
     ) -> list[tuple[str, float]]:
@@ -181,9 +210,20 @@ class GSPOTrajectoryGenerator:
             )
 
             results = grouped_results[prompt]
-            responses = [
-                (result.response, result.cumulative_logprob) for result in results
-            ]
+
+            if getattr(self.config, "rescore_old_log_probs", True):
+                responses = []
+                for result in results:
+                    log_prob = await self._compute_sequence_log_prob(
+                        prompt, result.response
+                    )
+                    responses.append((result.response, log_prob))
+            else:
+                if self.config.temperature != 1.0:
+                    self._warn_vllm_temperature_bias_once()
+                responses = [
+                    (result.response, result.cumulative_logprob) for result in results
+                ]
 
             logger.debug("vLLM generated %s responses for prompt", len(responses))
             return responses
@@ -197,10 +237,23 @@ class GSPOTrajectoryGenerator:
         """Generate responses using HuggingFace sequentially."""
         responses = []
 
+        tokenizer = getattr(self.agent, "tokenizer", None)
+        chat_template = getattr(tokenizer, "chat_template", None) if tokenizer else None
+        if tokenizer is not None and chat_template:
+            rendered_prompt = tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        else:
+            rendered_prompt = prompt
+
         for _ in range(num_responses):
             messages = [{"role": "user", "content": prompt}]
             response = await self.agent.generate_response(messages)
-            log_prob = await self._compute_sequence_log_prob(prompt, response)
+            log_prob = await self._compute_sequence_log_prob(
+                rendered_prompt, response
+            )
             responses.append((response, log_prob))
 
         return responses
@@ -240,14 +293,21 @@ class GSPOTrajectoryGenerator:
             )
         return results
 
-    async def _compute_sequence_log_prob(self, prompt: str, response: str) -> float:
-        """Compute the log probability of a sequence."""
+    async def _compute_sequence_log_prob(
+        self, prompt_text: str, response: str
+    ) -> float:
+        """Compute the log probability of a sequence.
+
+        `prompt_text` must be the exact text the response continues from
+        (e.g. the chat-template-rendered prompt used at generation time), so
+        that scoring tokenizes the same text the model actually sampled.
+        """
         tokenizer = getattr(self.agent, "tokenizer", None)
         model = getattr(self.agent, "model", None)
         if tokenizer is None or model is None:
             raise RuntimeError("Agent tokenizer and model are required for GSPO scoring")
 
-        full_text = prompt + " " + response
+        full_text = build_scoring_text(prompt_text, response)
         inputs = tokenizer(
             full_text,
             return_tensors="pt",
@@ -258,7 +318,7 @@ class GSPOTrajectoryGenerator:
         )
 
         prompt_tokens = tokenizer(
-            prompt,
+            prompt_text,
             return_tensors="pt",
             truncation=True,
             max_length=self.config.max_prompt_length,
