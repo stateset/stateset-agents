@@ -422,12 +422,13 @@ class MultiTurnGRPOTrainer:
         self, group: TrajectoryGroup, advantages: Any
     ) -> Any:
         """Compute per-group policy loss (compatibility shim for tests)."""
-        return _compute_group_policy_loss(
+        loss, _entropy = _compute_group_policy_loss(
             group=group,
             advantages=advantages,
             config=self.config,
             agent=self.agent,
         )
+        return loss
 
     def compute_enhanced_grpo_loss(
         self, trajectory_groups: list[TrajectoryGroup], beta: float = 0.0

@@ -15,18 +15,19 @@ from collections.abc import Callable
 
 import numpy as np
 
+from ..exceptions import LOSS_EXCEPTIONS
 from .trainer_utils import get_amp, get_functional, get_torch, require_torch
 
 logger = logging.getLogger(__name__)
 
-LOSS_EXCEPTIONS = (
-    RuntimeError,
-    ValueError,
-    TypeError,
-    AttributeError,
-    KeyError,
-    OSError,
-)
+__all__ = [
+    "LOSS_EXCEPTIONS",
+    "compute_grpo_loss",
+    "compute_enhanced_grpo_loss",
+    "compute_ppo_ratio",
+    "compute_entropy_bonus",
+]
+
 _warned_missing_log_probs = False
 _warned_missing_assistant_mask = False
 
@@ -72,6 +73,8 @@ def compute_grpo_loss(
 
     policy_losses = []
     all_advantages_for_logging: list[float] = []
+    entropy_values_for_logging: list[float] = []
+    entropy_coef = float(getattr(config, "entropy_coef", 0.0))
 
     # Configuration controls
     baseline_type = getattr(config, "baseline_type", "group_mean")
@@ -131,8 +134,12 @@ def compute_grpo_loss(
         all_advantages_for_logging.extend(advantages.detach().cpu().tolist())
 
         # Compute policy loss for this group
-        group_loss = _compute_group_policy_loss(group, advantages, config, agent)
+        group_loss, group_entropy = _compute_group_policy_loss(
+            group, advantages, config, agent, entropy_coef=entropy_coef
+        )
         policy_losses.append(group_loss)
+        if group_entropy is not None:
+            entropy_values_for_logging.append(group_entropy)
 
     # Aggregate losses
     if policy_losses:
@@ -141,23 +148,14 @@ def compute_grpo_loss(
         total_loss_tensor = torch.tensor(0.0, requires_grad=True)
 
     # Entropy bonus — encourages exploration by penalizing overly confident
-    # distributions.  The coefficient is defined in TrainingConfig but was
-    # previously unused.
-    entropy_coef = float(getattr(config, "entropy_coef", 0.0))
-    entropy_value = 0.0
-    if entropy_coef > 0 and policy_losses:
-        # Estimate entropy from the last forward pass logits if available.
-        # When unavailable, skip — entropy is a bonus, not a requirement.
-        try:
-            entropy_value = _estimate_policy_entropy(
-                trajectory_groups, agent, config, device
-            )
-            if entropy_value > 0:
-                total_loss_tensor = total_loss_tensor - entropy_coef * torch.tensor(
-                    entropy_value, device=device
-                )
-        except LOSS_EXCEPTIONS:
-            pass
+    # distributions.  Computed inside each trajectory's grad-enabled forward
+    # pass (see `_compute_group_policy_loss`) so it contributes a real
+    # gradient rather than being estimated under `torch.no_grad()`.
+    entropy_value = (
+        float(np.mean(entropy_values_for_logging))
+        if entropy_values_for_logging
+        else 0.0
+    )
 
     return {
         "policy_loss": total_loss_tensor,
@@ -172,50 +170,47 @@ def compute_grpo_loss(
     }
 
 
-def _estimate_policy_entropy(
-    trajectory_groups: list[Any],
-    agent: Any,
-    config: Any,
-    device: Any,
-) -> float:
-    """Estimate the mean entropy of the policy distribution.
+def compute_ppo_ratio(
+    new_log_prob_sum: Any, old_log_prob_sum: Any, token_count: int
+) -> Any:
+    """Length-normalized PPO importance ratio.
 
-    Samples a single trajectory from the first non-empty group and computes
-    the token-averaged entropy from the logits.  This is intentionally cheap
-    (one forward pass) since it runs every training step.
+    Ratios computed from raw summed log-probs blow up (overflow) or vanish
+    (underflow) for long responses, since the sum scales with sequence
+    length. Dividing by `token_count` first yields a bounded, O(1)
+    sequence-mean ratio, matching standard PPO/GRPO implementations.
     """
     torch = get_torch() or require_torch()
+    return torch.exp((new_log_prob_sum - old_log_prob_sum) / max(token_count, 1))
+
+
+def compute_entropy_bonus(logits: Any, response_mask: Any) -> Any:
+    """Differentiable masked-mean policy entropy from logits.
+
+    Unlike a `torch.no_grad()` estimate, this stays in the autograd graph so
+    the entropy bonus actually contributes gradient to the loss it's added
+    to (encouraging exploration), rather than being a dead metric.
+    """
     F = get_functional()
-    if F is None:
-        return 0.0
+    log_probs = F.log_softmax(logits, dim=-1)
+    probs = log_probs.exp()
+    # H = -sum(p * log p)
+    token_entropy = -(probs * log_probs).sum(dim=-1)
 
-    for group in trajectory_groups:
-        if not group.trajectories:
-            continue
-        trajectory = group.trajectories[0]
-        try:
-            inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
-            with torch.no_grad():
-                outputs = agent.model(**inputs, labels=labels)
-                logits = outputs.logits
-                log_probs = F.log_softmax(logits, dim=-1)
-                probs = log_probs.exp()
-                # H = -sum(p * log p)
-                token_entropy = -(probs * log_probs).sum(dim=-1)
+    mask = response_mask
+    if mask is None:
+        return token_entropy.mean()
+    mask = mask.to(dtype=token_entropy.dtype)
+    denom = mask.sum()
+    if denom.item() == 0:
+        return token_entropy.mean()
+    return (token_entropy * mask).sum() / denom
 
-                # Mask to labelled tokens only
-                if torch.is_tensor(labels):
-                    mask = labels.ne(-100)
-                    if mask.any():
-                        entropy = (token_entropy * mask).sum() / mask.sum()
-                    else:
-                        entropy = token_entropy.mean()
-                else:
-                    entropy = token_entropy.mean()
-                return float(entropy.item())
-        except LOSS_EXCEPTIONS:
-            continue
-    return 0.0
+
+# Backwards-compatible alias for the previous (no-grad) entropy estimator
+# name. Prefer `compute_entropy_bonus` for new code — this alias is kept
+# only so external callers importing the old private name don't break.
+_estimate_policy_entropy = compute_entropy_bonus
 
 
 def _compute_group_policy_loss(
@@ -223,7 +218,8 @@ def _compute_group_policy_loss(
     advantages: Any,
     config: Any,
     agent: Any,
-) -> Any:
+    entropy_coef: float = 0.0,
+) -> tuple[Any, float | None]:
     """
     Compute policy loss for a single trajectory group with proper GRPO implementation.
 
@@ -232,15 +228,18 @@ def _compute_group_policy_loss(
         advantages: Tensor of advantages for each trajectory
         config: Training configuration
         agent: The agent being trained
+        entropy_coef: Coefficient for the (differentiable) entropy bonus
 
     Returns:
-        Policy loss tensor
+        Tuple of (policy loss tensor, mean entropy for logging or None)
     """
     torch = require_torch()
 
     device = _resolve_model_device(agent, torch)
     total_loss = torch.tensor(0.0, device=device, requires_grad=True)
     num_trajectories = 0
+    entropy_sum = 0.0
+    entropy_count = 0
 
     # PPO-style clipping ratio (falls back to advantage clipping when old log probs are absent).
     clip_ratio = getattr(config, "clip_ratio", getattr(config, "clip_epsilon", 0.2))
@@ -267,6 +266,11 @@ def _compute_group_policy_loss(
                 policy_loss = advantage * nll
 
                 old_log_prob = None
+                token_count = 0
+                if torch.is_tensor(labels):
+                    loss_mask = labels.ne(-100)
+                    token_count = int(loss_mask.sum().item())
+
                 log_probs = getattr(trajectory, "log_probs", None)
                 if log_probs is None and hasattr(trajectory, "metadata"):
                     log_probs = trajectory.metadata.get("log_probs")
@@ -281,25 +285,28 @@ def _compute_group_policy_loss(
                         old_log_prob = torch.tensor(float(log_probs), device=device)
 
                 new_log_prob = None
-                if torch.is_tensor(labels):
-                    loss_mask = labels.ne(-100)
-                    token_count = int(loss_mask.sum().item())
-                    if token_count > 0:
-                        new_log_prob = -(outputs.loss * token_count)
+                if token_count > 0:
+                    # outputs.loss is the mean per-token NLL; recover the
+                    # summed log prob so the ratio helper can length-normalize
+                    # consistently against `old_log_prob` (also a raw sum).
+                    new_log_prob = -(outputs.loss * token_count)
 
+                used_ratio_clipping = False
                 # Optional: PPO-style clipping when old log probs are available.
                 if (
                     clip_ratio > 0
                     and old_log_prob is not None
                     and new_log_prob is not None
+                    and token_count > 0
                 ):
-                    ratio = torch.exp(new_log_prob - old_log_prob)
+                    ratio = compute_ppo_ratio(new_log_prob, old_log_prob, token_count)
                     surrogate = ratio * advantage
                     clipped = (
                         torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
                         * advantage
                     )
                     policy_loss = -torch.min(surrogate, clipped)
+                    used_ratio_clipping = True
                 elif clip_ratio > 0:
                     global _warned_missing_log_probs
                     if not _warned_missing_log_probs:
@@ -313,12 +320,32 @@ def _compute_group_policy_loss(
                     policy_loss = advantage * nll
 
                 # Token-level normalization: divide by response token count
-                # to avoid biasing toward longer sequences.
-                if use_token_level and torch.is_tensor(labels):
+                # to avoid biasing toward longer sequences. When ratio
+                # clipping was used, the length normalization already lives
+                # inside the ratio (mean log-prob), so skip it here to avoid
+                # double-normalizing.
+                if (
+                    use_token_level
+                    and not used_ratio_clipping
+                    and torch.is_tensor(labels)
+                ):
                     _mask = labels.ne(-100)
                     _tc = int(_mask.sum().item())
                     if _tc > 1:
                         policy_loss = policy_loss / _tc
+
+                # Differentiable entropy bonus: computed from the same
+                # grad-enabled forward pass's logits, so it actually
+                # contributes gradient (encourages exploration) rather than
+                # being a dead no-grad metric.
+                if entropy_coef > 0 and torch.is_tensor(labels):
+                    response_mask = labels.ne(-100).to(dtype=outputs.logits.dtype)
+                    entropy_bonus = compute_entropy_bonus(
+                        outputs.logits, response_mask
+                    )
+                    policy_loss = policy_loss - entropy_coef * entropy_bonus
+                    entropy_sum += float(entropy_bonus.detach().item())
+                    entropy_count += 1
 
                 total_loss = total_loss + policy_loss
                 num_trajectories += 1
@@ -329,11 +356,13 @@ def _compute_group_policy_loss(
             )
             continue
 
+    mean_entropy = (entropy_sum / entropy_count) if entropy_count > 0 else None
+
     # Average over trajectories in the group
     if num_trajectories > 0:
-        return total_loss / num_trajectories
+        return total_loss / num_trajectories, mean_entropy
     else:
-        return torch.tensor(0.0, device=device, requires_grad=True)
+        return torch.tensor(0.0, device=device, requires_grad=True), mean_entropy
 
 
 def compute_enhanced_grpo_loss(
@@ -410,15 +439,55 @@ def compute_enhanced_grpo_loss(
             with autocast_ctx:
                 outputs = agent.model(**inputs, labels=labels)
 
-                # Get log probabilities
-                log_probs = outputs.logits.log_softmax(dim=-1)
+                # Compute policy loss with advantage weighting.
+                nll = outputs.loss
+                policy_loss = advantage * nll
 
-                # Compute policy loss with advantage weighting
-                policy_loss = advantage * outputs.loss
+                # Optional PPO-style clipping, mirroring `_compute_group_policy_loss`.
+                clip_ratio = getattr(
+                    config, "clip_ratio", getattr(config, "clip_epsilon", 0.2)
+                )
+                old_log_prob = None
+                log_probs_attr = getattr(trajectory, "log_probs", None)
+                if log_probs_attr is None and hasattr(trajectory, "metadata"):
+                    log_probs_attr = trajectory.metadata.get("log_probs")
+                if log_probs_attr is not None:
+                    if torch.is_tensor(log_probs_attr):
+                        old_log_prob = log_probs_attr.sum().detach()
+                    elif isinstance(log_probs_attr, (list, tuple)):
+                        old_log_prob = torch.tensor(
+                            float(sum(log_probs_attr)), device=device
+                        )
+                    elif isinstance(log_probs_attr, (int, float)):
+                        old_log_prob = torch.tensor(
+                            float(log_probs_attr), device=device
+                        )
+
+                token_count = 0
+                if torch.is_tensor(labels):
+                    token_count = int(labels.ne(-100).sum().item())
+
+                if (
+                    clip_ratio > 0
+                    and old_log_prob is not None
+                    and token_count > 0
+                ):
+                    new_log_prob = -(nll * token_count)
+                    ratio = compute_ppo_ratio(new_log_prob, old_log_prob, token_count)
+                    surrogate = ratio * advantage
+                    clipped = (
+                        torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
+                        * advantage
+                    )
+                    policy_loss = -torch.min(surrogate, clipped)
+
                 all_losses.append(policy_loss)
 
-                # KL divergence penalty (if beta > 0)
+                # Skip the full-vocab log_softmax entirely when there's no KL
+                # penalty to compute — it's an expensive (batch, seq, vocab)
+                # materialization that's otherwise dead weight.
                 if beta > 0 and reference_model is not None:
+                    log_probs = outputs.logits.log_softmax(dim=-1)
                     with torch.no_grad():
                         ref_outputs = reference_model(**inputs)
                         ref_log_probs = ref_outputs.logits.log_softmax(dim=-1)
