@@ -91,6 +91,11 @@ api = [
     "psutil>=5.9.0",
     # Used by alerting integrations.
     "requests>=2.31.0",
+    # Optional: distributed cache and cross-pod rate limiting
+    # (API_RATE_LIMIT_BACKEND=redis). The API works without it, falling
+    # back to the in-memory limiter/cache if redis is not installed or
+    # unreachable.
+    "redis>=4.5.0",
 ]
 examples = [
     "openai>=1.0.0",

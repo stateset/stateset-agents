@@ -32,6 +32,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at `WARNING` level, and fails closed in production — raising
   `ConfigurationError` — when auth is required but no credential source at
   all (no API keys and no JWT secret) is configured.
+- **Rate limiting now keys on identity, not shared IP**: `RateLimitMiddleware`
+  previously bucketed by raw client IP (or a raw bearer/API key), so requests
+  behind a shared NAT/proxy could exhaust one another's quota, and credential
+  values leaked into limiter state. The bucket key is now the SHA-256 hash
+  (first 16 hex chars, matching `auth.py`'s identity derivation) of the
+  presented `Authorization`/`X-API-Key` credential when one is present,
+  otherwise the client IP. `X-Forwarded-For`'s first hop is honored only when
+  the new `trust_proxy_headers` flag (env `API_TRUST_PROXY_HEADERS`, default
+  `false`) is enabled — previously the raw `request.client.host` was always
+  used with no way to see through a trusted proxy, and there was no equivalent
+  spoofing protection to disable it. Added an optional Redis-backed limiter
+  (`API_RATE_LIMIT_BACKEND=redis` + `API_RATE_LIMIT_REDIS_URL`) for multi-pod
+  deployments, using a fixed-window INCR/EXPIRE approximation; it falls back
+  to the existing in-memory limiter (logged once) if `redis` isn't installed
+  or the connection fails. `redis` is now listed under the `api` extra as an
+  optional dependency.
 
 ### Added — Kimi-K3 starter path
 

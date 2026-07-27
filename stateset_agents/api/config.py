@@ -196,10 +196,19 @@ class RateLimitConfig:
     burst_size: int = 10
     window_seconds: int = 60
     enabled: bool = True
+    trust_proxy_headers: bool = False
+    backend: str = "memory"
+    redis_url: str | None = None
 
     @classmethod
     def from_env(cls) -> "RateLimitConfig":
         """Load rate limit config from environment."""
+        backend = os.getenv("API_RATE_LIMIT_BACKEND", "memory").strip().lower()
+        if backend not in ("memory", "redis"):
+            logger.warning(
+                "Invalid API_RATE_LIMIT_BACKEND=%r; falling back to 'memory'", backend
+            )
+            backend = "memory"
         return cls(
             requests_per_minute=_get_int(
                 "API_RATE_LIMIT_PER_MIN", 60, min_val=1, max_val=10000
@@ -209,6 +218,9 @@ class RateLimitConfig:
                 "API_RATE_LIMIT_WINDOW", 60, min_val=1, max_val=3600
             ),
             enabled=_get_bool("API_RATE_LIMIT_ENABLED", True),
+            trust_proxy_headers=_get_bool("API_TRUST_PROXY_HEADERS", False),
+            backend=backend,
+            redis_url=os.getenv("API_RATE_LIMIT_REDIS_URL"),
         )
 
 

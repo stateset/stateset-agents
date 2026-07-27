@@ -4,6 +4,7 @@ API Middleware Module
 Centralized middleware for security, observability, and request handling.
 """
 
+import hashlib
 import logging
 import time
 import uuid
@@ -195,6 +196,64 @@ class SlidingWindowRateLimiter:
         self._limiter.cleanup()
 
 
+class RedisSlidingWindowLimiter:
+    """Fixed-window rate limiter backed by Redis, for multi-pod deployments.
+
+    Implements the same ``is_allowed(key, limit) -> (allowed, remaining)``
+    interface as :class:`UnifiedRateLimiter`, but as a coroutine, and uses a
+    fixed-window (INCR + EXPIRE) approximation rather than a true sliding
+    window: a burst that straddles a window boundary can momentarily allow
+    up to ~2x ``limit`` requests across the two windows. This is an accepted
+    tradeoff for coarse-grained, cross-replica abuse protection; the
+    in-memory sliding-window limiter remains exact for single-pod deployments.
+
+    The ``redis.asyncio`` client is imported lazily so the ``redis`` package
+    stays an optional dependency (see the ``api`` extra in ``pyproject.toml``).
+    """
+
+    def __init__(self, redis_url: str, window_seconds: int = 60):
+        self.redis_url = redis_url
+        self.window_seconds = window_seconds
+        self._client: Any | None = None
+
+    async def _get_client(self) -> Any:
+        if self._client is None:
+            import redis.asyncio as redis  # noqa: PLC0415 - intentional lazy/optional import
+
+            self._client = redis.from_url(self.redis_url, decode_responses=True)
+        return self._client
+
+    async def is_allowed(self, key: str, limit: int) -> tuple[bool, int]:
+        """Check and record a request against the fixed window in Redis."""
+        client = await self._get_client()
+        redis_key = f"stateset:ratelimit:{key}"
+        count = await client.incr(redis_key)
+        if count == 1:
+            await client.expire(redis_key, self.window_seconds)
+        allowed = count <= limit
+        remaining = max(0, limit - count)
+        return allowed, remaining
+
+    async def reset(self, key: str) -> None:
+        client = await self._get_client()
+        await client.delete(f"stateset:ratelimit:{key}")
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+
+def _hash_credential(value: str) -> str:
+    """Hash a credential (API key / bearer token) for use as a bucket key.
+
+    Mirrors the hashing approach used for user identity in ``auth.py``
+    (``_derive_api_user_id``) so raw credentials never end up in rate-limit
+    state or logs.
+    """
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiting middleware with sliding window algorithm."""
 
@@ -207,6 +266,56 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._last_cleanup = 0.0
         self._cleanup_interval = max(1.0, float(config.rate_limit.window_seconds))
 
+        # Optional Redis backend for multi-pod deployments. Only wired up
+        # when the caller didn't inject an explicit limiter (tests do) and
+        # the config asks for it; falls back to the in-memory limiter on
+        # any import/connection failure, logged once.
+        self._redis_limiter: RedisSlidingWindowLimiter | None = None
+        self._redis_fallback_logged = False
+        if limiter is None and config.rate_limit.backend == "redis":
+            redis_url = config.rate_limit.redis_url or "redis://localhost:6379"
+            self._redis_limiter = RedisSlidingWindowLimiter(
+                redis_url, config.rate_limit.window_seconds
+            )
+
+    async def _check_rate_limit(self, key: str, limit: int) -> tuple[bool, int]:
+        """Check the rate limit, preferring Redis and falling back to memory."""
+        if self._redis_limiter is not None:
+            try:
+                return await self._redis_limiter.is_allowed(key, limit)
+            except Exception as exc:  # noqa: BLE001 - any redis/import failure triggers fallback
+                if not self._redis_fallback_logged:
+                    logger.warning(
+                        "Redis rate-limit backend unavailable (%s); "
+                        "falling back to in-memory limiter",
+                        exc,
+                    )
+                    self._redis_fallback_logged = True
+                self._redis_limiter = None
+
+        return self.limiter.is_allowed(key, limit)
+
+    def _rate_limit_key(self, request: Request, config: Any) -> tuple[str, str | None]:
+        """Derive the rate-limit bucket key and, if present, the raw API key."""
+        api_key = self._extract_api_key(request)
+        if api_key:
+            return f"key:{_hash_credential(api_key)}", api_key
+
+        client_ip = self._client_ip(request, config)
+        return f"ip:{client_ip}", None
+
+    @staticmethod
+    def _client_ip(request: Request, config: Any) -> str:
+        """Resolve the client IP, honoring X-Forwarded-For only when trusted."""
+        if config.rate_limit.trust_proxy_headers:
+            forwarded_for = request.headers.get("X-Forwarded-For")
+            if forwarded_for:
+                first_hop = forwarded_for.split(",")[0].strip()
+                if first_hop:
+                    return first_hop
+
+        return request.client.host if request.client else "unknown"
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         config = get_config()
 
@@ -217,10 +326,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path in ("/health", "/healthz", "/ready"):
             return await call_next(request)
 
-        # Get rate limit key (API key or IP)
-        api_key = self._extract_api_key(request)
+        # Get rate limit key: hashed credential when present, else client IP.
+        limit_key, api_key = self._rate_limit_key(request, config)
         client_ip = request.client.host if request.client else "unknown"
-        limit_key = api_key or client_ip
 
         now = time.monotonic()
         if now - self._last_cleanup >= self._cleanup_interval:
@@ -229,7 +337,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             self._last_cleanup = now
 
         # Check rate limit
-        allowed, remaining = self.limiter.is_allowed(
+        allowed, remaining = await self._check_rate_limit(
             limit_key, config.rate_limit.requests_per_minute
         )
 
