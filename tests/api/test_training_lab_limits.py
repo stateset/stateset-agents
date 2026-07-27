@@ -22,6 +22,7 @@ def clean_lab_state():
     training_lab._logs.clear()
     training_lab._simulators.clear()
     training_lab._running_tasks.clear()
+    training_lab._metrics_subscribers.clear()
     yield
     for task in list(training_lab._running_tasks.values()):
         if not task.done():
@@ -31,6 +32,7 @@ def clean_lab_state():
     training_lab._logs.clear()
     training_lab._simulators.clear()
     training_lab._running_tasks.clear()
+    training_lab._metrics_subscribers.clear()
 
 
 def _client_for_app(app):
@@ -191,3 +193,43 @@ async def test_delete_experiment_cancels_background_task(
             await asyncio.sleep(0.01)
 
         assert task.done()
+
+
+async def test_delete_experiment_removes_metrics_subscribers_entry(
+    monkeypatch, preserve_api_config, clean_lab_state,
+):
+    _enable_lab_no_auth(monkeypatch)
+    from stateset_agents.api.main import create_app
+
+    app = create_app()
+    async with _client_for_app(app) as client:
+        resp = await _create_experiment(client, name="subs-exp")
+        exp_id = resp.json()["id"]
+        training_lab._metrics_subscribers[exp_id] = []
+
+        del_resp = await client.delete(f"/api/lab/experiments/{exp_id}")
+        assert del_resp.status_code == 200
+
+        assert exp_id not in training_lab._metrics_subscribers
+
+
+async def test_eviction_removes_metrics_subscribers_entry(
+    monkeypatch, preserve_api_config, clean_lab_state,
+):
+    _enable_lab_no_auth(monkeypatch)
+    from stateset_agents.api.main import create_app
+
+    app = create_app()
+    async with _client_for_app(app) as client:
+        for i in range(training_lab.MAX_EXPERIMENTS):
+            resp = await _create_experiment(client, name=f"exp-{i}")
+            assert resp.status_code == 201
+
+        oldest_id = next(iter(training_lab._experiments))
+        training_lab._metrics_subscribers[oldest_id] = []
+
+        resp = await _create_experiment(client, name="overflow")
+        assert resp.status_code == 201
+
+        assert oldest_id not in training_lab._experiments
+        assert oldest_id not in training_lab._metrics_subscribers

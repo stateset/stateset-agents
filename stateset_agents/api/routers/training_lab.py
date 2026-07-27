@@ -802,6 +802,7 @@ def _delete_experiment_state(experiment_id: str) -> None:
     _episodes.pop(experiment_id, None)
     _simulators.pop(experiment_id, None)
     _logs.pop(experiment_id, None)
+    _metrics_subscribers.pop(experiment_id, None)
 
 
 @router.delete("/experiments/{experiment_id}")
