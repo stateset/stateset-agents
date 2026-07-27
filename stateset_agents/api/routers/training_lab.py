@@ -19,11 +19,31 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel, Field
 
+from ..dependencies import require_auth_if_enabled
+
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/lab", tags=["training-lab"])
+router = APIRouter(
+    prefix="/api/lab",
+    tags=["training-lab"],
+    dependencies=[Depends(require_auth_if_enabled)],
+)
+
+# The WebSocket endpoint can't use the HTTP `Depends(require_auth_if_enabled)`
+# dependency (it expects a `Request`, not a `WebSocket`), so it lives on a
+# separate router with no router-level dependency and authenticates itself
+# explicitly via `_authorize_websocket` below. Both routers share the same
+# prefix and are mounted together in `main.py`.
+ws_router = APIRouter(prefix="/api/lab", tags=["training-lab"])
 
 # ---------------------------------------------------------------------------
 # In-memory state (swap for Redis/DB in production)
@@ -1226,9 +1246,52 @@ async def export_experiment(
     }
 
 
-@router.websocket("/experiments/{experiment_id}/ws")
+async def _authorize_websocket(websocket: WebSocket) -> bool:
+    """Validate API key / JWT credentials for the metrics WebSocket.
+
+    WebSocket connections can't use the standard HTTP ``Depends`` auth
+    dependency, so credentials are read from the ``api_key`` (or ``token``)
+    query parameter or the ``X-API-Key`` header and validated using the same
+    mechanisms as ``auth.authenticate_request``.
+    """
+    from ..auth import get_jwt_handler
+    from ..config import get_config
+
+    config = get_config()
+    if not config.security.require_auth:
+        return True
+
+    credential = (
+        websocket.query_params.get("api_key")
+        or websocket.query_params.get("token")
+        or websocket.headers.get("x-api-key")
+    )
+    if not credential:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            credential = auth_header.split(" ", 1)[1].strip()
+
+    if not credential:
+        return False
+
+    if credential in config.security.api_keys:
+        return True
+
+    try:
+        jwt = get_jwt_handler()
+        payload = jwt.decode(credential)
+    except Exception:
+        payload = None
+
+    return payload is not None
+
+
+@ws_router.websocket("/experiments/{experiment_id}/ws")
 async def experiment_ws(websocket: WebSocket, experiment_id: str) -> None:
     """Stream real-time training metrics via WebSocket."""
+    if not await _authorize_websocket(websocket):
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
     _metrics_subscribers.setdefault(experiment_id, []).append(websocket)
     try:

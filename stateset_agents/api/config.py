@@ -325,6 +325,7 @@ class APIConfig:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
+    enable_training_lab: bool = False
 
     @classmethod
     def from_env(cls) -> "APIConfig":
@@ -349,6 +350,9 @@ class APIConfig:
             security=SecurityConfig.from_env(),
             validation=ValidationConfig.from_env(),
             observability=ObservabilityConfig.from_env(),
+            enable_training_lab=_get_bool(
+                "API_ENABLE_TRAINING_LAB", environment == Environment.DEVELOPMENT
+            ),
         )
 
     def validate(self) -> list[str]:

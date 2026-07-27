@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Training Lab API gated behind auth + feature flag**: `/api/lab/*` (22 REST
+  endpoints + metrics WebSocket) previously had no authentication and was
+  mounted unconditionally. It is now opt-in via `enable_training_lab`
+  (env `API_ENABLE_TRAINING_LAB`, default `true` in development, `false`
+  otherwise) and, when mounted, every HTTP endpoint requires auth via
+  `Depends(require_auth_if_enabled)`. The metrics WebSocket authenticates
+  explicitly using an `api_key`/`token` query param (or `X-API-Key`/
+  `Authorization` header), closing with code `4401` on missing/invalid
+  credentials.
+
 ### Added — Kimi-K3 starter path
 
 - **`stateset_agents/training/kimi_k3_starter.py`** — packaged GSPO starter for

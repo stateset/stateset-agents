@@ -209,7 +209,9 @@ def create_app() -> FastAPI:
     app.include_router(v1.router)
     app.include_router(messages.router)
     app.include_router(openai.router)
-    app.include_router(training_lab.router)
+    if config.enable_training_lab:
+        app.include_router(training_lab.router)
+        app.include_router(training_lab.ws_router)
 
     # Compatibility aliases for legacy tests/clients
     app.add_api_route(
