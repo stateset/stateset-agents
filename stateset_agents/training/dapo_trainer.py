@@ -706,6 +706,29 @@ class DAPOTrainer:
             )
         return correct / len(responses)
 
+    def _build_batch_tensors(
+        self, responses: list[dict[str, Any]]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Pad a group of response dicts into batch tensors."""
+        max_len = max(len(r["input_ids"]) for r in responses)
+        batch_size = len(responses)
+
+        batch_input_ids = torch.zeros(
+            batch_size, max_len, dtype=torch.long, device=self.device
+        )
+        batch_attention_mask = torch.zeros(
+            batch_size, max_len, dtype=torch.long, device=self.device
+        )
+        batch_response_mask = torch.zeros(batch_size, max_len, device=self.device)
+
+        for i, resp in enumerate(responses):
+            seq_len = len(resp["input_ids"])
+            batch_input_ids[i, :seq_len] = resp["input_ids"]
+            batch_attention_mask[i, :seq_len] = resp["attention_mask"]
+            batch_response_mask[i, :seq_len] = resp["response_mask"]
+
+        return batch_input_ids, batch_attention_mask, batch_response_mask
+
     async def collect_samples_with_dynamic_sampling(
         self,
         prompts: list[str],
@@ -764,6 +787,17 @@ class DAPOTrainer:
                 std_reward = torch.tensor(1.0, device=self.device)
             advantages = (rewards_tensor - mean_reward) / std_reward
 
+            # Freeze old-policy log probs at rollout time (before any inner updates
+            # mutate the model), so importance ratios are computed against the
+            # policy that actually generated these responses.
+            batch_input_ids, batch_attention_mask, batch_response_mask = (
+                self._build_batch_tensors(group_responses)
+            )
+            with torch.no_grad():
+                old_token_log_probs, _ = self.compute_token_log_probs(
+                    batch_input_ids, batch_attention_mask, batch_response_mask
+                )
+
             # Store sample
             sample = {
                 "prompt": prompt,
@@ -771,6 +805,7 @@ class DAPOTrainer:
                 "rewards": rewards,
                 "advantages": advantages,
                 "accuracy": accuracy,
+                "old_token_log_probs": old_token_log_probs,
             }
             collected_samples.append(sample)
 
@@ -823,31 +858,24 @@ class DAPOTrainer:
             all_seq_lengths.extend([r["sequence_length"] for r in responses])
 
             # Prepare batch
-            max_len = max(len(r["input_ids"]) for r in responses)
-            batch_size = len(responses)
-
-            batch_input_ids = torch.zeros(
-                batch_size, max_len, dtype=torch.long, device=self.device
+            batch_input_ids, batch_attention_mask, batch_response_mask = (
+                self._build_batch_tensors(responses)
             )
-            batch_attention_mask = torch.zeros(
-                batch_size, max_len, dtype=torch.long, device=self.device
-            )
-            batch_response_mask = torch.zeros(batch_size, max_len, device=self.device)
 
-            for i, resp in enumerate(responses):
-                seq_len = len(resp["input_ids"])
-                batch_input_ids[i, :seq_len] = resp["input_ids"]
-                batch_attention_mask[i, :seq_len] = resp["attention_mask"]
-                batch_response_mask[i, :seq_len] = resp["response_mask"]
-
-            # Get old log probs (from generation, detached)
-            with torch.no_grad():
-                old_token_log_probs, _ = self.compute_token_log_probs(
-                    batch_input_ids, batch_attention_mask, batch_response_mask
-                )
+            # Old log probs: prefer the ones frozen at rollout time (before any
+            # inner updates could have moved the policy). Fall back to computing
+            # them here once, before the inner loop, for backward compatibility
+            # with callers that don't populate this key.
+            old_token_log_probs = sample.get("old_token_log_probs")
+            if old_token_log_probs is None:
+                with torch.no_grad():
+                    old_token_log_probs, _ = self.compute_token_log_probs(
+                        batch_input_ids, batch_attention_mask, batch_response_mask
+                    )
+            old_token_log_probs = old_token_log_probs.detach()
 
             # Multiple gradient updates per rollout (mu updates)
-            for _ in range(min(self.config.num_gradient_updates, 1)):
+            for _ in range(max(1, self.config.num_gradient_updates)):
                 # Compute current log probs
                 current_token_log_probs, token_counts = self.compute_token_log_probs(
                     batch_input_ids, batch_attention_mask, batch_response_mask
@@ -855,7 +883,7 @@ class DAPOTrainer:
 
                 # Compute importance ratios
                 importance_ratios = self.compute_importance_ratio(
-                    current_token_log_probs, old_token_log_probs.detach()
+                    current_token_log_probs, old_token_log_probs
                 )
 
                 # Expand advantages to token level
