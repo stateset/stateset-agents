@@ -49,8 +49,12 @@ ws_router = APIRouter(prefix="/api/lab", tags=["training-lab"])
 # In-memory state (swap for Redis/DB in production)
 # ---------------------------------------------------------------------------
 
+MAX_EXPERIMENTS = 100
+MAX_EPISODES_PER_EXPERIMENT = 1000
+MAX_LOGS_PER_EXPERIMENT = 5000
+
 _experiments: dict[str, dict[str, Any]] = {}
-_episodes: dict[str, list[dict[str, Any]]] = {}  # experiment_id -> episodes
+_episodes: dict[str, deque[dict[str, Any]]] = {}  # experiment_id -> episodes
 _logs: dict[str, deque[dict[str, Any]]] = {}  # experiment_id -> log entries
 _metrics_subscribers: dict[str, list[WebSocket]] = {}
 
@@ -61,6 +65,17 @@ class ExperimentStatus(str, Enum):
     PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+# Statuses considered "finished" — safe to evict when the experiment cap is
+# reached. CREATED experiments were never started, so they're evictable too.
+_EVICTABLE_STATUSES = frozenset(
+    {
+        ExperimentStatus.CREATED.value,
+        ExperimentStatus.COMPLETED.value,
+        ExperimentStatus.FAILED.value,
+    },
+)
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +428,7 @@ _running_tasks: dict[str, asyncio.Task[None]] = {}
 
 def _add_log(experiment_id: str, level: str, message: str, **extra: Any) -> None:
     entry = {"ts": time.time(), "level": level, "message": message, **extra}
-    _logs.setdefault(experiment_id, deque(maxlen=1000)).append(entry)
+    _logs.setdefault(experiment_id, deque(maxlen=MAX_LOGS_PER_EXPERIMENT)).append(entry)
 
 
 # ---------------------------------------------------------------------------
@@ -516,6 +531,9 @@ async def list_algorithms() -> list[dict[str, Any]]:
 @router.post("/experiments", response_model=ExperimentResponse, status_code=201)
 async def create_experiment(req: CreateExperimentRequest) -> ExperimentResponse:
     """Create a new training experiment."""
+    if len(_experiments) >= MAX_EXPERIMENTS:
+        _evict_oldest_finished_experiment()
+
     exp_id = str(uuid.uuid4())
     now = time.time()
     experiment = {
@@ -531,9 +549,33 @@ async def create_experiment(req: CreateExperimentRequest) -> ExperimentResponse:
         "updated_at": now,
     }
     _experiments[exp_id] = experiment
-    _episodes[exp_id] = []
+    _episodes[exp_id] = deque(maxlen=MAX_EPISODES_PER_EXPERIMENT)
     _add_log(exp_id, "info", f"Experiment '{req.name}' created")
     return ExperimentResponse(**experiment)
+
+
+def _evict_oldest_finished_experiment() -> None:
+    """Evict the oldest evictable (created/completed/failed) experiment to
+    make room for a new one. Raises 429 if every experiment is active
+    (running/paused).
+    """
+    evictable = [
+        (exp["created_at"], exp_id)
+        for exp_id, exp in _experiments.items()
+        if exp.get("status") in _EVICTABLE_STATUSES
+    ]
+    if not evictable:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Maximum of {MAX_EXPERIMENTS} experiments reached and all are "
+                "active (running/paused). Stop or delete an experiment before "
+                "creating a new one."
+            ),
+        )
+    evictable.sort(key=lambda item: item[0])
+    _, oldest_id = evictable[0]
+    _delete_experiment_state(oldest_id)
 
 
 @router.get("/experiments")
@@ -588,7 +630,9 @@ async def start_experiment(experiment_id: str) -> dict[str, Any]:
                     break
 
                 episode = await simulator.run_episode()
-                _episodes.setdefault(experiment_id, []).append(episode)
+                _episodes.setdefault(
+                    experiment_id, deque(maxlen=MAX_EPISODES_PER_EXPERIMENT),
+                ).append(episode)
                 exp["metrics"] = simulator._metrics.copy()
                 exp["updated_at"] = time.time()
 
@@ -678,6 +722,11 @@ async def stop_experiment(experiment_id: str) -> dict[str, str]:
     exp["status"] = ExperimentStatus.COMPLETED.value
     exp["updated_at"] = time.time()
     _add_log(experiment_id, "warn", "Training stopped by user")
+
+    task = _running_tasks.get(experiment_id)
+    if task is not None and not task.done():
+        task.cancel()
+
     return {"status": "stopped"}
 
 
@@ -713,6 +762,9 @@ async def clone_experiment(
     if not exp:
         raise HTTPException(status_code=404, detail="Experiment not found")
 
+    if len(_experiments) >= MAX_EXPERIMENTS:
+        _evict_oldest_finished_experiment()
+
     import copy
     new_id = str(uuid.uuid4())
     now = time.time()
@@ -734,21 +786,28 @@ async def clone_experiment(
                 cloned[section].update(overrides[section])
 
     _experiments[new_id] = cloned
-    _episodes[new_id] = []
+    _episodes[new_id] = deque(maxlen=MAX_EPISODES_PER_EXPERIMENT)
     _add_log(new_id, "info", f"Cloned from '{exp['name']}' ({experiment_id[:8]}...)")
     return ExperimentResponse(**cloned)
+
+
+def _delete_experiment_state(experiment_id: str) -> None:
+    """Remove all in-memory state for an experiment, cancelling its
+    background training task if one is still running.
+    """
+    task = _running_tasks.pop(experiment_id, None)
+    if task is not None and not task.done():
+        task.cancel()
+    _experiments.pop(experiment_id, None)
+    _episodes.pop(experiment_id, None)
+    _simulators.pop(experiment_id, None)
+    _logs.pop(experiment_id, None)
 
 
 @router.delete("/experiments/{experiment_id}")
 async def delete_experiment(experiment_id: str) -> dict[str, str]:
     """Delete an experiment and stop if running."""
-    if experiment_id in _running_tasks:
-        _running_tasks[experiment_id].cancel()
-        del _running_tasks[experiment_id]
-    _experiments.pop(experiment_id, None)
-    _episodes.pop(experiment_id, None)
-    _simulators.pop(experiment_id, None)
-    _logs.pop(experiment_id, None)
+    _delete_experiment_state(experiment_id)
     return {"status": "deleted"}
 
 

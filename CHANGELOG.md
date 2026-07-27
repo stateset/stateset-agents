@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicitly using an `api_key`/`token` query param (or `X-API-Key`/
   `Authorization` header), closing with code `4401` on missing/invalid
   credentials.
+- **Training Lab in-memory state is now bounded**: `/api/lab` previously kept
+  unbounded module-level dicts for experiments, episodes, and logs, and could
+  leak untracked background training tasks. Experiments are now capped at
+  `MAX_EXPERIMENTS = 100` (oldest created/completed/failed experiment is
+  evicted to make room; a `429` is returned if every experiment is
+  running/paused). Episodes and logs are bounded per-experiment via
+  `collections.deque` (`MAX_EPISODES_PER_EXPERIMENT = 1000`,
+  `MAX_LOGS_PER_EXPERIMENT = 5000`). Stopping or deleting an experiment now
+  cancels its background training task.
 
 ### Added — Kimi-K3 starter path
 
