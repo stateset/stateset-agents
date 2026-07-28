@@ -35,7 +35,7 @@ If you want a framework that treats conversations as first‑class RL episodes (
 - **Kimi-K3 starter path.** First-class starter for `moonshotai/Kimi-K3`: `stateset-agents kimi-k3` CLI command, `init --preset kimi-k3`, packaged module, examples, docs, and tests. The model ID and presets are provisional mirrors of the Kimi-K2.6 starter until Moonshot publishes HF weights (not out as of 2026-07-16).
 - **GLM 5.2 starter path.** Full parallel surface for `zai-org/GLM-5.2` (754B MoE): starter module, examples, Helm values, vLLM/training Kubernetes manifests, and hosting plan.
 
-**In v0.15.3 (latest release):**
+**In v0.16.0 (latest release):**
 
 - **Rust accelerator wheels.** The `stateset-rl-core` crate ships as maturin-built wheels (abi3-py310 — one wheel covers Python 3.10–3.13) with a new `[rust]` extra.
 - **Inference observability.** Model-level Prometheus metrics (RPS, latency, TTFT, tokens/s, in-flight) across the OpenAI/Anthropic routes, plus a Grafana serving row.
@@ -128,7 +128,7 @@ asyncio.run(main())
 pip install stateset-agents          # latest on PyPI (currently v0.13.4)
 ```
 
-> **PyPI currently lags the source tree.** `pip install stateset-agents` gets **v0.13.4**, while this repo is at **v0.15.3** plus unreleased starters (Kimi-K3, GLM 5.2) on master. For the newest surface, install from source:
+> **PyPI currently lags the source tree.** `pip install stateset-agents` gets **v0.13.4**, while this repo is at **v0.16.0** plus unreleased starters (Kimi-K3, GLM 5.2) on master. For the newest surface, install from source:
 >
 > ```bash
 > pip install "git+https://github.com/stateset/stateset-agents@master"
@@ -864,7 +864,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.15.3`; Kimi-K3 and GLM 5.2 starters are on master, unreleased).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.16.0`; Kimi-K3 and GLM 5.2 starters are on master, unreleased).
 
 Other entry points:
 
