@@ -83,12 +83,15 @@ def get_reward(reward_name: str) -> Any:
     """Map a reward name to a reward function instance."""
     if reward_name == "gsm8k":
         from stateset_agents.data.gsm8k import GSM8KReward
+
         return GSM8KReward()
     if reward_name == "customer_support":
         from stateset_agents.data.customer_support_bench import SupportRewardComposite
+
         return SupportRewardComposite()
     if reward_name == "tool_calling":
         from stateset_agents.data.tool_calling_bench import ToolCallReward
+
         return ToolCallReward()
     raise ValueError(
         f"Unknown reward: {reward_name!r}. Choose: gsm8k, customer_support, tool_calling."
@@ -118,16 +121,22 @@ async def grade_transcript(
         context = contexts[assistant_idx] if assistant_idx < len(contexts) else None
         result = await reward.compute_reward(convo_so_far, context=context)
 
-        rows.append({
-            "assistant_turn_idx": assistant_idx,
-            "user_query": turns[max(0, assistant_idx * 2 - 1)]["content"][:80]
-                if assistant_idx * 2 - 1 >= 0 and assistant_idx * 2 - 1 < len(turns)
-                else "",
-            "response_preview": turn["content"][:80],
-            "score": float(result.score),
-            "breakdown": dict(result.breakdown) if hasattr(result, "breakdown") else {},
-            "explanation": getattr(result, "explanation", None),
-        })
+        rows.append(
+            {
+                "assistant_turn_idx": assistant_idx,
+                "user_query": (
+                    turns[max(0, assistant_idx * 2 - 1)]["content"][:80]
+                    if assistant_idx * 2 - 1 >= 0 and assistant_idx * 2 - 1 < len(turns)
+                    else ""
+                ),
+                "response_preview": turn["content"][:80],
+                "score": float(result.score),
+                "breakdown": (
+                    dict(result.breakdown) if hasattr(result, "breakdown") else {}
+                ),
+                "explanation": getattr(result, "explanation", None),
+            }
+        )
         assistant_idx += 1
 
     return rows
@@ -156,7 +165,9 @@ def render_markdown(rows: list[dict[str, Any]], reward_name: str) -> str:
     lines.append("|---|-------|---------|")
     for row in rows:
         preview = row["response_preview"].replace("|", "\\|").replace("\n", " ")
-        lines.append(f"| {row['assistant_turn_idx']} | {row['score']:.3f} | {preview} |")
+        lines.append(
+            f"| {row['assistant_turn_idx']} | {row['score']:.3f} | {preview} |"
+        )
     return "\n".join(lines)
 
 
@@ -217,14 +228,20 @@ def write_curated_examples(
 
     written = 0
     with output_path.open("a", encoding="utf-8") as f:
-        for pair, row in zip(pairs, rows):
+        for pair, row in zip(pairs, rows, strict=True):
             if row["score"] >= threshold and pair not in seen:
-                f.write(json.dumps({
-                    "prompt": pair[0],
-                    "response": pair[1],
-                    "score": row["score"],
-                    "source": transcript_path.name,
-                }, ensure_ascii=False) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "prompt": pair[0],
+                            "response": pair[1],
+                            "score": row["score"],
+                            "source": transcript_path.name,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
                 seen.add(pair)
                 written += 1
     return written
@@ -232,31 +249,61 @@ def write_curated_examples(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--history", type=Path, required=True,
-                        help="JSONL transcript from `chat --history`.")
-    parser.add_argument("--reward", choices=["gsm8k", "customer_support", "tool_calling"],
-                        required=True)
-    parser.add_argument("--context-file", type=Path, default=None,
-                        help="Optional JSONL of context dicts (one per assistant turn).")
-    parser.add_argument("--output", type=Path, default=None,
-                        help="Write the markdown report to this path (default: stdout).")
-    parser.add_argument("--json", action="store_true",
-                        help="Also write a raw JSON dump alongside the markdown report.")
-    parser.add_argument("--output-curated", type=Path, default=None,
-                        help="Append (prompt, response, score) tuples to this JSONL "
-                             "for every assistant turn whose score >= --threshold. "
-                             "Builds a curated training set across multiple runs.")
-    parser.add_argument("--threshold", type=float, default=0.7,
-                        help="Minimum score for inclusion in --output-curated (default: 0.7).")
+    parser.add_argument(
+        "--history",
+        type=Path,
+        required=True,
+        help="JSONL transcript from `chat --history`.",
+    )
+    parser.add_argument(
+        "--reward", choices=["gsm8k", "customer_support", "tool_calling"], required=True
+    )
+    parser.add_argument(
+        "--context-file",
+        type=Path,
+        default=None,
+        help="Optional JSONL of context dicts (one per assistant turn).",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write the markdown report to this path (default: stdout).",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Also write a raw JSON dump alongside the markdown report.",
+    )
+    parser.add_argument(
+        "--output-curated",
+        type=Path,
+        default=None,
+        help="Append (prompt, response, score) tuples to this JSONL "
+        "for every assistant turn whose score >= --threshold. "
+        "Builds a curated training set across multiple runs.",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.7,
+        help="Minimum score for inclusion in --output-curated (default: 0.7).",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
     turns = load_transcript(args.history)
     contexts = load_contexts(args.context_file)
     reward = get_reward(args.reward)
-    logger.info("Loaded %d turn(s), %d context(s), reward=%s",
-                len(turns), len(contexts), args.reward)
+    logger.info(
+        "Loaded %d turn(s), %d context(s), reward=%s",
+        len(turns),
+        len(contexts),
+        args.reward,
+    )
 
     rows = asyncio.run(grade_transcript(turns, contexts, reward))
     md = render_markdown(rows, args.reward)
@@ -278,7 +325,9 @@ def main() -> int:
         )
         logger.info(
             "Curated %d example(s) (score >= %.2f) → %s",
-            n_curated, args.threshold, args.output_curated,
+            n_curated,
+            args.threshold,
+            args.output_curated,
         )
 
     return 0

@@ -71,7 +71,8 @@ class TestChatHistoryAndReplay:
         hist = tmp_path / "convo.jsonl"
         result = _run_chat(
             "hello there\n/quit\n",
-            "--history", str(hist),
+            "--history",
+            str(hist),
         )
         assert result.returncode == 0
         assert hist.exists()
@@ -90,7 +91,8 @@ class TestChatHistoryAndReplay:
         nested = tmp_path / "deep" / "nested" / "dir" / "convo.jsonl"
         result = _run_chat(
             "ping\n/quit\n",
-            "--history", str(nested),
+            "--history",
+            str(nested),
         )
         assert result.returncode == 0
         assert nested.exists()
@@ -104,7 +106,8 @@ class TestChatHistoryAndReplay:
         )
         result = _run_chat(
             "/quit\n",
-            "--replay", str(hist),
+            "--replay",
+            str(hist),
         )
         assert result.returncode == 0
         assert "Loaded 2 turn(s)" in result.stdout
@@ -112,7 +115,8 @@ class TestChatHistoryAndReplay:
     def test_replay_missing_file_exits_2(self, tmp_path: Path) -> None:
         result = _run_chat(
             "/quit\n",
-            "--replay", "/tmp/does/not/exist.jsonl",
+            "--replay",
+            "/tmp/does/not/exist.jsonl",
         )
         assert result.returncode == 2
         assert "Replay path not found" in result.stderr

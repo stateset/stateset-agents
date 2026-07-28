@@ -2,7 +2,9 @@ import importlib
 
 
 def test_enhanced_state_management_reexports_cache_primitives() -> None:
-    state_mod = importlib.import_module("stateset_agents.core.enhanced_state_management")
+    state_mod = importlib.import_module(
+        "stateset_agents.core.enhanced_state_management"
+    )
     cache_mod = importlib.import_module("stateset_agents.core.enhanced_state_cache")
 
     assert state_mod.CacheEntry is cache_mod.CacheEntry

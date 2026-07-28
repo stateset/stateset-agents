@@ -15,12 +15,14 @@ def build_agent(args: argparse.Namespace) -> MultiTurnAgent:
     config = AgentConfig(
         model_name=args.model,
         use_stub_model=args.stub,
-        stub_responses=[
-            "Stub mode activated. Bring your own checkpoints!",
-            "Responding from the lightweight backend.",
-        ]
-        if args.stub
-        else None,
+        stub_responses=(
+            [
+                "Stub mode activated. Bring your own checkpoints!",
+                "Responding from the lightweight backend.",
+            ]
+            if args.stub
+            else None
+        ),
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
     )

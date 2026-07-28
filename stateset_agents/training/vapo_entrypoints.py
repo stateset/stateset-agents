@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
-from collections.abc import Awaitable, Callable
 
 import numpy as np
 
@@ -32,12 +32,7 @@ async def train_with_vapo(
 
     VAPO is the current SOTA for long-CoT reasoning (60.4 on AIME 2024).
     """
-    from .vapo_trainer import (
-        VAPOModelManager,
-        VAPOTrainer,
-        _require_wandb,
-        wandb,
-    )
+    from .vapo_trainer import VAPOModelManager, VAPOTrainer, _require_wandb, wandb
 
     logger.info("=" * 60)
     logger.info("VAPO Training - Value-Augmented Policy Optimization")
@@ -61,9 +56,12 @@ async def train_with_vapo(
         )
 
     logger.info("Loading model: %s", model_name)
-    _is_stub = model_name.startswith("stub://") or getattr(config, "use_stub_model", False)
+    _is_stub = model_name.startswith("stub://") or getattr(
+        config, "use_stub_model", False
+    )
     if _is_stub:
         from stateset_agents.core.agent_backends import StubModel, StubTokenizer
+
         model = StubModel()
         tokenizer = StubTokenizer()
     else:
@@ -95,9 +93,7 @@ async def train_with_vapo(
 
         if iteration % config.logging_steps == 0:
             if "warmup_value_loss" in metrics:
-                logger.info(
-                    "Value warmup | Loss: %.4f", metrics["warmup_value_loss"]
-                )
+                logger.info("Value warmup | Loss: %.4f", metrics["warmup_value_loss"])
             else:
                 logger.info(
                     "Iter %s/%s | Policy: %.4f | Value: %.4f | Reward: %.4f | Acc: %.2f%% | EV: %.4f",

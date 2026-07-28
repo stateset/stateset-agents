@@ -18,9 +18,9 @@ Reference: https://arxiv.org/abs/1707.06347
 import asyncio
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Callable
 
 import torch
 import torch.nn as nn
@@ -754,13 +754,13 @@ class PPOTrainer:
         self.tokenizer.save_pretrained(path)
 
         # Save value head
-        torch.save(
+        torch.save(  # nosec: B614
             self.value_head.state_dict(),
             os.path.join(path, "value_head.pt"),
         )
 
         # Save training state
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "policy_optimizer": self.policy_optimizer.state_dict(),
                 "value_optimizer": self.value_optimizer.state_dict(),

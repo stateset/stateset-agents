@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from stateset_agents.training.auto_research.config import AutoResearchConfig
 from stateset_agents.training.auto_research.checkpoint_manager import CheckpointManager
+from stateset_agents.training.auto_research.config import AutoResearchConfig
 from stateset_agents.training.auto_research.experiment_tracker import (
     ExperimentRecord,
     ExperimentTracker,
@@ -21,10 +21,10 @@ from stateset_agents.training.auto_research.proposer import (
     create_proposer,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def tmp_dir(tmp_path: Path) -> Path:
@@ -39,17 +39,24 @@ def search_space():
         SearchSpaceType,
     )
 
-    return SearchSpace([
-        SearchDimension("learning_rate", SearchSpaceType.LOGUNIFORM, 1e-6, 1e-3),
-        SearchDimension("num_generations", SearchSpaceType.INT, 2, 16),
-        SearchDimension("warmup_ratio", SearchSpaceType.FLOAT, 0.0, 0.5),
-        SearchDimension("baseline_type", SearchSpaceType.CATEGORICAL, choices=["group_mean", "group_median"]),
-    ])
+    return SearchSpace(
+        [
+            SearchDimension("learning_rate", SearchSpaceType.LOGUNIFORM, 1e-6, 1e-3),
+            SearchDimension("num_generations", SearchSpaceType.INT, 2, 16),
+            SearchDimension("warmup_ratio", SearchSpaceType.FLOAT, 0.0, 0.5),
+            SearchDimension(
+                "baseline_type",
+                SearchSpaceType.CATEGORICAL,
+                choices=["group_mean", "group_median"],
+            ),
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
 # AutoResearchConfig
 # ---------------------------------------------------------------------------
+
 
 class TestAutoResearchConfig:
     def test_defaults(self):
@@ -88,6 +95,7 @@ class TestAutoResearchConfig:
 # ExperimentTracker
 # ---------------------------------------------------------------------------
 
+
 class TestExperimentTracker:
     def test_record_and_best(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir, direction="maximize")
@@ -110,10 +118,16 @@ class TestExperimentTracker:
     def test_improvement_tracking(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir, direction="maximize")
 
-        tracker.record(ExperimentRecord(
-            experiment_id="baseline", params={}, metrics={},
-            objective_value=0.5, training_time=0, status="keep",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="baseline",
+                params={},
+                metrics={},
+                objective_value=0.5,
+                training_time=0,
+                status="keep",
+            )
+        )
         assert tracker.is_improvement(0.6) is True
         assert tracker.is_improvement(0.4) is False
         assert tracker.is_improvement(0.5) is False
@@ -121,31 +135,49 @@ class TestExperimentTracker:
     def test_minimize_direction(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir, direction="minimize")
 
-        tracker.record(ExperimentRecord(
-            experiment_id="baseline", params={}, metrics={},
-            objective_value=0.5, training_time=0, status="keep",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="baseline",
+                params={},
+                metrics={},
+                objective_value=0.5,
+                training_time=0,
+                status="keep",
+            )
+        )
         assert tracker.is_improvement(0.4) is True
         assert tracker.is_improvement(0.6) is False
 
     def test_crash_counting(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir)
 
-        tracker.record(ExperimentRecord(
-            experiment_id="crash_1", params={}, metrics={},
-            objective_value=0.0, training_time=0, status="crash",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="crash_1",
+                params={},
+                metrics={},
+                objective_value=0.0,
+                training_time=0,
+                status="crash",
+            )
+        )
         assert tracker.num_crashed == 1
         assert tracker.num_kept == 0
 
     def test_tsv_output(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir)
 
-        tracker.record(ExperimentRecord(
-            experiment_id="exp_1", params={"lr": 0.001}, metrics={},
-            objective_value=0.5, training_time=10.0, status="keep",
-            description="test run",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="exp_1",
+                params={"lr": 0.001},
+                metrics={},
+                objective_value=0.5,
+                training_time=10.0,
+                status="keep",
+                description="test run",
+            )
+        )
 
         tsv = (tmp_dir / "results.tsv").read_text()
         lines = tsv.strip().split("\n")
@@ -156,10 +188,16 @@ class TestExperimentTracker:
     def test_jsonl_output(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir)
 
-        tracker.record(ExperimentRecord(
-            experiment_id="exp_1", params={"lr": 0.001}, metrics={},
-            objective_value=0.5, training_time=10.0, status="keep",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="exp_1",
+                params={"lr": 0.001},
+                metrics={},
+                objective_value=0.5,
+                training_time=10.0,
+                status="keep",
+            )
+        )
 
         jsonl = (tmp_dir / "experiments.jsonl").read_text().strip()
         data = json.loads(jsonl)
@@ -169,14 +207,26 @@ class TestExperimentTracker:
     def test_history_for_proposer(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir)
 
-        tracker.record(ExperimentRecord(
-            experiment_id="exp_1", params={"lr": 0.001}, metrics={},
-            objective_value=0.5, training_time=10.0, status="keep",
-        ))
-        tracker.record(ExperimentRecord(
-            experiment_id="exp_2", params={"lr": 0.01}, metrics={},
-            objective_value=0.3, training_time=10.0, status="discard",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="exp_1",
+                params={"lr": 0.001},
+                metrics={},
+                objective_value=0.5,
+                training_time=10.0,
+                status="keep",
+            )
+        )
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="exp_2",
+                params={"lr": 0.01},
+                metrics={},
+                objective_value=0.3,
+                training_time=10.0,
+                status="discard",
+            )
+        )
 
         history = tracker.get_history_for_proposer()
         assert len(history) == 2
@@ -187,6 +237,7 @@ class TestExperimentTracker:
 # ---------------------------------------------------------------------------
 # CheckpointManager
 # ---------------------------------------------------------------------------
+
 
 class TestCheckpointManager:
     def test_has_best_initially_false(self, tmp_dir: Path):
@@ -274,7 +325,9 @@ class TestCheckpointManager:
         agent.model = mock_model
 
         # Need to mock peft import for isinstance check
-        with patch("stateset_agents.training.auto_research.checkpoint_manager.Path.write_text"):
+        with patch(
+            "stateset_agents.training.auto_research.checkpoint_manager.Path.write_text"
+        ):
             mgr.save_best(agent, "exp_1", {"lr": 0.001})
 
         # save_pretrained should have been called
@@ -284,6 +337,7 @@ class TestCheckpointManager:
 # ---------------------------------------------------------------------------
 # Proposers
 # ---------------------------------------------------------------------------
+
 
 class TestRandomProposer:
     def test_propose_returns_params_and_description(self, search_space):
@@ -302,7 +356,12 @@ class TestPerturbationProposer:
     def test_propose_returns_params_and_description(self, search_space):
         proposer = PerturbationProposer(search_space)
         params, desc = proposer.propose(
-            current_best={"learning_rate": 1e-5, "num_generations": 4, "warmup_ratio": 0.1, "baseline_type": "group_mean"},
+            current_best={
+                "learning_rate": 1e-5,
+                "num_generations": 4,
+                "warmup_ratio": 0.1,
+                "baseline_type": "group_mean",
+            },
             history=[],
         )
         assert isinstance(params, dict)
@@ -310,7 +369,12 @@ class TestPerturbationProposer:
 
     def test_always_makes_at_least_one_change(self, search_space):
         proposer = PerturbationProposer(search_space, num_params_to_change=1)
-        current = {"learning_rate": 1e-5, "num_generations": 4, "warmup_ratio": 0.1, "baseline_type": "group_mean"}
+        current = {
+            "learning_rate": 1e-5,
+            "num_generations": 4,
+            "warmup_ratio": 0.1,
+            "baseline_type": "group_mean",
+        }
         # Run multiple times — at least one change should happen
         for _ in range(10):
             params, desc = proposer.propose(current, [])
@@ -458,6 +522,7 @@ class TestCreateProposer:
 # ---------------------------------------------------------------------------
 # Module-level imports
 # ---------------------------------------------------------------------------
+
 
 class TestModuleImports:
     def test_training_level_imports(self):

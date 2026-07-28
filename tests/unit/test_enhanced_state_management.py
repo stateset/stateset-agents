@@ -375,10 +375,14 @@ class TestDistributedStateService:
     @pytest.fixture
     def state_service(self):
         """Create a mock DistributedStateService."""
-        with patch(
-            "stateset_agents.core.enhanced_state_management.REDIS_AVAILABLE", False
-        ), patch(
-            "stateset_agents.core.enhanced_state_management.MONGODB_AVAILABLE", False
+        with (
+            patch(
+                "stateset_agents.core.enhanced_state_management.REDIS_AVAILABLE", False
+            ),
+            patch(
+                "stateset_agents.core.enhanced_state_management.MONGODB_AVAILABLE",
+                False,
+            ),
         ):
             from stateset_agents.core.enhanced_state_management import (
                 DistributedStateService,
@@ -534,10 +538,14 @@ class TestGetStateService:
 
     def test_get_state_service(self):
         """Test getting the global state service."""
-        with patch(
-            "stateset_agents.core.enhanced_state_management.REDIS_AVAILABLE", False
-        ), patch(
-            "stateset_agents.core.enhanced_state_management.MONGODB_AVAILABLE", False
+        with (
+            patch(
+                "stateset_agents.core.enhanced_state_management.REDIS_AVAILABLE", False
+            ),
+            patch(
+                "stateset_agents.core.enhanced_state_management.MONGODB_AVAILABLE",
+                False,
+            ),
         ):
             from stateset_agents.core.enhanced_state_management import get_state_service
 

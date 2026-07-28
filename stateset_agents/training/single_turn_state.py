@@ -128,7 +128,9 @@ def merge_scenario_into_state(
     if scenario is None:
         return state
 
-    task_key = getattr(config, "task_id_key", "task_id") if config is not None else "task_id"
+    task_key = (
+        getattr(config, "task_id_key", "task_id") if config is not None else "task_id"
+    )
     scenario_copy = dict(scenario)
     task_value = scenario_copy.get(task_key)
 

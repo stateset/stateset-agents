@@ -12,12 +12,12 @@ import threading
 import time
 import uuid
 from collections import defaultdict, deque
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, cast
-from collections.abc import Callable
 
 # Optional imports for enhanced functionality
 try:
@@ -55,7 +55,9 @@ def _prometheus_get_or_create(
     except ValueError:
         # Registry keys include a base name without `_total` for Counters.
         base_name = name[:-6] if name.endswith("_total") else name
-        collector = REGISTRY._names_to_collectors.get(base_name) or REGISTRY._names_to_collectors.get(name)
+        collector = REGISTRY._names_to_collectors.get(
+            base_name
+        ) or REGISTRY._names_to_collectors.get(name)
         if collector is None or not isinstance(collector, metric_cls):
             raise
         return collector
@@ -399,54 +401,78 @@ class MetricsCollector:
         if HAS_PSUTIL:
             summary["system_metrics"] = {
                 "cpu_usage": {
-                    "current": list(self.system_metrics.cpu_usage)[-1]
-                    if self.system_metrics.cpu_usage
-                    else 0,
-                    "average": statistics.mean(self.system_metrics.cpu_usage)
-                    if self.system_metrics.cpu_usage
-                    else 0,
-                    "max": max(self.system_metrics.cpu_usage)
-                    if self.system_metrics.cpu_usage
-                    else 0,
+                    "current": (
+                        list(self.system_metrics.cpu_usage)[-1]
+                        if self.system_metrics.cpu_usage
+                        else 0
+                    ),
+                    "average": (
+                        statistics.mean(self.system_metrics.cpu_usage)
+                        if self.system_metrics.cpu_usage
+                        else 0
+                    ),
+                    "max": (
+                        max(self.system_metrics.cpu_usage)
+                        if self.system_metrics.cpu_usage
+                        else 0
+                    ),
                 },
                 "memory_usage": {
-                    "current": list(self.system_metrics.memory_usage)[-1]
-                    if self.system_metrics.memory_usage
-                    else 0,
-                    "average": statistics.mean(self.system_metrics.memory_usage)
-                    if self.system_metrics.memory_usage
-                    else 0,
-                    "max": max(self.system_metrics.memory_usage)
-                    if self.system_metrics.memory_usage
-                    else 0,
+                    "current": (
+                        list(self.system_metrics.memory_usage)[-1]
+                        if self.system_metrics.memory_usage
+                        else 0
+                    ),
+                    "average": (
+                        statistics.mean(self.system_metrics.memory_usage)
+                        if self.system_metrics.memory_usage
+                        else 0
+                    ),
+                    "max": (
+                        max(self.system_metrics.memory_usage)
+                        if self.system_metrics.memory_usage
+                        else 0
+                    ),
                 },
                 "disk_usage": {
-                    "current": list(self.system_metrics.disk_usage)[-1]
-                    if self.system_metrics.disk_usage
-                    else 0,
-                    "average": statistics.mean(self.system_metrics.disk_usage)
-                    if self.system_metrics.disk_usage
-                    else 0,
-                    "max": max(self.system_metrics.disk_usage)
-                    if self.system_metrics.disk_usage
-                    else 0,
+                    "current": (
+                        list(self.system_metrics.disk_usage)[-1]
+                        if self.system_metrics.disk_usage
+                        else 0
+                    ),
+                    "average": (
+                        statistics.mean(self.system_metrics.disk_usage)
+                        if self.system_metrics.disk_usage
+                        else 0
+                    ),
+                    "max": (
+                        max(self.system_metrics.disk_usage)
+                        if self.system_metrics.disk_usage
+                        else 0
+                    ),
                 },
             }
 
         # Application metrics
         summary["application_metrics"] = {
             "requests_total": self.app_metrics.requests_total,
-            "requests_per_second": list(self.app_metrics.requests_per_second)[-1]
-            if self.app_metrics.requests_per_second
-            else 0,
-            "average_response_time": statistics.mean(self.app_metrics.response_times)
-            if self.app_metrics.response_times
-            else 0,
+            "requests_per_second": (
+                list(self.app_metrics.requests_per_second)[-1]
+                if self.app_metrics.requests_per_second
+                else 0
+            ),
+            "average_response_time": (
+                statistics.mean(self.app_metrics.response_times)
+                if self.app_metrics.response_times
+                else 0
+            ),
             "active_conversations": self.app_metrics.active_conversations,
             "training_iterations": self.app_metrics.training_iterations,
-            "average_reward_score": statistics.mean(self.app_metrics.reward_scores)
-            if self.app_metrics.reward_scores
-            else 0,
+            "average_reward_score": (
+                statistics.mean(self.app_metrics.reward_scores)
+                if self.app_metrics.reward_scores
+                else 0
+            ),
             "error_count": self.app_metrics.error_count,
         }
 

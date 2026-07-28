@@ -205,10 +205,10 @@ async def train_iterative_grpo(
     """
     from .trl_grpo_trainer import (
         ModelManager,
+        TrajectoryGenerator,
         TRLGRPODatasetBuilder,
         TRLGRPORewardFunction,
         TRLGRPOTrainerWrapper,
-        TrajectoryGenerator,
         _require_wandb,
         wandb,
     )

@@ -1,6 +1,7 @@
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
-from unittest.mock import AsyncMock
 
 from stateset_agents.api import config as api_config
 

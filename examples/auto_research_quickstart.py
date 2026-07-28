@@ -178,10 +178,12 @@ async def main(args: argparse.Namespace) -> None:
         max_turns=6,
     )
 
-    reward_fn = CompositeReward([
-        HelpfulnessReward(weight=0.6),
-        SafetyReward(weight=0.4),
-    ])
+    reward_fn = CompositeReward(
+        [
+            HelpfulnessReward(weight=0.6),
+            SafetyReward(weight=0.4),
+        ]
+    )
 
     # ================================================================
     # Step 5: Configure auto-research
@@ -189,13 +191,10 @@ async def main(args: argparse.Namespace) -> None:
     config = AutoResearchConfig(
         # How long each experiment trains (seconds)
         time_budget=args.time_budget,
-
         # How many experiments to run (0 = unlimited)
         max_experiments=args.max_experiments,
-
         # Stop if last N experiments don't improve (0 = disabled)
         improvement_patience=args.patience,
-
         # How the loop proposes new hyperparameters:
         #   "perturbation" — small random changes (default, fast)
         #   "smart"        — learns which params matter, focuses there
@@ -205,7 +204,6 @@ async def main(args: argparse.Namespace) -> None:
         #   "random"       — pure random sampling
         #   "grid"         — systematic grid search
         proposer=args.proposer,
-
         # Which hyperparameters to search over:
         #   "quick"           — just LR, num_gens, temp, lora_r (4 dims)
         #   "auto_research"   — comprehensive (14 dims)
@@ -213,17 +211,13 @@ async def main(args: argparse.Namespace) -> None:
         #   "reward"          — reward weight exploration
         #   "model"           — LoRA/generation architecture
         search_space_name=args.search_space,
-
         # Where to save results
         output_dir=args.output_dir,
-
         # Evaluation settings
         eval_episodes=3,
         eval_seed=42,
-
         # Save model checkpoints for kept experiments
         save_checkpoints=args.real,
-
         # Training algorithm
         trainer_algorithm="gspo",
     )
@@ -287,16 +281,30 @@ if __name__ == "__main__":
         description="Auto-Research Quickstart",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--real", action="store_true",
-                        help="Use a real model (requires GPU)")
-    parser.add_argument("--model", default="gpt2",
-                        help="HuggingFace model name (only with --real)")
-    parser.add_argument("--proposer", default="perturbation",
-                        choices=["perturbation", "smart", "adaptive",
-                                 "random", "grid", "bayesian", "llm"])
-    parser.add_argument("--search-space", default="quick",
-                        choices=["quick", "auto_research", "multi_algorithm",
-                                 "reward", "model"])
+    parser.add_argument(
+        "--real", action="store_true", help="Use a real model (requires GPU)"
+    )
+    parser.add_argument(
+        "--model", default="gpt2", help="HuggingFace model name (only with --real)"
+    )
+    parser.add_argument(
+        "--proposer",
+        default="perturbation",
+        choices=[
+            "perturbation",
+            "smart",
+            "adaptive",
+            "random",
+            "grid",
+            "bayesian",
+            "llm",
+        ],
+    )
+    parser.add_argument(
+        "--search-space",
+        default="quick",
+        choices=["quick", "auto_research", "multi_algorithm", "reward", "model"],
+    )
     parser.add_argument("--max-experiments", type=int, default=5)
     parser.add_argument("--time-budget", type=int, default=60)
     parser.add_argument("--patience", type=int, default=0)

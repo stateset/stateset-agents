@@ -507,7 +507,9 @@ def load_gemma4_31b_config_file(path: str | Path) -> Gemma4Config:
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     payload = _read_mapping_file(config_path)
-    config_payload = payload.get("config") if isinstance(payload.get("config"), dict) else payload
+    config_payload = (
+        payload.get("config") if isinstance(payload.get("config"), dict) else payload
+    )
     if not isinstance(config_payload, dict):
         raise ValueError("Gemma starter config root must be a JSON/YAML object.")
 
@@ -522,11 +524,7 @@ def write_gemma4_31b_config_file(
     include_preview: bool = False,
 ) -> Path:
     """Write a Gemma 4 31B starter config to JSON or YAML."""
-    payload = (
-        create_gemma4_31b_preview(config)
-        if include_preview
-        else config.to_dict()
-    )
+    payload = create_gemma4_31b_preview(config) if include_preview else config.to_dict()
     written_path = _write_mapping_file(payload, Path(path))
     logger.info("Wrote Gemma 4 31B config to %s", written_path)
     return written_path

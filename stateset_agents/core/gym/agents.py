@@ -99,7 +99,9 @@ class GymAgent(MultiTurnAgent):
             Agent response (action as text)
         """
         normalized_messages = (
-            [{"role": "user", "content": messages}] if isinstance(messages, str) else messages
+            [{"role": "user", "content": messages}]
+            if isinstance(messages, str)
+            else messages
         )
 
         # Add gym-specific context to messages if needed
@@ -108,7 +110,9 @@ class GymAgent(MultiTurnAgent):
             pass
 
         # Generate with parent method (handles all the model logic)
-        response = await super().generate_response(normalized_messages, context, **kwargs)
+        response = await super().generate_response(
+            normalized_messages, context, **kwargs
+        )
 
         # Post-process: extract just the action if agent was verbose
         # This helps when agents output "I choose action 1" instead of just "1"

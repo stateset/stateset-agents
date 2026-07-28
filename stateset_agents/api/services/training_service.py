@@ -44,9 +44,7 @@ class JobProgressCallback:
         self.job["progress"] = ((episode + 1) / self.total_episodes) * 100.0
         # Only store JSON-serializable scalar metrics
         self.job["metrics"] = {
-            k: v
-            for k, v in metrics.items()
-            if isinstance(v, (int, float, str, bool))
+            k: v for k, v in metrics.items() if isinstance(v, (int, float, str, bool))
         }
 
         if self.cancel_event.is_set():
@@ -73,7 +71,9 @@ class TrainingService:
         owner = job.get("user_id")
         return owner is None or owner == user_id
 
-    async def start_training(self, request: TrainingRequest, user_id: str | None = None) -> str:
+    async def start_training(
+        self, request: TrainingRequest, user_id: str | None = None
+    ) -> str:
         """Start a training job."""
         training_id = str(uuid.uuid4())
         now = datetime.utcnow()
@@ -198,7 +198,9 @@ class TrainingService:
             self.training_jobs[training_id]["completed_at"] = datetime.utcnow()
         return True
 
-    def get_training_status(self, training_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+    def get_training_status(
+        self, training_id: str, user_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Get training job status, or None if not found."""
         job = self.training_jobs.get(training_id)
         if not job or not self._can_access_job(job, user_id):

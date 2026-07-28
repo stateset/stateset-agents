@@ -122,10 +122,12 @@ async def main(max_experiments: int = 5, proposer: str = "perturbation"):
     ]
 
     # ── Reward function ──
-    reward_fn = CompositeReward([
-        HelpfulnessReward(weight=0.6),
-        SafetyReward(weight=0.4),
-    ])
+    reward_fn = CompositeReward(
+        [
+            HelpfulnessReward(weight=0.6),
+            SafetyReward(weight=0.4),
+        ]
+    )
 
     # ── Auto-research config ──
     config = AutoResearchConfig(
@@ -177,11 +179,15 @@ async def main(max_experiments: int = 5, proposer: str = "perturbation"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Auto-Research Demo")
     parser.add_argument(
-        "--max-experiments", type=int, default=5,
+        "--max-experiments",
+        type=int,
+        default=5,
         help="Maximum experiments to run",
     )
     parser.add_argument(
-        "--proposer", type=str, default="perturbation",
+        "--proposer",
+        type=str,
+        default="perturbation",
         choices=["random", "perturbation", "grid", "bayesian"],
         help="Proposer strategy",
     )

@@ -79,9 +79,7 @@ def test_composite_reward_throughput(benchmark):
 
 def test_composite_reward_large_batch(benchmark):
     """Stress test: 32 turns processed sequentially (matches a small group rollout)."""
-    reward_fn = CompositeReward(
-        reward_functions=[HelpfulnessReward(), SafetyReward()]
-    )
+    reward_fn = CompositeReward(reward_functions=[HelpfulnessReward(), SafetyReward()])
     turns = [_sample_turn() for _ in range(32)]
 
     async def run_all():

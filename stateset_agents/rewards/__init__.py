@@ -48,8 +48,8 @@ from .llm_judge_adapter import (
     LLMJudgeReward,
     LLMJudgeRewardComponent,
     LLMJudgeRewardWithFallback,
-    create_rlaif_reward,
     create_rlaif_component,
+    create_rlaif_reward,
 )
 
 __all__ = [

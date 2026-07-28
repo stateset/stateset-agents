@@ -7,10 +7,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-from collections.abc import Callable
 
 from .reward import RewardFunction
 from .reward_base import RewardType
@@ -134,9 +134,7 @@ class Environment(ABC):
         return reward_type in (RewardType.CUMULATIVE, RewardType.SPARSE)
 
     @abstractmethod
-    async def reset(
-        self, scenario: dict[str, Any] | None = None
-    ) -> EnvironmentState:
+    async def reset(self, scenario: dict[str, Any] | None = None) -> EnvironmentState:
         """Reset environment and return initial state"""
 
     @abstractmethod
@@ -145,9 +143,7 @@ class Environment(ABC):
     ) -> tuple[EnvironmentState, float, bool, dict[str, Any]]:
         """Execute one step in the environment."""
 
-    async def get_initial_prompt(
-        self, scenario: dict[str, Any] | None = None
-    ) -> str:
+    async def get_initial_prompt(self, scenario: dict[str, Any] | None = None) -> str:
         """Get initial prompt/context (override in subclasses)"""
         return ""
 
@@ -243,16 +239,16 @@ class Environment(ABC):
                 new_state = step_result[0]
                 step_reward = float(step_result[1])
                 done = bool(step_result[2])
-                info = (
-                    dict(step_result[3]) if isinstance(step_result[3], dict) else {}
-                )
+                info = dict(step_result[3]) if isinstance(step_result[3], dict) else {}
                 maybe_env_response = info.get("env_response")
                 if isinstance(maybe_env_response, ConversationTurn):
                     env_response = maybe_env_response
             elif _is_reward(step_result[2]) and _is_done(step_result[3]):
                 new_state = step_result[0]
                 env_response = (
-                    step_result[1] if isinstance(step_result[1], ConversationTurn) else None
+                    step_result[1]
+                    if isinstance(step_result[1], ConversationTurn)
+                    else None
                 )
                 step_reward = float(step_result[2])
                 done = bool(step_result[3])
@@ -271,9 +267,7 @@ class Environment(ABC):
                 new_state = step_result[0]
                 step_reward = float(step_result[1])
                 done = bool(step_result[2])
-                info = (
-                    dict(step_result[3]) if isinstance(step_result[3], dict) else {}
-                )
+                info = dict(step_result[3]) if isinstance(step_result[3], dict) else {}
                 maybe_env_response = info.get("env_response")
                 if isinstance(maybe_env_response, ConversationTurn):
                     env_response = maybe_env_response

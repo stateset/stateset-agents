@@ -5,10 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from .intelligent_orchestrator_models import (
-    OrchestrationConfig,
-    OrchestrationDecision,
-)
+from .intelligent_orchestrator_models import OrchestrationConfig, OrchestrationDecision
 
 
 def calculate_recent_performance(history: list[float]) -> float:
@@ -222,8 +219,7 @@ def make_conservative_decision(
             component="orchestrator",
             action="request_human_intervention",
             reasoning=(
-                "Performance "
-                f"{recent_performance:.3f} significantly below threshold"
+                "Performance " f"{recent_performance:.3f} significantly below threshold"
             ),
             expected_benefit=0.0,
             confidence=1.0,

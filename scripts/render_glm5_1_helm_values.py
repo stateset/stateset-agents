@@ -113,9 +113,9 @@ def build_values_from_manifest(
         "api": {
             "env": {
                 "INFERENCE_DEFAULT_MODEL": model_id,
-                "INFERENCE_STREAM_INCLUDE_USAGE": "true"
-                if include_stream_usage
-                else "false",
+                "INFERENCE_STREAM_INCLUDE_USAGE": (
+                    "true" if include_stream_usage else "false"
+                ),
             }
         },
         "vllm": {

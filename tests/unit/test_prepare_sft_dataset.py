@@ -21,12 +21,35 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
 @pytest.fixture
 def curated_jsonl(tmp_path: Path) -> Path:
     p = tmp_path / "curated.jsonl"
-    _write_jsonl(p, [
-        {"prompt": "refund?", "response": "yes", "score": 0.85, "source": "s1.jsonl"},
-        {"prompt": "crash", "response": "let me help", "score": 0.78, "source": "s2.jsonl"},
-        {"prompt": "hours?", "response": "9-5", "score": 0.65, "source": "s1.jsonl"},
-        {"prompt": "refund?", "response": "different answer", "score": 0.92, "source": "s3.jsonl"},
-    ])
+    _write_jsonl(
+        p,
+        [
+            {
+                "prompt": "refund?",
+                "response": "yes",
+                "score": 0.85,
+                "source": "s1.jsonl",
+            },
+            {
+                "prompt": "crash",
+                "response": "let me help",
+                "score": 0.78,
+                "source": "s2.jsonl",
+            },
+            {
+                "prompt": "hours?",
+                "response": "9-5",
+                "score": 0.65,
+                "source": "s1.jsonl",
+            },
+            {
+                "prompt": "refund?",
+                "response": "different answer",
+                "score": 0.92,
+                "source": "s3.jsonl",
+            },
+        ],
+    )
     return p
 
 
@@ -65,7 +88,7 @@ class TestLoadCurated:
         p = tmp_path / "bad.jsonl"
         p.write_text(
             '{"prompt": "ok", "response": "ok"}\n'
-            'not json\n'
+            "not json\n"
             '{"prompt": "ok2", "response": "ok2"}\n'
         )
         entries = prep.load_curated(p)
@@ -112,19 +135,31 @@ class TestFilter:
 class TestEndToEndCLI:
     def test_chat_format_output(self, curated_jsonl: Path, tmp_path: Path) -> None:
         import subprocess
+
         out = tmp_path / "sft.jsonl"
         result = subprocess.run(
-            [sys.executable, str(SCRIPT_DIR / "prepare_sft_dataset.py"),
-             "--input", str(curated_jsonl),
-             "--format", "chat",
-             "--output", str(out),
-             "--min-score", "0.7",
-             "--dedup"],
-            capture_output=True, text=True, check=False,
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "prepare_sft_dataset.py"),
+                "--input",
+                str(curated_jsonl),
+                "--format",
+                "chat",
+                "--output",
+                str(out),
+                "--min-score",
+                "0.7",
+                "--dedup",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 0
         assert out.exists()
-        lines = [json.loads(line) for line in out.read_text().splitlines() if line.strip()]
+        lines = [
+            json.loads(line) for line in out.read_text().splitlines() if line.strip()
+        ]
         assert len(lines) == 2
         for line in lines:
             assert "messages" in line

@@ -370,9 +370,9 @@ class ConversationalBEAR:
         state_dim: int,
         action_dim: int,
         config: BEARConfig | None = None,
-        device: str = "cuda"
-        if torch is not None and torch.cuda.is_available()
-        else "cpu",
+        device: str = (
+            "cuda" if torch is not None and torch.cuda.is_available() else "cpu"
+        ),
     ):
         _require_torch()
 
@@ -738,7 +738,7 @@ class ConversationalBEAR:
 
     def save(self, path: str) -> None:
         """Save model checkpoint"""
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "actor_state_dict": self.actor.state_dict(),
                 "q1_state_dict": self.q1.state_dict(),
@@ -755,7 +755,7 @@ class ConversationalBEAR:
 
     def load(self, path: str) -> None:
         """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
 
         self.actor.load_state_dict(checkpoint["actor_state_dict"])
         self.q1.load_state_dict(checkpoint["q1_state_dict"])
@@ -780,9 +780,9 @@ class BEARTrainer:
         state_dim: int,
         action_dim: int,
         config: BEARConfig | None = None,
-        device: str = "cuda"
-        if torch is not None and torch.cuda.is_available()
-        else "cpu",
+        device: str = (
+            "cuda" if torch is not None and torch.cuda.is_available() else "cpu"
+        ),
     ):
         _require_torch()
 

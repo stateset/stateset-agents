@@ -143,9 +143,7 @@ class AutoResearchLoop:
                 self.config.calibration_method,
             )
         except (ImportError, AttributeError) as exc:
-            logger.warning(
-                "Reward calibration requested but unavailable: %s", exc
-            )
+            logger.warning("Reward calibration requested but unavailable: %s", exc)
             self._calibrated_reward_fn = None
 
     @property
@@ -199,12 +197,13 @@ class AutoResearchLoop:
                 "best_so_far": self.tracker.best_value or 0.0,
                 "num_experiments": self.tracker.num_experiments,
             }
+            log_data.update({f"metric/{k}": v for k, v in record.metrics.items()})
             log_data.update(
-                {f"metric/{k}": v for k, v in record.metrics.items()}
-            )
-            log_data.update(
-                {f"param/{k}": v for k, v in record.params.items()
-                 if isinstance(v, (int, float, str, bool))}
+                {
+                    f"param/{k}": v
+                    for k, v in record.params.items()
+                    if isinstance(v, (int, float, str, bool))
+                }
             )
             self._wandb.log(log_data)
         except Exception as exc:
@@ -322,7 +321,9 @@ class AutoResearchLoop:
         self._init_wandb()
 
         logger.info("Starting autonomous research loop")
-        logger.info("  Objective: %s (%s)", self.config.objective_metric, self.config.direction)
+        logger.info(
+            "  Objective: %s (%s)", self.config.objective_metric, self.config.direction
+        )
         logger.info("  Time budget per experiment: %ds", self.config.time_budget)
         logger.info("  Max experiments: %s", self.config.max_experiments or "unlimited")
         logger.info("  Proposer: %s", self.config.proposer)
@@ -444,9 +445,7 @@ class AutoResearchLoop:
 
         # Save baseline as first checkpoint
         if self.config.save_checkpoints:
-            self.checkpoint_mgr.save_best(
-                self.agent, "baseline", self.baseline_params
-            )
+            self.checkpoint_mgr.save_best(self.agent, "baseline", self.baseline_params)
 
     async def _run_experiment(self, experiment_id: str) -> None:
         """Run a single experiment: propose → train → eval → keep/revert."""
@@ -482,7 +481,8 @@ class AutoResearchLoop:
             )
             self._cleanup_gpu()
             self._record_crash(
-                experiment_id, proposed_params,
+                experiment_id,
+                proposed_params,
                 f"timeout after {training_time:.0f}s",
             )
             self._report_to_proposer(0.0, crashed=True)
@@ -601,13 +601,11 @@ class AutoResearchLoop:
         except (AttributeError, TypeError):
             return True
 
-    async def _train_gspo(
-        self, base_config: Any, params: dict[str, Any]
-    ) -> None:
+    async def _train_gspo(self, base_config: Any, params: dict[str, Any]) -> None:
+        from dataclasses import fields as dc_fields
+
         from stateset_agents.training.gspo_config import GSPOConfig
         from stateset_agents.training.gspo_entrypoints import train_with_gspo
-
-        from dataclasses import fields as dc_fields
 
         gspo_kwargs = {}
         gspo_fields = {f.name for f in dc_fields(GSPOConfig)}
@@ -652,9 +650,7 @@ class AutoResearchLoop:
             timeout=self.config.time_budget,
         )
 
-    async def _train_dapo(
-        self, base_config: Any, params: dict[str, Any]
-    ) -> None:
+    async def _train_dapo(self, base_config: Any, params: dict[str, Any]) -> None:
         from stateset_agents.training.dapo_entrypoints import train_with_dapo
 
         # DAPO entrypoint expects (model_name, reward_fn, train_prompts)
@@ -687,9 +683,7 @@ class AutoResearchLoop:
             timeout=self.config.time_budget,
         )
 
-    async def _train_vapo(
-        self, base_config: Any, params: dict[str, Any]
-    ) -> None:
+    async def _train_vapo(self, base_config: Any, params: dict[str, Any]) -> None:
         from stateset_agents.training.vapo_entrypoints import train_with_vapo
 
         # VAPO entrypoint expects (model_name, reward_fn, train_prompts)
@@ -732,10 +726,7 @@ class AutoResearchLoop:
         percentile metrics from multi_turn_evaluation if available.
         """
         from stateset_agents.core.environment import ConversationEnvironment
-        from stateset_agents.training.evaluation import (
-            EvaluationConfig,
-            evaluate_agent,
-        )
+        from stateset_agents.training.evaluation import EvaluationConfig, evaluate_agent
 
         eval_env = ConversationEnvironment(
             scenarios=self.eval_scenarios,
@@ -769,9 +760,7 @@ class AutoResearchLoop:
 
         return results
 
-    async def _execute_experiment(
-        self, params: dict[str, Any]
-    ) -> dict[str, float]:
+    async def _execute_experiment(self, params: dict[str, Any]) -> dict[str, float]:
         """Run the train + eval body for a single experiment."""
         await self._train_with_params(params)
         return await self._evaluate()
@@ -888,9 +877,7 @@ class AutoResearchLoop:
             self.config.max_experiments > 0
             and self.tracker.num_experiments >= self.config.max_experiments
         ):
-            logger.info(
-                "Reached max_experiments=%d", self.config.max_experiments
-            )
+            logger.info("Reached max_experiments=%d", self.config.max_experiments)
             return True
 
         if self.config.max_wall_clock > 0:

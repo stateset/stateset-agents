@@ -25,11 +25,11 @@ import statistics
 import sys
 import time
 import tracemalloc
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
-from collections.abc import Callable
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -416,7 +416,7 @@ async def benchmark_structured_output(iterations: int = 100) -> BenchmarkResult:
         extracted = extract_json_from_response(response)
         repair_json_string(extracted)
         json_schema_from_type(list[str])
-        json_schema_from_type(Optional[int])  # noqa: UP045 - runtime type, not annotation
+        json_schema_from_type(Optional[int])  # noqa: UP045 - runtime type
         idx += 1
 
     return benchmark("Structured Output", run, iterations)

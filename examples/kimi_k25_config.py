@@ -572,9 +572,11 @@ def get_kimi_k25_config(
         lora_alpha=lora_alpha,
         lora_target_modules=list(KIMI_K25_LORA_TARGET_MODULES),
         use_vllm=use_vllm,
-        vllm_gpu_memory_utilization=vllm_gpu_memory_utilization
-        if vllm_gpu_memory_utilization is not None
-        else 0.85,
+        vllm_gpu_memory_utilization=(
+            vllm_gpu_memory_utilization
+            if vllm_gpu_memory_utilization is not None
+            else 0.85
+        ),
         use_4bit=use_4bit,
         use_8bit=use_8bit,
         temperature=temperature,
@@ -585,12 +587,12 @@ def get_kimi_k25_config(
         num_generations=num_generations,
         learning_rate=learning_rate,
         num_iterations=num_iterations if num_iterations is not None else 1,
-        num_outer_iterations=num_outer_iterations
-        if num_outer_iterations is not None
-        else 100,
-        generations_per_iteration=generations_per_iteration
-        if generations_per_iteration is not None
-        else 100,
+        num_outer_iterations=(
+            num_outer_iterations if num_outer_iterations is not None else 100
+        ),
+        generations_per_iteration=(
+            generations_per_iteration if generations_per_iteration is not None else 100
+        ),
         save_steps_every=save_steps_every,
         output_dir=output_dir,
         report_to="wandb" if use_wandb else "none",

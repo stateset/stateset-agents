@@ -18,7 +18,7 @@ class AgentConfigRequest(BaseModel):
                 "enable_planning": True,
                 "planning_config": {"max_steps": 4},
             }
-        }
+        },
     )
 
     model_name: str = Field(..., description="Name of the model to use")
@@ -28,9 +28,7 @@ class AgentConfigRequest(BaseModel):
     temperature: float = Field(0.8, description="Sampling temperature", ge=0.0, le=2.0)
     top_p: float = Field(0.9, description="Top-p sampling parameter", ge=0.0, le=1.0)
     top_k: int = Field(50, description="Top-k sampling parameter", ge=1, le=1000)
-    system_prompt: str | None = Field(
-        None, description="System prompt for the agent"
-    )
+    system_prompt: str | None = Field(None, description="System prompt for the agent")
     use_chat_template: bool = Field(True, description="Whether to use chat template")
     enable_planning: bool = Field(False, description="Enable long-term planning")
     planning_config: dict[str, Any] | None = Field(
@@ -136,7 +134,7 @@ class TrainingRequest(BaseModel):
                     "replay_ratio": 0.3,
                 },
             }
-        }
+        },
     )
 
     agent_config: AgentConfigRequest
@@ -187,9 +185,7 @@ class TrainingResponse(BaseModel):
 
     training_id: str = Field(..., description="Training job identifier")
     status: str = Field(..., description="Training status")
-    estimated_time: float | None = Field(
-        None, description="Estimated completion time"
-    )
+    estimated_time: float | None = Field(None, description="Estimated completion time")
     message: str = Field(..., description="Status message")
 
 
@@ -207,9 +203,7 @@ class MetricsResponse(BaseModel):
     """Metrics response."""
 
     timestamp: float = Field(..., description="Metrics timestamp")
-    system_metrics: dict[str, int | float] = Field(
-        ..., description="System metrics"
-    )
+    system_metrics: dict[str, int | float] = Field(..., description="System metrics")
     performance_metrics: dict[str, int | float] = Field(
         ..., description="Performance metrics"
     )
@@ -221,7 +215,5 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
-    details: dict[str, Any] | None = Field(
-        None, description="Additional error details"
-    )
+    details: dict[str, Any] | None = Field(None, description="Additional error details")
     timestamp: float = Field(..., description="Error timestamp")

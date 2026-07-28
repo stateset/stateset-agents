@@ -11,9 +11,9 @@ import logging
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from typing import Any, TypeVar, cast
-from collections.abc import Callable
 
 from .enhanced_state_cache import (
     MONGODB_AVAILABLE,

@@ -76,12 +76,15 @@ async def main() -> None:
     eval_scenarios = all_scenarios[16:]
 
     # 1) Baseline eval — what does the untuned model score on the rubric?
-    baseline_agent = MultiTurnAgent(AgentConfig(
-        model_name=TRAINEE_MODEL,
-        torch_dtype="bfloat16",
-        attn_implementation="sdpa",       # portable across cloud GPUs (no flash-attn dep)
-        do_sample=False, temperature=0.0,
-    ))
+    baseline_agent = MultiTurnAgent(
+        AgentConfig(
+            model_name=TRAINEE_MODEL,
+            torch_dtype="bfloat16",
+            attn_implementation="sdpa",  # portable across cloud GPUs (no flash-attn dep)
+            do_sample=False,
+            temperature=0.0,
+        )
+    )
     await baseline_agent.initialize()
     baseline = await evaluate(baseline_agent, eval_scenarios)
     print(f"Baseline rubric: {baseline:.3f}")
@@ -92,29 +95,42 @@ async def main() -> None:
     config = GSPOConfig(
         model_name=TRAINEE_MODEL,
         num_generations=4,
-        clip_range_left=3e-4, clip_range_right=4e-4,
+        clip_range_left=3e-4,
+        clip_range_right=4e-4,
         learning_rate=5e-6,
-        max_prompt_length=512, max_completion_length=320,
-        use_lora=True, lora_r=16, lora_alpha=32,
+        max_prompt_length=512,
+        max_completion_length=320,
+        use_lora=True,
+        lora_r=16,
+        lora_alpha=32,
         gradient_checkpointing=False,
-        num_epochs=1, warmup_ratio=0.1,
-        use_reference_model=True, beta=0.05,   # KL anchor — see §10.5 of the whitepaper
+        num_epochs=1,
+        warmup_ratio=0.1,
+        use_reference_model=True,
+        beta=0.05,  # KL anchor — see §10.5 of the whitepaper
         output_dir="./outputs/getting_started_03",
     )
-    agent = MultiTurnAgent(AgentConfig(
-        model_name=TRAINEE_MODEL, torch_dtype="bfloat16", attn_implementation="sdpa",
-    ))
+    agent = MultiTurnAgent(
+        AgentConfig(
+            model_name=TRAINEE_MODEL,
+            torch_dtype="bfloat16",
+            attn_implementation="sdpa",
+        )
+    )
     env = ConversationEnvironment(
         scenarios=make_support_scenarios(train_scenarios),
         reward_fn=SupportRewardComposite(),
         max_turns=4,
     )
     train_queries = [
-        {"prompt": prompt_for(s), "context": {
-            "must_acknowledge": list(s.must_acknowledge),
-            "must_avoid": list(s.must_avoid),
-            "intent": s.intent,
-        }}
+        {
+            "prompt": prompt_for(s),
+            "context": {
+                "must_acknowledge": list(s.must_acknowledge),
+                "must_avoid": list(s.must_avoid),
+                "intent": s.intent,
+            },
+        }
         for s in train_scenarios
     ]
 

@@ -32,7 +32,6 @@ from stateset_agents.training.auto_research.search_spaces import (
     create_quick_search_space,
 )
 
-
 EVAL_SCENARIOS = [
     {
         "topic": "test",
@@ -128,8 +127,12 @@ class TestDuplicateIdGuard:
     def test_duplicate_id_raises(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
         record = ExperimentRecord(
-            experiment_id="exp_1", params={}, metrics={},
-            objective_value=0.5, training_time=0, status="keep",
+            experiment_id="exp_1",
+            params={},
+            metrics={},
+            objective_value=0.5,
+            training_time=0,
+            status="keep",
         )
         tracker.record(record)
 
@@ -139,8 +142,12 @@ class TestDuplicateIdGuard:
     def test_load_record_does_not_persist(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
         record = ExperimentRecord(
-            experiment_id="exp_1", params={"lr": 0.001}, metrics={},
-            objective_value=0.5, training_time=0, status="keep",
+            experiment_id="exp_1",
+            params={"lr": 0.001},
+            metrics={},
+            objective_value=0.5,
+            training_time=0,
+            status="keep",
         )
         tracker.load_record(record)
 
@@ -151,28 +158,52 @@ class TestDuplicateIdGuard:
     def test_load_then_record_new_works(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
         # Load old record
-        tracker.load_record(ExperimentRecord(
-            experiment_id="exp_1", params={}, metrics={},
-            objective_value=0.5, training_time=0, status="keep",
-        ))
+        tracker.load_record(
+            ExperimentRecord(
+                experiment_id="exp_1",
+                params={},
+                metrics={},
+                objective_value=0.5,
+                training_time=0,
+                status="keep",
+            )
+        )
         # Record new one — should work fine
-        tracker.record(ExperimentRecord(
-            experiment_id="exp_2", params={}, metrics={},
-            objective_value=0.6, training_time=1, status="keep",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="exp_2",
+                params={},
+                metrics={},
+                objective_value=0.6,
+                training_time=1,
+                status="keep",
+            )
+        )
         assert tracker.num_experiments == 2
 
     def test_load_then_record_same_id_raises(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
-        tracker.load_record(ExperimentRecord(
-            experiment_id="exp_1", params={}, metrics={},
-            objective_value=0.5, training_time=0, status="keep",
-        ))
+        tracker.load_record(
+            ExperimentRecord(
+                experiment_id="exp_1",
+                params={},
+                metrics={},
+                objective_value=0.5,
+                training_time=0,
+                status="keep",
+            )
+        )
         with pytest.raises(ValueError, match="already recorded"):
-            tracker.record(ExperimentRecord(
-                experiment_id="exp_1", params={}, metrics={},
-                objective_value=0.6, training_time=1, status="keep",
-            ))
+            tracker.record(
+                ExperimentRecord(
+                    experiment_id="exp_1",
+                    params={},
+                    metrics={},
+                    objective_value=0.6,
+                    training_time=1,
+                    status="keep",
+                )
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +225,9 @@ class TestTSVHeaderRecovery:
     def test_tsv_header_preserved_if_exists(self, tmp_path):
         # Create existing TSV
         tsv_path = tmp_path / "results.tsv"
-        tsv_path.write_text("experiment_id\tobjective\ttraining_time\tstatus\tdescription\n")
+        tsv_path.write_text(
+            "experiment_id\tobjective\ttraining_time\tstatus\tdescription\n"
+        )
 
         ExperimentTracker(tmp_path)
         # Should not duplicate header
@@ -210,18 +243,36 @@ class TestTSVHeaderRecovery:
 class TestAnalysis:
     def test_get_analysis_basic(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
-        tracker.record(ExperimentRecord(
-            experiment_id="baseline", params={}, metrics={},
-            objective_value=0.5, training_time=0, status="keep",
-        ))
-        tracker.record(ExperimentRecord(
-            experiment_id="exp_1", params={"lr": 0.001}, metrics={},
-            objective_value=0.7, training_time=10, status="keep",
-        ))
-        tracker.record(ExperimentRecord(
-            experiment_id="exp_2", params={"lr": 0.01}, metrics={},
-            objective_value=0.3, training_time=8, status="discard",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="baseline",
+                params={},
+                metrics={},
+                objective_value=0.5,
+                training_time=0,
+                status="keep",
+            )
+        )
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="exp_1",
+                params={"lr": 0.001},
+                metrics={},
+                objective_value=0.7,
+                training_time=10,
+                status="keep",
+            )
+        )
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="exp_2",
+                params={"lr": 0.01},
+                metrics={},
+                objective_value=0.3,
+                training_time=8,
+                status="discard",
+            )
+        )
 
         analysis = tracker.get_analysis()
         assert analysis["total_experiments"] == 3
@@ -297,9 +348,12 @@ class TestWandBIntegration:
         mock_wandb.finish = MagicMock()
         mock_wandb.summary = MagicMock()
 
-        with patch.object(
-            AutoResearchLoop, "_train_with_params", new_callable=AsyncMock
-        ), patch.dict("sys.modules", {"wandb": mock_wandb}):
+        with (
+            patch.object(
+                AutoResearchLoop, "_train_with_params", new_callable=AsyncMock
+            ),
+            patch.dict("sys.modules", {"wandb": mock_wandb}),
+        ):
             await run_auto_research(
                 agent=agent,
                 environment=env,
@@ -348,9 +402,12 @@ class TestWandBIntegration:
         mock_wandb = MagicMock()
         mock_wandb.init.side_effect = RuntimeError("wandb init failed")
 
-        with patch.object(
-            AutoResearchLoop, "_train_with_params", new_callable=AsyncMock
-        ), patch.dict("sys.modules", {"wandb": mock_wandb}):
+        with (
+            patch.object(
+                AutoResearchLoop, "_train_with_params", new_callable=AsyncMock
+            ),
+            patch.dict("sys.modules", {"wandb": mock_wandb}),
+        ):
             tracker = await run_auto_research(
                 agent=agent,
                 environment=env,
@@ -651,9 +708,12 @@ class TestStubAgentDetection:
     @pytest.mark.asyncio
     async def test_stub_detected_with_no_model(self, tmp_path):
         config = AutoResearchConfig(
-            time_budget=10, max_experiments=1,
-            output_dir=str(tmp_path), search_space_name="quick",
-            eval_episodes=1, save_checkpoints=False,
+            time_budget=10,
+            max_experiments=1,
+            output_dir=str(tmp_path),
+            search_space_name="quick",
+            eval_episodes=1,
+            save_checkpoints=False,
         )
         agent = AsyncMock()
         agent.model = None
@@ -661,9 +721,11 @@ class TestStubAgentDetection:
         reward_fn = MagicMock()
 
         loop = AutoResearchLoop(
-            agent=agent, environment=env,
+            agent=agent,
+            environment=env,
             eval_scenarios=EVAL_SCENARIOS,
-            reward_fn=reward_fn, config=config,
+            reward_fn=reward_fn,
+            config=config,
             proposer=CountingProposer(),
         )
         assert loop._is_stub_agent() is True
@@ -671,9 +733,12 @@ class TestStubAgentDetection:
     @pytest.mark.asyncio
     async def test_real_model_not_detected_as_stub(self, tmp_path):
         config = AutoResearchConfig(
-            time_budget=10, max_experiments=1,
-            output_dir=str(tmp_path), search_space_name="quick",
-            eval_episodes=1, save_checkpoints=False,
+            time_budget=10,
+            max_experiments=1,
+            output_dir=str(tmp_path),
+            search_space_name="quick",
+            eval_episodes=1,
+            save_checkpoints=False,
         )
         agent = AsyncMock()
         agent.model = MagicMock()
@@ -682,9 +747,11 @@ class TestStubAgentDetection:
         reward_fn = MagicMock()
 
         loop = AutoResearchLoop(
-            agent=agent, environment=env,
+            agent=agent,
+            environment=env,
             eval_scenarios=EVAL_SCENARIOS,
-            reward_fn=reward_fn, config=config,
+            reward_fn=reward_fn,
+            config=config,
             proposer=CountingProposer(),
         )
         assert loop._is_stub_agent() is False
@@ -719,11 +786,12 @@ class TestGPUCleanup:
         async def crash_train(params):
             raise RuntimeError("OOM")
 
-        with patch.object(
-            AutoResearchLoop, "_train_with_params", side_effect=crash_train
-        ), patch.object(
-            AutoResearchLoop, "_cleanup_gpu"
-        ) as mock_cleanup:
+        with (
+            patch.object(
+                AutoResearchLoop, "_train_with_params", side_effect=crash_train
+            ),
+            patch.object(AutoResearchLoop, "_cleanup_gpu") as mock_cleanup,
+        ):
             await run_auto_research(
                 agent=agent,
                 environment=env,
@@ -734,7 +802,9 @@ class TestGPUCleanup:
             )
 
         # Cleanup should have been called for each crashed experiment
-        assert mock_cleanup.call_count >= 2  # 2 experiments crash (baseline doesn't train)
+        assert (
+            mock_cleanup.call_count >= 2
+        )  # 2 experiments crash (baseline doesn't train)
 
 
 class TestEnhancedAnalysis:
@@ -743,14 +813,16 @@ class TestEnhancedAnalysis:
     def test_analysis_includes_convergence_curve(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
         for i in range(8):
-            tracker.record(ExperimentRecord(
-                experiment_id=f"exp_{i}",
-                params={"lr": 1e-5 + i * 1e-6},
-                metrics={},
-                objective_value=0.5 + i * 0.02,
-                training_time=10.0,
-                status="keep" if i % 2 == 0 else "discard",
-            ))
+            tracker.record(
+                ExperimentRecord(
+                    experiment_id=f"exp_{i}",
+                    params={"lr": 1e-5 + i * 1e-6},
+                    metrics={},
+                    objective_value=0.5 + i * 0.02,
+                    training_time=10.0,
+                    status="keep" if i % 2 == 0 else "discard",
+                )
+            )
 
         analysis = tracker.get_analysis()
         assert "convergence_curve" in analysis
@@ -763,14 +835,16 @@ class TestEnhancedAnalysis:
     def test_analysis_includes_parameter_importance(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
         for i in range(8):
-            tracker.record(ExperimentRecord(
-                experiment_id=f"exp_{i}",
-                params={"lr": 1e-5 * (i + 1), "temp": 0.5 + i * 0.05},
-                metrics={},
-                objective_value=0.3 + i * 0.05,
-                training_time=10.0,
-                status="keep",
-            ))
+            tracker.record(
+                ExperimentRecord(
+                    experiment_id=f"exp_{i}",
+                    params={"lr": 1e-5 * (i + 1), "temp": 0.5 + i * 0.05},
+                    metrics={},
+                    objective_value=0.3 + i * 0.05,
+                    training_time=10.0,
+                    status="keep",
+                )
+            )
 
         analysis = tracker.get_analysis()
         assert "parameter_importance" in analysis
@@ -778,14 +852,16 @@ class TestEnhancedAnalysis:
 
     def test_analysis_includes_experiments_for_jupyter(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
-        tracker.record(ExperimentRecord(
-            experiment_id="baseline",
-            params={"lr": 1e-5},
-            metrics={"eval_reward": 0.5},
-            objective_value=0.5,
-            training_time=0,
-            status="keep",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="baseline",
+                params={"lr": 1e-5},
+                metrics={"eval_reward": 0.5},
+                objective_value=0.5,
+                training_time=0,
+                status="keep",
+            )
+        )
 
         analysis = tracker.get_analysis()
         assert "experiments" in analysis
@@ -804,15 +880,42 @@ class TestTrackerLoadFromDisk:
         # Write a fake completed run
         jsonl = tmp_path / "experiments.jsonl"
         jsonl.write_text(
-            json.dumps({"experiment_id": "baseline", "params": {"lr": 1e-5},
-                        "metrics": {"eval_reward": 0.5}, "objective_value": 0.5,
-                        "training_time": 0, "status": "keep", "description": "baseline"}) + "\n"
-            + json.dumps({"experiment_id": "exp_0001", "params": {"lr": 2e-5},
-                          "metrics": {"eval_reward": 0.6}, "objective_value": 0.6,
-                          "training_time": 10, "status": "keep", "description": "lr up"}) + "\n"
-            + json.dumps({"experiment_id": "exp_0002", "params": {"lr": 3e-5},
-                          "metrics": {"eval_reward": 0.4}, "objective_value": 0.4,
-                          "training_time": 8, "status": "discard", "description": "lr too high"}) + "\n"
+            json.dumps(
+                {
+                    "experiment_id": "baseline",
+                    "params": {"lr": 1e-5},
+                    "metrics": {"eval_reward": 0.5},
+                    "objective_value": 0.5,
+                    "training_time": 0,
+                    "status": "keep",
+                    "description": "baseline",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "experiment_id": "exp_0001",
+                    "params": {"lr": 2e-5},
+                    "metrics": {"eval_reward": 0.6},
+                    "objective_value": 0.6,
+                    "training_time": 10,
+                    "status": "keep",
+                    "description": "lr up",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "experiment_id": "exp_0002",
+                    "params": {"lr": 3e-5},
+                    "metrics": {"eval_reward": 0.4},
+                    "objective_value": 0.4,
+                    "training_time": 8,
+                    "status": "discard",
+                    "description": "lr too high",
+                }
+            )
+            + "\n"
         )
 
         tracker = ExperimentTracker.load(str(tmp_path))
@@ -831,12 +934,18 @@ class TestTrackerLoadFromDisk:
         jsonl = tmp_path / "experiments.jsonl"
         lines = []
         for i in range(8):
-            lines.append(json.dumps({
-                "experiment_id": f"exp_{i}",
-                "params": {"lr": 1e-5 * (i + 1), "temp": 0.5 + i * 0.05},
-                "metrics": {}, "objective_value": 0.3 + i * 0.05,
-                "training_time": 10, "status": "keep",
-            }))
+            lines.append(
+                json.dumps(
+                    {
+                        "experiment_id": f"exp_{i}",
+                        "params": {"lr": 1e-5 * (i + 1), "temp": 0.5 + i * 0.05},
+                        "metrics": {},
+                        "objective_value": 0.3 + i * 0.05,
+                        "training_time": 10,
+                        "status": "keep",
+                    }
+                )
+            )
         jsonl.write_text("\n".join(lines) + "\n")
 
         tracker = ExperimentTracker.load(str(tmp_path))
@@ -854,12 +963,16 @@ class TestConfigFromFile:
 
     def test_from_json(self, tmp_path):
         config_path = tmp_path / "config.json"
-        config_path.write_text(json.dumps({
-            "time_budget": 120,
-            "proposer": "smart",
-            "search_space_name": "quick",
-            "max_experiments": 50,
-        }))
+        config_path.write_text(
+            json.dumps(
+                {
+                    "time_budget": 120,
+                    "proposer": "smart",
+                    "search_space_name": "quick",
+                    "max_experiments": 50,
+                }
+            )
+        )
 
         config = AutoResearchConfig.from_file(config_path)
         assert config.time_budget == 120
@@ -869,12 +982,16 @@ class TestConfigFromFile:
 
     def test_from_json_nested(self, tmp_path):
         config_path = tmp_path / "config.json"
-        config_path.write_text(json.dumps({
-            "auto_research": {
-                "time_budget": 60,
-                "proposer": "bayesian",
-            }
-        }))
+        config_path.write_text(
+            json.dumps(
+                {
+                    "auto_research": {
+                        "time_budget": 60,
+                        "proposer": "bayesian",
+                    }
+                }
+            )
+        )
 
         config = AutoResearchConfig.from_file(config_path)
         assert config.time_budget == 60
@@ -883,12 +1000,16 @@ class TestConfigFromFile:
     def test_aliases(self, tmp_path):
         """Common aliases like 'algorithm' and 'patience' should work."""
         config_path = tmp_path / "config.json"
-        config_path.write_text(json.dumps({
-            "algorithm": "dapo",
-            "patience": 15,
-            "search_space": "model",
-            "wandb": True,
-        }))
+        config_path.write_text(
+            json.dumps(
+                {
+                    "algorithm": "dapo",
+                    "patience": 15,
+                    "search_space": "model",
+                    "wandb": True,
+                }
+            )
+        )
 
         config = AutoResearchConfig.from_file(config_path)
         assert config.trainer_algorithm == "dapo"
@@ -898,11 +1019,15 @@ class TestConfigFromFile:
 
     def test_unknown_keys_ignored(self, tmp_path):
         config_path = tmp_path / "config.json"
-        config_path.write_text(json.dumps({
-            "time_budget": 120,
-            "unknown_field": "should be ignored",
-            "another_unknown": 42,
-        }))
+        config_path.write_text(
+            json.dumps(
+                {
+                    "time_budget": 120,
+                    "unknown_field": "should be ignored",
+                    "another_unknown": 42,
+                }
+            )
+        )
 
         config = AutoResearchConfig.from_file(config_path)
         assert config.time_budget == 120
@@ -920,8 +1045,10 @@ class TestConfigFromFile:
 
     def test_roundtrip_json(self, tmp_path):
         original = AutoResearchConfig(
-            time_budget=180, proposer="adaptive",
-            max_experiments=75, improvement_patience=8,
+            time_budget=180,
+            proposer="adaptive",
+            max_experiments=75,
+            improvement_patience=8,
         )
         config_path = tmp_path / "roundtrip.json"
         config_path.write_text(json.dumps(original.to_dict()))
@@ -947,9 +1074,13 @@ class TestCategoricalParameterImportance:
         records = [
             ExperimentRecord("e1", {"lr": 1e-5, "algo": "gspo"}, {}, 0.7, 10, "keep"),
             ExperimentRecord("e2", {"lr": 2e-5, "algo": "gspo"}, {}, 0.75, 10, "keep"),
-            ExperimentRecord("e3", {"lr": 1e-5, "algo": "grpo"}, {}, 0.4, 10, "discard"),
+            ExperimentRecord(
+                "e3", {"lr": 1e-5, "algo": "grpo"}, {}, 0.4, 10, "discard"
+            ),
             ExperimentRecord("e4", {"lr": 3e-5, "algo": "gspo"}, {}, 0.65, 10, "keep"),
-            ExperimentRecord("e5", {"lr": 1e-6, "algo": "grpo"}, {}, 0.35, 10, "discard"),
+            ExperimentRecord(
+                "e5", {"lr": 1e-6, "algo": "grpo"}, {}, 0.35, 10, "discard"
+            ),
             ExperimentRecord("e6", {"lr": 2e-5, "algo": "gspo"}, {}, 0.72, 10, "keep"),
             ExperimentRecord("e7", {"lr": 5e-5, "algo": "grpo"}, {}, 0.5, 10, "keep"),
         ]
@@ -972,11 +1103,21 @@ class TestCategoricalParameterImportance:
 
         records = [
             ExperimentRecord("e1", {"lr": 1e-5, "use_lora": True}, {}, 0.7, 10, "keep"),
-            ExperimentRecord("e2", {"lr": 2e-5, "use_lora": True}, {}, 0.75, 10, "keep"),
-            ExperimentRecord("e3", {"lr": 1e-5, "use_lora": False}, {}, 0.4, 10, "discard"),
-            ExperimentRecord("e4", {"lr": 3e-5, "use_lora": True}, {}, 0.65, 10, "keep"),
-            ExperimentRecord("e5", {"lr": 1e-6, "use_lora": False}, {}, 0.35, 10, "discard"),
-            ExperimentRecord("e6", {"lr": 2e-5, "use_lora": True}, {}, 0.72, 10, "keep"),
+            ExperimentRecord(
+                "e2", {"lr": 2e-5, "use_lora": True}, {}, 0.75, 10, "keep"
+            ),
+            ExperimentRecord(
+                "e3", {"lr": 1e-5, "use_lora": False}, {}, 0.4, 10, "discard"
+            ),
+            ExperimentRecord(
+                "e4", {"lr": 3e-5, "use_lora": True}, {}, 0.65, 10, "keep"
+            ),
+            ExperimentRecord(
+                "e5", {"lr": 1e-6, "use_lora": False}, {}, 0.35, 10, "discard"
+            ),
+            ExperimentRecord(
+                "e6", {"lr": 2e-5, "use_lora": True}, {}, 0.72, 10, "keep"
+            ),
         ]
 
         importance = compute_parameter_importance(records)
@@ -988,24 +1129,28 @@ class TestToDataFrame:
 
     def test_to_dataframe_basic(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
-        tracker.record(ExperimentRecord(
-            experiment_id="baseline",
-            params={"lr": 1e-5, "temp": 0.7},
-            metrics={"eval_reward": 0.5, "eval_reward_std": 0.1},
-            objective_value=0.5,
-            training_time=0,
-            status="keep",
-            description="baseline",
-        ))
-        tracker.record(ExperimentRecord(
-            experiment_id="exp_1",
-            params={"lr": 2e-5, "temp": 0.6},
-            metrics={"eval_reward": 0.6, "eval_reward_std": 0.08},
-            objective_value=0.6,
-            training_time=10,
-            status="keep",
-            description="lr up",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="baseline",
+                params={"lr": 1e-5, "temp": 0.7},
+                metrics={"eval_reward": 0.5, "eval_reward_std": 0.1},
+                objective_value=0.5,
+                training_time=0,
+                status="keep",
+                description="baseline",
+            )
+        )
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="exp_1",
+                params={"lr": 2e-5, "temp": 0.6},
+                metrics={"eval_reward": 0.6, "eval_reward_std": 0.08},
+                objective_value=0.6,
+                training_time=10,
+                status="keep",
+                description="lr up",
+            )
+        )
 
         df = tracker.to_dataframe()
 
@@ -1024,30 +1169,36 @@ class TestToDataFrame:
 
     def test_to_dataframe_running_best_ignores_discard(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
-        tracker.record(ExperimentRecord(
-            experiment_id="baseline",
-            params={},
-            metrics={"eval_reward": 0.5},
-            objective_value=0.5,
-            training_time=0,
-            status="keep",
-        ))
-        tracker.record(ExperimentRecord(
-            experiment_id="exp_rejected",
-            params={},
-            metrics={"eval_reward": 0.7},
-            objective_value=0.7,
-            training_time=0,
-            status="discard",
-        ))
-        tracker.record(ExperimentRecord(
-            experiment_id="exp_kept",
-            params={},
-            metrics={"eval_reward": 0.6},
-            objective_value=0.6,
-            training_time=0,
-            status="keep",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="baseline",
+                params={},
+                metrics={"eval_reward": 0.5},
+                objective_value=0.5,
+                training_time=0,
+                status="keep",
+            )
+        )
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="exp_rejected",
+                params={},
+                metrics={"eval_reward": 0.7},
+                objective_value=0.7,
+                training_time=0,
+                status="discard",
+            )
+        )
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="exp_kept",
+                params={},
+                metrics={"eval_reward": 0.6},
+                objective_value=0.6,
+                training_time=0,
+                status="keep",
+            )
+        )
 
         df = tracker.to_dataframe()
         assert list(df["running_best"]) == [0.5, 0.5, 0.6]
@@ -1061,12 +1212,28 @@ class TestToDataFrame:
         """Load from disk then convert to DataFrame."""
         jsonl = tmp_path / "experiments.jsonl"
         jsonl.write_text(
-            json.dumps({"experiment_id": "b", "params": {"lr": 1e-5},
-                        "metrics": {"r": 0.5}, "objective_value": 0.5,
-                        "training_time": 0, "status": "keep"}) + "\n"
-            + json.dumps({"experiment_id": "e1", "params": {"lr": 2e-5},
-                          "metrics": {"r": 0.7}, "objective_value": 0.7,
-                          "training_time": 10, "status": "keep"}) + "\n"
+            json.dumps(
+                {
+                    "experiment_id": "b",
+                    "params": {"lr": 1e-5},
+                    "metrics": {"r": 0.5},
+                    "objective_value": 0.5,
+                    "training_time": 0,
+                    "status": "keep",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "experiment_id": "e1",
+                    "params": {"lr": 2e-5},
+                    "metrics": {"r": 0.7},
+                    "objective_value": 0.7,
+                    "training_time": 10,
+                    "status": "keep",
+                }
+            )
+            + "\n"
         )
 
         tracker = ExperimentTracker.load(str(tmp_path))
@@ -1077,14 +1244,26 @@ class TestToDataFrame:
 
     def test_to_dataframe_minimize_direction(self, tmp_path):
         tracker = ExperimentTracker(tmp_path, direction="minimize")
-        tracker.record(ExperimentRecord(
-            experiment_id="a", params={}, metrics={},
-            objective_value=1.0, training_time=0, status="keep",
-        ))
-        tracker.record(ExperimentRecord(
-            experiment_id="b", params={}, metrics={},
-            objective_value=0.5, training_time=0, status="keep",
-        ))
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="a",
+                params={},
+                metrics={},
+                objective_value=1.0,
+                training_time=0,
+                status="keep",
+            )
+        )
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="b",
+                params={},
+                metrics={},
+                objective_value=0.5,
+                training_time=0,
+                status="keep",
+            )
+        )
 
         df = tracker.to_dataframe()
         assert df["running_best"].iloc[0] == 1.0
@@ -1146,15 +1325,55 @@ class TestCompareRuns:
         run_a = tmp_path / "run_perturbation"
         run_a.mkdir()
         (run_a / "experiments.jsonl").write_text(
-            json.dumps({"experiment_id": "baseline", "params": {"lr": 1e-5}, "metrics": {}, "objective_value": 0.5, "training_time": 0, "status": "keep"}) + "\n"
-            + json.dumps({"experiment_id": "exp_1", "params": {"lr": 2e-5}, "metrics": {}, "objective_value": 0.6, "training_time": 10, "status": "keep"}) + "\n"
+            json.dumps(
+                {
+                    "experiment_id": "baseline",
+                    "params": {"lr": 1e-5},
+                    "metrics": {},
+                    "objective_value": 0.5,
+                    "training_time": 0,
+                    "status": "keep",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "experiment_id": "exp_1",
+                    "params": {"lr": 2e-5},
+                    "metrics": {},
+                    "objective_value": 0.6,
+                    "training_time": 10,
+                    "status": "keep",
+                }
+            )
+            + "\n"
         )
 
         run_b = tmp_path / "run_smart"
         run_b.mkdir()
         (run_b / "experiments.jsonl").write_text(
-            json.dumps({"experiment_id": "baseline", "params": {"lr": 1e-5}, "metrics": {}, "objective_value": 0.5, "training_time": 0, "status": "keep"}) + "\n"
-            + json.dumps({"experiment_id": "exp_1", "params": {"lr": 3e-5}, "metrics": {}, "objective_value": 0.7, "training_time": 12, "status": "keep"}) + "\n"
+            json.dumps(
+                {
+                    "experiment_id": "baseline",
+                    "params": {"lr": 1e-5},
+                    "metrics": {},
+                    "objective_value": 0.5,
+                    "training_time": 0,
+                    "status": "keep",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "experiment_id": "exp_1",
+                    "params": {"lr": 3e-5},
+                    "metrics": {},
+                    "objective_value": 0.7,
+                    "training_time": 12,
+                    "status": "keep",
+                }
+            )
+            + "\n"
         )
 
         report = compare_runs(str(run_a), str(run_b))
@@ -1171,7 +1390,17 @@ class TestCompareRuns:
         run = tmp_path / "single_run"
         run.mkdir()
         (run / "experiments.jsonl").write_text(
-            json.dumps({"experiment_id": "baseline", "params": {}, "metrics": {}, "objective_value": 0.5, "training_time": 0, "status": "keep"}) + "\n"
+            json.dumps(
+                {
+                    "experiment_id": "baseline",
+                    "params": {},
+                    "metrics": {},
+                    "objective_value": 0.5,
+                    "training_time": 0,
+                    "status": "keep",
+                }
+            )
+            + "\n"
         )
 
         report = compare_runs(str(run))
@@ -1218,41 +1447,59 @@ class TestCLIConfigIntegration:
 
     def test_cli_with_config_file(self, tmp_path):
         from typer.testing import CliRunner
+
         from stateset_agents.cli import app
 
         config_path = tmp_path / "test.json"
-        config_path.write_text(json.dumps({
-            "auto_research": {
-                "time_budget": 60,
-                "proposer": "smart",
-                "agent": {"model_name": "gpt2"},
-                "environment": {
-                    "scenarios": [{
-                        "topic": "test",
-                        "context": "Test",
-                        "user_responses": ["Hi"],
-                    }]
+        config_path.write_text(
+            json.dumps(
+                {
+                    "auto_research": {
+                        "time_budget": 60,
+                        "proposer": "smart",
+                        "agent": {"model_name": "gpt2"},
+                        "environment": {
+                            "scenarios": [
+                                {
+                                    "topic": "test",
+                                    "context": "Test",
+                                    "user_responses": ["Hi"],
+                                }
+                            ]
+                        },
+                    }
                 }
-            }
-        }))
+            )
+        )
 
         runner = CliRunner()
-        result = runner.invoke(app, [
-            "auto-research", "--dry-run",
-            "--config", str(config_path),
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "auto-research",
+                "--dry-run",
+                "--config",
+                str(config_path),
+            ],
+        )
         assert result.exit_code == 0
         assert "smart" in result.output
 
     def test_cli_without_config_file(self):
         from typer.testing import CliRunner
+
         from stateset_agents.cli import app
 
         runner = CliRunner()
-        result = runner.invoke(app, [
-            "auto-research", "--dry-run",
-            "--proposer", "adaptive",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "auto-research",
+                "--dry-run",
+                "--proposer",
+                "adaptive",
+            ],
+        )
         assert result.exit_code == 0
         assert "adaptive" in result.output
 
@@ -1267,9 +1514,7 @@ class TestPublicAPIExports:
         assert len(space.dimensions) >= 5
 
     def test_validate_params_exported_from_package(self):
-        from stateset_agents.training.auto_research import (
-            validate_params_against_space,
-        )
+        from stateset_agents.training.auto_research import validate_params_against_space
 
         space = create_quick_search_space()
         warnings = validate_params_against_space({"learning_rate": 1e-5}, space)
@@ -1285,11 +1530,17 @@ class TestLLMProposerOpenAI:
 
         mock_client = MagicMock()
         mock_choice = MagicMock()
-        mock_choice.message.content = json.dumps({
-            "params": {"learning_rate": 1e-4, "num_generations": 8,
-                       "temperature": 0.5, "lora_r": 16},
-            "description": "openai test"
-        })
+        mock_choice.message.content = json.dumps(
+            {
+                "params": {
+                    "learning_rate": 1e-4,
+                    "num_generations": 8,
+                    "temperature": 0.5,
+                    "lora_r": 16,
+                },
+                "description": "openai test",
+            }
+        )
         mock_response = MagicMock()
         mock_response.choices = [mock_choice]
         mock_client.chat.completions.create.return_value = mock_response

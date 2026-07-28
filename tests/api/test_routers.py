@@ -5,7 +5,6 @@ Comprehensive tests for all API endpoints including agents, conversations,
 training, and metrics routers.
 """
 
-
 import pytest
 from fastapi import FastAPI
 

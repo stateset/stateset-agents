@@ -423,7 +423,10 @@ class RedisCacheBackend(CacheBackend):
     def _deserialize(self, data: bytes) -> Any:
         """Deserialize value from Redis storage."""
         if self.serializer == "pickle":
-            return pickle.loads(data)
+            # Pickle deserialization is opt-in (disabled by default; see
+            # allow_pickle gating in __init__) and only reads from this
+            # process's own trusted Redis cache.
+            return pickle.loads(data)  # nosec: B301
         return json.loads(data.decode("utf-8"))
 
     async def clear(self) -> bool:

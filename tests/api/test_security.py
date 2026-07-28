@@ -5,10 +5,12 @@ Comprehensive tests for prompt injection detection, authentication,
 rate limiting, and other security features.
 """
 
-
 import pytest
 
-from stateset_agents.api.constants import MAX_AUTH_FAILURES_BEFORE_LOCKOUT, MAX_MESSAGE_LENGTH
+from stateset_agents.api.constants import (
+    MAX_AUTH_FAILURES_BEFORE_LOCKOUT,
+    MAX_MESSAGE_LENGTH,
+)
 from stateset_agents.api.security import (
     APISecurityMonitor,
     AuthFailureTracker,

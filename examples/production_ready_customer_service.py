@@ -73,10 +73,15 @@ class ProductionCustomerServiceAgent:
         # Error handling — wrap calls with `retry_async` (decorator) +
         # `CircuitBreaker.call(...)` (direct invocation).
         self.retry_config = RetryConfig(
-            max_attempts=3, base_delay=1.0, max_delay=10.0, exponential_base=2.0,
+            max_attempts=3,
+            base_delay=1.0,
+            max_delay=10.0,
+            exponential_base=2.0,
         )
         self.circuit_breaker = CircuitBreaker(
-            failure_threshold=5, recovery_timeout=60.0, expected_exception=Exception,
+            failure_threshold=5,
+            recovery_timeout=60.0,
+            expected_exception=Exception,
         )
 
         # Setup signal handlers for graceful shutdown
@@ -173,7 +178,9 @@ class ProductionCustomerServiceAgent:
             # downstream call with the circuit breaker (`CircuitBreaker.call`).
             @retry_async(self.retry_config)
             async def generate_with_retry():
-                return await self.agent.generate_response(messages, conversation_context)
+                return await self.agent.generate_response(
+                    messages, conversation_context
+                )
 
             response = await self.circuit_breaker.call(generate_with_retry)
 

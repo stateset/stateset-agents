@@ -18,6 +18,7 @@ import pytest
 async def agent_service():
     from stateset_agents.api.services.agent_service import AgentService
     from stateset_agents.utils.security import SecurityMonitor
+
     return AgentService(SecurityMonitor())
 
 

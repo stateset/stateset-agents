@@ -199,7 +199,9 @@ class GRPOShowcase:
     async def initialize_showcase(self):
         """Initialize all showcase components"""
         console.print(
-            Panel.fit("🚀 Initializing GRPO Agent Framework Showcase", style="bold blue")
+            Panel.fit(
+                "🚀 Initializing GRPO Agent Framework Showcase", style="bold blue"
+            )
         )
 
         with Progress(
@@ -233,14 +235,14 @@ class GRPOShowcase:
             # Multi-objective rewards
             self.multi_objective_rewards = {}
             for scenario_name in self.scenarios:
-                self.multi_objective_rewards[
-                    scenario_name
-                ] = create_customer_service_reward(
-                    expected_responses=[
-                        d.get("content", "")
-                        for d in self.scenarios[scenario_name]["dialogues"]
-                    ],
-                    weight=0.4,
+                self.multi_objective_rewards[scenario_name] = (
+                    create_customer_service_reward(
+                        expected_responses=[
+                            d.get("content", "")
+                            for d in self.scenarios[scenario_name]["dialogues"]
+                        ],
+                        weight=0.4,
+                    )
                 )
             progress.update(task2, advance=1)
 

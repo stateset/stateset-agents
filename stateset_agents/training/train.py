@@ -116,11 +116,22 @@ async def train(
     # Create trainer based on mode
     if training_mode == "offline":
         return await _train_offline(
-            agent, config, reward_fn, dataset, save_path, callbacks,
+            agent,
+            config,
+            reward_fn,
+            dataset,
+            save_path,
+            callbacks,
         )
     elif training_mode == "hybrid":
         return await _train_hybrid(
-            agent, environment, config, reward_fn, dataset, save_path, callbacks,
+            agent,
+            environment,
+            config,
+            reward_fn,
+            dataset,
+            save_path,
+            callbacks,
         )
     elif training_mode == "multi_turn":
         trainer: Any = MultiTurnGRPOTrainer(

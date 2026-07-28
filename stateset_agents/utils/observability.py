@@ -354,7 +354,9 @@ class ObservabilityTracer:
         self.metrics.active_spans -= 1
 
         # Update average duration
-        total_duration = self.metrics.average_span_duration * (self.metrics.total_spans - 1)
+        total_duration = self.metrics.average_span_duration * (
+            self.metrics.total_spans - 1
+        )
         duration_ms = span.duration_ms or 0.0
         self.metrics.average_span_duration = (
             total_duration + duration_ms
@@ -363,9 +365,9 @@ class ObservabilityTracer:
         # OpenTelemetry integration
         if HAS_OPENTELEMETRY and hasattr(self, "span_duration"):
             self.span_duration.record(
-                    duration_ms,
-                    {"operation": span.operation_name, "kind": span.kind.value},
-                )
+                duration_ms,
+                {"operation": span.operation_name, "kind": span.kind.value},
+            )
 
         # Check if trace is complete
         self._check_trace_completion(span.trace_id)
@@ -387,7 +389,9 @@ class ObservabilityTracer:
         """Add tag to span"""
         span.tags[key] = value
 
-    def add_span_log(self, span: Span, message: str, level: str = "info", **kwargs) -> None:
+    def add_span_log(
+        self, span: Span, message: str, level: str = "info", **kwargs
+    ) -> None:
         """Add log to span"""
         log_entry = {
             "timestamp": datetime.now().isoformat(),
@@ -464,9 +468,11 @@ class ObservabilityTracer:
             "average_span_duration_ms": self.metrics.average_span_duration,
             "spans_by_operation": dict(self.metrics.spans_by_operation),
             "error_spans": self.metrics.error_spans,
-            "error_rate": self.metrics.error_spans / self.metrics.total_spans
-            if self.metrics.total_spans > 0
-            else 0,
+            "error_rate": (
+                self.metrics.error_spans / self.metrics.total_spans
+                if self.metrics.total_spans > 0
+                else 0
+            ),
         }
 
 
@@ -632,12 +638,12 @@ class ObservabilityManager:
                 "average_duration_ms": sum(durations) / len(durations),
                 "min_duration_ms": min(durations),
                 "max_duration_ms": max(durations),
-                "p95_duration_ms": sorted(durations)[int(len(durations) * 0.95)]
-                if durations
-                else 0,
-                "p99_duration_ms": sorted(durations)[int(len(durations) * 0.99)]
-                if durations
-                else 0,
+                "p95_duration_ms": (
+                    sorted(durations)[int(len(durations) * 0.95)] if durations else 0
+                ),
+                "p99_duration_ms": (
+                    sorted(durations)[int(len(durations) * 0.99)] if durations else 0
+                ),
             }
 
         return summary

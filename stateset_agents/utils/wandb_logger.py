@@ -161,9 +161,9 @@ class WandBLogger:
         try:
             config_dict = {
                 "agent/model_name": agent_config.model_name,
-                "agent/system_prompt_length": len(agent_config.system_prompt)
-                if agent_config.system_prompt
-                else 0,
+                "agent/system_prompt_length": (
+                    len(agent_config.system_prompt) if agent_config.system_prompt else 0
+                ),
                 "agent/temperature": agent_config.temperature,
                 "agent/max_new_tokens": agent_config.max_new_tokens,
                 "agent/torch_dtype": agent_config.torch_dtype,

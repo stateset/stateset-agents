@@ -75,7 +75,9 @@ def _write_mapping_file(payload: dict[str, Any], path: Path) -> Path:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     if suffix in {".json", ".js"}:
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return path
 
     try:
@@ -143,7 +145,9 @@ def get_qwen3_5_profile_overrides(starter_profile: str = "balanced") -> dict[str
     }
     if starter_profile not in profiles:
         supported = ", ".join(QWEN35_08B_STARTER_PROFILE_CHOICES)
-        raise ValueError(f"Unsupported Qwen starter profile: {starter_profile}. Use one of: {supported}.")
+        raise ValueError(
+            f"Unsupported Qwen starter profile: {starter_profile}. Use one of: {supported}."
+        )
     return dict(profiles[starter_profile])
 
 
@@ -151,7 +155,9 @@ def get_qwen3_5_profile_description(starter_profile: str = "balanced") -> str:
     """Return the human-readable description for a starter profile."""
     if starter_profile not in QWEN35_08B_STARTER_PROFILE_DESCRIPTIONS:
         supported = ", ".join(QWEN35_08B_STARTER_PROFILE_CHOICES)
-        raise ValueError(f"Unsupported Qwen starter profile: {starter_profile}. Use one of: {supported}.")
+        raise ValueError(
+            f"Unsupported Qwen starter profile: {starter_profile}. Use one of: {supported}."
+        )
     return QWEN35_08B_STARTER_PROFILE_DESCRIPTIONS[starter_profile]
 
 
@@ -411,7 +417,9 @@ def validate_qwen3_5_config(config: Qwen35Config) -> list[str]:
             "starter_profile is outside the built-in profiles; balance memory and context carefully"
         )
     if config.task not in QWEN35_08B_TASK_CHOICES:
-        warnings.append("task is outside the built-in starter presets; default environment fallbacks may be used")
+        warnings.append(
+            "task is outside the built-in starter presets; default environment fallbacks may be used"
+        )
     if "qwen" not in config.model_name.lower():
         warnings.append("model_name does not look like a Qwen checkpoint")
     if "qwen3.5-0.8b" not in config.model_name.lower():
@@ -461,7 +469,9 @@ def load_qwen3_5_config_file(path: str | Path) -> Qwen35Config:
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     payload = _read_mapping_file(config_path)
-    config_payload = payload.get("config") if isinstance(payload.get("config"), dict) else payload
+    config_payload = (
+        payload.get("config") if isinstance(payload.get("config"), dict) else payload
+    )
     if not isinstance(config_payload, dict):
         raise ValueError("Qwen starter config root must be a JSON/YAML object.")
 

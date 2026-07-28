@@ -61,16 +61,13 @@ class RulerResponse(BaseModel):
 
 # Pre-defined rubrics for different domains
 RUBRICS = {
-    "default": dedent(
-        """
+    "default": dedent("""
         - A trajectory that achieves its goal should always get a significantly higher score than a trajectory that does not achieve its goal.
         - A trajectory that achieves its goal more efficiently (eg. by avoiding unproductive detours) should get a higher score than a trajectory that achieves its goal less efficiently.
         - If one trajectory is only slightly better than another, the difference in scores should be small. If it is significantly better, the difference in scores should be large.
         - You may give some partial credit for a trajectory that makes progress towards its goal but does not complete it.
-    """
-    ),
-    "customer_service": dedent(
-        """
+    """),
+    "customer_service": dedent("""
         Score each assistant response based on:
         - Helpfulness: Does it directly address the customer's query?
         - Empathy: Shows understanding of customer's situation?
@@ -78,58 +75,47 @@ RUBRICS = {
         - Professionalism: Polite and brand-appropriate tone?
         - Completeness: Provides all necessary information/action steps?
         Give higher scores to responses that excel in multiple categories.
-    """
-    ),
-    "technical_support": dedent(
-        """
+    """),
+    "technical_support": dedent("""
         Evaluate technical support responses on:
         - Accuracy: Is the technical information correct?
         - Clarity: Are complex concepts explained clearly?
         - Step-by-step guidance: Are instructions easy to follow?
         - Problem resolution: Does it solve the user's issue?
         - Alternative solutions: Are fallback options provided?
-    """
-    ),
-    "sales_assistant": dedent(
-        """
+    """),
+    "sales_assistant": dedent("""
         Rate sales interactions based on:
         - Product knowledge: Accurate information about products/services?
         - Customer needs identification: Does it understand what the customer wants?
         - Value proposition: Clearly communicates benefits?
         - Objection handling: Addresses concerns effectively?
         - Call to action: Guides customer to next steps?
-    """
-    ),
-    "educational": dedent(
-        """
+    """),
+    "educational": dedent("""
         Score educational responses on:
         - Correctness: Is the information accurate?
         - Pedagogical approach: Is it appropriate for the learner's level?
         - Engagement: Does it maintain interest?
         - Examples: Are concrete examples provided?
         - Learning reinforcement: Does it check understanding?
-    """
-    ),
-    "creative_writing": dedent(
-        """
+    """),
+    "creative_writing": dedent("""
         Evaluate creative writing responses on:
         - Creativity: Is the content original and imaginative?
         - Coherence: Does the narrative flow logically?
         - Engagement: Is it interesting and captivating?
         - Style: Is the writing style appropriate and well-crafted?
         - Completion: Does it fulfill the creative prompt?
-    """
-    ),
-    "code_assistance": dedent(
-        """
+    """),
+    "code_assistance": dedent("""
         Rate code assistance responses on:
         - Correctness: Is the code syntactically and logically correct?
         - Efficiency: Is the solution optimized and well-structured?
         - Clarity: Are explanations clear and educational?
         - Best practices: Does it follow coding standards?
         - Completeness: Does it address all aspects of the problem?
-    """
-    ),
+    """),
 }
 
 
@@ -450,8 +436,7 @@ class RulerRewardFunction(RewardFunction):
 
         user_text += "Trajectories:\n\n" + "\n\n".join(serialized_trajectories)
 
-        judge_prompt = dedent(
-            f"""
+        judge_prompt = dedent(f"""
             All of the trajectories below have been given the same goal.
             Your job is to consider each of them and give them a score between 0 and 1.
             Take into consideration your best judgement of the agent's goal.
@@ -460,8 +445,7 @@ class RulerRewardFunction(RewardFunction):
             {self.rubric}
 
             Please provide scores for each trajectory with explanations.
-        """
-        )
+        """)
 
         messages = [
             {"role": "system", "content": judge_prompt},

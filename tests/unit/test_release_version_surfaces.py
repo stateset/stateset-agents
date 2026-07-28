@@ -99,8 +99,16 @@ def test_public_docs_and_examples_do_not_embed_internal_identifiers() -> None:
         repo_root / "examples" / "finetune_glm5_1_gspo.py",
         repo_root / "examples" / "finetune_glm5_2_gspo.py",
         repo_root / "scripts" / "gke" / "publish_model_to_gcs.sh",
-        repo_root / "deployment" / "helm" / "stateset-agents" / "values-glm5-1-fp8.yaml",
-        repo_root / "deployment" / "helm" / "stateset-agents" / "values-glm5-2-fp8.yaml",
+        repo_root
+        / "deployment"
+        / "helm"
+        / "stateset-agents"
+        / "values-glm5-1-fp8.yaml",
+        repo_root
+        / "deployment"
+        / "helm"
+        / "stateset-agents"
+        / "values-glm5-2-fp8.yaml",
         repo_root / "deployment" / "kubernetes" / "glm5-1-vllm-fp8.yaml",
         repo_root / "deployment" / "kubernetes" / "glm5-2-vllm-fp8.yaml",
     ]

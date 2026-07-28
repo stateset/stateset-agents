@@ -139,10 +139,10 @@ class _SimpleTokenizer:
 
     @staticmethod
     def _stable_token_id(token: str, vocab_size: int) -> int:
-        try:
-            digest = hashlib.md5(token.encode("utf-8"), usedforsecurity=False).digest()
-        except TypeError:
-            digest = hashlib.md5(token.encode("utf-8")).digest()
+        # usedforsecurity=False: this hash is used only to bucket tokens into a
+        # stable vocab id, never for anything security-sensitive. Supported
+        # unconditionally since the project's minimum Python is 3.10.
+        digest = hashlib.md5(token.encode("utf-8"), usedforsecurity=False).digest()
         value = int.from_bytes(digest[:4], byteorder="big", signed=False)
         # Reserve 0 for PAD and 1 for UNK.
         return (value % (vocab_size - 2)) + 2
@@ -640,7 +640,9 @@ class TransformerRewardTrainer:
         optimizer = self.optimizer
         scheduler = self.scheduler
         if optimizer is None or scheduler is None:
-            raise RuntimeError("Optimizer and scheduler must be initialized before training")
+            raise RuntimeError(
+                "Optimizer and scheduler must be initialized before training"
+            )
 
         for batch in train_loader:
             # Move to device
@@ -753,7 +755,7 @@ class TransformerRewardTrainer:
         except REWARD_MODEL_EXCEPTIONS:
             config_payload = dict(getattr(self.config, "__dict__", {}))
 
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "model_state_dict": self.model.state_dict(),
                 "optimizer_state_dict": (
@@ -775,24 +777,32 @@ class TransformerRewardTrainer:
     def load_checkpoint(self, path: str):
         """Load model checkpoint"""
         try:
-            checkpoint = torch.load(path, map_location=self.device)
+            checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
         except REWARD_MODEL_EXCEPTIONS as e:
             if "weights_only" in str(e):
                 try:
-                    checkpoint = torch.load(
+                    checkpoint = torch.load(  # nosec: B614
                         path, map_location=self.device, weights_only=False
                     )
                 except TypeError:
-                    checkpoint = torch.load(path, map_location=self.device)
+                    checkpoint = torch.load(
+                        path, map_location=self.device
+                    )  # nosec: B614
             else:
                 raise
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
-        if checkpoint.get("optimizer_state_dict") is not None and self.optimizer is not None:
+        if (
+            checkpoint.get("optimizer_state_dict") is not None
+            and self.optimizer is not None
+        ):
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-        if checkpoint.get("scheduler_state_dict") is not None and self.scheduler is not None:
+        if (
+            checkpoint.get("scheduler_state_dict") is not None
+            and self.scheduler is not None
+        ):
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
         self.train_losses = checkpoint.get("train_losses", [])

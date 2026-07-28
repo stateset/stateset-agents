@@ -505,9 +505,11 @@ class APISecurityMonitor:
             client_ip=client_ip,
             path=path,
             details={
-                "content_preview": content_preview[:100] + "..."
-                if len(content_preview) > 100
-                else content_preview,
+                "content_preview": (
+                    content_preview[:100] + "..."
+                    if len(content_preview) > 100
+                    else content_preview
+                ),
                 "matched_patterns": patterns,
             },
             request_id=request_id,

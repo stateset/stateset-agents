@@ -31,11 +31,11 @@ import logging
 import re
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
 from re import Pattern
-from collections.abc import Callable
+from typing import Any
 
 from .error_handling import ErrorCode, ValidationException
 

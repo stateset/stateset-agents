@@ -88,9 +88,11 @@ class SimilarityAwareReward(RewardFunction):
             breakdown=breakdown,
             metadata={
                 "has_expected_responses": bool(similarity_scores),
-                "avg_similarity": sum(similarity_scores) / len(similarity_scores)
-                if similarity_scores
-                else 0.0,
+                "avg_similarity": (
+                    sum(similarity_scores) / len(similarity_scores)
+                    if similarity_scores
+                    else 0.0
+                ),
             },
         )
 

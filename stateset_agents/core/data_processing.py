@@ -350,9 +350,7 @@ def _get_train_test_split():
             train_test_split = None
             return None
         try:
-            from sklearn.model_selection import (
-                train_test_split as _tts,
-            )
+            from sklearn.model_selection import train_test_split as _tts
 
             train_test_split = _tts
         except ImportError:  # pragma: no cover - optional dependency

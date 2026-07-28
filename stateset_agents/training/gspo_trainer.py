@@ -39,8 +39,8 @@ from stateset_agents.rewards.multi_objective_reward import (
 
 from .gspo_config import GSPOConfig
 from .gspo_generation import (
-    GSPOTrajectoryGenerator,
     VLLM_AVAILABLE,
+    GSPOTrajectoryGenerator,
     _get_model_device,
     build_scoring_text,
     render_prompt_for_scoring,
@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 # Optional training dependencies
 try:
     import wandb as _wandb
+
     wandb: Any | None = _wandb
 except ImportError:  # pragma: no cover - optional dependency
     wandb = None
@@ -248,9 +249,11 @@ class GSPOModelManager:
 
             # Model loading kwargs
             model_kwargs = {
-                "torch_dtype": torch.float16
-                if self.config.fp16
-                else (torch.bfloat16 if self.config.bf16 else torch.float32),
+                "torch_dtype": (
+                    torch.float16
+                    if self.config.fp16
+                    else (torch.bfloat16 if self.config.bf16 else torch.float32)
+                ),
                 "device_map": "auto" if torch.cuda.is_available() else None,
                 "trust_remote_code": True,
             }
@@ -342,6 +345,7 @@ class GSPOModelManager:
         except MODEL_LOAD_EXCEPTIONS as e:
             logger.error(f"Failed to load model: {e}")
             raise
+
 
 class GSPOTrainer:
     """
@@ -893,7 +897,6 @@ class GSPOTrainer:
 
 
 from .gspo_entrypoints import train_customer_service_with_gspo, train_with_gspo
-
 
 # Backwards-compatible alias (some users expect snake_case-like class names).
 GSPO_Trainer = GSPOTrainer

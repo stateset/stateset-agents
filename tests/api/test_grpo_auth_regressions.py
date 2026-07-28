@@ -2,9 +2,9 @@
 
 import hashlib
 
+import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-import pytest
 
 from stateset_agents.api.grpo.config import reset_config
 from stateset_agents.api.grpo.service import create_app, verify_request
@@ -67,8 +67,10 @@ def test_verify_request_uses_stable_hashed_identity_for_api_key():
 
     assert response_a.status_code == 200
     assert response_b.status_code == 200
-    assert response_a.json()["user_id"] == response_b.json()["user_id"] == _expected_api_user_id(
-        "unit-key"
+    assert (
+        response_a.json()["user_id"]
+        == response_b.json()["user_id"]
+        == _expected_api_user_id("unit-key")
     )
     assert response_a.json()["roles"] == ["user"]
 

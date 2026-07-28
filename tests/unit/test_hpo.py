@@ -10,6 +10,7 @@ Tests cover:
 """
 
 import importlib
+import importlib.machinery
 import sys
 import tempfile
 from pathlib import Path
@@ -19,7 +20,9 @@ import pytest
 
 # Block vllm import to avoid torchvision issues - mock it before any imports
 if "vllm" not in sys.modules:
-    sys.modules["vllm"] = type(sys)("vllm")  # type: ignore
+    _vllm_stub = type(sys)("vllm")  # type: ignore
+    _vllm_stub.__spec__ = importlib.machinery.ModuleSpec("vllm", loader=None)
+    sys.modules["vllm"] = _vllm_stub
 
 # Try imports - skip if not available
 HPO_AVAILABLE = True

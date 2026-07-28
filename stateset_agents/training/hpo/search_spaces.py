@@ -41,15 +41,17 @@ def create_grpo_search_space(
             high=1e-3,
             default=1e-5,
         ),
-        SearchDimension(
-            "value_lr_multiplier",
-            SearchSpaceType.UNIFORM,
-            low=0.5,
-            high=2.0,
-            default=1.0,
-        )
-        if include_value_function
-        else None,
+        (
+            SearchDimension(
+                "value_lr_multiplier",
+                SearchSpaceType.UNIFORM,
+                low=0.5,
+                high=2.0,
+                default=1.0,
+            )
+            if include_value_function
+            else None
+        ),
         # Batch parameters
         SearchDimension(
             "per_device_train_batch_size",
@@ -70,27 +72,33 @@ def create_grpo_search_space(
         SearchDimension(
             "gamma", SearchSpaceType.UNIFORM, low=0.9, high=0.999, default=0.99
         ),
-        SearchDimension(
-            "gae_lambda", SearchSpaceType.UNIFORM, low=0.9, high=0.99, default=0.95
-        )
-        if include_value_function
-        else None,
+        (
+            SearchDimension(
+                "gae_lambda", SearchSpaceType.UNIFORM, low=0.9, high=0.99, default=0.95
+            )
+            if include_value_function
+            else None
+        ),
         # KL penalty
-        SearchDimension(
-            "kl_penalty_coef",
-            SearchSpaceType.LOGUNIFORM,
-            low=0.001,
-            high=0.1,
-            default=0.01,
-        )
-        if include_kl_penalty
-        else None,
+        (
+            SearchDimension(
+                "kl_penalty_coef",
+                SearchSpaceType.LOGUNIFORM,
+                low=0.001,
+                high=0.1,
+                default=0.01,
+            )
+            if include_kl_penalty
+            else None
+        ),
         # PPO clipping
-        SearchDimension(
-            "clip_range", SearchSpaceType.UNIFORM, low=0.1, high=0.3, default=0.2
-        )
-        if include_ppo_clipping
-        else None,
+        (
+            SearchDimension(
+                "clip_range", SearchSpaceType.UNIFORM, low=0.1, high=0.3, default=0.2
+            )
+            if include_ppo_clipping
+            else None
+        ),
         # Gradient clipping
         SearchDimension(
             "max_grad_norm", SearchSpaceType.UNIFORM, low=0.5, high=2.0, default=1.0

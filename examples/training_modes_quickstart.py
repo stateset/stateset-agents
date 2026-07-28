@@ -72,13 +72,18 @@ def create_environment():
 
 # ─── Mode 1: Online GRPO ────────────────────────────────────────────
 
+
 async def demo_online_grpo():
     """Standard online RL training with GRPO."""
     print("\n" + "=" * 60)
     print("MODE 1: Online GRPO (single-turn)")
     print("=" * 60)
 
-    from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
+    from stateset_agents.core.reward import (
+        CompositeReward,
+        HelpfulnessReward,
+        SafetyReward,
+    )
     from stateset_agents.training.train import train
 
     agent = create_agent()
@@ -103,6 +108,7 @@ async def demo_online_grpo():
 
 # ─── Mode 2: RLAIF with LLM Judge ──────────────────────────────────
 
+
 async def demo_rlaif():
     """RLAIF training with LLM-as-Judge reward (falls back to heuristic)."""
     print("\n" + "=" * 60)
@@ -119,7 +125,9 @@ async def demo_rlaif():
     # Without keys, it gracefully falls back to heuristic rewards.
     reward = create_rlaif_reward()
     print(f"  Judge available: {reward._judge_available}")
-    print(f"  Mode: {'LLM Judge + heuristic' if reward._judge_available else 'heuristic fallback'}")
+    print(
+        f"  Mode: {'LLM Judge + heuristic' if reward._judge_available else 'heuristic fallback'}"
+    )
 
     await train(
         agent=agent,
@@ -134,6 +142,7 @@ async def demo_rlaif():
 
 
 # ─── Mode 3: Uncertainty-Weighted ───────────────────────────────────
+
 
 async def demo_uncertainty():
     """Training with Bayesian uncertainty-weighted rewards."""
@@ -162,6 +171,7 @@ async def demo_uncertainty():
 
 
 # ─── Mode 4: Offline RL from Dataset ───────────────────────────────
+
 
 async def demo_offline():
     """Offline RL training from logged conversations."""
@@ -208,10 +218,13 @@ async def demo_offline():
         print("  Offline training complete!")
     except Exception as exc:
         print(f"  Offline training skipped: {exc}")
-        print("  (This is expected — offline RL needs torch tensors from real embeddings)")
+        print(
+            "  (This is expected — offline RL needs torch tensors from real embeddings)"
+        )
 
 
 # ─── Mode 5: Hybrid (Offline + Online) ─────────────────────────────
+
 
 async def demo_hybrid():
     """Hybrid training: offline pre-training then online fine-tuning."""

@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+from stateset_agents.training.config import get_config_for_task
 from stateset_agents.training.qwen3_5_starter import (
     QWEN35_08B_BASE_MODEL,
     QWEN35_08B_LORA_TARGET_MODULES,
@@ -23,12 +24,11 @@ from stateset_agents.training.qwen3_5_starter import (
     get_qwen3_5_gspo_config,
     get_qwen3_5_profile_description,
     get_qwen3_5_profile_overrides,
-    summarize_qwen3_5_config,
     load_qwen3_5_config_file,
+    summarize_qwen3_5_config,
     validate_qwen3_5_config,
     write_qwen3_5_config_file,
 )
-from stateset_agents.training.config import get_config_for_task
 
 
 class TestQwen35Config:
@@ -137,7 +137,8 @@ class TestQwen35Config:
         config = get_qwen3_5_config(task="customer_service")
 
         with patch(
-            "stateset_agents.training.qwen3_5_starter.get_config_for_task", return_value=base_config
+            "stateset_agents.training.qwen3_5_starter.get_config_for_task",
+            return_value=base_config,
         ):
             gspo_config = get_qwen3_5_gspo_config(config)
 
@@ -182,7 +183,9 @@ class TestQwen35Config:
         assert loaded.output_dir == "./outputs/qwen3_5_roundtrip"
 
     def test_preview_payload_can_be_loaded_as_config(self, tmp_path):
-        config = get_qwen3_5_config(task="sales", output_dir="./outputs/qwen3_5_preview")
+        config = get_qwen3_5_config(
+            task="sales", output_dir="./outputs/qwen3_5_preview"
+        )
         preview_path = write_qwen3_5_config_file(
             config,
             tmp_path / "qwen3_5_preview.json",
@@ -199,11 +202,25 @@ class TestQwen35Config:
 
         assert example_config_module.Qwen35Config is Qwen35Config
         assert example_config_module.QWEN35_08B_BASE_MODEL == QWEN35_08B_BASE_MODEL
-        assert example_config_module.QWEN35_08B_STARTER_PROFILE_CHOICES == QWEN35_08B_STARTER_PROFILE_CHOICES
-        assert example_config_module.QWEN35_08B_STARTER_PROFILE_DESCRIPTIONS == QWEN35_08B_STARTER_PROFILE_DESCRIPTIONS
-        assert example_config_module.describe_qwen3_5_starter_profiles is describe_qwen3_5_starter_profiles
-        assert example_config_module.get_qwen3_5_profile_overrides is get_qwen3_5_profile_overrides
-        assert example_config_module.summarize_qwen3_5_config is summarize_qwen3_5_config
+        assert (
+            example_config_module.QWEN35_08B_STARTER_PROFILE_CHOICES
+            == QWEN35_08B_STARTER_PROFILE_CHOICES
+        )
+        assert (
+            example_config_module.QWEN35_08B_STARTER_PROFILE_DESCRIPTIONS
+            == QWEN35_08B_STARTER_PROFILE_DESCRIPTIONS
+        )
+        assert (
+            example_config_module.describe_qwen3_5_starter_profiles
+            is describe_qwen3_5_starter_profiles
+        )
+        assert (
+            example_config_module.get_qwen3_5_profile_overrides
+            is get_qwen3_5_profile_overrides
+        )
+        assert (
+            example_config_module.summarize_qwen3_5_config is summarize_qwen3_5_config
+        )
 
     def test_generic_family_script_reuses_shared_0_8b_defaults(self):
         from examples import finetune_qwen3_gspo as family_module
@@ -362,9 +379,7 @@ class TestQwen3527BStarterScript:
         assert preview["gspo_overrides"]["use_vllm"] is True
         assert preview["gspo_overrides"]["num_generations"] == 8
         assert preview["serving_manifest"]["recommended"]["reasoning_parser"] == "qwen3"
-        assert (
-            preview["serving_manifest"]["recommended"]["language_model_only"] is True
-        )
+        assert preview["serving_manifest"]["recommended"]["language_model_only"] is True
 
     def test_cli_dry_run_subprocess(self):
         repo_root = Path(__file__).resolve().parents[2]
@@ -381,5 +396,8 @@ class TestQwen3527BStarterScript:
 
         assert payload["model_name"] == "Qwen/Qwen3.5-27B"
         assert payload["gspo_overrides"]["use_vllm"] is True
-        assert payload["serving_manifest"]["recommended"]["tool_call_parser"] == "qwen3_coder"
+        assert (
+            payload["serving_manifest"]["recommended"]["tool_call_parser"]
+            == "qwen3_coder"
+        )
         assert payload["serving_manifest"]["recommended"]["language_model_only"] is True

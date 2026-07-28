@@ -737,12 +737,12 @@ class ConversationSimulator(Environment):
                 rewards.append(traj.total_reward)
 
         return {
-            "mean_response_length": float(np.mean(response_lengths))
-            if response_lengths
-            else 0.0,
-            "std_response_length": float(np.std(response_lengths))
-            if response_lengths
-            else 0.0,
+            "mean_response_length": (
+                float(np.mean(response_lengths)) if response_lengths else 0.0
+            ),
+            "std_response_length": (
+                float(np.std(response_lengths)) if response_lengths else 0.0
+            ),
             "mean_turn_count": float(np.mean(turn_counts)) if turn_counts else 0.0,
             "mean_reward": float(np.mean(rewards)) if rewards else 0.0,
         }
@@ -763,12 +763,12 @@ class ConversationSimulator(Environment):
                     response_lengths.append(len(response_text.split()))
 
         return {
-            "mean_response_length": float(np.mean(response_lengths))
-            if response_lengths
-            else 0.0,
-            "std_response_length": float(np.std(response_lengths))
-            if response_lengths
-            else 0.0,
+            "mean_response_length": (
+                float(np.mean(response_lengths)) if response_lengths else 0.0
+            ),
+            "std_response_length": (
+                float(np.std(response_lengths)) if response_lengths else 0.0
+            ),
             "mean_turn_count": float(np.mean(turn_counts)) if turn_counts else 0.0,
             "mean_reward": 0.0,  # Not computed for generated
         }

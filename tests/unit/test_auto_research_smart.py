@@ -30,7 +30,6 @@ from stateset_agents.training.auto_research.search_spaces import (
     create_quick_search_space,
 )
 
-
 EVAL_SCENARIOS = [
     {"topic": "test", "context": "Test.", "user_responses": ["Hi"]},
 ]
@@ -132,8 +131,12 @@ class TestAdaptivePerturbationProposer:
         proposer = AdaptivePerturbationProposer(
             space, initial_factor=0.3, adaptation_window=3
         )
-        current = {"learning_rate": 1e-5, "num_generations": 4,
-                    "temperature": 0.7, "lora_r": 8}
+        current = {
+            "learning_rate": 1e-5,
+            "num_generations": 4,
+            "temperature": 0.7,
+            "lora_r": 8,
+        }
 
         # History with high keep rate
         history = [
@@ -149,8 +152,12 @@ class TestAdaptivePerturbationProposer:
         proposer = AdaptivePerturbationProposer(
             space, initial_factor=0.2, adaptation_window=3
         )
-        current = {"learning_rate": 1e-5, "num_generations": 4,
-                    "temperature": 0.7, "lora_r": 8}
+        current = {
+            "learning_rate": 1e-5,
+            "num_generations": 4,
+            "temperature": 0.7,
+            "lora_r": 8,
+        }
 
         history = [
             {"params": {}, "objective": 0.3, "status": "discard"},
@@ -165,8 +172,12 @@ class TestAdaptivePerturbationProposer:
         proposer = AdaptivePerturbationProposer(
             space, initial_factor=0.05, min_factor=0.05, max_factor=0.5
         )
-        current = {"learning_rate": 1e-5, "num_generations": 4,
-                    "temperature": 0.7, "lora_r": 8}
+        current = {
+            "learning_rate": 1e-5,
+            "num_generations": 4,
+            "temperature": 0.7,
+            "lora_r": 8,
+        }
 
         # Many successes — factor tries to go below min
         history = [{"params": {}, "objective": 0.9, "status": "keep"}] * 20
@@ -190,8 +201,12 @@ class TestSmartPerturbationProposer:
         """During exploration phase, behaves like standard perturbation."""
         space = create_quick_search_space()
         proposer = SmartPerturbationProposer(space, exploration_phase=10)
-        current = {"learning_rate": 1e-5, "num_generations": 4,
-                    "temperature": 0.7, "lora_r": 8}
+        current = {
+            "learning_rate": 1e-5,
+            "num_generations": 4,
+            "temperature": 0.7,
+            "lora_r": 8,
+        }
 
         # Only 3 history items — should still be in exploration
         history = [
@@ -206,19 +221,95 @@ class TestSmartPerturbationProposer:
         """After exploration phase, uses importance-weighted selection."""
         space = create_quick_search_space()
         proposer = SmartPerturbationProposer(space, exploration_phase=3)
-        current = {"learning_rate": 1e-5, "num_generations": 4,
-                    "temperature": 0.7, "lora_r": 8}
+        current = {
+            "learning_rate": 1e-5,
+            "num_generations": 4,
+            "temperature": 0.7,
+            "lora_r": 8,
+        }
 
         # Enough history to enter smart phase
         history = [
-            {"params": {"learning_rate": 1e-5, "num_generations": 4, "temperature": 0.7, "lora_r": 8}, "objective": 0.5, "status": "keep"},
-            {"params": {"learning_rate": 2e-5, "num_generations": 4, "temperature": 0.7, "lora_r": 8}, "objective": 0.6, "status": "keep"},
-            {"params": {"learning_rate": 3e-5, "num_generations": 8, "temperature": 0.7, "lora_r": 8}, "objective": 0.7, "status": "keep"},
-            {"params": {"learning_rate": 1e-5, "num_generations": 4, "temperature": 0.3, "lora_r": 16}, "objective": 0.4, "status": "discard"},
-            {"params": {"learning_rate": 5e-5, "num_generations": 4, "temperature": 0.7, "lora_r": 8}, "objective": 0.65, "status": "keep"},
-            {"params": {"learning_rate": 1e-6, "num_generations": 2, "temperature": 0.9, "lora_r": 4}, "objective": 0.3, "status": "discard"},
-            {"params": {"learning_rate": 4e-5, "num_generations": 8, "temperature": 0.5, "lora_r": 8}, "objective": 0.75, "status": "keep"},
-            {"params": {"learning_rate": 2e-5, "num_generations": 8, "temperature": 0.6, "lora_r": 16}, "objective": 0.55, "status": "discard"},
+            {
+                "params": {
+                    "learning_rate": 1e-5,
+                    "num_generations": 4,
+                    "temperature": 0.7,
+                    "lora_r": 8,
+                },
+                "objective": 0.5,
+                "status": "keep",
+            },
+            {
+                "params": {
+                    "learning_rate": 2e-5,
+                    "num_generations": 4,
+                    "temperature": 0.7,
+                    "lora_r": 8,
+                },
+                "objective": 0.6,
+                "status": "keep",
+            },
+            {
+                "params": {
+                    "learning_rate": 3e-5,
+                    "num_generations": 8,
+                    "temperature": 0.7,
+                    "lora_r": 8,
+                },
+                "objective": 0.7,
+                "status": "keep",
+            },
+            {
+                "params": {
+                    "learning_rate": 1e-5,
+                    "num_generations": 4,
+                    "temperature": 0.3,
+                    "lora_r": 16,
+                },
+                "objective": 0.4,
+                "status": "discard",
+            },
+            {
+                "params": {
+                    "learning_rate": 5e-5,
+                    "num_generations": 4,
+                    "temperature": 0.7,
+                    "lora_r": 8,
+                },
+                "objective": 0.65,
+                "status": "keep",
+            },
+            {
+                "params": {
+                    "learning_rate": 1e-6,
+                    "num_generations": 2,
+                    "temperature": 0.9,
+                    "lora_r": 4,
+                },
+                "objective": 0.3,
+                "status": "discard",
+            },
+            {
+                "params": {
+                    "learning_rate": 4e-5,
+                    "num_generations": 8,
+                    "temperature": 0.5,
+                    "lora_r": 8,
+                },
+                "objective": 0.75,
+                "status": "keep",
+            },
+            {
+                "params": {
+                    "learning_rate": 2e-5,
+                    "num_generations": 8,
+                    "temperature": 0.6,
+                    "lora_r": 16,
+                },
+                "objective": 0.55,
+                "status": "discard",
+            },
         ]
         params, desc = proposer.propose(current, history)
         assert "smart" in desc

@@ -34,9 +34,9 @@ def test_chart_lints_with_defaults(helm_binary):
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, (
-        f"helm lint failed:\nstdout={result.stdout}\nstderr={result.stderr}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"helm lint failed:\nstdout={result.stdout}\nstderr={result.stderr}"
 
 
 @pytest.mark.parametrize("values_file", VALUES_FILES, ids=lambda p: p.name)

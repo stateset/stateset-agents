@@ -116,7 +116,8 @@ def get_cache() -> SimpleCache:
 
 
 def cached(
-    ttl_seconds: float, key_prefix: str = "",
+    ttl_seconds: float,
+    key_prefix: str = "",
 ) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
     """
     Decorator to cache function results.
@@ -137,11 +138,18 @@ def cached(
             # Generate cache key
             cache_key = f"{key_prefix}:{func.__name__}"
             if args:
-                cache_key += ":" + hashlib.md5(repr(args).encode()).hexdigest()[:8]
+                cache_key += (
+                    ":"
+                    + hashlib.md5(
+                        repr(args).encode(), usedforsecurity=False
+                    ).hexdigest()[:8]
+                )
             if kwargs:
                 cache_key += (
                     ":"
-                    + hashlib.md5(repr(sorted(kwargs.items())).encode()).hexdigest()[:8]
+                    + hashlib.md5(
+                        repr(sorted(kwargs.items())).encode(), usedforsecurity=False
+                    ).hexdigest()[:8]
                 )
 
             # Try to get from cache
@@ -174,11 +182,18 @@ def cached_sync(ttl_seconds: float, key_prefix: str = ""):
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             cache_key = f"{key_prefix}:{func.__name__}"
             if args:
-                cache_key += ":" + hashlib.md5(repr(args).encode()).hexdigest()[:8]
+                cache_key += (
+                    ":"
+                    + hashlib.md5(
+                        repr(args).encode(), usedforsecurity=False
+                    ).hexdigest()[:8]
+                )
             if kwargs:
                 cache_key += (
                     ":"
-                    + hashlib.md5(repr(sorted(kwargs.items())).encode()).hexdigest()[:8]
+                    + hashlib.md5(
+                        repr(sorted(kwargs.items())).encode(), usedforsecurity=False
+                    ).hexdigest()[:8]
                 )
 
             cached_value = _cache.get(cache_key)

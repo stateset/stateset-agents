@@ -11,9 +11,9 @@ if it is importable on sys.path. When running tests from the repo root,
 this file will be discovered and applied.
 """
 
+import inspect
 import os
 import sys
-import inspect
 from pathlib import Path
 
 try:
@@ -47,9 +47,8 @@ try:
     # some versions, while httpx>=0.28 removed that parameter.
     import httpx
 
-    if (
-        "app" not in inspect.signature(httpx.Client.__init__).parameters
-        and not getattr(httpx.Client, "_stateset_agents_app_compat", False)
+    if "app" not in inspect.signature(httpx.Client.__init__).parameters and not getattr(
+        httpx.Client, "_stateset_agents_app_compat", False
     ):
         _original_httpx_client_init = httpx.Client.__init__
 

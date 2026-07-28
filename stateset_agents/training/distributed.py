@@ -107,11 +107,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
             # Use Accelerate for automatic distributed setup
             self.accelerator = Accelerator(
                 gradient_accumulation_steps=self.distributed_config.gradient_accumulation_steps,
-                mixed_precision="bf16"
-                if self.config.bf16
-                else "fp16"
-                if self.config.fp16
-                else "no",
+                mixed_precision=(
+                    "bf16" if self.config.bf16 else "fp16" if self.config.fp16 else "no"
+                ),
                 log_with=["wandb"] if self.config.report_to == "wandb" else None,
             )
             self.is_main_process = self.accelerator.is_main_process
@@ -370,7 +368,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 "best_eval_metric": self.best_eval_metric,
                 "distributed_config": self.distributed_config.__dict__,
             }
-            torch.save(training_state, checkpoint_path / "training_state.pt")
+            torch.save(
+                training_state, checkpoint_path / "training_state.pt"
+            )  # nosec: B614
 
         logger.info(f"Distributed checkpoint saved: {checkpoint_path}")
 

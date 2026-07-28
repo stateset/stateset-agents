@@ -4,6 +4,7 @@ Integration tests for the complete training pipeline.
 These tests verify that all components work together correctly.
 """
 
+import importlib.machinery
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,7 +12,9 @@ import pytest
 
 # Block vllm import to avoid torchvision issues
 if "vllm" not in sys.modules:
-    sys.modules["vllm"] = type(sys)("vllm")  # type: ignore
+    _vllm_stub = type(sys)("vllm")  # type: ignore
+    _vllm_stub.__spec__ = importlib.machinery.ModuleSpec("vllm", loader=None)
+    sys.modules["vllm"] = _vllm_stub
 
 INTEGRATION_AVAILABLE = True
 try:

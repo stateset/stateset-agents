@@ -21,11 +21,11 @@ Usage:
 
 import functools
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
 from typing import Any, cast
-from collections.abc import Callable
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 
@@ -264,9 +264,9 @@ def deprecate(
             if isinstance(response, Response):
                 response.headers["Deprecation"] = notice.to_header_value()
                 if replacement:
-                    response.headers[
-                        "Link"
-                    ] = f'<{replacement}>; rel="successor-version"'
+                    response.headers["Link"] = (
+                        f'<{replacement}>; rel="successor-version"'
+                    )
                 if notice.sunset_date:
                     response.headers["Sunset"] = notice.sunset_date.isoformat()
 
@@ -351,9 +351,9 @@ def add_version_headers(response: Response, version: APIVersion) -> Response:
                 response.headers["Sunset"] = info.sunset_date.isoformat()
                 days = info.days_until_sunset()
                 if days is not None and days < 30:
-                    response.headers[
-                        "Warning"
-                    ] = f'299 - "This API version will be sunset in {days} days"'
+                    response.headers["Warning"] = (
+                        f'299 - "This API version will be sunset in {days} days"'
+                    )
 
     return response
 
@@ -646,9 +646,9 @@ def create_version_info_router() -> APIRouter:
                     "version": version.value,
                     "release_date": info.release_date.isoformat(),
                     "status": info.status,
-                    "sunset_date": info.sunset_date.isoformat()
-                    if info.sunset_date
-                    else None,
+                    "sunset_date": (
+                        info.sunset_date.isoformat() if info.sunset_date else None
+                    ),
                     "days_until_sunset": info.days_until_sunset(),
                     "changelog_url": info.changelog_url,
                     "breaking_changes": info.breaking_changes,

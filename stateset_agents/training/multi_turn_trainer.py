@@ -492,7 +492,9 @@ class MultiTurnGRPOTrainer:
         that accumulates when using incremental mean over many batches.
         """
         if not hasattr(self, "_global_reward_sum"):
-            self._global_reward_sum = self._global_reward_mean * self._global_reward_count
+            self._global_reward_sum = (
+                self._global_reward_mean * self._global_reward_count
+            )
 
         self._global_reward_sum += batch_mean * batch_size
         self._global_reward_count += batch_size
@@ -604,9 +606,9 @@ class MultiTurnGRPOTrainer:
         optimizer = self.optimizer
         metrics = {
             **{k: v.item() if torch.is_tensor(v) else v for k, v in loss_dict.items()},
-            "learning_rate": optimizer.param_groups[0]["lr"]
-            if optimizer is not None
-            else 0.0,
+            "learning_rate": (
+                optimizer.param_groups[0]["lr"] if optimizer is not None else 0.0
+            ),
             "global_step": self.global_step,
             "optimizer_step": optimizer_step,
             "grad_accum_step": self._grad_accum_step,
@@ -703,9 +705,9 @@ class MultiTurnGRPOTrainer:
                 if replay_groups:
                     metrics["replay_group_count"] = len(replay_groups)
                     if self.continual_manager is not None:
-                        metrics[
-                            "replay_buffer_size"
-                        ] = self.continual_manager.buffer.size
+                        metrics["replay_buffer_size"] = (
+                            self.continual_manager.buffer.size
+                        )
 
                 # Callback: episode end (include reward signal for generic monitors)
                 episode_rewards = [
@@ -776,7 +778,9 @@ class MultiTurnGRPOTrainer:
                 self.continual_manager.on_task_end(
                     agent=self.agent, task_id=self._current_task_id
                 )
-                reference_model = getattr(self.continual_manager, "reference_model", None)
+                reference_model = getattr(
+                    self.continual_manager, "reference_model", None
+                )
                 if reference_model is not None:
                     self.reference_model = reference_model
 
@@ -786,7 +790,9 @@ class MultiTurnGRPOTrainer:
             }
 
             if errored:
-                logger.info("Skipping final checkpoint and success callbacks after training failure")
+                logger.info(
+                    "Skipping final checkpoint and success callbacks after training failure"
+                )
             else:
                 try:
                     await self.save_checkpoint()

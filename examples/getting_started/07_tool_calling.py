@@ -30,7 +30,6 @@ from stateset_agents.core.agent_config import AgentConfig
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.data import SAMPLE_TOOLS, ToolCallReward, load_tool_call_scenarios
 
-
 # Three handcrafted response strings cover the three failure modes a trainer
 # will see during rollout: well-formed, wrong tool, malformed JSON.
 GOOD = """I'll check that for you.
@@ -64,7 +63,11 @@ async def main() -> None:
     context = target.to_scenario()
 
     reward = ToolCallReward()
-    cases = [("well-formed call", GOOD), ("wrong tool", WRONG_TOOL), ("malformed JSON", MALFORMED)]
+    cases = [
+        ("well-formed call", GOOD),
+        ("wrong tool", WRONG_TOOL),
+        ("malformed JSON", MALFORMED),
+    ]
     for label, response in cases:
         turns = [ConversationTurn(role="assistant", content=response)]
         result = await reward.compute_reward(turns, context=context)

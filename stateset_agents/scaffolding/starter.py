@@ -816,9 +816,11 @@ class StarterTemplate:
     def render(self, project_name: str) -> dict[str, str]:
         """Substitute ``{project_name}`` into every file. Returns a dict copy."""
         return {
-            path: content.format(project_name=project_name)
-            if "{project_name}" in content
-            else content
+            path: (
+                content.format(project_name=project_name)
+                if "{project_name}" in content
+                else content
+            )
             for path, content in self.files.items()
         }
 
@@ -885,7 +887,9 @@ def list_templates() -> list[StarterTemplate]:
     return sorted(SCAFFOLD_TEMPLATES.values(), key=lambda t: t.name)
 
 
-def _apply_client_customizations(content: str, client_name: str, project_name: str) -> str:
+def _apply_client_customizations(
+    content: str, client_name: str, project_name: str
+) -> str:
     """Patch generated content with client-specific values where it makes sense.
 
     Replaces output_dir paths, W&B project names, and config-yaml `wandb_project`
@@ -947,9 +951,7 @@ def scaffold_project(
     """
     if template_name not in SCAFFOLD_TEMPLATES:
         available = ", ".join(sorted(SCAFFOLD_TEMPLATES))
-        raise KeyError(
-            f"Unknown template {template_name!r}. Available: {available}"
-        )
+        raise KeyError(f"Unknown template {template_name!r}. Available: {available}")
 
     out = Path(output_dir)
     if out.exists() and any(out.iterdir()) and not force:
@@ -983,5 +985,7 @@ def scaffold_project(
     (out / ".stateset-agents-starter.json").write_text(json.dumps(marker, indent=2))
     created.append(out / ".stateset-agents-starter.json")
 
-    logger.info("Scaffolded %s template into %s (%d files)", template_name, out, len(created))
+    logger.info(
+        "Scaffolded %s template into %s (%d files)", template_name, out, len(created)
+    )
     return created

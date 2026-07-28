@@ -36,20 +36,26 @@ def synth_transcripts() -> list[dict]:
     for s in scenarios[:4]:
         # "good" responses — acknowledge + concrete next step
         ctx = s.to_scenario()
-        ack = " and ".join(ctx.get("must_acknowledge", [])) or ctx.get("intent", "your request")
-        out.append({
-            "query": ctx["user_query"],
-            "response": f"Thanks for flagging this {ack}. I'll process the {ctx['intent']} now and confirm in your email.",
-            "context": ctx,
-        })
+        ack = " and ".join(ctx.get("must_acknowledge", [])) or ctx.get(
+            "intent", "your request"
+        )
+        out.append(
+            {
+                "query": ctx["user_query"],
+                "response": f"Thanks for flagging this {ack}. I'll process the {ctx['intent']} now and confirm in your email.",
+                "context": ctx,
+            }
+        )
     for s in scenarios[4:8]:
         # "bad" responses — generic apology, no acknowledgement
         ctx = s.to_scenario()
-        out.append({
-            "query": ctx["user_query"],
-            "response": "Sorry, I can't help with that. Try again later.",
-            "context": ctx,
-        })
+        out.append(
+            {
+                "query": ctx["user_query"],
+                "response": "Sorry, I can't help with that. Try again later.",
+                "context": ctx,
+            }
+        )
     return out
 
 
@@ -81,16 +87,23 @@ async def main() -> None:
     with out_path.open("w") as f:
         for row in kept:
             # SFT-ready JSONL: a single (instruction, output) pair per line.
-            f.write(json.dumps({
-                "instruction": row["query"],
-                "output": row["response"],
-                "score": row["score"],
-                "intent": row["context"].get("intent"),
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "instruction": row["query"],
+                        "output": row["response"],
+                        "score": row["score"],
+                        "intent": row["context"].get("intent"),
+                    }
+                )
+                + "\n"
+            )
     print(f"Wrote curated dataset → {out_path}")
     print()
     print("Next step: feed `curated_sft.jsonl` into your SFT trainer of choice,")
-    print("then re-train your RL adapter on top. See `notebooks/sft_from_curated_demo.ipynb`.")
+    print(
+        "then re-train your RL adapter on top. See `notebooks/sft_from_curated_demo.ipynb`."
+    )
 
 
 if __name__ == "__main__":

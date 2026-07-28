@@ -15,7 +15,6 @@ Stub-backed throughout — no GPU, no real weights.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -99,6 +98,7 @@ def test_router_uses_os_env_for_warning() -> None:
     plus auth deps, but we can confirm the warning branch exists in the source.
     """
     from pathlib import Path
+
     router_src = (
         Path(__file__).resolve().parents[2]
         / "stateset_agents"

@@ -12,9 +12,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from stateset_agents.core.advanced_monitoring import (
+    AdvancedMonitoringService,
     Alert,
     AlertSeverity,
-    AdvancedMonitoringService,
     DistributedTracer,
     MetricPoint,
     MetricsCollector,
@@ -243,16 +243,15 @@ class TestMetricsCollectorWithPrometheus:
     @pytest.fixture
     def collector_with_prometheus(self):
         """Create a MetricsCollector with mocked Prometheus."""
-        with patch(
-            "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", True
-        ), patch("stateset_agents.core.advanced_monitoring.CollectorRegistry"), patch(
-            "stateset_agents.core.advanced_monitoring.Counter"
-        ), patch(
-            "stateset_agents.core.advanced_monitoring.Gauge"
-        ), patch(
-            "stateset_agents.core.advanced_monitoring.Histogram"
-        ), patch(
-            "stateset_agents.core.advanced_monitoring.Summary"
+        with (
+            patch(
+                "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", True
+            ),
+            patch("stateset_agents.core.advanced_monitoring.CollectorRegistry"),
+            patch("stateset_agents.core.advanced_monitoring.Counter"),
+            patch("stateset_agents.core.advanced_monitoring.Gauge"),
+            patch("stateset_agents.core.advanced_monitoring.Histogram"),
+            patch("stateset_agents.core.advanced_monitoring.Summary"),
         ):
             collector = MetricsCollector()
             # Cleanup task is now lazily initialized, so no need to cancel
@@ -278,10 +277,14 @@ class TestAdvancedMonitoringService:
     @pytest.fixture
     def mock_service(self):
         """Create a mock monitoring service."""
-        with patch(
-            "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
-        ), patch(
-            "stateset_agents.core.advanced_monitoring.OPENTELEMETRY_AVAILABLE", False
+        with (
+            patch(
+                "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
+            ),
+            patch(
+                "stateset_agents.core.advanced_monitoring.OPENTELEMETRY_AVAILABLE",
+                False,
+            ),
         ):
             from stateset_agents.core.advanced_monitoring import (
                 AdvancedMonitoringService,
@@ -362,9 +365,7 @@ class TestAdvancedMonitoringService:
         requests_total, requests_total_bound = make_metric(
             ("method", "endpoint", "status")
         )
-        request_duration, request_duration_bound = make_metric(
-            ("method", "endpoint")
-        )
+        request_duration, request_duration_bound = make_metric(("method", "endpoint"))
         request_size, _ = make_metric(("method", "endpoint"))
         training_iterations, _ = make_metric(("agent_type", "strategy"))
         memory_usage, _ = make_metric(("component",))
@@ -372,22 +373,31 @@ class TestAdvancedMonitoringService:
         error_rate, _ = make_metric(("component", "error_type"))
         errors_total, errors_total_bound = make_metric(("component", "error_type"))
 
-        with patch(
-            "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", True
-        ), patch(
-            "stateset_agents.core.advanced_monitoring.OPENTELEMETRY_AVAILABLE", False
-        ), patch("stateset_agents.core.advanced_monitoring.CollectorRegistry"), patch(
-            "stateset_agents.core.advanced_monitoring.Counter",
-            side_effect=[requests_total, training_iterations, errors_total],
-        ), patch(
-            "stateset_agents.core.advanced_monitoring.Gauge",
-            side_effect=[memory_usage, gpu_utilization, error_rate],
-        ), patch(
-            "stateset_agents.core.advanced_monitoring.Histogram",
-            return_value=request_duration,
-        ), patch(
-            "stateset_agents.core.advanced_monitoring.Summary",
-            return_value=request_size,
+        with (
+            patch(
+                "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", True
+            ),
+            patch(
+                "stateset_agents.core.advanced_monitoring.OPENTELEMETRY_AVAILABLE",
+                False,
+            ),
+            patch("stateset_agents.core.advanced_monitoring.CollectorRegistry"),
+            patch(
+                "stateset_agents.core.advanced_monitoring.Counter",
+                side_effect=[requests_total, training_iterations, errors_total],
+            ),
+            patch(
+                "stateset_agents.core.advanced_monitoring.Gauge",
+                side_effect=[memory_usage, gpu_utilization, error_rate],
+            ),
+            patch(
+                "stateset_agents.core.advanced_monitoring.Histogram",
+                return_value=request_duration,
+            ),
+            patch(
+                "stateset_agents.core.advanced_monitoring.Summary",
+                return_value=request_size,
+            ),
         ):
             service = AdvancedMonitoringService(enable_tracing=False)
 

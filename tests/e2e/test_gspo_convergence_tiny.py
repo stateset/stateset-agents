@@ -97,9 +97,9 @@ def _run_convergence_training() -> tuple[float, float, list[float]]:
     model = _tiny_gpt2()
 
     prompt_ids = tokenizer(PROMPT, return_tensors="pt")["input_ids"][0]
-    target_token_id = tokenizer(TARGET_RESPONSE, add_special_tokens=False)[
-        "input_ids"
-    ][0]
+    target_token_id = tokenizer(TARGET_RESPONSE, add_special_tokens=False)["input_ids"][
+        0
+    ]
 
     initial_prob = _target_token_probability(model, prompt_ids, target_token_id)
 
@@ -167,9 +167,9 @@ def test_gspo_convergence_tiny() -> None:
 
     # Primary, low-variance assertion: the internal probability of the
     # preferred token strictly increased under the final policy.
-    assert final_prob > initial_prob, (
-        f"target token probability did not increase: {initial_prob} -> {final_prob}"
-    )
+    assert (
+        final_prob > initial_prob
+    ), f"target token probability did not increase: {initial_prob} -> {final_prob}"
 
     # Secondary, advisory assertion: reward over the tail of training should
     # not be worse than the start of training. Logged either way; only a
@@ -187,6 +187,6 @@ def test_gspo_convergence_tiny() -> None:
         WARMUP_STEPS,
         mean_last,
     )
-    assert mean_last >= mean_first - 0.1, (
-        f"reward regressed over training: first={mean_first:.4f} last={mean_last:.4f}"
-    )
+    assert (
+        mean_last >= mean_first - 0.1
+    ), f"reward regressed over training: first={mean_first:.4f} last={mean_last:.4f}"

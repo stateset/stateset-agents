@@ -1,6 +1,7 @@
 """Behavioral tests for VAPO: rollout-time value clipping, terminal-token
 rewards, wired decoupled-GAE critic advantages, and a single batched
 optimizer step per train_step."""
+
 import pytest
 import torch
 
@@ -125,7 +126,9 @@ def test_compute_vapo_losses_uses_critic_advantages_for_value_target(vapo_traine
 
 
 @pytest.mark.asyncio
-async def test_train_step_single_optimizer_step_per_call(vapo_trainer_tiny, monkeypatch):
+async def test_train_step_single_optimizer_step_per_call(
+    vapo_trainer_tiny, monkeypatch
+):
     """optimizer.step() must be called once per train_step, not once per
     prompt in the batch."""
     t = vapo_trainer_tiny
@@ -156,10 +159,14 @@ async def test_train_step_single_optimizer_step_per_call(vapo_trainer_tiny, monk
     orig_actor_step = t.actor_optimizer.step
     orig_critic_step = t.critic_optimizer.step
     monkeypatch.setattr(
-        t.actor_optimizer, "step", lambda *a, **k: (actor_steps.append(1), orig_actor_step())[1]
+        t.actor_optimizer,
+        "step",
+        lambda *a, **k: (actor_steps.append(1), orig_actor_step())[1],
     )
     monkeypatch.setattr(
-        t.critic_optimizer, "step", lambda *a, **k: (critic_steps.append(1), orig_critic_step())[1]
+        t.critic_optimizer,
+        "step",
+        lambda *a, **k: (critic_steps.append(1), orig_critic_step())[1],
     )
 
     await t.train_step(["prompt one", "prompt two"])

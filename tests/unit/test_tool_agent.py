@@ -233,7 +233,11 @@ async def test_tool_agent_supports_positional_only_parameters():
     agent = ToolAgent(
         config,
         tools=[
-            {"name": "add", "function": add_positional, "parameters": {"a": "int", "b": "int"}}
+            {
+                "name": "add",
+                "function": add_positional,
+                "parameters": {"a": "int", "b": "int"},
+            }
         ],
     )
     await agent.initialize()

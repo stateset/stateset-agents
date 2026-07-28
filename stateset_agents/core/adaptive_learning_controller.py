@@ -570,20 +570,22 @@ class AdaptiveLearningController:
                 "action_statistics": {
                     action: {
                         "count": count,
-                        "average_reward": np.mean(
-                            self.exploration_controller.action_rewards[action]
-                        )
-                        if self.exploration_controller.action_rewards[action]
-                        else 0.0,
+                        "average_reward": (
+                            np.mean(self.exploration_controller.action_rewards[action])
+                            if self.exploration_controller.action_rewards[action]
+                            else 0.0
+                        ),
                     }
                     for action, count in self.exploration_controller.action_counts.items()
                 },
             },
             "hyperparameter_insights": {
                 "optimization_steps": self.hyperparameter_optimizer.optimization_step,
-                "performance_trend": self.hyperparameter_optimizer._calculate_performance_trend()
-                if len(self.hyperparameter_optimizer.performance_history) >= 5
-                else 0.0,
+                "performance_trend": (
+                    self.hyperparameter_optimizer._calculate_performance_trend()
+                    if len(self.hyperparameter_optimizer.performance_history) >= 5
+                    else 0.0
+                ),
             },
             "overall_stats": {
                 "learning_episodes": self.learning_episodes,

@@ -9,9 +9,9 @@ from stateset_agents.training import (
     QWEN35_08B_SUPPORTED_VARIANTS,
     QWEN35_08B_TASK_CHOICES,
     Qwen35Config,
+    build_serving_manifest,
     create_qwen3_5_preview,
     describe_qwen3_5_starter_profiles,
-    build_serving_manifest,
     export_merged_model_for_serving,
     finetune_qwen3_5_0_8b,
     get_qwen3_5_config,
@@ -20,13 +20,13 @@ from stateset_agents.training import (
     load_qwen3_5_config_file,
     run_qwen3_5_0_8b_config,
     summarize_qwen3_5_config,
-    write_serving_manifest,
     write_qwen3_5_config_file,
+    write_serving_manifest,
 )
 from stateset_agents.training.qwen3_5_starter import (
     QWEN35_08B_BASE_MODEL as DirectBaseModel,
-    Qwen35Config as DirectQwen35Config,
 )
+from stateset_agents.training.qwen3_5_starter import Qwen35Config as DirectQwen35Config
 
 
 def test_qwen3_5_training_exports_remain_available() -> None:

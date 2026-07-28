@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
+
 logger = logging.getLogger(__name__)
 
 
@@ -470,7 +471,9 @@ class ConversationMemory:
 
     def _generate_id(self) -> str:
         """Generate unique conversation ID."""
-        return hashlib.md5(f"{time.time()}-{id(self)}".encode()).hexdigest()[:12]
+        return hashlib.md5(
+            f"{time.time()}-{id(self)}".encode(), usedforsecurity=False
+        ).hexdigest()[:12]
 
     def _estimate_tokens(self, text: str) -> int:
         """Estimate token count (roughly 4 chars per token)."""

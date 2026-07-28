@@ -50,7 +50,9 @@ class ReproducibilityState:
 REPRODUCIBILITY_STATE = ReproducibilityState()
 
 
-def set_all_seeds(seed: int = 42, deterministic_cuda: bool = False) -> ReproducibilityState:
+def set_all_seeds(
+    seed: int = 42, deterministic_cuda: bool = False
+) -> ReproducibilityState:
     """Seed every RNG the framework can reach.
 
     Args:

@@ -6,7 +6,6 @@ verify the CLI's argument-validation and error paths via subprocess.
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -27,8 +26,10 @@ class TestEvaluateBatchValidation:
         scenarios = tmp_path / "s.jsonl"
         scenarios.write_text('{"user_query": "Q"}\n')
         result = _run(
-            "--checkpoint", "/tmp/fake-ckpt",
-            "--scenarios", str(scenarios),
+            "--checkpoint",
+            "/tmp/fake-ckpt",
+            "--scenarios",
+            str(scenarios),
         )
         assert result.returncode == 2
         assert "--reward is required" in result.stderr
@@ -37,18 +38,24 @@ class TestEvaluateBatchValidation:
         scenarios = tmp_path / "s.jsonl"
         scenarios.write_text('{"user_query": "Q"}\n')
         result = _run(
-            "--checkpoint", "/tmp/fake-ckpt",
-            "--scenarios", str(scenarios),
-            "--reward", "not-a-real-reward",
+            "--checkpoint",
+            "/tmp/fake-ckpt",
+            "--scenarios",
+            str(scenarios),
+            "--reward",
+            "not-a-real-reward",
         )
         assert result.returncode == 2
         assert "Unknown reward" in result.stderr
 
     def test_missing_scenarios_file_errors(self) -> None:
         result = _run(
-            "--checkpoint", "/tmp/fake-ckpt",
-            "--scenarios", "/tmp/does-not-exist.jsonl",
-            "--reward", "gsm8k",
+            "--checkpoint",
+            "/tmp/fake-ckpt",
+            "--scenarios",
+            "/tmp/does-not-exist.jsonl",
+            "--reward",
+            "gsm8k",
             "--dry-run",
         )
         # Dry-run prints the plan and exits 0; without dry-run it would fail.
@@ -59,10 +66,14 @@ class TestEvaluateBatchValidation:
         scenarios = tmp_path / "s.jsonl"
         scenarios.write_text('{"user_query": "Q"}\n')
         result = _run(
-            "--checkpoint", "/tmp/fake-ckpt",
-            "--scenarios", str(scenarios),
-            "--reward", "customer_support",
-            "--output", "/tmp/out.md",
+            "--checkpoint",
+            "/tmp/fake-ckpt",
+            "--scenarios",
+            str(scenarios),
+            "--reward",
+            "customer_support",
+            "--output",
+            "/tmp/out.md",
             "--dry-run",
         )
         assert result.returncode == 0
@@ -74,8 +85,10 @@ class TestEvaluateBatchValidation:
     def test_single_message_dry_run_unchanged(self) -> None:
         """Original single-message mode must still work."""
         result = _run(
-            "--checkpoint", "/tmp/fake-ckpt",
-            "--message", "Hello",
+            "--checkpoint",
+            "/tmp/fake-ckpt",
+            "--message",
+            "Hello",
             "--dry-run",
         )
         assert result.returncode == 0
@@ -83,7 +96,8 @@ class TestEvaluateBatchValidation:
 
     def test_missing_checkpoint_errors(self) -> None:
         result = _run(
-            "--message", "Hello",
+            "--message",
+            "Hello",
         )
         assert result.returncode == 2
 
@@ -92,7 +106,9 @@ class TestEvaluateBatchHelp:
     def test_help_documents_batch_mode(self) -> None:
         result = subprocess.run(
             [sys.executable, "-m", "stateset_agents.cli", "evaluate", "--help"],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 0
         assert "--scenarios" in result.stdout

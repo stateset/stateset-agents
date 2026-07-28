@@ -533,9 +533,9 @@ class RunPodDeploymentManager:
             "total_cost": total_cost,
             "active_deployments": active_deployments,
             "total_deployments": len(self.deployments),
-            "cost_per_deployment": total_cost / len(self.deployments)
-            if self.deployments
-            else 0,
+            "cost_per_deployment": (
+                total_cost / len(self.deployments) if self.deployments else 0
+            ),
         }
 
 

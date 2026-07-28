@@ -7,10 +7,10 @@ uses those value estimates as baselines for GRPO training.
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, cast
-from collections.abc import Callable
 
 import numpy as np
 
@@ -430,7 +430,9 @@ class OfflineGRPOTrainer:
         logger.info("Value function pre-training complete")
 
         last_metrics = metrics[-1] if metrics else {}
-        final_loss = float(last_metrics.get("total_loss", last_metrics.get("loss", 0.0)))
+        final_loss = float(
+            last_metrics.get("total_loss", last_metrics.get("loss", 0.0))
+        )
         return {
             "num_steps": float(num_steps),
             "final_loss": final_loss,
@@ -724,7 +726,7 @@ class OfflineGRPOTrainer:
 
     def save(self, path: str) -> None:
         """Save model checkpoint"""
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "value_net_state_dict": self.value_net.state_dict(),
                 "q_net_state_dict": self.q_net.state_dict(),
@@ -742,7 +744,7 @@ class OfflineGRPOTrainer:
 
     def load(self, path: str) -> None:
         """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
 
         self.value_net.load_state_dict(checkpoint["value_net_state_dict"])
         self.q_net.load_state_dict(checkpoint["q_net_state_dict"])

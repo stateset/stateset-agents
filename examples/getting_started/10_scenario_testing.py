@@ -54,7 +54,9 @@ class Assertion:
         self.label = label
         self.fn = fn
 
-    async def check(self, scenario: dict[str, Any], response: str, rubric: RewardFunction):
+    async def check(
+        self, scenario: dict[str, Any], response: str, rubric: RewardFunction
+    ):
         return await self.fn(scenario, response, rubric)
 
 
@@ -79,6 +81,7 @@ async def assert_rubric_floor(floor: float):
         if result.score < floor:
             return False, f"rubric {result.score:.2f} < {floor}"
         return True, f"rubric {result.score:.2f} ≥ {floor}"
+
     return _check
 
 
@@ -89,8 +92,8 @@ async def main() -> int:
     floor_check = await assert_rubric_floor(0.50)
     assertions = [
         Assertion("acknowledges required terms", assert_acknowledges),
-        Assertion("avoids forbidden terms",      assert_avoids),
-        Assertion("rubric ≥ 0.50",               floor_check),
+        Assertion("avoids forbidden terms", assert_avoids),
+        Assertion("rubric ≥ 0.50", floor_check),
     ]
 
     failures: list[str] = []

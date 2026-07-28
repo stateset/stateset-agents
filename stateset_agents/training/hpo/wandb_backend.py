@@ -10,10 +10,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
-from collections.abc import Awaitable, Callable
 
 from .base import (
     HPOBackend,

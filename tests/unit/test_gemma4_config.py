@@ -188,7 +188,9 @@ class TestGemma4Config:
         assert loaded.output_dir == "./outputs/gemma4_roundtrip"
 
     def test_preview_payload_can_be_loaded_as_config(self, tmp_path):
-        config = get_gemma4_31b_config(task="sales", output_dir="./outputs/gemma4_preview")
+        config = get_gemma4_31b_config(
+            task="sales", output_dir="./outputs/gemma4_preview"
+        )
         preview_path = write_gemma4_31b_config_file(
             config,
             tmp_path / "gemma4_preview.json",

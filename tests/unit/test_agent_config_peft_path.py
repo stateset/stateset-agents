@@ -41,10 +41,12 @@ class TestPeftPathLoaderBehavior:
         # Easiest: directly test the agent class's peft_path branch by checking
         # that the FileNotFoundError-raising helper would be invoked.
         from stateset_agents.core.agent import _load_peft
+
         # Just verify the lazy loader exposes PeftModel after a load attempt.
         ok = _load_peft()
         if ok:
             from stateset_agents.core.agent import PeftModel
+
             # When peft installed, PeftModel should be importable.
             assert PeftModel is not None
         # If peft isn't installed, _load_peft() returns False — that's fine.

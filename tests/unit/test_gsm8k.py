@@ -49,7 +49,10 @@ class TestExtractPredictedAnswer:
         assert extract_predicted_answer("The result is \\boxed{256}.") == 256.0
 
     def test_dollar_sign(self) -> None:
-        assert extract_predicted_answer("She earns the answer is $1,200 per week") == 1200.0
+        assert (
+            extract_predicted_answer("She earns the answer is $1,200 per week")
+            == 1200.0
+        )
 
     def test_negative_answer(self) -> None:
         assert extract_predicted_answer("The answer is -7") == -7.0
@@ -169,7 +172,9 @@ class TestPartialCreditGSM8KReward:
     @pytest.mark.asyncio
     async def test_unparseable(self) -> None:
         reward = PartialCreditGSM8KReward()
-        turns = [ConversationTurn(role="assistant", content="I cannot solve this problem.")]
+        turns = [
+            ConversationTurn(role="assistant", content="I cannot solve this problem.")
+        ]
         result = await reward.compute_reward(turns, context={"gold_answer": 42.0})
         assert result.score == 0.0
         assert result.breakdown.get("unparseable") == 1.0

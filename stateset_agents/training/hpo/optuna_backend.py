@@ -13,10 +13,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
-from collections.abc import Awaitable, Callable
 
 from .base import (
     HPOBackend,
@@ -220,9 +220,7 @@ class OptunaBackend(HPOBackend):
             high = dim.high
             if low is None or high is None:
                 raise ValueError(f"Integer dimension {dim.name} requires bounds")
-            return trial.suggest_int(
-                dim.name, int(low), int(high), log=dim.log_scale
-            )
+            return trial.suggest_int(dim.name, int(low), int(high), log=dim.log_scale)
         elif dim.type in [SearchSpaceType.CATEGORICAL, SearchSpaceType.CHOICE]:
             return trial.suggest_categorical(dim.name, dim.choices)
         else:
@@ -308,9 +306,9 @@ class OptunaBackend(HPOBackend):
                 trial_id=trial_id,
                 params=params,
                 metrics={},
-                best_metric=float("-inf")
-                if self.direction == "maximize"
-                else float("inf"),
+                best_metric=(
+                    float("-inf") if self.direction == "maximize" else float("inf")
+                ),
                 training_time=training_time,
                 status="pruned",
             )
@@ -325,9 +323,9 @@ class OptunaBackend(HPOBackend):
                 trial_id=trial_id,
                 params=params,
                 metrics={},
-                best_metric=float("-inf")
-                if self.direction == "maximize"
-                else float("inf"),
+                best_metric=(
+                    float("-inf") if self.direction == "maximize" else float("inf")
+                ),
                 training_time=training_time,
                 status="failed",
                 metadata={"error": str(e)},

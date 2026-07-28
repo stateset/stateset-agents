@@ -16,11 +16,7 @@ _EXCLUDED_NAMES = {"__init__.py"}
 
 
 def _top_level_example_files() -> list[Path]:
-    return sorted(
-        p
-        for p in EXAMPLES_DIR.glob("*.py")
-        if p.name not in _EXCLUDED_NAMES
-    )
+    return sorted(p for p in EXAMPLES_DIR.glob("*.py") if p.name not in _EXCLUDED_NAMES)
 
 
 def test_readme_exists() -> None:

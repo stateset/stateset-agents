@@ -474,9 +474,11 @@ class PerformanceProfiler:
             "memory": {
                 "mean": sum(memory_usage) / len(memory_usage),
                 "max": max(memory_usage),
-                "peak_efficiency": min(memory_usage) / max(memory_usage)
-                if max(memory_usage) > 0
-                else 0,
+                "peak_efficiency": (
+                    min(memory_usage) / max(memory_usage)
+                    if max(memory_usage) > 0
+                    else 0
+                ),
             },
         }
 

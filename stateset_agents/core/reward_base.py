@@ -8,9 +8,10 @@ including the base class, result types, and composite reward implementation.
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
@@ -207,7 +208,8 @@ class CompositeReward(RewardFunction):
 
         if self.combination_method == "weighted_sum":
             total_score = sum(
-                rr.score * w for (rf, rr), w in zip(results, component_weights, strict=False)
+                rr.score * w
+                for (rf, rr), w in zip(results, component_weights, strict=False)
             )
         elif self.combination_method == "average":
             total_score = (
@@ -222,7 +224,8 @@ class CompositeReward(RewardFunction):
                 f"Unknown combination method '{self.combination_method}', defaulting to weighted_sum"
             )
             total_score = sum(
-                rr.score * w for (rf, rr), w in zip(results, component_weights, strict=False)
+                rr.score * w
+                for (rf, rr), w in zip(results, component_weights, strict=False)
             )
 
         components: dict[str, float] = {}

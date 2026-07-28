@@ -15,11 +15,7 @@ from typing import Any
 
 try:
     import uvicorn
-    from fastapi import (
-        FastAPI,
-        HTTPException,
-        Request,
-    )
+    from fastapi import FastAPI, HTTPException, Request
     from fastapi.exceptions import RequestValidationError
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse
@@ -601,7 +597,7 @@ def main():
 
     uvicorn.run(
         "stateset_agents.api.grpo.service:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec: B104 - intentional default for containerized deployment
         port=8001,
         log_level="info",
     )

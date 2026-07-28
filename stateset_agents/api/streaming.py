@@ -24,10 +24,10 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-from collections.abc import AsyncIterator, Callable
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -204,9 +204,11 @@ class StreamingService:
                 data={
                     "stream_id": stream_id,
                     "conversation_id": conversation_id,
-                    "model": getattr(self.agent.config, "model_name", "unknown")
-                    if self.agent
-                    else "mock",
+                    "model": (
+                        getattr(self.agent.config, "model_name", "unknown")
+                        if self.agent
+                        else "mock"
+                    ),
                 },
             )
 

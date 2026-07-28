@@ -15,9 +15,7 @@ def analyze_user_input(context: ConversationContext, user_message: str) -> None:
         context.intent = "support"
     elif any(word in lowered_message for word in ["buy", "purchase", "price", "cost"]):
         context.intent = "sales"
-    elif any(
-        word in lowered_message for word in ["learn", "how", "what", "explain"]
-    ):
+    elif any(word in lowered_message for word in ["learn", "how", "what", "explain"]):
         context.intent = "education"
 
     entities: dict[str, Any] = {}

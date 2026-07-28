@@ -317,7 +317,9 @@ async def test_environment_respects_max_turns():
     trajectory = await env.run_episode(
         agent_fn=agent.generate_response, scenario=scenarios[0]
     )
-    assistant_turns = [t for t in trajectory.turns if getattr(t, "role", None) == "assistant"]
+    assistant_turns = [
+        t for t in trajectory.turns if getattr(t, "role", None) == "assistant"
+    ]
     # Max_turns caps assistant turns at 2
     assert len(assistant_turns) <= 2
 

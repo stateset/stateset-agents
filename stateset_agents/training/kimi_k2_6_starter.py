@@ -81,7 +81,9 @@ def _write_mapping_file(payload: dict[str, Any], path: Path) -> Path:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     if suffix in {".json", ".js"}:
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return path
 
     try:
@@ -120,7 +122,9 @@ def get_kimi_k2_6_system_prompt(task: str = "customer_service") -> str:
     return prompts.get(task, prompts["customer_service"])
 
 
-def get_kimi_k2_6_profile_overrides(starter_profile: str = "balanced") -> dict[str, Any]:
+def get_kimi_k2_6_profile_overrides(
+    starter_profile: str = "balanced",
+) -> dict[str, Any]:
     """Return preset overrides for a starter profile."""
     profiles: dict[str, dict[str, Any]] = {
         "balanced": {
@@ -153,7 +157,9 @@ def get_kimi_k2_6_profile_overrides(starter_profile: str = "balanced") -> dict[s
     }
     if starter_profile not in profiles:
         supported = ", ".join(KIMI_K26_STARTER_PROFILE_CHOICES)
-        raise ValueError(f"Unsupported Kimi starter profile: {starter_profile}. Use one of: {supported}.")
+        raise ValueError(
+            f"Unsupported Kimi starter profile: {starter_profile}. Use one of: {supported}."
+        )
     return dict(profiles[starter_profile])
 
 
@@ -161,7 +167,9 @@ def get_kimi_k2_6_profile_description(starter_profile: str = "balanced") -> str:
     """Return the human-readable description for a starter profile."""
     if starter_profile not in KIMI_K26_STARTER_PROFILE_DESCRIPTIONS:
         supported = ", ".join(KIMI_K26_STARTER_PROFILE_CHOICES)
-        raise ValueError(f"Unsupported Kimi starter profile: {starter_profile}. Use one of: {supported}.")
+        raise ValueError(
+            f"Unsupported Kimi starter profile: {starter_profile}. Use one of: {supported}."
+        )
     return KIMI_K26_STARTER_PROFILE_DESCRIPTIONS[starter_profile]
 
 
@@ -421,7 +429,9 @@ def validate_kimi_k2_6_config(config: KimiK26Config) -> list[str]:
             "starter_profile is outside the built-in profiles; balance memory and context carefully"
         )
     if config.task not in KIMI_K26_TASK_CHOICES:
-        warnings.append("task is outside the built-in starter presets; default environment fallbacks may be used")
+        warnings.append(
+            "task is outside the built-in starter presets; default environment fallbacks may be used"
+        )
     if "kimi" not in config.model_name.lower():
         warnings.append("model_name does not look like a Kimi checkpoint")
     if "kimi-k2.6" not in config.model_name.lower():
@@ -471,7 +481,9 @@ def load_kimi_k2_6_config_file(path: str | Path) -> KimiK26Config:
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     payload = _read_mapping_file(config_path)
-    config_payload = payload.get("config") if isinstance(payload.get("config"), dict) else payload
+    config_payload = (
+        payload.get("config") if isinstance(payload.get("config"), dict) else payload
+    )
     if not isinstance(config_payload, dict):
         raise ValueError("Kimi starter config root must be a JSON/YAML object.")
 

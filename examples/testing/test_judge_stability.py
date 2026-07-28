@@ -16,24 +16,30 @@ from __future__ import annotations
 
 import random
 import statistics
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 import pytest
 
 
 # A deliberately noisy "judge". Replace with `await llm_judge(query, response)`.
-def noisy_judge(*, base: float, noise: float, rng: random.Random) -> Callable[..., Awaitable[float]]:
+def noisy_judge(
+    *, base: float, noise: float, rng: random.Random
+) -> Callable[..., Awaitable[float]]:
     async def _judge(query: str, response: str) -> float:
         return base + rng.uniform(-noise, noise)
+
     return _judge
 
 
-@pytest.mark.parametrize("noise,budget", [
-    # (noise amplitude, allowed stdev). The budget should comfortably exceed the
-    # amplitude — that's the test of the *test*, not of the judge.
-    (0.05, 0.10),
-    (0.20, 0.30),
-])
+@pytest.mark.parametrize(
+    "noise,budget",
+    [
+        # (noise amplitude, allowed stdev). The budget should comfortably exceed the
+        # amplitude — that's the test of the *test*, not of the judge.
+        (0.05, 0.10),
+        (0.20, 0.30),
+    ],
+)
 async def test_judge_stdev_under_budget(noise, budget):
     """Score the same (query, response) N times. Stdev must be under the budget."""
     rng = random.Random(42)

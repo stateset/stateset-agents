@@ -32,7 +32,10 @@ class HasNumberReward(RewardFunction):
         if not turns or not expected:
             return RewardResult(score=0.0, breakdown={"reason": "missing input"})
         contains = expected in (turns[-1].content or "")
-        return RewardResult(score=1.0 if contains else 0.0, breakdown={"contains": 1.0 if contains else 0.0})
+        return RewardResult(
+            score=1.0 if contains else 0.0,
+            breakdown={"contains": 1.0 if contains else 0.0},
+        )
 
 
 @pytest.fixture
@@ -40,13 +43,16 @@ def reward():
     return HasNumberReward()
 
 
-@pytest.mark.parametrize("response,expected,score", [
-    ("The answer is 42.",        "42", 1.0),
-    ("It is forty-two.",         "42", 0.0),
-    ("",                         "42", 0.0),
-    ("42 is the answer.",        "42", 1.0),
-    ("The result: 24",           "42", 0.0),
-])
+@pytest.mark.parametrize(
+    "response,expected,score",
+    [
+        ("The answer is 42.", "42", 1.0),
+        ("It is forty-two.", "42", 0.0),
+        ("", "42", 0.0),
+        ("42 is the answer.", "42", 1.0),
+        ("The result: 24", "42", 0.0),
+    ],
+)
 async def test_score_matches_table(reward, response, expected, score):
     turns = [ConversationTurn(role="assistant", content=response)]
     result = await reward.compute_reward(turns, context={"expected": expected})

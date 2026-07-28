@@ -354,9 +354,9 @@ class RLAIFTrainer:
 
             self.model = AutoModelForCausalLM.from_pretrained(
                 config.model_name,
-                torch_dtype=torch.float16
-                if self.device.type == "cuda"
-                else torch.float32,
+                torch_dtype=(
+                    torch.float16 if self.device.type == "cuda" else torch.float32
+                ),
                 device_map="auto" if self.device.type == "cuda" else None,
             )
         else:
@@ -704,7 +704,7 @@ class RLAIFTrainer:
         self.tokenizer.save_pretrained(path)
 
         # Save training state
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "global_step": self.global_step,
                 "metrics_history": self.metrics_history,

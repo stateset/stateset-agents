@@ -48,9 +48,11 @@ from stateset_agents.api.main import app
 def main() -> int:
     print("Starting StateSet Agents service on http://0.0.0.0:8001")
     print("Try:")
-    print('  curl -X POST http://localhost:8001/v1/chat/completions \\')
+    print("  curl -X POST http://localhost:8001/v1/chat/completions \\")
     print('       -H "Content-Type: application/json" \\')
-    print('       -d \'{"model": "stub", "messages": [{"role": "user", "content": "hello"}]}\'')
+    print(
+        '       -d \'{"model": "stub", "messages": [{"role": "user", "content": "hello"}]}\''
+    )
     print()
     uvicorn.run(app, host="0.0.0.0", port=8001, log_level="info")
     return 0

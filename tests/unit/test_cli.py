@@ -1,6 +1,6 @@
+import importlib
 import json
 import tempfile
-import importlib
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -130,13 +130,16 @@ def test_cli_train_maps_legacy_profile_alias_to_canonical_name():
 
     try:
         train_module = importlib.import_module("stateset_agents.training.train")
-        with patch.object(
-            train_module,
-            "train",
-            new=AsyncMock(),
-        ) as mock_train, patch(
-            "stateset_agents.core.agent.MultiTurnAgent.initialize",
-            new=AsyncMock(),
+        with (
+            patch.object(
+                train_module,
+                "train",
+                new=AsyncMock(),
+            ) as mock_train,
+            patch(
+                "stateset_agents.core.agent.MultiTurnAgent.initialize",
+                new=AsyncMock(),
+            ),
         ):
             result = runner.invoke(
                 app,
@@ -204,6 +207,7 @@ def test_cli_train_negative_episodes():
     assert result.exit_code != 0
     assert "positive integer" in result.stdout.lower()
 
+
 def test_cli_qwen3_5_0_8b_dry_run_json():
     """Test the dedicated Qwen 3.5 starter preview payload."""
     result = runner.invoke(app, ["qwen3-5-0-8b", "--json-output"])
@@ -265,9 +269,12 @@ def test_cli_qwen3_5_0_8b_rejects_unknown_task():
 
 def test_cli_qwen3_5_0_8b_rejects_unknown_starter_profile():
     """Test the dedicated Qwen starter rejects unsupported profile names."""
-    result = runner.invoke(app, ["qwen3-5-0-8b", "--starter-profile", "unknown_profile"])
+    result = runner.invoke(
+        app, ["qwen3-5-0-8b", "--starter-profile", "unknown_profile"]
+    )
     assert result.exit_code != 0
     assert "unsupported starter profile" in result.stdout.lower()
+
 
 def test_cli_qwen3_5_0_8b_write_config_json(tmp_path):
     """Test the dedicated Qwen starter can write a reusable config file."""
@@ -310,7 +317,9 @@ def test_cli_qwen3_5_0_8b_load_config_json(tmp_path):
 def test_cli_qwen3_5_0_8b_rejects_config_with_overrides(tmp_path):
     """Test the dedicated Qwen starter rejects config files mixed with override flags."""
     cfg_path = tmp_path / "qwen3_5_conflict.json"
-    cfg_path.write_text(json.dumps({"model_name": "Qwen/Qwen3.5-0.8B-Base"}), encoding="utf-8")
+    cfg_path.write_text(
+        json.dumps({"model_name": "Qwen/Qwen3.5-0.8B-Base"}), encoding="utf-8"
+    )
     result = runner.invoke(
         app,
         ["qwen3-5-0-8b", "--config", str(cfg_path), "--use-4bit"],
@@ -322,7 +331,9 @@ def test_cli_qwen3_5_0_8b_rejects_config_with_overrides(tmp_path):
 def test_cli_qwen3_5_0_8b_rejects_config_with_profile_override(tmp_path):
     """Test the dedicated Qwen starter rejects config files mixed with starter profiles."""
     cfg_path = tmp_path / "qwen3_5_profile_conflict.json"
-    cfg_path.write_text(json.dumps({"model_name": "Qwen/Qwen3.5-0.8B-Base"}), encoding="utf-8")
+    cfg_path.write_text(
+        json.dumps({"model_name": "Qwen/Qwen3.5-0.8B-Base"}), encoding="utf-8"
+    )
     result = runner.invoke(
         app,
         ["qwen3-5-0-8b", "--config", str(cfg_path), "--starter-profile", "memory"],
@@ -334,7 +345,9 @@ def test_cli_qwen3_5_0_8b_rejects_config_with_profile_override(tmp_path):
 def test_cli_qwen3_5_0_8b_rejects_list_profiles_with_config(tmp_path):
     """Test profile discovery stays separate from config-file execution mode."""
     cfg_path = tmp_path / "qwen3_5_list_profiles_conflict.json"
-    cfg_path.write_text(json.dumps({"model_name": "Qwen/Qwen3.5-0.8B-Base"}), encoding="utf-8")
+    cfg_path.write_text(
+        json.dumps({"model_name": "Qwen/Qwen3.5-0.8B-Base"}), encoding="utf-8"
+    )
     result = runner.invoke(
         app,
         ["qwen3-5-0-8b", "--config", str(cfg_path), "--list-profiles"],
@@ -450,7 +463,9 @@ def test_cli_kimi_k2_6_load_config_json(tmp_path):
 def test_cli_kimi_k2_6_rejects_config_with_overrides(tmp_path):
     """Test the dedicated Kimi starter rejects config files mixed with override flags."""
     cfg_path = tmp_path / "kimi_k2_6_conflict.json"
-    cfg_path.write_text(json.dumps({"model_name": "moonshotai/Kimi-K2.6"}), encoding="utf-8")
+    cfg_path.write_text(
+        json.dumps({"model_name": "moonshotai/Kimi-K2.6"}), encoding="utf-8"
+    )
     result = runner.invoke(
         app,
         ["kimi-k2-6", "--config", str(cfg_path), "--use-4bit"],
@@ -462,7 +477,9 @@ def test_cli_kimi_k2_6_rejects_config_with_overrides(tmp_path):
 def test_cli_kimi_k2_6_rejects_config_with_profile_override(tmp_path):
     """Test the dedicated Kimi starter rejects config files mixed with starter profiles."""
     cfg_path = tmp_path / "kimi_k2_6_profile_conflict.json"
-    cfg_path.write_text(json.dumps({"model_name": "moonshotai/Kimi-K2.6"}), encoding="utf-8")
+    cfg_path.write_text(
+        json.dumps({"model_name": "moonshotai/Kimi-K2.6"}), encoding="utf-8"
+    )
     result = runner.invoke(
         app,
         ["kimi-k2-6", "--config", str(cfg_path), "--starter-profile", "memory"],
@@ -474,7 +491,9 @@ def test_cli_kimi_k2_6_rejects_config_with_profile_override(tmp_path):
 def test_cli_kimi_k2_6_rejects_list_profiles_with_config(tmp_path):
     """Test Kimi profile discovery stays separate from config-file execution mode."""
     cfg_path = tmp_path / "kimi_k2_6_list_profiles_conflict.json"
-    cfg_path.write_text(json.dumps({"model_name": "moonshotai/Kimi-K2.6"}), encoding="utf-8")
+    cfg_path.write_text(
+        json.dumps({"model_name": "moonshotai/Kimi-K2.6"}), encoding="utf-8"
+    )
     result = runner.invoke(
         app,
         ["kimi-k2-6", "--config", str(cfg_path), "--list-profiles"],
@@ -590,7 +609,9 @@ def test_cli_kimi_k3_load_config_json(tmp_path):
 def test_cli_kimi_k3_rejects_config_with_overrides(tmp_path):
     """Test the dedicated Kimi starter rejects config files mixed with override flags."""
     cfg_path = tmp_path / "kimi_k3_conflict.json"
-    cfg_path.write_text(json.dumps({"model_name": "moonshotai/Kimi-K3"}), encoding="utf-8")
+    cfg_path.write_text(
+        json.dumps({"model_name": "moonshotai/Kimi-K3"}), encoding="utf-8"
+    )
     result = runner.invoke(
         app,
         ["kimi-k3", "--config", str(cfg_path), "--use-4bit"],
@@ -602,7 +623,9 @@ def test_cli_kimi_k3_rejects_config_with_overrides(tmp_path):
 def test_cli_kimi_k3_rejects_config_with_profile_override(tmp_path):
     """Test the dedicated Kimi starter rejects config files mixed with starter profiles."""
     cfg_path = tmp_path / "kimi_k3_profile_conflict.json"
-    cfg_path.write_text(json.dumps({"model_name": "moonshotai/Kimi-K3"}), encoding="utf-8")
+    cfg_path.write_text(
+        json.dumps({"model_name": "moonshotai/Kimi-K3"}), encoding="utf-8"
+    )
     result = runner.invoke(
         app,
         ["kimi-k3", "--config", str(cfg_path), "--starter-profile", "memory"],
@@ -614,7 +637,9 @@ def test_cli_kimi_k3_rejects_config_with_profile_override(tmp_path):
 def test_cli_kimi_k3_rejects_list_profiles_with_config(tmp_path):
     """Test Kimi profile discovery stays separate from config-file execution mode."""
     cfg_path = tmp_path / "kimi_k3_list_profiles_conflict.json"
-    cfg_path.write_text(json.dumps({"model_name": "moonshotai/Kimi-K3"}), encoding="utf-8")
+    cfg_path.write_text(
+        json.dumps({"model_name": "moonshotai/Kimi-K3"}), encoding="utf-8"
+    )
     result = runner.invoke(
         app,
         ["kimi-k3", "--config", str(cfg_path), "--list-profiles"],
@@ -705,9 +730,7 @@ def test_cli_validate_config_rejects_bad_scenario_items():
         config_path = f.name
 
     try:
-        result = runner.invoke(
-            app, ["validate-config", "--config", config_path]
-        )
+        result = runner.invoke(app, ["validate-config", "--config", config_path])
         assert result.exit_code != 0
         assert "environment.scenarios[0]" in result.stdout.lower()
         assert "must be an object" in result.stdout.lower()
@@ -733,9 +756,7 @@ def test_cli_validate_config_rejects_bad_scenario_user_responses():
         config_path = f.name
 
     try:
-        result = runner.invoke(
-            app, ["validate-config", "--config", config_path]
-        )
+        result = runner.invoke(app, ["validate-config", "--config", config_path])
         assert result.exit_code != 0
         assert "user_responses[0]" in result.stdout.lower()
         assert "must be a string" in result.stdout.lower()
@@ -871,6 +892,7 @@ def test_cli_publish_check_json_no_config():
 
 def test_cli_publish_check_strict_required_import_failure():
     """Test publish-check fails when required imports are unavailable."""
+
     def fake_collect_import_status(modules: list[str]) -> dict[str, bool]:
         modules_set = set(modules)
         if "stateset_agents.core.environment" in modules_set:
@@ -879,7 +901,10 @@ def test_cli_publish_check_strict_required_import_failure():
             return dict.fromkeys(modules, False)
         return dict.fromkeys(modules, True)
 
-    with patch("stateset_agents.cli._collect_import_status", side_effect=fake_collect_import_status):
+    with patch(
+        "stateset_agents.cli._collect_import_status",
+        side_effect=fake_collect_import_status,
+    ):
         with patch(
             "stateset_agents.cli._collect_dependency_status",
             return_value=({"torch": True, "transformers": True, "datasets": True}, {}),
@@ -1008,6 +1033,7 @@ def test_cli_init_json_format():
         assert loaded["agent"]["model_name"] == "gpt2"
         assert loaded["training"]["num_episodes"] == 5
 
+
 def test_cli_init_qwen_preset_json(tmp_path):
     """Test init can scaffold the Qwen 3.5 starter preset."""
     cfg_path = tmp_path / "qwen3_5_0_8b.json"
@@ -1029,7 +1055,6 @@ def test_cli_init_qwen_preset_json(tmp_path):
     assert loaded["task"] == "customer_service"
     assert loaded["trust_remote_code"] is True
     assert loaded["attn_implementation"] == "sdpa"
-
 
 
 def test_cli_init_qwen_preset_custom_task(tmp_path):

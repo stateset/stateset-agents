@@ -98,16 +98,19 @@ class AutoResearchConfig:
         if self.time_budget <= 0:
             warnings.append("time_budget must be positive")
         valid_proposers = (
-            "random", "grid", "bayesian", "perturbation",
-            "adaptive", "smart", "llm",
+            "random",
+            "grid",
+            "bayesian",
+            "perturbation",
+            "adaptive",
+            "smart",
+            "llm",
         )
         if self.proposer not in valid_proposers:
             warnings.append(f"Unknown proposer strategy: {self.proposer!r}")
         valid_algos = ("gspo", "grpo", "dapo", "vapo", "auto")
         if self.trainer_algorithm not in valid_algos:
-            warnings.append(
-                f"Unknown trainer_algorithm: {self.trainer_algorithm!r}"
-            )
+            warnings.append(f"Unknown trainer_algorithm: {self.trainer_algorithm!r}")
         if self.eval_episodes <= 0:
             warnings.append("eval_episodes must be positive")
         if self.eval_concurrency <= 0:

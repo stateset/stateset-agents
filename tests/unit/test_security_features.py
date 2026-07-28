@@ -478,7 +478,11 @@ class TestAPIVersioning:
 
     def test_migration_step(self):
         """Test request migration between versions."""
-        from stateset_agents.api.versioning import APIVersion, MigrationStep, RequestMigrator
+        from stateset_agents.api.versioning import (
+            APIVersion,
+            MigrationStep,
+            RequestMigrator,
+        )
 
         migrator = RequestMigrator()
         migrator.add_step(

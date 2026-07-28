@@ -72,8 +72,7 @@ def export_merged_model_for_serving(
     """
     try:
         from peft import PeftModel
-        from transformers import AutoConfig, AutoModelForCausalLM
-        from transformers import AutoTokenizer
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     except ImportError as exc:  # pragma: no cover
         logger.warning("Missing dependencies for merge export: %s", exc)
         return ""

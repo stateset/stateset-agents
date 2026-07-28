@@ -327,7 +327,9 @@ class APIConfig:
     """Main API configuration."""
 
     environment: Environment = Environment.DEVELOPMENT
-    host: str = "0.0.0.0"
+    host: str = (
+        "0.0.0.0"  # nosec: B104 - intentional default for containerized deployment
+    )
     port: int = 8000
     api_version: str = "v1"
     title: str = "StateSet Agents API"
@@ -353,7 +355,9 @@ class APIConfig:
 
         return cls(
             environment=environment,
-            host=os.getenv("API_HOST", "0.0.0.0"),
+            host=os.getenv(
+                "API_HOST", "0.0.0.0"
+            ),  # nosec: B104 - intentional default for containerized deployment
             port=_get_int("API_PORT", 8000, min_val=1, max_val=65535),
             api_version=os.getenv("API_VERSION", "v1"),
             title=os.getenv("API_TITLE", "StateSet Agents API"),

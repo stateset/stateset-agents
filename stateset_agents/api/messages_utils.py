@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
 from collections.abc import Iterable
+from typing import Any
 
 
 def _join_text_parts(parts: Iterable[str]) -> str:
@@ -214,16 +214,14 @@ def _tool_to_openai(tool: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def tools_to_openai(
-    tools: list[dict[str, Any]] | None
-) -> list[dict[str, Any]] | None:
+def tools_to_openai(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
     if not tools:
         return None
     return [_tool_to_openai(tool) for tool in tools]
 
 
 def tool_choice_to_openai(
-    tool_choice: str | dict[str, Any] | None
+    tool_choice: str | dict[str, Any] | None,
 ) -> str | dict[str, Any] | None:
     if tool_choice is None:
         return None

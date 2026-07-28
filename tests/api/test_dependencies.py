@@ -18,7 +18,6 @@ from stateset_agents.api.dependencies import (
 )
 from tests.api.asgi_client import SyncASGIClient
 
-
 # ============================================================================
 # AuthenticatedUser tests
 # ============================================================================

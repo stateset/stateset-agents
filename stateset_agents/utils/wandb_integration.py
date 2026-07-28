@@ -324,9 +324,7 @@ class WandBIntegration:
         ):
             self._create_trajectory_plots()
 
-    def log_reward_analysis(
-        self, rewards: list[RewardResult], step: int | None = None
-    ):
+    def log_reward_analysis(self, rewards: list[RewardResult], step: int | None = None):
         """Log detailed reward analysis"""
         if not self.is_initialized or not self.config.log_rewards:
             return
@@ -696,7 +694,7 @@ class WandBIntegration:
             # Create temporary file
             with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp_file:
                 if TORCH_AVAILABLE and hasattr(model, "state_dict"):
-                    torch.save(model.state_dict(), tmp_file.name)
+                    torch.save(model.state_dict(), tmp_file.name)  # nosec: B614
                 else:
                     # Fallback for non-PyTorch models
                     import pickle
@@ -704,9 +702,7 @@ class WandBIntegration:
                     pickle.dump(model, tmp_file)
 
                 # Create artifact
-                artifact = wb.Artifact(
-                    name=name, type="model", metadata=metadata or {}
-                )
+                artifact = wb.Artifact(name=name, type="model", metadata=metadata or {})
 
                 artifact.add_file(tmp_file.name)
                 wb.log_artifact(artifact)
@@ -768,6 +764,7 @@ class WandBIntegration:
             self.is_initialized = False
             logger.info("Finished W&B run")
 
+
 class WandBMonitoringService(MonitoringService):
     """Monitoring service that logs to W&B"""
 
@@ -811,6 +808,7 @@ class WandBMonitoringService(MonitoringService):
                 "context": context or {},
             }
             self.wandb.log_step({"errors/error": error_data}, commit=False)
+
 
 from .wandb_logger import WandBLogger, init_wandb
 

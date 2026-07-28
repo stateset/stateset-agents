@@ -12,6 +12,7 @@ All components are designed to work seamlessly with the existing framework
 while providing significant improvements in capabilities and performance.
 """
 
+from ... import __version__ as _PACKAGE_VERSION
 from .advanced_evaluation import (
     AdvancedEvaluator,
     AutomatedTestSuite,
@@ -40,7 +41,6 @@ from .enhanced_agent import (
     create_domain_specific_agent,
     create_enhanced_agent,
 )
-from ... import __version__ as _PACKAGE_VERSION
 
 __all__ = [
     # Enhanced Agents

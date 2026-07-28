@@ -69,15 +69,17 @@ def render_summary(
         if not scores:
             continue
         all_scores.extend(scores)
-        per_transcript.append({
-            "name": path.stem,
-            "n_turns": len(scores),
-            "mean": statistics.mean(scores),
-            "perfect": sum(1 for s in scores if s >= 0.999),
-            "zero": sum(1 for s in scores if s < 0.001),
-            "min": min(scores),
-            "max": max(scores),
-        })
+        per_transcript.append(
+            {
+                "name": path.stem,
+                "n_turns": len(scores),
+                "mean": statistics.mean(scores),
+                "perfect": sum(1 for s in scores if s >= 0.999),
+                "zero": sum(1 for s in scores if s < 0.001),
+                "min": min(scores),
+                "max": max(scores),
+            }
+        )
 
     if not all_scores:
         lines.append("_No assistant turns found across the transcripts._")
@@ -91,8 +93,12 @@ def render_summary(
     lines.append(f"**Transcripts:** {len(per_transcript)}")
     lines.append(f"**Total assistant turns:** {len(all_scores)}")
     lines.append(f"**Grand mean score:** {grand_mean:.3f} ± {grand_std:.3f}")
-    lines.append(f"**Perfect (≥0.999):** {n_perfect}/{len(all_scores)} ({100 * n_perfect / len(all_scores):.1f}%)")
-    lines.append(f"**Zero (<0.001):** {n_zero}/{len(all_scores)} ({100 * n_zero / len(all_scores):.1f}%)")
+    lines.append(
+        f"**Perfect (≥0.999):** {n_perfect}/{len(all_scores)} ({100 * n_perfect / len(all_scores):.1f}%)"
+    )
+    lines.append(
+        f"**Zero (<0.001):** {n_zero}/{len(all_scores)} ({100 * n_zero / len(all_scores):.1f}%)"
+    )
     lines.append("")
 
     # Per-transcript table — sorted by mean score descending.
@@ -113,16 +119,28 @@ def render_summary(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--graded-dir", type=Path, required=True,
-                        help="Directory containing the *.json files from `grade-batch`.")
-    parser.add_argument("--output", type=Path, default=None,
-                        help="Write the markdown report here (default: stdout).")
+    parser.add_argument(
+        "--graded-dir",
+        type=Path,
+        required=True,
+        help="Directory containing the *.json files from `grade-batch`.",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write the markdown report here (default: stdout).",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
     transcripts = load_graded_jsons(args.graded_dir)
-    logger.info("Loaded %d transcript file(s) from %s", len(transcripts), args.graded_dir)
+    logger.info(
+        "Loaded %d transcript file(s) from %s", len(transcripts), args.graded_dir
+    )
 
     md = render_summary(transcripts)
     if args.output:

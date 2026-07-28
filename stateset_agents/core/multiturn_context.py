@@ -73,7 +73,9 @@ class DialogueDatabase:
                 for dialogue_idx in self.index[word]:
                     scores[dialogue_idx] = scores.get(dialogue_idx, 0) + 1
 
-        sorted_dialogues = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        sorted_dialogues = sorted(
+            scores.items(), key=lambda item: item[1], reverse=True
+        )
 
         results = []
         for dialogue_idx, score in sorted_dialogues[:top_k]:

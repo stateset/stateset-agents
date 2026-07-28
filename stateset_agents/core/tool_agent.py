@@ -14,7 +14,7 @@ import logging
 import re
 from typing import Any
 
-from .agent import AgentConfig, MultiTurnAgent, TOOL_EXEC_EXCEPTIONS
+from .agent import TOOL_EXEC_EXCEPTIONS, AgentConfig, MultiTurnAgent
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +43,16 @@ class ToolAgent(MultiTurnAgent):
     ) -> str:
         """Generate response with potential tool usage"""
         normalized_messages = (
-            [{"role": "user", "content": messages}] if isinstance(messages, str) else messages
+            [{"role": "user", "content": messages}]
+            if isinstance(messages, str)
+            else messages
         )
 
         if self._should_use_tools(normalized_messages, context):
             return await self._generate_with_tools(normalized_messages, context)
-        raw_response: object = await super().generate_response(normalized_messages, context)
+        raw_response: object = await super().generate_response(
+            normalized_messages, context
+        )
         return raw_response if isinstance(raw_response, str) else str(raw_response)
 
     def _should_use_tools(
@@ -124,7 +128,9 @@ class ToolAgent(MultiTurnAgent):
         else:
             enhanced_messages = [{"role": "system", "content": system_msg}] + messages
 
-        raw_response: object = await super().generate_response(enhanced_messages, context)
+        raw_response: object = await super().generate_response(
+            enhanced_messages, context
+        )
         response_text = (
             raw_response if isinstance(raw_response, str) else str(raw_response)
         )

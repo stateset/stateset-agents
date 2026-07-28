@@ -205,10 +205,10 @@ class TestTextProcessor:
     @pytest.fixture
     def mock_text_processor(self):
         """Create a mock TextProcessor."""
-        with patch(
-            "stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True
-        ), patch("stateset_agents.core.multimodal_processing.AutoTokenizer"), patch(
-            "stateset_agents.core.multimodal_processing.AutoModel"
+        with (
+            patch("stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True),
+            patch("stateset_agents.core.multimodal_processing.AutoTokenizer"),
+            patch("stateset_agents.core.multimodal_processing.AutoModel"),
         ):
             from stateset_agents.core.multimodal_processing import TextProcessor
 
@@ -224,11 +224,12 @@ class TestTextProcessor:
     @pytest.mark.asyncio
     async def test_text_processor_initialize(self, mock_text_processor):
         """Test TextProcessor initialization."""
-        with patch(
-            "stateset_agents.core.multimodal_processing.AutoTokenizer"
-        ) as mock_tokenizer, patch(
-            "stateset_agents.core.multimodal_processing.AutoModel"
-        ) as mock_model:
+        with (
+            patch(
+                "stateset_agents.core.multimodal_processing.AutoTokenizer"
+            ) as mock_tokenizer,
+            patch("stateset_agents.core.multimodal_processing.AutoModel") as mock_model,
+        ):
             mock_tokenizer.from_pretrained.return_value = MagicMock()
             mock_model.from_pretrained.return_value = MagicMock()
 
@@ -243,9 +244,10 @@ class TestImageProcessor:
 
     def test_image_processor_interface(self):
         """Test ImageProcessor implements required methods."""
-        with patch(
-            "stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True
-        ), patch("stateset_agents.core.multimodal_processing.PIL_AVAILABLE", True):
+        with (
+            patch("stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True),
+            patch("stateset_agents.core.multimodal_processing.PIL_AVAILABLE", True),
+        ):
             from stateset_agents.core.multimodal_processing import ImageProcessor
 
             processor = ImageProcessor()
@@ -260,9 +262,10 @@ class TestAudioProcessor:
 
     def test_audio_processor_interface(self):
         """Test AudioProcessor implements required methods."""
-        with patch(
-            "stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True
-        ), patch("stateset_agents.core.multimodal_processing.AUDIO_AVAILABLE", True):
+        with (
+            patch("stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True),
+            patch("stateset_agents.core.multimodal_processing.AUDIO_AVAILABLE", True),
+        ):
             from stateset_agents.core.multimodal_processing import AudioProcessor
 
             processor = AudioProcessor()
@@ -278,12 +281,12 @@ class TestMultimodalProcessor:
     @pytest.fixture
     def multimodal_processor(self):
         """Create a mock MultimodalProcessor."""
-        with patch(
-            "stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True
-        ), patch(
-            "stateset_agents.core.multimodal_processing.get_monitoring_service"
-        ) as mock_monitoring, patch(
-            "stateset_agents.core.multimodal_processing.ErrorHandler"
+        with (
+            patch("stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True),
+            patch(
+                "stateset_agents.core.multimodal_processing.get_monitoring_service"
+            ) as mock_monitoring,
+            patch("stateset_agents.core.multimodal_processing.ErrorHandler"),
         ):
             mock_monitoring.return_value = MagicMock()
             from stateset_agents.core.multimodal_processing import MultimodalProcessor
@@ -331,11 +334,12 @@ class TestCreateMultimodalProcessor:
 
     def test_create_multimodal_processor(self):
         """Test factory function creates processor."""
-        with patch(
-            "stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True
-        ), patch(
-            "stateset_agents.core.multimodal_processing.get_monitoring_service"
-        ) as mock_monitoring:
+        with (
+            patch("stateset_agents.core.multimodal_processing.TORCH_AVAILABLE", True),
+            patch(
+                "stateset_agents.core.multimodal_processing.get_monitoring_service"
+            ) as mock_monitoring,
+        ):
             mock_monitoring.return_value = MagicMock()
             from stateset_agents.core.multimodal_processing import (
                 create_multimodal_processor,

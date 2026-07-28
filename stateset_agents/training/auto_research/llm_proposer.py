@@ -12,8 +12,8 @@ import json
 import logging
 import os
 import re
-from typing import Any
 from collections.abc import Mapping
+from typing import Any
 
 from .proposer import ExperimentProposer
 
@@ -132,9 +132,11 @@ def _resolve_backend(
         _infer_backend_from_model(model),
         _infer_backend_from_model(env_mapping.get("LLM_PROPOSER_MODEL")),
         _infer_backend_from_model(env_mapping.get("MODEL_NAME")),
-        "openai"
-        if env_mapping.get("OPENAI_API_KEY") or env_mapping.get("OPENAI_TOKEN")
-        else None,
+        (
+            "openai"
+            if env_mapping.get("OPENAI_API_KEY") or env_mapping.get("OPENAI_TOKEN")
+            else None
+        ),
         "anthropic" if env_mapping.get("ANTHROPIC_API_KEY") else None,
     ):
         if candidate is not None:
@@ -153,7 +155,9 @@ def _resolve_model_name(
         return model
 
     env_mapping = os.environ if env is None else env
-    shared_model = env_mapping.get("LLM_PROPOSER_MODEL") or env_mapping.get("MODEL_NAME")
+    shared_model = env_mapping.get("LLM_PROPOSER_MODEL") or env_mapping.get(
+        "MODEL_NAME"
+    )
     if shared_model:
         return shared_model
     if backend == "anthropic":
@@ -408,7 +412,8 @@ class LLMProposer(ExperimentProposer):
                 if val not in dim.choices:
                     logger.debug(
                         "LLM proposed invalid choice %r for %s, using first choice",
-                        val, dim.name,
+                        val,
+                        dim.name,
                     )
                     params[dim.name] = dim.choices[0]
             elif dim.type == SearchSpaceType.INT:

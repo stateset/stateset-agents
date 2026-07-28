@@ -10,6 +10,7 @@ pytest_plugins = ("pytest_asyncio",)
 def pytest_collection_modifyitems(config, items):
     """Auto-apply the asyncio marker to coroutine tests."""
     import asyncio
+
     for item in items:
         if asyncio.iscoroutinefunction(getattr(item, "function", None)):
             item.add_marker(pytest.mark.asyncio)

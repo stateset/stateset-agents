@@ -106,9 +106,7 @@ class GymEnvironmentAdapter(Environment):
         self._gym_states: dict[str, Any] = {}
         self._episode_rewards: dict[str, float] = {}
 
-    async def reset(
-        self, scenario: dict[str, Any] | None = None
-    ) -> EnvironmentState:
+    async def reset(self, scenario: dict[str, Any] | None = None) -> EnvironmentState:
         """
         Reset the gym environment and return initial state.
 
@@ -162,9 +160,7 @@ class GymEnvironmentAdapter(Environment):
 
         return state
 
-    async def step(
-        self, state: EnvironmentState, action: ConversationTurn
-    ) -> Any:
+    async def step(self, state: EnvironmentState, action: ConversationTurn) -> Any:
         """
         Execute one step in the gym environment.
 
@@ -280,9 +276,7 @@ class GymEnvironmentAdapter(Environment):
 
         return new_state, obs_turn, reward, done
 
-    async def get_initial_prompt(
-        self, scenario: dict[str, Any] | None = None
-    ) -> str:
+    async def get_initial_prompt(self, scenario: dict[str, Any] | None = None) -> str:
         """
         Get initial task description for the agent.
 

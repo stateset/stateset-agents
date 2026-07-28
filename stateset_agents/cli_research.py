@@ -28,8 +28,7 @@ app = _cli.app
 
 @app.command("auto-research")
 def auto_research(
-    config: str
-    | None = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -212,12 +211,14 @@ def auto_research(
         max_new_tokens=agent_cfg.get("max_new_tokens", 64),
         temperature=agent_cfg.get("temperature", 0.7),
         use_stub_model=agent_cfg.get("use_stub_model", stub),
-        stub_responses=agent_cfg.get(
-            "stub_responses",
-            ["Stub response for auto-research testing."],
-        )
-        if stub
-        else None,
+        stub_responses=(
+            agent_cfg.get(
+                "stub_responses",
+                ["Stub response for auto-research testing."],
+            )
+            if stub
+            else None
+        ),
     )
 
     scenarios = env_cfg.get("scenarios") or [

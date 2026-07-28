@@ -14,9 +14,9 @@ import pickle
 import shutil
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 try:
     import torch
@@ -57,6 +57,7 @@ from stateset_agents.core.performance_optimizer import (
     OptimizationLevel,
     PerformanceOptimizer,
 )
+
 from .advanced_training_models import (
     ResourceRequirement,
     ResourceType,
@@ -88,9 +89,9 @@ class ResourceManager:
 
     def __init__(self):
         self.available_resources: dict[ResourceType, float] = {}
-        self.allocated_resources: dict[
-            str, dict[ResourceType, float]
-        ] = {}  # job_id -> resources
+        self.allocated_resources: dict[str, dict[ResourceType, float]] = (
+            {}
+        )  # job_id -> resources
         self.resource_locks: dict[ResourceType, asyncio.Lock] = {}
 
         # Initialize locks

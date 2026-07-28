@@ -255,13 +255,15 @@ async def full_training_pipeline(config_dict: dict[str, Any]):
         max_new_tokens=config.max_completion_length,
         torch_dtype=config.torch_dtype,
         use_peft=config.use_lora,
-        peft_config={
-            "r": config.lora_r,
-            "lora_alpha": config.lora_alpha,
-            "lora_dropout": config.lora_dropout,
-        }
-        if config.use_lora
-        else None,
+        peft_config=(
+            {
+                "r": config.lora_r,
+                "lora_alpha": config.lora_alpha,
+                "lora_dropout": config.lora_dropout,
+            }
+            if config.use_lora
+            else None
+        ),
     )
 
     agent = MultiTurnAgent(agent_config)

@@ -93,12 +93,10 @@ class TTLDict(dict[str, T], Generic[T]):
             return True
 
     @overload
-    def get(self, key: str, default: None = None) -> T | None:
-        ...
+    def get(self, key: str, default: None = None) -> T | None: ...
 
     @overload
-    def get(self, key: str, default: _DefaultT) -> T | _DefaultT:
-        ...
+    def get(self, key: str, default: _DefaultT) -> T | _DefaultT: ...
 
     def get(self, key: str, default: _DefaultT | None = None) -> T | _DefaultT | None:
         """Get item with default value."""
@@ -115,12 +113,10 @@ class TTLDict(dict[str, T], Generic[T]):
             return super().__getitem__(key)
 
     @overload
-    def pop(self, key: str) -> T:
-        ...
+    def pop(self, key: str) -> T: ...
 
     @overload
-    def pop(self, key: str, default: _DefaultT) -> T | _DefaultT:
-        ...
+    def pop(self, key: str, default: _DefaultT) -> T | _DefaultT: ...
 
     def pop(self, key: str, default: object = _MISSING) -> T | _DefaultT:
         """Remove and return item."""

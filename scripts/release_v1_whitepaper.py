@@ -132,7 +132,10 @@ def copy_figures(dry_run: bool = False) -> list[Path]:
         return []
     figures_dir.mkdir(parents=True, exist_ok=True)
     copied: list[Path] = []
-    for figure_name in ("fig_pass_at_1_per_trainer.png", "fig_improvement_per_trainer.png"):
+    for figure_name in (
+        "fig_pass_at_1_per_trainer.png",
+        "fig_improvement_per_trainer.png",
+    ):
         src = RESULTS_DIR / figure_name
         if not src.exists():
             logger.warning("figure %s not found; skipping", src)
@@ -158,34 +161,50 @@ def write_manifest(metadata: dict[str, Any], artifacts: list[str]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print steps without writing.")
-    parser.add_argument("--strict", action="store_true",
-                        help="Exit non-zero if benchmark gates aren't met.")
-    parser.add_argument("--skip-figures", action="store_true",
-                        help="Skip PNG generation (markdown-only).")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print steps without writing."
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit non-zero if benchmark gates aren't met.",
+    )
+    parser.add_argument(
+        "--skip-figures",
+        action="store_true",
+        help="Skip PNG generation (markdown-only).",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
     # Step 1: snapshot what we have.
     metadata = collect_run_metadata()
-    logger.info("Found %d run(s): trainers=%s tasks=%s seeds=%s commits=%s",
-                metadata["runs"], metadata["trainers"], metadata["tasks"],
-                metadata["seeds"], metadata["commits"])
+    logger.info(
+        "Found %d run(s): trainers=%s tasks=%s seeds=%s commits=%s",
+        metadata["runs"],
+        metadata["trainers"],
+        metadata["tasks"],
+        metadata["seeds"],
+        metadata["commits"],
+    )
 
     if metadata["runs"] == 0:
         logger.warning(
-            "No benchmark runs found in %s. Run `make benchmark-phase0-all` "
-            "first.", RESULTS_DIR,
+            "No benchmark runs found in %s. Run `make benchmark-phase0-all` " "first.",
+            RESULTS_DIR,
         )
         if args.strict:
             return 1
 
     # Step 2: aggregate.
     aggregate_cmd = [
-        sys.executable, "scripts/aggregate_phase0_results.py",
-        "--results-dir", str(RESULTS_DIR),
+        sys.executable,
+        "scripts/aggregate_phase0_results.py",
+        "--results-dir",
+        str(RESULTS_DIR),
     ]
     if args.strict:
         aggregate_cmd.append("--strict")
@@ -197,8 +216,12 @@ def main() -> int:
     if not args.skip_figures:
         run_step(
             "Generate publication figures",
-            [sys.executable, "scripts/plot_phase0_results.py",
-             "--results-dir", str(RESULTS_DIR)],
+            [
+                sys.executable,
+                "scripts/plot_phase0_results.py",
+                "--results-dir",
+                str(RESULTS_DIR),
+            ],
             dry_run=args.dry_run,
         )
 
@@ -213,7 +236,9 @@ def main() -> int:
         WHITEPAPER_SECTION_PATH.write_text(section)
         logger.info("Wrote %s", WHITEPAPER_SECTION_PATH)
     else:
-        logger.warning("summary.md not found at %s; skipping §11.7 render", summary_path)
+        logger.warning(
+            "summary.md not found at %s; skipping §11.7 render", summary_path
+        )
 
     # Step 5: copy figures into docs/.
     figures = []
@@ -239,7 +264,9 @@ def main() -> int:
         marker = "📄" if a.endswith(".md") else "📊" if a.endswith(".png") else "📋"
         print(f"  {marker} {a}")
     print()
-    print(f"Runs: {metadata['runs']} across trainers={metadata['trainers']} tasks={metadata['tasks']}")
+    print(
+        f"Runs: {metadata['runs']} across trainers={metadata['trainers']} tasks={metadata['tasks']}"
+    )
     print(f"Seeds: {metadata['seeds']}")
     print(f"Commits: {metadata['commits']}")
     return 0

@@ -295,9 +295,7 @@ class PPOTrainer:
 
         return trajectory
 
-    async def _get_state_embedding(
-        self, messages: list[dict[str, str]]
-    ) -> FloatArray:
+    async def _get_state_embedding(self, messages: list[dict[str, str]]) -> FloatArray:
         """Get embedding representation of conversation state"""
         # Simple approach: concatenate last few messages
         conversation_text = " ".join([msg["content"] for msg in messages[-3:]])
@@ -538,9 +536,7 @@ class DPOTrainer:
 
         # Update parameters
         model = _require_model(self.agent)
-        torch.nn.utils.clip_grad_norm_(
-            model.parameters(), self.config.max_grad_norm
-        )
+        torch.nn.utils.clip_grad_norm_(model.parameters(), self.config.max_grad_norm)
         self.optimizer.step()
         self.optimizer.zero_grad()
 
@@ -638,9 +634,7 @@ class A2CTrainer:
 
         return episode_rewards
 
-    async def _get_state_embedding(
-        self, messages: list[dict[str, str]]
-    ) -> FloatArray:
+    async def _get_state_embedding(self, messages: list[dict[str, str]]) -> FloatArray:
         """Get embedding for state (simplified)"""
         conversation_text = messages[-1]["content"] if messages else ""
         tokenizer = _require_tokenizer(self.agent)

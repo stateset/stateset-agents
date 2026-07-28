@@ -2,7 +2,6 @@
 Tests for Multi-Agent Coordination System
 """
 
-
 import pytest
 
 from stateset_agents.core.agent import Agent

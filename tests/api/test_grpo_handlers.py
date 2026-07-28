@@ -3,7 +3,6 @@ Tests for GRPO handler context updates and access controls.
 """
 
 import contextlib
-
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -203,25 +202,27 @@ async def test_api_endpoints_restrict_job_access_by_user():
         training_handler = fixture["training_handler"]
 
         request = GRPOTrainingRequest(prompts=["safety"], num_iterations=1)
-        train_response = await training_handler.start_training(request, "owner", "req-2")
+        train_response = await training_handler.start_training(
+            request, "owner", "req-2"
+        )
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
             assert (
-                (await client.get(
+                await client.get(
                     f"/api/status/{train_response.job_id}",
                     headers={"x-user-id": "intruder", "x-user-roles": "user"},
-                )).status_code
-                == 404
-            )
+                )
+            ).status_code == 404
 
             assert (
-                (await client.get(
+                await client.get(
                     f"/v1/jobs/{train_response.job_id}",
                     headers={"x-user-id": "intruder", "x-user-roles": "user"},
-                )).status_code
-                == 404
-            )
+                )
+            ).status_code == 404
 
             delete_response = await client.delete(
                 f"/v1/jobs/{train_response.job_id}",
@@ -251,7 +252,9 @@ async def test_api_batch_endpoints_restrict_to_job_owner():
         headers = {"x-user-roles": "user"}
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
             status_response = await client.post(
                 "/api/batch/status",
                 headers={**headers, "x-user-id": "intruder"},
@@ -319,7 +322,9 @@ async def test_api_batch_endpoints_allow_admin_full_visibility():
         )
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
             status_response = await client.post(
                 "/api/batch/status",
                 headers={"x-user-id": "security-admin", "x-user-roles": "admin"},
@@ -371,7 +376,9 @@ async def test_api_batch_cancel_marks_completed_jobs_as_already_completed():
         state.update_job(completed_job.job_id, status="completed")
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
             cancel_response = await client.post(
                 "/api/batch/cancel",
                 headers={"x-user-id": "owner", "x-user-roles": "user"},

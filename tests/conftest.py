@@ -1,12 +1,12 @@
 """Shared test configuration and fixtures for all test modules."""
 
 import asyncio
+import inspect
 import logging
 import os
 import shutil
 import sys
 import tempfile
-import inspect
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -26,9 +26,8 @@ try:
 except Exception:
     pass
 
-if (
-    "app" not in inspect.signature(httpx.Client.__init__).parameters
-    and not getattr(httpx.Client, "_stateset_agents_app_compat", False)
+if "app" not in inspect.signature(httpx.Client.__init__).parameters and not getattr(
+    httpx.Client, "_stateset_agents_app_compat", False
 ):
     _original_httpx_client_init = httpx.Client.__init__
 
@@ -213,6 +212,62 @@ def reset_torch_default_dtype():
     torch.set_default_dtype(torch.float32)
     yield
     torch.set_default_dtype(torch.float32)
+
+
+@pytest.fixture(autouse=True)
+def restore_stateset_agents_sys_modules():
+    """Undo any `sys.modules` surgery a test performs on our own package tree.
+
+    Several tests exercise lazy-import behaviour by doing
+    ``sys.modules.pop("stateset_agents...", None)`` (or
+    ``del sys.modules[name]``) and then re-importing fresh, without ever
+    restoring the original module object afterwards. That leaves a *new*
+    module object installed under the parent package's attribute for the
+    rest of the process — e.g. popping and reimporting
+    ``stateset_agents.api`` drops its ``.services`` attribute, because that
+    attribute is only re-populated by Python's import machinery when a
+    submodule is *actually loaded*, not when it's already cached elsewhere
+    in ``sys.modules``. Any later test that does
+    ``import stateset_agents.api.services`` sees the submodule already in
+    ``sys.modules`` and skips re-setting the parent's attribute, so the
+    stale, attribute-less package object leaks into every subsequent test
+    in the same process — reproducing only when the whole suite runs
+    together, never in isolation.
+
+    Snapshot every ``sys.modules`` entry under the ``stateset_agents``
+    package tree before each test and force it back to the exact same
+    object afterwards, regardless of what the test did to it. This is a
+    no-op for the overwhelming majority of tests (which don't touch
+    ``sys.modules``) and heals the handful of lazy-import tests that do,
+    without having to rewrite each of them individually.
+
+    Restoring ``sys.modules`` alone is not enough: tools like
+    ``unittest.mock.patch`` resolve dotted targets by attribute-walking
+    from the *root* module (``getattr(stateset_agents, "api")``, then
+    ``getattr(that, "services")``, ...), not by looking each component up
+    in ``sys.modules``. Re-importing a submodule also rebinds it as an
+    attribute on its parent package object, so the parent's attribute has
+    to be re-pointed at the original child object too, or attribute-walking
+    consumers keep seeing the leaked replacement.
+    """
+    snapshot = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "stateset_agents" or name.startswith("stateset_agents.")
+    }
+    yield
+    # Restore sys.modules first, then re-link each parent package's
+    # attribute to the original child module object, shallowest names
+    # first so a parent is back in place before we bind its children onto
+    # it.
+    for name in sorted(snapshot, key=lambda n: n.count(".")):
+        module = snapshot[name]
+        sys.modules[name] = module
+        if "." in name:
+            parent_name, leaf = name.rsplit(".", 1)
+            parent = sys.modules.get(parent_name)
+            if parent is not None:
+                setattr(parent, leaf, module)
 
 
 def pytest_configure(config: pytest.Config) -> None:

@@ -5,9 +5,9 @@ Reward function for symbolic physics relation discovery.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
-from collections.abc import Callable, Mapping
 
 from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
 from stateset_agents.core.trajectory import ConversationTurn
@@ -388,7 +388,9 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
         if target_expression and target_values is not None:
             matches = sum(
                 1
-                for candidate, target in zip(candidate_values, target_values, strict=False)
+                for candidate, target in zip(
+                    candidate_values, target_values, strict=False
+                )
                 if _close_enough(
                     candidate, target, self.config.rel_tol, self.config.abs_tol
                 )

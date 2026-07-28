@@ -83,6 +83,7 @@ def gpu_available() -> bool:
     """Detect whether we have a CUDA GPU + transformers."""
     try:
         import torch
+
         return torch.cuda.is_available()
     except ImportError:
         return False
@@ -175,14 +176,19 @@ def run_sft(
     def render(row: dict[str, Any]) -> dict[str, Any]:
         """Apply the model's chat template to each row."""
         text = tokenizer.apply_chat_template(
-            row["messages"], tokenize=False, add_generation_prompt=False,
+            row["messages"],
+            tokenize=False,
+            add_generation_prompt=False,
         )
         return {"text": text}
 
     dataset = Dataset.from_list(rows).map(render, remove_columns=["messages"])
     dataset = dataset.map(
         lambda x: tokenizer(
-            x["text"], truncation=True, max_length=max_length, padding=False,
+            x["text"],
+            truncation=True,
+            max_length=max_length,
+            padding=False,
         ),
         remove_columns=["text"],
     )
@@ -217,10 +223,17 @@ def run_sft(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", type=Path, required=True,
-                        help="Chat-format JSONL from prepare_sft_dataset.py.")
-    parser.add_argument("--base-model", required=True,
-                        help="Hugging Face base model name (e.g. Qwen/Qwen3.5-0.8B).")
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        required=True,
+        help="Chat-format JSONL from prepare_sft_dataset.py.",
+    )
+    parser.add_argument(
+        "--base-model",
+        required=True,
+        help="Hugging Face base model name (e.g. Qwen/Qwen3.5-0.8B).",
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/sft_v1"))
     parser.add_argument("--num-epochs", type=int, default=3)
     parser.add_argument("--lora-r", type=int, default=16)
@@ -229,12 +242,17 @@ def main() -> int:
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--per-device-batch-size", type=int, default=2)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=4)
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print the training plan without running it (forced "
-                             "automatically when no GPU is detected).")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the training plan without running it (forced "
+        "automatically when no GPU is detected).",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
     rows = load_chat_dataset(args.dataset)
     if not rows:
@@ -271,7 +289,8 @@ def main() -> int:
     except ImportError as e:
         logger.error(
             "SFT requires the 'training' extras. Install with: pip install -e '.[training]'\n"
-            "Details: %s", e,
+            "Details: %s",
+            e,
         )
         return 2
     except Exception as e:  # noqa: BLE001 — surface the error
@@ -281,8 +300,12 @@ def main() -> int:
     logger.info("Adapter saved to %s", path)
     print()
     print("Next steps:")
-    print(f"  Chat with it:   stateset-agents chat --model {args.base_model} --checkpoint {path}")
-    print(f"  Serve it:       stateset-agents serve --checkpoint {path} --base-model {args.base_model}")
+    print(
+        f"  Chat with it:   stateset-agents chat --model {args.base_model} --checkpoint {path}"
+    )
+    print(
+        f"  Serve it:       stateset-agents serve --checkpoint {path} --base-model {args.base_model}"
+    )
     return 0
 
 

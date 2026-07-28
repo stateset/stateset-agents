@@ -47,7 +47,9 @@ def test_find_repo_hygiene_issues_flags_generated_directories() -> None:
     )
 
     assert "tracked generated artifact: htmlcov/index.html" in issues
-    assert "tracked generated artifact: outputs/checkpoint-1/model.safetensors" in issues
+    assert (
+        "tracked generated artifact: outputs/checkpoint-1/model.safetensors" in issues
+    )
     assert "tracked generated artifact: dashboard/dist/assets/index.js" in issues
 
 
@@ -81,13 +83,17 @@ def test_render_repo_hygiene_report_formats_failures() -> None:
 
 def test_get_tracked_git_paths_parses_null_delimited_output(tmp_path: Path) -> None:
     completed = Mock(returncode=0, stdout=b"a.py\0b.py\0", stderr=b"")
-    with patch("stateset_agents.utils.repo_hygiene.subprocess.run", return_value=completed):
+    with patch(
+        "stateset_agents.utils.repo_hygiene.subprocess.run", return_value=completed
+    ):
         assert get_tracked_git_paths(tmp_path) == ["a.py", "b.py"]
 
 
 def test_get_tracked_git_paths_raises_on_git_failure(tmp_path: Path) -> None:
     completed = Mock(returncode=1, stdout=b"", stderr=b"fatal: not a git repository")
-    with patch("stateset_agents.utils.repo_hygiene.subprocess.run", return_value=completed):
+    with patch(
+        "stateset_agents.utils.repo_hygiene.subprocess.run", return_value=completed
+    ):
         with pytest.raises(RuntimeError, match="fatal: not a git repository"):
             get_tracked_git_paths(tmp_path)
 
@@ -106,7 +112,9 @@ def test_extract_dunder_version_reads_python_module_version(tmp_path: Path) -> N
     assert extract_dunder_version(module) == "1.2.3"
 
 
-def test_uses_package_version_alias_detects_single_source_pattern(tmp_path: Path) -> None:
+def test_uses_package_version_alias_detects_single_source_pattern(
+    tmp_path: Path,
+) -> None:
     module = tmp_path / "__init__.py"
     module.write_text("__version__ = _PACKAGE_VERSION\n")
 
@@ -122,7 +130,9 @@ def test_find_version_hygiene_issues_flags_mismatched_internal_versions(
     (repo_root / "pyproject.toml").write_text(
         '[project]\nname = "stateset-agents"\nversion = "1.2.3"\n'
     )
-    (repo_root / "stateset_agents" / "__init__.py").write_text('__version__ = "1.2.3"\n')
+    (repo_root / "stateset_agents" / "__init__.py").write_text(
+        '__version__ = "1.2.3"\n'
+    )
     (repo_root / "stateset_agents" / "api" / "__init__.py").write_text(
         '__version__ = "1.2.3"\n'
     )

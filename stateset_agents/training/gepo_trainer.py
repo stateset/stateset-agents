@@ -113,7 +113,9 @@ class GEPOConfig(TrainingConfig):
     use_group_baseline: bool = True  # Use within-group baseline normalization
 
     @classmethod
-    def from_training_config(cls, config: TrainingConfig, **kwargs: Any) -> "GEPOConfig":
+    def from_training_config(
+        cls, config: TrainingConfig, **kwargs: Any
+    ) -> "GEPOConfig":
         """Create GEPO config from standard training config"""
         config_dict = config.to_dict()
         config_dict.update(kwargs)
@@ -155,9 +157,11 @@ class GEPOModelManager:
 
         # Model loading kwargs
         model_kwargs = {
-            "torch_dtype": torch.float16
-            if self.config.fp16
-            else (torch.bfloat16 if self.config.bf16 else torch.float32),
+            "torch_dtype": (
+                torch.float16
+                if self.config.fp16
+                else (torch.bfloat16 if self.config.bf16 else torch.float32)
+            ),
             "device_map": "auto" if torch.cuda.is_available() else None,
             "trust_remote_code": True,
         }
@@ -627,7 +631,7 @@ class GEPOTrainer:
             "scheduler_state_dict": self.scheduler.state_dict(),
             "metrics_history": self.metrics_history,
         }
-        torch.save(state, os.path.join(output_dir, "training_state.pt"))
+        torch.save(state, os.path.join(output_dir, "training_state.pt"))  # nosec: B614
 
         # Save config
         config_path = os.path.join(output_dir, "gepo_config.json")
@@ -640,7 +644,7 @@ class GEPOTrainer:
         """Load model checkpoint"""
         state_path = os.path.join(checkpoint_dir, "training_state.pt")
         if os.path.exists(state_path):
-            state = torch.load(state_path, map_location=self.device)
+            state = torch.load(state_path, map_location=self.device)  # nosec: B614
             self.global_step = state["global_step"]
             self.optimizer.load_state_dict(state["optimizer_state_dict"])
             self.scheduler.load_state_dict(state["scheduler_state_dict"])

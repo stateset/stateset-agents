@@ -9,9 +9,9 @@ import asyncio
 import json
 import logging
 import random
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, Optional
-from collections.abc import Iterator
 
 import numpy as np
 

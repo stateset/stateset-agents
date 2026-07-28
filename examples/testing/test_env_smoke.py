@@ -22,10 +22,12 @@ from stateset_agents.data import (
 
 @pytest.fixture
 async def stub_agent():
-    agent = MultiTurnAgent(AgentConfig(
-        model_name="stub://smoke",
-        use_stub_model=True,
-    ))
+    agent = MultiTurnAgent(
+        AgentConfig(
+            model_name="stub://smoke",
+            use_stub_model=True,
+        )
+    )
     await agent.initialize()
     return agent
 
@@ -41,7 +43,9 @@ async def test_every_support_scenario_round_trips(stub_agent, idx):
         max_turns=1,
     )
     state = await env.reset(scenario=scenarios[idx])
-    response = await stub_agent.generate_response(state.context["scenario"]["user_query"])
+    response = await stub_agent.generate_response(
+        state.context["scenario"]["user_query"]
+    )
     payload = await env.step(response)
     assert payload["done"] is True
     assert 0.0 <= float(payload["reward"]) <= 1.0
@@ -57,7 +61,9 @@ async def test_every_tool_scenario_round_trips(stub_agent, idx):
         max_turns=1,
     )
     state = await env.reset(scenario=scenarios[idx])
-    response = await stub_agent.generate_response(state.context["scenario"]["user_query"])
+    response = await stub_agent.generate_response(
+        state.context["scenario"]["user_query"]
+    )
     payload = await env.step(response)
     assert payload["done"] is True
     assert 0.0 <= float(payload["reward"]) <= 1.0

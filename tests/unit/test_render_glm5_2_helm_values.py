@@ -122,9 +122,7 @@ def test_render_values_from_manifest_with_gcs_uri(tmp_path):
     )
 
     assert "modelSync:" in rendered
-    assert (
-        'gcsUri: "gs://YOUR_BUCKET/glm5-2/runs/YOUR_RUN_ID/merged"' in rendered
-    )
+    assert 'gcsUri: "gs://YOUR_BUCKET/glm5-2/runs/YOUR_RUN_ID/merged"' in rendered
     assert 'localDir: "/models/glm5-2/runs/run-123/merged"' in rendered
 
 

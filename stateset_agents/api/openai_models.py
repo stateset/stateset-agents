@@ -47,9 +47,7 @@ class OpenAIChatCompletionRequest(BaseModel):
 
     stop: str | list[str] | None = Field(None, description="Stop sequence(s)")
     tools: list[dict[str, Any]] | None = Field(None, description="Tool definitions")
-    tool_choice: str | dict[str, Any] | None = Field(
-        None, description="Tool choice"
-    )
+    tool_choice: str | dict[str, Any] | None = Field(None, description="Tool choice")
 
 
 class OpenAIChatCompletionResponse(BaseModel):

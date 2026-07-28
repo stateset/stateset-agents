@@ -54,7 +54,6 @@ from typing import Any
 from ..core.reward_base import RewardFunction, RewardResult, RewardType
 from ..core.trajectory import ConversationTurn
 
-
 # ---------------------------------------------------------------------------
 # Sample tool registry
 # ---------------------------------------------------------------------------
@@ -74,7 +73,12 @@ SAMPLE_TOOLS: list[dict[str, Any]] = [
         "description": "Evaluate a math expression.",
         "parameters": {
             "type": "object",
-            "properties": {"expression": {"type": "string", "description": "A math expression like '17 * 24'."}},
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "A math expression like '17 * 24'.",
+                }
+            },
             "required": ["expression"],
         },
     },
@@ -83,7 +87,9 @@ SAMPLE_TOOLS: list[dict[str, Any]] = [
         "description": "Search a knowledge base.",
         "parameters": {
             "type": "object",
-            "properties": {"query": {"type": "string", "description": "The search query."}},
+            "properties": {
+                "query": {"type": "string", "description": "The search query."}
+            },
             "required": ["query"],
         },
     },
@@ -95,38 +101,54 @@ SAMPLE_TOOLS: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 
 _BUNDLED_SCENARIOS: list[dict[str, Any]] = [
-    {"user_query": "What's the weather in San Francisco?",
-     "expected_tool": "get_weather",
-     "expected_params": {"city": "San Francisco"},
-     "expected_outcome": "63"},
-    {"user_query": "Calculate 17 * 24",
-     "expected_tool": "calculator",
-     "expected_params": {"expression": "17 * 24"},
-     "expected_outcome": "408"},
-    {"user_query": "Look up the population of Tokyo",
-     "expected_tool": "search",
-     "expected_params": {"query": "population of Tokyo"},
-     "expected_outcome": "13.96"},
-    {"user_query": "Find recent papers on diffusion models",
-     "expected_tool": "search",
-     "expected_params": {"query": "diffusion models"},
-     "expected_outcome": "papers"},
-    {"user_query": "Calculate the square root of 144",
-     "expected_tool": "calculator",
-     "expected_params": {"expression": "sqrt(144)"},
-     "expected_outcome": "12"},
-    {"user_query": "What's the weather forecast for Paris tomorrow?",
-     "expected_tool": "get_weather",
-     "expected_params": {"city": "Paris"},
-     "expected_outcome": "58"},
-    {"user_query": "How many calories in 200g of rice?",
-     "expected_tool": "search",
-     "expected_params": {"query": "calories in 200g rice"},
-     "expected_outcome": "260"},
-    {"user_query": "Compute 2 to the power of 10",
-     "expected_tool": "calculator",
-     "expected_params": {"expression": "2 ** 10"},
-     "expected_outcome": "1024"},
+    {
+        "user_query": "What's the weather in San Francisco?",
+        "expected_tool": "get_weather",
+        "expected_params": {"city": "San Francisco"},
+        "expected_outcome": "63",
+    },
+    {
+        "user_query": "Calculate 17 * 24",
+        "expected_tool": "calculator",
+        "expected_params": {"expression": "17 * 24"},
+        "expected_outcome": "408",
+    },
+    {
+        "user_query": "Look up the population of Tokyo",
+        "expected_tool": "search",
+        "expected_params": {"query": "population of Tokyo"},
+        "expected_outcome": "13.96",
+    },
+    {
+        "user_query": "Find recent papers on diffusion models",
+        "expected_tool": "search",
+        "expected_params": {"query": "diffusion models"},
+        "expected_outcome": "papers",
+    },
+    {
+        "user_query": "Calculate the square root of 144",
+        "expected_tool": "calculator",
+        "expected_params": {"expression": "sqrt(144)"},
+        "expected_outcome": "12",
+    },
+    {
+        "user_query": "What's the weather forecast for Paris tomorrow?",
+        "expected_tool": "get_weather",
+        "expected_params": {"city": "Paris"},
+        "expected_outcome": "58",
+    },
+    {
+        "user_query": "How many calories in 200g of rice?",
+        "expected_tool": "search",
+        "expected_params": {"query": "calories in 200g rice"},
+        "expected_outcome": "260",
+    },
+    {
+        "user_query": "Compute 2 to the power of 10",
+        "expected_tool": "calculator",
+        "expected_params": {"expression": "2 ** 10"},
+        "expected_outcome": "1024",
+    },
 ]
 
 
@@ -272,14 +294,17 @@ class ToolCallReward(RewardFunction):
                 param_score = 0.0
             else:
                 matched = sum(
-                    1 for k, v in expected_params.items()
+                    1
+                    for k, v in expected_params.items()
                     if str(params.get(k, "")).strip().lower() == str(v).strip().lower()
                 )
                 param_score = matched / max(len(expected_params), 1)
 
         # 3) Outcome substring.
         if expected_outcome:
-            outcome_score = 1.0 if expected_outcome.lower() in full_response.lower() else 0.0
+            outcome_score = (
+                1.0 if expected_outcome.lower() in full_response.lower() else 0.0
+            )
         else:
             outcome_score = 1.0
 

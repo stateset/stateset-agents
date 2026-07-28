@@ -281,7 +281,9 @@ def authenticate_request(request: Request) -> AuthenticatedUser:
                 logger.debug(
                     "Ignoring untrusted X-User-ID header for API-key authenticated request",
                     extra={
-                        "client_ip": request.client.host if request.client else "unknown",
+                        "client_ip": (
+                            request.client.host if request.client else "unknown"
+                        ),
                         "path": str(request.url.path),
                         "provided_user_id": provided_user_id,
                     },

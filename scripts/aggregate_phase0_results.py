@@ -83,7 +83,9 @@ def load_runs(results_dir: Path) -> list[dict[str, Any]]:
     return runs
 
 
-def group_runs(runs: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
+def group_runs(
+    runs: list[dict[str, Any]],
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
     """Group runs by ``(trainer, model)``."""
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for run in runs:
@@ -140,15 +142,11 @@ def check_gates(summary: dict[str, Any]) -> tuple[bool, list[str]]:
 
     n_seeds = summary["pass_at_1"]["n"]
     if n_seeds < MIN_SEEDS_PER_GROUP:
-        failures.append(
-            f"Only {n_seeds} seeds, need ≥{MIN_SEEDS_PER_GROUP}"
-        )
+        failures.append(f"Only {n_seeds} seeds, need ≥{MIN_SEEDS_PER_GROUP}")
 
     std = summary["pass_at_1"]["std"]
     if not math.isnan(std) and std > MAX_STD_PASS_AT_1:
-        failures.append(
-            f"std={std:.3f} exceeds gate of {MAX_STD_PASS_AT_1}"
-        )
+        failures.append(f"std={std:.3f} exceeds gate of {MAX_STD_PASS_AT_1}")
 
     improvement = summary["improvement"]
     if not math.isnan(improvement) and improvement < MIN_IMPROVEMENT:
@@ -248,21 +246,25 @@ def render_csv(runs: list[dict[str, Any]], path: Path) -> None:
             metrics = run.get("metrics", {})
             base = metrics.get("eval_pass_at_1_baseline")
             final = metrics.get("eval_pass_at_1")
-            improvement = (final - base) if (base is not None and final is not None) else None
-            writer.writerow({
-                "source": run.get("__source__"),
-                "trainer": run.get("trainer"),
-                "model": run.get("model"),
-                "seed": run.get("seed"),
-                "commit": run.get("commit"),
-                "timestamp": run.get("timestamp"),
-                "eval_pass_at_1": final,
-                "eval_pass_at_1_baseline": base,
-                "improvement": improvement,
-                "wall_clock_seconds": metrics.get("wall_clock_seconds"),
-                "peak_vram_mb": metrics.get("peak_vram_mb"),
-                "wandb_run_url": run.get("wandb_run_url"),
-            })
+            improvement = (
+                (final - base) if (base is not None and final is not None) else None
+            )
+            writer.writerow(
+                {
+                    "source": run.get("__source__"),
+                    "trainer": run.get("trainer"),
+                    "model": run.get("model"),
+                    "seed": run.get("seed"),
+                    "commit": run.get("commit"),
+                    "timestamp": run.get("timestamp"),
+                    "eval_pass_at_1": final,
+                    "eval_pass_at_1_baseline": base,
+                    "improvement": improvement,
+                    "wall_clock_seconds": metrics.get("wall_clock_seconds"),
+                    "peak_vram_mb": metrics.get("peak_vram_mb"),
+                    "wandb_run_url": run.get("wandb_run_url"),
+                }
+            )
 
 
 def main() -> int:
@@ -285,14 +287,18 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     output_dir = args.output_dir or args.results_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     runs = load_runs(args.results_dir)
     grouped = group_runs(runs)
     grouped_summary = {key: summarize_group(group) for key, group in grouped.items()}
-    gate_results = {key: check_gates(summary) for key, summary in grouped_summary.items()}
+    gate_results = {
+        key: check_gates(summary) for key, summary in grouped_summary.items()
+    }
 
     md = render_markdown(grouped_summary, gate_results)
     md_path = output_dir / "summary.md"
@@ -304,14 +310,20 @@ def main() -> int:
     logger.info("Wrote %s", csv_path)
 
     gates_path = output_dir / "passes_gates.json"
-    gates_path.write_text(json.dumps({
-        f"{trainer}|{model}": {
-            "passed": passed,
-            "failures": failures,
-            "summary": grouped_summary[(trainer, model)],
-        }
-        for (trainer, model), (passed, failures) in gate_results.items()
-    }, indent=2, default=str))
+    gates_path.write_text(
+        json.dumps(
+            {
+                f"{trainer}|{model}": {
+                    "passed": passed,
+                    "failures": failures,
+                    "summary": grouped_summary[(trainer, model)],
+                }
+                for (trainer, model), (passed, failures) in gate_results.items()
+            },
+            indent=2,
+            default=str,
+        )
+    )
     logger.info("Wrote %s", gates_path)
 
     all_passed = all(passed for passed, _ in gate_results.values())

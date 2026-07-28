@@ -191,6 +191,7 @@ class StubTokenizer:
         if return_tensors == "pt":
             try:
                 import torch
+
                 return {
                     "input_ids": torch.tensor(batch_ids, dtype=torch.long),
                     "attention_mask": torch.tensor(batch_masks, dtype=torch.long),
@@ -269,6 +270,7 @@ class StubModel:
         if input_ids is not None:
             try:
                 import torch
+
                 if hasattr(input_ids, "shape"):
                     bs = input_ids.shape[0]
                     prompt_len = input_ids.shape[1]
@@ -300,17 +302,17 @@ class StubModel:
         """Return empty iterator to match PyTorch interface."""
         return iter([])
 
-    def train(self, mode: bool = True) -> "StubModel":
+    def train(self, mode: bool = True) -> StubModel:
         """Set training mode to match PyTorch interface."""
         self._training = mode
         return self
 
-    def eval(self) -> "StubModel":
+    def eval(self) -> StubModel:
         """Set evaluation mode to match PyTorch interface."""
         self._training = False
         return self
 
-    def to(self, device: Any) -> "StubModel":
+    def to(self, device: Any) -> StubModel:
         """No-op to match PyTorch interface."""
         return self
 
@@ -350,6 +352,7 @@ class StubModel:
                 self.hidden_states: Any
                 try:
                     import torch
+
                     self.loss = torch.tensor(0.5, requires_grad=True)
                     self.logits = torch.randn(bs, sl, vs, requires_grad=True)
                     if include_hidden:

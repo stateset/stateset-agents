@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import random
 import uuid
-from typing import Any
 from collections.abc import Callable
+from typing import Any
 
 from .environment_base import Environment, EnvironmentState, EpisodeStatus
 from .reward import RewardFunction
@@ -33,11 +33,11 @@ class TaskEnvironment(Environment):
         self.current_task: dict[str, Any] | None = None
         self._last_state: EnvironmentState | None = None
 
-    async def reset(
-        self, scenario: dict[str, Any] | None = None
-    ) -> EnvironmentState:
+    async def reset(self, scenario: dict[str, Any] | None = None) -> EnvironmentState:
         """Reset for a new task"""
-        selected_scenario = scenario if scenario is not None else random.choice(self.tasks)
+        selected_scenario = (
+            scenario if scenario is not None else random.choice(self.tasks)
+        )
 
         self.current_task = selected_scenario
         episode_id = str(uuid.uuid4())
@@ -72,9 +72,7 @@ class TaskEnvironment(Environment):
         self._last_state = state
         return state
 
-    async def step(
-        self, state: EnvironmentState, action: ConversationTurn
-    ) -> Any:
+    async def step(self, state: EnvironmentState, action: ConversationTurn) -> Any:
         """Process agent action and update task state"""
         new_state = state.copy()
         new_state.turn_count += 1
@@ -100,9 +98,7 @@ class TaskEnvironment(Environment):
 
         return new_state, env_response, step_reward, done
 
-    async def get_initial_prompt(
-        self, scenario: dict[str, Any] | None = None
-    ) -> str:
+    async def get_initial_prompt(self, scenario: dict[str, Any] | None = None) -> str:
         """Get initial task description"""
         active_scenario = scenario or self.current_task or {}
 

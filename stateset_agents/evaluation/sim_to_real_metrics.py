@@ -427,7 +427,9 @@ class SimToRealEvaluator:
                     likelihoods.append(likelihood)
 
         return {
-            "user_model_likelihood": float(np.mean(likelihoods)) if likelihoods else 0.0,
+            "user_model_likelihood": (
+                float(np.mean(likelihoods)) if likelihoods else 0.0
+            ),
             "num_samples": len(likelihoods),
         }
 

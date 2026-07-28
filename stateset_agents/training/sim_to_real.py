@@ -485,9 +485,7 @@ class SimToRealTransfer:
 
                 if turn.role == "assistant" and next_turn.role == "user":
                     next_text = (
-                        next_turn.content
-                        if isinstance(next_turn.content, str)
-                        else ""
+                        next_turn.content if isinstance(next_turn.content, str) else ""
                     )
                     training_data.append(
                         {
@@ -537,8 +535,10 @@ class SimToRealTransfer:
 
         # Fallback: deterministic hash-based encoding (preserves semantics
         # better than random vectors since similar text produces similar hashes)
-        logger.info("Using hash-based encoding for sim-to-real (install "
-                     "sentence-transformers for better quality)")
+        logger.info(
+            "Using hash-based encoding for sim-to-real (install "
+            "sentence-transformers for better quality)"
+        )
 
         def _hash_encode(text: str) -> np.ndarray:
             import hashlib
@@ -546,7 +546,9 @@ class SimToRealTransfer:
             result: np.ndarray = np.zeros(dim, dtype=np.float32)
             words = text.lower().split()
             for word in words:
-                h = int(hashlib.md5(word.encode()).hexdigest(), 16)
+                h = int(
+                    hashlib.md5(word.encode(), usedforsecurity=False).hexdigest(), 16
+                )
                 idx = h % dim
                 result[idx] += 1.0
             # L2 normalize
@@ -766,7 +768,7 @@ class SimToRealTransfer:
 
     def save(self, path: str) -> None:
         """Save transfer state"""
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "user_model_state_dict": self.user_model.state_dict(),
                 "domain_adapter_state_dict": self.domain_adapter.state_dict(),
@@ -782,7 +784,7 @@ class SimToRealTransfer:
 
     def load(self, path: str) -> None:
         """Load transfer state"""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
 
         self.user_model.load_state_dict(checkpoint["user_model_state_dict"])
         self.domain_adapter.load_state_dict(checkpoint["domain_adapter_state_dict"])

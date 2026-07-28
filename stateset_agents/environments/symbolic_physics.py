@@ -8,10 +8,10 @@ import json
 import logging
 import random
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from collections.abc import Sequence
 
 from stateset_agents.core.environment import (
     Environment,
@@ -107,9 +107,11 @@ class SymbolicPhysicsEnvironment(Environment):
         if not tasks:
             raise ValueError("SymbolicPhysicsEnvironment requires at least one task.")
         self.tasks = [
-            task
-            if isinstance(task, SymbolicPhysicsTask)
-            else SymbolicPhysicsTask.from_dict(task)
+            (
+                task
+                if isinstance(task, SymbolicPhysicsTask)
+                else SymbolicPhysicsTask.from_dict(task)
+            )
             for task in tasks
         ]
         self.task_sampling = task_sampling
@@ -127,9 +129,7 @@ class SymbolicPhysicsEnvironment(Environment):
             return task
         return self._rng.choice(self.tasks)
 
-    async def reset(
-        self, scenario: dict[str, Any] | None = None
-    ) -> EnvironmentState:
+    async def reset(self, scenario: dict[str, Any] | None = None) -> EnvironmentState:
         if scenario:
             task_data = scenario.get("task", scenario)
             task = (
@@ -160,9 +160,7 @@ class SymbolicPhysicsEnvironment(Environment):
         self._last_state = state
         return state
 
-    async def get_initial_prompt(
-        self, scenario: dict[str, Any] | None = None
-    ) -> str:
+    async def get_initial_prompt(self, scenario: dict[str, Any] | None = None) -> str:
         base = (
             "You are a symbolic physics assistant. "
             "Return a single expression using explicit * and **."

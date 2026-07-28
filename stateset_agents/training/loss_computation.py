@@ -10,8 +10,8 @@ from __future__ import annotations
 import contextlib
 import inspect
 import logging
-from typing import Any
 from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 
@@ -160,12 +160,16 @@ def compute_grpo_loss(
     return {
         "policy_loss": total_loss_tensor,
         "total_loss": total_loss_tensor,
-        "mean_advantage": float(np.mean(all_advantages_for_logging))
-        if all_advantages_for_logging
-        else 0.0,
-        "advantage_std": float(np.std(all_advantages_for_logging))
-        if all_advantages_for_logging
-        else 0.0,
+        "mean_advantage": (
+            float(np.mean(all_advantages_for_logging))
+            if all_advantages_for_logging
+            else 0.0
+        ),
+        "advantage_std": (
+            float(np.std(all_advantages_for_logging))
+            if all_advantages_for_logging
+            else 0.0
+        ),
         "entropy": entropy_value,
     }
 
@@ -343,9 +347,7 @@ def _compute_group_policy_loss(
                 # being a dead no-grad metric.
                 if entropy_coef > 0 and torch.is_tensor(labels):
                     response_mask = labels.ne(-100).to(dtype=outputs.logits.dtype)
-                    entropy_bonus = compute_entropy_bonus(
-                        outputs.logits, response_mask
-                    )
+                    entropy_bonus = compute_entropy_bonus(outputs.logits, response_mask)
                     policy_loss = policy_loss - entropy_coef * entropy_bonus
                     entropy_sum += float(entropy_bonus.detach().item())
                     entropy_count += 1
@@ -470,11 +472,7 @@ def compute_enhanced_grpo_loss(
                 if torch.is_tensor(labels):
                     token_count = int(labels.ne(-100).sum().item())
 
-                if (
-                    clip_ratio > 0
-                    and old_log_prob is not None
-                    and token_count > 0
-                ):
+                if clip_ratio > 0 and old_log_prob is not None and token_count > 0:
                     new_log_prob = -(nll * token_count)
                     ratio = compute_ppo_ratio(new_log_prob, old_log_prob, token_count)
                     surrogate = ratio * advantage

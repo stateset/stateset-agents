@@ -141,7 +141,8 @@ class TestKimiK26Config:
         config = get_kimi_k2_6_config(task="customer_service")
 
         with patch(
-            "stateset_agents.training.kimi_k2_6_starter.get_config_for_task", return_value=base_config
+            "stateset_agents.training.kimi_k2_6_starter.get_config_for_task",
+            return_value=base_config,
         ):
             gspo_config = get_kimi_k2_6_gspo_config(config)
 
@@ -186,7 +187,9 @@ class TestKimiK26Config:
         assert loaded.output_dir == "./outputs/kimi_k2_6_roundtrip"
 
     def test_preview_payload_can_be_loaded_as_config(self, tmp_path):
-        config = get_kimi_k2_6_config(task="sales", output_dir="./outputs/kimi_k2_6_preview")
+        config = get_kimi_k2_6_config(
+            task="sales", output_dir="./outputs/kimi_k2_6_preview"
+        )
         preview_path = write_kimi_k2_6_config_file(
             config,
             tmp_path / "kimi_k2_6_preview.json",
@@ -203,11 +206,26 @@ class TestKimiK26Config:
 
         assert example_config_module.KimiK26Config is KimiK26Config
         assert example_config_module.KIMI_K26_BASE_MODEL == KIMI_K26_BASE_MODEL
-        assert example_config_module.KIMI_K26_STARTER_PROFILE_CHOICES == KIMI_K26_STARTER_PROFILE_CHOICES
-        assert example_config_module.KIMI_K26_STARTER_PROFILE_DESCRIPTIONS == KIMI_K26_STARTER_PROFILE_DESCRIPTIONS
-        assert example_config_module.describe_kimi_k2_6_starter_profiles is describe_kimi_k2_6_starter_profiles
-        assert example_config_module.get_kimi_k2_6_profile_overrides is get_kimi_k2_6_profile_overrides
-        assert example_config_module.summarize_kimi_k2_6_config is summarize_kimi_k2_6_config
+        assert (
+            example_config_module.KIMI_K26_STARTER_PROFILE_CHOICES
+            == KIMI_K26_STARTER_PROFILE_CHOICES
+        )
+        assert (
+            example_config_module.KIMI_K26_STARTER_PROFILE_DESCRIPTIONS
+            == KIMI_K26_STARTER_PROFILE_DESCRIPTIONS
+        )
+        assert (
+            example_config_module.describe_kimi_k2_6_starter_profiles
+            is describe_kimi_k2_6_starter_profiles
+        )
+        assert (
+            example_config_module.get_kimi_k2_6_profile_overrides
+            is get_kimi_k2_6_profile_overrides
+        )
+        assert (
+            example_config_module.summarize_kimi_k2_6_config
+            is summarize_kimi_k2_6_config
+        )
 
 
 class TestKimiK26StarterScript:

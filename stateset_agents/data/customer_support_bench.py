@@ -37,73 +37,164 @@ Usage::
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..core.reward_base import RewardFunction, RewardResult, RewardType
 from ..core.trajectory import ConversationTurn
 
-
 # Bundled corpus — deliberately small and explicit so the benchmark is
 # reproducible without external data. Real production use would swap in a
 # larger dataset (e.g., Bitext customer-support) via the same scenario schema.
 _BUNDLED_SCENARIOS: list[dict[str, Any]] = [
     # Refund intent (6)
-    {"intent": "refund", "user_query": "I want my money back for order #4521",
-     "must_acknowledge": ["refund", "order"], "must_avoid": ["impossible", "can't help"]},
-    {"intent": "refund", "user_query": "The shoes don't fit, please refund",
-     "must_acknowledge": ["refund", "return"], "must_avoid": ["impossible"]},
-    {"intent": "refund", "user_query": "I was charged twice — I need a refund for the duplicate",
-     "must_acknowledge": ["refund", "duplicate"], "must_avoid": ["impossible"]},
-    {"intent": "refund", "user_query": "Cancel my subscription and refund last month",
-     "must_acknowledge": ["refund", "cancel"], "must_avoid": ["impossible"]},
-    {"intent": "refund", "user_query": "My order arrived damaged — I want a refund",
-     "must_acknowledge": ["refund", "damaged"], "must_avoid": ["impossible"]},
-    {"intent": "refund", "user_query": "I never received the package — refund please",
-     "must_acknowledge": ["refund", "package"], "must_avoid": ["impossible"]},
-
+    {
+        "intent": "refund",
+        "user_query": "I want my money back for order #4521",
+        "must_acknowledge": ["refund", "order"],
+        "must_avoid": ["impossible", "can't help"],
+    },
+    {
+        "intent": "refund",
+        "user_query": "The shoes don't fit, please refund",
+        "must_acknowledge": ["refund", "return"],
+        "must_avoid": ["impossible"],
+    },
+    {
+        "intent": "refund",
+        "user_query": "I was charged twice — I need a refund for the duplicate",
+        "must_acknowledge": ["refund", "duplicate"],
+        "must_avoid": ["impossible"],
+    },
+    {
+        "intent": "refund",
+        "user_query": "Cancel my subscription and refund last month",
+        "must_acknowledge": ["refund", "cancel"],
+        "must_avoid": ["impossible"],
+    },
+    {
+        "intent": "refund",
+        "user_query": "My order arrived damaged — I want a refund",
+        "must_acknowledge": ["refund", "damaged"],
+        "must_avoid": ["impossible"],
+    },
+    {
+        "intent": "refund",
+        "user_query": "I never received the package — refund please",
+        "must_acknowledge": ["refund", "package"],
+        "must_avoid": ["impossible"],
+    },
     # Technical (6)
-    {"intent": "technical", "user_query": "The app crashes every time I open it",
-     "must_acknowledge": ["app", "crash"], "must_avoid": ["working as designed", "your fault"]},
-    {"intent": "technical", "user_query": "I can't log in — keeps saying invalid password",
-     "must_acknowledge": ["password", "login"], "must_avoid": ["your fault"]},
-    {"intent": "technical", "user_query": "The website won't load on my browser",
-     "must_acknowledge": ["website", "browser"], "must_avoid": ["your fault"]},
-    {"intent": "technical", "user_query": "Email notifications stopped working last week",
-     "must_acknowledge": ["email", "notification"], "must_avoid": ["your fault"]},
-    {"intent": "technical", "user_query": "The mobile app won't sync with my account",
-     "must_acknowledge": ["sync", "app"], "must_avoid": ["your fault"]},
-    {"intent": "technical", "user_query": "I'm getting an error code 502 when checking out",
-     "must_acknowledge": ["error", "checkout"], "must_avoid": ["your fault"]},
-
+    {
+        "intent": "technical",
+        "user_query": "The app crashes every time I open it",
+        "must_acknowledge": ["app", "crash"],
+        "must_avoid": ["working as designed", "your fault"],
+    },
+    {
+        "intent": "technical",
+        "user_query": "I can't log in — keeps saying invalid password",
+        "must_acknowledge": ["password", "login"],
+        "must_avoid": ["your fault"],
+    },
+    {
+        "intent": "technical",
+        "user_query": "The website won't load on my browser",
+        "must_acknowledge": ["website", "browser"],
+        "must_avoid": ["your fault"],
+    },
+    {
+        "intent": "technical",
+        "user_query": "Email notifications stopped working last week",
+        "must_acknowledge": ["email", "notification"],
+        "must_avoid": ["your fault"],
+    },
+    {
+        "intent": "technical",
+        "user_query": "The mobile app won't sync with my account",
+        "must_acknowledge": ["sync", "app"],
+        "must_avoid": ["your fault"],
+    },
+    {
+        "intent": "technical",
+        "user_query": "I'm getting an error code 502 when checking out",
+        "must_acknowledge": ["error", "checkout"],
+        "must_avoid": ["your fault"],
+    },
     # Billing (6)
-    {"intent": "billing", "user_query": "Why is my bill higher this month?",
-     "must_acknowledge": ["bill", "month"], "must_avoid": ["impossible"]},
-    {"intent": "billing", "user_query": "I don't recognize this charge on my statement",
-     "must_acknowledge": ["charge", "statement"], "must_avoid": ["impossible"]},
-    {"intent": "billing", "user_query": "I need a copy of last month's invoice",
-     "must_acknowledge": ["invoice"], "must_avoid": ["impossible"]},
-    {"intent": "billing", "user_query": "Can I switch to annual billing for a discount?",
-     "must_acknowledge": ["annual", "billing"], "must_avoid": ["impossible"]},
-    {"intent": "billing", "user_query": "My promo code wasn't applied at checkout",
-     "must_acknowledge": ["promo", "code"], "must_avoid": ["impossible"]},
-    {"intent": "billing", "user_query": "Update my credit card on file",
-     "must_acknowledge": ["credit card"], "must_avoid": ["impossible"]},
-
+    {
+        "intent": "billing",
+        "user_query": "Why is my bill higher this month?",
+        "must_acknowledge": ["bill", "month"],
+        "must_avoid": ["impossible"],
+    },
+    {
+        "intent": "billing",
+        "user_query": "I don't recognize this charge on my statement",
+        "must_acknowledge": ["charge", "statement"],
+        "must_avoid": ["impossible"],
+    },
+    {
+        "intent": "billing",
+        "user_query": "I need a copy of last month's invoice",
+        "must_acknowledge": ["invoice"],
+        "must_avoid": ["impossible"],
+    },
+    {
+        "intent": "billing",
+        "user_query": "Can I switch to annual billing for a discount?",
+        "must_acknowledge": ["annual", "billing"],
+        "must_avoid": ["impossible"],
+    },
+    {
+        "intent": "billing",
+        "user_query": "My promo code wasn't applied at checkout",
+        "must_acknowledge": ["promo", "code"],
+        "must_avoid": ["impossible"],
+    },
+    {
+        "intent": "billing",
+        "user_query": "Update my credit card on file",
+        "must_acknowledge": ["credit card"],
+        "must_avoid": ["impossible"],
+    },
     # General (6)
-    {"intent": "general", "user_query": "What are your business hours?",
-     "must_acknowledge": ["hours"], "must_avoid": []},
-    {"intent": "general", "user_query": "How do I contact a human agent?",
-     "must_acknowledge": ["agent", "human"], "must_avoid": []},
-    {"intent": "general", "user_query": "Do you ship internationally?",
-     "must_acknowledge": ["ship", "international"], "must_avoid": []},
-    {"intent": "general", "user_query": "What's your return policy?",
-     "must_acknowledge": ["return", "policy"], "must_avoid": []},
-    {"intent": "general", "user_query": "Where is your office located?",
-     "must_acknowledge": ["office", "located"], "must_avoid": []},
-    {"intent": "general", "user_query": "Are you hiring?",
-     "must_acknowledge": ["hiring", "careers"], "must_avoid": []},
+    {
+        "intent": "general",
+        "user_query": "What are your business hours?",
+        "must_acknowledge": ["hours"],
+        "must_avoid": [],
+    },
+    {
+        "intent": "general",
+        "user_query": "How do I contact a human agent?",
+        "must_acknowledge": ["agent", "human"],
+        "must_avoid": [],
+    },
+    {
+        "intent": "general",
+        "user_query": "Do you ship internationally?",
+        "must_acknowledge": ["ship", "international"],
+        "must_avoid": [],
+    },
+    {
+        "intent": "general",
+        "user_query": "What's your return policy?",
+        "must_acknowledge": ["return", "policy"],
+        "must_avoid": [],
+    },
+    {
+        "intent": "general",
+        "user_query": "Where is your office located?",
+        "must_acknowledge": ["office", "located"],
+        "must_avoid": [],
+    },
+    {
+        "intent": "general",
+        "user_query": "Are you hiring?",
+        "must_acknowledge": ["hiring", "careers"],
+        "must_avoid": [],
+    },
 ]
 
 
@@ -192,8 +283,15 @@ def _brand_voice_score(text: str) -> tuple[float, dict[str, float]]:
     breakdown["length_score"] = length_score
     breakdown["n_words"] = float(n_words)
 
-    polite_terms = ["thank you", "happy to help", "of course", "i understand",
-                    "i'd be glad", "please", "sorry to hear"]
+    polite_terms = [
+        "thank you",
+        "happy to help",
+        "of course",
+        "i understand",
+        "i'd be glad",
+        "please",
+        "sorry to hear",
+    ]
     politeness = min(1.0, _contains_any(text, polite_terms) / 2.0)
     breakdown["politeness"] = politeness
 
@@ -275,8 +373,7 @@ class SupportRewardComposite(RewardFunction):
         safety_score, safety_reason = _safety_check(assistant_text)
 
         composite = (
-            self.intent_weight * intent_score
-            + self.brand_voice_weight * voice_score
+            self.intent_weight * intent_score + self.brand_voice_weight * voice_score
         ) * (safety_score if self.require_safety else 1.0)
 
         breakdown = {

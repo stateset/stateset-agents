@@ -293,7 +293,9 @@ async def main():
 
     logger.info("\nQuick start completed successfully!")
     logger.info("\nNext steps:")
-    logger.info("1. Run the auto-training variant inside this file if you want a larger demo")
+    logger.info(
+        "1. Run the auto-training variant inside this file if you want a larger demo"
+    )
     logger.info("2. Run custom_reward_example() to experiment with custom rewards")
     logger.info("3. Swap the stub model config for a real checkpoint when you're ready")
 

@@ -37,7 +37,9 @@ class _FallbackGenerationConfig:
 class _FallbackStoppingCriteria:
     """Fallback StoppingCriteria when transformers not available."""
 
-    def __call__(self, *args: Any, **kwargs: Any) -> bool:  # pragma: no cover - placeholder
+    def __call__(
+        self, *args: Any, **kwargs: Any
+    ) -> bool:  # pragma: no cover - placeholder
         return False
 
 
@@ -261,7 +263,9 @@ class Agent:
         config: AgentConfig | None = None,
         model_loader: Callable[[AgentConfig], Any] | None = None,
         tokenizer_loader: Callable[[AgentConfig], Any] | None = None,
-        generation_config_factory: Callable[[AgentConfig, Any, Any], GenerationConfig] | None = None,
+        generation_config_factory: (
+            Callable[[AgentConfig, Any, Any], GenerationConfig] | None
+        ) = None,
         backend: ModelBackend | None = None,
     ):
         """Initialize the agent.
@@ -389,9 +393,9 @@ class Agent:
                 if self.config.device_map:
                     model_kwargs["device_map"] = self.config.device_map
                 if self.config.attn_implementation:
-                    model_kwargs[
-                        "attn_implementation"
-                    ] = self.config.attn_implementation
+                    model_kwargs["attn_implementation"] = (
+                        self.config.attn_implementation
+                    )
                 if self.config.model_kwargs:
                     model_kwargs.update(self.config.model_kwargs)
 
@@ -438,7 +442,7 @@ class Agent:
 
     @staticmethod
     def _normalize_messages(
-        messages: str | list[dict[str, Any]]
+        messages: str | list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         """Coerce message input into a normalized list of dicts."""
         if isinstance(messages, str):
@@ -513,7 +517,9 @@ class MultiTurnAgent(Agent):
         context_compression: bool = False,
         model_loader: Callable[[AgentConfig], Any] | None = None,
         tokenizer_loader: Callable[[AgentConfig], Any] | None = None,
-        generation_config_factory: Callable[[AgentConfig, Any, Any], GenerationConfig] | None = None,
+        generation_config_factory: (
+            Callable[[AgentConfig, Any, Any], GenerationConfig] | None
+        ) = None,
         backend: ModelBackend | None = None,
         planning_manager: PlanningManager | None = None,
     ):
@@ -556,15 +562,16 @@ class MultiTurnAgent(Agent):
                     "PEFT library not available. Install with: pip install peft"
                 )
             from pathlib import Path
+
             adapter_path = Path(self.config.peft_path).expanduser().resolve()
             if not adapter_path.exists():
-                raise FileNotFoundError(
-                    f"peft_path does not exist: {adapter_path}"
-                )
+                raise FileNotFoundError(f"peft_path does not exist: {adapter_path}")
             self.model = PeftModel.from_pretrained(self.model, str(adapter_path))
             logger.info("Loaded LoRA adapter from %s", adapter_path)
         # Otherwise apply a fresh PEFT config if requested (training-time path).
-        elif self.config.use_peft and self.config.peft_config and self.model is not None:
+        elif (
+            self.config.use_peft and self.config.peft_config and self.model is not None
+        ):
             if not _load_peft() or LoraConfig is None or get_peft_model is None:
                 raise ImportError(
                     "PEFT library not available. Install with: pip install peft"
@@ -769,9 +776,7 @@ class MultiTurnAgent(Agent):
 
         # Decode response
         response_tokens = outputs.sequences[0][inputs["input_ids"].shape[1] :]
-        response = str(
-            self.tokenizer.decode(response_tokens, skip_special_tokens=True)
-        )
+        response = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
 
         # Clean up response
         response = self._clean_response(response)
@@ -922,10 +927,14 @@ class MultiTurnAgent(Agent):
                 }
                 model = self.model
                 if model is None:
-                    raise RuntimeError("Agent model must be initialized before streaming")
+                    raise RuntimeError(
+                        "Agent model must be initialized before streaming"
+                    )
 
                 # Run generation in separate thread
-                thread = threading.Thread(target=lambda: model.generate(**generation_kwargs))
+                thread = threading.Thread(
+                    target=lambda: model.generate(**generation_kwargs)
+                )
                 thread.start()
 
                 # Yield tokens as they arrive
@@ -1006,7 +1015,6 @@ class MultiTurnAgent(Agent):
         return turn
 
 
-from .tool_agent import ToolAgent
 from .agent_factories import (
     AGENT_CONFIGS,
     _load_agent_configs,
@@ -1016,6 +1024,7 @@ from .agent_factories import (
     load_agent_from_checkpoint,
     save_agent_checkpoint,
 )
+from .tool_agent import ToolAgent
 
 __all__ = [
     "Agent",

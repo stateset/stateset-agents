@@ -10,11 +10,11 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import wraps
 from typing import Any, cast
-from collections.abc import Callable
 
 import psutil
 
@@ -144,9 +144,9 @@ class PerformanceMonitor:
                 "avg_duration": sum(durations) / len(durations) if durations else None,
                 "min_duration": min(durations) if durations else None,
                 "max_duration": max(durations) if durations else None,
-                "avg_memory_delta": sum(memory_deltas) / len(memory_deltas)
-                if memory_deltas
-                else None,
+                "avg_memory_delta": (
+                    sum(memory_deltas) / len(memory_deltas) if memory_deltas else None
+                ),
             }
 
         return summary

@@ -361,15 +361,11 @@ class AdaptiveRewardScaler:
         # Adjust scale to move towards target distribution
         if current_mean > 0:
             mean_adjustment = target_mean / current_mean
-            self.scale *= float(
-                1.0 + (mean_adjustment - 1.0) * self.adaptation_rate
-            )
+            self.scale *= float(1.0 + (mean_adjustment - 1.0) * self.adaptation_rate)
 
         if current_std > 0:
             std_adjustment = target_std / current_std
-            self.scale *= float(
-                1.0 + (std_adjustment - 1.0) * self.adaptation_rate
-            )
+            self.scale *= float(1.0 + (std_adjustment - 1.0) * self.adaptation_rate)
 
         # Clip scale to valid range
         self.scale = float(np.clip(self.scale, self.min_scale, self.max_scale))

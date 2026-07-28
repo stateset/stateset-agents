@@ -41,8 +41,10 @@ async def train_with_gspo(
     # ('Reference-model drift') and benchmark_results/whitepaper_v1/
     # customer_support_qwen3_5_0_8b_gspo.json for a documented case.
     _has_kl_anchor = config.use_reference_model and config.beta > 0.0
-    _corpus_size = len(train_queries) if train_queries else (
-        len(environment.scenarios) if hasattr(environment, "scenarios") else None
+    _corpus_size = (
+        len(train_queries)
+        if train_queries
+        else (len(environment.scenarios) if hasattr(environment, "scenarios") else None)
     )
     if not _has_kl_anchor and _corpus_size is not None and _corpus_size < 100:
         logger.warning(
@@ -85,7 +87,9 @@ async def train_with_gspo(
     )
 
     if _is_stub:
-        logger.info("Stub backend detected — skipping model manager, using agent's model")
+        logger.info(
+            "Stub backend detected — skipping model manager, using agent's model"
+        )
         model = agent.model
         tokenizer = agent.tokenizer
         model_manager = None
@@ -135,7 +139,9 @@ async def train_with_gspo(
     aborted = False
 
     for iteration in range(config.num_outer_iterations):
-        logger.info("=== Iteration %s/%s ===", iteration + 1, config.num_outer_iterations)
+        logger.info(
+            "=== Iteration %s/%s ===", iteration + 1, config.num_outer_iterations
+        )
 
         metrics = await trainer.train_step(
             queries=train_queries, num_groups=min(len(train_queries), 10)

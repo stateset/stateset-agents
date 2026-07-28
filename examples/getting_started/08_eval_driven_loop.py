@@ -23,14 +23,14 @@ Expected output:
 import asyncio
 from typing import Any
 
-from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
+from stateset_agents.core.reward_base import RewardFunction
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.data import SupportRewardComposite, load_support_scenarios
-
 
 # We simulate "two candidate agents" with two pure-Python policies so the demo
 # runs in CPU and the contrast between baseline and improved is reproducible.
 # In your real loop, replace these with `await agent.generate_response(...)`.
+
 
 async def policy_a(scenario: dict[str, Any]) -> str:
     """A weak policy: ignores the query and offers a generic apology."""
@@ -48,7 +48,9 @@ async def policy_b(scenario: dict[str, Any]) -> str:
     )
 
 
-async def evaluate(policy, rubric: RewardFunction, scenarios: list[dict[str, Any]]) -> float:
+async def evaluate(
+    policy, rubric: RewardFunction, scenarios: list[dict[str, Any]]
+) -> float:
     scores: list[float] = []
     for s in scenarios:
         response = await policy(s)

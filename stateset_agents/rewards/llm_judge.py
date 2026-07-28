@@ -120,9 +120,11 @@ def _resolve_judge_provider(
             or env_vars.get("LLM_JUDGE_MODEL")
             or env_vars.get("MODEL_NAME")
         ),
-        "openai"
-        if env_vars.get("OPENAI_API_KEY") or env_vars.get("OPENAI_TOKEN")
-        else None,
+        (
+            "openai"
+            if env_vars.get("OPENAI_API_KEY") or env_vars.get("OPENAI_TOKEN")
+            else None
+        ),
         "anthropic" if env_vars.get("ANTHROPIC_API_KEY") else None,
     ):
         if candidate is not None:
@@ -141,22 +143,24 @@ def _resolve_judge_model_name(
         return model_name
 
     env_vars = os.environ if env is None else env
-    shared_model = env_vars.get("STATESET_JUDGE_MODEL") or env_vars.get(
-        "LLM_JUDGE_MODEL"
-    ) or env_vars.get(
-        "MODEL_NAME"
+    shared_model = (
+        env_vars.get("STATESET_JUDGE_MODEL")
+        or env_vars.get("LLM_JUDGE_MODEL")
+        or env_vars.get("MODEL_NAME")
     )
     if shared_model:
         return shared_model
 
     if provider == JudgeProvider.ANTHROPIC:
-        return env_vars.get("ANTHROPIC_MODEL") or _DEFAULT_JUDGE_MODEL_NAMES[
-            provider.value
-        ]
+        return (
+            env_vars.get("ANTHROPIC_MODEL")
+            or _DEFAULT_JUDGE_MODEL_NAMES[provider.value]
+        )
     if provider == JudgeProvider.LOCAL:
-        return env_vars.get("LOCAL_JUDGE_MODEL") or _DEFAULT_JUDGE_MODEL_NAMES[
-            provider.value
-        ]
+        return (
+            env_vars.get("LOCAL_JUDGE_MODEL")
+            or _DEFAULT_JUDGE_MODEL_NAMES[provider.value]
+        )
     return env_vars.get("OPENAI_MODEL") or _DEFAULT_JUDGE_MODEL_NAMES[provider.value]
 
 
@@ -380,7 +384,7 @@ class ResultCache:
     def _hash_key(self, query: str, response: str, criteria: str) -> str:
         """Create hash key for cache."""
         content = f"{query}|{response}|{criteria}"
-        return hashlib.md5(content.encode()).hexdigest()
+        return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
 
     def get(self, query: str, response: str, criteria: str) -> Any | None:
         """Get cached result."""

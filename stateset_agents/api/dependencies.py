@@ -15,7 +15,6 @@ from .auth import AuthenticatedUser, authenticate_request
 from .errors import UnauthorizedError
 from .security import get_api_security_monitor
 
-
 # ============================================================================
 # Security Setup
 # ============================================================================

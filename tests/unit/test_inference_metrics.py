@@ -17,7 +17,6 @@ from stateset_agents.api.services.inference_service import (
     InferenceService,
 )
 
-
 prometheus_client = pytest.importorskip("prometheus_client")
 
 

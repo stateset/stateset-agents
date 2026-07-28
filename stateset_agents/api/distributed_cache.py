@@ -13,11 +13,11 @@ import logging
 import pickle
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
 from typing import Any, Generic, TypeVar
-from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -700,7 +700,10 @@ class RedisCache(CacheInterface):
                     "Pickle serializer disabled; refusing to deserialize pickle payload."
                 )
             else:
-                return pickle.loads(data)
+                # Pickle deserialization is opt-in via config.allow_pickle and
+                # only reads from this process's own trusted Redis cache,
+                # never externally supplied data.
+                return pickle.loads(data)  # nosec: B301
         return json.loads(data.decode("utf-8"))
 
     async def close(self) -> None:
@@ -898,12 +901,16 @@ def cached(
                 # Default key from function name and args
                 key_parts = [key_prefix, func.__name__]
                 if args:
-                    key_parts.append(hashlib.md5(str(args).encode()).hexdigest()[:8])
+                    key_parts.append(
+                        hashlib.md5(
+                            str(args).encode(), usedforsecurity=False
+                        ).hexdigest()[:8]
+                    )
                 if kwargs:
                     key_parts.append(
-                        hashlib.md5(str(sorted(kwargs.items())).encode()).hexdigest()[
-                            :8
-                        ]
+                        hashlib.md5(
+                            str(sorted(kwargs.items())).encode(), usedforsecurity=False
+                        ).hexdigest()[:8]
                     )
                 cache_key = ":".join(filter(None, key_parts))
 

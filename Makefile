@@ -718,80 +718,8 @@ security-scan: ## Run basic security scanning tools
 
 security-scan-strict: ## Run stricter security scanning (exit on high severity findings)
 	bandit -r stateset_agents -f json -o bandit-report.json || true
-	safety check --json > safety-report.json || true
-	$(PYTHON_BIN) - <<-'PY'
-		import json
-		import sys
-		from pathlib import Path
-
-		bandit_path = Path("bandit-report.json")
-		safety_path = Path("safety-report.json")
-
-		if not bandit_path.exists() or not bandit_path.read_text().strip():
-		    print("Bandit report not generated")
-		    sys.exit(1)
-
-		try:
-		    bandit_payload = json.loads(bandit_path.read_text())
-		except Exception as exc:
-		    print(f"Bandit output parse failed: {exc}")
-		    sys.exit(1)
-
-		bandit_results = []
-		if isinstance(bandit_payload, dict):
-		    bandit_results = bandit_payload.get("results", [])
-		elif isinstance(bandit_payload, list):
-		    bandit_results = bandit_payload
-
-		high_findings = [
-		    item
-		    for item in bandit_results
-		    if str(item.get("issue_severity", "")).upper()
-		    in {"MEDIUM", "HIGH", "CRITICAL"}
-		]
-
-		if high_findings:
-		    for item in high_findings[:10]:
-		        print(
-		            f"Bandit: {item.get('filename')}:{item.get('line_number')} "
-		            f"{item.get('test_id')} {item.get('issue_severity')}"
-		        )
-		    print(
-		        f"Bandit: failing with {len(high_findings)} "
-		        "medium/high/critical findings"
-		    )
-		    sys.exit(1)
-
-		if not safety_path.exists() or not safety_path.read_text().strip():
-		    print("Safety report not generated; ensure safety is installed")
-		    sys.exit(1)
-
-		try:
-		    safety_payload = json.loads(safety_path.read_text())
-		except Exception as exc:
-		    print(f"Safety output parse failed: {exc}")
-		    sys.exit(1)
-
-		vulns = safety_payload.get(
-		    "vulnerabilities",
-		    safety_payload if isinstance(safety_payload, list) else [],
-		)
-		high = [
-		    v
-		    for v in vulns
-		    if str(v.get("severity", "")).upper() in {"HIGH", "CRITICAL"}
-		]
-
-		if high:
-		    for v in high[:10]:
-		        print(
-		            f"High severity vulnerability: "
-		            f"{v.get('package_name', 'unknown')} {v.get('id', '')}"
-		        )
-		    sys.exit(1)
-
-		sys.exit(0)
-	PY
+	safety check --save-json safety-report.json > /dev/null 2>&1 || true
+	$(PYTHON_BIN) scripts/check_security_findings.py
 
 publish-readiness: ## Run pre-publish release readiness gate
 	bash scripts/publish_readiness.sh

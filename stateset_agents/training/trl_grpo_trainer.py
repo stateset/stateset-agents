@@ -404,9 +404,11 @@ class ModelManager:
 
             # Model loading kwargs
             model_kwargs = {
-                "torch_dtype": torch.float16
-                if self.config.fp16
-                else (torch.bfloat16 if self.config.bf16 else torch.float32),
+                "torch_dtype": (
+                    torch.float16
+                    if self.config.fp16
+                    else (torch.bfloat16 if self.config.bf16 else torch.float32)
+                ),
                 "device_map": "auto" if torch.cuda.is_available() else None,
                 "trust_remote_code": True,
             }
@@ -521,9 +523,7 @@ class TRLGRPODatasetBuilder:
         self.tokenizer = tokenizer
         self.config = config
 
-    def build_from_trajectories(
-        self, trajectories: list[MultiTurnTrajectory]
-    ) -> Any:
+    def build_from_trajectories(self, trajectories: list[MultiTurnTrajectory]) -> Any:
         """Build dataset from multi-turn trajectories"""
         _require_dataset()
         dataset_cls = Dataset
@@ -677,9 +677,11 @@ class TRLGRPOTrainerWrapper:
             logging_steps=self.config.logging_steps,
             save_steps=self.config.save_steps,
             eval_steps=self.config.eval_steps,
-            report_to=self.config.report_to.split(",")
-            if self.config.report_to != "none"
-            else [],
+            report_to=(
+                self.config.report_to.split(",")
+                if self.config.report_to != "none"
+                else []
+            ),
             remove_unused_columns=False,
             # GRPO specific parameters
             beta=self.config.beta,
@@ -713,7 +715,6 @@ from .trl_grpo_entrypoints import (
     train_iterative_grpo,
     train_with_trl_grpo,
 )
-
 
 # Export main components
 __all__ = [

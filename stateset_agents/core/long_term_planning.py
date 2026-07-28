@@ -8,11 +8,11 @@ multi-step plans, then inject them into the prompt as system context.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from collections.abc import Callable
 
 
 class PlanStatus(str, Enum):
@@ -186,7 +186,9 @@ class PlanningManager:
         self,
         config: PlanningConfig | None = None,
         planner: Any | None = None,
-        goal_extractor: Callable[[list[dict[str, str]], dict[str, Any]], str | None] | None = None,
+        goal_extractor: (
+            Callable[[list[dict[str, str]], dict[str, Any]], str | None] | None
+        ) = None,
     ):
         self.config = config or PlanningConfig()
         self.planner = planner or HeuristicPlanner()

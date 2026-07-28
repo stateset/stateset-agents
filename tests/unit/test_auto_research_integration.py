@@ -18,13 +18,10 @@ from stateset_agents.training.auto_research.experiment_loop import (
     AutoResearchLoop,
     run_auto_research,
 )
-from stateset_agents.training.auto_research.proposer import (
-    ExperimentProposer,
-)
+from stateset_agents.training.auto_research.proposer import ExperimentProposer
 from stateset_agents.training.auto_research.search_spaces import (
     create_quick_search_space,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -128,11 +125,16 @@ class TestAutoResearchLoopIntegration:
             save_checkpoints=False,
         )
 
-        proposer = FixedProposer([
-            ({"learning_rate": 1e-5, "num_generations": 4}, "increase LR to 1e-5"),
-            ({"learning_rate": 2e-5, "num_generations": 8}, "increase LR and generations"),
-            ({"learning_rate": 5e-6, "num_generations": 2}, "decrease both"),
-        ])
+        proposer = FixedProposer(
+            [
+                ({"learning_rate": 1e-5, "num_generations": 4}, "increase LR to 1e-5"),
+                (
+                    {"learning_rate": 2e-5, "num_generations": 8},
+                    "increase LR and generations",
+                ),
+                ({"learning_rate": 5e-6, "num_generations": 2}, "decrease both"),
+            ]
+        )
 
         # Mock the training to be a no-op (stub agent doesn't need real training)
         with patch.object(
@@ -226,9 +228,7 @@ class TestAutoResearchLoopIntegration:
         assert tracker.num_crashed >= 1
 
     @pytest.mark.asyncio
-    async def test_keep_and_discard_logic(
-        self, stub_agent, stub_environment, tmp_path
-    ):
+    async def test_keep_and_discard_logic(self, stub_agent, stub_environment, tmp_path):
         """Verify that better results are kept and worse ones discarded."""
         config = AutoResearchConfig(
             time_budget=10,
@@ -240,7 +240,9 @@ class TestAutoResearchLoopIntegration:
         )
 
         # Reward fn that returns different scores based on call count
-        scores = iter([0.5, 0.7, 0.3, 0.8])  # baseline, exp1(better), exp2(worse), exp3(best)
+        scores = iter(
+            [0.5, 0.7, 0.3, 0.8]
+        )  # baseline, exp1(better), exp2(worse), exp3(best)
 
         reward_fn = MagicMock()
 
@@ -317,7 +319,6 @@ class TestAutoResearchLoopIntegration:
         # Should have resumed and run 2 more experiments
         assert tracker2.num_experiments == 5
 
-
     @pytest.mark.asyncio
     async def test_baseline_respects_wall_clock_budget(
         self, stub_agent, stub_environment, stub_reward_fn, tmp_path
@@ -376,10 +377,13 @@ class TestAutoResearchLoopIntegration:
             await asyncio.sleep(1.2)
             return {"eval_reward": 0.6}
 
-        with patch.object(
-            AutoResearchLoop, "_train_with_params", new_callable=AsyncMock
-        ), patch.object(
-            AutoResearchLoop, "_evaluate", new=evaluate_with_slow_second_call
+        with (
+            patch.object(
+                AutoResearchLoop, "_train_with_params", new_callable=AsyncMock
+            ),
+            patch.object(
+                AutoResearchLoop, "_evaluate", new=evaluate_with_slow_second_call
+            ),
         ):
             tracker = await run_auto_research(
                 agent=stub_agent,

@@ -10,9 +10,9 @@ import logging
 import os
 import time
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, cast
-from collections.abc import AsyncIterator
 
 import httpx
 

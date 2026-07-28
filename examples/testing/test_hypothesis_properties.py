@@ -64,4 +64,6 @@ async def test_clamped_reward_always_in_unit_interval(content):
     reward = ClampedSimilarityReward()
     turn = ConversationTurn(role="assistant", content=content)
     result = await reward.compute_reward([turn], context=None)
-    assert 0.0 <= result.score <= 1.0, f"Clamp violated: {result.score} for content len={len(content)}"
+    assert (
+        0.0 <= result.score <= 1.0
+    ), f"Clamp violated: {result.score} for content len={len(content)}"

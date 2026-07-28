@@ -420,21 +420,21 @@ def validate_config(
 
 @app.command()
 def serve(
-    host: str = typer.Option("0.0.0.0", help="Bind host"),
+    host: str = typer.Option(
+        "0.0.0.0", help="Bind host"
+    ),  # nosec: B104 - intentional default for containerized deployment
     port: int = typer.Option(8000, help="Bind port"),
     reload: bool = typer.Option(False, help="Enable auto-reload (development)"),
     dry_run: bool = typer.Option(
         False, help="Print startup command without running the server."
     ),
-    checkpoint: str
-    | None = typer.Option(
+    checkpoint: str | None = typer.Option(
         None,
         "--checkpoint",
         "-c",
         help="Path to a trained checkpoint (LoRA adapter or full model).",
     ),
-    base_model: str
-    | None = typer.Option(
+    base_model: str | None = typer.Option(
         None,
         "--base-model",
         help="Base model name when --checkpoint is a LoRA adapter (defaults to the value baked into the adapter).",
@@ -495,27 +495,23 @@ def serve(
 
 @app.command()
 def evaluate(
-    checkpoint: str
-    | None = typer.Option(
+    checkpoint: str | None = typer.Option(
         None, "--checkpoint", help="Path to a saved checkpoint directory"
     ),
     message: str = typer.Option(
         "Hello", help="Single message to evaluate (ignored when --scenarios is set)"
     ),
-    scenarios: str
-    | None = typer.Option(
+    scenarios: str | None = typer.Option(
         None,
         "--scenarios",
         help='JSONL of scenarios for batch mode. Each line: {"user_query": ..., <reward-specific context>}.',
     ),
-    reward: str
-    | None = typer.Option(
+    reward: str | None = typer.Option(
         None,
         "--reward",
         help="Reward name for batch mode: gsm8k, customer_support, tool_calling.",
     ),
-    output: str
-    | None = typer.Option(
+    output: str | None = typer.Option(
         None,
         "--output",
         "-o",
@@ -1076,10 +1072,14 @@ def recipe(
     if pager is None:
         pager = "less -R" if shutil.which("less") else None
     if pager and sys.stdout.isatty():
+        import shlex
         import subprocess
 
         try:
-            subprocess.run(pager, shell=True, check=False, input=section, text=True)
+            subprocess.run(
+                shlex.split(pager), check=False, input=section, text=True
+            )  # nosec: B603 — no shell=True; pager command comes from a fixed
+            # default or the user's own $PAGER, split with shlex (not shell-parsed)
             return
         except Exception:
             pass
@@ -1118,10 +1118,14 @@ def tour() -> None:
 
     if pager and sys.stdout.isatty():
         # Pipe through PAGER for TTY users.
+        import shlex
         import subprocess
 
         try:
-            subprocess.run(f"{pager} {tour_path}", shell=True, check=False)
+            subprocess.run(
+                [*shlex.split(pager), str(tour_path)], check=False
+            )  # nosec: B603 — no shell=True; pager command comes from a fixed
+            # default or the user's own $PAGER, split with shlex (not shell-parsed)
             return
         except Exception:
             pass
@@ -1140,8 +1144,7 @@ def starter(
         "",
         help="Output directory for the scaffolded project (not needed for `list`).",
     ),
-    project_name: str
-    | None = typer.Option(
+    project_name: str | None = typer.Option(
         None,
         "--name",
         "-n",
@@ -1153,8 +1156,7 @@ def starter(
         "-f",
         help="Overwrite an existing non-empty directory.",
     ),
-    client_name: str
-    | None = typer.Option(
+    client_name: str | None = typer.Option(
         None,
         "--client-name",
         help="Client name (slugified) — patches output_dir paths and the W&B project name throughout the scaffold.",

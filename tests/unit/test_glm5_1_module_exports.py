@@ -24,10 +24,8 @@ from stateset_agents.training import (
     write_glm5_1_config_file,
     write_serving_manifest,
 )
-from stateset_agents.training.glm5_1_starter import (
-    GLM5_1_BASE_MODEL as DirectBaseModel,
-    Glm51Config as DirectGlm51Config,
-)
+from stateset_agents.training.glm5_1_starter import GLM5_1_BASE_MODEL as DirectBaseModel
+from stateset_agents.training.glm5_1_starter import Glm51Config as DirectGlm51Config
 
 
 def test_glm5_1_training_exports_remain_available() -> None:

@@ -16,9 +16,9 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from collections.abc import Iterable
 
 
 class Publisher:
@@ -270,7 +270,9 @@ print("Import test successful")
             return token
 
         if os.environ.get("CI", "").strip().lower() in {"1", "true", "yes"}:
-            raise RuntimeError(f"{token_var} is required for non-interactive CI publish.")
+            raise RuntimeError(
+                f"{token_var} is required for non-interactive CI publish."
+            )
         return None
 
     def publish_to_pypi(
@@ -381,14 +383,11 @@ print("Import test successful")
             return
 
         try:
-            branch = (
-                subprocess.check_output(
-                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                    text=True,
-                    cwd=self.project_root,
-                )
-                .strip()
-            )
+            branch = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                text=True,
+                cwd=self.project_root,
+            ).strip()
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
                 f"Could not determine git branch for release check: {exc}"
@@ -423,7 +422,9 @@ print("Import test successful")
 
             if run_readiness:
                 print("📋 Running publish readiness checks...")
-                readiness_script = self.project_root / "scripts" / "publish_readiness.sh"
+                readiness_script = (
+                    self.project_root / "scripts" / "publish_readiness.sh"
+                )
                 if not readiness_script.exists():
                     print(
                         f"Missing readiness script: {readiness_script}\n"

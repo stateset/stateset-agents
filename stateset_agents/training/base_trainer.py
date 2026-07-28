@@ -16,9 +16,9 @@ import importlib.util
 import logging
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar, cast
-from collections.abc import Callable
 
 import torch
 import torch.nn.functional as F
@@ -449,7 +449,9 @@ class BaseTrajectoryGenerator:
         vllm_config_cls = _VLLMConfig
         vllm_generator_cls = _VLLMGenerator
         if vllm_config_cls is None or vllm_generator_cls is None:
-            logger.warning("vLLM backend exports unavailable, using HuggingFace fallback")
+            logger.warning(
+                "vLLM backend exports unavailable, using HuggingFace fallback"
+            )
             return
 
         vllm_config = vllm_config_cls(
@@ -460,9 +462,11 @@ class BaseTrajectoryGenerator:
             max_tokens=self.config.max_completion_length,
             temperature=self.config.temperature,
             top_p=self.config.top_p,
-            dtype="float16"
-            if self.config.fp16
-            else ("bfloat16" if self.config.bf16 else "auto"),
+            dtype=(
+                "float16"
+                if self.config.fp16
+                else ("bfloat16" if self.config.bf16 else "auto")
+            ),
         )
 
         self.vllm_generator = vllm_generator_cls(vllm_config)
@@ -637,8 +641,8 @@ class BaseTrainer(ABC, Generic[ConfigT]):
             return 0.0
         return float(
             torch.nn.utils.clip_grad_norm_(
-            params,
-            self.config.max_grad_norm,
+                params,
+                self.config.max_grad_norm,
             ).item()
         )
 
@@ -658,7 +662,7 @@ class BaseTrainer(ABC, Generic[ConfigT]):
             if p.grad is not None:
                 grad = p.grad.detach()
                 param_norm = grad.norm(2).item()
-                total_norm += param_norm ** 2
+                total_norm += param_norm**2
                 max_grad = max(max_grad, grad.abs().max().item())
                 grad_sum += grad.abs().mean().item()
                 param_count += 1
@@ -666,7 +670,7 @@ class BaseTrainer(ABC, Generic[ConfigT]):
                     zero_count += 1
 
         return {
-            "grad_norm": total_norm ** 0.5,
+            "grad_norm": total_norm**0.5,
             "grad_max": max_grad,
             "grad_mean": grad_sum / max(param_count, 1),
             "num_zero_grads": zero_count,
@@ -699,9 +703,7 @@ class BaseTrainer(ABC, Generic[ConfigT]):
 
         return metrics
 
-    def log_metrics(
-        self, metrics: dict[str, float], step: int | None = None
-    ) -> None:
+    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
         """Log metrics to W&B and internal history."""
         step = step or self.global_step
 
@@ -743,7 +745,7 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         self.tokenizer.save_pretrained(path)
 
         # Save optimizer and scheduler state
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "optimizer": self.optimizer.state_dict(),
                 "scheduler": self.scheduler.state_dict(),

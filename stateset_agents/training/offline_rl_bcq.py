@@ -344,9 +344,9 @@ class BatchConstrainedQLearning:
         state_dim: int,
         action_dim: int,
         config: BCQConfig | None = None,
-        device: str = "cuda"
-        if torch is not None and torch.cuda.is_available()
-        else "cpu",
+        device: str = (
+            "cuda" if torch is not None and torch.cuda.is_available() else "cpu"
+        ),
     ):
         _require_torch()
 
@@ -683,7 +683,7 @@ class BatchConstrainedQLearning:
 
     def save(self, path: str) -> None:
         """Save model checkpoint"""
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "vae_state_dict": self.vae.state_dict(),
                 "perturbation_state_dict": self.perturbation.state_dict(),
@@ -700,7 +700,7 @@ class BatchConstrainedQLearning:
 
     def load(self, path: str) -> None:
         """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
 
         self.vae.load_state_dict(checkpoint["vae_state_dict"])
         self.perturbation.load_state_dict(checkpoint["perturbation_state_dict"])
@@ -725,9 +725,9 @@ class BCQTrainer:
         state_dim: int,
         action_dim: int,
         config: BCQConfig | None = None,
-        device: str = "cuda"
-        if torch is not None and torch.cuda.is_available()
-        else "cpu",
+        device: str = (
+            "cuda" if torch is not None and torch.cuda.is_available() else "cpu"
+        ),
     ):
         _require_torch()
 

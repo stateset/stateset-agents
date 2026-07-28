@@ -604,7 +604,11 @@ class TestStreamingService:
     @pytest.mark.asyncio
     async def test_streaming_batch_progress(self):
         """Test streaming batch progress events."""
-        from stateset_agents.api.streaming import BatchItem, StreamEventType, StreamingService
+        from stateset_agents.api.streaming import (
+            BatchItem,
+            StreamEventType,
+            StreamingService,
+        )
 
         service = StreamingService(agent=None)
 

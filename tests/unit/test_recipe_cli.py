@@ -22,7 +22,16 @@ class TestRecipeListing:
         assert result.returncode == 0
         assert "Available cookbook recipes:" in result.stdout
         # All 8 recipes should appear (Recipe 5 — batch eval — added in v0.12.0)
-        for keyword in ("first-fine-tune", "iterate-from", "reproduce", "tool-using", "batch", "debug", "hand-off", "demos"):
+        for keyword in (
+            "first-fine-tune",
+            "iterate-from",
+            "reproduce",
+            "tool-using",
+            "batch",
+            "debug",
+            "hand-off",
+            "demos",
+        ):
             assert keyword in result.stdout, f"missing recipe with keyword {keyword!r}"
 
     def test_default_arg_is_list(self) -> None:

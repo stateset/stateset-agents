@@ -38,7 +38,9 @@ async def test_generate_with_hf_uses_rendered_chat_template_for_scoring(monkeypa
     class FakeTokenizer:
         chat_template = "{{ messages }}"
 
-        def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True):
+        def apply_chat_template(
+            self, messages, tokenize=False, add_generation_prompt=True
+        ):
             return "<user>" + messages[0]["content"] + "<assistant>"
 
         def __call__(self, text, **kwargs):
@@ -216,7 +218,9 @@ async def test_generate_batch_groups_vllm_rescores_when_enabled(monkeypatch):
             self.tokenizer = _ChatTemplateTokenizer()
             self.model = None
 
-    config = GSPOConfig(model_name="fake-model", use_vllm=False, rescore_old_log_probs=True)
+    config = GSPOConfig(
+        model_name="fake-model", use_vllm=False, rescore_old_log_probs=True
+    )
     generator = gg.GSPOTrajectoryGenerator.__new__(gg.GSPOTrajectoryGenerator)
     generator.config = config
     generator.agent = FakeAgent()
@@ -265,7 +269,10 @@ async def test_generate_batch_groups_vllm_returns_raw_logprob_when_rescore_disab
             self.model = None
 
     config = GSPOConfig(
-        model_name="fake-model", use_vllm=False, rescore_old_log_probs=False, temperature=1.0
+        model_name="fake-model",
+        use_vllm=False,
+        rescore_old_log_probs=False,
+        temperature=1.0,
     )
     generator = gg.GSPOTrajectoryGenerator.__new__(gg.GSPOTrajectoryGenerator)
     generator.config = config

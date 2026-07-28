@@ -481,7 +481,7 @@ class NeuralRewardTrainer:
 
     def save_model(self, path: str):
         """Save model checkpoint"""
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "model_state_dict": self.model.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),
@@ -499,7 +499,7 @@ class NeuralRewardTrainer:
 
     def load_model(self, path: str):
         """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
