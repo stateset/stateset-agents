@@ -35,6 +35,14 @@ class ModelPreset:
     use_8bit: bool = False
     chat_template_override: str | None = None
     notes: str = ""
+    starter_module: str | None = None
+    """Name of the packaged ``stateset_agents.training.<module>`` starter
+    (e.g. ``"kimi_k3_starter"``) that owns this preset's hyperparameters, if
+    any. When set, ``examples/finetune_gspo.py --starter-profile`` delegates
+    profile resolution (balanced/memory/quality) to that starter's
+    ``get_<name>_config``/``run_<name>_config`` functions instead of the
+    driver's own ``build_gspo_config``.
+    """
 
 
 PRESETS: dict[str, ModelPreset] = {
@@ -62,6 +70,7 @@ PRESETS: dict[str, ModelPreset] = {
             "(KIMI_K3_*). examples/finetune_kimi_k3_gspo.py delegates to the "
             "packaged starter rather than duplicating hyperparameters."
         ),
+        starter_module="kimi_k3_starter",
     ),
     "kimi-k2.5": ModelPreset(
         model_id="moonshotai/Kimi-K2.5",
@@ -121,6 +130,7 @@ PRESETS: dict[str, ModelPreset] = {
             "(KIMI_K26_*). examples/finetune_kimi_k2_6_gspo.py delegates to "
             "the packaged starter."
         ),
+        starter_module="kimi_k2_6_starter",
     ),
     "glm5.1": ModelPreset(
         model_id="zai-org/GLM-5.1",
@@ -148,6 +158,7 @@ PRESETS: dict[str, ModelPreset] = {
             "examples/finetune_glm5_1_gspo.py are re-export shims over the "
             "same packaged starter, so there is no discrepancy to reconcile."
         ),
+        starter_module="glm5_1_starter",
     ),
     "glm5.2": ModelPreset(
         model_id="zai-org/GLM-5.2",
@@ -174,6 +185,7 @@ PRESETS: dict[str, ModelPreset] = {
             "(GLM5_2_*); mirrors GLM 5.1's defaults. The starter also "
             "exposes GLM5_2_FP8_MODEL as an alternate checkpoint."
         ),
+        starter_module="glm5_2_starter",
     ),
     "qwen3": ModelPreset(
         model_id="Qwen/Qwen2.5-7B",
@@ -220,6 +232,7 @@ PRESETS: dict[str, ModelPreset] = {
             "examples/finetune_qwen3_5_0_8b_gspo.py are re-export shims "
             "over the same packaged starter."
         ),
+        starter_module="qwen3_5_starter",
     ),
     "qwen3.5-27b": ModelPreset(
         model_id="Qwen/Qwen3.5-27B",
@@ -300,6 +313,7 @@ PRESETS: dict[str, ModelPreset] = {
             "examples/finetune_gemma4_31b_gspo.py are re-export shims over "
             "the same packaged starter."
         ),
+        starter_module="gemma4_starter",
     ),
     "llama3": ModelPreset(
         model_id="meta-llama/Llama-3.1-8B-Instruct",

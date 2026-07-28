@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import inspect
 import json
 import subprocess
 import sys
@@ -232,26 +230,31 @@ class TestGemma4Config:
 class TestGemma4StarterScript:
     """Test the dedicated starter script surface."""
 
-    def test_training_function_signature(self):
-        from examples import finetune_gemma4_31b_gspo as training_module
+    def test_script_is_a_deprecated_forwarder(self):
+        """finetune_gemma4_31b_gspo.py was converted to a thin forwarder onto
+        examples/finetune_gspo.py --model gemma4-31b once the driver's
+        --starter-profile support reproduced its entire CLI. It still
+        prints a deprecation notice and exits 0 under --dry-run."""
+        repo_root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            [sys.executable, "examples/finetune_gemma4_31b_gspo.py", "--dry-run"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "deprecated" in result.stderr.lower()
+        assert "gemma4-31b" in result.stderr
 
-        sig = inspect.signature(training_module.finetune_gemma4_31b)
-        params = list(sig.parameters.keys())
+    def test_dry_run_preview_via_starter_profile(self):
+        """The starter's own config resolution is still reachable through
+        the unified driver's --starter-profile flag."""
+        from examples import finetune_gspo
 
-        assert "task" in params
-        assert "starter_profile" in params
-        assert "use_4bit" in params
-        assert "dry_run" in params
-
-    def test_dry_run_preview(self):
-        from examples import finetune_gemma4_31b_gspo as training_module
-
-        preview = asyncio.run(training_module.finetune_gemma4_31b(dry_run=True))
-
-        assert preview["config"]["model_name"] == GEMMA4_31B_BASE_MODEL
-        assert preview["summary"]["starter_profile"] == "balanced"
-        assert preview["agent_config"]["trust_remote_code"] is True
-        assert preview["gspo_overrides"]["num_generations"] == 4
+        exit_code = finetune_gspo.main(
+            ["--model", "gemma4-31b", "--starter-profile", "balanced", "--dry-run"]
+        )
+        assert exit_code == 0
 
     def test_cli_dry_run_subprocess(self):
         repo_root = Path(__file__).resolve().parents[2]
@@ -259,6 +262,8 @@ class TestGemma4StarterScript:
             [
                 sys.executable,
                 "examples/finetune_gemma4_31b_gspo.py",
+                "--starter-profile",
+                "balanced",
                 "--dry-run",
             ],
             cwd=repo_root,

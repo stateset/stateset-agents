@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Rate limiter moved out of the deprecated `grpo` package; deprecation warning scoped (A+ final wave, Task 3)
+
+- `UnifiedRateLimiter` (and `RateLimitResult`, `get_rate_limiter`,
+  `reset_rate_limiter`, `MAX_BUCKETS`) moved from
+  `stateset_agents.api.grpo.rate_limiter` to `stateset_agents.api.rate_limiter`,
+  reflecting that it is shared infrastructure used by `middleware.py` on the
+  normal app path, not something specific to the secondary GRPO app.
+  `stateset_agents.api.grpo.rate_limiter` remains as a thin re-export for
+  backward compatibility.
+- `stateset_agents.api.grpo`'s `DeprecationWarning` no longer fires on
+  package import (previously it fired on every normal app startup via
+  `middleware.py`'s rate-limiter import). It now fires lazily, only when
+  the deprecated app-surface submodules (`service`, `service_routes`,
+  `router_v1`, `auth`) are actually accessed.
+
+### Changed — Unified finetune driver absorbs shared flags (A+ final wave, Task 1)
+
+- `examples/finetune_gspo.py` now supports the full set of flag families
+  shared by the packaged-starter per-model scripts:
+  `--use-lora/--no-lora`, `--use-4bit`, `--use-8bit`, `--use-vllm`,
+  `--wandb`/`--wandb-project`, `--export-merged`, `--learning-rate`,
+  `--epochs`, `--steps`, and, for presets with a packaged starter
+  (`ModelPreset.starter_module`), `--starter-profile
+  {balanced,memory,quality}`, `--config PATH`, `--write-config PATH`, and
+  `--list-profiles`. `--dry-run` now defaults to `True` (use `--no-dry-run`
+  for a real run), matching the safe-by-default behavior of the starter
+  scripts it now covers.
+- **Fixed:** the driver's non-dry-run ("real run") mode used to be a
+  no-op — it logged "wire this into your training entry point" and
+  exited 0 without training anything. It now actually invokes the real
+  training entry point: the packaged starter's own `run_<name>_config`
+  coroutine for starter-backed presets, or
+  `stateset_agents.training.gspo_entrypoints.train_with_gspo` for the rest.
+  The dry-run exit message now explicitly says "pass --no-dry-run to
+  train", and every doc/docstring example of a real run now shows
+  `--no-dry-run` explicitly.
+- **Fixed:** `--wandb`/`--wandb-project` were parsed but never reached
+  `GSPOConfig` for non-starter presets (silent no-op even on real runs).
+  `build_gspo_config` now sets `report_to="wandb"` plus `wandb_project`/
+  `wandb_tags` when `--wandb` is passed (and `report_to="none"` otherwise),
+  on both the starter and non-starter paths.
+- **Fixed:** `--export-merged` was parsed but wired to nothing (silent
+  no-op). It now calls `export_merged_model_for_serving` after a real,
+  non-starter-backed training run (skipping with a warning if LoRA is
+  disabled, since there is nothing to merge), and exits with a clear error
+  for starter-backed presets, since none of the packaged starters currently
+  expose a merge-export path.
+- **Fixed:** the forwarder scripts silently dropped the old `--iterations`
+  flag (the driver had no such flag, so passing it errored with
+  "unrecognized arguments" instead of doing the thing the old script did).
+  The driver now accepts `--iterations`, mapping it to a starter's
+  `num_outer_iterations` override for starter-backed presets, and exiting
+  with a clear error for non-starter presets ("use --epochs or --steps
+  instead") rather than either silently dropping it or hard-failing with a
+  generic argparse error.
+- `ModelPreset` gained a `starter_module: str | None` field naming the
+  packaged `stateset_agents.training.*_starter` module backing a preset's
+  `--starter-profile` delegation, set for `kimi-k3`, `kimi-k2.6`,
+  `glm5.1`, `glm5.2`, `gemma4-31b`, and `qwen3.5-0.8b`.
+- Converted `examples/finetune_kimi_k3_gspo.py`,
+  `examples/finetune_kimi_k2_6_gspo.py`,
+  `examples/finetune_gemma4_31b_gspo.py`, and
+  `examples/finetune_qwen3_5_0_8b_gspo.py` into thin (<=15 line) deprecated
+  forwarders onto `examples/finetune_gspo.py --model <preset>`, now that
+  the driver reproduces their entire CLI. The remaining per-model scripts
+  (GLM's serving-only flags, the multi-size branching family scripts, and
+  the already-forwarding `finetune_kimi_k2_5_gspo.py`) are kept; see
+  `examples/README.md` for why each one still carries unique logic.
+
 ### Changed — CI + deferred cleanup (surface consolidation, Plan 3 Task 4)
 
 - CI now runs `examples/getting_started/smoke.sh` against the checked-out

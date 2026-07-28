@@ -15,6 +15,7 @@ GRPO (Group Relative Policy Optimization) service with:
 - FastAPI application (service.py)
 """
 
+import importlib
 import warnings
 
 from .config import GRPOConfig, get_grpo_config, reset_config
@@ -46,12 +47,35 @@ from .state import (
     reset_state_manager,
 )
 
-warnings.warn(
-    "stateset_agents.api.grpo is a secondary GRPO API app and is deprecated; "
-    "use stateset_agents.api.main instead.",
-    DeprecationWarning,
-    stacklevel=2,
+#: Symbols that belong to the deprecated *app surface* of this package (the
+#: standalone GRPO service app). Config/handlers/metrics/models/state/
+#: rate_limiter are shared infrastructure re-exported here for convenience
+#: and are NOT deprecated, so importing this package alone must not warn.
+_DEPRECATED_APP_SUBMODULES = {
+    "service",
+    "service_routes",
+    "router_v1",
+    "auth",
+}
+
+_DEPRECATION_MESSAGE = (
+    "stateset_agents.api.grpo.{name} is part of a secondary GRPO API app "
+    "and is deprecated; use stateset_agents.api.main instead."
 )
+
+
+def __getattr__(name: str):
+    if name in _DEPRECATED_APP_SUBMODULES:
+        warnings.warn(
+            _DEPRECATION_MESSAGE.format(name=name),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        module = importlib.import_module(f".{name}", __name__)
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     # Config
