@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Honest status labeling for dashboard/mobile; mock-data fallback surfaced (A+ final wave, Task 5)
+
+- `dashboard/README.md` and `mobile/README.md` now lead with an explicit
+  "demo, not deployed" status: both apps are real, working code, but
+  neither has a deployment path — the `/api/lab/*` router they talk to is
+  simulator-backed and gated behind auth + `API_ENABLE_TRAINING_LAB`
+  (off by default). Both READMEs document how to run locally and what
+  productionizing would require.
+- `README.md` gained a short "Dashboard and mobile app (demo, not
+  deployed)" section under Supported models, linking to the two READMEs.
+- `dashboard/src/api.ts` gained a header comment stating it targets the
+  simulator-backed `/api/lab` router and requires auth plus
+  `API_ENABLE_TRAINING_LAB`.
+- `mobile/hooks/useTrainingData.ts` now exposes `isMockData: boolean`
+  alongside the existing `source: 'live' | 'mock'` field, and logs one
+  `console.warn` per app session the first time it silently falls back to
+  bundled mock data (unreachable API, auth failure, or empty response) —
+  previously this fallback was invisible.
+
 ## [0.17.0] - 2026-07-27 — Unified finetune driver, rate-limiter hardening, grpo untangling
 
 ### Changed — Rate limiter moved out of the deprecated `grpo` package; deprecation warning scoped (A+ final wave, Task 3)
