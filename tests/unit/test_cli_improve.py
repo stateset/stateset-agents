@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 import re
 import shlex
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from stateset_agents.cli import app
@@ -28,6 +30,15 @@ def _help_flags(*argv: str) -> frozenset[str]:
     argparse/typer parser actually defines — without executing the command
     for real (some of these launch long-running training).
     """
+    # Wide, plain terminal so typer/rich cannot wrap or truncate flag names
+    # (a narrow CI pty previously made help parse to zero flags).
+    env = {
+        **os.environ,
+        "COLUMNS": "200",
+        "TERM": "dumb",
+        "NO_COLOR": "1",
+        "PYTHONIOENCODING": "utf-8",
+    }
     result = subprocess.run(
         [*argv, "--help"],
         cwd=REPO_ROOT,
@@ -35,13 +46,23 @@ def _help_flags(*argv: str) -> frozenset[str]:
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=60,
+        timeout=120,
         check=False,
+        env=env,
     )
+    if result.returncode != 0 and os.name == "nt":
+        # Some scripts' --help cannot run on Windows (heavy imports); the
+        # POSIX CI jobs still enforce the guard strictly.
+        pytest.skip(f"`{' '.join(argv)} --help` unavailable on Windows")
     assert (
         result.returncode == 0
     ), f"`{' '.join(argv)} --help` failed (exit {result.returncode}):\n{result.stderr}"
-    return frozenset(_FLAG_RE.findall(result.stdout + result.stderr))
+    flags = frozenset(_FLAG_RE.findall(result.stdout + result.stderr))
+    assert flags, (
+        f"`{' '.join(argv)} --help` succeeded but no flags were parsed from its "
+        f"output — help rendering changed?\n{result.stdout[:500]}"
+    )
+    return flags
 
 
 def _extract_bash_commands(markdown: str) -> list[list[str]]:
