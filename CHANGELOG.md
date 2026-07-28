@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — CI + deferred cleanup (surface consolidation, Plan 3 Task 4)
+
+- CI now runs `examples/getting_started/smoke.sh` against the checked-out
+  source tree (via the editable install already used for tests), in
+  addition to the existing PyPI-based `make getting-started-smoke` target
+  used for release checks.
+- Tightened `tests/unit/test_advanced_trainers.py::test_compute_gepo_coefficient`
+  to pass sequence *log*-probs (matching the real call signature) and to
+  assert the coefficients against the linear-space formula
+  `coef_i = p_i / (sum(q^2) / sum(q))`, not just "greater than zero".
+- Fixed `GSPOTokenTrainer.train_step_token_level`'s per-response token loss
+  to normalize by the actual response length instead of the full padded
+  sequence width, matching the sequence-level normalization used
+  elsewhere in GSPO/GSPO-token.
+- Corrected the comment on `_estimate_policy_entropy = compute_entropy_bonus`
+  in `stateset_agents/training/loss_computation.py`: it is not a drop-in
+  "backwards-compatible alias" (the signatures differ — the old estimator
+  and `compute_entropy_bonus` are not interchangeable); it exists only
+  because the one known external caller does `callable(_estimate_policy_entropy)`
+  rather than calling it with the old signature.
+- **Operational note:** `GSPOConfig.rescore_old_log_probs` now defaults to
+  `True` (see prior GSPO hardening). This means even vLLM-based rollout
+  deployments still require a local HF agent model + tokenizer at train
+  time — the rollout log-probs are always rescored against the current
+  policy before use, so a vLLM-only deployment with no HF model loaded
+  will fail. Set `rescore_old_log_probs=False` explicitly if you
+  intentionally want to trust the vLLM-reported log-probs instead (not
+  recommended; see `gspo_generation.py` for the numerical-stability
+  rationale).
+
 ### Changed — docs consolidation (surface consolidation, Plan 3 Task 3)
 
 - Merged `docs/COMPARISON_TRL.md`, `docs/COMPARISON_LLM_FRAMEWORKS.md`,

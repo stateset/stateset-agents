@@ -273,10 +273,13 @@ class GSPOTokenTrainer(GSPOTrainer):
                 # - Detached sequence ratio (for clipping)
                 # - Token-level advantages
 
-                # Token-level loss
+                # Token-level loss, normalized by the actual response length
+                # (not the full padded sequence width, which would dilute
+                # the loss for short responses in a padded batch).
+                response_len = sequence_lengths[i]
                 token_loss = -(
                     detached_seq_ratio * token_advantages * token_log_probs
-                ).mean()
+                ).sum() / response_len
 
                 loss += token_loss / len(responses)
 

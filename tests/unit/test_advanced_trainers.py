@@ -273,15 +273,26 @@ class TestGEPOTrainer:
             reward_fn=simple_reward_fn,
         )
 
-        # Create test probabilities
+        # compute_gepo_coefficient takes *log*-probs (sequence log-probs),
+        # not linear-space probabilities.
         learner_probs = torch.tensor([0.3, 0.25, 0.2, 0.25], device=device)
         sampler_probs = torch.tensor([0.25, 0.25, 0.25, 0.25], device=device)
+        learner_log_probs = torch.log(learner_probs)
+        sampler_log_probs = torch.log(sampler_probs)
 
-        coefs = trainer.compute_gepo_coefficient(learner_probs, sampler_probs)
+        coefs = trainer.compute_gepo_coefficient(learner_log_probs, sampler_log_probs)
 
         assert coefs.shape == learner_probs.shape
-        # Coefficients should be close to 1 when distributions are similar
         assert torch.all(coefs > 0)
+
+        # coef_i = p_i / E_qhat[q], where E_qhat[q] = sum(q^2) / sum(q)
+        # (linear-space formula the log-space implementation must match).
+        expected_denominator = (sampler_probs**2).sum() / sampler_probs.sum()
+        expected_coefs = learner_probs / expected_denominator
+        assert torch.allclose(coefs, expected_coefs, atol=1e-6)
+
+        # Distributions are similar here, so coefficients should be near 1.
+        assert torch.allclose(coefs, torch.ones_like(coefs), atol=0.3)
 
     def test_compute_group_advantages(
         self, gepo_config, mock_model, mock_tokenizer, simple_reward_fn, device

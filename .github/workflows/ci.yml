@@ -124,6 +124,16 @@ jobs:
       run: |
         pytest examples/testing/ -q --no-header
 
+    - name: Run getting-started smoke against source tree
+      # Exercises examples/getting_started/smoke.sh against the checked-out
+      # source (already installed via `pip install -e .` above), not the
+      # published PyPI package. The Makefile's `getting-started-smoke`
+      # target still runs against the installed PyPI release separately
+      # for release checks — this step is a fast, always-on source-tree
+      # regression check.
+      run: |
+        PYTHON=python examples/getting_started/smoke.sh
+
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v5
       with:

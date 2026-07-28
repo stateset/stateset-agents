@@ -207,9 +207,12 @@ def compute_entropy_bonus(logits: Any, response_mask: Any) -> Any:
     return (token_entropy * mask).sum() / denom
 
 
-# Backwards-compatible alias for the previous (no-grad) entropy estimator
-# name. Prefer `compute_entropy_bonus` for new code — this alias is kept
-# only so external callers importing the old private name don't break.
+# NOT a drop-in replacement: `compute_entropy_bonus(logits, response_mask)`
+# has a different signature than the old no-grad `_estimate_policy_entropy`
+# estimator it replaces here. This alias exists only because the sole known
+# external caller checks `callable(_estimate_policy_entropy)` rather than
+# invoking it with the old signature — do not call this alias directly
+# expecting the old API.
 _estimate_policy_entropy = compute_entropy_bonus
 
 
