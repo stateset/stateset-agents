@@ -200,6 +200,7 @@ class ContinuousActionMapper(ActionMapper):
             self.action_high = np.asarray(action_high)
 
         # Set default action
+        self.default_action: np.ndarray
         if default_action is None:
             self.default_action = np.zeros(action_dim)
         else:
