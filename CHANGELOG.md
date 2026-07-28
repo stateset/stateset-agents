@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — docs consolidation (surface consolidation, Plan 3 Task 3)
+
+- Merged `docs/COMPARISON_TRL.md`, `docs/COMPARISON_LLM_FRAMEWORKS.md`,
+  `docs/COMPARISON_TRADITIONAL_RL.md`, and the prior `docs/COMPARISONS.md`
+  overview into a single `docs/COMPARISONS.md` with three clearly-headed
+  sections ("StateSet Agents vs Hugging Face TRL",
+  "StateSet Agents vs Traditional RL Frameworks",
+  "StateSet Agents vs LLM Orchestration Frameworks").
+- Archived the three superseded comparison files plus the dev-journal
+  artifacts `docs/ENHANCEMENTS_SUMMARY.md`,
+  `docs/FRAMEWORK_ENHANCEMENT_SUMMARY.md`, and root
+  `GYM_INTEGRATION_COMPLETE.md` to `docs/archive/`. No other doc, README,
+  or Sphinx toctree referenced these paths (verified by repo-wide grep
+  before moving), so no link fixes were required beyond the merged
+  `docs/COMPARISONS.md` itself.
+- Added `tests/unit/test_docs_structure.py` to keep the archived files out
+  of their old top-level paths and to assert `docs/COMPARISONS.md`
+  contains all three merged section headers.
+
 ### Changed — examples cleanup (surface consolidation, Plan 3 Task 2)
 
 - `examples/finetune_kimi_k2_5_gspo.py` is now a deprecated forwarder to
