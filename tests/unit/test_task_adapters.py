@@ -319,6 +319,7 @@ class TestEndToEndRunner:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
         assert result.returncode == 0, result.stderr
@@ -346,6 +347,7 @@ class TestEndToEndRunner:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
         assert result.returncode == 0, result.stderr

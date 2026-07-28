@@ -274,6 +274,7 @@ class TestCLI:
             [sys.executable, "-m", "stateset_agents.cli", "starter", "list"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
         assert result.returncode == 0
@@ -294,6 +295,7 @@ class TestCLI:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
         assert result.returncode == 2
@@ -313,6 +315,7 @@ class TestCLI:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
         assert result.returncode == 0

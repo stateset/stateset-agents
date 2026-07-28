@@ -17,6 +17,7 @@ def _run(*args: str) -> subprocess.CompletedProcess:
         [sys.executable, "-m", "stateset_agents.cli", "evaluate", *args],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         timeout=20,
     )
@@ -123,6 +124,7 @@ class TestEvaluateBatchHelp:
             [sys.executable, "-m", "stateset_agents.cli", "evaluate", "--help"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
             env=env,
         )

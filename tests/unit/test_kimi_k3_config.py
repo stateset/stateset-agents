@@ -241,6 +241,7 @@ class TestKimiK3StarterScript:
             cwd=repo_root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
         assert result.returncode == 0, result.stderr
         assert "deprecated" in result.stderr.lower()

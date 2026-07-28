@@ -110,6 +110,7 @@ def test_dry_run_subprocess_exits_zero(preset_name):
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
     )
     assert result.returncode == 0, result.stderr
@@ -185,6 +186,7 @@ def test_forwarder_scripts_exit_zero_under_dry_run(script_name):
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
     )
     assert result.returncode == 0, result.stderr
@@ -453,6 +455,7 @@ def test_list_models_subprocess_prints_all_names():
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
     )
     assert result.returncode == 0, result.stderr

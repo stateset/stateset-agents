@@ -14,6 +14,7 @@ def _run_chat(input_text: str, *args: str) -> subprocess.CompletedProcess:
         input=input_text,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         timeout=30,
     )
@@ -58,6 +59,7 @@ class TestChatStubMode:
             [sys.executable, "-m", "stateset_agents.cli", "chat", "--help"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
             timeout=10,
         )

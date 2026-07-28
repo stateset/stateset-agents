@@ -33,6 +33,7 @@ def test_chart_lints_with_defaults(helm_binary):
         [helm_binary, "lint", str(CHART_PATH)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     assert (
         result.returncode == 0
@@ -46,6 +47,7 @@ def test_values_file_lints_cleanly(helm_binary, values_file):
         [helm_binary, "lint", str(CHART_PATH), "-f", str(values_file)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     assert result.returncode == 0, (
         f"helm lint failed for {values_file.name}:\n"
@@ -67,6 +69,7 @@ def test_values_file_template_renders(helm_binary, values_file):
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     assert result.returncode == 0, (
         f"helm template failed for {values_file.name}:\n"

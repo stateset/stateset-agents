@@ -11,6 +11,7 @@ def _run(*args: str) -> subprocess.CompletedProcess:
         [sys.executable, "-m", "stateset_agents.cli", "recipe", *args],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         timeout=15,
     )
