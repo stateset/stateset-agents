@@ -736,3 +736,15 @@ clean: ## Remove build artifacts and caches
 	rm -rf build dist *.egg-info .coverage htmlcov .pytest_cache .mypy_cache
 	find . -name "__pycache__" -type d -prune -exec rm -rf {} +
 	find . -name "*.py[cod]" -delete
+
+flagship-benchmark: ## Run one flagship benchmark seed (GPU; SEED=42 default) — see benchmarks/FLAGSHIP.md
+	python scripts/run_phase0_benchmark.py --trainer gspo --task customer_support \
+		--model $${FLAGSHIP_MODEL:-Qwen/Qwen3.5-8B-Instruct} \
+		--num-train-examples 500 --num-eval-examples 200 \
+		--seed $${SEED:-42} --train --vllm \
+		--output benchmark_results/flagship_v1/gspo_seed$${SEED:-42}_customer_support.json
+
+flagship-benchmark-all: ## Run all three flagship seeds sequentially (GPU)
+	$(MAKE) flagship-benchmark SEED=42
+	$(MAKE) flagship-benchmark SEED=43
+	$(MAKE) flagship-benchmark SEED=44
