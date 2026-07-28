@@ -1234,6 +1234,7 @@ def starter(
 from stateset_agents import cli_benchmark  # noqa: E402, F401 — benchmark sub-app
 from stateset_agents import cli_chat  # noqa: E402, F401 — chat
 from stateset_agents import cli_ingest  # noqa: E402, F401 — ingest third-party logs
+from stateset_agents import cli_mcp  # noqa: E402, F401 — run the MCP server
 from stateset_agents import cli_research  # noqa: E402, F401 — auto-research, fine-tune
 from stateset_agents import (  # noqa: E402, F401 — grade -> curate -> retrain loop; noqa: E402, F401 — train, qwen3-5-0-8b, kimi-k2-6, gemma-4-31b; noqa: E402, F401 — doctor, preflight, publish-check
     cli_improve,

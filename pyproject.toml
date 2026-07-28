@@ -157,6 +157,16 @@ auto-research-llm = [
 distributed = [
     "deepspeed>=0.9.0",
 ]
+mcp = [
+    # Official MCP Python SDK (FastMCP). Powers `stateset-agents mcp` —
+    # exposes the improve/ingest/grade loop as MCP tools for any MCP client
+    # (Claude Code/Desktop, other agents). Not a core dependency: only
+    # installed when the `mcp` extra is requested.
+    # Pinned <2: mcp 2.0.0 removed mcp.server.fastmcp.FastMCP (renamed/
+    # restructured under mcp.server.mcpserver) — stick to the 1.x FastMCP
+    # API this server is written against until that migration is done.
+    "mcp>=1.25.0,<2",
+]
 full = [
     "stateset-agents[training,api,hpo,auto-research,vllm,rust]",
 ]

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MCP server.** `stateset-agents mcp` (new optional `mcp` extra —
+  `pip install stateset-agents[mcp]`) exposes the grade → curate → retrain
+  "improve" loop as MCP tools (`list_rewards`, `ingest_transcripts`,
+  `grade_transcript`, `improve_run`, `improve_status`, `list_model_presets`,
+  `dry_run_finetune`) so any MCP client (Claude Code/Desktop, other agents)
+  can drive the loop directly. Thin wrappers only — no grading/curation/
+  training logic reimplemented; `improve_run` shares the same orchestration
+  function (`cli_improve.run_improve`) as the CLI's `improve run` command.
+  v1 scope: no tool starts real GPU training (`dry_run_finetune` is
+  dry-run only). See `docs/MCP_SERVER.md` for setup and Claude Code
+  registration (`claude mcp add stateset-agents -- stateset-agents mcp`).
+
 ## [0.18.0] - 2026-07-28 — Bring-your-own-agent: trajectory ingestion + one-command improve loop
 
 ### Added — `stateset-agents improve`: the grade -> curate -> retrain loop in one command

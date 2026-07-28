@@ -234,6 +234,157 @@ def _render_next_steps(summary: dict[str, Any], output_dir: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
+class ImproveUsageError(ValueError):
+    """Raised by :func:`run_improve` for bad arguments (CLI exit code 2)."""
+
+
+class ImproveDataError(ValueError):
+    """Raised by :func:`run_improve` for data problems (CLI exit code 1)."""
+
+
+def run_improve(
+    *,
+    transcripts: str,
+    reward: str,
+    output: str,
+    threshold: float = 0.7,
+    format: str = "transcripts",
+    echo: Any = None,
+) -> dict[str, Any]:
+    """Run the grade -> curate -> retrain loop and return the summary dict.
+
+    This is the single implementation of the ``improve run`` orchestration —
+    both the ``stateset-agents improve run`` CLI command and the MCP
+    ``improve_run`` tool call this function. Raises :class:`ImproveUsageError`
+    for bad arguments (CLI maps this to exit code 2) or
+    :class:`ImproveDataError` for data problems (CLI maps this to exit code
+    1). ``echo`` is an optional ``callable(str) -> None`` used for progress
+    messages (defaults to no-op).
+    """
+    _log = echo if echo is not None else (lambda _msg: None)
+
+    if not transcripts:
+        raise ImproveUsageError("--transcripts is required.")
+    if not reward:
+        raise ImproveUsageError("--reward is required.")
+
+    fmt = format.strip().lower()
+    if fmt not in ("transcripts", "openai", "langchain"):
+        raise ImproveUsageError(
+            f"Unsupported --format '{format}'. Choose 'transcripts', 'openai', "
+            "or 'langchain'."
+        )
+
+    if reward not in KNOWN_REWARDS:
+        lowered = reward.lower()
+        if any(hint in lowered for hint in JUDGE_REWARD_HINTS):
+            raise ImproveUsageError(
+                f"Unsupported --reward '{reward}': the `improve` loop runs offline "
+                "with rule-based rewards only, so LLM-judge rewards (which require "
+                "an API key) are not supported here. Choose one of: "
+                f"{', '.join(KNOWN_REWARDS)}."
+            )
+        raise ImproveUsageError(
+            f"Unknown --reward '{reward}'. Choose one of: {', '.join(KNOWN_REWARDS)}."
+        )
+
+    transcripts_path = Path(transcripts)
+    if not transcripts_path.exists():
+        raise ImproveUsageError(f"--transcripts path not found: {transcripts_path}")
+
+    output_dir = Path(output)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Phase 1: ingest (only when the source isn't already transcript JSONL).
+    if fmt in ("openai", "langchain"):
+        if not transcripts_path.is_file():
+            raise ImproveUsageError(
+                f"--transcripts must be a file when --format is {fmt!r}: "
+                f"{transcripts_path}"
+            )
+        ingest_dir = output_dir / "ingested"
+        try:
+            transcript_files = _ingest_to_transcripts(fmt, transcripts_path, ingest_dir)
+        except (ValueError, OSError, json.JSONDecodeError) as exc:
+            raise ImproveDataError(
+                f"Failed to ingest {transcripts_path}: {exc}"
+            ) from exc
+        _log(f"Ingested {len(transcript_files)} conversation(s) -> {ingest_dir}/")
+    else:
+        if not transcripts_path.is_dir():
+            raise ImproveUsageError(
+                "--transcripts must be a directory when --format is 'transcripts': "
+                f"{transcripts_path}"
+            )
+        transcript_files = _collect_transcript_files(transcripts_path)
+        if not transcript_files:
+            raise ImproveDataError(
+                f"No .jsonl transcript files found in {transcripts_path}"
+            )
+
+    # Phase 2: grade.
+    import grade_transcript as gt  # local import: sys.path was patched above
+
+    reward_fn = gt.get_reward(reward)
+    per_transcript = asyncio.run(_grade_all(transcript_files, reward_fn))
+    total_turns = sum(len(e["rows"]) for e in per_transcript)
+    if total_turns == 0:
+        raise ImproveDataError("No assistant turns found across the given transcripts.")
+
+    # Phase 3 + 4: curate above --threshold into <output>/curated.jsonl.
+    curated_path = output_dir / CURATED_FILENAME
+    curated_path.unlink(missing_ok=True)  # fresh curation per run
+    curated_count = 0
+    for entry in per_transcript:
+        curated_count += gt.write_curated_examples(
+            entry["path"], entry["turns"], entry["rows"], threshold, curated_path
+        )
+
+    # Phase 5: summary + next steps.
+    summary = _build_summary(
+        reward, threshold, per_transcript, curated_count, curated_path
+    )
+    summary_path = output_dir / SUMMARY_FILENAME
+    summary_path.write_text(
+        json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    next_steps_path = output_dir / NEXT_STEPS_FILENAME
+    next_steps_path.write_text(
+        _render_next_steps(summary, output_dir), encoding="utf-8"
+    )
+
+    _log(
+        f"Graded {summary['transcript_count']} transcript(s), "
+        f"{summary['assistant_turn_count']} assistant turn(s), "
+        f"mean score {summary['mean_score']:.3f}."
+    )
+    _log(f"Curated {curated_count} example(s) (>= {threshold}) -> {curated_path}")
+    _log(f"Summary  -> {summary_path}")
+    _log(f"Next steps -> {next_steps_path}")
+
+    summary["summary_path"] = str(summary_path)
+    summary["next_steps_path"] = str(next_steps_path)
+    return summary
+
+
+def get_improve_status(output: str) -> dict[str, Any]:
+    """Return the summary JSON from a previous ``improve run``.
+
+    Raises :class:`ImproveDataError` when no previous run is found at
+    ``<output>/improve_summary.json``.
+    """
+    output_dir = Path(output)
+    summary_path = output_dir / SUMMARY_FILENAME
+    if not summary_path.exists():
+        raise ImproveDataError(
+            f"No previous `improve run` found at {summary_path}. "
+            "Run `stateset-agents improve run` first."
+        )
+    result: dict[str, Any] = json.loads(summary_path.read_text(encoding="utf-8"))
+    return result
+
+
 @app.command("improve")
 def improve(
     action: str = typer.Argument(
@@ -282,18 +433,12 @@ def improve(
 
         stateset-agents improve status --output improved/
     """
-    output_dir = Path(output)
-
     if action == "status":
-        summary_path = output_dir / SUMMARY_FILENAME
-        if not summary_path.exists():
-            _echo(
-                f"No previous `improve run` found at {summary_path}. "
-                "Run `stateset-agents improve run` first.",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        try:
+            summary = get_improve_status(output)
+        except ImproveDataError as exc:
+            _echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
         _echo(json.dumps(summary, indent=2, sort_keys=True))
         return
 
@@ -303,98 +448,18 @@ def improve(
         )
         raise typer.Exit(code=2)
 
-    if not transcripts:
-        _echo("--transcripts is required.", err=True)
-        raise typer.Exit(code=2)
-    if not reward:
-        _echo("--reward is required.", err=True)
-        raise typer.Exit(code=2)
-
-    fmt = format.strip().lower()
-    if fmt not in ("transcripts", "openai", "langchain"):
-        _echo(
-            f"Unsupported --format '{format}'. Choose 'transcripts', 'openai', "
-            "or 'langchain'.",
-            err=True,
+    try:
+        run_improve(
+            transcripts=transcripts or "",
+            reward=reward or "",
+            output=output,
+            threshold=threshold,
+            format=format,
+            echo=_echo,
         )
-        raise typer.Exit(code=2)
-
-    _resolve_reward_name(reward)
-
-    transcripts_path = Path(transcripts)
-    if not transcripts_path.exists():
-        _echo(f"--transcripts path not found: {transcripts_path}", err=True)
-        raise typer.Exit(code=2)
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Phase 1: ingest (only when the source isn't already transcript JSONL).
-    if fmt in ("openai", "langchain"):
-        if not transcripts_path.is_file():
-            _echo(
-                f"--transcripts must be a file when --format is {fmt!r}: "
-                f"{transcripts_path}",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        ingest_dir = output_dir / "ingested"
-        try:
-            transcript_files = _ingest_to_transcripts(fmt, transcripts_path, ingest_dir)
-        except (ValueError, OSError, json.JSONDecodeError) as exc:
-            _echo(f"Failed to ingest {transcripts_path}: {exc}", err=True)
-            raise typer.Exit(code=1) from exc
-        _echo(f"Ingested {len(transcript_files)} conversation(s) -> {ingest_dir}/")
-    else:
-        if not transcripts_path.is_dir():
-            _echo(
-                "--transcripts must be a directory when --format is 'transcripts': "
-                f"{transcripts_path}",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        transcript_files = _collect_transcript_files(transcripts_path)
-        if not transcript_files:
-            _echo(f"No .jsonl transcript files found in {transcripts_path}", err=True)
-            raise typer.Exit(code=1)
-
-    # Phase 2: grade.
-    import grade_transcript as gt  # local import: sys.path was patched above
-
-    reward_fn = gt.get_reward(reward)
-    per_transcript = asyncio.run(_grade_all(transcript_files, reward_fn))
-    total_turns = sum(len(e["rows"]) for e in per_transcript)
-    if total_turns == 0:
-        _echo("No assistant turns found across the given transcripts.", err=True)
-        raise typer.Exit(code=1)
-
-    # Phase 3 + 4: curate above --threshold into <output>/curated.jsonl.
-    curated_path = output_dir / CURATED_FILENAME
-    curated_path.unlink(missing_ok=True)  # fresh curation per run
-    curated_count = 0
-    for entry in per_transcript:
-        curated_count += gt.write_curated_examples(
-            entry["path"], entry["turns"], entry["rows"], threshold, curated_path
-        )
-
-    # Phase 5: summary + next steps.
-    summary = _build_summary(
-        reward, threshold, per_transcript, curated_count, curated_path
-    )
-    summary_path = output_dir / SUMMARY_FILENAME
-    summary_path.write_text(
-        json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
-    )
-
-    next_steps_path = output_dir / NEXT_STEPS_FILENAME
-    next_steps_path.write_text(
-        _render_next_steps(summary, output_dir), encoding="utf-8"
-    )
-
-    _echo(
-        f"Graded {summary['transcript_count']} transcript(s), "
-        f"{summary['assistant_turn_count']} assistant turn(s), "
-        f"mean score {summary['mean_score']:.3f}."
-    )
-    _echo(f"Curated {curated_count} example(s) (>= {threshold}) -> {curated_path}")
-    _echo(f"Summary  -> {summary_path}")
-    _echo(f"Next steps -> {next_steps_path}")
+    except ImproveUsageError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    except ImproveDataError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
