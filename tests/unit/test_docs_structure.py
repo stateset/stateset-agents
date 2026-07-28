@@ -35,7 +35,7 @@ def test_archived_docs_present_in_archive() -> None:
 
 
 def test_comparisons_doc_has_all_three_sections() -> None:
-    contents = (REPO_ROOT / "docs" / "COMPARISONS.md").read_text()
+    contents = (REPO_ROOT / "docs" / "COMPARISONS.md").read_text(encoding="utf-8")
 
     assert "## StateSet Agents vs Hugging Face TRL" in contents
     assert "## StateSet Agents vs Traditional RL Frameworks" in contents

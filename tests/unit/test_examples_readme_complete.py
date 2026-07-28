@@ -24,7 +24,7 @@ def test_readme_exists() -> None:
 
 
 def test_every_top_level_example_is_documented_in_readme() -> None:
-    readme_text = README_PATH.read_text()
+    readme_text = README_PATH.read_text(encoding="utf-8")
     files = _top_level_example_files()
     assert files, "expected at least one example script under examples/"
 

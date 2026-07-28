@@ -17,7 +17,7 @@ def test_selected_guides_no_longer_default_to_gpt2_bootstrap() -> None:
     ]
 
     for target in targets:
-        contents = target.read_text()
+        contents = target.read_text(encoding="utf-8")
         assert 'model_name="gpt2"' not in contents
 
 
@@ -29,6 +29,6 @@ def test_selected_guides_use_current_repo_identity() -> None:
     ]
 
     for target in targets:
-        contents = target.read_text()
+        contents = target.read_text(encoding="utf-8")
         assert "grpo-framework.readthedocs.io" not in contents
         assert "github.com/stateset/grpo-agent-framework" not in contents

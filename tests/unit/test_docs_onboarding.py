@@ -7,7 +7,7 @@ from pathlib import Path
 
 def test_index_quickstart_matches_stub_backed_flow() -> None:
     index_path = Path(__file__).resolve().parents[2] / "docs" / "index.rst"
-    contents = index_path.read_text()
+    contents = index_path.read_text(encoding="utf-8")
 
     assert 'model_name="stub://quickstart"' in contents
     assert "use_stub_model=True" in contents
@@ -18,7 +18,7 @@ def test_index_quickstart_matches_stub_backed_flow() -> None:
 
 def test_quickstart_doc_avoids_stale_gpt2_bootstrap() -> None:
     quickstart_path = Path(__file__).resolve().parents[2] / "docs" / "quickstart.rst"
-    contents = quickstart_path.read_text()
+    contents = quickstart_path.read_text(encoding="utf-8")
 
     assert 'model_name="stub://quickstart"' in contents
     assert "use_stub_model=True" in contents
