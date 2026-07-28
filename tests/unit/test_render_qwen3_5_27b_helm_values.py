@@ -132,6 +132,7 @@ def test_cli_rejects_non_object_manifest(tmp_path):
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
     )
     assert result.returncode != 0
     assert "JSON object" in result.stderr

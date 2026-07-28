@@ -55,6 +55,7 @@ def test_make_help_renders_available_commands() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
         check=False,
     )
 

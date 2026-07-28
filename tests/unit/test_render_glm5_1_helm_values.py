@@ -201,6 +201,7 @@ def test_cli_rejects_missing_manifest(tmp_path):
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
     )
     assert result.returncode != 0
     assert "manifest not found" in result.stderr
@@ -219,6 +220,7 @@ def test_cli_rejects_malformed_json(tmp_path):
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
     )
     assert result.returncode != 0
     assert "not valid JSON" in result.stderr

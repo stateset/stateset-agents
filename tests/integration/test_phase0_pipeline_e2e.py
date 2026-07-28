@@ -39,6 +39,7 @@ def _run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
         check=False,
         cwd=cwd or REPO_ROOT,
     )

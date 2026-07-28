@@ -243,6 +243,7 @@ class TestKimiK26StarterScript:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
         )
         assert result.returncode == 0, result.stderr
         assert "deprecated" in result.stderr.lower()

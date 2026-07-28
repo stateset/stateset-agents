@@ -275,6 +275,7 @@ class TestCLI:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             check=False,
         )
         assert result.returncode == 0
@@ -296,6 +297,7 @@ class TestCLI:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             check=False,
         )
         assert result.returncode == 2
@@ -316,6 +318,7 @@ class TestCLI:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             check=False,
         )
         assert result.returncode == 0

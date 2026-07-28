@@ -65,6 +65,7 @@ def test_model_specific_starter_configs_round_trip_via_cli(
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
     )
 
     assert config_path.exists()
@@ -90,6 +91,7 @@ def test_model_specific_starter_configs_round_trip_via_cli(
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
     )
 
     preview = json.loads(starter_result.stdout)

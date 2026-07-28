@@ -12,6 +12,7 @@ def _run(*args: str) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=15,
     )

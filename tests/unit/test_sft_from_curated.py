@@ -115,6 +115,7 @@ class TestEndToEndScript:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             check=False,
         )
         assert result.returncode == 0
@@ -136,6 +137,7 @@ class TestEndToEndScript:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             check=False,
         )
         assert result.returncode == 1
@@ -155,6 +157,7 @@ class TestEndToEndScript:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             check=False,
         )
         assert result.returncode != 0
@@ -190,6 +193,7 @@ class TestFullCurationLoop:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             check=False,
         )
         assert result.returncode == 0
@@ -211,6 +215,7 @@ class TestFullCurationLoop:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             check=False,
         )
         assert result.returncode == 0
