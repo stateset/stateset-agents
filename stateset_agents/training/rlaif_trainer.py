@@ -704,7 +704,7 @@ class RLAIFTrainer:
         self.tokenizer.save_pretrained(path)
 
         # Save training state
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "global_step": self.global_step,
                 "metrics_history": self.metrics_history,

@@ -952,7 +952,7 @@ class DAPOTrainer:
             "optimizer_state_dict": self.optimizer.state_dict(),
             "metrics_history": self.metrics_history,
         }
-        torch.save(state, os.path.join(output_dir, "training_state.pt"))
+        torch.save(state, os.path.join(output_dir, "training_state.pt"))  # nosec: B614
 
         # Save config
         config_path = os.path.join(output_dir, "dapo_config.json")

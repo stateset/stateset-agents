@@ -357,7 +357,7 @@ class SQLiteRepository(Repository[T]):
         connection = sqlite3.connect(self._db_path, timeout=30)
         try:
             connection.execute(
-                f"INSERT INTO {self._table_name} (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                f"INSERT INTO {self._table_name} (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)",  # nosec: B608 - table name is derived from the entity class name, not user input
                 (entity_id, data_json, created_at, updated_at),
             )
             connection.commit()
@@ -381,7 +381,7 @@ class SQLiteRepository(Repository[T]):
         self._require_initialized()
         connection = sqlite3.connect(self._db_path, timeout=30)
         cursor = connection.execute(
-            f"SELECT data FROM {self._table_name} WHERE id = ?",
+            f"SELECT data FROM {self._table_name} WHERE id = ?",  # nosec: B608 - table name is derived from the entity class name, not user input
             (id,),
         )
         try:
@@ -406,7 +406,7 @@ class SQLiteRepository(Repository[T]):
         connection = sqlite3.connect(self._db_path, timeout=30)
         try:
             connection.execute(
-                f"UPDATE {self._table_name} SET data = ?, updated_at = ? WHERE id = ?",
+                f"UPDATE {self._table_name} SET data = ?, updated_at = ? WHERE id = ?",  # nosec: B608 - table name is derived from the entity class name, not user input
                 (data_json, updated_at, entity_id),
             )
             connection.commit()
@@ -428,7 +428,7 @@ class SQLiteRepository(Repository[T]):
         self._require_initialized()
         connection = sqlite3.connect(self._db_path, timeout=30)
         cursor = connection.execute(
-            f"DELETE FROM {self._table_name} WHERE id = ?",
+            f"DELETE FROM {self._table_name} WHERE id = ?",  # nosec: B608 - table name is derived from the entity class name, not user input
             (id,),
         )
         try:
@@ -447,7 +447,7 @@ class SQLiteRepository(Repository[T]):
         self._require_initialized()
         connection = sqlite3.connect(self._db_path, timeout=30)
         cursor = connection.execute(
-            f"SELECT data FROM {self._table_name} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT data FROM {self._table_name} ORDER BY created_at DESC LIMIT ? OFFSET ?",  # nosec: B608 - table name is derived from the entity class name, not user input
             (limit, offset),
         )
         try:
@@ -479,7 +479,9 @@ class SQLiteRepository(Repository[T]):
     def _count_sync(self) -> int:
         self._require_initialized()
         connection = sqlite3.connect(self._db_path, timeout=30)
-        cursor = connection.execute(f"SELECT COUNT(*) FROM {self._table_name}")
+        cursor = connection.execute(
+            f"SELECT COUNT(*) FROM {self._table_name}"  # nosec: B608 - table name is derived from the entity class name, not user input
+        )
         try:
             row = cursor.fetchone()
         finally:

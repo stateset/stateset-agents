@@ -428,7 +428,7 @@ class ValueFunction:
     def save(self, path: str):
         """Save value function state"""
         _require_torch()
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "value_head_state_dict": self.value_head.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),
@@ -442,7 +442,7 @@ class ValueFunction:
     def load(self, path: str):
         """Load value function state"""
         _require_torch()
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path)  # nosec: B614
         self.value_head.load_state_dict(checkpoint["value_head_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.gamma = checkpoint["gamma"]

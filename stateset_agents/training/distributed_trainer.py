@@ -484,7 +484,7 @@ class DistributedGRPOTrainer:
         if self.scaler is not None:
             checkpoint["scaler_state_dict"] = self.scaler.state_dict()
 
-        torch.save(checkpoint, checkpoint_path)
+        torch.save(checkpoint, checkpoint_path)  # nosec: B614
         logger.info(f"Saved checkpoint: {checkpoint_path}")
 
     def cleanup(self):

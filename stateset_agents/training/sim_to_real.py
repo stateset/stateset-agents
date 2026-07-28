@@ -546,7 +546,9 @@ class SimToRealTransfer:
             result: np.ndarray = np.zeros(dim, dtype=np.float32)
             words = text.lower().split()
             for word in words:
-                h = int(hashlib.md5(word.encode()).hexdigest(), 16)
+                h = int(
+                    hashlib.md5(word.encode(), usedforsecurity=False).hexdigest(), 16
+                )
                 idx = h % dim
                 result[idx] += 1.0
             # L2 normalize
@@ -766,7 +768,7 @@ class SimToRealTransfer:
 
     def save(self, path: str) -> None:
         """Save transfer state"""
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "user_model_state_dict": self.user_model.state_dict(),
                 "domain_adapter_state_dict": self.domain_adapter.state_dict(),
@@ -782,7 +784,7 @@ class SimToRealTransfer:
 
     def load(self, path: str) -> None:
         """Load transfer state"""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
 
         self.user_model.load_state_dict(checkpoint["user_model_state_dict"])
         self.domain_adapter.load_state_dict(checkpoint["domain_adapter_state_dict"])

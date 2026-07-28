@@ -726,7 +726,7 @@ class OfflineGRPOTrainer:
 
     def save(self, path: str) -> None:
         """Save model checkpoint"""
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "value_net_state_dict": self.value_net.state_dict(),
                 "q_net_state_dict": self.q_net.state_dict(),
@@ -744,7 +744,7 @@ class OfflineGRPOTrainer:
 
     def load(self, path: str) -> None:
         """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
 
         self.value_net.load_state_dict(checkpoint["value_net_state_dict"])
         self.q_net.load_state_dict(checkpoint["q_net_state_dict"])

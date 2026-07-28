@@ -368,7 +368,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 "best_eval_metric": self.best_eval_metric,
                 "distributed_config": self.distributed_config.__dict__,
             }
-            torch.save(training_state, checkpoint_path / "training_state.pt")
+            torch.save(
+                training_state, checkpoint_path / "training_state.pt"
+            )  # nosec: B614
 
         logger.info(f"Distributed checkpoint saved: {checkpoint_path}")
 

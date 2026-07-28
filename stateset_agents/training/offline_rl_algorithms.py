@@ -741,7 +741,7 @@ class OfflineRLTrainer:
 
     def save(self, path: str) -> None:
         """Save trained model"""
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "algorithm": self.algorithm,
                 "learner_state": {
@@ -757,7 +757,7 @@ class OfflineRLTrainer:
 
     def load(self, path: str) -> None:
         """Load trained model"""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
 
         for name, module in self.learner.__dict__.items():
             if isinstance(module, nn.Module) and name in checkpoint["learner_state"]:

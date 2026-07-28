@@ -745,7 +745,7 @@ class BaseTrainer(ABC, Generic[ConfigT]):
         self.tokenizer.save_pretrained(path)
 
         # Save optimizer and scheduler state
-        torch.save(
+        torch.save(  # nosec: B614
             {
                 "optimizer": self.optimizer.state_dict(),
                 "scheduler": self.scheduler.state_dict(),

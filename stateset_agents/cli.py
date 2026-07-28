@@ -420,7 +420,9 @@ def validate_config(
 
 @app.command()
 def serve(
-    host: str = typer.Option("0.0.0.0", help="Bind host"),
+    host: str = typer.Option(
+        "0.0.0.0", help="Bind host"
+    ),  # nosec: B104 - intentional default for containerized deployment
     port: int = typer.Option(8000, help="Bind port"),
     reload: bool = typer.Option(False, help="Enable auto-reload (development)"),
     dry_run: bool = typer.Option(
@@ -1070,10 +1072,14 @@ def recipe(
     if pager is None:
         pager = "less -R" if shutil.which("less") else None
     if pager and sys.stdout.isatty():
+        import shlex
         import subprocess
 
         try:
-            subprocess.run(pager, shell=True, check=False, input=section, text=True)
+            subprocess.run(
+                shlex.split(pager), check=False, input=section, text=True
+            )  # nosec: B603 — no shell=True; pager command comes from a fixed
+            # default or the user's own $PAGER, split with shlex (not shell-parsed)
             return
         except Exception:
             pass
@@ -1112,10 +1118,14 @@ def tour() -> None:
 
     if pager and sys.stdout.isatty():
         # Pipe through PAGER for TTY users.
+        import shlex
         import subprocess
 
         try:
-            subprocess.run(f"{pager} {tour_path}", shell=True, check=False)
+            subprocess.run(
+                [*shlex.split(pager), str(tour_path)], check=False
+            )  # nosec: B603 — no shell=True; pager command comes from a fixed
+            # default or the user's own $PAGER, split with shlex (not shell-parsed)
             return
         except Exception:
             pass

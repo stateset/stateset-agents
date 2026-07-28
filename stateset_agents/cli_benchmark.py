@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tempfile
 
 import typer
 
@@ -41,6 +42,7 @@ def benchmark_smoke() -> None:
         _echo(f"Benchmark script not found at {script}", err=True)
         raise typer.Exit(code=1)
 
+    output_path = Path(tempfile.gettempdir()) / "stateset_smoke.json"
     result = subprocess.run(
         [
             sys.executable,
@@ -49,7 +51,7 @@ def benchmark_smoke() -> None:
             "gspo",
             "--smoke-test",
             "--output",
-            "/tmp/stateset_smoke.json",
+            str(output_path),
         ],
         check=False,
     )

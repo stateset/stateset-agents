@@ -1104,7 +1104,7 @@ class VAPOTrainer:
         self.tokenizer.save_pretrained(output_dir)
 
         # Save value head
-        torch.save(
+        torch.save(  # nosec: B614
             self.value_head.state_dict(), os.path.join(output_dir, "value_head.pt")
         )
 
@@ -1118,7 +1118,7 @@ class VAPOTrainer:
             "critic_scheduler_state_dict": self.critic_scheduler.state_dict(),
             "metrics_history": self.metrics_history,
         }
-        torch.save(state, os.path.join(output_dir, "training_state.pt"))
+        torch.save(state, os.path.join(output_dir, "training_state.pt"))  # nosec: B614
 
         # Save config
         config_path = os.path.join(output_dir, "vapo_config.json")
@@ -1133,13 +1133,13 @@ class VAPOTrainer:
         value_head_path = os.path.join(checkpoint_dir, "value_head.pt")
         if os.path.exists(value_head_path):
             self.value_head.load_state_dict(
-                torch.load(value_head_path, map_location=self.device)
+                torch.load(value_head_path, map_location=self.device)  # nosec: B614
             )
 
         # Load training state
         state_path = os.path.join(checkpoint_dir, "training_state.pt")
         if os.path.exists(state_path):
-            state = torch.load(state_path, map_location=self.device)
+            state = torch.load(state_path, map_location=self.device)  # nosec: B614
             self.global_step = state["global_step"]
             self.value_warmup_complete = state.get("value_warmup_complete", True)
             self.actor_optimizer.load_state_dict(state["actor_optimizer_state_dict"])

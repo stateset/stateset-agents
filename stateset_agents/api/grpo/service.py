@@ -597,7 +597,7 @@ def main():
 
     uvicorn.run(
         "stateset_agents.api.grpo.service:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec: B104 - intentional default for containerized deployment
         port=8001,
         log_level="info",
     )

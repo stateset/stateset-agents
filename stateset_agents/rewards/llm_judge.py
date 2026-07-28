@@ -384,7 +384,7 @@ class ResultCache:
     def _hash_key(self, query: str, response: str, criteria: str) -> str:
         """Create hash key for cache."""
         content = f"{query}|{response}|{criteria}"
-        return hashlib.md5(content.encode()).hexdigest()
+        return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
 
     def get(self, query: str, response: str, criteria: str) -> Any | None:
         """Get cached result."""

@@ -45,7 +45,7 @@ jobs:
     
     - name: Run Safety dependency check
       run: |
-        safety check --json > safety-report.json || true
+        safety check --save-json safety-report.json > /dev/null 2>&1 || true
         safety check > safety-report.txt || true
     
     - name: Run Semgrep security analysis
