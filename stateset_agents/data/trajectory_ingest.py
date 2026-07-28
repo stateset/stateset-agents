@@ -36,7 +36,7 @@ Supported source formats
 Every loader accepts an optional per-conversation reward: if the source
 object carries a top-level ``"reward"`` or ``"score"`` field (or a nested
 ``"metadata": {"reward": ...}``), it is attached to
-``MultiTurnTrajectory.total_reward`` / ``.metadata["source_reward"]``. When
+``MultiTurnTrajectory.total_reward``. When
 absent, the trajectory is left unscored for ``scripts/grade_transcript.py``
 (or any other reward function) to fill in.
 
@@ -61,7 +61,6 @@ __all__ = [
     "to_grading_history",
 ]
 
-_OPENAI_VALID_ROLES = {"system", "user", "assistant", "tool", "function", "developer"}
 
 _LC_TYPE_TO_ROLE = {
     "human": "user",

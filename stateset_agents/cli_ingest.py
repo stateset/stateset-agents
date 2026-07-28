@@ -53,7 +53,9 @@ def ingest(
         "-o",
         help="Output path. If it ends in .jsonl, all conversations are "
         "concatenated into one graded-history JSONL file (turns from "
-        "different conversations are separated by a blank line). Otherwise "
+        "different conversations are separated by a blank line — note the grader "
+        "treats such a file as ONE transcript; use directory mode to grade "
+        "conversations separately). Otherwise "
         "it is treated as a directory and one <output>/conversation_<N>.jsonl "
         "file is written per conversation — feed any of them to "
         "`python scripts/grade_transcript.py --history <file>`.",
