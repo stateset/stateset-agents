@@ -4,6 +4,33 @@ A React + Vite SPA for the `stateset-agents` RL training lab. Talks to the
 FastAPI router at [`stateset_agents/api/routers/training_lab.py`](../stateset_agents/api/routers/training_lab.py)
 under `/api/lab/*`, including a WebSocket stream for live training metrics.
 
+## Status: demo, not deployed
+
+This app is real, working code, but it has **no deployment path today** —
+there is no hosted instance and no CI/CD pipeline that ships it anywhere.
+Concretely:
+
+- The `/api/lab/*` router it talks to is **simulator-backed**: experiments
+  run a scripted simulation of training, not real GRPO/GSPO jobs.
+- That router is gated behind auth *and* the `API_ENABLE_TRAINING_LAB`
+  server flag, which defaults to **off** outside local development
+  (`stateset_agents/api/config.py`). Requests will 401/404 against a
+  default deployment.
+- Treat this as a local dev tool / internal demo, not a production
+  surface, until someone explicitly stands up a hosted API and dashboard
+  build.
+
+### What productionizing would need
+
+- A hosted FastAPI deployment with `API_ENABLE_TRAINING_LAB=true` and real
+  auth credentials issued to dashboard users.
+- Replacing (or explicitly keeping, with a clear label) the simulator
+  backend with real training-job orchestration.
+- A build/deploy pipeline for the Vite `dist/` output (static host +
+  reverse proxy to the API — see "Production build" below) and a decision
+  on hosting for the WebSocket endpoint.
+- Secrets/CORS/rate-limit review for exposing the API beyond localhost.
+
 ## Features
 
 | Surface | What it does |

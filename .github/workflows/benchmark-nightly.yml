@@ -54,6 +54,12 @@ jobs:
             --benchmark-columns=min,mean,median,stddev,rounds,iterations \
             --benchmark-group-by=group
 
+      - name: Run slow tests (CPU convergence e2e, etc.)
+        run: |
+          python -m pytest -m slow -v --no-header \
+            -o addopts="" \
+            tests/
+
       - name: Store benchmark result & alert on regression
         uses: benchmark-action/github-action-benchmark@v1
         with:

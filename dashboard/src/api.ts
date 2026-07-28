@@ -1,3 +1,9 @@
+// Typed fetch wrapper for the FastAPI `/api/lab/*` "Training Lab" router
+// (stateset_agents/api/routers/training_lab.py). That router is simulator-
+// backed (no real training executes behind it) and is gated behind auth
+// plus the `API_ENABLE_TRAINING_LAB` server flag — it is disabled by
+// default and NOT deployed anywhere. See ../README.md for status/how to
+// run locally. Requests here will 401/404 against a default deployment.
 import type {
   Experiment,
   EnvironmentPreset,
