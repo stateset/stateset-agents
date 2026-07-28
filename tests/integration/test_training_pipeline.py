@@ -6,6 +6,7 @@ These tests verify that all components work together correctly.
 
 import importlib.machinery
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -278,7 +279,9 @@ class TestTrainingPipelineIntegration:
     def test_single_turn_import_uses_correct_path(self):
         """Test that SingleTurnGRPOTrainer import in train.py uses stateset_agents path."""
         # Read the train.py source and check the import statement
-        train_path = "/home/dom/stateset-agents/stateset_agents/training/train.py"
+        import stateset_agents.training as _training_pkg
+
+        train_path = Path(_training_pkg.__file__).parent / "train.py"
         with open(train_path) as f:
             source = f.read()
 
@@ -293,7 +296,9 @@ class TestTrainingPipelineIntegration:
     def test_train_function_passes_checkpoint_name_correctly(self):
         """Test that train() calls save_checkpoint with checkpoint_name kwarg."""
         # Read the train.py source and check the save_checkpoint call
-        train_path = "/home/dom/stateset-agents/stateset_agents/training/train.py"
+        import stateset_agents.training as _training_pkg
+
+        train_path = Path(_training_pkg.__file__).parent / "train.py"
         with open(train_path) as f:
             source = f.read()
 

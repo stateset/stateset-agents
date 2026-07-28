@@ -234,7 +234,18 @@ class TestInMemoryRepository:
         updated = await repo.update(agent)
 
         assert updated.name == "Updated"
-        assert updated.updated_at > updated.created_at
+        # `created_at`/`updated_at` are both independently stamped with
+        # `datetime.utcnow()` (see BaseEntity + Repository.update in
+        # stateset_agents/api/persistence.py). On a coarse-resolution
+        # system clock (observed on Windows CI, ~15.6ms granularity) a
+        # create-then-immediately-update in the same test can legitimately
+        # land on the same tick, making updated_at == created_at rather
+        # than strictly greater. The actual invariant this test cares
+        # about is "update never moves updated_at backwards relative to
+        # created_at", which >= expresses correctly without requiring an
+        # artificial delay or a higher-resolution clock/counter in the
+        # product code.
+        assert updated.updated_at >= updated.created_at
 
     @pytest.mark.asyncio
     async def test_update_nonexistent(self, repo):

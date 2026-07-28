@@ -970,7 +970,7 @@ def scaffold_project(
             content = _apply_client_customizations(content, client_name, name)
         dst = out / rel_path
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(content)
+        dst.write_text(content, encoding="utf-8")
         if rel_path.endswith(".sh"):
             dst.chmod(0o755)
         created.append(dst)
@@ -982,7 +982,9 @@ def scaffold_project(
     }
     if client_name:
         marker["client_name"] = client_name
-    (out / ".stateset-agents-starter.json").write_text(json.dumps(marker, indent=2))
+    (out / ".stateset-agents-starter.json").write_text(
+        json.dumps(marker, indent=2), encoding="utf-8"
+    )
     created.append(out / ".stateset-agents-starter.json")
 
     logger.info(
