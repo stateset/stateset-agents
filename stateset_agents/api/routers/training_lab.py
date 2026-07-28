@@ -1164,6 +1164,18 @@ async def get_leaderboard(
 
 _playground_sessions: dict[str, dict[str, Any]] = {}
 
+MAX_PLAYGROUND_SESSIONS = 200
+MAX_PLAYGROUND_HISTORY = 200  # messages per session (user + assistant)
+
+
+def _evict_oldest_playground_session() -> None:
+    if not _playground_sessions:
+        return
+    oldest_id = min(
+        _playground_sessions, key=lambda sid: _playground_sessions[sid]["created_at"]
+    )
+    _playground_sessions.pop(oldest_id, None)
+
 
 class PlaygroundMessage(BaseModel):
     session_id: str | None = None
@@ -1217,6 +1229,13 @@ async def playground_chat(req: PlaygroundMessage) -> dict[str, Any]:
     )
     session["total_reward"] = round(session["total_reward"] + reward, 4)
     session["turn_count"] = turn_num + 1
+    if len(session["history"]) > MAX_PLAYGROUND_HISTORY:
+        session["history"] = session["history"][-MAX_PLAYGROUND_HISTORY:]
+    if (
+        session_id not in _playground_sessions
+        and len(_playground_sessions) >= MAX_PLAYGROUND_SESSIONS
+    ):
+        _evict_oldest_playground_session()
     _playground_sessions[session_id] = session
 
     return {

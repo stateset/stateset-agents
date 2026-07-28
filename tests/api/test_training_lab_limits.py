@@ -247,3 +247,54 @@ async def test_eviction_removes_metrics_subscribers_entry(
 
         assert oldest_id not in training_lab._experiments
         assert oldest_id not in training_lab._metrics_subscribers
+
+
+async def test_playground_history_is_trimmed(
+    monkeypatch,
+    preserve_api_config,
+    clean_lab_state,
+):
+    _enable_lab_no_auth(monkeypatch)
+    monkeypatch.setattr(training_lab, "MAX_PLAYGROUND_HISTORY", 6)
+    training_lab._playground_sessions.clear()
+    from stateset_agents.api.main import create_app
+
+    app = create_app()
+    async with _client_for_app(app) as client:
+        session_id = None
+        for i in range(8):
+            payload = {"message": f"hello {i}"}
+            if session_id:
+                payload["session_id"] = session_id
+            resp = await client.post("/api/lab/playground/chat", json=payload)
+            assert resp.status_code == 200
+            session_id = resp.json()["session_id"]
+    history = training_lab._playground_sessions[session_id]["history"]
+    assert len(history) <= 6
+    training_lab._playground_sessions.clear()
+
+
+async def test_playground_sessions_capped_with_oldest_eviction(
+    monkeypatch,
+    preserve_api_config,
+    clean_lab_state,
+):
+    _enable_lab_no_auth(monkeypatch)
+    monkeypatch.setattr(training_lab, "MAX_PLAYGROUND_SESSIONS", 3)
+    training_lab._playground_sessions.clear()
+    from stateset_agents.api.main import create_app
+
+    app = create_app()
+    async with _client_for_app(app) as client:
+        ids = []
+        for i in range(5):
+            resp = await client.post(
+                "/api/lab/playground/chat", json={"message": f"hi {i}"}
+            )
+            assert resp.status_code == 200
+            ids.append(resp.json()["session_id"])
+    assert len(training_lab._playground_sessions) <= 3
+    # oldest two evicted, newest three retained
+    assert ids[-1] in training_lab._playground_sessions
+    assert ids[0] not in training_lab._playground_sessions
+    training_lab._playground_sessions.clear()
