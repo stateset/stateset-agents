@@ -25,7 +25,7 @@
   5. `kimi-k2.6` → `kimi-k3`
   6. `kimi-k2-6` → `kimi-k3`
 - **Residual-token check** after every generation step: `grep -nE 'K26|k2_6|[Kk]2\.6|k2-6' <generated files>` must print nothing. If it prints anything, hand-fix those lines to the K3 equivalent before proceeding.
-- Run tests with `python -m pytest <path> -v` from the repo root (`/home/dom/stateset-agents`).
+- Run tests with `python -m pytest <path> -v` from the repo root.
 
 ---
 
