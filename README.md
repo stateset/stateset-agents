@@ -30,11 +30,11 @@ If you want a framework that treats conversations as first‑class RL episodes (
 
 ## What's new
 
-**In v0.17.2 (latest release):**
+**In v0.17.3 (latest release):**
 
 - **Packaging repair.** PyPI publishing now fires on version tags with OIDC trusted-publishing support; wheels finally ship the runtime config presets; `stateset-rl-core` 0.1.1 publishes to PyPI (fixing `pip install stateset-agents[rust]` and `[full]`); Rust CI covers both crates; dashboard/mobile gained env-based API config, API-key auth, Node pins, and mobile CI.
 
-**In v0.17.2:**
+**In v0.17.3:**
 
 - **Convergence proof in CI.** `tests/e2e/test_gspo_convergence_tiny.py` trains real GSPO on a tiny model and asserts the target-token probability provably increases (verified against zero-signal and reversed-reward controls); runs in the nightly benchmark workflow.
 - **Honest demo labeling.** `dashboard/` and `mobile/` are clearly marked as simulator-backed demos (not deployed); the mobile data hook now surfaces an `isMockData` flag instead of silently falling back.
@@ -138,7 +138,7 @@ asyncio.run(main())
 pip install stateset-agents          # latest on PyPI (currently v0.13.4)
 ```
 
-> **PyPI currently lags the source tree.** `pip install stateset-agents` gets **v0.13.4**, while this repo is at **v0.17.2** (RL-core correctness fixes, API hardening, unified finetune driver, Kimi-K3/GLM-5.2 starters). For the newest surface, install from source:
+> **PyPI currently lags the source tree.** `pip install stateset-agents` gets **v0.13.4**, while this repo is at **v0.17.3** (RL-core correctness fixes, API hardening, unified finetune driver, Kimi-K3/GLM-5.2 starters). For the newest surface, install from source:
 >
 > ```bash
 > pip install "git+https://github.com/stateset/stateset-agents@master"
@@ -889,7 +889,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.17.2`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.17.3`).
 
 Other entry points:
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.3] - 2026-07-28 — Green CI: toolchain pinning, Windows/utf-8 correctness, packaging pipeline repair
+
 ## [0.17.2] - 2026-07-27 — Packaging A-grade: PyPI pipeline repair, rust_core 0.1.1, JS auth + CI
 
 ### Fixed — dashboard/mobile JS surface (A-grade pass)
