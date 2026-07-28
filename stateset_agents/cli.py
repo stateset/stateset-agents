@@ -1266,6 +1266,15 @@ _register_advanced_cli()
 
 
 def run() -> None:
+    # Windows consoles default to a legacy codepage (cp1252) that cannot
+    # encode the CLI's unicode output (checkmarks, arrows); force UTF-8.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     app()
 
 
