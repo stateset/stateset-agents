@@ -30,6 +30,10 @@ If you want a framework that treats conversations as first‑class RL episodes (
 
 ## What's new
 
+**Unreleased:**
+
+- **MCP server.** `stateset-agents mcp` (`pip install stateset-agents[mcp]`) exposes the grade → curate → retrain improve loop as MCP tools for any MCP client (Claude Code/Desktop, other agents) — see [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
+
 **In v0.18.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
 
 - **Bring your own agent's logs.** `stateset-agents ingest` converts OpenAI chat-format and LangChain conversation dumps into framework trajectories — production logs from agents built *anywhere* plug straight into the grade → curate → retrain loop.

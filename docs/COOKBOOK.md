@@ -77,6 +77,8 @@ stateset-agents improve status --output improved/
 
 Use `improve` for the fast path. Reach for the manual steps in Recipe 2 when you need finer control — e.g. inspecting per-transcript markdown reports before curating, or grading with a `--context-file` of ground-truth scenarios.
 
+Driving this loop from an MCP client (Claude Code/Desktop, another agent) instead of a shell? See [`docs/MCP_SERVER.md`](MCP_SERVER.md) — `stateset-agents mcp` exposes `improve_run`, `improve_status`, `ingest_transcripts`, `grade_transcript`, `list_rewards`, `list_model_presets`, and `dry_run_finetune` as MCP tools (`pip install 'stateset-agents[mcp]'`).
+
 ---
 
 ## Recipe 2 — Iterate from production conversation logs
