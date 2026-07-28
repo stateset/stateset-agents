@@ -10,6 +10,13 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 
 
+#: Hard cap on the number of distinct rate-limit buckets an in-memory
+#: limiter will hold at once. Without a cap, a flood of unique keys
+#: (e.g. random/garbage credentials) can grow the bucket dict without
+#: bound between cleanup cycles. Overridable per-instance for tests.
+MAX_BUCKETS = 10_000
+
+
 @dataclass
 class RateLimitResult:
     """Result of a rate limit check."""
@@ -28,14 +35,18 @@ class UnifiedRateLimiter:
     consolidating the previously duplicate implementations.
     """
 
-    def __init__(self, window_seconds: int = 60):
+    def __init__(self, window_seconds: int = 60, max_buckets: int = MAX_BUCKETS):
         """
         Initialize the rate limiter.
 
         Args:
             window_seconds: Size of the sliding window in seconds.
+            max_buckets: Hard cap on distinct bucket keys held at once.
+                When a new key would exceed the cap, the oldest bucket
+                (by insertion order) is evicted to make room.
         """
         self.window_seconds = window_seconds
+        self.max_buckets = max_buckets
         self._windows: dict[str, deque] = defaultdict(deque)
 
     @property
@@ -55,6 +66,11 @@ class UnifiedRateLimiter:
             RateLimitResult with allowed status and metadata.
         """
         now = time.monotonic()
+        if key not in self._windows and len(self._windows) >= self.max_buckets:
+            # Evict the oldest bucket (dicts preserve insertion order) to
+            # bound memory under a flood of unique keys.
+            oldest_key = next(iter(self._windows))
+            del self._windows[oldest_key]
         window = self._windows[key]
         cutoff = now - self.window_seconds
 

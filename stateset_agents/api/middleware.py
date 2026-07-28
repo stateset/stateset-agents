@@ -5,6 +5,7 @@ Centralized middleware for security, observability, and request handling.
 """
 
 import hashlib
+import hmac
 import logging
 import time
 import uuid
@@ -19,6 +20,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from .auth import get_jwt_handler
 from .config import get_config
 from .constants import (
     HEADER_CORRELATION_ID,
@@ -224,12 +226,21 @@ class RedisSlidingWindowLimiter:
         return self._client
 
     async def is_allowed(self, key: str, limit: int) -> tuple[bool, int]:
-        """Check and record a request against the fixed window in Redis."""
+        """Check and record a request against the fixed window in Redis.
+
+        INCR and EXPIRE are issued in a single pipeline (MULTI/EXEC) so the
+        counter bump and its TTL are applied atomically from Redis's
+        perspective, instead of two separate round trips that could race
+        under concurrent requests. ``expire(..., nx=True)`` only sets the
+        TTL when the key doesn't already have one, so it's safe to send on
+        every request rather than gating it on ``count == 1``.
+        """
         client = await self._get_client()
         redis_key = f"stateset:ratelimit:{key}"
-        count = await client.incr(redis_key)
-        if count == 1:
-            await client.expire(redis_key, self.window_seconds)
+        async with client.pipeline(transaction=True) as pipe:
+            pipe.incr(redis_key)
+            pipe.expire(redis_key, self.window_seconds, nx=True)
+            count, _ = await pipe.execute()
         allowed = count <= limit
         remaining = max(0, limit - count)
         return allowed, remaining
@@ -254,6 +265,37 @@ def _hash_credential(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
 
+def _validate_credential(credential: str, config: Any) -> bool:
+    """Return True only if ``credential`` validates as a real API key or JWT.
+
+    Unvalidated/garbage credentials must NOT get their own rate-limit
+    bucket (that would let an attacker mint unlimited fresh buckets and
+    bypass IP-based limits); they fall back to the client-IP bucket.
+    """
+    if any(
+        hmac.compare_digest(stored_key, credential)
+        for stored_key in config.security.api_keys
+    ):
+        return True
+
+    if config.security.jwt_secret:
+        try:
+            jwt = get_jwt_handler()
+            payload = jwt.decode(credential)
+        except Exception:  # noqa: BLE001 - any decode failure means invalid
+            return False
+        if payload:
+            return True
+
+    return False
+
+
+# Cooldown before a failed Redis backend is retried, in seconds. During the
+# cooldown window the in-memory limiter is used instead of hammering a
+# down/unreachable Redis on every request.
+REDIS_RETRY_COOLDOWN_SECONDS = 60.0
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiting middleware with sliding window algorithm."""
 
@@ -269,9 +311,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Optional Redis backend for multi-pod deployments. Only wired up
         # when the caller didn't inject an explicit limiter (tests do) and
         # the config asks for it; falls back to the in-memory limiter on
-        # any import/connection failure, logged once.
+        # any import/connection failure. Rather than permanently disabling
+        # itself, it retries after a cooldown so Redis coming back online
+        # is picked up automatically.
         self._redis_limiter: RedisSlidingWindowLimiter | None = None
-        self._redis_fallback_logged = False
+        self._redis_disabled_until = 0.0
+        self._redis_currently_disabled = False
         if limiter is None and config.rate_limit.backend == "redis":
             redis_url = config.rate_limit.redis_url or "redis://localhost:6379"
             self._redis_limiter = RedisSlidingWindowLimiter(
@@ -281,24 +326,35 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def _check_rate_limit(self, key: str, limit: int) -> tuple[bool, int]:
         """Check the rate limit, preferring Redis and falling back to memory."""
         if self._redis_limiter is not None:
+            now = time.monotonic()
+            if now < self._redis_disabled_until:
+                return self.limiter.is_allowed(key, limit)
+
             try:
-                return await self._redis_limiter.is_allowed(key, limit)
+                result = await self._redis_limiter.is_allowed(key, limit)
             except Exception as exc:  # noqa: BLE001 - any redis/import failure triggers fallback
-                if not self._redis_fallback_logged:
+                self._redis_disabled_until = now + REDIS_RETRY_COOLDOWN_SECONDS
+                if not self._redis_currently_disabled:
                     logger.warning(
                         "Redis rate-limit backend unavailable (%s); "
-                        "falling back to in-memory limiter",
+                        "falling back to in-memory limiter for %.0fs",
                         exc,
+                        REDIS_RETRY_COOLDOWN_SECONDS,
                     )
-                    self._redis_fallback_logged = True
-                self._redis_limiter = None
+                    self._redis_currently_disabled = True
+                return self.limiter.is_allowed(key, limit)
+            else:
+                if self._redis_currently_disabled:
+                    logger.info("Redis rate-limit backend recovered; resuming")
+                    self._redis_currently_disabled = False
+                return result
 
         return self.limiter.is_allowed(key, limit)
 
     def _rate_limit_key(self, request: Request, config: Any) -> tuple[str, str | None]:
         """Derive the rate-limit bucket key and, if present, the raw API key."""
         api_key = self._extract_api_key(request)
-        if api_key:
+        if api_key and _validate_credential(api_key, config):
             return f"key:{_hash_credential(api_key)}", api_key
 
         client_ip = self._client_ip(request, config)

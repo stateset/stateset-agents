@@ -1,13 +1,15 @@
 """Tests for identity-keyed rate limiting and the optional Redis backend."""
 
 import hashlib
+import time
 
 import httpx
 import pytest
 from fastapi import FastAPI
 
 from stateset_agents.api import config as api_config
-from stateset_agents.api.config import APIConfig, RateLimitConfig
+from stateset_agents.api.config import APIConfig, RateLimitConfig, SecurityConfig
+from stateset_agents.api.grpo.rate_limiter import UnifiedRateLimiter
 from stateset_agents.api.middleware import (
     RateLimitMiddleware,
     RedisSlidingWindowLimiter,
@@ -21,8 +23,10 @@ def preserve_api_config():
     api_config._config = prev
 
 
-def _build_app(rate_limit: RateLimitConfig) -> FastAPI:
-    config = APIConfig(rate_limit=rate_limit)
+def _build_app(
+    rate_limit: RateLimitConfig, security: SecurityConfig | None = None
+) -> FastAPI:
+    config = APIConfig(rate_limit=rate_limit, security=security or SecurityConfig())
     api_config._config = config
 
     app = FastAPI()
@@ -46,7 +50,12 @@ def _expected_key(api_key: str) -> str:
 
 @pytest.mark.asyncio
 async def test_different_api_keys_do_not_share_a_bucket(preserve_api_config):
-    app = _build_app(RateLimitConfig(requests_per_minute=1, enabled=True))
+    app = _build_app(
+        RateLimitConfig(requests_per_minute=1, enabled=True),
+        security=SecurityConfig(
+            api_keys={"key-a": ["user"], "key-b": ["user"]}, require_auth=False
+        ),
+    )
 
     async with _client(app) as client:
         r1 = await client.get("/probe", headers={"X-API-Key": "key-a"})
@@ -58,7 +67,12 @@ async def test_different_api_keys_do_not_share_a_bucket(preserve_api_config):
 
 @pytest.mark.asyncio
 async def test_same_api_key_from_two_ips_shares_one_bucket(preserve_api_config):
-    app = _build_app(RateLimitConfig(requests_per_minute=1, enabled=True))
+    app = _build_app(
+        RateLimitConfig(requests_per_minute=1, enabled=True),
+        security=SecurityConfig(
+            api_keys={"shared-key": ["user"]}, require_auth=False
+        ),
+    )
 
     async with _client(app, client_ip="1.1.1.1") as client:
         r1 = await client.get("/probe", headers={"X-API-Key": "shared-key"})
@@ -139,3 +153,110 @@ async def test_redis_backend_falls_back_to_memory_when_unavailable(
 def test_redis_limiter_uses_lazy_import(preserve_api_config):
     limiter = RedisSlidingWindowLimiter("redis://localhost:6379", window_seconds=60)
     assert limiter._client is None
+
+
+@pytest.mark.asyncio
+async def test_garbage_api_key_falls_back_to_ip_bucket(preserve_api_config):
+    """Unvalidated credentials must not mint their own bucket.
+
+    Without validation, presenting a fresh garbage `X-API-Key` on every
+    request would give each request its own unlimited bucket, bypassing
+    IP-based limits entirely. Garbage keys must share the IP bucket.
+    """
+    app = _build_app(
+        RateLimitConfig(requests_per_minute=1, enabled=True),
+        security=SecurityConfig(api_keys={}, require_auth=False),
+    )
+
+    async with _client(app, client_ip="7.7.7.7") as client:
+        r1 = await client.get("/probe", headers={"X-API-Key": "garbage-one"})
+        r2 = await client.get("/probe", headers={"X-API-Key": "garbage-two"})
+
+    assert r1.status_code == 200
+    # Second garbage key shares the same IP bucket as the first -> limited.
+    assert r2.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_valid_api_key_still_gets_credential_bucket_alongside_garbage(
+    preserve_api_config,
+):
+    """A validated key gets its own bucket even when garbage keys share IP."""
+    app = _build_app(
+        RateLimitConfig(requests_per_minute=1, enabled=True),
+        security=SecurityConfig(api_keys={"real-key": ["user"]}, require_auth=False),
+    )
+
+    async with _client(app, client_ip="8.8.8.8") as client:
+        garbage = await client.get("/probe", headers={"X-API-Key": "not-real"})
+        real = await client.get("/probe", headers={"X-API-Key": "real-key"})
+
+    assert garbage.status_code == 200
+    # Different bucket (validated credential) -> not limited by the IP hit.
+    assert real.status_code == 200
+
+
+def test_bucket_dict_capped_under_unique_key_flood():
+    """The in-memory limiter must not grow unboundedly between cleanups."""
+    limiter = UnifiedRateLimiter(window_seconds=60, max_buckets=100)
+
+    for i in range(20_000):
+        limiter.is_allowed(f"flood-key-{i}", limit=5)
+
+    assert len(limiter.windows) <= 100
+
+
+@pytest.mark.asyncio
+async def test_redis_limiter_retries_after_cooldown(preserve_api_config, monkeypatch):
+    """After a Redis failure, the middleware retries Redis after cooldown
+    instead of permanently self-disabling."""
+    app_config = APIConfig(
+        rate_limit=RateLimitConfig(
+            requests_per_minute=5,
+            enabled=True,
+            backend="redis",
+            redis_url="redis://placeholder:6379",
+        )
+    )
+    api_config._config = app_config
+
+    # Build the middleware directly so we can control/inspect its state,
+    # then monkeypatch its Redis limiter to fail then succeed.
+    dummy_app = FastAPI()
+    middleware = RateLimitMiddleware(dummy_app)
+    assert middleware._redis_limiter is not None
+
+    call_state = {"calls": 0}
+
+    async def flaky_is_allowed(key, limit):
+        call_state["calls"] += 1
+        raise RuntimeError("redis unreachable")
+
+    monkeypatch.setattr(middleware._redis_limiter, "is_allowed", flaky_is_allowed)
+
+    fake_time = {"now": 1000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: fake_time["now"])
+
+    # First failure -> disabled until now + cooldown, in-memory used.
+    allowed, _ = await middleware._check_rate_limit("some-key", 5)
+    assert allowed is True
+    assert call_state["calls"] == 1
+    assert middleware._redis_currently_disabled is True
+
+    # Still within cooldown -> Redis not retried.
+    fake_time["now"] += 10
+    allowed, _ = await middleware._check_rate_limit("some-key", 5)
+    assert call_state["calls"] == 1  # unchanged: Redis skipped
+
+    # Past cooldown -> Redis retried.
+    async def recovered_is_allowed(key, limit):
+        call_state["calls"] += 1
+        return True, 4
+
+    fake_time["now"] += 60
+    monkeypatch.setattr(middleware._redis_limiter, "is_allowed", recovered_is_allowed)
+    allowed, remaining = await middleware._check_rate_limit("some-key", 5)
+    assert call_state["calls"] == 2
+    assert allowed is True
+    assert remaining == 4
+    assert middleware._redis_currently_disabled is False
