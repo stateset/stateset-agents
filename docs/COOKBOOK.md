@@ -47,6 +47,38 @@ curl -X POST http://localhost:8000/agents/default/messages \
 
 ---
 
+## The improvement loop in one command
+
+**You want:** grade -> curate -> retrain without stitching together `grade_transcript.py`, `summarize_graded_batch.py`, and `sft_from_curated.py` by hand every time.
+
+```bash
+stateset-agents improve run --transcripts transcripts/ \
+                             --reward customer_support \
+                             --output improved/ \
+                             --threshold 0.7
+```
+
+This does, in one step, what Recipe 2 below does manually: grades every transcript in `transcripts/` with the named reward, aggregates a summary (mean score, per-reward-component breakdown, count above threshold), curates the turns that clear `--threshold` into `improved/curated.jsonl`, and writes `improved/next_steps.md` with the exact `sft_from_curated.py`/`finetune_gspo.py` commands to train on it. Machine-readable results live in `improved/improve_summary.json`.
+
+Bringing logs from a different agent framework? Ingest first in the same call:
+
+```bash
+stateset-agents improve run --transcripts openai_logs.jsonl --format openai \
+                             --reward customer_support --output improved/
+```
+
+Check a previous run's numbers without re-grading:
+
+```bash
+stateset-agents improve status --output improved/
+```
+
+`improve` is offline-friendly — the reward functions (`gsm8k`, `customer_support`, `tool_calling`) are rule-based, no LLM judge or API key required; an LLM-judge reward name fails fast with a clear message.
+
+Use `improve` for the fast path. Reach for the manual steps in Recipe 2 when you need finer control — e.g. inspecting per-transcript markdown reports before curating, or grading with a `--context-file` of ground-truth scenarios.
+
+---
+
 ## Recipe 2 — Iterate from production conversation logs
 
 **You want:** take real customer transcripts from production, identify what your model gets wrong, and produce a better fine-tune.

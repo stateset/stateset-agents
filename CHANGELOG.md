@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — `stateset-agents improve`: the grade -> curate -> retrain loop in one command
+
+- New CLI subcommand `stateset-agents improve run --transcripts DIR --reward
+  NAME --output DIR [--threshold F] [--format transcripts|openai|langchain]`.
+  Thin orchestrator over existing, tested pieces — `stateset_agents.data.
+  trajectory_ingest` (only when `--format openai/langchain`), `scripts/
+  grade_transcript.py`'s grading + curation functions, and generates
+  `next_steps.md` with the exact `scripts/sft_from_curated.py` /
+  `examples/finetune_gspo.py` commands to train on the curated set. Writes
+  machine-readable `improve_summary.json` (mean score, per-reward-component
+  breakdown, curated count) alongside `curated.jsonl`.
+- `stateset-agents improve status --output DIR` prints a previous run's
+  summary without re-grading.
+- Offline-friendly: only the rule-based rewards (`gsm8k`, `customer_support`,
+  `tool_calling`) are supported; an LLM-judge reward name fails with a clear
+  message instead of silently requiring an API key.
+- See docs/COOKBOOK.md "The improvement loop in one command".
+
 ### Added — trajectory ingestion for logs from any agent framework
 
 - `stateset_agents.data.trajectory_ingest`: `from_openai_messages`/`from_openai_jsonl`
