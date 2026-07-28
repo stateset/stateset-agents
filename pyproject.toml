@@ -48,7 +48,26 @@ dev = [
     "black>=23.0.0",
     "isort>=5.12.0",
     "flake8>=6.0.0",
-    "mypy>=1.0.0",
+    # Pinned exactly (not a floor): CI installs unpinned via
+    # `pip install -e ".[dev,api]"`, so a bare floor here means every
+    # mypy release automatically becomes CI's type-check gate the moment
+    # it ships -- which is how round 3 broke on mypy going 2.1 -> 2.3 and
+    # round 4 broke again on stricter/changed inference in the same 2.x
+    # line. Bump this deliberately (and re-verify `mypy --config-file
+    # mypy.ini` + `check_types.py --all`) rather than letting it drift.
+    "mypy==2.3.0",
+    # Pinned upper bound (not just dev-only in spirit, but scoped here
+    # since mypy is the thing that breaks): numpy 2.5.0 shipped inline
+    # .pyi stubs using PEP 695 `type X = ...` syntax, which mypy refuses
+    # to parse under mypy.ini's `python_version = 3.10` target ("Type
+    # statement is only supported in Python 3.12 and greater"), crashing
+    # every mypy invocation before it checks a single line of our code.
+    # 2.4.0 is the newest release confirmed still using pre-PEP-695 stub
+    # syntax; capping here (rather than bumping mypy.ini's python_version,
+    # which would also start allowing our own curated files to use
+    # 3.11/3.12-only syntax the project's actual minimum-supported
+    # Python -- 3.10 -- can't run) keeps that floor meaningful.
+    "numpy<2.5.0",
     "pre-commit>=3.0.0",
     "sphinx>=6.0.0",
     "sphinx-rtd-theme>=1.2.0",

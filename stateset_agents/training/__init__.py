@@ -66,7 +66,17 @@ def _has_spec(module_name: str) -> bool:
 try:  # pragma: no cover
     import trl
 
-    TRL_AVAILABLE = hasattr(trl, "GRPOConfig")
+    # `hasattr` only swallows AttributeError. trl's own lazy-module loader
+    # (trl._lazy_module) wraps *any* failure while resolving an attribute
+    # -- including a transitively optional, environment-dependent one like
+    # an unusable/absent vllm integration -- in a bare RuntimeError, not
+    # AttributeError. A plain `hasattr(trl, "GRPOConfig")` would let that
+    # RuntimeError escape and crash this module's import instead of
+    # falling back to TRL_AVAILABLE = False as intended.
+    try:
+        TRL_AVAILABLE = hasattr(trl, "GRPOConfig")
+    except Exception:  # noqa: BLE001 — trl's lazy-attr errors are not typed
+        TRL_AVAILABLE = False
 except ImportError:  # pragma: no cover
     TRL_AVAILABLE = False
 
