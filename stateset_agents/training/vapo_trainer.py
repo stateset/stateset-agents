@@ -778,7 +778,7 @@ class VAPOTrainer:
         ``scalar_reward`` may be a python float (applied to every row) or a
         1-D tensor of per-row rewards.
         """
-        if not torch.is_tensor(scalar_reward):
+        if not isinstance(scalar_reward, torch.Tensor):
             scalar_reward = torch.tensor(
                 scalar_reward, dtype=response_mask.dtype, device=response_mask.device
             )
@@ -1104,7 +1104,7 @@ class VAPOTrainer:
         self.tokenizer.save_pretrained(output_dir)
 
         # Save value head
-        torch.save(  # nosec: B614
+        torch.save(
             self.value_head.state_dict(), os.path.join(output_dir, "value_head.pt")
         )
 
@@ -1118,7 +1118,7 @@ class VAPOTrainer:
             "critic_scheduler_state_dict": self.critic_scheduler.state_dict(),
             "metrics_history": self.metrics_history,
         }
-        torch.save(state, os.path.join(output_dir, "training_state.pt"))  # nosec: B614
+        torch.save(state, os.path.join(output_dir, "training_state.pt"))
 
         # Save config
         config_path = os.path.join(output_dir, "vapo_config.json")

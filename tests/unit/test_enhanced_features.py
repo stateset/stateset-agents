@@ -284,7 +284,9 @@ class TestTypeSystem:
         # Test invalid config creation
         with pytest.raises(ValueError):
             create_typed_config(
-                ModelConfig, model_name="gpt2", temperature=5.0  # Invalid temperature
+                ModelConfig,
+                model_name="gpt2",
+                temperature=5.0,  # Invalid temperature
             )
 
     def test_type_safe_serialization(self):

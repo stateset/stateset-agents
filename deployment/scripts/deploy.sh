@@ -36,7 +36,7 @@ log_error() {
 
 check_prerequisites() {
     log_info "Checking prerequisites..."
-    
+
     case $DEPLOYMENT_TYPE in
         "docker")
             if ! command -v docker &> /dev/null; then
@@ -92,38 +92,38 @@ check_prerequisites() {
             exit 1
             ;;
     esac
-    
+
     log_success "Prerequisites check passed"
 }
 
 build_docker_image() {
     log_info "Building Docker image..."
-    
+
     cd "$(dirname "$0")/../.."
-    
+
     docker build -t grpo-framework:latest -f deployment/docker/Dockerfile .
-    
+
     log_success "Docker image built successfully"
 }
 
 deploy_docker() {
     log_info "Deploying with Docker Compose..."
-    
+
     cd "$(dirname "$0")/../docker"
-    
+
     # Create necessary directories
     mkdir -p data logs models
-    
+
     # Pull latest images
     docker-compose pull
-    
+
     # Build and start services
     docker-compose up -d --build
-    
+
     # Wait for services to be ready
     log_info "Waiting for services to be ready..."
     sleep 30
-    
+
     # Check service health
     if docker-compose ps | grep -q "Up"; then
         log_success "Docker deployment completed successfully"
@@ -141,31 +141,31 @@ deploy_docker() {
 
 deploy_kubernetes() {
     log_info "Deploying to Kubernetes..."
-    
+
     cd "$(dirname "$0")/../kubernetes"
-    
+
     # Create namespace
     kubectl apply -f namespace.yaml
-    
+
     # Apply configurations
     kubectl apply -f configmap.yaml
     kubectl apply -f secret.yaml
     kubectl apply -f pvc.yaml
-    
+
     # Deploy services
     kubectl apply -f deployment.yaml
     kubectl apply -f service.yaml
-    
+
     # Setup ingress
     kubectl apply -f ingress.yaml
-    
+
     # Setup auto-scaling
     kubectl apply -f hpa.yaml
-    
+
     # Wait for deployment
     log_info "Waiting for deployment to be ready..."
     kubectl wait --for=condition=available --timeout=300s deployment/grpo-framework -n $NAMESPACE
-    
+
     # Get service information
     log_success "Kubernetes deployment completed successfully"
     log_info "Getting service information..."
@@ -175,68 +175,68 @@ deploy_kubernetes() {
 
 deploy_aws() {
     log_info "Deploying to AWS..."
-    
+
     cd "$(dirname "$0")/../cloud/aws/terraform"
-    
+
     # Initialize Terraform
     terraform init
-    
+
     # Plan deployment
     terraform plan -out=tfplan
-    
+
     # Apply infrastructure
     log_info "Creating AWS infrastructure..."
     terraform apply tfplan
-    
+
     # Get cluster information
     CLUSTER_NAME=$(terraform output -raw cluster_name)
-    
+
     # Configure kubectl
     log_info "Configuring kubectl for EKS..."
     aws eks update-kubeconfig --name $CLUSTER_NAME
-    
+
     # Deploy application
     cd ../../kubernetes
     deploy_kubernetes
-    
+
     log_success "AWS deployment completed successfully"
     log_info "EKS cluster: $CLUSTER_NAME"
 }
 
 deploy_gcp() {
     log_info "Deploying to GCP..."
-    
+
     cd "$(dirname "$0")/../cloud/gcp/terraform"
-    
+
     # Initialize Terraform
     terraform init
-    
+
     # Plan deployment
     terraform plan -out=tfplan
-    
+
     # Apply infrastructure
     log_info "Creating GCP infrastructure..."
     terraform apply tfplan
-    
+
     # Get cluster information
     CLUSTER_NAME=$(terraform output -raw cluster_name)
     CLUSTER_LOCATION=$(terraform output -raw cluster_location)
-    
+
     # Configure kubectl
     log_info "Configuring kubectl for GKE..."
     gcloud container clusters get-credentials $CLUSTER_NAME --zone $CLUSTER_LOCATION
-    
+
     # Deploy application
     cd ../../kubernetes
     deploy_kubernetes
-    
+
     log_success "GCP deployment completed successfully"
     log_info "GKE cluster: $CLUSTER_NAME"
 }
 
 cleanup() {
     log_info "Cleaning up deployment..."
-    
+
     case $DEPLOYMENT_TYPE in
         "docker")
             cd "$(dirname "$0")/../docker"
@@ -255,7 +255,7 @@ cleanup() {
             terraform destroy -auto-approve
             ;;
     esac
-    
+
     log_success "Cleanup completed"
 }
 
@@ -290,15 +290,15 @@ show_help() {
 # Main execution
 main() {
     local command=${3:-"deploy"}
-    
+
     case $command in
         "deploy")
             log_info "Starting GRPO Agent Framework deployment"
             log_info "Deployment type: $DEPLOYMENT_TYPE"
             log_info "Environment: $ENVIRONMENT"
-            
+
             check_prerequisites
-            
+
             case $DEPLOYMENT_TYPE in
                 "docker")
                     build_docker_image
@@ -314,7 +314,7 @@ main() {
                     deploy_gcp
                     ;;
             esac
-            
+
             log_success "Deployment completed successfully!"
             ;;
         "cleanup")

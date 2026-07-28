@@ -297,7 +297,9 @@ class TestGymAgent:
         from stateset_agents.core.gym.agents import create_gym_agent
 
         agent = create_gym_agent(
-            model_name="gpt2", use_stub=True, temperature=0.7  # Use stub for testing
+            model_name="gpt2",
+            use_stub=True,
+            temperature=0.7,  # Use stub for testing
         )
 
         assert agent is not None

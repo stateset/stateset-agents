@@ -293,7 +293,7 @@ class ReasoningEngine:
             thought=thought,
             action=action,
             confidence=confidence,
-            evidence=[f"Step {i+1}" for i in range(step_num)],
+            evidence=[f"Step {i + 1}" for i in range(step_num)],
         )
 
 

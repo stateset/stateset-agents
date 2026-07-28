@@ -445,8 +445,8 @@ class TestResiliencePerformance:
         overhead_percent = ((with_breaker - without_breaker) / without_breaker) * 100
 
         print("\nCircuit Breaker Overhead:")
-        print(f"  With breaker: {with_breaker*1000:.2f} ms for 1000 calls")
-        print(f"  Without breaker: {without_breaker*1000:.2f} ms for 1000 calls")
+        print(f"  With breaker: {with_breaker * 1000:.2f} ms for 1000 calls")
+        print(f"  Without breaker: {without_breaker * 1000:.2f} ms for 1000 calls")
         print(f"  Overhead: {overhead_percent:.1f}%")
 
         assert overhead_percent < 100, "Circuit breaker overhead should be < 100%"

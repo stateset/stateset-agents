@@ -153,12 +153,21 @@ def load_gsm8k(
                 break
         return examples
 
+    # Dataset repo id ("gsm8k") is a fixed, well-known public benchmark name,
+    # not attacker-controlled input; pinning a revision would require this
+    # module to track upstream commit hashes for a dataset it doesn't own.
     if split is not None:
-        ds = load_dataset("gsm8k", "main", split=split, cache_dir=cache_dir)
+        ds = load_dataset(
+            "gsm8k", "main", split=split, cache_dir=cache_dir
+        )  # nosec: B615
         return _to_examples(ds)
 
-    train = load_dataset("gsm8k", "main", split="train", cache_dir=cache_dir)
-    test = load_dataset("gsm8k", "main", split="test", cache_dir=cache_dir)
+    train = load_dataset(
+        "gsm8k", "main", split="train", cache_dir=cache_dir
+    )  # nosec: B615
+    test = load_dataset(
+        "gsm8k", "main", split="test", cache_dir=cache_dir
+    )  # nosec: B615
     return _to_examples(train), _to_examples(test)
 
 

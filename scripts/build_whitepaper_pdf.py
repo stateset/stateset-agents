@@ -29,6 +29,7 @@ from __future__ import annotations
 import base64
 import re
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -246,11 +247,15 @@ def _mermaid_to_svg(diagram: str, *, timeout: float = 15.0) -> str | None:
     encoded = (
         base64.urlsafe_b64encode(diagram.encode("utf-8")).decode("ascii").rstrip("=")
     )
-    cache_dir = Path("/tmp") / "mermaid_svg_cache"
+    cache_dir = Path(tempfile.gettempdir()) / "mermaid_svg_cache"
     cache_dir.mkdir(exist_ok=True)
     cache_path = cache_dir / f"{encoded[:32]}.svg"
     if cache_path.exists():
         return cache_path.read_text()
+    # URL is always the hardcoded https://mermaid.ink/svg/ endpoint (the
+    # diagram content is base64-encoded into the *path*, not the scheme or
+    # host) — never attacker-influenced, so the "file:/ or custom scheme"
+    # risk this check guards against doesn't apply here.
     url = f"https://mermaid.ink/svg/{encoded}"
     req = urllib.request.Request(
         url,
@@ -259,7 +264,7 @@ def _mermaid_to_svg(diagram: str, *, timeout: float = 15.0) -> str | None:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec: B310
             if resp.status != 200:
                 return None
             svg = resp.read().decode("utf-8")

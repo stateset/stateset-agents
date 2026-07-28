@@ -68,4 +68,3 @@ helm upgrade --install stateset-agents deployment/helm/stateset-agents \
 ```bash
 python -m pytest -q
 ```
-

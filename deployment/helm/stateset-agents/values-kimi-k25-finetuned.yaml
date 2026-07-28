@@ -6,4 +6,3 @@ api:
 vllm:
   finetuned: true
   modelPath: "/models/kimi-k25/merged"
-

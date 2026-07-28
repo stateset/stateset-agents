@@ -576,7 +576,7 @@ class GRPOShowcase:
             "parallel_tasks": len(tasks),
             "successful_executions": len(successful_results),
             "total_time": f"{parallel_time:.2f}s",
-            "efficiency_gain": f"{len(tasks)/parallel_time:.1f}x",
+            "efficiency_gain": f"{len(tasks) / parallel_time:.1f}x",
             "computational_philosophy": "✅ Massive parallel computation",
             "scaling_potential": "Unlimited with more GPUs",
         }

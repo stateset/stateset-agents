@@ -10,4 +10,3 @@ Core building blocks:
 - Trajectories: `stateset_agents.core.trajectory.MultiTurnTrajectory`
 - Rewards: `stateset_agents.rewards` (multi-objective, rule-based, LLM-judge)
 - Training: `stateset_agents.training` (GRPO/GSPO family and more)
-

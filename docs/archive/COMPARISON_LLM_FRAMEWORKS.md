@@ -33,4 +33,3 @@ A common production pattern:
 4. Train with GRPO/GSPO to improve the underlying model or policy.
 
 StateSet does not replace orchestration frameworks; it complements them by adding a learning layer.
-

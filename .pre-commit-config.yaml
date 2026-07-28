@@ -1,37 +1,56 @@
 repos:
   # Black - Python code formatter
   - repo: https://github.com/psf/black
-    rev: 23.12.1
+    rev: 26.5.1
     hooks:
       - id: black
         language_version: python3
 
   # isort - Import sorter
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: 8.0.1
     hooks:
       - id: isort
         args: ["--profile", "black"]
 
   # Ruff - Fast Python linter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.14
+    rev: v0.16.0
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
-      - id: ruff-format
+      # ruff-format intentionally omitted: CI's "Run linting" step (see
+      # .github/workflows/ci.yml) only enforces `ruff check .` and
+      # `black --check .`, not `ruff format --check .`. Running both
+      # ruff-format and black here — two independent formatters — caused
+      # them to fight over trailing-comment line wrapping (e.g. `# nosec:`
+      # annotations) and reformat the same files back and forth forever.
+      # black is this project's canonical formatter; keep only that.
 
   # mypy - Static type checker
+  #
+  # No additional_dependencies here: `types-all` (previously used) is a
+  # deprecated meta-package that now fails to install (it depends on
+  # `types-pkg-resources`, which has been removed from PyPI), breaking
+  # `pre-commit run --all-files` with an environment-setup error before any
+  # linting even runs. mypy.ini already sets `ignore_missing_imports = true`
+  # and doesn't need third-party type stubs. Point this hook at the same
+  # config CI's separate "Run type checking" step uses
+  # (`mypy --config-file mypy.ini`), and let mypy.ini's own `files =` list
+  # choose what gets checked instead of pre-commit passing the full set of
+  # changed filenames (which would run against files mypy.ini deliberately
+  # excludes from the gated, incrementally-typed surface).
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+    rev: v2.3.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-all]
+        args: ["--config-file=mypy.ini"]
+        pass_filenames: false
         exclude: ^(tests/|examples/)
 
   # Check for merge conflicts
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: check-merge-conflict
       - id: check-added-large-files
@@ -41,24 +60,54 @@ repos:
       - id: check-symlinks
       - id: check-toml
       - id: check-yaml
+        # Several deployment/kubernetes/*.yaml manifests are multi-document
+        # (`---`-separated) on purpose (e.g. multiple Kubernetes objects in
+        # one file); check-yaml treats that as an error unless told it's
+        # allowed. Helm chart templates under deployment/helm/**/templates/
+        # aren't valid standalone YAML at all — they're Go-template source
+        # (`{{ .Values... }}`, template actions, etc.) that only becomes
+        # valid YAML after `helm template` renders it; that's already
+        # covered by the CI `helm` job's `helm lint` / `helm template`
+        # steps, so exclude them here.
+        args: ["--allow-multiple-documents"]
+        exclude: ^deployment/helm/.*/templates/
       - id: debug-statements
       - id: end-of-file-fixer
       - id: trailing-whitespace
         exclude: \.(md|rst)$
 
   # Safety - Check for insecure Python packages
+  #
+  # The hook's default `files` regex (`pyproject\.toml|requirements`) matches
+  # pyproject.toml, rust_core/pyproject.toml, requirements-lock.txt, and
+  # requirements-dev-lock.txt all at once; safety_check refuses to run
+  # against a mix of pyproject.toml- and requirements-style inputs in a
+  # single invocation ("Unsupported mix of pyproject.toml & requirements
+  # files"). Restrict it to requirements-dev-lock.txt, the superset lock
+  # file (dev + api extras) that already pins every dependency this project
+  # ships with.
   - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
-    rev: v1.3.2
+    rev: v1.4.2
     hooks:
       - id: python-safety-dependencies-check
+        files: ^requirements-dev-lock\.txt$
 
   # Bandit - Security linter for Python
+  #
+  # --severity-level=medium matches the project's actual security gate
+  # (scripts/check_security_findings.py / `make security-scan-strict`, run
+  # in CI's dedicated "security" job): only MEDIUM+ findings block the
+  # build. Low-severity findings (e.g. B311 non-crypto `random.choice`,
+  # B404/B603 subprocess usage, B101 assert) are reviewed and accepted
+  # elsewhere in this codebase; without this flag bandit's pre-commit hook
+  # fails on every one of them by default, which is a stricter policy than
+  # anything else in the project enforces.
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.6
+    rev: 1.9.4
     hooks:
       - id: bandit
         exclude: ^(tests/|examples/)
-        args: ["-c", "pyproject.toml"]
+        args: ["-c", "pyproject.toml", "--severity-level=medium"]
 
   # Local repo hygiene checks
   - repo: local

@@ -50,4 +50,3 @@ spec:
       - name: models
         persistentVolumeClaim:
           claimName: stateset-models-pvc
-

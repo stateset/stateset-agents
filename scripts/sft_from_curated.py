@@ -153,10 +153,15 @@ def run_sft(
     )
 
     logger.info("Loading tokenizer and model: %s", base_model)
-    tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
+    # base_model is a caller-supplied CLI argument (public HF model repo id),
+    # not attacker-controlled input; pinning a fixed revision would break
+    # support for arbitrary user-chosen base models.
+    tokenizer = AutoTokenizer.from_pretrained(
+        base_model, trust_remote_code=True
+    )  # nosec: B615
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(  # nosec: B615
         base_model,
         trust_remote_code=True,
         torch_dtype="bfloat16",

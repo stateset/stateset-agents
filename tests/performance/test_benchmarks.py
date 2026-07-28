@@ -23,6 +23,18 @@ from stateset_agents.core.basic_rewards import (
 from stateset_agents.core.reward_base import CompositeReward
 from stateset_agents.core.trajectory import ConversationTurn
 
+# The `benchmark` fixture (used by every test below) is provided by the
+# pytest-benchmark plugin, not pytest itself. Some CI jobs (e.g. test-windows)
+# install only `pip install -e ".[dev,api]"` without the perf extras, so the
+# plugin — and its fixture — may be absent. Skip this whole module cleanly at
+# import time in that case instead of erroring during fixture resolution.
+# (When the plugin is *installed* but explicitly disabled, e.g. via
+# `-p no:benchmark`, tests/performance/conftest.py's
+# pytest_collection_modifyitems hook additionally skips these items — a
+# plain `pytest.importorskip` can't see that case, since the package is
+# still importable even when the plugin registration is turned off.)
+pytest.importorskip("pytest_benchmark")
+
 pytestmark = pytest.mark.benchmark
 
 

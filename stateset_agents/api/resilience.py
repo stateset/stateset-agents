@@ -139,7 +139,7 @@ class CircuitBreaker:
                     if self.config.fallback:
                         return await self._execute_fallback(*args, **kwargs)
                     raise CircuitOpenError(
-                        f"Circuit {self.name} is OPEN. " f"Request rejected."
+                        f"Circuit {self.name} is OPEN. Request rejected."
                     )
 
         # Execute the function

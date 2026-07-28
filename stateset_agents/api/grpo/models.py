@@ -112,7 +112,7 @@ class GRPOTrainingRequest(BaseModel):
         for i, prompt in enumerate(cleaned):
             if len(prompt) > config.max_prompt_length:
                 raise ValueError(
-                    f"Prompt {i+1} exceeds {config.max_prompt_length} characters"
+                    f"Prompt {i + 1} exceeds {config.max_prompt_length} characters"
                 )
 
         return cleaned

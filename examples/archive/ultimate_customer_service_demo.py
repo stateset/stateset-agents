@@ -414,14 +414,14 @@ class AdvancedCustomerServiceAgent:
         # Run training iterations
         results = []
         for i in range(num_iterations):
-            logger.info(f"Training iteration {i+1}/{num_iterations}")
+            logger.info(f"Training iteration {i + 1}/{num_iterations}")
 
             # Use sample prompts for training
             iteration_results = await engine.train_iteration(SAMPLE_PROMPTS[:5])
             results.append(iteration_results)
 
             logger.info(
-                f"Iteration {i+1} completed: "
+                f"Iteration {i + 1} completed: "
                 f"Avg reward: {iteration_results['average_reward']:.3f}, "
                 f"Trajectories: {iteration_results['trajectories_generated']}"
             )
@@ -585,7 +585,7 @@ async def run_benchmark_demo():
     total_start_time = datetime.now()
 
     for i, (scenario, message) in enumerate(test_scenarios):
-        print(f"\n📝 Scenario {i+1}/10: {scenario}")
+        print(f"\n📝 Scenario {i + 1}/10: {scenario}")
         print(f"Message: {message}")
 
         start_time = datetime.now()
@@ -611,7 +611,7 @@ async def run_benchmark_demo():
 
     # Display benchmark results
     print("\n🏆 BENCHMARK RESULTS")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
     print(f"Total scenarios: {len(test_scenarios)}")
     print(f"Total time: {total_time:.2f}s")
     print(

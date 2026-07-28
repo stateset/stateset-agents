@@ -348,7 +348,7 @@ print("Import test successful")
         """Update CHANGELOG.md with new release."""
         print(f"Updating changelog for version {version}")
 
-        changelog_entry = f"""## [{version}] - {datetime.now().strftime('%Y-%m-%d')}
+        changelog_entry = f"""## [{version}] - {datetime.now().strftime("%Y-%m-%d")}
 
 {changes}
 

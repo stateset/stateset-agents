@@ -279,7 +279,7 @@ async def main():
             if config.post_eval_detailed and eval_results.get("scenario_results"):
                 logger.info("\nSample conversations:")
                 for i, scenario in enumerate(eval_results["scenario_results"][:3]):
-                    logger.info(f"\n--- Scenario {i+1} ---")
+                    logger.info(f"\n--- Scenario {i + 1} ---")
                     best_traj = max(scenario["trajectories"], key=lambda x: x["reward"])
                     logger.info(f"Best reward: {best_traj['reward']:.4f}")
                     for turn in best_traj["conversation"][:4]:  # Show first 4 turns

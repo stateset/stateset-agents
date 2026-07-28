@@ -257,7 +257,7 @@ class TrainingRequest(BaseModel):
         for i, prompt in enumerate(cleaned):
             if len(prompt) > config.validation.max_prompt_length:
                 raise ValueError(
-                    f"Prompt {i+1} exceeds maximum length of {config.validation.max_prompt_length} characters"
+                    f"Prompt {i + 1} exceeds maximum length of {config.validation.max_prompt_length} characters"
                 )
 
         return cleaned

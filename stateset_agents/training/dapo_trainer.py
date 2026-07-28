@@ -794,9 +794,11 @@ class DAPOTrainer:
             # Freeze old-policy log probs at rollout time (before any inner updates
             # mutate the model), so importance ratios are computed against the
             # policy that actually generated these responses.
-            batch_input_ids, batch_attention_mask, batch_response_mask = (
-                self._build_batch_tensors(group_responses)
-            )
+            (
+                batch_input_ids,
+                batch_attention_mask,
+                batch_response_mask,
+            ) = self._build_batch_tensors(group_responses)
             with torch.no_grad():
                 old_token_log_probs, _ = self.compute_token_log_probs(
                     batch_input_ids, batch_attention_mask, batch_response_mask
@@ -862,9 +864,11 @@ class DAPOTrainer:
             all_seq_lengths.extend([r["sequence_length"] for r in responses])
 
             # Prepare batch
-            batch_input_ids, batch_attention_mask, batch_response_mask = (
-                self._build_batch_tensors(responses)
-            )
+            (
+                batch_input_ids,
+                batch_attention_mask,
+                batch_response_mask,
+            ) = self._build_batch_tensors(responses)
 
             # Old log probs: prefer the ones frozen at rollout time (before any
             # inner updates could have moved the policy). Fall back to computing
@@ -952,7 +956,7 @@ class DAPOTrainer:
             "optimizer_state_dict": self.optimizer.state_dict(),
             "metrics_history": self.metrics_history,
         }
-        torch.save(state, os.path.join(output_dir, "training_state.pt"))  # nosec: B614
+        torch.save(state, os.path.join(output_dir, "training_state.pt"))
 
         # Save config
         config_path = os.path.join(output_dir, "dapo_config.json")

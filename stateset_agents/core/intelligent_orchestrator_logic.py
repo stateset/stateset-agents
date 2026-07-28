@@ -104,8 +104,7 @@ def make_automated_decision(
             component="orchestrator",
             action="gentle_optimize",
             reasoning=(
-                "Performance low but resources constrained "
-                f"({resource_pressure:.2f})"
+                f"Performance low but resources constrained ({resource_pressure:.2f})"
             ),
             expected_benefit=0.1,
             confidence=0.6,
@@ -219,7 +218,7 @@ def make_conservative_decision(
             component="orchestrator",
             action="request_human_intervention",
             reasoning=(
-                "Performance " f"{recent_performance:.3f} significantly below threshold"
+                f"Performance {recent_performance:.3f} significantly below threshold"
             ),
             expected_benefit=0.0,
             confidence=1.0,

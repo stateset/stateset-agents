@@ -11,9 +11,11 @@ import json
 import logging
 import os
 import tarfile
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 try:
@@ -543,8 +545,9 @@ class RunPodDeploymentManager:
 def create_code_bundle(source_dir: str, output_path: str | None = None) -> str:
     """Create a code bundle for deployment"""
     if output_path is None:
-        output_path = (
-            f"/tmp/grpo_bundle_{datetime.now().strftime('%Y%m%d_%H%M%S')}.tar.gz"
+        output_path = str(
+            Path(tempfile.gettempdir())
+            / f"grpo_bundle_{datetime.now().strftime('%Y%m%d_%H%M%S')}.tar.gz"
         )
 
     with tarfile.open(output_path, "w:gz") as tar:

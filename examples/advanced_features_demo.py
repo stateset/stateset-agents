@@ -102,7 +102,7 @@ async def demo_curriculum_learning():
         if episode % 5 == 0:
             summary = curriculum.get_progress_summary()
             print(
-                f"Episode {episode}: Stage {summary['current_stage']+1}/3 - "
+                f"Episode {episode}: Stage {summary['current_stage'] + 1}/3 - "
                 f"Success: {summary['stage_success_rate']:.2%}, "
                 f"Avg Reward: {summary['stage_avg_reward']:.3f}"
             )

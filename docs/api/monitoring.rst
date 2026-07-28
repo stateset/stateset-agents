@@ -12,4 +12,3 @@ Metrics endpoints:
 
 - `GET /metrics`
 - `GET /metrics/json`
-

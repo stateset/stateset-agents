@@ -75,15 +75,15 @@ def _parse_bytes(value: str | None) -> int:
 
 
 def _fmt_cpu(mcpu: int) -> str:
-    return f"{mcpu/1000:.2f}" if mcpu >= 1000 else f"{mcpu}m"
+    return f"{mcpu / 1000:.2f}" if mcpu >= 1000 else f"{mcpu}m"
 
 
 def _fmt_gib(bytes_value: int) -> str:
-    return f"{bytes_value/2**30:.1f}Gi"
+    return f"{bytes_value / 2**30:.1f}Gi"
 
 
 def _fmt_tib(bytes_value: int) -> str:
-    return f"{bytes_value/2**40:.2f}Ti"
+    return f"{bytes_value / 2**40:.2f}Ti"
 
 
 def _parse_ts(value: str | None) -> datetime | None:
@@ -288,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"excluded namespaces: {', '.join(sorted(excluded))}")
     print(
         "pod requests (sum): "
-        f"cpu={_fmt_cpu(cpu_total)} cores={cpu_total/1000:.2f} "
+        f"cpu={_fmt_cpu(cpu_total)} cores={cpu_total / 1000:.2f} "
         f"mem={_fmt_gib(mem_total)} eph={_fmt_tib(eph_total)} "
         f"gpu={gpu_total}"
     )

@@ -443,9 +443,9 @@ def generate_report(
     if times:
         lines.append("")
         lines.append(
-            f"Total wall time: {sum(times)/60:.1f} min ({len(records)} experiments)"
+            f"Total wall time: {sum(times) / 60:.1f} min ({len(records)} experiments)"
         )
-        lines.append(f"Avg per experiment: {sum(times)/len(times):.1f}s")
+        lines.append(f"Avg per experiment: {sum(times) / len(times):.1f}s")
 
     # Improvement rate
     kept = sum(1 for r in records if r.status == "keep")
@@ -453,11 +453,11 @@ def generate_report(
     if len(records) > 1:
         lines.append("")
         lines.append(
-            f"Improvement rate: {kept}/{len(records)} ({kept/len(records)*100:.0f}%)"
+            f"Improvement rate: {kept}/{len(records)} ({kept / len(records) * 100:.0f}%)"
         )
         if crashed:
             lines.append(
-                f"Crash rate: {crashed}/{len(records)} ({crashed/len(records)*100:.0f}%)"
+                f"Crash rate: {crashed}/{len(records)} ({crashed / len(records) * 100:.0f}%)"
             )
 
     lines.append("")

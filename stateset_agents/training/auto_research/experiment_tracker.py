@@ -416,7 +416,7 @@ class ExperimentTracker:
             total_time = sum(times)
             print("\nTiming:")
             print(f"  Avg training time:   {avg_time:.1f}s")
-            print(f"  Total training time: {total_time:.1f}s ({total_time/60:.1f}m)")
+            print(f"  Total training time: {total_time:.1f}s ({total_time / 60:.1f}m)")
 
         # Improvement rate
         if self.num_experiments > 1:
