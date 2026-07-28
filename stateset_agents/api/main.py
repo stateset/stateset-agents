@@ -1,14 +1,14 @@
 import logging
-import time
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI
-from starlette.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.cors import CORSMiddleware
 
 from .config import ConfigurationError, get_config
 from .errors import setup_exception_handlers
@@ -46,7 +46,8 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager with resource initialization."""
     config = getattr(app.state, "config", get_config())
     strict_startup = (
-        os.getenv("STATESET_AGENTS_STRICT_STARTUP", "false").lower() in {"1", "true", "on", "yes"}
+        os.getenv("STATESET_AGENTS_STRICT_STARTUP", "false").lower()
+        in {"1", "true", "on", "yes"}
         or config.is_production()
     )
     health_checker = getattr(app.state, "health_checker", HealthChecker())
@@ -93,8 +94,9 @@ async def lifespan(app: FastAPI):
         logger.warning("Database initialization skipped: %s", e)
 
     # Initialize agent service
-    from .services.agent_service import AgentService
     from stateset_agents.utils.security import SecurityMonitor as _SecurityMonitor
+
+    from .services.agent_service import AgentService
 
     agent_service = getattr(app.state, "agent_service", None)
     if agent_service is None:
@@ -294,7 +296,10 @@ def create_app() -> FastAPI:
     )
     async def liveness_check() -> dict[str, Any]:
         """Kubernetes liveness probe endpoint."""
-        return {"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}
+        return {
+            "status": "alive",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
 
     # Circuit breaker status endpoint
     @app.get(

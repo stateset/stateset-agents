@@ -32,12 +32,12 @@ Usage:
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from ..core.reward_base import RewardFunction, RewardResult, RewardType
 from ..core.trajectory import ConversationTurn
-
 
 # The canonical GSM8K answer format ends with "#### <number>" on its own line.
 _GOLD_ANSWER_RE = re.compile(r"####\s*([\-+]?[\d,\.]+)")
@@ -45,7 +45,9 @@ _GOLD_ANSWER_RE = re.compile(r"####\s*([\-+]?[\d,\.]+)")
 # Generated answer extraction — try several patterns in priority order.
 _ANSWER_PATTERNS = [
     # "The answer is 42" or "answer: 42" — most common in instruction-tuned outputs.
-    re.compile(r"(?:the\s+)?answer\s+is\s*[:=]?\s*\$?([\-+]?[\d,]+(?:\.\d+)?)", re.IGNORECASE),
+    re.compile(
+        r"(?:the\s+)?answer\s+is\s*[:=]?\s*\$?([\-+]?[\d,]+(?:\.\d+)?)", re.IGNORECASE
+    ),
     re.compile(r"answer\s*[:=]\s*\$?([\-+]?[\d,]+(?:\.\d+)?)", re.IGNORECASE),
     # "#### 42" — GSM8K's native format if the model imitates it.
     re.compile(r"####\s*\$?([\-+]?[\d,]+(?:\.\d+)?)"),
@@ -218,7 +220,9 @@ class GSM8KReward(RewardFunction):
                 "gold": float(gold),
                 "abs_error": abs(predicted - float(gold)),
             },
-            explanation=("Correct" if correct else f"Predicted {predicted}, expected {gold}"),
+            explanation=(
+                "Correct" if correct else f"Predicted {predicted}, expected {gold}"
+            ),
         )
 
 

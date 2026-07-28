@@ -95,10 +95,18 @@ def render_text_plots(
     lines.append("|---------|----------|-------|-------------|---|")
     for trainer, runs in sorted(grouped.items()):
         finals = [r["eval_pass_at_1"] for r in runs if r["eval_pass_at_1"] is not None]
-        bases = [r["eval_pass_at_1_baseline"] for r in runs if r["eval_pass_at_1_baseline"] is not None]
+        bases = [
+            r["eval_pass_at_1_baseline"]
+            for r in runs
+            if r["eval_pass_at_1_baseline"] is not None
+        ]
         f_mean, f_std = _mean_std(finals)
         b_mean, b_std = _mean_std(bases)
-        improvement = f_mean - b_mean if (not math.isnan(f_mean) and not math.isnan(b_mean)) else float("nan")
+        improvement = (
+            f_mean - b_mean
+            if (not math.isnan(f_mean) and not math.isnan(b_mean))
+            else float("nan")
+        )
         lines.append(
             f"| {trainer.upper()} |"
             f" {b_mean:.3f} ± {b_std:.3f} |"
@@ -134,13 +142,19 @@ def render_matplotlib(
     for trainer in trainers:
         runs = grouped[trainer]
         finals = [r["eval_pass_at_1"] for r in runs if r["eval_pass_at_1"] is not None]
-        bases = [r["eval_pass_at_1_baseline"] for r in runs if r["eval_pass_at_1_baseline"] is not None]
+        bases = [
+            r["eval_pass_at_1_baseline"]
+            for r in runs
+            if r["eval_pass_at_1_baseline"] is not None
+        ]
         f_mean, f_std = _mean_std(finals)
         b_mean, _ = _mean_std(bases)
         final_means.append(f_mean)
         final_stds.append(f_std)
         baseline_means.append(b_mean)
-        improvements.append(f_mean - b_mean if not (math.isnan(f_mean) or math.isnan(b_mean)) else 0.0)
+        improvements.append(
+            f_mean - b_mean if not (math.isnan(f_mean) or math.isnan(b_mean)) else 0.0
+        )
         n_seeds.append(len(finals))
 
     # Figure 1: pass@1 per trainer (with baseline reference line).
@@ -156,9 +170,11 @@ def render_matplotlib(
         label="Post-training (mean ± std)",
     )
     # Baseline averaged across all groups — drawn as a dashed horizontal line.
-    baseline_overall = statistics.mean([b for b in baseline_means if not math.isnan(b)]) if any(
-        not math.isnan(b) for b in baseline_means
-    ) else 0.0
+    baseline_overall = (
+        statistics.mean([b for b in baseline_means if not math.isnan(b)])
+        if any(not math.isnan(b) for b in baseline_means)
+        else 0.0
+    )
     ax.axhline(
         baseline_overall,
         color="#dc2626",
@@ -195,8 +211,13 @@ def render_matplotlib(
     fig, ax = plt.subplots(figsize=(7, 4.2))
     ax.barh(trainers_sorted, improvements_sorted, color=colors, edgecolor="#374151")
     ax.axvline(0, color="#374151", linewidth=1)
-    ax.axvline(0.03, color="#16a34a", linestyle=":", linewidth=1,
-               label="Publication gate (+0.03)")
+    ax.axvline(
+        0.03,
+        color="#16a34a",
+        linestyle=":",
+        linewidth=1,
+        label="Publication gate (+0.03)",
+    )
     ax.set_xlabel("Improvement over baseline (Δ pass@1)")
     ax.set_title("Trainer improvement over un-tuned baseline")
     ax.legend(loc="lower right", fontsize=9)
@@ -227,7 +248,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     output_dir = args.output_dir or args.results_dir
     rows = load_csv(args.results_dir / "summary.csv")
     if not rows:

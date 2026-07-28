@@ -426,15 +426,13 @@ def serve(
     dry_run: bool = typer.Option(
         False, help="Print startup command without running the server."
     ),
-    checkpoint: str
-    | None = typer.Option(
+    checkpoint: str | None = typer.Option(
         None,
         "--checkpoint",
         "-c",
         help="Path to a trained checkpoint (LoRA adapter or full model).",
     ),
-    base_model: str
-    | None = typer.Option(
+    base_model: str | None = typer.Option(
         None,
         "--base-model",
         help="Base model name when --checkpoint is a LoRA adapter (defaults to the value baked into the adapter).",
@@ -495,27 +493,23 @@ def serve(
 
 @app.command()
 def evaluate(
-    checkpoint: str
-    | None = typer.Option(
+    checkpoint: str | None = typer.Option(
         None, "--checkpoint", help="Path to a saved checkpoint directory"
     ),
     message: str = typer.Option(
         "Hello", help="Single message to evaluate (ignored when --scenarios is set)"
     ),
-    scenarios: str
-    | None = typer.Option(
+    scenarios: str | None = typer.Option(
         None,
         "--scenarios",
         help='JSONL of scenarios for batch mode. Each line: {"user_query": ..., <reward-specific context>}.',
     ),
-    reward: str
-    | None = typer.Option(
+    reward: str | None = typer.Option(
         None,
         "--reward",
         help="Reward name for batch mode: gsm8k, customer_support, tool_calling.",
     ),
-    output: str
-    | None = typer.Option(
+    output: str | None = typer.Option(
         None,
         "--output",
         "-o",
@@ -1140,8 +1134,7 @@ def starter(
         "",
         help="Output directory for the scaffolded project (not needed for `list`).",
     ),
-    project_name: str
-    | None = typer.Option(
+    project_name: str | None = typer.Option(
         None,
         "--name",
         "-n",
@@ -1153,8 +1146,7 @@ def starter(
         "-f",
         help="Overwrite an existing non-empty directory.",
     ),
-    client_name: str
-    | None = typer.Option(
+    client_name: str | None = typer.Option(
         None,
         "--client-name",
         help="Client name (slugified) — patches output_dir paths and the W&B project name throughout the scaffold.",

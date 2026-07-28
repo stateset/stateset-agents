@@ -10,7 +10,6 @@ Covers:
 - Error handling
 """
 
-
 import pytest
 
 from stateset_agents.core.reward import (

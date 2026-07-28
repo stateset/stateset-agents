@@ -593,9 +593,9 @@ async def train_with_optimizations(
                         "epoch": epoch,
                         "model_state_dict": model.state_dict(),
                         "optimizer_state_dict": optimizer.state_dict(),
-                        "scheduler_state_dict": scheduler.state_dict()
-                        if scheduler
-                        else None,
+                        "scheduler_state_dict": (
+                            scheduler.state_dict() if scheduler else None
+                        ),
                         "best_reward": best_reward,
                     },
                     checkpoint_path,

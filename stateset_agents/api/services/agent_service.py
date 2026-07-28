@@ -45,7 +45,9 @@ class AgentService:
         for conversation in conversation_list:
             if conversation.get("id") == conversation_id:
                 if not self._user_can_access_conversation(conversation, user_id):
-                    raise HTTPException(status_code=404, detail="Conversation not found")
+                    raise HTTPException(
+                        status_code=404, detail="Conversation not found"
+                    )
                 return conversation
 
         conversation = {
@@ -188,9 +190,7 @@ class AgentService:
 
         ckpt = Path(checkpoint_path).expanduser().resolve()
         if not ckpt.exists():
-            raise FileNotFoundError(
-                f"Checkpoint path does not exist: {ckpt}"
-            )
+            raise FileNotFoundError(f"Checkpoint path does not exist: {ckpt}")
 
         # Use the base model name when supplied (LoRA case); fall back to the
         # checkpoint dir name (full-model case). When base_model is set, treat

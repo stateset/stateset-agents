@@ -41,7 +41,9 @@ except ImportError:  # pragma: no cover - optional dependency
     wandb = None
 
 try:
-    from peft import LoraConfig as _LoraConfig, TaskType as _TaskType, get_peft_model as _get_peft_model
+    from peft import LoraConfig as _LoraConfig
+    from peft import TaskType as _TaskType
+    from peft import get_peft_model as _get_peft_model
 
     LoraConfig: Any = _LoraConfig
     TaskType: Any = _TaskType
@@ -140,17 +142,17 @@ class VAPOModelManager:
 
         # Model loading kwargs
         model_kwargs = {
-            "torch_dtype": torch.float16
-            if self.config.fp16
-            else (torch.bfloat16 if self.config.bf16 else torch.float32),
+            "torch_dtype": (
+                torch.float16
+                if self.config.fp16
+                else (torch.bfloat16 if self.config.bf16 else torch.float32)
+            ),
             "device_map": "auto" if torch.cuda.is_available() else None,
             "trust_remote_code": True,
         }
 
         # Load base model
-        base_model = model_cls.from_pretrained(
-            self.config.model_name, **model_kwargs
-        )
+        base_model = model_cls.from_pretrained(self.config.model_name, **model_kwargs)
 
         # Add LoRA adapters if configured
         if self.config.use_lora:
@@ -348,7 +350,9 @@ class LengthAdaptiveGAE:
             )
             advantages_np[i, :end] = row_advantages
 
-        return torch.as_tensor(advantages_np, dtype=rewards.dtype, device=rewards.device)
+        return torch.as_tensor(
+            advantages_np, dtype=rewards.dtype, device=rewards.device
+        )
 
     def compute_decoupled_gae(
         self,
@@ -724,9 +728,9 @@ class VAPOTrainer:
 
         return {
             "warmup_value_loss": total_value_loss / self.config.value_warmup_steps,
-            "warmup_explained_variance": float(np.mean(explained_variances))
-            if explained_variances
-            else 0,
+            "warmup_explained_variance": (
+                float(np.mean(explained_variances)) if explained_variances else 0
+            ),
         }
 
     def compute_value_loss(
@@ -778,7 +782,9 @@ class VAPOTrainer:
             scalar_reward = torch.tensor(
                 scalar_reward, dtype=response_mask.dtype, device=response_mask.device
             )
-        scalar_reward = scalar_reward.to(dtype=response_mask.dtype, device=response_mask.device)
+        scalar_reward = scalar_reward.to(
+            dtype=response_mask.dtype, device=response_mask.device
+        )
         if scalar_reward.dim() == 0:
             scalar_reward = scalar_reward.expand(response_mask.shape[0])
 
@@ -786,10 +792,14 @@ class VAPOTrainer:
         rewards = torch.zeros_like(response_mask)
         mask_bool = response_mask > 0
 
-        idx = torch.arange(seq_len, device=response_mask.device).unsqueeze(0).expand(
-            batch_size, seq_len
+        idx = (
+            torch.arange(seq_len, device=response_mask.device)
+            .unsqueeze(0)
+            .expand(batch_size, seq_len)
         )
-        last_idx = torch.where(mask_bool, idx, torch.full_like(idx, -1)).max(dim=1).values
+        last_idx = (
+            torch.where(mask_bool, idx, torch.full_like(idx, -1)).max(dim=1).values
+        )
         valid = last_idx >= 0
         rows = torch.arange(batch_size, device=response_mask.device)[valid]
         rewards[rows, last_idx[valid]] = scalar_reward[valid]
@@ -1011,7 +1021,9 @@ class VAPOTrainer:
                 + self.config.positive_lm_weight * positive_lm_loss
             )
             accumulated_loss = (
-                total_loss if accumulated_loss is None else accumulated_loss + total_loss
+                total_loss
+                if accumulated_loss is None
+                else accumulated_loss + total_loss
             )
             prompt_count += 1
 
@@ -1058,14 +1070,14 @@ class VAPOTrainer:
         metrics = {
             "policy_loss": np.mean(all_policy_losses) if all_policy_losses else 0.0,
             "value_loss": np.mean(all_value_losses) if all_value_losses else 0.0,
-            "positive_lm_loss": np.mean(all_positive_lm_losses)
-            if all_positive_lm_losses
-            else 0.0,
+            "positive_lm_loss": (
+                np.mean(all_positive_lm_losses) if all_positive_lm_losses else 0.0
+            ),
             "average_reward": np.mean(all_rewards) if all_rewards else 0.0,
             "accuracy": np.mean(all_accuracies) if all_accuracies else 0.0,
-            "explained_variance": np.mean(all_explained_variances)
-            if all_explained_variances
-            else 0.0,
+            "explained_variance": (
+                np.mean(all_explained_variances) if all_explained_variances else 0.0
+            ),
             "actor_lr": self.actor_scheduler.get_last_lr()[0],
             "critic_lr": self.critic_scheduler.get_last_lr()[0],
             "global_step": self.global_step,
@@ -1140,7 +1152,6 @@ class VAPOTrainer:
 
 
 from .vapo_entrypoints import train_with_vapo
-
 
 # Export
 __all__ = [

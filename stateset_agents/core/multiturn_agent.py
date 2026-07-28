@@ -61,6 +61,7 @@ TOOL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     asyncio.TimeoutError,
 )
 
+
 class MultiTurnAgent(Agent):
     """
     Advanced multi-turn conversational agent with context management
@@ -187,9 +188,7 @@ class MultiTurnAgent(Agent):
 
     def register_response_backend(
         self,
-        backend: Callable[
-            [str | list[dict[str, Any]]], str | Awaitable[str]
-        ],
+        backend: Callable[[str | list[dict[str, Any]]], str | Awaitable[str]],
     ) -> None:
         """Register a custom response backend callable."""
         self.response_backend = backend
@@ -229,9 +228,11 @@ class MultiTurnAgent(Agent):
             from .agent import AgentConfig as HFConfig
             from .agent import MultiTurnAgent as HFMultiTurnAgent
 
-            model_name = self._hf_backend_config.get("model_name") or self.model_config.get(
-                "model_name"
-            ) or "gpt2"
+            model_name = (
+                self._hf_backend_config.get("model_name")
+                or self.model_config.get("model_name")
+                or "gpt2"
+            )
             cfg_kwargs = {
                 k: v for k, v in self._hf_backend_config.items() if k != "model_name"
             }
@@ -738,9 +739,7 @@ class MultiTurnAgent(Agent):
         """Get list of active conversation IDs"""
         return list(self.active_conversations.keys())
 
-    def get_conversation_summary(
-        self, conversation_id: str
-    ) -> dict[str, Any] | None:
+    def get_conversation_summary(self, conversation_id: str) -> dict[str, Any] | None:
         """Get summary of a conversation"""
         if conversation_id in self.active_conversations:
             context = self.active_conversations[conversation_id]

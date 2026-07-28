@@ -17,8 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..auth import RequestContext, get_request_context
-from ..dependencies import get_inference_service
 from ..config import get_config
+from ..dependencies import get_inference_service
 from ..messages_models import MessageInput, MessagesRequest
 from ..services.inference_service import InferenceService
 
@@ -173,9 +173,7 @@ def _delete_timed_state(
     metadata.pop(key, None)
 
 
-def _resolve_idempotency_job_id(
-    idempotency: dict[str, Any], key: str
-) -> str | None:
+def _resolve_idempotency_job_id(idempotency: dict[str, Any], key: str) -> str | None:
     mapped = idempotency.get(key)
     if isinstance(mapped, str):
         return mapped
@@ -379,14 +377,18 @@ async def start_training_v1(
             if existing:
                 existing_job = jobs.get(existing, {})
                 if existing_job.get("user_id") == user_id:
-                    _touch_timed_state(idempotency_access, requested_idempotency_key, now)
+                    _touch_timed_state(
+                        idempotency_access, requested_idempotency_key, now
+                    )
                 else:
                     existing = None
         if existing and existing in jobs and jobs[existing].get("user_id") == user_id:
             _touch_timed_state(job_access, existing, now)
             _touch_timed_state(idempotency_access, scoped_key, now)
             existing_status = jobs[existing].get("status", "starting")
-            return TrainingCreateResponseV1(job_id=existing, status=str(existing_status))
+            return TrainingCreateResponseV1(
+                job_id=existing, status=str(existing_status)
+            )
 
     job_id = str(uuid.uuid4())
     jobs[job_id] = {
@@ -774,9 +776,7 @@ async def end_conversation_v1(
     )
     if conversation_id not in conversations:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    if not _is_v1_conversation_owner(
-        conversations[conversation_id], ctx.user.user_id
-    ):
+    if not _is_v1_conversation_owner(conversations[conversation_id], ctx.user.user_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
     _delete_timed_state(conversations, conversation_access, conversation_id)
     return {"status": "ended", "conversation_id": conversation_id}

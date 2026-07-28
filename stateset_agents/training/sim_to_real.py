@@ -485,9 +485,7 @@ class SimToRealTransfer:
 
                 if turn.role == "assistant" and next_turn.role == "user":
                     next_text = (
-                        next_turn.content
-                        if isinstance(next_turn.content, str)
-                        else ""
+                        next_turn.content if isinstance(next_turn.content, str) else ""
                     )
                     training_data.append(
                         {
@@ -537,8 +535,10 @@ class SimToRealTransfer:
 
         # Fallback: deterministic hash-based encoding (preserves semantics
         # better than random vectors since similar text produces similar hashes)
-        logger.info("Using hash-based encoding for sim-to-real (install "
-                     "sentence-transformers for better quality)")
+        logger.info(
+            "Using hash-based encoding for sim-to-real (install "
+            "sentence-transformers for better quality)"
+        )
 
         def _hash_encode(text: str) -> np.ndarray:
             import hashlib

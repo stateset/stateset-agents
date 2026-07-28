@@ -652,8 +652,8 @@ class OfflineRLTrainer:
 
         if self.algorithm == "cql":
             cql_config = config if isinstance(config, CQLConfig) else None
-            self.learner: ConservativeQLearning | ImplicitQLearning = ConservativeQLearning(
-                state_dim, action_dim, cql_config, device
+            self.learner: ConservativeQLearning | ImplicitQLearning = (
+                ConservativeQLearning(state_dim, action_dim, cql_config, device)
             )
         elif self.algorithm == "iql":
             iql_config = config if isinstance(config, IQLConfig) else None

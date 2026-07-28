@@ -11,15 +11,11 @@ import asyncio
 import logging
 import time
 import weakref
+from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import (
-    Any,
-    Generic,
-    TypeVar,
-)
-from collections.abc import AsyncIterator, Awaitable
+from typing import Any, Generic, TypeVar
 
 from .error_handling import ErrorCode, ResourceException
 
@@ -601,9 +597,7 @@ class AsyncTaskManager:
             f"Task manager started with max {self.max_concurrent_tasks} concurrent tasks"
         )
 
-    async def submit_task(
-        self, coro: Awaitable[T], timeout: float | None = None
-    ) -> T:
+    async def submit_task(self, coro: Awaitable[T], timeout: float | None = None) -> T:
         """Submit a task for execution"""
         timeout = timeout or self.task_timeout
 

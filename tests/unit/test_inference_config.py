@@ -1,4 +1,7 @@
-from stateset_agents.api.services.inference_service import InferenceConfig, _parse_model_map
+from stateset_agents.api.services.inference_service import (
+    InferenceConfig,
+    _parse_model_map,
+)
 
 
 def test_parse_model_map_handles_json_and_fallback_pairs():
@@ -19,9 +22,7 @@ def test_parse_model_map_handles_json_and_fallback_pairs():
 
 
 def test_parse_model_map_rejects_non_string_values():
-    assert _parse_model_map('{"valid": "ok", "bad": 123}') == {
-        "valid": "ok"
-    }
+    assert _parse_model_map('{"valid": "ok", "bad": 123}') == {"valid": "ok"}
 
 
 def test_inference_config_from_env_normalizes_values(monkeypatch):

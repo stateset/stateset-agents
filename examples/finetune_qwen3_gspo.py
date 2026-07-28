@@ -262,9 +262,9 @@ def get_qwen3_config(
                 "down_proj",
             ],
             gradient_checkpointing=True,
-            use_4bit=use_4bit
-            if use_4bit
-            else use_8bit,  # Use quantization for large models
+            use_4bit=(
+                use_4bit if use_4bit else use_8bit
+            ),  # Use quantization for large models
             use_8bit=use_8bit if not use_4bit else False,
             use_vllm=use_vllm,
             max_prompt_length=2048,
@@ -399,7 +399,9 @@ async def finetune_qwen3(
         env_config = CONVERSATION_CONFIGS["customer_service"].copy()
 
     environment = ConversationEnvironment(**env_config)
-    logger.info(f"✅ Environment configured with {len(environment.scenarios)} scenarios")
+    logger.info(
+        f"✅ Environment configured with {len(environment.scenarios)} scenarios"
+    )
 
     # Create reward model
     logger.info("Initializing reward model...")

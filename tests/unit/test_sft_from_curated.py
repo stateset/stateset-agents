@@ -26,16 +26,23 @@ def _write_chat_jsonl(path: Path, rows: list[dict]) -> None:
 @pytest.fixture
 def chat_dataset(tmp_path: Path) -> Path:
     p = tmp_path / "sft_train.jsonl"
-    _write_chat_jsonl(p, [
-        {"messages": [
-            {"role": "user", "content": "What's a refund?"},
-            {"role": "assistant", "content": "A refund returns your money."},
-        ]},
-        {"messages": [
-            {"role": "user", "content": "How do I cancel?"},
-            {"role": "assistant", "content": "Visit Settings → Subscription."},
-        ]},
-    ])
+    _write_chat_jsonl(
+        p,
+        [
+            {
+                "messages": [
+                    {"role": "user", "content": "What's a refund?"},
+                    {"role": "assistant", "content": "A refund returns your money."},
+                ]
+            },
+            {
+                "messages": [
+                    {"role": "user", "content": "How do I cancel?"},
+                    {"role": "assistant", "content": "Visit Settings → Subscription."},
+                ]
+            },
+        ],
+    )
     return p
 
 
@@ -56,7 +63,7 @@ class TestLoadChatDataset:
         p = tmp_path / "mixed.jsonl"
         p.write_text(
             '{"messages": [{"role": "user", "content": "ok"}]}\n'
-            'not json\n'
+            "not json\n"
             '{"no_messages_key": true}\n'
             '{"messages": [{"role": "assistant", "content": "ok"}]}\n'
         )
@@ -94,12 +101,20 @@ class TestTrainingPlan:
 class TestEndToEndScript:
     def test_dry_run_succeeds(self, chat_dataset: Path, tmp_path: Path) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPT_DIR / "sft_from_curated.py"),
-             "--dataset", str(chat_dataset),
-             "--base-model", "stub://test",
-             "--output-dir", str(tmp_path / "out"),
-             "--dry-run"],
-            capture_output=True, text=True, check=False,
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "sft_from_curated.py"),
+                "--dataset",
+                str(chat_dataset),
+                "--base-model",
+                "stub://test",
+                "--output-dir",
+                str(tmp_path / "out"),
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 0
         assert "SFT Training Plan" in result.stdout
@@ -108,22 +123,36 @@ class TestEndToEndScript:
         empty = tmp_path / "empty.jsonl"
         empty.write_text("")
         result = subprocess.run(
-            [sys.executable, str(SCRIPT_DIR / "sft_from_curated.py"),
-             "--dataset", str(empty),
-             "--base-model", "stub://test",
-             "--dry-run"],
-            capture_output=True, text=True, check=False,
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "sft_from_curated.py"),
+                "--dataset",
+                str(empty),
+                "--base-model",
+                "stub://test",
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 1
         assert "No usable rows" in result.stderr
 
     def test_missing_dataset_path(self, tmp_path: Path) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPT_DIR / "sft_from_curated.py"),
-             "--dataset", "/tmp/does_not_exist.jsonl",
-             "--base-model", "stub://test",
-             "--dry-run"],
-            capture_output=True, text=True, check=False,
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "sft_from_curated.py"),
+                "--dataset",
+                "/tmp/does_not_exist.jsonl",
+                "--base-model",
+                "stub://test",
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode != 0
         assert "not found" in (result.stderr + result.stdout).lower()
@@ -143,24 +172,41 @@ class TestFullCurationLoop:
         # 2. prepare-sft → chat format
         sft_jsonl = tmp_path / "sft.jsonl"
         result = subprocess.run(
-            [sys.executable, str(SCRIPT_DIR / "prepare_sft_dataset.py"),
-             "--input", str(curated),
-             "--format", "chat",
-             "--output", str(sft_jsonl),
-             "--min-score", "0.7"],
-            capture_output=True, text=True, check=False,
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "prepare_sft_dataset.py"),
+                "--input",
+                str(curated),
+                "--format",
+                "chat",
+                "--output",
+                str(sft_jsonl),
+                "--min-score",
+                "0.7",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 0
         assert sft_jsonl.exists()
 
         # 3. sft-from-curated with --dry-run
         result = subprocess.run(
-            [sys.executable, str(SCRIPT_DIR / "sft_from_curated.py"),
-             "--dataset", str(sft_jsonl),
-             "--base-model", "stub://test",
-             "--output-dir", str(tmp_path / "out"),
-             "--dry-run"],
-            capture_output=True, text=True, check=False,
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "sft_from_curated.py"),
+                "--dataset",
+                str(sft_jsonl),
+                "--base-model",
+                "stub://test",
+                "--output-dir",
+                str(tmp_path / "out"),
+                "--dry-run",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 0
         assert "Dataset size:     2" in result.stdout

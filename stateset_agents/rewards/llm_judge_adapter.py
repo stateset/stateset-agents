@@ -21,11 +21,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from stateset_agents.core.reward_base import (
-    RewardFunction,
-    RewardResult,
-    RewardType,
-)
+from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
 from stateset_agents.core.trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -101,7 +97,9 @@ class LLMJudgeReward(RewardFunction):
         return RewardResult(
             score=float(score),
             components={"llm_judge": float(score)},
-            metadata={"judge_model": getattr(self.judge.config, "model_name", "unknown")},
+            metadata={
+                "judge_model": getattr(self.judge.config, "model_name", "unknown")
+            },
         )
 
 
@@ -283,16 +281,15 @@ def create_rlaif_reward(
     """
     try:
         from stateset_agents.rewards.llm_judge import (
+            EvaluationCriteria,
             JudgeConfig,
             LLMJudge,
-            EvaluationCriteria,
         )
 
         eval_criteria = None
         if criteria:
             eval_criteria = [
-                EvaluationCriteria(c) if isinstance(c, str) else c
-                for c in criteria
+                EvaluationCriteria(c) if isinstance(c, str) else c for c in criteria
             ]
 
         config = JudgeConfig(

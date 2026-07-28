@@ -164,11 +164,12 @@ class TestGSPOModelManager:
         mock_model.gradient_checkpointing_enable = MagicMock()
         mock_model_class.from_pretrained.return_value = mock_model
 
-        with patch(
-            "stateset_agents.training.gspo_trainer._require_bitsandbytes"
-        ), patch(
-            "stateset_agents.training.gspo_trainer.prepare_model_for_kbit_training"
-        ) as mock_kbit:
+        with (
+            patch("stateset_agents.training.gspo_trainer._require_bitsandbytes"),
+            patch(
+                "stateset_agents.training.gspo_trainer.prepare_model_for_kbit_training"
+            ) as mock_kbit,
+        ):
             mock_kbit.return_value = mock_model
             model, tokenizer = manager.load_model_and_tokenizer()
 

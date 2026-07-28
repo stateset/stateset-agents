@@ -21,8 +21,8 @@ from stateset_agents.training import (
 )
 from stateset_agents.training.gemma4_starter import (
     GEMMA4_31B_BASE_MODEL as DirectBaseModel,
-    Gemma4Config as DirectGemma4Config,
 )
+from stateset_agents.training.gemma4_starter import Gemma4Config as DirectGemma4Config
 
 
 def test_gemma4_training_exports_remain_available() -> None:

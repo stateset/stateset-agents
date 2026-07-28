@@ -22,7 +22,9 @@ def test_multi_turn_trainer_wandb_metadata_uses_current_framework_name() -> None
     trainer = MultiTurnGRPOTrainer.__new__(MultiTurnGRPOTrainer)
     trainer.agent = object()
     trainer.environment = object()
-    trainer.wandb_logger = type("Logger", (), {"init_run": lambda *args, **kwargs: None})()
+    trainer.wandb_logger = type(
+        "Logger", (), {"init_run": lambda *args, **kwargs: None}
+    )()
 
     # Reproduce the metadata dict assembled inside _init_wandb without running the full trainer.
     config_dict = {

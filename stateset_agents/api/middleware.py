@@ -10,10 +10,10 @@ import logging
 import time
 import uuid
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
-from collections.abc import Callable
 
 from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -332,7 +332,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
             try:
                 result = await self._redis_limiter.is_allowed(key, limit)
-            except Exception as exc:  # noqa: BLE001 - any redis/import failure triggers fallback
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 - any redis/import failure triggers fallback
                 self._redis_disabled_until = now + REDIS_RETRY_COOLDOWN_SECONDS
                 if not self._redis_currently_disabled:
                     logger.warning(
@@ -507,15 +509,15 @@ class APIMetrics:
             "rate_limit_hits": self.rate_limit_hits,
             "latency": {
                 "avg_ms": round(avg_latency, 2),
-                "p50_ms": round(sorted_latencies[p50_index], 2)
-                if sorted_latencies
-                else 0,
-                "p95_ms": round(sorted_latencies[p95_index], 2)
-                if sorted_latencies
-                else 0,
-                "p99_ms": round(sorted_latencies[p99_index], 2)
-                if sorted_latencies
-                else 0,
+                "p50_ms": (
+                    round(sorted_latencies[p50_index], 2) if sorted_latencies else 0
+                ),
+                "p95_ms": (
+                    round(sorted_latencies[p95_index], 2) if sorted_latencies else 0
+                ),
+                "p99_ms": (
+                    round(sorted_latencies[p99_index], 2) if sorted_latencies else 0
+                ),
             },
             "timestamp": datetime.utcnow().isoformat(),
         }

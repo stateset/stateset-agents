@@ -18,7 +18,9 @@ class StaticScoreComponent(components_module.BaseRewardComponent):
 
 def test_multi_objective_reward_reexports_component_classes():
     assert reward_module.BaseRewardComponent is components_module.BaseRewardComponent
-    assert reward_module.LengthRewardComponent is components_module.LengthRewardComponent
+    assert (
+        reward_module.LengthRewardComponent is components_module.LengthRewardComponent
+    )
     assert (
         reward_module.ReasoningRewardComponent
         is components_module.ReasoningRewardComponent

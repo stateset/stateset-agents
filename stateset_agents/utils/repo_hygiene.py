@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 TRACKED_GENERATED_PATH_PREFIXES = (
     "build/",
@@ -92,7 +92,7 @@ def extract_project_version(pyproject_path: str | Path) -> str:
 def extract_dunder_version(module_path: str | Path) -> str:
     """Return the assigned ``__version__`` string from a Python module."""
     match = re.search(
-        r'(?m)^__version__\s*=\s*[\"\']([^\"\']+)[\"\']\s*$',
+        r"(?m)^__version__\s*=\s*[\"\']([^\"\']+)[\"\']\s*$",
         Path(module_path).read_text(encoding="utf-8"),
     )
     if match is None:
@@ -117,13 +117,17 @@ def find_version_hygiene_issues(
 ) -> list[str]:
     """Return internal version mismatches for known public version surfaces."""
     root = Path(repo_root)
-    expected_version = package_version or extract_project_version(root / "pyproject.toml")
+    expected_version = package_version or extract_project_version(
+        root / "pyproject.toml"
+    )
 
     issues: list[str] = []
     for relative_path in VERSION_SURFACE_PATHS:
         path = root / relative_path
         if not path.exists():
-            issues.append(f"missing version surface: {normalize_repo_path(str(relative_path))}")
+            issues.append(
+                f"missing version surface: {normalize_repo_path(str(relative_path))}"
+            )
             continue
 
         actual_version = (

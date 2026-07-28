@@ -90,9 +90,13 @@ class DistributedTracer:
     ) -> TraceSpan:
         """Start a new trace span."""
         parent_span = (
-            self.active_spans.get(parent_span_id) if parent_span_id is not None else None
+            self.active_spans.get(parent_span_id)
+            if parent_span_id is not None
+            else None
         )
-        trace_id = parent_span.trace_id if parent_span is not None else str(uuid.uuid4())
+        trace_id = (
+            parent_span.trace_id if parent_span is not None else str(uuid.uuid4())
+        )
         span_id = str(uuid.uuid4())
 
         span = TraceSpan(

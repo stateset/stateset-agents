@@ -6,7 +6,6 @@ load environment configuration (which may require secrets) at import time.
 
 from __future__ import annotations
 
-
 from stateset_agents.utils.security import AuthService
 
 from ..config import get_config

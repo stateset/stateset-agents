@@ -10,7 +10,6 @@ Tests:
 - Sim-to-Real Transfer
 """
 
-
 import numpy as np
 import pytest
 

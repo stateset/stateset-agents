@@ -258,9 +258,9 @@ class VLLMGenerator:
             raise RuntimeError("vLLM not available")
 
         return SamplingParams(
-            temperature=temperature
-            if temperature is not None
-            else self.config.temperature,
+            temperature=(
+                temperature if temperature is not None else self.config.temperature
+            ),
             top_p=top_p if top_p is not None else self.config.top_p,
             top_k=top_k if top_k is not None else self.config.top_k,
             max_tokens=max_tokens if max_tokens is not None else self.config.max_tokens,

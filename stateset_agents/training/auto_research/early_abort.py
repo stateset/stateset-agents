@@ -53,7 +53,9 @@ class EarlyAbortCallback:
         self.should_abort = False
         self.abort_reason: str | None = None
 
-    def on_step_end(self, step: int | None = None, metrics: dict[str, Any] | None = None, **_: Any) -> None:
+    def on_step_end(
+        self, step: int | None = None, metrics: dict[str, Any] | None = None, **_: Any
+    ) -> None:
         """Called after each training step. Check for abort conditions."""
         if self.should_abort or metrics is None:
             return

@@ -9,10 +9,10 @@ import asyncio
 import logging
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
-from collections.abc import Callable
 
 from .errors import StateSetError
 

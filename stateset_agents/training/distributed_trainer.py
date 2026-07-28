@@ -393,7 +393,9 @@ class DistributedGRPOTrainer:
     def _reduce_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
         """Reduce metrics across all processes"""
         # Gather metrics from all processes
-        gathered_metrics: list[dict[str, Any] | None] = [None] * self.distributed_config.world_size
+        gathered_metrics: list[dict[str, Any] | None] = [
+            None
+        ] * self.distributed_config.world_size
         dist.all_gather_object(gathered_metrics, metrics)
         valid_metrics = [metric for metric in gathered_metrics if metric is not None]
 
@@ -429,9 +431,11 @@ class DistributedGRPOTrainer:
             wandb_metrics = {
                 "epoch": epoch,
                 "loss": metrics["loss"],
-                "average_reward": sum(metrics["rewards"]) / len(metrics["rewards"])
-                if metrics["rewards"]
-                else 0,
+                "average_reward": (
+                    sum(metrics["rewards"]) / len(metrics["rewards"])
+                    if metrics["rewards"]
+                    else 0
+                ),
                 "trajectories": metrics["trajectories"],
                 "step_time": metrics["step_time"],
                 "gpu_memory_gb": metrics["gpu_memory"],
@@ -462,7 +466,9 @@ class DistributedGRPOTrainer:
 
         # Save model state
         model_state = (
-            model.module.state_dict() if hasattr(model, "module") else model.state_dict()
+            model.module.state_dict()
+            if hasattr(model, "module")
+            else model.state_dict()
         )
 
         checkpoint = {

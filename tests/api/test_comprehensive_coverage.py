@@ -752,7 +752,11 @@ class TestSecurityMonitor:
 
     def test_injection_attempt_logging(self):
         """Test prompt injection attempt logging."""
-        from stateset_agents.api.security import APISecurityMonitor, SecurityEventType, ThreatLevel
+        from stateset_agents.api.security import (
+            APISecurityMonitor,
+            SecurityEventType,
+            ThreatLevel,
+        )
 
         monitor = APISecurityMonitor()
 

@@ -37,11 +37,11 @@ app = _cli.app
 
 @app.command()
 def train(
-    config: str
-    | None = typer.Option(None, help="Path to a training config file (YAML/JSON)."),
+    config: str | None = typer.Option(
+        None, help="Path to a training config file (YAML/JSON)."
+    ),
     episodes: int | None = typer.Option(None, help="Override number of episodes."),
-    save: str
-    | None = typer.Option(
+    save: str | None = typer.Option(
         None, help="Optional checkpoint directory to save the trained agent."
     ),
     dry_run: bool = typer.Option(
@@ -130,15 +130,17 @@ def train(
         max_new_tokens=agent_cfg.get("max_new_tokens", 64),
         temperature=agent_cfg.get("temperature", 0.7),
         use_stub_model=agent_cfg.get("use_stub_model", stub),
-        stub_responses=agent_cfg.get(
-            "stub_responses",
-            [
-                "Stub backend ready. Install training extras for full GRPO",
-                "Running in offline stub mode.",
-            ],
-        )
-        if stub
-        else None,
+        stub_responses=(
+            agent_cfg.get(
+                "stub_responses",
+                [
+                    "Stub backend ready. Install training extras for full GRPO",
+                    "Running in offline stub mode.",
+                ],
+            )
+            if stub
+            else None
+        ),
     )
     agent = MultiTurnAgent(ac)
 
@@ -222,8 +224,7 @@ def train(
 
 @app.command("qwen3-5-0-8b")
 def qwen3_5_0_8b(
-    config: str
-    | None = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -248,32 +249,27 @@ def qwen3_5_0_8b(
         "--model",
         help="Model name. For post-training, prefer Qwen/Qwen3.5-0.8B-Base.",
     ),
-    use_lora: bool
-    | None = typer.Option(
+    use_lora: bool | None = typer.Option(
         None,
         "--use-lora/--no-lora",
         help="Override LoRA usage. Defaults come from --starter-profile.",
     ),
-    use_4bit: bool
-    | None = typer.Option(
+    use_4bit: bool | None = typer.Option(
         None,
         "--use-4bit/--no-use-4bit",
         help="Override 4-bit quantization. Defaults come from --starter-profile.",
     ),
-    use_8bit: bool
-    | None = typer.Option(
+    use_8bit: bool | None = typer.Option(
         None,
         "--use-8bit/--no-use-8bit",
         help="Override 8-bit quantization. Defaults come from --starter-profile.",
     ),
-    output_dir: str
-    | None = typer.Option(
+    output_dir: str | None = typer.Option(
         None,
         "--output-dir",
         help="Override the output directory for checkpoints and adapters.",
     ),
-    iterations: int
-    | None = typer.Option(
+    iterations: int | None = typer.Option(
         None,
         "--iterations",
         help="Override the outer GSPO iteration count for the starter run.",
@@ -283,14 +279,12 @@ def qwen3_5_0_8b(
         "--wandb",
         help="Enable Weights & Biases logging.",
     ),
-    wandb_project: str
-    | None = typer.Option(
+    wandb_project: str | None = typer.Option(
         None,
         "--wandb-project",
         help="Optional W&B project name.",
     ),
-    write_config: str
-    | None = typer.Option(
+    write_config: str | None = typer.Option(
         None,
         "--write-config",
         help="Write the resolved Qwen starter config to JSON/YAML and exit.",
@@ -494,8 +488,7 @@ def qwen3_5_0_8b(
 
 @app.command("kimi-k2-6")
 def kimi_k2_6(
-    config: str
-    | None = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -520,32 +513,27 @@ def kimi_k2_6(
         "--model",
         help="Model name. For post-training, prefer moonshotai/Kimi-K2.6.",
     ),
-    use_lora: bool
-    | None = typer.Option(
+    use_lora: bool | None = typer.Option(
         None,
         "--use-lora/--no-lora",
         help="Override LoRA usage. Defaults come from --starter-profile.",
     ),
-    use_4bit: bool
-    | None = typer.Option(
+    use_4bit: bool | None = typer.Option(
         None,
         "--use-4bit/--no-use-4bit",
         help="Override 4-bit quantization. Defaults come from --starter-profile.",
     ),
-    use_8bit: bool
-    | None = typer.Option(
+    use_8bit: bool | None = typer.Option(
         None,
         "--use-8bit/--no-use-8bit",
         help="Override 8-bit quantization. Defaults come from --starter-profile.",
     ),
-    output_dir: str
-    | None = typer.Option(
+    output_dir: str | None = typer.Option(
         None,
         "--output-dir",
         help="Override the output directory for checkpoints and adapters.",
     ),
-    iterations: int
-    | None = typer.Option(
+    iterations: int | None = typer.Option(
         None,
         "--iterations",
         help="Override the outer GSPO iteration count for the starter run.",
@@ -555,14 +543,12 @@ def kimi_k2_6(
         "--wandb",
         help="Enable Weights & Biases logging.",
     ),
-    wandb_project: str
-    | None = typer.Option(
+    wandb_project: str | None = typer.Option(
         None,
         "--wandb-project",
         help="Optional W&B project name.",
     ),
-    write_config: str
-    | None = typer.Option(
+    write_config: str | None = typer.Option(
         None,
         "--write-config",
         help="Write the resolved Kimi starter config to JSON/YAML and exit.",
@@ -762,8 +748,7 @@ def kimi_k2_6(
 
 @app.command("kimi-k3")
 def kimi_k3(
-    config: str
-    | None = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -788,32 +773,27 @@ def kimi_k3(
         "--model",
         help="Model name. For post-training, prefer moonshotai/Kimi-K3.",
     ),
-    use_lora: bool
-    | None = typer.Option(
+    use_lora: bool | None = typer.Option(
         None,
         "--use-lora/--no-lora",
         help="Override LoRA usage. Defaults come from --starter-profile.",
     ),
-    use_4bit: bool
-    | None = typer.Option(
+    use_4bit: bool | None = typer.Option(
         None,
         "--use-4bit/--no-use-4bit",
         help="Override 4-bit quantization. Defaults come from --starter-profile.",
     ),
-    use_8bit: bool
-    | None = typer.Option(
+    use_8bit: bool | None = typer.Option(
         None,
         "--use-8bit/--no-use-8bit",
         help="Override 8-bit quantization. Defaults come from --starter-profile.",
     ),
-    output_dir: str
-    | None = typer.Option(
+    output_dir: str | None = typer.Option(
         None,
         "--output-dir",
         help="Override the output directory for checkpoints and adapters.",
     ),
-    iterations: int
-    | None = typer.Option(
+    iterations: int | None = typer.Option(
         None,
         "--iterations",
         help="Override the outer GSPO iteration count for the starter run.",
@@ -823,14 +803,12 @@ def kimi_k3(
         "--wandb",
         help="Enable Weights & Biases logging.",
     ),
-    wandb_project: str
-    | None = typer.Option(
+    wandb_project: str | None = typer.Option(
         None,
         "--wandb-project",
         help="Optional W&B project name.",
     ),
-    write_config: str
-    | None = typer.Option(
+    write_config: str | None = typer.Option(
         None,
         "--write-config",
         help="Write the resolved Kimi starter config to JSON/YAML and exit.",
@@ -1030,8 +1008,7 @@ def kimi_k3(
 
 @app.command("gemma-4-31b")
 def gemma4_31b(
-    config: str
-    | None = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -1056,32 +1033,27 @@ def gemma4_31b(
         "--model",
         help="Model name. For post-training, use google/gemma-4-31B-it.",
     ),
-    use_lora: bool
-    | None = typer.Option(
+    use_lora: bool | None = typer.Option(
         None,
         "--use-lora/--no-lora",
         help="Override LoRA usage. Defaults come from --starter-profile.",
     ),
-    use_4bit: bool
-    | None = typer.Option(
+    use_4bit: bool | None = typer.Option(
         None,
         "--use-4bit/--no-use-4bit",
         help="Override 4-bit quantization. Defaults come from --starter-profile.",
     ),
-    use_8bit: bool
-    | None = typer.Option(
+    use_8bit: bool | None = typer.Option(
         None,
         "--use-8bit/--no-use-8bit",
         help="Override 8-bit quantization. Defaults come from --starter-profile.",
     ),
-    output_dir: str
-    | None = typer.Option(
+    output_dir: str | None = typer.Option(
         None,
         "--output-dir",
         help="Override the output directory for checkpoints and adapters.",
     ),
-    iterations: int
-    | None = typer.Option(
+    iterations: int | None = typer.Option(
         None,
         "--iterations",
         help="Override the outer GSPO iteration count for the starter run.",
@@ -1091,14 +1063,12 @@ def gemma4_31b(
         "--wandb",
         help="Enable Weights & Biases logging.",
     ),
-    wandb_project: str
-    | None = typer.Option(
+    wandb_project: str | None = typer.Option(
         None,
         "--wandb-project",
         help="Optional W&B project name.",
     ),
-    write_config: str
-    | None = typer.Option(
+    write_config: str | None = typer.Option(
         None,
         "--write-config",
         help="Write the resolved Gemma starter config to JSON/YAML and exit.",

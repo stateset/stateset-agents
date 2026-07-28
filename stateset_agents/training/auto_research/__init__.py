@@ -57,10 +57,6 @@ Configuration from file:
     >>> config = AutoResearchConfig.from_file("config.yaml")
 """
 
-from .checkpoint_manager import CheckpointManager
-from .config import AutoResearchConfig
-from .experiment_loop import AutoResearchLoop, run_auto_research
-from .experiment_tracker import ExperimentRecord, ExperimentTracker
 from .analysis import (
     compare_runs,
     compute_convergence_curve,
@@ -68,7 +64,11 @@ from .analysis import (
     compute_parameter_importance,
     generate_report,
 )
+from .checkpoint_manager import CheckpointManager
+from .config import AutoResearchConfig
 from .early_abort import EarlyAbortCallback
+from .experiment_loop import AutoResearchLoop, run_auto_research
+from .experiment_tracker import ExperimentRecord, ExperimentTracker
 from .proposer import (
     AdaptivePerturbationProposer,
     BayesianProposer,

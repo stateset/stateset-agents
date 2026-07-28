@@ -1,4 +1,5 @@
 """Behavioral tests: importance ratios must come from rollout-time log probs."""
+
 import pytest
 import torch
 
@@ -83,13 +84,19 @@ async def test_num_gradient_updates_respected(dapo_trainer_factory, monkeypatch)
     trainer = dapo_trainer_factory(tiny_model(), num_gradient_updates=3)
     steps = []
     orig = trainer.optimizer.step
-    monkeypatch.setattr(trainer.optimizer, "step", lambda *a, **k: (steps.append(1), orig())[1])
+    monkeypatch.setattr(
+        trainer.optimizer, "step", lambda *a, **k: (steps.append(1), orig())[1]
+    )
 
     ids, am, rm = make_batch()
     sample = {
         "responses": [
-            {"input_ids": ids[i], "attention_mask": am[i],
-             "response_mask": rm[i], "sequence_length": int(am[i].sum())}
+            {
+                "input_ids": ids[i],
+                "attention_mask": am[i],
+                "response_mask": rm[i],
+                "sequence_length": int(am[i].sum()),
+            }
             for i in range(2)
         ],
         "advantages": torch.tensor([0.5, -0.5]),
@@ -99,6 +106,7 @@ async def test_num_gradient_updates_respected(dapo_trainer_factory, monkeypatch)
 
     async def fake_collect(prompts, n):
         return [sample], 0.0
+
     monkeypatch.setattr(trainer, "collect_samples_with_dynamic_sampling", fake_collect)
     await trainer.train_step(["q"])
     assert len(steps) == 3
@@ -114,8 +122,12 @@ async def test_old_log_probs_captured_at_collection(dapo_trainer_factory, monkey
         old, _ = trainer.compute_token_log_probs(ids, am, rm)
     sample = {
         "responses": [
-            {"input_ids": ids[i], "attention_mask": am[i],
-             "response_mask": rm[i], "sequence_length": int(am[i].sum())}
+            {
+                "input_ids": ids[i],
+                "attention_mask": am[i],
+                "response_mask": rm[i],
+                "sequence_length": int(am[i].sum()),
+            }
             for i in range(2)
         ],
         "advantages": torch.tensor([1.0, -1.0]),
@@ -125,18 +137,23 @@ async def test_old_log_probs_captured_at_collection(dapo_trainer_factory, monkey
     }
     seen_ratios = []
     orig_ratio = trainer.compute_importance_ratio
+
     def spy(cur, old_):
         r = orig_ratio(cur, old_)
         seen_ratios.append(r.detach().clone())
         return r
+
     monkeypatch.setattr(trainer, "compute_importance_ratio", spy)
 
     async def fake_collect(prompts, n):
         return [sample], 0.0
+
     monkeypatch.setattr(trainer, "collect_samples_with_dynamic_sampling", fake_collect)
     await trainer.train_step(["q"])
     assert len(seen_ratios) == 2
     # first inner update: on-policy, ratio ~ 1
     assert torch.allclose(seen_ratios[0], torch.ones_like(seen_ratios[0]), atol=1e-4)
     # second inner update: policy moved, ratio must not be identically 1
-    assert not torch.allclose(seen_ratios[1], torch.ones_like(seen_ratios[1]), atol=1e-5)
+    assert not torch.allclose(
+        seen_ratios[1], torch.ones_like(seen_ratios[1]), atol=1e-5
+    )

@@ -143,8 +143,7 @@ def doctor(
 
 @app.command()
 def preflight(
-    config: str
-    | None = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -231,8 +230,7 @@ def preflight(
 
 @app.command()
 def publish_check(
-    config: str
-    | None = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",

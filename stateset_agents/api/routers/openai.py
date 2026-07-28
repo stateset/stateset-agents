@@ -9,15 +9,19 @@ from __future__ import annotations
 
 import json
 import logging
-import httpx
 import time
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..config import get_config
-from ..dependencies import AuthenticatedUser, get_inference_service, require_auth_if_enabled
+from ..dependencies import (
+    AuthenticatedUser,
+    get_inference_service,
+    require_auth_if_enabled,
+)
 from ..messages_models import MessageInput, MessagesRequest
 from ..messages_utils import validate_tool_choice, validate_tools
 from ..openai_models import OpenAIChatCompletionRequest, OpenAIChatCompletionResponse

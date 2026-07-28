@@ -25,7 +25,11 @@ import asyncio
 
 from stateset_agents.core import ConversationEnvironment, MultiTurnAgent
 from stateset_agents.core.agent_config import AgentConfig
-from stateset_agents.data import SupportRewardComposite, load_support_scenarios, make_support_scenarios
+from stateset_agents.data import (
+    SupportRewardComposite,
+    load_support_scenarios,
+    make_support_scenarios,
+)
 
 
 async def main() -> None:
@@ -38,10 +42,12 @@ async def main() -> None:
         max_turns=3,
     )
 
-    agent = MultiTurnAgent(AgentConfig(
-        model_name="stub://multi-turn",
-        use_stub_model=True,
-    ))
+    agent = MultiTurnAgent(
+        AgentConfig(
+            model_name="stub://multi-turn",
+            use_stub_model=True,
+        )
+    )
     await agent.initialize()
 
     # Pick a specific scenario so the run is deterministic.
@@ -71,7 +77,9 @@ async def main() -> None:
         history.append({"role": "user", "content": "Can you elaborate?"})
 
     print(f"\nEpisode finished. Total reward: {total_reward:.2f}  Turns: {turn}")
-    print("Tip: swap `use_stub_model=True` for a real `model_name=` to see real responses.")
+    print(
+        "Tip: swap `use_stub_model=True` for a real `model_name=` to see real responses."
+    )
 
 
 if __name__ == "__main__":

@@ -75,7 +75,8 @@ class HelpfulnessReward(RewardFunction):
 
         # Information density — count real sentences (split on common delimiters)
         import re as _re
-        raw_sentences = _re.split(r'[.!?]+', content)
+
+        raw_sentences = _re.split(r"[.!?]+", content)
         sentences = [s.strip() for s in raw_sentences if len(s.strip().split()) >= 3]
         if len(sentences) >= 3:
             score += 0.25
@@ -124,8 +125,29 @@ class HelpfulnessReward(RewardFunction):
             score += 0.2
 
         # Acknowledge + solve pattern — the gold standard for helpful responses
-        acknowledge_words = ["understand", "appreciate", "thank", "sorry", "concern", "happy", "glad", "found", "see"]
-        solve_words = ["here", "try", "check", "help", "option", "step", "resolve", "approach", "found", "details"]
+        acknowledge_words = [
+            "understand",
+            "appreciate",
+            "thank",
+            "sorry",
+            "concern",
+            "happy",
+            "glad",
+            "found",
+            "see",
+        ]
+        solve_words = [
+            "here",
+            "try",
+            "check",
+            "help",
+            "option",
+            "step",
+            "resolve",
+            "approach",
+            "found",
+            "details",
+        ]
         has_acknowledge = any(w in content_lower for w in acknowledge_words)
         has_solve = any(w in content_lower for w in solve_words)
         if has_acknowledge and has_solve:
@@ -210,9 +232,7 @@ class CorrectnessReward(RewardFunction):
     Rewards factually correct responses
     """
 
-    def __init__(
-        self, weight: float = 1.0, ground_truth: dict[str, Any] | None = None
-    ):
+    def __init__(self, weight: float = 1.0, ground_truth: dict[str, Any] | None = None):
         super().__init__(weight, RewardType.IMMEDIATE, "CorrectnessReward")
         self.ground_truth = ground_truth or {}
 

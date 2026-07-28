@@ -7,10 +7,10 @@ Production-grade monitoring with live metrics, alerts, and visualization.
 import asyncio
 import logging
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
-from collections.abc import Callable
 
 try:
     from prometheus_client import Counter, Gauge, Histogram

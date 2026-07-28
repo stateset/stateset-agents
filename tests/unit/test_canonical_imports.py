@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCAN_ROOTS = ("stateset_agents", "examples", "scripts")
 DEPRECATED_SHIMS = {"api", "core", "training", "rewards", "environments"}

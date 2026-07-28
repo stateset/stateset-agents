@@ -29,6 +29,8 @@ from .callbacks import (
     notify_training_end,
     notify_training_start,
 )
+from .continual_learning import ContinualLearningManager
+from .loss_computation import compute_enhanced_grpo_loss, compute_grpo_loss
 from .single_turn_checkpointing import (
     load_checkpoint_artifacts,
     resolve_checkpoint_path,
@@ -43,8 +45,6 @@ from .single_turn_state import (
     merge_scenario_into_state,
     resolve_task_id,
 )
-from .continual_learning import ContinualLearningManager
-from .loss_computation import compute_enhanced_grpo_loss, compute_grpo_loss
 from .trainer_utils import (
     get_amp,
     get_cosine_schedule_with_warmup,
@@ -532,9 +532,9 @@ class SingleTurnGRPOTrainer:
                     loss_dict = {
                         "policy_loss": None,
                         "total_loss": None,
-                        "mean_advantage": float(np.mean(group.rewards))
-                        if group.rewards
-                        else 0.0,
+                        "mean_advantage": (
+                            float(np.mean(group.rewards)) if group.rewards else 0.0
+                        ),
                     }
 
                 policy_loss = loss_dict.get("total_loss")

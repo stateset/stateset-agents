@@ -6,8 +6,14 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, WebSocket
-from fastapi import WebSocketDisconnect
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+)
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 

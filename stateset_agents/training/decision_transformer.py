@@ -459,9 +459,9 @@ class DecisionTransformerTrainer:
     def __init__(
         self,
         config: DecisionTransformerConfig,
-        device: str = "cuda"
-        if torch is not None and torch.cuda.is_available()
-        else "cpu",
+        device: str = (
+            "cuda" if torch is not None and torch.cuda.is_available() else "cpu"
+        ),
     ):
         _require_torch()
 
@@ -606,9 +606,11 @@ class DecisionTransformerTrainer:
         metrics = {
             "loss": loss.item(),
             "action_loss": action_loss.item(),
-            "state_loss": state_loss.item()
-            if isinstance(state_loss, torch.Tensor)
-            else state_loss,
+            "state_loss": (
+                state_loss.item()
+                if isinstance(state_loss, torch.Tensor)
+                else state_loss
+            ),
             "lr": self.scheduler.get_last_lr()[0],
             "training_step": self.training_step,
         }
@@ -783,7 +785,9 @@ class DecisionTransformerTrainer:
 
             # Fill in past context
             if past_actions:
-                for i, (act, ret) in enumerate(zip(past_actions, past_returns or [], strict=False)):
+                for i, (act, ret) in enumerate(
+                    zip(past_actions, past_returns or [], strict=False)
+                ):
                     actions[0, i] = act
                     if past_returns:
                         returns_to_go[0, i, 0] = ret

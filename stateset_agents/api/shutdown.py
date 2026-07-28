@@ -8,12 +8,12 @@ import asyncio
 import logging
 import signal
 import sys
+from collections.abc import Callable, Coroutine
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from collections.abc import Callable, Coroutine
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 

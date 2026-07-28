@@ -66,7 +66,9 @@ class MultimodalConversationEnvironment:
         enable_video: bool = True,
     ):
         if not scenarios:
-            raise ValueError("MultimodalConversationEnvironment requires at least one scenario")
+            raise ValueError(
+                "MultimodalConversationEnvironment requires at least one scenario"
+            )
         self.scenarios = scenarios
         self.max_turns = max_turns
         self.enable_vision = enable_vision

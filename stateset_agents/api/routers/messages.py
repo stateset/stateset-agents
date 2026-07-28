@@ -6,15 +6,19 @@ from __future__ import annotations
 
 import json
 import logging
-import httpx
 import time
 from typing import Any, Union
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..config import get_config
-from ..dependencies import AuthenticatedUser, get_inference_service, require_auth_if_enabled
+from ..dependencies import (
+    AuthenticatedUser,
+    get_inference_service,
+    require_auth_if_enabled,
+)
 from ..messages_models import MessageInput, MessagesRequest, MessagesResponse
 from ..messages_utils import validate_tool_choice, validate_tools
 from ..openai_models import OpenAIChatCompletionResponse
@@ -44,7 +48,9 @@ def _estimate_message_content_length(content: Any) -> int:
     return len(str(content))
 
 
-def _validate_message_limits(messages: list[MessageInput], max_messages: int, max_len: int) -> None:
+def _validate_message_limits(
+    messages: list[MessageInput], max_messages: int, max_len: int
+) -> None:
     if len(messages) > max_messages:
         raise HTTPException(
             status_code=422,

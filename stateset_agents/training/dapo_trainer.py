@@ -171,9 +171,11 @@ class DAPOModelManager:
 
         # Model loading kwargs
         model_kwargs = {
-            "torch_dtype": torch.float16
-            if self.config.fp16
-            else (torch.bfloat16 if self.config.bf16 else torch.float32),
+            "torch_dtype": (
+                torch.float16
+                if self.config.fp16
+                else (torch.bfloat16 if self.config.bf16 else torch.float32)
+            ),
             "device_map": "auto" if torch.cuda.is_available() else None,
             "trust_remote_code": True,
         }
@@ -431,7 +433,9 @@ class DAPOTrainer:
         vllm_config_cls = VLLMConfig
         vllm_generator_cls = VLLMGenerator
         if vllm_config_cls is None or vllm_generator_cls is None:
-            logger.warning("vLLM backend exports unavailable, using HuggingFace fallback")
+            logger.warning(
+                "vLLM backend exports unavailable, using HuggingFace fallback"
+            )
             return
 
         vllm_config = vllm_config_cls(
@@ -904,9 +908,7 @@ class DAPOTrainer:
                 # Gradient clipping
                 _params = list(self.model.parameters())
                 if _params:
-                    torch.nn.utils.clip_grad_norm_(
-                        _params, self.config.max_grad_norm
-                    )
+                    torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
 
                 # Update
                 self.optimizer.step()
@@ -923,9 +925,9 @@ class DAPOTrainer:
             "average_reward": float(np.mean(all_rewards)) if all_rewards else 0.0,
             "accuracy": float(np.mean(all_accuracies)) if all_accuracies else 0.0,
             "filtered_ratio": filter_ratio,
-            "avg_sequence_length": float(np.mean(all_seq_lengths))
-            if all_seq_lengths
-            else 0.0,
+            "avg_sequence_length": (
+                float(np.mean(all_seq_lengths)) if all_seq_lengths else 0.0
+            ),
             "learning_rate": float(self.config.learning_rate),
             "global_step": float(self.global_step),
         }
@@ -959,8 +961,8 @@ class DAPOTrainer:
 
         logger.info(f"Checkpoint saved to {output_dir}")
 
-from .dapo_entrypoints import train_reasoning_with_dapo, train_with_dapo
 
+from .dapo_entrypoints import train_reasoning_with_dapo, train_with_dapo
 
 # Export
 __all__ = [

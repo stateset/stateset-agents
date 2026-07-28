@@ -89,6 +89,7 @@ WandBSweepsBackend: Any | None = None
 try:
     from .optuna_backend import OPTUNA_AVAILABLE as __optuna_available__
     from .optuna_backend import OptunaBackend as _OptunaBackend
+
     OptunaBackend = _OptunaBackend
 except ImportError:
     __optuna_available__ = False
@@ -96,6 +97,7 @@ except ImportError:
 try:
     from .ray_tune_backend import RAY_AVAILABLE as __ray_tune_available__
     from .ray_tune_backend import RayTuneBackend as _RayTuneBackend
+
     RayTuneBackend = _RayTuneBackend
 except ImportError:  # pragma: no cover
     __ray_tune_available__ = False
@@ -104,6 +106,7 @@ except ImportError:  # pragma: no cover
 try:
     from .wandb_backend import WANDB_AVAILABLE as __wandb_available__
     from .wandb_backend import WandBSweepsBackend as _WandBSweepsBackend
+
     WandBSweepsBackend = _WandBSweepsBackend
 except ImportError:  # pragma: no cover
     __wandb_available__ = False

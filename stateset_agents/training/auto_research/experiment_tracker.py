@@ -177,7 +177,11 @@ class ExperimentTracker:
                     continue
 
                 commit, avg_reward, memory_gb, status, description = (
-                    row[0], row[1], row[2], row[3], row[4],
+                    row[0],
+                    row[1],
+                    row[2],
+                    row[3],
+                    row[4],
                 )
 
                 try:
@@ -194,7 +198,9 @@ class ExperimentTracker:
                     },
                     objective_value=objective,
                     training_time=0.0,
-                    status=status if status in ("keep", "discard", "crash") else "unknown",
+                    status=(
+                        status if status in ("keep", "discard", "crash") else "unknown"
+                    ),
                     description=description,
                 )
                 tracker.load_record(record)
@@ -325,13 +331,15 @@ class ExperimentTracker:
     def _append_tsv(self, record: ExperimentRecord) -> None:
         with open(self._tsv_path, "a", newline="") as f:
             writer = csv.writer(f, delimiter="\t")
-            writer.writerow([
-                record.experiment_id,
-                f"{record.objective_value:.6f}",
-                f"{record.training_time:.1f}",
-                record.status,
-                record.description,
-            ])
+            writer.writerow(
+                [
+                    record.experiment_id,
+                    f"{record.objective_value:.6f}",
+                    f"{record.training_time:.1f}",
+                    record.status,
+                    record.description,
+                ]
+            )
             f.flush()
 
     # ------------------------------------------------------------------
@@ -373,7 +381,10 @@ class ExperimentTracker:
                         marker = " *"
                 elif r.status == "keep" and (
                     (self.direction == "maximize" and r.objective_value > running_best)
-                    or (self.direction == "minimize" and r.objective_value < running_best)
+                    or (
+                        self.direction == "minimize"
+                        and r.objective_value < running_best
+                    )
                 ):
                     running_best = r.objective_value
                     marker = " *"
@@ -410,7 +421,9 @@ class ExperimentTracker:
         # Improvement rate
         if self.num_experiments > 1:
             rate = self.num_kept / self.num_experiments * 100
-            print(f"\nImprovement rate: {rate:.0f}% ({self.num_kept}/{self.num_experiments})")
+            print(
+                f"\nImprovement rate: {rate:.0f}% ({self.num_kept}/{self.num_experiments})"
+            )
 
         print(f"\nResults saved to:   {self._tsv_path}")
         print("=" * 60 + "\n")
@@ -469,9 +482,7 @@ class ExperimentTracker:
             analysis["parameter_importance"] = compute_parameter_importance(
                 self.records
             )
-            dr = compute_diminishing_returns(
-                self.records, self.direction
-            )
+            dr = compute_diminishing_returns(self.records, self.direction)
             if dr is not None:
                 analysis["diminishing_returns_ratio"] = dr
         except Exception:

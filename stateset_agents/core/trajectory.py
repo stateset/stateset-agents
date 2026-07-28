@@ -357,9 +357,7 @@ class TrajectoryGroup:
     """
 
     scenario_id: str = ""
-    trajectories: list[Trajectory | MultiTurnTrajectory] = field(
-        default_factory=list
-    )
+    trajectories: list[Trajectory | MultiTurnTrajectory] = field(default_factory=list)
     scenario_metadata: dict[str, Any] = field(default_factory=dict)
     group_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
@@ -371,9 +369,7 @@ class TrajectoryGroup:
             for traj in self.trajectories
         ]
 
-    def add_trajectory(
-        self, trajectory: Trajectory | MultiTurnTrajectory
-    ) -> None:
+    def add_trajectory(self, trajectory: Trajectory | MultiTurnTrajectory) -> None:
         """Append a trajectory to the group (compatibility helper)."""
         self.trajectories.append(trajectory)
 

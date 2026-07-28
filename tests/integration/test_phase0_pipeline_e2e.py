@@ -83,8 +83,12 @@ class TestEndToEndHappyPath:
         # ----- Step 1: scaffold a project -----
         project = tmp_path / "client_acme"
         scaffold_cmd = [
-            sys.executable, "-m", "stateset_agents.cli",
-            "starter", "customer-support", str(project),
+            sys.executable,
+            "-m",
+            "stateset_agents.cli",
+            "starter",
+            "customer-support",
+            str(project),
         ]
         result = _run(scaffold_cmd)
         assert result.returncode == 0, f"scaffold failed: {result.stderr}"
@@ -99,13 +103,19 @@ class TestEndToEndHappyPath:
         # ----- Step 2: benchmark smoke test -----
         smoke_out = tmp_path / "smoke.json"
         smoke_cmd = [
-            sys.executable, "scripts/run_phase0_benchmark.py",
-            "--trainer", "gspo",
-            "--task", "customer_support",
-            "--num-train-examples", "5",
-            "--num-eval-examples", "3",
+            sys.executable,
+            "scripts/run_phase0_benchmark.py",
+            "--trainer",
+            "gspo",
+            "--task",
+            "customer_support",
+            "--num-train-examples",
+            "5",
+            "--num-eval-examples",
+            "3",
             "--smoke-test",
-            "--output", str(smoke_out),
+            "--output",
+            str(smoke_out),
         ]
         result = _run(smoke_cmd)
         assert result.returncode == 0, f"smoke failed: {result.stderr}"
@@ -123,8 +133,10 @@ class TestEndToEndHappyPath:
 
         # ----- Step 4: aggregate -----
         aggregate_cmd = [
-            sys.executable, "scripts/aggregate_phase0_results.py",
-            "--results-dir", str(results_dir),
+            sys.executable,
+            "scripts/aggregate_phase0_results.py",
+            "--results-dir",
+            str(results_dir),
         ]
         result = _run(aggregate_cmd)
         assert result.returncode == 0, f"aggregate failed: {result.stderr}"
@@ -140,7 +152,9 @@ class TestEndToEndHappyPath:
         # Gates should pass (3 seeds each, +0.10 improvement, σ = 0).
         gates = json.loads((results_dir / "passes_gates.json").read_text())
         for key, info in gates.items():
-            assert info["passed"], f"{key} unexpectedly failed gates: {info['failures']}"
+            assert info[
+                "passed"
+            ], f"{key} unexpectedly failed gates: {info['failures']}"
 
         # CSV should have 9 data rows (header + 9).
         csv_lines = (results_dir / "summary.csv").read_text().splitlines()
@@ -148,8 +162,10 @@ class TestEndToEndHappyPath:
 
         # ----- Step 5: plot (text fallback — matplotlib may or may not be present) -----
         plot_cmd = [
-            sys.executable, "scripts/plot_phase0_results.py",
-            "--results-dir", str(results_dir),
+            sys.executable,
+            "scripts/plot_phase0_results.py",
+            "--results-dir",
+            str(results_dir),
             "--no-matplotlib",
         ]
         result = _run(plot_cmd)
@@ -158,15 +174,19 @@ class TestEndToEndHappyPath:
         text_plots = (results_dir / "text_plots.md").read_text()
         assert "GSPO" in text_plots and "GRPO" in text_plots and "DAPO" in text_plots
 
-    def test_aggregate_strict_fails_on_underspecified_group(self, tmp_path: Path) -> None:
+    def test_aggregate_strict_fails_on_underspecified_group(
+        self, tmp_path: Path
+    ) -> None:
         # A single seed should fail the 3-seed gate.
         results_dir = tmp_path / "underspec"
         results_dir.mkdir(parents=True)
         _write_synthetic_run(results_dir, "gspo", seed=42)
 
         cmd = [
-            sys.executable, "scripts/aggregate_phase0_results.py",
-            "--results-dir", str(results_dir),
+            sys.executable,
+            "scripts/aggregate_phase0_results.py",
+            "--results-dir",
+            str(results_dir),
             "--strict",
         ]
         result = _run(cmd)
@@ -184,16 +204,22 @@ class TestSmokePathForAllAdaptersAndTrainers:
         n_train = 5 if task != "customer_support" else 4
         n_eval = 3 if task != "customer_support" else 2
         cmd = [
-            sys.executable, "scripts/run_phase0_benchmark.py",
-            "--trainer", trainer,
-            "--task", task,
-            "--num-train-examples", str(n_train),
-            "--num-eval-examples", str(n_eval),
+            sys.executable,
+            "scripts/run_phase0_benchmark.py",
+            "--trainer",
+            trainer,
+            "--task",
+            task,
+            "--num-train-examples",
+            str(n_train),
+            "--num-eval-examples",
+            str(n_eval),
             "--smoke-test",
-            "--output", str(out),
+            "--output",
+            str(out),
         ]
         result = _run(cmd)
-        assert result.returncode == 0, (
-            f"smoke failed for trainer={trainer} task={task}: {result.stderr}"
-        )
+        assert (
+            result.returncode == 0
+        ), f"smoke failed for trainer={trainer} task={task}: {result.stderr}"
         assert f"task={task}" in (result.stdout + result.stderr)

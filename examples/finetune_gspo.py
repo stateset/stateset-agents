@@ -80,7 +80,9 @@ def _load_starter_functions(preset: ModelPreset, preset_name: str) -> dict[str, 
     if preset.starter_module is None:
         raise ValueError(f"Preset {preset_name!r} has no starter_module")
 
-    module = importlib.import_module(f"stateset_agents.training.{preset.starter_module}")
+    module = importlib.import_module(
+        f"stateset_agents.training.{preset.starter_module}"
+    )
     get_suffix = STARTER_FN_SUFFIX[preset.starter_module]
     run_suffix = STARTER_RUN_FN_OVERRIDE.get(preset_name, get_suffix)
     return {
@@ -141,7 +143,9 @@ def build_gspo_config(
     kwargs: dict[str, Any] = {
         "model_name": preset.model_id,
         "run_name": f"{preset.model_id}-{task}",
-        "learning_rate": learning_rate if learning_rate is not None else preset.learning_rate,
+        "learning_rate": (
+            learning_rate if learning_rate is not None else preset.learning_rate
+        ),
         "num_generations": preset.num_generations,
         "max_prompt_length": preset.max_prompt_length,
         "max_completion_length": preset.max_completion_length,
@@ -159,7 +163,9 @@ def build_gspo_config(
         kwargs["max_steps"] = steps
     if use_wandb:
         kwargs["report_to"] = "wandb"
-        kwargs["wandb_project"] = wandb_project or f"{preset.model_id.split('/')[-1]}-gspo-{task}"
+        kwargs["wandb_project"] = (
+            wandb_project or f"{preset.model_id.split('/')[-1]}-gspo-{task}"
+        )
         kwargs["wandb_tags"] = ["gspo", task, preset.model_id.split("/")[-1]]
     else:
         kwargs["report_to"] = "none"
@@ -168,12 +174,13 @@ def build_gspo_config(
 
 def build_reward_fn() -> Any:
     """Build the common composite reward used by the finetune scripts."""
-    from stateset_agents.core.reward import CompositeReward
-    from stateset_agents.core.reward import HelpfulnessReward, SafetyReward
-
-    return CompositeReward(
-        [HelpfulnessReward(weight=0.7), SafetyReward(weight=0.3)]
+    from stateset_agents.core.reward import (
+        CompositeReward,
+        HelpfulnessReward,
+        SafetyReward,
     )
+
+    return CompositeReward([HelpfulnessReward(weight=0.7), SafetyReward(weight=0.3)])
 
 
 def build_environment() -> Any:
@@ -194,7 +201,9 @@ def build_environment() -> Any:
     return ConversationEnvironment(scenarios=scenarios, max_turns=2)
 
 
-def preview_payload(preset_name: str, preset: ModelPreset, gspo_config: Any) -> dict[str, Any]:
+def preview_payload(
+    preset_name: str, preset: ModelPreset, gspo_config: Any
+) -> dict[str, Any]:
     return {
         "preset": preset_name,
         "model_id": preset.model_id,
@@ -241,7 +250,11 @@ async def _run_starter_backed(args: argparse.Namespace, preset: ModelPreset) -> 
             output_dir=args.output_dir,
             use_wandb=args.wandb,
             wandb_project=args.wandb_project,
-            **({"learning_rate": args.learning_rate} if args.learning_rate is not None else {}),
+            **(
+                {"learning_rate": args.learning_rate}
+                if args.learning_rate is not None
+                else {}
+            ),
             **overrides,
         )
 

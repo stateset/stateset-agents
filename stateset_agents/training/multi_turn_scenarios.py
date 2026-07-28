@@ -70,7 +70,9 @@ def split_scenarios(
     return scenarios[:-eval_count], scenarios[-eval_count:]
 
 
-def apply_task_schedule(config: Any | None, scenario: dict[str, Any], index: int) -> None:
+def apply_task_schedule(
+    config: Any | None, scenario: dict[str, Any], index: int
+) -> None:
     if config is None:
         return
 

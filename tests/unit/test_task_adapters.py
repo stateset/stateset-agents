@@ -24,14 +24,14 @@ import run_phase0_benchmark as runner  # noqa: E402
 
 class TestGSM8KAdapter:
     @pytest.fixture
-    def adapter(self) -> "runner.GSM8KAdapter":
+    def adapter(self) -> runner.GSM8KAdapter:
         return runner.GSM8KAdapter()
 
-    def test_name_and_token_cap(self, adapter: "runner.GSM8KAdapter") -> None:
+    def test_name_and_token_cap(self, adapter: runner.GSM8KAdapter) -> None:
         assert adapter.name == "gsm8k"
         assert adapter.max_new_tokens > 0
 
-    def test_format_prompt(self, adapter: "runner.GSM8KAdapter") -> None:
+    def test_format_prompt(self, adapter: runner.GSM8KAdapter) -> None:
         from stateset_agents.data.gsm8k import GSM8KExample
 
         ex = GSM8KExample(
@@ -44,15 +44,17 @@ class TestGSM8KAdapter:
         assert "step by step" in prompt.lower()
         assert "Answer:" in prompt
 
-    def test_score_correct(self, adapter: "runner.GSM8KAdapter") -> None:
+    def test_score_correct(self, adapter: runner.GSM8KAdapter) -> None:
         from stateset_agents.data.gsm8k import GSM8KExample
 
         ex = GSM8KExample(question="Q?", answer_text="A. #### 42", gold_answer=42.0)
-        score, parseable = adapter.score_response(ex, "Working it out... the answer is 42.")
+        score, parseable = adapter.score_response(
+            ex, "Working it out... the answer is 42."
+        )
         assert score == 1.0
         assert parseable is True
 
-    def test_score_incorrect(self, adapter: "runner.GSM8KAdapter") -> None:
+    def test_score_incorrect(self, adapter: runner.GSM8KAdapter) -> None:
         from stateset_agents.data.gsm8k import GSM8KExample
 
         ex = GSM8KExample(question="Q?", answer_text="A. #### 42", gold_answer=42.0)
@@ -60,7 +62,7 @@ class TestGSM8KAdapter:
         assert score == 0.0
         assert parseable is True
 
-    def test_score_unparseable(self, adapter: "runner.GSM8KAdapter") -> None:
+    def test_score_unparseable(self, adapter: runner.GSM8KAdapter) -> None:
         from stateset_agents.data.gsm8k import GSM8KExample
 
         ex = GSM8KExample(question="Q?", answer_text="A. #### 42", gold_answer=42.0)
@@ -71,14 +73,14 @@ class TestGSM8KAdapter:
 
 class TestCustomerSupportAdapter:
     @pytest.fixture
-    def adapter(self) -> "runner.CustomerSupportAdapter":
+    def adapter(self) -> runner.CustomerSupportAdapter:
         return runner.CustomerSupportAdapter()
 
-    def test_name_and_token_cap(self, adapter: "runner.CustomerSupportAdapter") -> None:
+    def test_name_and_token_cap(self, adapter: runner.CustomerSupportAdapter) -> None:
         assert adapter.name == "customer_support"
         assert adapter.max_new_tokens > 0
 
-    def test_load_respects_split(self, adapter: "runner.CustomerSupportAdapter") -> None:
+    def test_load_respects_split(self, adapter: runner.CustomerSupportAdapter) -> None:
         train, eval_ = adapter.load(n_train=16, n_eval=8)
         assert len(train) == 16
         assert len(eval_) == 8
@@ -87,12 +89,12 @@ class TestCustomerSupportAdapter:
         eval_queries = {s.user_query for s in eval_}
         assert not (train_queries & eval_queries)
 
-    def test_load_caps_to_corpus(self, adapter: "runner.CustomerSupportAdapter") -> None:
+    def test_load_caps_to_corpus(self, adapter: runner.CustomerSupportAdapter) -> None:
         # Bundled corpus is 24; asking for 100 train + 100 eval should clamp.
         train, eval_ = adapter.load(n_train=100, n_eval=100)
         assert len(train) + len(eval_) <= 24
 
-    def test_format_prompt(self, adapter: "runner.CustomerSupportAdapter") -> None:
+    def test_format_prompt(self, adapter: runner.CustomerSupportAdapter) -> None:
         from stateset_agents.data.customer_support_bench import SupportScenario
 
         s = SupportScenario(
@@ -106,7 +108,7 @@ class TestCustomerSupportAdapter:
         assert "Agent:" in prompt
 
     def test_score_returns_composite_value(
-        self, adapter: "runner.CustomerSupportAdapter"
+        self, adapter: runner.CustomerSupportAdapter
     ) -> None:
         from stateset_agents.data.customer_support_bench import SupportScenario
 
@@ -125,7 +127,7 @@ class TestCustomerSupportAdapter:
         assert parseable is True
 
     def test_score_safety_failure_zeros(
-        self, adapter: "runner.CustomerSupportAdapter"
+        self, adapter: runner.CustomerSupportAdapter
     ) -> None:
         from stateset_agents.data.customer_support_bench import SupportScenario
 
@@ -143,14 +145,14 @@ class TestCustomerSupportAdapter:
 
 class TestToolCallingAdapter:
     @pytest.fixture
-    def adapter(self) -> "runner.ToolCallingAdapter":
+    def adapter(self) -> runner.ToolCallingAdapter:
         return runner.ToolCallingAdapter()
 
-    def test_name_and_token_cap(self, adapter: "runner.ToolCallingAdapter") -> None:
+    def test_name_and_token_cap(self, adapter: runner.ToolCallingAdapter) -> None:
         assert adapter.name == "tool_calling"
         assert adapter.max_new_tokens > 0
 
-    def test_load_splits_correctly(self, adapter: "runner.ToolCallingAdapter") -> None:
+    def test_load_splits_correctly(self, adapter: runner.ToolCallingAdapter) -> None:
         train, eval_ = adapter.load(n_train=5, n_eval=3)
         assert len(train) == 5
         assert len(eval_) == 3
@@ -158,8 +160,9 @@ class TestToolCallingAdapter:
         eval_queries = {s.user_query for s in eval_}
         assert not (train_queries & eval_queries)
 
-    def test_format_prompt(self, adapter: "runner.ToolCallingAdapter") -> None:
+    def test_format_prompt(self, adapter: runner.ToolCallingAdapter) -> None:
         from stateset_agents.data.tool_calling_bench import ToolCallScenario
+
         s = ToolCallScenario(
             user_query="What's the weather in NYC?",
             expected_tool="get_weather",
@@ -170,8 +173,9 @@ class TestToolCallingAdapter:
         assert "```json" in prompt
         assert "tool" in prompt.lower()
 
-    def test_score_correct_tool_call(self, adapter: "runner.ToolCallingAdapter") -> None:
+    def test_score_correct_tool_call(self, adapter: runner.ToolCallingAdapter) -> None:
         from stateset_agents.data.tool_calling_bench import ToolCallScenario
+
         s = ToolCallScenario(
             user_query="Compute 5 + 3",
             expected_tool="calculator",
@@ -203,7 +207,9 @@ class TestTaskRegistry:
             runner.build_trainer_config("not-a-trainer")
 
     def test_trainer_config_includes_overrides(self) -> None:
-        cfg = runner.build_trainer_config("gspo", model_name="some-model", learning_rate=1e-7)
+        cfg = runner.build_trainer_config(
+            "gspo", model_name="some-model", learning_rate=1e-7
+        )
         assert cfg["model_name"] == "some-model"
         assert cfg["learning_rate"] == 1e-7
         # GSPO-specific defaults still present.
@@ -220,8 +226,11 @@ class TestBuildEnvReward:
 
     def test_gsm8k(self) -> None:
         from stateset_agents.data.gsm8k import GSM8KExample
+
         adapter = runner.GSM8KAdapter()
-        examples = [GSM8KExample(question="Q?", answer_text="A. #### 1", gold_answer=1.0)]
+        examples = [
+            GSM8KExample(question="Q?", answer_text="A. #### 1", gold_answer=1.0)
+        ]
         env, reward, scenarios = runner._build_env_reward(adapter, examples)
         assert env is not None
         assert reward.name == "gsm8k"
@@ -230,6 +239,7 @@ class TestBuildEnvReward:
     def test_customer_support(self) -> None:
         adapter = runner.CustomerSupportAdapter()
         from stateset_agents.data.customer_support_bench import load_support_scenarios
+
         examples = load_support_scenarios(limit=2)
         env, reward, scenarios = runner._build_env_reward(adapter, examples)
         assert reward.name == "support_composite"
@@ -238,6 +248,7 @@ class TestBuildEnvReward:
     def test_tool_calling(self) -> None:
         adapter = runner.ToolCallingAdapter()
         from stateset_agents.data.tool_calling_bench import load_tool_call_scenarios
+
         examples = load_tool_call_scenarios(limit=3)
         env, reward, scenarios = runner._build_env_reward(adapter, examples)
         assert reward.name == "tool_call_composite"
@@ -246,6 +257,7 @@ class TestBuildEnvReward:
     def test_unknown_task_raises(self) -> None:
         class BogusAdapter(runner.TaskAdapter):
             name = "bogus"
+
         with pytest.raises(ValueError, match="Unknown task"):
             runner._build_env_reward(BogusAdapter(), [])
 
@@ -295,11 +307,15 @@ class TestEndToEndRunner:
 
         result = subprocess.run(
             [
-                sys.executable, str(SCRIPT_DIR / "run_phase0_benchmark.py"),
-                "--trainer", "gspo",
-                "--task", "gsm8k",
+                sys.executable,
+                str(SCRIPT_DIR / "run_phase0_benchmark.py"),
+                "--trainer",
+                "gspo",
+                "--task",
+                "gsm8k",
                 "--smoke-test",
-                "--output", str(tmp_path / "smoke.json"),
+                "--output",
+                str(tmp_path / "smoke.json"),
             ],
             capture_output=True,
             text=True,
@@ -314,13 +330,19 @@ class TestEndToEndRunner:
 
         result = subprocess.run(
             [
-                sys.executable, str(SCRIPT_DIR / "run_phase0_benchmark.py"),
-                "--trainer", "dapo",
-                "--task", "customer_support",
-                "--num-train-examples", "16",
-                "--num-eval-examples", "8",
+                sys.executable,
+                str(SCRIPT_DIR / "run_phase0_benchmark.py"),
+                "--trainer",
+                "dapo",
+                "--task",
+                "customer_support",
+                "--num-train-examples",
+                "16",
+                "--num-eval-examples",
+                "8",
                 "--smoke-test",
-                "--output", str(tmp_path / "smoke.json"),
+                "--output",
+                str(tmp_path / "smoke.json"),
             ],
             capture_output=True,
             text=True,

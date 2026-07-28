@@ -133,6 +133,7 @@ class AlgoResult:
 # Training + eval for a single algorithm
 # ---------------------------------------------------------------------------
 
+
 async def run_algorithm_eval(algo_name: str) -> AlgoResult:
     """Run a mini training + eval loop for one algorithm."""
     start = time.monotonic()
@@ -145,10 +146,7 @@ async def run_algorithm_eval(algo_name: str) -> AlgoResult:
             SafetyReward,
         )
         from stateset_agents.training.config import TrainingConfig
-        from stateset_agents.training.evaluation import (
-            EvaluationConfig,
-            evaluate_agent,
-        )
+        from stateset_agents.training.evaluation import EvaluationConfig, evaluate_agent
 
         # --- Agent ---
         agent_config = AgentConfig(
@@ -251,12 +249,16 @@ async def run_algorithm_eval(algo_name: str) -> AlgoResult:
             await agent.initialize()
 
             def _dapo_reward(prompt: str, response: str) -> float:
-                return reward_fn.compute_reward_sync(
-                    [
-                        {"role": "user", "content": prompt},
-                        {"role": "assistant", "content": response},
-                    ]
-                ) if hasattr(reward_fn, "compute_reward_sync") else 0.5
+                return (
+                    reward_fn.compute_reward_sync(
+                        [
+                            {"role": "user", "content": prompt},
+                            {"role": "assistant", "content": response},
+                        ]
+                    )
+                    if hasattr(reward_fn, "compute_reward_sync")
+                    else 0.5
+                )
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 dapo_config = DAPOConfig(
@@ -290,12 +292,16 @@ async def run_algorithm_eval(algo_name: str) -> AlgoResult:
             await agent.initialize()
 
             def _vapo_reward(prompt: str, response: str) -> float:
-                return reward_fn.compute_reward_sync(
-                    [
-                        {"role": "user", "content": prompt},
-                        {"role": "assistant", "content": response},
-                    ]
-                ) if hasattr(reward_fn, "compute_reward_sync") else 0.5
+                return (
+                    reward_fn.compute_reward_sync(
+                        [
+                            {"role": "user", "content": prompt},
+                            {"role": "assistant", "content": response},
+                        ]
+                    )
+                    if hasattr(reward_fn, "compute_reward_sync")
+                    else 0.5
+                )
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 vapo_config = VAPOConfig(
@@ -369,6 +375,7 @@ async def run_algorithm_eval(algo_name: str) -> AlgoResult:
 # good vs bad responses
 # ---------------------------------------------------------------------------
 
+
 async def probe_reward_discrimination() -> float:
     """Measure how well reward functions separate good from bad responses.
 
@@ -425,6 +432,7 @@ async def probe_reward_discrimination() -> float:
 # Loss computation quality probe
 # ---------------------------------------------------------------------------
 
+
 def probe_loss_features() -> float:
     """Check that key loss computation features are wired up.
 
@@ -451,6 +459,7 @@ def probe_loss_features() -> float:
 
         # 3. entropy_coef is read from config
         import inspect
+
         src = inspect.getsource(compute_grpo_loss)
 
         checks += 1
@@ -458,9 +467,8 @@ def probe_loss_features() -> float:
             score += 1.0
 
         # 4. Token-level normalization option exists (in group policy loss)
-        from stateset_agents.training.loss_computation import (
-            _compute_group_policy_loss,
-        )
+        from stateset_agents.training.loss_computation import _compute_group_policy_loss
+
         group_src = inspect.getsource(_compute_group_policy_loss)
 
         checks += 1
@@ -479,6 +487,7 @@ def probe_loss_features() -> float:
 
         # 7. Reward calibration uses online Welford bootstrap
         from stateset_agents.training.reward_calibration import RewardNormalizer
+
         cal_src = inspect.getsource(RewardNormalizer.add_reward)
         checks += 1
         if "welford" in cal_src.lower():
@@ -494,6 +503,7 @@ def probe_loss_features() -> float:
 # RLAIF integration probe
 # ---------------------------------------------------------------------------
 
+
 def probe_rlaif_integration() -> float:
     """Check that LLM Judge is properly wired into the training pipeline.
 
@@ -505,20 +515,23 @@ def probe_rlaif_integration() -> float:
     try:
         # 1. LLMJudgeReward adapter exists and is a RewardFunction
         checks += 1
-        from stateset_agents.rewards.llm_judge_adapter import LLMJudgeReward
         from stateset_agents.core.reward_base import RewardFunction
+        from stateset_agents.rewards.llm_judge_adapter import LLMJudgeReward
+
         if issubclass(LLMJudgeReward, RewardFunction):
             score += 1.0
 
         # 2. LLMJudgeRewardComponent exists for MultiObjective
         checks += 1
         from stateset_agents.rewards.llm_judge_adapter import LLMJudgeRewardComponent
+
         if hasattr(LLMJudgeRewardComponent, "compute_score"):
             score += 1.0
 
         # 3. Fallback reward works without API key
         checks += 1
         from stateset_agents.rewards.llm_judge_adapter import create_rlaif_reward
+
         fallback = create_rlaif_reward(api_key="")  # No key
         if fallback is not None and not fallback._judge_available:
             score += 1.0
@@ -535,6 +548,7 @@ def probe_rlaif_integration() -> float:
         # 5. Exported from rewards package
         checks += 1
         from stateset_agents.rewards import create_rlaif_reward as _factory
+
         if callable(_factory):
             score += 1.0
 
@@ -547,6 +561,7 @@ def probe_rlaif_integration() -> float:
 # ---------------------------------------------------------------------------
 # Offline RL + uncertainty integration probe
 # ---------------------------------------------------------------------------
+
 
 def probe_offline_and_uncertainty() -> float:
     """Check that offline RL and uncertainty weighting are wired into train().
@@ -561,32 +576,37 @@ def probe_offline_and_uncertainty() -> float:
 
         # 1. TrainingMode has OFFLINE and HYBRID
         from stateset_agents.training.train import TrainingMode
+
         checks += 1
         if hasattr(TrainingMode, "OFFLINE") and hasattr(TrainingMode, "HYBRID"):
             score += 1.0
 
         # 2. train() accepts dataset and uncertainty_weighted params
         from stateset_agents.training.train import train
+
         sig = inspect.signature(train)
         checks += 1
         if "dataset" in sig.parameters and "uncertainty_weighted" in sig.parameters:
             score += 1.0
 
         # 3. UncertaintyWeightedReward exists and is a RewardFunction
-        from stateset_agents.training.train import UncertaintyWeightedReward
         from stateset_agents.core.reward_base import RewardFunction
+        from stateset_agents.training.train import UncertaintyWeightedReward
+
         checks += 1
         if issubclass(UncertaintyWeightedReward, RewardFunction):
             score += 1.0
 
         # 4. _train_offline function exists
         from stateset_agents.training.train import _train_offline
+
         checks += 1
         if callable(_train_offline):
             score += 1.0
 
         # 5. _train_hybrid function exists
         from stateset_agents.training.train import _train_hybrid
+
         checks += 1
         if callable(_train_hybrid):
             score += 1.0
@@ -601,6 +621,7 @@ def probe_offline_and_uncertainty() -> float:
 # Numerical correctness probe
 # ---------------------------------------------------------------------------
 
+
 def probe_numerical_correctness() -> float:
     """Check critical numerical correctness fixes.
 
@@ -610,11 +631,13 @@ def probe_numerical_correctness() -> float:
     checks = 0
 
     try:
+        import inspect
+
         import torch
 
         # 1. KL divergence direction: should compute KL(current || ref)
         from stateset_agents.training.base_trainer import BaseTrainer
-        import inspect
+
         kl_src = inspect.getsource(BaseTrainer.compute_kl_divergence)
 
         checks += 1
@@ -624,6 +647,7 @@ def probe_numerical_correctness() -> float:
 
         # 2. Reward mean uses sum/count (not incremental mean)
         from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
+
         mean_src = inspect.getsource(MultiTurnGRPOTrainer._update_global_stats)
 
         checks += 1
@@ -632,6 +656,7 @@ def probe_numerical_correctness() -> float:
 
         # 3. AdaptiveKLController clamps proportional error
         from stateset_agents.training.kl_controllers import AdaptiveKLController
+
         kl_ctrl_src = inspect.getsource(AdaptiveKLController.update)
 
         checks += 1
@@ -644,6 +669,7 @@ def probe_numerical_correctness() -> float:
         logits_b = torch.randn(1, 5, 10)
         # Use a fresh instance to test
         from stateset_agents.training.base_trainer import F as _F
+
         if _F is not None:
             log_a = _F.log_softmax(logits_a, dim=-1)
             log_b = _F.log_softmax(logits_b, dim=-1)
@@ -664,6 +690,7 @@ def probe_numerical_correctness() -> float:
 # ---------------------------------------------------------------------------
 # Main evaluation
 # ---------------------------------------------------------------------------
+
 
 async def main() -> float:
     """Run the full evaluation and return the composite score."""

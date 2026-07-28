@@ -211,9 +211,7 @@ def compute_parameter_importance(
     if len(successful) < 6:
         return {}
 
-    sorted_records = sorted(
-        successful, key=lambda r: r.objective_value, reverse=True
-    )
+    sorted_records = sorted(successful, key=lambda r: r.objective_value, reverse=True)
 
     n_top = max(2, int(len(sorted_records) * top_fraction))
     top = sorted_records[:n_top]
@@ -233,8 +231,16 @@ def compute_parameter_importance(
 
     # Numeric importance: normalized mean divergence
     for param in numeric_params:
-        top_vals = [r.params[param] for r in top if param in r.params and isinstance(r.params[param], (int, float))]
-        bottom_vals = [r.params[param] for r in bottom if param in r.params and isinstance(r.params[param], (int, float))]
+        top_vals = [
+            r.params[param]
+            for r in top
+            if param in r.params and isinstance(r.params[param], (int, float))
+        ]
+        bottom_vals = [
+            r.params[param]
+            for r in bottom
+            if param in r.params and isinstance(r.params[param], (int, float))
+        ]
 
         if not top_vals or not bottom_vals:
             continue
@@ -242,7 +248,11 @@ def compute_parameter_importance(
         top_mean = sum(top_vals) / len(top_vals)
         bottom_mean = sum(bottom_vals) / len(bottom_vals)
 
-        all_vals = [r.params[param] for r in successful if param in r.params and isinstance(r.params[param], (int, float))]
+        all_vals = [
+            r.params[param]
+            for r in successful
+            if param in r.params and isinstance(r.params[param], (int, float))
+        ]
         val_range = max(all_vals) - min(all_vals)
 
         if val_range == 0:
@@ -272,8 +282,7 @@ def compute_parameter_importance(
 
         # Total variation distance: 0.5 * sum(|p - q|)
         tvd = 0.5 * sum(
-            abs(top_freq.get(c, 0) - bottom_freq.get(c, 0))
-            for c in all_categories
+            abs(top_freq.get(c, 0) - bottom_freq.get(c, 0)) for c in all_categories
         )
         importance[param] = tvd
 
@@ -284,7 +293,6 @@ def compute_parameter_importance(
             importance = {k: v / max_imp for k, v in importance.items()}
 
     return dict(sorted(importance.items(), key=lambda x: -x[1]))
-
 
 
 def compute_convergence_curve(
@@ -373,8 +381,12 @@ def generate_report(
         best = min(successful, key=lambda r: r.objective_value)
         worst = max(successful, key=lambda r: r.objective_value)
 
-    lines.append(f"Best:  {best.experiment_id} ({best.objective_value:.6f}) — {best.description}")
-    lines.append(f"Worst: {worst.experiment_id} ({worst.objective_value:.6f}) — {worst.description}")
+    lines.append(
+        f"Best:  {best.experiment_id} ({best.objective_value:.6f}) — {best.description}"
+    )
+    lines.append(
+        f"Worst: {worst.experiment_id} ({worst.objective_value:.6f}) — {worst.description}"
+    )
 
     # Parameter importance
     importance = compute_parameter_importance(successful)
@@ -406,7 +418,9 @@ def generate_report(
         dr = compute_diminishing_returns(successful, direction)
         if dr is not None:
             if dr < 0.1:
-                lines.append(f"  Trend:  Diminishing returns (ratio={dr:.2f}) — consider stopping")
+                lines.append(
+                    f"  Trend:  Diminishing returns (ratio={dr:.2f}) — consider stopping"
+                )
             elif dr < 0.5:
                 lines.append(f"  Trend:  Slowing improvement (ratio={dr:.2f})")
             else:
@@ -420,13 +434,17 @@ def generate_report(
             for row in chart:
                 lines.append(f"  │{row}│")
             lines.append("  " + "─" * 52)
-            lines.append(f"  {'experiment 1':>1s}{' ' * 36}{'experiment ' + str(len(curve)):>14s}")
+            lines.append(
+                f"  {'experiment 1':>1s}{' ' * 36}{'experiment ' + str(len(curve)):>14s}"
+            )
 
     # Timing
     times = [r.training_time for r in records if r.training_time > 0]
     if times:
         lines.append("")
-        lines.append(f"Total wall time: {sum(times)/60:.1f} min ({len(records)} experiments)")
+        lines.append(
+            f"Total wall time: {sum(times)/60:.1f} min ({len(records)} experiments)"
+        )
         lines.append(f"Avg per experiment: {sum(times)/len(times):.1f}s")
 
     # Improvement rate
@@ -434,9 +452,13 @@ def generate_report(
     crashed = sum(1 for r in records if r.status == "crash")
     if len(records) > 1:
         lines.append("")
-        lines.append(f"Improvement rate: {kept}/{len(records)} ({kept/len(records)*100:.0f}%)")
+        lines.append(
+            f"Improvement rate: {kept}/{len(records)} ({kept/len(records)*100:.0f}%)"
+        )
         if crashed:
-            lines.append(f"Crash rate: {crashed}/{len(records)} ({crashed/len(records)*100:.0f}%)")
+            lines.append(
+                f"Crash rate: {crashed}/{len(records)} ({crashed/len(records)*100:.0f}%)"
+            )
 
     lines.append("")
     lines.append("=" * 60)

@@ -94,10 +94,11 @@ class TestMultiTurnGRPOTrainer:
     @pytest.mark.asyncio
     async def test_trainer_initialize(self, trainer, mock_agent):
         """Test trainer initialization."""
-        with patch(
-            "stateset_agents.training.multi_turn_trainer.require_torch"
-        ) as mock_torch, patch(
-            "stateset_agents.training.multi_turn_trainer.require_transformers"
+        with (
+            patch(
+                "stateset_agents.training.multi_turn_trainer.require_torch"
+            ) as mock_torch,
+            patch("stateset_agents.training.multi_turn_trainer.require_transformers"),
         ):
             mock_torch.return_value = MagicMock()
 
@@ -161,11 +162,14 @@ class TestMultiTurnGRPOTrainer:
             config=config,
         )
 
-        with patch(
-            "stateset_agents.training.multi_turn_trainer.require_torch"
-        ) as mock_torch, patch(
-            "stateset_agents.training.multi_turn_trainer.notify_checkpoint_saved",
-            new=AsyncMock(),
+        with (
+            patch(
+                "stateset_agents.training.multi_turn_trainer.require_torch"
+            ) as mock_torch,
+            patch(
+                "stateset_agents.training.multi_turn_trainer.notify_checkpoint_saved",
+                new=AsyncMock(),
+            ),
         ):
             torch_module = MagicMock()
             mock_torch.return_value = torch_module
@@ -194,15 +198,20 @@ class TestMultiTurnGRPOTrainer:
         trainer.generate_trajectories = AsyncMock(return_value=[MagicMock()])
         trainer._maybe_mix_replay = MagicMock(return_value=([MagicMock()], []))
         trainer.training_step = AsyncMock(side_effect=RuntimeError("boom"))
-        trainer.save_checkpoint = AsyncMock(side_effect=AssertionError("checkpoint should be skipped"))
+        trainer.save_checkpoint = AsyncMock(
+            side_effect=AssertionError("checkpoint should be skipped")
+        )
         trainer.wandb_logger = MagicMock()
 
-        with patch(
-            "stateset_agents.training.multi_turn_trainer.notify_training_start",
-            new=AsyncMock(),
-        ), patch(
-            "stateset_agents.training.multi_turn_trainer.notify_training_end",
-            new=AsyncMock(),
+        with (
+            patch(
+                "stateset_agents.training.multi_turn_trainer.notify_training_start",
+                new=AsyncMock(),
+            ),
+            patch(
+                "stateset_agents.training.multi_turn_trainer.notify_training_end",
+                new=AsyncMock(),
+            ),
         ):
             with pytest.raises(RuntimeError, match="boom"):
                 await trainer.train()

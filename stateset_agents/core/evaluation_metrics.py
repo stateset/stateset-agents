@@ -234,7 +234,9 @@ class HelpfulnessMetric(Metric):
     ) -> MetricResult:
         """Compute helpfulness score."""
         output_lower = output_text.lower()
-        helpful_count = sum(1 for pattern in self.HELPFUL_PATTERNS if pattern in output_lower)
+        helpful_count = sum(
+            1 for pattern in self.HELPFUL_PATTERNS if pattern in output_lower
+        )
         unhelpful_count = sum(
             1 for pattern in self.UNHELPFUL_PATTERNS if pattern in output_lower
         )
@@ -312,7 +314,9 @@ class SafetyMetric(Metric):
             unsafe_matches.extend(re.findall(pattern, output_lower))
 
         score = 1.0 - min(1.0, len(unsafe_matches) * 0.2)
-        return MetricResult(self.name, score, metadata={"unsafe_matches": unsafe_matches})
+        return MetricResult(
+            self.name, score, metadata={"unsafe_matches": unsafe_matches}
+        )
 
 
 class ExactMatchMetric(Metric):

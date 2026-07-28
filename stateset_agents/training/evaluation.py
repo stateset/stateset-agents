@@ -11,9 +11,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
-from collections.abc import Sequence
 
 import numpy as np
 

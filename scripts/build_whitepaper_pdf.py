@@ -27,7 +27,6 @@ Output: docs/WHITEPAPER.preview.pdf
 from __future__ import annotations
 
 import base64
-import json as _json
 import re
 import sys
 import urllib.error
@@ -244,7 +243,9 @@ def _mermaid_to_svg(diagram: str, *, timeout: float = 15.0) -> str | None:
     pure HTTP. We cache results on disk to keep PDF builds reproducible
     even if mermaid.ink is unreachable.
     """
-    encoded = base64.urlsafe_b64encode(diagram.encode("utf-8")).decode("ascii").rstrip("=")
+    encoded = (
+        base64.urlsafe_b64encode(diagram.encode("utf-8")).decode("ascii").rstrip("=")
+    )
     cache_dir = Path("/tmp") / "mermaid_svg_cache"
     cache_dir.mkdir(exist_ok=True)
     cache_path = cache_dir / f"{encoded[:32]}.svg"
@@ -253,7 +254,9 @@ def _mermaid_to_svg(diagram: str, *, timeout: float = 15.0) -> str | None:
     url = f"https://mermaid.ink/svg/{encoded}"
     req = urllib.request.Request(
         url,
-        headers={"User-Agent": "stateset-agents-whitepaper-build/0.13.4 (+https://github.com/stateset/stateset-agents)"},
+        headers={
+            "User-Agent": "stateset-agents-whitepaper-build/0.13.4 (+https://github.com/stateset/stateset-agents)"
+        },
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -273,17 +276,14 @@ def preprocess_markdown(src: str) -> str:
     Mermaid blocks are rendered via mermaid.ink to inline SVG when reachable;
     falls back to a fenced code block + note if the service is unavailable.
     """
+
     def mermaid_replace(m: re.Match[str]) -> str:
         body = m.group(1)
         svg = _mermaid_to_svg(body)
         if svg is not None:
             # Strip the XML declaration if present so it slots cleanly into HTML.
             svg = re.sub(r"<\?xml[^?]*\?>", "", svg).strip()
-            return (
-                "<div class='mermaid-rendered'>\n"
-                + svg
-                + "\n</div>\n"
-            )
+            return "<div class='mermaid-rendered'>\n" + svg + "\n</div>\n"
         return (
             "<div class='mermaid-note'>"
             "[Mermaid diagram — render failed; see docs/WHITEPAPER.md on GitHub for the SVG.]"
@@ -325,12 +325,12 @@ def main() -> int:
 
     md = markdown.Markdown(
         extensions=[
-            "extra",         # tables, fenced code, footnotes, etc.
-            "toc",           # table of contents anchors
+            "extra",  # tables, fenced code, footnotes, etc.
+            "toc",  # table of contents anchors
             "sane_lists",
             "admonition",
             "codehilite",
-            "nl2br",         # not used but harmless
+            "nl2br",  # not used but harmless
         ],
         extension_configs={
             "codehilite": {"guess_lang": False, "use_pygments": True},

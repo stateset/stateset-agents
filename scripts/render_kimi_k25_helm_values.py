@@ -19,9 +19,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
-from collections.abc import Sequence
 
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 
@@ -105,9 +105,9 @@ def build_values_from_manifest(
         "api": {
             "env": {
                 "INFERENCE_DEFAULT_MODEL": model_id,
-                "INFERENCE_STREAM_INCLUDE_USAGE": "true"
-                if include_stream_usage
-                else "false",
+                "INFERENCE_STREAM_INCLUDE_USAGE": (
+                    "true" if include_stream_usage else "false"
+                ),
             }
         },
         "vllm": {

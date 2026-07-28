@@ -14,8 +14,8 @@ import gc
 import statistics
 import sys
 import time
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import pytest
 

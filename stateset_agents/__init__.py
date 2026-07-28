@@ -33,10 +33,7 @@ def _export_group(
     *,
     install_hint: str | None = None,
 ) -> dict[str, tuple[str, str, str | None]]:
-    return {
-        name: (module_name, name, install_hint)
-        for name in names
-    }
+    return {name: (module_name, name, install_hint) for name in names}
 
 
 _LAZY_EXPORTS: dict[str, tuple[str, str, str | None]] = {}
@@ -281,9 +278,7 @@ def __getattr__(name: str) -> Any:
     try:
         module = import_module(module_name)
     except OPTIONAL_IMPORT_EXCEPTIONS as exc:
-        raise ImportError(
-            _build_import_error(name, module_name, install_hint)
-        ) from exc
+        raise ImportError(_build_import_error(name, module_name, install_hint)) from exc
 
     try:
         value = getattr(module, attr_name)

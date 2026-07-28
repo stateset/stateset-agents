@@ -204,9 +204,13 @@ class TestIntelligentOrchestrator:
     def test_module_reexports_split_models(self):
         """Public orchestrator symbols should remain available from the main module."""
         from stateset_agents.core import intelligent_orchestrator as orchestrator_module
-        from stateset_agents.core import intelligent_orchestrator_models as models_module
+        from stateset_agents.core import (
+            intelligent_orchestrator_models as models_module,
+        )
 
-        assert orchestrator_module.OrchestrationConfig is models_module.OrchestrationConfig
+        assert (
+            orchestrator_module.OrchestrationConfig is models_module.OrchestrationConfig
+        )
         assert (
             orchestrator_module.OrchestrationDecision
             is models_module.OrchestrationDecision
@@ -216,13 +220,17 @@ class TestIntelligentOrchestrator:
     @pytest.fixture
     def mock_dependencies(self):
         """Mock external dependencies."""
-        with patch(
-            "stateset_agents.core.intelligent_orchestrator.get_monitoring_service"
-        ) as mock_monitoring, patch(
-            "stateset_agents.core.intelligent_orchestrator.get_state_service"
-        ) as mock_state, patch(
-            "stateset_agents.core.intelligent_orchestrator.ErrorHandler"
-        ) as mock_error_handler:
+        with (
+            patch(
+                "stateset_agents.core.intelligent_orchestrator.get_monitoring_service"
+            ) as mock_monitoring,
+            patch(
+                "stateset_agents.core.intelligent_orchestrator.get_state_service"
+            ) as mock_state,
+            patch(
+                "stateset_agents.core.intelligent_orchestrator.ErrorHandler"
+            ) as mock_error_handler,
+        ):
             mock_monitoring.return_value = MagicMock()
             mock_monitoring.return_value.record_metric = MagicMock()
             mock_state.return_value = MagicMock()

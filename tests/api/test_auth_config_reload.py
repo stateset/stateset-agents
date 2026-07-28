@@ -17,7 +17,7 @@ def _request_with_bearer_token(token: str) -> Request:
             "type": "http",
             "method": "GET",
             "path": "/probe",
-            "headers": [(b"authorization", f"Bearer {token}".encode("utf-8"))],
+            "headers": [(b"authorization", f"Bearer {token}".encode())],
             "client": ("127.0.0.1", 12345),
             "scheme": "http",
             "server": ("testserver", 80),

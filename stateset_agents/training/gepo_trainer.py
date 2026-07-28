@@ -113,7 +113,9 @@ class GEPOConfig(TrainingConfig):
     use_group_baseline: bool = True  # Use within-group baseline normalization
 
     @classmethod
-    def from_training_config(cls, config: TrainingConfig, **kwargs: Any) -> "GEPOConfig":
+    def from_training_config(
+        cls, config: TrainingConfig, **kwargs: Any
+    ) -> "GEPOConfig":
         """Create GEPO config from standard training config"""
         config_dict = config.to_dict()
         config_dict.update(kwargs)
@@ -155,9 +157,11 @@ class GEPOModelManager:
 
         # Model loading kwargs
         model_kwargs = {
-            "torch_dtype": torch.float16
-            if self.config.fp16
-            else (torch.bfloat16 if self.config.bf16 else torch.float32),
+            "torch_dtype": (
+                torch.float16
+                if self.config.fp16
+                else (torch.bfloat16 if self.config.bf16 else torch.float32)
+            ),
             "device_map": "auto" if torch.cuda.is_available() else None,
             "trust_remote_code": True,
         }

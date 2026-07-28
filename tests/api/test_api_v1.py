@@ -290,9 +290,7 @@ class TestTrainingEndpoint:
 
         assert user_a_first.status_code == 202
         assert user_a_again.status_code == 202
-        assert (
-            user_a_again.json()["job_id"] == user_a_first.json()["job_id"]
-        )
+        assert user_a_again.json()["job_id"] == user_a_first.json()["job_id"]
 
         user_a_third = client.post(
             "/api/v1/training",
@@ -769,7 +767,9 @@ class TestAuthentication:
             "num_iterations": 1,
         }
 
-        create = auth_required_client.post("/api/v1/training", json=payload, headers=headers)
+        create = auth_required_client.post(
+            "/api/v1/training", json=payload, headers=headers
+        )
         assert create.status_code == 202
         job_id = create.json()["job_id"]
 
@@ -803,7 +803,9 @@ class TestAuthentication:
         )
         assert other_user.status_code == 404
 
-    def test_idempotency_key_is_scoped_per_authenticated_user(self, auth_required_client):
+    def test_idempotency_key_is_scoped_per_authenticated_user(
+        self, auth_required_client
+    ):
         """Scoped idempotency keys should not collide across API credentials."""
         payload = {
             "prompts": ["stability check"],
@@ -815,8 +817,12 @@ class TestAuthentication:
         user_headers = {"X-API-Key": "test-api-key-that-is-long-enough-32ch"}
         admin_headers = {"X-API-Key": "admin-api-key-that-is-long-enough-32ch"}
 
-        user_job = auth_required_client.post("/api/v1/training", json=payload, headers=user_headers)
-        admin_job = auth_required_client.post("/api/v1/training", json=payload, headers=admin_headers)
+        user_job = auth_required_client.post(
+            "/api/v1/training", json=payload, headers=user_headers
+        )
+        admin_job = auth_required_client.post(
+            "/api/v1/training", json=payload, headers=admin_headers
+        )
 
         assert user_job.status_code == 202
         assert admin_job.status_code == 202

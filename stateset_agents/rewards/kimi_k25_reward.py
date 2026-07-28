@@ -8,8 +8,8 @@ including multimodal reasoning rewards and thinking-mode specific rewards.
 import logging
 from typing import Any
 
-from .multi_objective_reward import MultiObjectiveRewardFunction as MultiObjectiveReward
 from .multi_objective_reward import BaseRewardComponent
+from .multi_objective_reward import MultiObjectiveRewardFunction as MultiObjectiveReward
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +66,13 @@ class ThinkingModeReward(BaseRewardComponent):
         context = context or {}
         reasoning_content = str(context.get("reasoning_content", ""))
         if not reasoning_content:
-            assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
+            assistant_turns = [
+                turn for turn in turns if turn.get("role") == "assistant"
+            ]
             if assistant_turns:
-                reasoning_content = str(assistant_turns[-1].get("reasoning_content", ""))
+                reasoning_content = str(
+                    assistant_turns[-1].get("reasoning_content", "")
+                )
 
         if not reasoning_content:
             # If no reasoning content, penalize
@@ -181,7 +185,9 @@ class MultimodalConsistencyReward(BaseRewardComponent):
             return 1.0  # Not applicable, give full marks
 
         assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
-        response = str(assistant_turns[-1].get("content", "")) if assistant_turns else ""
+        response = (
+            str(assistant_turns[-1].get("content", "")) if assistant_turns else ""
+        )
 
         if not response:
             return 0.0
@@ -285,7 +291,9 @@ class CodeExecutionReward(BaseRewardComponent):
         """
         context = context or {}
         assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
-        response = str(assistant_turns[-1].get("content", "")) if assistant_turns else ""
+        response = (
+            str(assistant_turns[-1].get("content", "")) if assistant_turns else ""
+        )
 
         if not response:
             return 0.0
@@ -403,7 +411,9 @@ class LongContextReward(BaseRewardComponent):
             return 1.0
 
         assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
-        response = str(assistant_turns[-1].get("content", "")) if assistant_turns else ""
+        response = (
+            str(assistant_turns[-1].get("content", "")) if assistant_turns else ""
+        )
         earlier_messages = context.get("earlier_messages", [])
 
         if not earlier_messages:

@@ -14,9 +14,7 @@ from stateset_agents.core.reward import RewardFunction, RewardResult
 
 
 class StubEnvironment(Environment):
-    async def reset(
-        self, scenario: dict[str, Any] | None = None
-    ) -> EnvironmentState:
+    async def reset(self, scenario: dict[str, Any] | None = None) -> EnvironmentState:
         return EnvironmentState(
             episode_id="stub-episode",
             turn_count=0,

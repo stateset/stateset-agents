@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import logging
 import random
+from collections.abc import Iterable, Sequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, cast
-from collections.abc import Iterable, Sequence
 
 try:  # pragma: no cover - optional dependency
     import torch

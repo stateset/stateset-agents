@@ -54,7 +54,9 @@ class AgentConfig:
     tokenizer_kwargs: dict[str, Any] | None = None
     use_peft: bool = False
     peft_config: dict[str, Any] | None = None
-    peft_path: str | None = None  # Load a pre-trained LoRA adapter from disk (e.g. outputs/run_v1)
+    peft_path: str | None = (
+        None  # Load a pre-trained LoRA adapter from disk (e.g. outputs/run_v1)
+    )
     use_stub_model: bool = False
     stub_responses: list[str] | None = None
 

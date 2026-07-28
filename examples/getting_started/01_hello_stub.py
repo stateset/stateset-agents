@@ -27,10 +27,12 @@ async def main() -> None:
     # but the underlying "model" returns canned text. This is the seam that lets
     # the test suite run without a GPU and is the right first sanity check after
     # a fresh `pip install`.
-    agent = MultiTurnAgent(AgentConfig(
-        model_name="stub://hello",   # the stub:// prefix routes to the in-memory backend
-        use_stub_model=True,
-    ))
+    agent = MultiTurnAgent(
+        AgentConfig(
+            model_name="stub://hello",  # the stub:// prefix routes to the in-memory backend
+            use_stub_model=True,
+        )
+    )
     await agent.initialize()
     print(f"Agent loaded OK. Version: {__version__}")
 

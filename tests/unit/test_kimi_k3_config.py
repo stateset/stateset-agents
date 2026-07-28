@@ -141,7 +141,8 @@ class TestKimiK3Config:
         config = get_kimi_k3_config(task="customer_service")
 
         with patch(
-            "stateset_agents.training.kimi_k3_starter.get_config_for_task", return_value=base_config
+            "stateset_agents.training.kimi_k3_starter.get_config_for_task",
+            return_value=base_config,
         ):
             gspo_config = get_kimi_k3_gspo_config(config)
 
@@ -186,7 +187,9 @@ class TestKimiK3Config:
         assert loaded.output_dir == "./outputs/kimi_k3_roundtrip"
 
     def test_preview_payload_can_be_loaded_as_config(self, tmp_path):
-        config = get_kimi_k3_config(task="sales", output_dir="./outputs/kimi_k3_preview")
+        config = get_kimi_k3_config(
+            task="sales", output_dir="./outputs/kimi_k3_preview"
+        )
         preview_path = write_kimi_k3_config_file(
             config,
             tmp_path / "kimi_k3_preview.json",
@@ -203,11 +206,25 @@ class TestKimiK3Config:
 
         assert example_config_module.KimiK3Config is KimiK3Config
         assert example_config_module.KIMI_K3_BASE_MODEL == KIMI_K3_BASE_MODEL
-        assert example_config_module.KIMI_K3_STARTER_PROFILE_CHOICES == KIMI_K3_STARTER_PROFILE_CHOICES
-        assert example_config_module.KIMI_K3_STARTER_PROFILE_DESCRIPTIONS == KIMI_K3_STARTER_PROFILE_DESCRIPTIONS
-        assert example_config_module.describe_kimi_k3_starter_profiles is describe_kimi_k3_starter_profiles
-        assert example_config_module.get_kimi_k3_profile_overrides is get_kimi_k3_profile_overrides
-        assert example_config_module.summarize_kimi_k3_config is summarize_kimi_k3_config
+        assert (
+            example_config_module.KIMI_K3_STARTER_PROFILE_CHOICES
+            == KIMI_K3_STARTER_PROFILE_CHOICES
+        )
+        assert (
+            example_config_module.KIMI_K3_STARTER_PROFILE_DESCRIPTIONS
+            == KIMI_K3_STARTER_PROFILE_DESCRIPTIONS
+        )
+        assert (
+            example_config_module.describe_kimi_k3_starter_profiles
+            is describe_kimi_k3_starter_profiles
+        )
+        assert (
+            example_config_module.get_kimi_k3_profile_overrides
+            is get_kimi_k3_profile_overrides
+        )
+        assert (
+            example_config_module.summarize_kimi_k3_config is summarize_kimi_k3_config
+        )
 
 
 class TestKimiK3StarterScript:

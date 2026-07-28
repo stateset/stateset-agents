@@ -72,7 +72,9 @@ class TestSupportRewardComposite:
     @pytest.mark.asyncio
     async def test_missing_acknowledge(self, reward: SupportRewardComposite) -> None:
         turns = [
-            ConversationTurn(role="assistant", content="That request is impossible to fulfill."),
+            ConversationTurn(
+                role="assistant", content="That request is impossible to fulfill."
+            ),
         ]
         context = {
             "intent": "refund",
@@ -85,7 +87,9 @@ class TestSupportRewardComposite:
         assert result.breakdown["intent_avoid_penalty"] > 0
 
     @pytest.mark.asyncio
-    async def test_safety_failure_zeros_score(self, reward: SupportRewardComposite) -> None:
+    async def test_safety_failure_zeros_score(
+        self, reward: SupportRewardComposite
+    ) -> None:
         turns = [
             ConversationTurn(
                 role="assistant",
@@ -119,11 +123,13 @@ class TestSupportRewardComposite:
         # The reward should consider all assistant turns, not just the last one.
         turns = [
             ConversationTurn(role="user", content="I need help"),
-            ConversationTurn(role="assistant", content="Of course! I'd be glad to help."),
+            ConversationTurn(
+                role="assistant", content="Of course! I'd be glad to help."
+            ),
             ConversationTurn(role="user", content="It's about a refund for order #123"),
             ConversationTurn(
                 role="assistant",
-                content="I understand — I'll get that refund for your order processed right away."
+                content="I understand — I'll get that refund for your order processed right away.",
             ),
         ]
         context = {
@@ -170,7 +176,7 @@ class TestMakeSupportScenarios:
         scenarios = load_support_scenarios(limit=3)
         env_scenarios = make_support_scenarios(scenarios)
         assert len(env_scenarios) == 3
-        for orig, env in zip(scenarios, env_scenarios):
+        for orig, env in zip(scenarios, env_scenarios, strict=True):
             assert env["user_query"] == orig.user_query
             assert env["intent"] == orig.intent
             assert env["must_acknowledge"] == orig.must_acknowledge

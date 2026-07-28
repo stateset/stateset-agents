@@ -16,18 +16,13 @@ import pytest
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.reward import (
-    CompositeReward,
-    HelpfulnessReward,
-    SafetyReward,
-)
+from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
 from stateset_agents.training.auto_research import (
     AutoResearchConfig,
     AutoResearchLoop,
     run_auto_research,
 )
 from stateset_agents.training.auto_research.proposer import ExperimentProposer
-
 
 TRAIN_SCENARIOS = [
     {
@@ -88,10 +83,12 @@ def _make_env() -> ConversationEnvironment:
 
 
 def _make_reward() -> CompositeReward:
-    return CompositeReward([
-        HelpfulnessReward(weight=0.6),
-        SafetyReward(weight=0.4),
-    ])
+    return CompositeReward(
+        [
+            HelpfulnessReward(weight=0.6),
+            SafetyReward(weight=0.4),
+        ]
+    )
 
 
 class TestAutoResearchE2E:
@@ -321,15 +318,23 @@ class TestCLIDryRun:
         from stateset_agents.cli import app
 
         runner = CliRunner()
-        result = runner.invoke(app, [
-            "auto-research",
-            "--dry-run",
-            "--proposer", "bayesian",
-            "--algorithm", "gspo",
-            "--time-budget", "120",
-            "--max-experiments", "10",
-            "--search-space", "quick",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "auto-research",
+                "--dry-run",
+                "--proposer",
+                "bayesian",
+                "--algorithm",
+                "gspo",
+                "--time-budget",
+                "120",
+                "--max-experiments",
+                "10",
+                "--search-space",
+                "quick",
+            ],
+        )
         assert result.exit_code == 0
         assert "bayesian" in result.output
         assert "gspo" in result.output
@@ -343,20 +348,28 @@ class TestCLIDryRun:
         from stateset_agents.cli import app
 
         config_path = tmp_path / "test_config.json"
-        config_path.write_text(json.dumps({
-            "auto_research": {
-                "time_budget": 60,
-                "proposer": "grid",
-                "algorithm": "grpo",
-            }
-        }))
+        config_path.write_text(
+            json.dumps(
+                {
+                    "auto_research": {
+                        "time_budget": 60,
+                        "proposer": "grid",
+                        "algorithm": "grpo",
+                    }
+                }
+            )
+        )
 
         runner = CliRunner()
-        result = runner.invoke(app, [
-            "auto-research",
-            "--dry-run",
-            "--config", str(config_path),
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "auto-research",
+                "--dry-run",
+                "--config",
+                str(config_path),
+            ],
+        )
         assert result.exit_code == 0
         assert "grid" in result.output
         assert "grpo" in result.output
@@ -376,10 +389,14 @@ class TestCLIDryRun:
         )
 
         runner = CliRunner()
-        result = runner.invoke(app, [
-            "auto-research",
-            "--dry-run",
-            "--output-dir", str(tmp_path),
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "auto-research",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
         assert result.exit_code == 0
         assert "3 previous experiments found" in result.output

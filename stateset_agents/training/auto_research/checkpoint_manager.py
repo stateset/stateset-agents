@@ -48,9 +48,7 @@ class CheckpointManager:
         Returns the path to the saved checkpoint.
         """
         # Write to temp directory first
-        tmp_dir = Path(tempfile.mkdtemp(
-            dir=self.checkpoints_dir, prefix=".best_tmp_"
-        ))
+        tmp_dir = Path(tempfile.mkdtemp(dir=self.checkpoints_dir, prefix=".best_tmp_"))
         try:
             model_path = tmp_dir / "model"
             model_path.mkdir(exist_ok=True)
@@ -78,9 +76,7 @@ class CheckpointManager:
             if old_best.exists():
                 shutil.rmtree(old_best, ignore_errors=True)
 
-            logger.info(
-                "Saved best checkpoint: %s → %s", experiment_id, self.best_dir
-            )
+            logger.info("Saved best checkpoint: %s → %s", experiment_id, self.best_dir)
             return self.best_dir
 
         except Exception:
@@ -231,9 +227,7 @@ class CheckpointManager:
             try:
                 import torch
 
-                state_dict = torch.load(
-                    state_pt, map_location="cpu", weights_only=True
-                )
+                state_dict = torch.load(state_pt, map_location="cpu", weights_only=True)
                 model.load_state_dict(state_dict, strict=False)
                 logger.info("Restored state_dict from %s", state_pt)
                 return True

@@ -277,9 +277,10 @@ class GSPOTokenTrainer(GSPOTrainer):
                 # (not the full padded sequence width, which would dilute
                 # the loss for short responses in a padded batch).
                 response_len = sequence_lengths[i]
-                token_loss = -(
-                    detached_seq_ratio * token_advantages * token_log_probs
-                ).sum() / response_len
+                token_loss = (
+                    -(detached_seq_ratio * token_advantages * token_log_probs).sum()
+                    / response_len
+                )
 
                 loss += token_loss / len(responses)
 

@@ -280,12 +280,15 @@ class TestSingleTurnGRPOTrainer:
             config=config,
         )
 
-        with patch(
-            "stateset_agents.training.single_turn_trainer.compute_grpo_loss"
-        ) as mock_loss, patch(
-            "stateset_agents.training.single_turn_trainer.notify_episode_end",
-            new=AsyncMock(),
-        ) as mock_notify:
+        with (
+            patch(
+                "stateset_agents.training.single_turn_trainer.compute_grpo_loss"
+            ) as mock_loss,
+            patch(
+                "stateset_agents.training.single_turn_trainer.notify_episode_end",
+                new=AsyncMock(),
+            ) as mock_notify,
+        ):
             mock_loss.return_value = {
                 "policy_loss": None,
                 "total_loss": None,
@@ -374,7 +377,9 @@ class TestSingleTurnGRPOTrainer:
             await trainer.initialize()
             await trainer.train()
 
-        prompts = [call.args[0] for call in mock_agent.generate_response.await_args_list]
+        prompts = [
+            call.args[0] for call in mock_agent.generate_response.await_args_list
+        ]
         assert prompts == [
             "Need help with my order",
             "Need help with my order",

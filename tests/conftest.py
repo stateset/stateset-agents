@@ -1,12 +1,12 @@
 """Shared test configuration and fixtures for all test modules."""
 
 import asyncio
+import inspect
 import logging
 import os
 import shutil
 import sys
 import tempfile
-import inspect
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -26,9 +26,8 @@ try:
 except Exception:
     pass
 
-if (
-    "app" not in inspect.signature(httpx.Client.__init__).parameters
-    and not getattr(httpx.Client, "_stateset_agents_app_compat", False)
+if "app" not in inspect.signature(httpx.Client.__init__).parameters and not getattr(
+    httpx.Client, "_stateset_agents_app_compat", False
 ):
     _original_httpx_client_init = httpx.Client.__init__
 

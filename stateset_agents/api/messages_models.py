@@ -42,9 +42,7 @@ class MessagesRequest(BaseModel):
     system: str | list[dict[str, Any]] | None = Field(
         None, description="System prompt (string or content blocks)"
     )
-    max_tokens: int | None = Field(
-        None, ge=1, description="Maximum tokens to generate"
-    )
+    max_tokens: int | None = Field(None, ge=1, description="Maximum tokens to generate")
     temperature: float | None = Field(
         None, ge=0.0, le=2.0, description="Sampling temperature"
     )

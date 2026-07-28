@@ -518,13 +518,17 @@ class TestAdvancedTrainingOrchestrator:
     @pytest.fixture
     def mock_dependencies(self):
         """Mock external dependencies."""
-        with patch(
-            "stateset_agents.training.advanced_training_orchestrator.get_monitoring_service"
-        ) as mock_monitoring, patch(
-            "stateset_agents.training.advanced_training_orchestrator.get_state_service"
-        ) as mock_state, patch(
-            "stateset_agents.training.advanced_training_orchestrator.psutil"
-        ) as mock_psutil:
+        with (
+            patch(
+                "stateset_agents.training.advanced_training_orchestrator.get_monitoring_service"
+            ) as mock_monitoring,
+            patch(
+                "stateset_agents.training.advanced_training_orchestrator.get_state_service"
+            ) as mock_state,
+            patch(
+                "stateset_agents.training.advanced_training_orchestrator.psutil"
+            ) as mock_psutil,
+        ):
             mock_monitoring.return_value = MagicMock()
             mock_monitoring.return_value.metrics_collector = MagicMock()
             mock_state.return_value = MagicMock()

@@ -126,7 +126,9 @@ def test_openai_response_to_anthropic_handles_malformed_tool_calls():
     }
 
     anthropic = openai_response_to_anthropic(response)
-    tool_calls = [block for block in anthropic["content"] if block["type"] == "tool_use"]
+    tool_calls = [
+        block for block in anthropic["content"] if block["type"] == "tool_use"
+    ]
 
     assert len(tool_calls) == 3
     assert [block["name"] for block in tool_calls] == ["", "search", "echo"]

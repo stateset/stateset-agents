@@ -49,7 +49,9 @@ class TestModelBasedRewardComponentProviderResolution:
                 completions=SimpleNamespace(
                     create=AsyncMock(
                         return_value=SimpleNamespace(
-                            choices=[SimpleNamespace(message=SimpleNamespace(content="0.8"))]
+                            choices=[
+                                SimpleNamespace(message=SimpleNamespace(content="0.8"))
+                            ]
                         )
                     )
                 )
@@ -66,7 +68,9 @@ class TestModelBasedRewardComponentProviderResolution:
 
         assert score == 0.8
         client.chat.completions.create.assert_awaited_once()
-        assert client.chat.completions.create.await_args.kwargs["model"] == "gpt-5.4-mini"
+        assert (
+            client.chat.completions.create.await_args.kwargs["model"] == "gpt-5.4-mini"
+        )
 
     @pytest.mark.asyncio
     async def test_anthropic_like_client_uses_anthropic_model_env(self, monkeypatch):
@@ -74,9 +78,7 @@ class TestModelBasedRewardComponentProviderResolution:
         client = SimpleNamespace(
             messages=SimpleNamespace(
                 create=AsyncMock(
-                    return_value=SimpleNamespace(
-                        content=[SimpleNamespace(text="0.6")]
-                    )
+                    return_value=SimpleNamespace(content=[SimpleNamespace(text="0.6")])
                 )
             )
         )
@@ -91,7 +93,10 @@ class TestModelBasedRewardComponentProviderResolution:
 
         assert score == 0.6
         client.messages.create.assert_awaited_once()
-        assert client.messages.create.await_args.kwargs["model"] == "claude-sonnet-4-20250514"
+        assert (
+            client.messages.create.await_args.kwargs["model"]
+            == "claude-sonnet-4-20250514"
+        )
 
 
 class TestLLMJudgeProviderResolution:

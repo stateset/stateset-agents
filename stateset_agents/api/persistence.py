@@ -97,9 +97,7 @@ class BaseEntity:
         return result
 
     @classmethod
-    def from_dict(
-        cls: type[_BaseEntityT], data: dict[str, Any]
-    ) -> _BaseEntityT:
+    def from_dict(cls: type[_BaseEntityT], data: dict[str, Any]) -> _BaseEntityT:
         """Create from dictionary."""
         if "created_at" in data and isinstance(data["created_at"], str):
             data["created_at"] = datetime.fromisoformat(data["created_at"])
@@ -330,22 +328,18 @@ class SQLiteRepository(Repository[T]):
     def _init_sync(self) -> None:
         connection = sqlite3.connect(self._db_path, timeout=30)
         try:
-            connection.execute(
-                f"""
+            connection.execute(f"""
                 CREATE TABLE IF NOT EXISTS {self._table_name} (
                     id TEXT PRIMARY KEY,
                     data TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
-                """
-            )
-            connection.execute(
-                f"""
+                """)
+            connection.execute(f"""
                 CREATE INDEX IF NOT EXISTS idx_{self._table_name}_created
                 ON {self._table_name}(created_at)
-                """
-            )
+                """)
             connection.commit()
         finally:
             connection.close()

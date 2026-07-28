@@ -182,13 +182,9 @@ class ConversationEnvironment(Environment):
         }
         return new_state, step_reward, bool(done), info
 
-    async def get_initial_prompt(
-        self, scenario: dict[str, Any] | None = None
-    ) -> str:
+    async def get_initial_prompt(self, scenario: dict[str, Any] | None = None) -> str:
         scenario = scenario or self.current_scenario
-        base_prompt = (
-            "You are a helpful AI assistant. Engage in natural conversation with the user."
-        )
+        base_prompt = "You are a helpful AI assistant. Engage in natural conversation with the user."
         if self.persona:
             base_prompt += f" {self.persona}"
         if scenario and "context" in scenario:

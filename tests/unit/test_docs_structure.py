@@ -23,9 +23,9 @@ ARCHIVED_DOC_FILES = [
 
 def test_superseded_docs_absent_at_old_paths() -> None:
     for rel_path in ARCHIVED_DOC_FILES:
-        assert not (REPO_ROOT / rel_path).exists(), (
-            f"{rel_path} should have been moved to docs/archive/"
-        )
+        assert not (
+            REPO_ROOT / rel_path
+        ).exists(), f"{rel_path} should have been moved to docs/archive/"
 
 
 def test_archived_docs_present_in_archive() -> None:

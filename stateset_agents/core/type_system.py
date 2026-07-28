@@ -9,6 +9,7 @@ import inspect
 import json
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from enum import Enum
 from typing import (
     Any,
@@ -21,7 +22,6 @@ from typing import (
     get_origin,
     get_type_hints,
 )
-from collections.abc import Awaitable, Callable
 
 from typing_extensions import NotRequired, Required, TypedDict
 

@@ -222,14 +222,16 @@ class AdvancedCustomerServiceAgent:
             else:
                 # Start new conversation
                 conversation_context = await self.agent.start_conversation(
-                    user_id=customer_context.get("user_id")
-                    if customer_context
-                    else None,
+                    user_id=(
+                        customer_context.get("user_id") if customer_context else None
+                    ),
                     initial_context={
                         "topic": "customer_service",
-                        "priority": customer_context.get("priority", "medium")
-                        if customer_context
-                        else "medium",
+                        "priority": (
+                            customer_context.get("priority", "medium")
+                            if customer_context
+                            else "medium"
+                        ),
                         **(customer_context or {}),
                     },
                 )
@@ -298,10 +300,11 @@ class AdvancedCustomerServiceAgent:
                 "metrics": {
                     "response_time_seconds": response_time,
                     "quality_scores": [r.score for r in reward_results],
-                    "average_quality": sum(r.score for r in reward_results)
-                    / len(reward_results)
-                    if reward_results
-                    else 0.0,
+                    "average_quality": (
+                        sum(r.score for r in reward_results) / len(reward_results)
+                        if reward_results
+                        else 0.0
+                    ),
                 },
                 "suggested_actions": self._get_suggested_actions(
                     message, response, context

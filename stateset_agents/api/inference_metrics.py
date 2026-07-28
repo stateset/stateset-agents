@@ -19,9 +19,9 @@ not need to guard their call sites.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
-from collections.abc import Iterator
 
 try:  # Optional: only used when Prometheus scraping is enabled.
     from prometheus_client import Counter, Gauge, Histogram

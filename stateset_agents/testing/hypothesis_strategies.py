@@ -5,7 +5,6 @@ These strategies generate valid test data for property-based testing
 of StateSet Agents components.
 """
 
-
 from hypothesis import strategies as st
 from hypothesis.strategies import composite
 

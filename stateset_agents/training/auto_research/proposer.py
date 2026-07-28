@@ -123,7 +123,9 @@ class PerturbationProposer(ExperimentProposer):
         # Ensure all search space dims have a value
         for dim in dims:
             if dim.name not in params:
-                params[dim.name] = dim.default if dim.default is not None else _sample_dimension(dim)
+                params[dim.name] = (
+                    dim.default if dim.default is not None else _sample_dimension(dim)
+                )
 
         # Pick a random subset of dimensions to perturb
         n = min(self.num_params_to_change, len(dims))
@@ -308,6 +310,7 @@ class BayesianProposer(ExperimentProposer):
         history: list[dict[str, Any]],
     ) -> tuple[dict[str, Any], str]:
         import optuna
+
         from stateset_agents.training.hpo.base import SearchSpaceType
 
         self._ensure_study()
@@ -523,10 +526,7 @@ class SmartPerturbationProposer(PerturbationProposer):
                 self.objective_value = objective_value
                 self.status = status
 
-        records = [
-            _Record(h["params"], h["objective"], h["status"])
-            for h in history
-        ]
+        records = [_Record(h["params"], h["objective"], h["status"]) for h in history]
         self._importance = compute_parameter_importance(records)
 
     def _weighted_select(self, dims: list[Any]) -> list[Any]:

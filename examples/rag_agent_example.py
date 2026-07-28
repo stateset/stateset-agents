@@ -179,7 +179,8 @@ class ChromaVectorStore(VectorStore):
                 results["ids"][0],
                 results["documents"][0],
                 results["metadatas"][0],
-                results["distances"][0], strict=False,
+                results["distances"][0],
+                strict=False,
             )
         ):
             # Convert distance to similarity score (cosine distance to similarity)
@@ -539,9 +540,11 @@ Context will be provided in <context> tags before each question."""
                     {
                         "source": source,
                         "relevance_score": round(result.score, 3),
-                        "excerpt": result.document.content[:200] + "..."
-                        if len(result.document.content) > 200
-                        else result.document.content,
+                        "excerpt": (
+                            result.document.content[:200] + "..."
+                            if len(result.document.content) > 200
+                            else result.document.content
+                        ),
                     }
                 )
 

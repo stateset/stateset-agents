@@ -96,9 +96,7 @@ class MathEnvironment(Environment):
         self.current_problem = None
         self.correct_answer = None
 
-    async def reset(
-        self, scenario: dict[str, Any] | None = None
-    ) -> EnvironmentState:
+    async def reset(self, scenario: dict[str, Any] | None = None) -> EnvironmentState:
         """Generate a new math problem."""
 
         # Generate random addition problem
@@ -124,9 +122,7 @@ class MathEnvironment(Environment):
         self._last_state = state  # Helper for implicit step() calls
         return state
 
-    async def get_initial_prompt(
-        self, scenario: dict[str, Any] | None = None
-    ) -> str:
+    async def get_initial_prompt(self, scenario: dict[str, Any] | None = None) -> str:
         """The initial prompt usually sets the system role."""
         return "You are a math tutor. Solve the problem concisely."
 

@@ -370,9 +370,9 @@ class ConversationalBEAR:
         state_dim: int,
         action_dim: int,
         config: BEARConfig | None = None,
-        device: str = "cuda"
-        if torch is not None and torch.cuda.is_available()
-        else "cpu",
+        device: str = (
+            "cuda" if torch is not None and torch.cuda.is_available() else "cpu"
+        ),
     ):
         _require_torch()
 
@@ -780,9 +780,9 @@ class BEARTrainer:
         state_dim: int,
         action_dim: int,
         config: BEARConfig | None = None,
-        device: str = "cuda"
-        if torch is not None and torch.cuda.is_available()
-        else "cpu",
+        device: str = (
+            "cuda" if torch is not None and torch.cuda.is_available() else "cpu"
+        ),
     ):
         _require_torch()
 

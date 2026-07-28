@@ -58,7 +58,9 @@ async def _create_experiment(client, name="exp"):
 
 
 async def test_experiment_creation_evicts_oldest_finished_when_at_cap(
-    monkeypatch, preserve_api_config, clean_lab_state,
+    monkeypatch,
+    preserve_api_config,
+    clean_lab_state,
 ):
     _enable_lab_no_auth(monkeypatch)
     from stateset_agents.api.main import create_app
@@ -81,7 +83,9 @@ async def test_experiment_creation_evicts_oldest_finished_when_at_cap(
 
 
 async def test_experiment_creation_429_when_all_running(
-    monkeypatch, preserve_api_config, clean_lab_state,
+    monkeypatch,
+    preserve_api_config,
+    clean_lab_state,
 ):
     _enable_lab_no_auth(monkeypatch)
     from stateset_agents.api.main import create_app
@@ -116,7 +120,9 @@ async def test_logs_trim_to_maxlen(monkeypatch, preserve_api_config, clean_lab_s
         assert len(training_lab._logs[exp_id]) == training_lab.MAX_LOGS_PER_EXPERIMENT
 
 
-async def test_episodes_trim_to_maxlen(monkeypatch, preserve_api_config, clean_lab_state):
+async def test_episodes_trim_to_maxlen(
+    monkeypatch, preserve_api_config, clean_lab_state
+):
     _enable_lab_no_auth(monkeypatch)
     from stateset_agents.api.main import create_app
 
@@ -135,7 +141,9 @@ async def test_episodes_trim_to_maxlen(monkeypatch, preserve_api_config, clean_l
 
 
 async def test_stop_experiment_cancels_background_task(
-    monkeypatch, preserve_api_config, clean_lab_state,
+    monkeypatch,
+    preserve_api_config,
+    clean_lab_state,
 ):
     _enable_lab_no_auth(monkeypatch)
     from stateset_agents.api.main import create_app
@@ -166,7 +174,9 @@ async def test_stop_experiment_cancels_background_task(
 
 
 async def test_delete_experiment_cancels_background_task(
-    monkeypatch, preserve_api_config, clean_lab_state,
+    monkeypatch,
+    preserve_api_config,
+    clean_lab_state,
 ):
     _enable_lab_no_auth(monkeypatch)
     from stateset_agents.api.main import create_app
@@ -196,7 +206,9 @@ async def test_delete_experiment_cancels_background_task(
 
 
 async def test_delete_experiment_removes_metrics_subscribers_entry(
-    monkeypatch, preserve_api_config, clean_lab_state,
+    monkeypatch,
+    preserve_api_config,
+    clean_lab_state,
 ):
     _enable_lab_no_auth(monkeypatch)
     from stateset_agents.api.main import create_app
@@ -214,7 +226,9 @@ async def test_delete_experiment_removes_metrics_subscribers_entry(
 
 
 async def test_eviction_removes_metrics_subscribers_entry(
-    monkeypatch, preserve_api_config, clean_lab_state,
+    monkeypatch,
+    preserve_api_config,
+    clean_lab_state,
 ):
     _enable_lab_no_auth(monkeypatch)
     from stateset_agents.api.main import create_app

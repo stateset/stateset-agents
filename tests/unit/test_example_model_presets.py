@@ -13,8 +13,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(REPO_ROOT))
 
-from examples.model_presets import PRESETS, ModelPreset, get_preset, list_preset_names  # noqa: E402
 from examples import finetune_gspo  # noqa: E402
+from examples.model_presets import (  # noqa: E402
+    PRESETS,
+    ModelPreset,
+    get_preset,
+    list_preset_names,
+)
 
 STARTER_BACKED_PRESETS = [
     name for name, preset in PRESETS.items() if preset.starter_module is not None
@@ -196,14 +201,20 @@ def test_forwarder_scripts_are_at_most_15_lines_of_code(script_name):
     source = path.read_text()
     tree = ast.parse(source)
     body = tree.body
-    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+    ):
         docstring_end = body[0].end_lineno
     else:
         docstring_end = 0
 
     lines_after_docstring = source.splitlines()[docstring_end:]
     code_lines = [
-        line for line in lines_after_docstring if line.strip() and not line.strip().startswith("#")
+        line
+        for line in lines_after_docstring
+        if line.strip() and not line.strip().startswith("#")
     ]
     assert len(code_lines) <= 15, f"{script_name} has {len(code_lines)} code lines"
 
@@ -228,9 +239,7 @@ def test_real_run_invokes_train_with_gspo_for_non_starter_preset(monkeypatch):
         calls.append(kwargs)
         return object()
 
-    monkeypatch.setattr(
-        "stateset_agents.core.agent.MultiTurnAgent", _FakeAgent
-    )
+    monkeypatch.setattr("stateset_agents.core.agent.MultiTurnAgent", _FakeAgent)
     monkeypatch.setattr(
         "stateset_agents.training.gspo_entrypoints.train_with_gspo",
         _fake_train_with_gspo,
@@ -327,7 +336,9 @@ def test_wandb_flags_reach_gspo_config_via_cli(monkeypatch):
 def test_export_merged_errors_clearly_for_starter_backed_preset():
     """No packaged starter supports merge export; --export-merged must fail
     loudly for those presets rather than being silently accepted."""
-    exit_code = finetune_gspo.main(["--model", "kimi-k3", "--export-merged", "--dry-run"])
+    exit_code = finetune_gspo.main(
+        ["--model", "kimi-k3", "--export-merged", "--dry-run"]
+    )
     assert exit_code != 0
 
 
@@ -375,7 +386,9 @@ def test_export_merged_invokes_export_for_non_starter_preset(monkeypatch, tmp_pa
     assert calls[0]["base_model_name"] == get_preset("llama3").model_id
 
 
-def test_export_merged_warns_without_erroring_when_lora_disabled(monkeypatch, tmp_path, caplog):
+def test_export_merged_warns_without_erroring_when_lora_disabled(
+    monkeypatch, tmp_path, caplog
+):
     """--export-merged with --no-lora has nothing to merge; it should warn,
     not silently pass and not crash."""
     import logging
@@ -409,11 +422,15 @@ def test_export_merged_warns_without_erroring_when_lora_disabled(monkeypatch, tm
             ]
         )
     assert exit_code == 0
-    assert any("Skipping --export-merged" in record.message for record in caplog.records)
+    assert any(
+        "Skipping --export-merged" in record.message for record in caplog.records
+    )
 
 
 def test_iterations_flag_errors_clearly_for_non_starter_preset():
-    exit_code = finetune_gspo.main(["--model", "llama3", "--iterations", "5", "--dry-run"])
+    exit_code = finetune_gspo.main(
+        ["--model", "llama3", "--iterations", "5", "--dry-run"]
+    )
     assert exit_code != 0
 
 
@@ -428,7 +445,11 @@ def test_iterations_flag_maps_to_num_outer_iterations_for_starter_backed_preset(
 
 def test_list_models_subprocess_prints_all_names():
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "examples" / "finetune_gspo.py"), "--list-models"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "examples" / "finetune_gspo.py"),
+            "--list-models",
+        ],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

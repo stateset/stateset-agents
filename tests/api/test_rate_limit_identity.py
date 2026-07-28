@@ -69,9 +69,7 @@ async def test_different_api_keys_do_not_share_a_bucket(preserve_api_config):
 async def test_same_api_key_from_two_ips_shares_one_bucket(preserve_api_config):
     app = _build_app(
         RateLimitConfig(requests_per_minute=1, enabled=True),
-        security=SecurityConfig(
-            api_keys={"shared-key": ["user"]}, require_auth=False
-        ),
+        security=SecurityConfig(api_keys={"shared-key": ["user"]}, require_auth=False),
     )
 
     async with _client(app, client_ip="1.1.1.1") as client:
@@ -101,9 +99,7 @@ async def test_two_ips_without_credentials_do_not_share_a_bucket(preserve_api_co
 @pytest.mark.asyncio
 async def test_xff_ignored_when_trust_flag_off(preserve_api_config):
     app = _build_app(
-        RateLimitConfig(
-            requests_per_minute=1, enabled=True, trust_proxy_headers=False
-        )
+        RateLimitConfig(requests_per_minute=1, enabled=True, trust_proxy_headers=False)
     )
 
     async with _client(app, client_ip="9.9.9.9") as client:

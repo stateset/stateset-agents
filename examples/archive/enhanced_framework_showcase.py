@@ -274,7 +274,9 @@ class EnhancedFrameworkDemo:
         logger.info("Received %s responses", len(responses))
 
         concurrent_time = time.time() - start_time
-        logger.info(f"✅ Handled 5 concurrent requests in {concurrent_time:.2f} seconds")
+        logger.info(
+            f"✅ Handled 5 concurrent requests in {concurrent_time:.2f} seconds"
+        )
 
         # Show agent self-improvement capabilities
         logger.info("Testing self-improvement capabilities...")

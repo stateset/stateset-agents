@@ -136,12 +136,14 @@ class MultimodalIntegrationReward(RewardComponent):
 
         # Check if there are visual inputs
         has_visual = any(
-            any(
-                content.get("type") in ["image_url", "video_url"]
-                for content in msg.get("content", [])
+            (
+                any(
+                    content.get("type") in ["image_url", "video_url"]
+                    for content in msg.get("content", [])
+                )
+                if isinstance(msg.get("content"), list)
+                else False
             )
-            if isinstance(msg.get("content"), list)
-            else False
             for msg in messages
         )
 

@@ -8,7 +8,6 @@ from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.data.tool_calling_bench import (
     SAMPLE_TOOLS,
     ToolCallReward,
-    ToolCallScenario,
     extract_tool_call,
     load_tool_call_scenarios,
     make_tool_call_scenarios,
@@ -111,7 +110,9 @@ class TestToolCallReward:
 
     @pytest.mark.asyncio
     async def test_wrong_tool(self, reward: ToolCallReward) -> None:
-        response = '```json\n{"tool": "search", "parameters": {"query": "17 * 24"}}\n```'
+        response = (
+            '```json\n{"tool": "search", "parameters": {"query": "17 * 24"}}\n```'
+        )
         turns = [ConversationTurn(role="assistant", content=response)]
         context = {
             "expected_tool": "calculator",
@@ -183,6 +184,6 @@ class TestMakeScenarios:
         scenarios = load_tool_call_scenarios(limit=3)
         env = make_tool_call_scenarios(scenarios)
         assert len(env) == 3
-        for orig, e in zip(scenarios, env):
+        for orig, e in zip(scenarios, env, strict=True):
             assert e["user_query"] == orig.user_query
             assert e["expected_tool"] == orig.expected_tool

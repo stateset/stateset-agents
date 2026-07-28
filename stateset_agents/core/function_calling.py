@@ -28,18 +28,10 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import (
-    Any,
-    Literal,
-    Union,
-    cast,
-    get_args,
-    get_origin,
-    get_type_hints,
-)
-from collections.abc import Callable
+from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hints
 
 logger = logging.getLogger(__name__)
 
@@ -613,10 +605,14 @@ def create_function_calling_agent_class():
                 if message_history and message_history[0].get("role") == "system":
                     message_history[0] = {
                         "role": "system",
-                        "content": str(message_history[0]["content"]) + "\n\n" + tool_prompt,
+                        "content": str(message_history[0]["content"])
+                        + "\n\n"
+                        + tool_prompt,
                     }
                 else:
-                    message_history.insert(0, {"role": "system", "content": tool_prompt})
+                    message_history.insert(
+                        0, {"role": "system", "content": tool_prompt}
+                    )
 
             for _round_num in range(max_tool_rounds):
                 # Generate response
@@ -651,7 +647,9 @@ def create_function_calling_agent_class():
                     message_history.append(result.to_message())
 
             # Max rounds reached
-            return str(await self.generate_response(cast(Any, message_history), context))
+            return str(
+                await self.generate_response(cast(Any, message_history), context)
+            )
 
     return FunctionCallingAgent
 

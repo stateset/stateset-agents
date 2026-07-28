@@ -113,9 +113,7 @@ class ConversationSummary(BaseModel):
     agent_id: str = Field(..., description="Associated agent ID")
     message_count: int = Field(0, description="Number of messages")
     created_at: datetime = Field(..., description="Creation timestamp")
-    last_message_at: datetime | None = Field(
-        None, description="Last message timestamp"
-    )
+    last_message_at: datetime | None = Field(None, description="Last message timestamp")
     total_tokens: int = Field(0, description="Total tokens used")
 
 
@@ -435,6 +433,7 @@ async def converse_with_agent(
             # to the gpt2 demo agent silently would hide a real failure.
             if agent_id == "default" and os.environ.get("STATESET_DEFAULT_CHECKPOINT"):
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "Request asked for the default agent, but no agent named 'default' "
                     "is registered, yet STATESET_DEFAULT_CHECKPOINT=%s was set. "

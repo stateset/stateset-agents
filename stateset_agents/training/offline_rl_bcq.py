@@ -344,9 +344,9 @@ class BatchConstrainedQLearning:
         state_dim: int,
         action_dim: int,
         config: BCQConfig | None = None,
-        device: str = "cuda"
-        if torch is not None and torch.cuda.is_available()
-        else "cpu",
+        device: str = (
+            "cuda" if torch is not None and torch.cuda.is_available() else "cpu"
+        ),
     ):
         _require_torch()
 
@@ -725,9 +725,9 @@ class BCQTrainer:
         state_dim: int,
         action_dim: int,
         config: BCQConfig | None = None,
-        device: str = "cuda"
-        if torch is not None and torch.cuda.is_available()
-        else "cpu",
+        device: str = (
+            "cuda" if torch is not None and torch.cuda.is_available() else "cpu"
+        ),
     ):
         _require_torch()
 

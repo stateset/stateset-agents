@@ -491,12 +491,15 @@ class GRPOLogger:
             "recent_errors": self.metrics.errors[-10:],  # Last 10 errors
             "performance_summary": {
                 "total_operations": len(self.metrics.performance_metrics),
-                "average_duration_ms": sum(
-                    float(m["duration_ms"]) for m in self.metrics.performance_metrics
-                )
-                / len(self.metrics.performance_metrics)
-                if self.metrics.performance_metrics
-                else 0,
+                "average_duration_ms": (
+                    sum(
+                        float(m["duration_ms"])
+                        for m in self.metrics.performance_metrics
+                    )
+                    / len(self.metrics.performance_metrics)
+                    if self.metrics.performance_metrics
+                    else 0
+                ),
             },
         }
 

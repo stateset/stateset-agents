@@ -355,8 +355,10 @@ class ConversationHandler:
         """
         start_time = time.monotonic()
 
-        if request.user_id and request.user_id != user_id and not self._is_admin_user(
-            user_roles
+        if (
+            request.user_id
+            and request.user_id != user_id
+            and not self._is_admin_user(user_roles)
         ):
             raise PermissionError("Conversation user mismatch")
 

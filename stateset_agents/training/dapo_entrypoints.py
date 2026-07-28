@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
-from collections.abc import Awaitable, Callable
 
 import numpy as np
 
@@ -63,9 +63,12 @@ async def train_with_dapo(
         )
 
     logger.info("Loading model: %s", model_name)
-    _is_stub = model_name.startswith("stub://") or getattr(config, "use_stub_model", False)
+    _is_stub = model_name.startswith("stub://") or getattr(
+        config, "use_stub_model", False
+    )
     if _is_stub:
         from stateset_agents.core.agent_backends import StubModel, StubTokenizer
+
         model = StubModel()
         tokenizer = StubTokenizer()
     else:

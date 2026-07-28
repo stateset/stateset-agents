@@ -9,7 +9,6 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
 
-
 #: Hard cap on the number of distinct rate-limit buckets an in-memory
 #: limiter will hold at once. Without a cap, a flood of unique keys
 #: (e.g. random/garbage credentials) can grow the bucket dict without

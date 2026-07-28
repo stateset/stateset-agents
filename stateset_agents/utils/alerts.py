@@ -12,13 +12,13 @@ import logging
 import smtplib
 import uuid
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
 from typing import Any, cast
-from collections.abc import Callable
 
 import requests
 
@@ -155,9 +155,11 @@ class Alert:
             "created_at": self.created_at.isoformat(),
             "fired_at": self.fired_at.isoformat() if self.fired_at else None,
             "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
-            "last_notification_at": self.last_notification_at.isoformat()
-            if self.last_notification_at
-            else None,
+            "last_notification_at": (
+                self.last_notification_at.isoformat()
+                if self.last_notification_at
+                else None
+            ),
             "notification_count": self.notification_count,
             "metadata": self.metadata,
         }
@@ -388,9 +390,9 @@ class PagerDutyNotificationHandler(NotificationHandler):
 
             payload = {
                 "routing_key": routing_key,
-                "event_action": "trigger"
-                if alert.status == AlertStatus.FIRING
-                else "resolve",
+                "event_action": (
+                    "trigger" if alert.status == AlertStatus.FIRING else "resolve"
+                ),
                 "dedup_key": f"grpo_alert_{alert.rule_name}",
                 "payload": {
                     "summary": f"{alert.rule_name}: {alert.message}",

@@ -56,9 +56,9 @@ async def main() -> None:
     context = {"expected_answer": "42"}
 
     cases = [
-        ("rude + wrong",      "Figure it out yourself."),
-        ("polite, wrong",     "Thank you for your patience! I'll look into it."),
-        ("polite + correct",  "Of course! The answer is 42, happy to help."),
+        ("rude + wrong", "Figure it out yourself."),
+        ("polite, wrong", "Thank you for your patience! I'll look into it."),
+        ("polite + correct", "Of course! The answer is 42, happy to help."),
     ]
 
     for label, response in cases:

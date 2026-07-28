@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 
 def test_make_check_types_uses_stable_wrapper() -> None:
@@ -41,7 +41,9 @@ def test_make_docs_uses_docs_safe_environment() -> None:
     makefile_path = Path(__file__).resolve().parents[2] / "Makefile"
     contents = makefile_path.read_text()
 
-    assert "SPHINX_DOCS_ENV := API_REQUIRE_AUTH=false INFERENCE_BACKEND=stub" in contents
+    assert (
+        "SPHINX_DOCS_ENV := API_REQUIRE_AUTH=false INFERENCE_BACKEND=stub" in contents
+    )
     assert "\t$(SPHINX_DOCS_ENV) sphinx-build docs docs/_build/html" in contents
 
 

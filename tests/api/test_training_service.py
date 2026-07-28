@@ -21,7 +21,6 @@ from stateset_agents.api.services.training_service import (
 )
 from tests.api.asgi_client import SyncASGIClient
 
-
 # ============================================================================
 # JobProgressCallback tests
 # ============================================================================

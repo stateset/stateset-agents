@@ -20,7 +20,9 @@ def preserve_api_config():
     api_config._config = prev
 
 
-def test_development_with_no_keys_logs_warning(monkeypatch, preserve_api_config, caplog):
+def test_development_with_no_keys_logs_warning(
+    monkeypatch, preserve_api_config, caplog
+):
     monkeypatch.setenv("API_ENVIRONMENT", "development")
     monkeypatch.setenv("API_REQUIRE_AUTH", "true")
     monkeypatch.delenv("API_KEYS", raising=False)
@@ -31,9 +33,7 @@ def test_development_with_no_keys_logs_warning(monkeypatch, preserve_api_config,
     with caplog.at_level(logging.WARNING):
         create_app()
 
-    assert any(
-        "No API keys configured" in record.message for record in caplog.records
-    )
+    assert any("No API keys configured" in record.message for record in caplog.records)
 
 
 def test_production_auth_enabled_no_credentials_raises(preserve_api_config):
@@ -68,6 +68,4 @@ def test_production_with_jwt_secret_only_does_not_raise(preserve_api_config, cap
     with caplog.at_level(logging.WARNING):
         create_app()  # should not raise
 
-    assert any(
-        "No API keys configured" in record.message for record in caplog.records
-    )
+    assert any("No API keys configured" in record.message for record in caplog.records)

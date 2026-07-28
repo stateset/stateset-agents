@@ -173,9 +173,9 @@ class ProcessedFeatures:
     def to_dict(self) -> dict[str, Any]:
         return {
             "modality": self.modality.value,
-            "feature_shape": list(self.features.shape)
-            if self.features is not None
-            else None,
+            "feature_shape": (
+                list(self.features.shape) if self.features is not None else None
+            ),
             "has_attention_mask": self.attention_mask is not None,
             "metadata": self.metadata,
             "processing_time": self.processing_time,

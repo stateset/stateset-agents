@@ -640,7 +640,9 @@ class TransformerRewardTrainer:
         optimizer = self.optimizer
         scheduler = self.scheduler
         if optimizer is None or scheduler is None:
-            raise RuntimeError("Optimizer and scheduler must be initialized before training")
+            raise RuntimeError(
+                "Optimizer and scheduler must be initialized before training"
+            )
 
         for batch in train_loader:
             # Move to device
@@ -789,10 +791,16 @@ class TransformerRewardTrainer:
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
-        if checkpoint.get("optimizer_state_dict") is not None and self.optimizer is not None:
+        if (
+            checkpoint.get("optimizer_state_dict") is not None
+            and self.optimizer is not None
+        ):
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-        if checkpoint.get("scheduler_state_dict") is not None and self.scheduler is not None:
+        if (
+            checkpoint.get("scheduler_state_dict") is not None
+            and self.scheduler is not None
+        ):
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
         self.train_losses = checkpoint.get("train_losses", [])

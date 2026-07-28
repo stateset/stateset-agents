@@ -38,8 +38,9 @@ import argparse
 import json
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger("prepare_sft_dataset")
 
@@ -126,23 +127,48 @@ def filter_entries(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", "-i", type=Path, required=True,
-                        help="Curated JSONL from `grade_transcript.py --output-curated`.")
-    parser.add_argument("--format", "-f", choices=sorted(FORMATTERS), required=True,
-                        help="Target SFT dataset format.")
-    parser.add_argument("--output", "-o", type=Path, required=True,
-                        help="Output JSONL path.")
-    parser.add_argument("--min-score", type=float, default=None,
-                        help="Drop entries with score below this threshold.")
-    parser.add_argument("--source", action="append", default=None,
-                        help="Keep only entries from these source files (repeatable).")
-    parser.add_argument("--dedup", action="store_true",
-                        help="Deduplicate by prompt (keeps first occurrence).")
-    parser.add_argument("--stats", action="store_true",
-                        help="Print a summary of what got included.")
+    parser.add_argument(
+        "--input",
+        "-i",
+        type=Path,
+        required=True,
+        help="Curated JSONL from `grade_transcript.py --output-curated`.",
+    )
+    parser.add_argument(
+        "--format",
+        "-f",
+        choices=sorted(FORMATTERS),
+        required=True,
+        help="Target SFT dataset format.",
+    )
+    parser.add_argument(
+        "--output", "-o", type=Path, required=True, help="Output JSONL path."
+    )
+    parser.add_argument(
+        "--min-score",
+        type=float,
+        default=None,
+        help="Drop entries with score below this threshold.",
+    )
+    parser.add_argument(
+        "--source",
+        action="append",
+        default=None,
+        help="Keep only entries from these source files (repeatable).",
+    )
+    parser.add_argument(
+        "--dedup",
+        action="store_true",
+        help="Deduplicate by prompt (keeps first occurrence).",
+    )
+    parser.add_argument(
+        "--stats", action="store_true", help="Print a summary of what got included."
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
     entries = load_curated(args.input)
     logger.info("Loaded %d entries from %s", len(entries), args.input)
@@ -160,13 +186,15 @@ def main() -> int:
     with args.output.open("w", encoding="utf-8") as f:
         for entry in filtered:
             f.write(json.dumps(formatter(entry), ensure_ascii=False) + "\n")
-    logger.info("Wrote %d entries → %s (format=%s)", len(filtered), args.output, args.format)
+    logger.info(
+        "Wrote %d entries → %s (format=%s)", len(filtered), args.output, args.format
+    )
 
     if args.stats:
         scores = [float(e.get("score", 0.0)) for e in filtered]
         sources = {e.get("source", "?") for e in filtered}
         print()
-        print(f"Output stats:")
+        print("Output stats:")
         print(f"  format:    {args.format}")
         print(f"  entries:   {len(filtered)}")
         if scores:

@@ -4,10 +4,7 @@ import types
 
 import pytest
 
-from stateset_agents.training import (
-    build_serving_manifest,
-    write_serving_manifest,
-)
+from stateset_agents.training import build_serving_manifest, write_serving_manifest
 from stateset_agents.training.serving_artifacts import export_merged_model_for_serving
 
 
@@ -145,9 +142,7 @@ def _install_fake_transformers(monkeypatch, *, architectures, has_image_text=Tru
 
 
 def test_export_merged_model_causal_lm(tmp_path, monkeypatch):
-    saved = _install_fake_transformers(
-        monkeypatch, architectures=["Qwen2ForCausalLM"]
-    )
+    saved = _install_fake_transformers(monkeypatch, architectures=["Qwen2ForCausalLM"])
 
     output = export_merged_model_for_serving(
         base_model_name="Qwen/Qwen3.5-0.8B-Base",
@@ -199,9 +194,7 @@ def test_export_merged_model_conditional_without_image_text_raises(
 
 
 def test_export_merged_model_trust_remote_code_propagates(tmp_path, monkeypatch):
-    saved = _install_fake_transformers(
-        monkeypatch, architectures=["LlamaForCausalLM"]
-    )
+    saved = _install_fake_transformers(monkeypatch, architectures=["LlamaForCausalLM"])
 
     export_merged_model_for_serving(
         base_model_name="meta-llama/Llama-3",

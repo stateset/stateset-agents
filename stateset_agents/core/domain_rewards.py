@@ -81,7 +81,11 @@ class DomainSpecificReward(RewardFunction):
                     for j in range(i - 1, -1, -1):
                         if turns[j].role == "user":
                             content = turns[j].content
-                            return content if isinstance(content, str) and content else None
+                            return (
+                                content
+                                if isinstance(content, str) and content
+                                else None
+                            )
                     break
                 assistant_count += 1
         return None

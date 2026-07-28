@@ -56,7 +56,9 @@ def test_rust_gae_matches_python_fallback_when_extension_installed():
     last_gae = torch.zeros(batch_size)
     for t in reversed(range(seq_len)):
         next_value = torch.zeros(batch_size) if t == seq_len - 1 else values[:, t + 1]
-        delta = rewards[:, t] + gae.gamma * next_value * (1 - dones[:, t]) - values[:, t]
+        delta = (
+            rewards[:, t] + gae.gamma * next_value * (1 - dones[:, t]) - values[:, t]
+        )
         last_gae = delta + gae.gamma * 0.95 * (1 - dones[:, t]) * last_gae
         torch_advantages[:, t] = last_gae
 

@@ -7,10 +7,10 @@ task difficulty during training, leading to better convergence and performance.
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-from collections.abc import Callable
 
 import numpy as np
 
@@ -402,9 +402,11 @@ class CurriculumLearning:
             "episodes_in_stage": self.progress.episodes_in_stage,
             "total_episodes": self.progress.total_episodes,
             "stage_success_rate": self.progress.stage_success_rate,
-            "stage_avg_reward": np.mean(self.progress.stage_rewards[-50:])
-            if self.progress.stage_rewards
-            else 0.0,
+            "stage_avg_reward": (
+                np.mean(self.progress.stage_rewards[-50:])
+                if self.progress.stage_rewards
+                else 0.0
+            ),
             "advancement_count": len(self.progress.advancement_history),
             "curriculum_complete": self.is_curriculum_complete(),
         }

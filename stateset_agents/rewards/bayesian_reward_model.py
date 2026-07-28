@@ -484,9 +484,9 @@ class BayesianRewardFunction(RewardFunction):
             },
             metadata={
                 "high_uncertainty": is_high_uncertainty,
-                "uncertainty_source": "epistemic"
-                if epistemic > aleatoric
-                else "aleatoric",
+                "uncertainty_source": (
+                    "epistemic" if epistemic > aleatoric else "aleatoric"
+                ),
                 "confidence": 1.0 / (1.0 + total_uncertainty),  # Normalized confidence
             },
             explanation=self._generate_explanation(
@@ -643,7 +643,9 @@ class ActiveLearningSelector:
         ) * uncertainties + self.diversity_weight * diversity_scores
 
         # Select top batch_size
-        selected_indices = [int(idx) for idx in np.argsort(scores)[-batch_size:].tolist()]
+        selected_indices = [
+            int(idx) for idx in np.argsort(scores)[-batch_size:].tolist()
+        ]
 
         # Update selected samples (cap memory at 1000 recent samples)
         for idx in selected_indices:

@@ -21,8 +21,8 @@ from stateset_agents.training import (
 )
 from stateset_agents.training.kimi_k3_starter import (
     KIMI_K3_BASE_MODEL as DirectBaseModel,
-    KimiK3Config as DirectKimiK3Config,
 )
+from stateset_agents.training.kimi_k3_starter import KimiK3Config as DirectKimiK3Config
 
 
 def test_kimi_k3_training_exports_remain_available() -> None:

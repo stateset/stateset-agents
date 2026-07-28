@@ -1,6 +1,7 @@
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
-from unittest.mock import AsyncMock
 
 from stateset_agents.api import config as api_config
 
@@ -164,9 +165,7 @@ async def test_openai_models_list_stub(monkeypatch, preserve_api_config):
 
 
 @pytest.mark.asyncio
-async def test_openai_models_list_hides_internal_ids(
-    monkeypatch, preserve_api_config
-):
+async def test_openai_models_list_hides_internal_ids(monkeypatch, preserve_api_config):
     monkeypatch.setenv("API_REQUIRE_AUTH", "false")
     monkeypatch.setenv("INFERENCE_BACKEND", "stub")
     monkeypatch.setenv("INFERENCE_DEFAULT_MODEL", "internal/model")

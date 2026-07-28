@@ -29,7 +29,9 @@ def test_importing_api_main_raises_no_deprecation_warning():
         warnings.simplefilter("always")
         _fresh_import("stateset_agents.api.main")
 
-    deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    deprecation_warnings = [
+        w for w in caught if issubclass(w.category, DeprecationWarning)
+    ]
     grpo_warnings = [
         w for w in deprecation_warnings if "stateset_agents.api.grpo" in str(w.message)
     ]
@@ -41,7 +43,9 @@ def test_importing_grpo_package_alone_raises_no_deprecation_warning():
         warnings.simplefilter("always")
         _fresh_import("stateset_agents.api.grpo")
 
-    deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    deprecation_warnings = [
+        w for w in caught if issubclass(w.category, DeprecationWarning)
+    ]
     assert deprecation_warnings == []
 
 
@@ -52,7 +56,9 @@ def test_accessing_deprecated_service_symbol_warns():
         warnings.simplefilter("always")
         grpo_pkg.service  # noqa: B018 - attribute access triggers __getattr__
 
-    deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    deprecation_warnings = [
+        w for w in caught if issubclass(w.category, DeprecationWarning)
+    ]
     assert len(deprecation_warnings) == 1
     assert "grpo.service" in str(deprecation_warnings[0].message)
 
@@ -64,7 +70,9 @@ def test_accessing_rate_limiter_symbol_does_not_warn():
         warnings.simplefilter("always")
         grpo_pkg.get_rate_limiter  # noqa: B018
 
-    deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    deprecation_warnings = [
+        w for w in caught if issubclass(w.category, DeprecationWarning)
+    ]
     assert deprecation_warnings == []
 
 

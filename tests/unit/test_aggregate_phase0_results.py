@@ -56,10 +56,17 @@ class TestLoadRuns:
 
     def test_skips_missing_required_fields(self, tmp_path: Path) -> None:
         (tmp_path / "valid.json").write_text(json.dumps(_make_run("gspo", 42, 0.4)))
-        (tmp_path / "missing_trainer.json").write_text(json.dumps({
-            "model": "Qwen", "seed": 1, "commit": "abc",
-            "timestamp": "x", "metrics": {"eval_pass_at_1": 0.5},
-        }))
+        (tmp_path / "missing_trainer.json").write_text(
+            json.dumps(
+                {
+                    "model": "Qwen",
+                    "seed": 1,
+                    "commit": "abc",
+                    "timestamp": "x",
+                    "metrics": {"eval_pass_at_1": 0.5},
+                }
+            )
+        )
         loaded = agg.load_runs(tmp_path)
         assert len(loaded) == 1
 

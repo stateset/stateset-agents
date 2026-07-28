@@ -13,9 +13,9 @@ import logging
 import statistics
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager
 from functools import wraps
-from collections.abc import Callable
 from typing import Any
 
 import psutil
@@ -532,12 +532,10 @@ class AdvancedMonitoringService:
                 opentelemetry_available=OPENTELEMETRY_AVAILABLE,
                 trace_module=trace if OPENTELEMETRY_AVAILABLE else None,
                 jaeger_exporter_cls=JaegerExporter if OPENTELEMETRY_AVAILABLE else None,
-                tracer_provider_cls=TracerProvider
-                if OPENTELEMETRY_AVAILABLE
-                else None,
-                batch_span_processor_cls=BatchSpanProcessor
-                if OPENTELEMETRY_AVAILABLE
-                else None,
+                tracer_provider_cls=TracerProvider if OPENTELEMETRY_AVAILABLE else None,
+                batch_span_processor_cls=(
+                    BatchSpanProcessor if OPENTELEMETRY_AVAILABLE else None
+                ),
                 logger=logger,
                 handled_exceptions=ADV_MONITORING_EXCEPTIONS,
             )

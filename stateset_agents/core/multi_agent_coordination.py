@@ -583,9 +583,11 @@ class MultiAgentCoordinator:
                 for agent_id, state in self.agent_states.items()
             },
             "agent_performance": {
-                agent_id: np.mean(state.performance_history[-10:])
-                if state.performance_history
-                else 0.0
+                agent_id: (
+                    np.mean(state.performance_history[-10:])
+                    if state.performance_history
+                    else 0.0
+                )
                 for agent_id, state in self.agent_states.items()
             },
         }

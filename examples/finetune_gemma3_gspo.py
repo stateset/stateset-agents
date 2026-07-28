@@ -230,7 +230,9 @@ async def finetune_gemma3(
         env_config = CONVERSATION_CONFIGS["customer_service"].copy()
 
     environment = ConversationEnvironment(**env_config)
-    logger.info(f"✅ Environment configured with {len(environment.scenarios)} scenarios")
+    logger.info(
+        f"✅ Environment configured with {len(environment.scenarios)} scenarios"
+    )
 
     # Create reward model
     logger.info("Initializing reward model...")

@@ -155,7 +155,9 @@ def _serialize_resource_requirements(
     return serialized
 
 
-def deserialize_training_config(config_data: TrainingConfig | dict[str, Any]) -> TrainingConfig:
+def deserialize_training_config(
+    config_data: TrainingConfig | dict[str, Any],
+) -> TrainingConfig:
     """Convert serialized config data back into a TrainingConfig."""
     if isinstance(config_data, TrainingConfig):
         return config_data

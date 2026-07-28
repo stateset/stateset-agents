@@ -116,7 +116,8 @@ def get_cache() -> SimpleCache:
 
 
 def cached(
-    ttl_seconds: float, key_prefix: str = "",
+    ttl_seconds: float,
+    key_prefix: str = "",
 ) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
     """
     Decorator to cache function results.

@@ -14,11 +14,11 @@ import time
 import traceback
 import tracemalloc
 import uuid
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
-from collections.abc import Callable
 
 import numpy as np
 import psutil
@@ -262,9 +262,9 @@ class BenchmarkRunner:
                     "std": statistics.stdev(durations) if len(durations) > 1 else 0,
                     "median": statistics.median(durations) if durations else 0,
                 },
-                "errors": errors[:10]
-                if config.detailed_metrics
-                else [],  # Limit error details
+                "errors": (
+                    errors[:10] if config.detailed_metrics else []
+                ),  # Limit error details
                 "system_info": {
                     "cpu_count": mp.cpu_count(),
                     "memory_gb": psutil.virtual_memory().total / 1024**3,
@@ -921,18 +921,18 @@ class BenchmarkRunner:
                 "total_benchmarks": len(all_benchmarks),
                 "total_duration_seconds": total_time,
                 "benchmark_suites": len(all_results),
-                "overall_success_rate": statistics.mean(success_rates)
-                if success_rates
-                else 0,
+                "overall_success_rate": (
+                    statistics.mean(success_rates) if success_rates else 0
+                ),
             },
             "performance_metrics": {
-                "average_throughput": statistics.mean(throughputs)
-                if throughputs
-                else 0,
+                "average_throughput": (
+                    statistics.mean(throughputs) if throughputs else 0
+                ),
                 "max_throughput": max(throughputs) if throughputs else 0,
-                "average_memory_usage_mb": statistics.mean(memory_usages)
-                if memory_usages
-                else 0,
+                "average_memory_usage_mb": (
+                    statistics.mean(memory_usages) if memory_usages else 0
+                ),
                 "max_memory_usage_mb": max(memory_usages) if memory_usages else 0,
             },
             "top_performers": self._get_top_performers(all_benchmarks),

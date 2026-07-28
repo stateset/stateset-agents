@@ -212,7 +212,9 @@ Examples:
     if args.list_profiles:
         if args.config is not None:
             parser.error("--list-profiles cannot be combined with --config")
-        payload = describe_glm5_2_starter_profiles(task=args.task, model_name=args.model)
+        payload = describe_glm5_2_starter_profiles(
+            task=args.task, model_name=args.model
+        )
         print(json.dumps(payload, indent=2, default=str))
         return
 

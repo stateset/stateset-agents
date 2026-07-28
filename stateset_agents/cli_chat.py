@@ -36,15 +36,13 @@ def chat(
         "-m",
         help="HF model name or stub://<id> for the in-process REPL.",
     ),
-    checkpoint: str
-    | None = typer.Option(
+    checkpoint: str | None = typer.Option(
         None,
         "--checkpoint",
         "-c",
         help="Path to a LoRA adapter to load on top of --model.",
     ),
-    system_prompt: str
-    | None = typer.Option(
+    system_prompt: str | None = typer.Option(
         None,
         "--system",
         help="Optional system prompt prepended to every conversation.",
@@ -54,23 +52,20 @@ def chat(
         "--max-new-tokens",
         help="Generation length cap per response.",
     ),
-    history: str
-    | None = typer.Option(
+    history: str | None = typer.Option(
         None,
         "--history",
         help="Path to a JSONL file to APPEND each turn (one JSON object per line). "
         "Capture interesting conversations to replay or grade later with "
         "`make grade-transcript`.",
     ),
-    replay: str
-    | None = typer.Option(
+    replay: str | None = typer.Option(
         None,
         "--replay",
         help="Path to a JSONL transcript to replay as initial conversation context. "
         "Useful for resuming a debugging session.",
     ),
-    grade: str
-    | None = typer.Option(
+    grade: str | None = typer.Option(
         None,
         "--grade",
         help="Score each assistant turn live with the named reward function. "

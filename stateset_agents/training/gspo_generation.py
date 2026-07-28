@@ -152,7 +152,9 @@ class GSPOTrajectoryGenerator:
         vllm_config_cls = VLLMConfig
         vllm_generator_cls = VLLMGenerator
         if vllm_config_cls is None or vllm_generator_cls is None:
-            logger.warning("vLLM backend symbols unavailable, using HuggingFace fallback")
+            logger.warning(
+                "vLLM backend symbols unavailable, using HuggingFace fallback"
+            )
             return
 
         vllm_config = vllm_config_cls(
@@ -172,9 +174,11 @@ class GSPOTrajectoryGenerator:
             max_tokens=self.config.max_completion_length,
             temperature=self.config.temperature,
             top_p=self.config.top_p,
-            dtype="float16"
-            if self.config.fp16
-            else ("bfloat16" if self.config.bf16 else "auto"),
+            dtype=(
+                "float16"
+                if self.config.fp16
+                else ("bfloat16" if self.config.bf16 else "auto")
+            ),
         )
 
         self.vllm_generator = vllm_generator_cls(vllm_config)
@@ -199,7 +203,9 @@ class GSPOTrajectoryGenerator:
                 )
             return bool(success)
         except VLLM_EXCEPTIONS as e:
-            logger.warning(f"Failed to initialize vLLM: {e}. Using HuggingFace fallback.")
+            logger.warning(
+                f"Failed to initialize vLLM: {e}. Using HuggingFace fallback."
+            )
             self._vllm_initialized = False
             return False
 
@@ -323,9 +329,7 @@ class GSPOTrajectoryGenerator:
         for _ in range(num_responses):
             messages = [{"role": "user", "content": prompt}]
             response = await self.agent.generate_response(messages)
-            log_prob = await self._compute_sequence_log_prob(
-                rendered_prompt, response
-            )
+            log_prob = await self._compute_sequence_log_prob(rendered_prompt, response)
             responses.append((response, log_prob))
 
         return responses
@@ -399,7 +403,9 @@ class GSPOTrajectoryGenerator:
         tokenizer = getattr(self.agent, "tokenizer", None)
         model = getattr(self.agent, "model", None)
         if tokenizer is None or model is None:
-            raise RuntimeError("Agent tokenizer and model are required for GSPO scoring")
+            raise RuntimeError(
+                "Agent tokenizer and model are required for GSPO scoring"
+            )
 
         full_text = build_scoring_text(prompt_text, response)
         inputs = tokenizer(

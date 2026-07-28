@@ -2,8 +2,8 @@
 Type stubs for datasets library.
 """
 
-from typing import Any
 from collections.abc import Iterator
+from typing import Any
 
 class Dataset:
     """Stub for Dataset."""

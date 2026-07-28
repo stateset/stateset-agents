@@ -18,9 +18,9 @@ Reference: https://arxiv.org/abs/1707.06347
 import asyncio
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Callable
 
 import torch
 import torch.nn as nn

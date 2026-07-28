@@ -107,11 +107,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
             # Use Accelerate for automatic distributed setup
             self.accelerator = Accelerator(
                 gradient_accumulation_steps=self.distributed_config.gradient_accumulation_steps,
-                mixed_precision="bf16"
-                if self.config.bf16
-                else "fp16"
-                if self.config.fp16
-                else "no",
+                mixed_precision=(
+                    "bf16" if self.config.bf16 else "fp16" if self.config.fp16 else "no"
+                ),
                 log_with=["wandb"] if self.config.report_to == "wandb" else None,
             )
             self.is_main_process = self.accelerator.is_main_process

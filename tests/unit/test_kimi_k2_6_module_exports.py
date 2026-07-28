@@ -21,6 +21,8 @@ from stateset_agents.training import (
 )
 from stateset_agents.training.kimi_k2_6_starter import (
     KIMI_K26_BASE_MODEL as DirectBaseModel,
+)
+from stateset_agents.training.kimi_k2_6_starter import (
     KimiK26Config as DirectKimiK26Config,
 )
 

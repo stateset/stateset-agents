@@ -52,23 +52,27 @@ async def create_enhanced_customer_service_agent(
         system_prompt="You are a helpful and professional customer service representative. "
         "Be empathetic, provide clear solutions, and maintain a friendly tone.",
         use_peft=use_lora,
-        peft_config={
-            "r": 8,
-            "lora_alpha": 16,
-            "target_modules": [
-                "q_proj",
-                "v_proj",
-            ],  # Will be auto-detected based on model
-            "lora_dropout": 0.05,
-            "bias": "none",
-            "task_type": "CAUSAL_LM",
-        }
-        if use_lora
-        else None,
+        peft_config=(
+            {
+                "r": 8,
+                "lora_alpha": 16,
+                "target_modules": [
+                    "q_proj",
+                    "v_proj",
+                ],  # Will be auto-detected based on model
+                "lora_dropout": 0.05,
+                "bias": "none",
+                "task_type": "CAUSAL_LM",
+            }
+            if use_lora
+            else None
+        ),
         torch_dtype="bfloat16",  # Use bfloat16 for better stability
-        attn_implementation="flash_attention_2"
-        if model_name not in ["gpt2", "openai/gpt-oss-120b"]
-        else None,
+        attn_implementation=(
+            "flash_attention_2"
+            if model_name not in ["gpt2", "openai/gpt-oss-120b"]
+            else None
+        ),
     )
 
     # Create agent

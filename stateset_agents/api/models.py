@@ -94,9 +94,7 @@ class Message(BaseModel):
 
     role: MessageRole = Field(..., description="Message role")
     content: str = Field(..., description="Message content")
-    name: str | None = Field(
-        None, description="Optional name for the message author"
-    )
+    name: str | None = Field(None, description="Optional name for the message author")
     metadata: dict[str, Any] | None = Field(None, description="Additional metadata")
 
     @field_validator("content")
@@ -159,9 +157,7 @@ class AgentConfig(BaseModel):
     temperature: float = Field(0.8, ge=0.0, le=2.0, description="Sampling temperature")
     top_p: float = Field(0.9, ge=0.0, le=1.0, description="Top-p (nucleus) sampling")
     top_k: int = Field(50, ge=1, le=1000, description="Top-k sampling")
-    system_prompt: str | None = Field(
-        None, description="System prompt for the agent"
-    )
+    system_prompt: str | None = Field(None, description="System prompt for the agent")
     use_chat_template: bool = Field(True, description="Whether to use chat template")
     enable_planning: bool = Field(False, description="Enable long-term planning")
     planning_config: dict[str, Any] | None = Field(

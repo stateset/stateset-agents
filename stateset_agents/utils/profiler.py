@@ -10,8 +10,8 @@ import io
 import logging
 import pstats
 import time
-from functools import wraps
 from collections.abc import Callable
+from functools import wraps
 
 import psutil
 import torch

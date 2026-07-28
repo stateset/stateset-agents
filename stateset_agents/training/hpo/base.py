@@ -10,11 +10,11 @@ This module provides the foundational abstractions for HPO in StateSet Agents:
 
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
-from collections.abc import Awaitable, Callable
 
 
 class SearchSpaceType(str, Enum):
@@ -158,9 +158,9 @@ class HPOResult:
             "best_metric": self.best_metric,
             "training_time": self.training_time,
             "status": self.status,
-            "checkpoint_path": str(self.checkpoint_path)
-            if self.checkpoint_path
-            else None,
+            "checkpoint_path": (
+                str(self.checkpoint_path) if self.checkpoint_path else None
+            ),
             "metadata": self.metadata,
         }
 

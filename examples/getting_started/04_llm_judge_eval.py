@@ -29,7 +29,6 @@ import argparse
 import re
 import sys
 
-
 JUDGE_PROMPT = """You are evaluating a customer service agent's response. Rate the response on a 0-10 scale.
 
 Customer message: {query}
@@ -49,25 +48,42 @@ Score:"""
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stub", action="store_true",
-                        help="Skip the real model load; just exercise the scaffolding.")
-    parser.add_argument("--judge", default="Qwen/Qwen2.5-1.5B-Instruct",
-                        help="HF model id for the judge.")
+    parser.add_argument(
+        "--stub",
+        action="store_true",
+        help="Skip the real model load; just exercise the scaffolding.",
+    )
+    parser.add_argument(
+        "--judge",
+        default="Qwen/Qwen2.5-1.5B-Instruct",
+        help="HF model id for the judge.",
+    )
     args = parser.parse_args()
 
     test_cases = [
-        ("Test 1 (good response)", "I need a refund for order #9981", "refund",
-         "I can process your refund immediately! Please confirm the original "
-         "payment method and order ID and I'll get started right away."),
-        ("Test 2 (bad response)", "I need a refund for order #9981", "refund",
-         "Random hash 12345 #include <stdio.h>"),
+        (
+            "Test 1 (good response)",
+            "I need a refund for order #9981",
+            "refund",
+            "I can process your refund immediately! Please confirm the original "
+            "payment method and order ID and I'll get started right away.",
+        ),
+        (
+            "Test 2 (bad response)",
+            "I need a refund for order #9981",
+            "refund",
+            "Random hash 12345 #include <stdio.h>",
+        ),
     ]
 
     if args.stub:
         # Smoke: hard-coded scores so the pipeline runs end-to-end without GPU.
         for label, _q, _i, _r in test_cases:
-            print(f"{label}: judge_score = 0.85 (stub)" if "good" in label else
-                  f"{label}: judge_score = 0.10 (stub)")
+            print(
+                f"{label}: judge_score = 0.85 (stub)"
+                if "good" in label
+                else f"{label}: judge_score = 0.10 (stub)"
+            )
         print("\nDone (stub mode). For a real judgment pass --no-stub on a CUDA host.")
         return 0
 
@@ -75,7 +91,9 @@ def main() -> int:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
     except ImportError as e:
-        print(f"Missing dependency: {e}. Install with: pip install 'stateset-agents[training]'")
+        print(
+            f"Missing dependency: {e}. Install with: pip install 'stateset-agents[training]'"
+        )
         return 1
 
     if not torch.cuda.is_available():
@@ -85,18 +103,30 @@ def main() -> int:
     print(f"Loading judge model: {args.judge}")
     tokenizer = AutoTokenizer.from_pretrained(args.judge)
     model = AutoModelForCausalLM.from_pretrained(
-        args.judge, torch_dtype=torch.bfloat16, device_map="cuda",
+        args.judge,
+        torch_dtype=torch.bfloat16,
+        device_map="cuda",
     )
     model.eval()
     print("Judge model loaded.")
 
     @torch.no_grad()
     def judge_score(query: str, intent: str, response: str) -> float:
-        prompt = JUDGE_PROMPT.format(query=query, intent=intent, response=response[:1024])
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024).to("cuda")
-        out = model.generate(**inputs, max_new_tokens=8, do_sample=False,
-                             pad_token_id=tokenizer.eos_token_id)
-        decoded = tokenizer.decode(out[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+        prompt = JUDGE_PROMPT.format(
+            query=query, intent=intent, response=response[:1024]
+        )
+        inputs = tokenizer(
+            prompt, return_tensors="pt", truncation=True, max_length=1024
+        ).to("cuda")
+        out = model.generate(
+            **inputs,
+            max_new_tokens=8,
+            do_sample=False,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+        decoded = tokenizer.decode(
+            out[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
+        )
         m = re.search(r"\b(10|[0-9])\b", decoded)
         return min(int(m.group(1)), 10) / 10.0 if m else 0.5
 

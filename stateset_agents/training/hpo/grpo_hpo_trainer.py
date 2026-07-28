@@ -126,43 +126,52 @@ class GRPOHPOTrainer:
         backend_config = self.hpo_config.get_backend_config()
 
         if self.hpo_config.backend == "optuna":
-            return cast(HPOBackend, OptunaBackend(
-                search_space=self.search_space,
-                objective_metric=self.hpo_config.objective_metric,
-                direction=self.hpo_config.direction,
-                callbacks=self.callbacks,
-                study_name=self.hpo_config.study_name,
-                **backend_config,
-            ))
-        elif self.hpo_config.backend == "ray_tune":
-            return cast(HPOBackend, RayTuneBackend(
-                search_space=self.search_space,
-                objective_metric=self.hpo_config.objective_metric,
-                direction=self.hpo_config.direction,
-                callbacks=self.callbacks,
-                output_dir=self.hpo_config.output_dir,
-                study_name=self.hpo_config.study_name,
-                scheduler=backend_config.get("scheduler", "asha"),
-                search_alg=backend_config.get("search_alg", "bayesopt"),
-                max_concurrent=backend_config.get(
-                    "max_concurrent", self.hpo_config.n_parallel_trials
+            return cast(
+                HPOBackend,
+                OptunaBackend(
+                    search_space=self.search_space,
+                    objective_metric=self.hpo_config.objective_metric,
+                    direction=self.hpo_config.direction,
+                    callbacks=self.callbacks,
+                    study_name=self.hpo_config.study_name,
+                    **backend_config,
                 ),
-                cpu_per_trial=self.hpo_config.cpu_per_trial,
-                gpu_per_trial=self.hpo_config.gpu_per_trial,
-                ray_init_kwargs=backend_config.get("ray_init_kwargs"),
-            ))
+            )
+        elif self.hpo_config.backend == "ray_tune":
+            return cast(
+                HPOBackend,
+                RayTuneBackend(
+                    search_space=self.search_space,
+                    objective_metric=self.hpo_config.objective_metric,
+                    direction=self.hpo_config.direction,
+                    callbacks=self.callbacks,
+                    output_dir=self.hpo_config.output_dir,
+                    study_name=self.hpo_config.study_name,
+                    scheduler=backend_config.get("scheduler", "asha"),
+                    search_alg=backend_config.get("search_alg", "bayesopt"),
+                    max_concurrent=backend_config.get(
+                        "max_concurrent", self.hpo_config.n_parallel_trials
+                    ),
+                    cpu_per_trial=self.hpo_config.cpu_per_trial,
+                    gpu_per_trial=self.hpo_config.gpu_per_trial,
+                    ray_init_kwargs=backend_config.get("ray_init_kwargs"),
+                ),
+            )
         elif self.hpo_config.backend == "wandb":
-            return cast(HPOBackend, WandBSweepsBackend(
-                search_space=self.search_space,
-                objective_metric=self.hpo_config.objective_metric,
-                direction=self.hpo_config.direction,
-                callbacks=self.callbacks,
-                output_dir=self.hpo_config.output_dir,
-                method=backend_config.get("method", "bayes"),
-                project=backend_config.get("project", "stateset-hpo"),
-                entity=backend_config.get("entity"),
-                sweep_name=self.hpo_config.study_name,
-            ))
+            return cast(
+                HPOBackend,
+                WandBSweepsBackend(
+                    search_space=self.search_space,
+                    objective_metric=self.hpo_config.objective_metric,
+                    direction=self.hpo_config.direction,
+                    callbacks=self.callbacks,
+                    output_dir=self.hpo_config.output_dir,
+                    method=backend_config.get("method", "bayes"),
+                    project=backend_config.get("project", "stateset-hpo"),
+                    entity=backend_config.get("entity"),
+                    sweep_name=self.hpo_config.study_name,
+                ),
+            )
         else:
             raise ValueError(f"Unknown backend: {self.hpo_config.backend}")
 
@@ -220,7 +229,9 @@ class GRPOHPOTrainer:
         logger.info(f"Running {hpo_episodes} episodes for HPO trial")
 
         try:
-            original_num_episodes = getattr(training_config, "num_episodes", hpo_episodes)
+            original_num_episodes = getattr(
+                training_config, "num_episodes", hpo_episodes
+            )
             training_config.num_episodes = hpo_episodes
             metrics = await trainer.train()
             training_config.num_episodes = original_num_episodes

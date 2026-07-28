@@ -65,12 +65,18 @@ def _resolve_model_name(provider: str, configured_model_name: str | None = None)
     if configured_model_name:
         return configured_model_name
     if provider == "anthropic":
-        return os.getenv("ANTHROPIC_MODEL") or os.getenv("STATESET_JUDGE_MODEL") or os.getenv(
-            "MODEL_NAME"
-        ) or _DEFAULT_MODEL_NAMES["anthropic"]
-    return os.getenv("OPENAI_MODEL") or os.getenv("STATESET_JUDGE_MODEL") or os.getenv(
-        "MODEL_NAME"
-    ) or _DEFAULT_MODEL_NAMES["openai"]
+        return (
+            os.getenv("ANTHROPIC_MODEL")
+            or os.getenv("STATESET_JUDGE_MODEL")
+            or os.getenv("MODEL_NAME")
+            or _DEFAULT_MODEL_NAMES["anthropic"]
+        )
+    return (
+        os.getenv("OPENAI_MODEL")
+        or os.getenv("STATESET_JUDGE_MODEL")
+        or os.getenv("MODEL_NAME")
+        or _DEFAULT_MODEL_NAMES["openai"]
+    )
 
 
 @dataclass
@@ -443,9 +449,7 @@ class ModelBasedRewardComponent(BaseRewardComponent):
         try:
             client = self.api_client
             if client is not None:
-                effective_provider = _resolve_model_provider(
-                    self.provider, client
-                )
+                effective_provider = _resolve_model_provider(self.provider, client)
                 self.model_name = _resolve_model_name(
                     effective_provider, self._configured_model_name
                 )

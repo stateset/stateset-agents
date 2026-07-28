@@ -15,7 +15,9 @@ from stateset_agents.core.evaluation import (
     RelevanceMetric,
     SampleResult,
 )
-from stateset_agents.core.evaluation_metrics import RelevanceMetric as SplitRelevanceMetric
+from stateset_agents.core.evaluation_metrics import (
+    RelevanceMetric as SplitRelevanceMetric,
+)
 from stateset_agents.core.evaluation_models import (
     EvaluationConfig as SplitEvaluationConfig,
 )
@@ -43,7 +45,9 @@ def test_evaluation_module_reexports_split_models_and_metrics():
 @pytest.mark.asyncio
 async def test_evaluator_preserves_input_order_for_unsorted_sample_ids():
     """Results should follow input order, not lexical sample-id order."""
-    evaluator = AgentEvaluator(EvaluationConfig(metrics=["relevance"], parallel_workers=2))
+    evaluator = AgentEvaluator(
+        EvaluationConfig(metrics=["relevance"], parallel_workers=2)
+    )
     samples = [
         EvaluationSample(id="b", input="slow"),
         EvaluationSample(id="a", input="fast"),
@@ -71,8 +75,12 @@ def test_confidence_level_controls_interval_width_and_summary_label():
     evaluator_90 = AgentEvaluator(EvaluationConfig(confidence_level=0.90))
     evaluator_99 = AgentEvaluator(EvaluationConfig(confidence_level=0.99))
 
-    interval_90 = evaluator_90._compute_confidence_intervals(sample_results)["relevance"]
-    interval_99 = evaluator_99._compute_confidence_intervals(sample_results)["relevance"]
+    interval_90 = evaluator_90._compute_confidence_intervals(sample_results)[
+        "relevance"
+    ]
+    interval_99 = evaluator_99._compute_confidence_intervals(sample_results)[
+        "relevance"
+    ]
 
     width_90 = interval_90[1] - interval_90[0]
     width_99 = interval_99[1] - interval_99[0]

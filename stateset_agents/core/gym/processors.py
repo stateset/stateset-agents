@@ -22,9 +22,7 @@ class ObservationProcessor(ABC):
     """
 
     @abstractmethod
-    def process(
-        self, observation: Any, context: dict[str, Any] | None = None
-    ) -> str:
+    def process(self, observation: Any, context: dict[str, Any] | None = None) -> str:
         """
         Convert a gym observation to a text description.
 
@@ -67,9 +65,7 @@ class VectorObservationProcessor(ObservationProcessor):
         self.feature_names = feature_names
         self.precision = precision
 
-    def process(
-        self, observation: Any, context: dict[str, Any] | None = None
-    ) -> str:
+    def process(self, observation: Any, context: dict[str, Any] | None = None) -> str:
         """Convert numeric vector to text description."""
         if not isinstance(observation, (np.ndarray, list, tuple)):
             observation = np.array(observation)
@@ -122,9 +118,7 @@ class CartPoleObservationProcessor(VectorObservationProcessor):
             precision=precision,
         )
 
-    def process(
-        self, observation: Any, context: dict[str, Any] | None = None
-    ) -> str:
+    def process(self, observation: Any, context: dict[str, Any] | None = None) -> str:
         """Convert CartPole observation to detailed text description."""
         if not isinstance(observation, (np.ndarray, list, tuple)):
             observation = np.array(observation)
@@ -147,9 +141,7 @@ class CartPoleObservationProcessor(VectorObservationProcessor):
         pole_dir = (
             "clockwise"
             if pole_vel > 0
-            else "counterclockwise"
-            if pole_vel < 0
-            else "stable"
+            else "counterclockwise" if pole_vel < 0 else "stable"
         )
         pole_tilt = (
             "right" if pole_angle > 0 else "left" if pole_angle < 0 else "upright"
@@ -192,9 +184,7 @@ class MountainCarObservationProcessor(VectorObservationProcessor):
     def __init__(self, precision: int = 3):
         super().__init__(feature_names=["position", "velocity"], precision=precision)
 
-    def process(
-        self, observation: Any, context: dict[str, Any] | None = None
-    ) -> str:
+    def process(self, observation: Any, context: dict[str, Any] | None = None) -> str:
         """Convert MountainCar observation to text."""
         if not isinstance(observation, (np.ndarray, list, tuple)):
             observation = np.array(observation)
@@ -221,9 +211,7 @@ class MountainCarObservationProcessor(VectorObservationProcessor):
         movement = (
             "moving right"
             if velocity > 0
-            else "moving left"
-            if velocity < 0
-            else "stationary"
+            else "moving left" if velocity < 0 else "stationary"
         )
 
         description = (

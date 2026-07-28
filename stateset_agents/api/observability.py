@@ -9,12 +9,12 @@ import logging
 import sys
 import time
 import uuid
+from collections.abc import Callable, Mapping
 from contextvars import ContextVar
 from datetime import datetime
 from functools import wraps
 from types import MappingProxyType
 from typing import Any
-from collections.abc import Callable, Mapping
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 
@@ -209,9 +209,7 @@ class Span:
         self.attributes[key] = value
         return self
 
-    def add_event(
-        self, name: str, attributes: dict[str, Any] | None = None
-    ) -> "Span":
+    def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> "Span":
         """Add an event to the span."""
         self.events.append(
             {

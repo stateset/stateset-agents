@@ -15,11 +15,7 @@ from typing import Any
 
 try:
     import uvicorn
-    from fastapi import (
-        FastAPI,
-        HTTPException,
-        Request,
-    )
+    from fastapi import FastAPI, HTTPException, Request
     from fastapi.exceptions import RequestValidationError
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse

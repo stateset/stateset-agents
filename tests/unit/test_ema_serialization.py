@@ -35,6 +35,8 @@ def test_multi_ema_load_state_dict_accepts_serialized_decay_keys() -> None:
 
     assert restored_state["step"] == source_state["step"]
     assert restored_state["decay"] == source_state["decay"]
-    assert restored_state["shadow_params"].keys() == source_state["shadow_params"].keys()
+    assert (
+        restored_state["shadow_params"].keys() == source_state["shadow_params"].keys()
+    )
     for name, tensor in source_state["shadow_params"].items():
         assert torch.equal(restored_state["shadow_params"][name], tensor)

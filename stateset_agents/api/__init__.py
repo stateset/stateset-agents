@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from .. import __version__ as _PACKAGE_VERSION
 from .config import APIConfig, get_config
 from .schemas import (
     ConversationRequest,
@@ -28,7 +29,6 @@ from .schemas import (
     TrainingRequest,
     TrainingResponse,
 )
-from .. import __version__ as _PACKAGE_VERSION
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -39,6 +39,7 @@ def create_app(*args: Any, **kwargs: Any) -> FastAPI:
     from .main import create_app as _create_app
 
     return _create_app(*args, **kwargs)
+
 
 __all__ = [
     "create_app",

@@ -154,9 +154,11 @@ async def run_post_training_evaluation(
                         conversation.append(
                             {
                                 "role": role,
-                                "content": content[:200] + "..."
-                                if len(content) > 200
-                                else content,
+                                "content": (
+                                    content[:200] + "..."
+                                    if len(content) > 200
+                                    else content
+                                ),
                             }
                         )
                     traj_info["conversation"] = conversation

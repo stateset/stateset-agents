@@ -167,7 +167,8 @@ def batch_compute_gae(
 
     # Sequential fallback
     return [
-        compute_gae(r, v, gamma, gae_lambda) for r, v in zip(all_rewards, all_values, strict=False)
+        compute_gae(r, v, gamma, gae_lambda)
+        for r, v in zip(all_rewards, all_values, strict=False)
     ]
 
 
@@ -232,7 +233,9 @@ def clip_rewards(
     rewards = np.asarray(rewards, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return cast(np.ndarray, np.asarray(_rust_core.clip_rewards(rewards, min_val, max_val)))
+        return cast(
+            np.ndarray, np.asarray(_rust_core.clip_rewards(rewards, min_val, max_val))
+        )
 
     return cast(np.ndarray, np.clip(rewards, min_val, max_val))
 
@@ -301,7 +304,9 @@ def apply_gspo_clipping(
         return cast(
             np.ndarray,
             np.asarray(
-                _rust_core.apply_gspo_clipping(ratios, advantages, clip_left, clip_right)
+                _rust_core.apply_gspo_clipping(
+                    ratios, advantages, clip_left, clip_right
+                )
             ),
         )
 

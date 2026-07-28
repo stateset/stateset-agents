@@ -244,7 +244,9 @@ def _make_gepo_harness() -> TrainerHarness:
 
 
 class _StubRewardModel:
-    async def compute_reward(self, turns: list[Any], context: dict[str, Any]) -> RewardResult:
+    async def compute_reward(
+        self, turns: list[Any], context: dict[str, Any]
+    ) -> RewardResult:
         score = 1.0 if turns[0].content == "ok" else 0.0
         return RewardResult(score=score, breakdown={}, components={})
 
@@ -344,9 +346,9 @@ async def test_ratio_and_gradient_invariants(trainer_name: str) -> None:
     # (a) On-policy first evaluation: mean ratio in [0.99, 1.01].
     onpolicy = harness.onpolicy_ratios()
     mean_ratio = onpolicy.mean().item()
-    assert 0.99 <= mean_ratio <= 1.01, (
-        f"{trainer_name}: on-policy mean ratio {mean_ratio} not close to 1"
-    )
+    assert (
+        0.99 <= mean_ratio <= 1.01
+    ), f"{trainer_name}: on-policy mean ratio {mean_ratio} not close to 1"
 
     # (b) After one real optimizer step, recomputed ratio must diverge from 1.
     ratio_after = harness.recompute_ratio_after_step()

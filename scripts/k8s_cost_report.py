@@ -20,10 +20,10 @@ import json
 import re
 import subprocess
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
-from collections.abc import Iterable
 
 _QTY_RE = re.compile(r"^([0-9.]+)([KMGTE]i?|m)?$")
 _RS_HASH_RE = re.compile(r"^(?P<name>.+)-[0-9a-f]{9,10}$")

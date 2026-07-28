@@ -9,7 +9,6 @@ import pytest
 
 from stateset_agents.scaffolding import (
     SCAFFOLD_TEMPLATES,
-    StarterTemplate,
     list_templates,
     scaffold_project,
 )
@@ -42,9 +41,16 @@ class TestCustomerSupportTemplate:
         out = tmp_path / "client_acme"
         created = scaffold_project("customer-support", out)
         expected = {
-            "config.yaml", "scenarios.jsonl", "reward.py", "train.py",
-            "eval.py", "serve.sh", "README.md", ".gitignore",
-            "requirements.txt", ".stateset-agents-starter.json",
+            "config.yaml",
+            "scenarios.jsonl",
+            "reward.py",
+            "train.py",
+            "eval.py",
+            "serve.sh",
+            "README.md",
+            ".gitignore",
+            "requirements.txt",
+            ".stateset-agents-starter.json",
         }
         names = {p.name for p in created}
         assert expected.issubset(names)
@@ -67,6 +73,7 @@ class TestCustomerSupportTemplate:
         out = tmp_path / "p"
         scaffold_project("customer-support", out)
         import yaml
+
         cfg = yaml.safe_load((out / "config.yaml").read_text())
         assert "model" in cfg
         assert "training" in cfg
@@ -78,6 +85,7 @@ class TestCustomerSupportTemplate:
         out = tmp_path / "p"
         scaffold_project("customer-support", out)
         import stat
+
         mode = (out / "serve.sh").stat().st_mode
         assert mode & stat.S_IXUSR
 
@@ -123,7 +131,13 @@ class TestToolCallingAgentTemplate:
         out = tmp_path / "tools"
         created = scaffold_project("tool-calling-agent", out)
         names = {p.name for p in created}
-        assert {"config.yaml", "tools.py", "scenarios.jsonl", "reward.py", "train.py"}.issubset(names)
+        assert {
+            "config.yaml",
+            "tools.py",
+            "scenarios.jsonl",
+            "reward.py",
+            "train.py",
+        }.issubset(names)
 
     def test_scenarios_have_expected_tool(self, tmp_path: Path) -> None:
         out = tmp_path / "tools"
@@ -153,12 +167,19 @@ class TestToolCallingAgentTemplate:
         out = tmp_path / "tools"
         scaffold_project("tool-calling-agent", out)
         import yaml
+
         cfg = yaml.safe_load((out / "config.yaml").read_text())
         r = cfg["reward"]
         # Weights should sum to ~1.0.
-        assert abs(
-            r["tool_selection_weight"] + r["param_correctness_weight"] + r["outcome_weight"] - 1.0
-        ) < 1e-6
+        assert (
+            abs(
+                r["tool_selection_weight"]
+                + r["param_correctness_weight"]
+                + r["outcome_weight"]
+                - 1.0
+            )
+            < 1e-6
+        )
 
 
 class TestMinimalTemplate:
@@ -248,9 +269,12 @@ class TestCLI:
     def test_cli_list_does_not_require_output(self) -> None:
         import subprocess
         import sys
+
         result = subprocess.run(
             [sys.executable, "-m", "stateset_agents.cli", "starter", "list"],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 0
         assert "customer-support" in result.stdout
@@ -259,19 +283,37 @@ class TestCLI:
     def test_cli_missing_output_for_scaffold_exits_2(self) -> None:
         import subprocess
         import sys
+
         result = subprocess.run(
-            [sys.executable, "-m", "stateset_agents.cli", "starter", "customer-support"],
-            capture_output=True, text=True, check=False,
+            [
+                sys.executable,
+                "-m",
+                "stateset_agents.cli",
+                "starter",
+                "customer-support",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 2
 
     def test_cli_scaffold_succeeds(self, tmp_path: Path) -> None:
         import subprocess
         import sys
+
         result = subprocess.run(
-            [sys.executable, "-m", "stateset_agents.cli",
-             "starter", "minimal", str(tmp_path / "p")],
-            capture_output=True, text=True, check=False,
+            [
+                sys.executable,
+                "-m",
+                "stateset_agents.cli",
+                "starter",
+                "minimal",
+                str(tmp_path / "p"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 0
         assert (tmp_path / "p" / "config.yaml").exists()
