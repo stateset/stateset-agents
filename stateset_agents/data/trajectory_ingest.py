@@ -222,16 +222,18 @@ def from_openai_jsonl(path: str | Path) -> list[MultiTurnTrajectory]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{lineno}: invalid JSON — {exc}") from exc
 
+            messages: list[Any]
             if isinstance(obj, list):
                 messages = obj
                 reward = None
                 metadata: dict[str, Any] = {}
             elif isinstance(obj, dict):
-                messages = obj.get("messages")
-                if messages is None:
+                raw_messages = obj.get("messages")
+                if raw_messages is None:
                     raise ValueError(
                         f"{path}:{lineno}: expected a 'messages' key or a bare list"
                     )
+                messages = list(raw_messages)
                 reward = _extract_reward(obj)
                 metadata = {
                     k: v
@@ -269,7 +271,8 @@ def _langchain_role_and_content(
     # Flat shape: {"type": "human"|"ai"|..., "data": {...}} or fields inlined.
     lc_type = str(item.get("type", "")).lower()
     role = _LC_TYPE_TO_ROLE.get(lc_type, lc_type or "assistant")
-    data = item.get("data") if isinstance(item.get("data"), dict) else item
+    raw_data = item.get("data")
+    data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else item
     return role, data.get("content"), data
 
 
@@ -333,9 +336,8 @@ def from_langchain_json(
 
     See the module docstring for the two supported per-message shapes.
     """
-    if isinstance(obj_or_path, (str, Path)) and not isinstance(
-        obj_or_path, (dict, list)
-    ):
+    data: Any
+    if isinstance(obj_or_path, (str, Path)):
         path = Path(obj_or_path)
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
