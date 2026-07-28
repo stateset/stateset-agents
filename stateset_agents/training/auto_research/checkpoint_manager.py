@@ -56,7 +56,7 @@ class CheckpointManager:
 
             meta = {"experiment_id": experiment_id, "params": params}
             meta_path = tmp_dir / "metadata.json"
-            with open(meta_path, "w", encoding="utf-8") as f:
+            with open(meta_path, "w", encoding="utf-8", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2)
 
             # Write completion marker
@@ -102,7 +102,7 @@ class CheckpointManager:
         self._save_agent_state(agent, model_path)
 
         meta = {"experiment_id": experiment_id, "params": params}
-        with open(exp_dir / "metadata.json", "w", encoding="utf-8") as f:
+        with open(exp_dir / "metadata.json", "w", encoding="utf-8", encoding="utf-8") as f:
             json.dump(meta, f, indent=2)
 
         return exp_dir
@@ -119,7 +119,7 @@ class CheckpointManager:
         meta_path = self.best_dir / "metadata.json"
         if not meta_path.exists():
             return None
-        with open(meta_path) as f:
+        with open(meta_path, encoding="utf-8") as f:
             return cast(dict[str, Any], json.load(f))
 
     def restore_best(self, agent: Any) -> bool:

@@ -104,7 +104,7 @@ class ExperimentTracker:
         if not jsonl_path.exists():
             return tracker
 
-        with open(jsonl_path) as f:
+        with open(jsonl_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -166,7 +166,7 @@ class ExperimentTracker:
 
         tracker = cls(Path(output_dir), objective_metric, direction)
 
-        with open(tsv_path, newline="") as f:
+        with open(tsv_path, newline="", encoding="utf-8") as f:
             reader = csv.reader(f, delimiter="\t")
             header = next(reader, None)
             if header is None:
@@ -311,7 +311,7 @@ class ExperimentTracker:
         if self._tsv_path.exists():
             # Check if it has a valid header
             try:
-                with open(self._tsv_path) as f:
+                with open(self._tsv_path, encoding="utf-8") as f:
                     first_line = f.readline().strip()
                 if first_line and "experiment_id" in first_line:
                     return  # Header exists
@@ -319,17 +319,17 @@ class ExperimentTracker:
                 pass
 
         # Write header
-        with open(self._tsv_path, "w", newline="", encoding="utf-8") as f:
+        with open(self._tsv_path, "w", newline="", encoding="utf-8", encoding="utf-8") as f:
             writer = csv.writer(f, delimiter="\t")
             writer.writerow(_TSV_HEADER)
 
     def _append_jsonl(self, record: ExperimentRecord) -> None:
-        with open(self._json_path, "a") as f:
+        with open(self._json_path, "a", encoding="utf-8", encoding="utf-8") as f:
             f.write(json.dumps(record.to_dict()) + "\n")
             f.flush()
 
     def _append_tsv(self, record: ExperimentRecord) -> None:
-        with open(self._tsv_path, "a", newline="") as f:
+        with open(self._tsv_path, "a", newline="", encoding="utf-8", encoding="utf-8") as f:
             writer = csv.writer(f, delimiter="\t")
             writer.writerow(
                 [
