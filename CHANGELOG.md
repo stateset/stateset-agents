@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — trajectory ingestion for logs from any agent framework
+
+- `stateset_agents.data.trajectory_ingest`: `from_openai_messages`/`from_openai_jsonl`
+  and `from_langchain_json` convert OpenAI chat-completions logs and
+  LangChain/LangGraph message dumps into `MultiTurnTrajectory` — tool calls
+  preserved in turn metadata, multimodal content flattened to text (skipped
+  parts recorded, not dropped), optional per-conversation `reward`/`score`
+  carried through. `to_grading_history()` emits the `{"role", "content"}`
+  dicts `scripts/grade_transcript.py` already reads, so logs from any agent
+  plug straight into the existing grade -> curate -> retrain loop.
+- New CLI subcommand `stateset-agents ingest --format openai|langchain
+  --input PATH --output PATH`.
+- Exported from `stateset_agents.data`; see docs/COOKBOOK.md Recipe 2b
+  ("Bring your own agent's logs").
+
 ## [0.17.3] - 2026-07-28 — Green CI: toolchain pinning, Windows/utf-8 correctness, packaging pipeline repair
 
 ## [0.17.2] - 2026-07-27 — Packaging A-grade: PyPI pipeline repair, rust_core 0.1.1, JS auth + CI
