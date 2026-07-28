@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-27 — RL-core correctness + API hardening
+
+### Fixed — RL training core correctness
+
+- **DAPO**: old-policy token log probs are now frozen at rollout time (computed
+  once under `no_grad` in `collect_samples_with_dynamic_sampling`) instead of
+  being recomputed from the current model inside `train_step`, and
+  `num_gradient_updates` (µ) is honored instead of being hard-capped at 1 —
+  Clip-Higher and the PPO-style `min(unclipped, clipped)` objective can now
+  actually fire on inner updates.
+- **GEPO**: group-expectation importance weights are computed in log space via
+  `logsumexp` (previously `exp()` of summed sequence log probs underflowed to 0
+  for realistic responses, yielding NaN/zero coefficients), and the response
+  mask off-by-one vs. the shifted-label convention is fixed
+  (`build_response_mask`, `max(P-1, 0)`).
+- **GSPO**: generation and scoring now share one tokenization convention —
+  the chat-template-rendered prompt (including `system_prompt` when set) is
+  scored via `build_scoring_text(rendered_prompt, response)` with no injected
+  space; the trainer's current-policy and reference-KL log probs use the same
+  convention, removing a systematic importance-ratio bias. Accumulated loss is
+  normalized by the number of processed query groups. vLLM rollouts are
+  rescored at T=1 by default (`rescore_old_log_probs=True`; requires the HF
+  agent model/tokenizer even in vLLM deployments — set it to `False` to keep
+  raw sampling-temperature `cumulative_logprob` with a one-time warning).
+  Removed the fake-parameter injection for parameterless models
+  (`GSPOTrainer` now raises `ValueError`).
+- **GSPO-token**: restored the gradient path (token log probs were computed
+  under `torch.no_grad()`, making `backward()` a no-op), masked prompt tokens
+  out of the objective, fixed the reward call to use `compute_turn_reward`,
+  and replaced `self.model.device` with `_get_model_device` (PEFT/sharded-safe).
+- **GRPO loss path** (`loss_computation.py`): PPO ratios are length-normalized
+  (`exp((new−old)/token_count)`) instead of `exp()` of raw log-prob sums; the
+  entropy bonus is now differentiable (computed from the grad-enabled forward's
+  logits); `LOSS_EXCEPTIONS` narrowed to `(RuntimeError, ValueError, OSError)`
+  so programming errors propagate; `compute_enhanced_grpo_loss` gained ratio
+  clipping and skips the full-vocab `log_softmax` when `beta == 0`.
+- **VAPO**: value clipping compares fresh values against rollout-time
+  predictions (was clipping values against themselves — a no-op); scalar
+  rewards are placed on the terminal response token only before GAE (was
+  broadcast across every token, inflating returns); `critic_advantages` is
+  wired into the value target (`returns = critic_advantages + old_values`,
+  decoupled GAE); the optimizer steps once per `train_step` over the
+  prompt-averaged loss. VAPO's GAE uses the Rust kernel
+  (`stateset_rl_core`) when installed, with a byte-identical Python fallback.
+
+### Added — behavioral trainer tests
+
+- Cross-trainer invariant suite `tests/integration/test_trainer_ratio_invariants.py`
+  (DAPO/GEPO/GSPO on a tiny real GPT-2: on-policy first-update ratio ≈ 1,
+  ratio ≠ 1 after a parameter update, finite loss, nonzero grads) plus
+  per-trainer behavioral tests and a Rust/Python GAE parity test —
+  the previous algorithm tests re-derived the math inline and could not catch
+  any of the defects above.
+
 ### Security
 
 - **Training Lab API gated behind auth + feature flag**: `/api/lab/*` (22 REST
