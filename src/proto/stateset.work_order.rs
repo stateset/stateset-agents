@@ -2,8 +2,8 @@
 /// WorkOrder represents a task or job to be completed
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkOrder {
-    #[prost(int32, tag = "1")]
-    pub id: i32,
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub title: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
@@ -12,18 +12,22 @@ pub struct WorkOrder {
     pub status: i32,
     #[prost(enumeration = "WorkOrderPriority", tag = "5")]
     pub priority: i32,
-    #[prost(int32, tag = "6")]
-    pub assigned_to: i32,
-    #[prost(int32, tag = "7")]
-    pub product_id: i32,
+    #[prost(string, tag = "6")]
+    pub assigned_to: ::prost::alloc::string::String,
+    #[prost(string, tag = "7")]
+    pub asset_id: ::prost::alloc::string::String,
     #[prost(int32, tag = "8")]
-    pub quantity: i32,
+    pub quantity_produced: i32,
     #[prost(message, optional, tag = "9")]
     pub due_date: ::core::option::Option<::prost_types::Timestamp>,
     #[prost(message, optional, tag = "10")]
     pub created_at: ::core::option::Option<::prost_types::Timestamp>,
     #[prost(message, optional, tag = "11")]
     pub updated_at: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(string, tag = "12")]
+    pub bill_of_materials_number: ::prost::alloc::string::String,
+    #[prost(string, tag = "13")]
+    pub parts_required_json: ::prost::alloc::string::String,
 }
 /// CreateWorkOrderRequest is used to create a new work order
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -34,14 +38,18 @@ pub struct CreateWorkOrderRequest {
     pub description: ::prost::alloc::string::String,
     #[prost(enumeration = "WorkOrderPriority", tag = "3")]
     pub priority: i32,
-    #[prost(int32, tag = "4")]
-    pub assigned_to: i32,
-    #[prost(int32, tag = "5")]
-    pub product_id: i32,
+    #[prost(string, tag = "4")]
+    pub assigned_to: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub asset_id: ::prost::alloc::string::String,
     #[prost(int32, tag = "6")]
-    pub quantity: i32,
+    pub quantity_produced: i32,
     #[prost(message, optional, tag = "7")]
     pub due_date: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(string, tag = "8")]
+    pub bill_of_materials_number: ::prost::alloc::string::String,
+    #[prost(string, tag = "9")]
+    pub parts_required_json: ::prost::alloc::string::String,
 }
 /// CreateWorkOrderResponse is the response for creating a work order
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -50,10 +58,10 @@ pub struct CreateWorkOrderResponse {
     pub work_order: ::core::option::Option<WorkOrder>,
 }
 /// GetWorkOrderRequest is used to retrieve a specific work order
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetWorkOrderRequest {
-    #[prost(int32, tag = "1")]
-    pub id: i32,
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
 }
 /// GetWorkOrderResponse is the response for retrieving a work order
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -64,8 +72,8 @@ pub struct GetWorkOrderResponse {
 /// UpdateWorkOrderRequest is used to update an existing work order
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateWorkOrderRequest {
-    #[prost(int32, tag = "1")]
-    pub id: i32,
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub title: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
@@ -74,12 +82,18 @@ pub struct UpdateWorkOrderRequest {
     pub status: i32,
     #[prost(enumeration = "WorkOrderPriority", tag = "5")]
     pub priority: i32,
-    #[prost(int32, tag = "6")]
-    pub assigned_to: i32,
+    #[prost(string, tag = "6")]
+    pub assigned_to: ::prost::alloc::string::String,
     #[prost(int32, tag = "7")]
-    pub quantity: i32,
+    pub quantity_produced: i32,
     #[prost(message, optional, tag = "8")]
     pub due_date: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(string, tag = "9")]
+    pub asset_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "10")]
+    pub bill_of_materials_number: ::prost::alloc::string::String,
+    #[prost(string, tag = "11")]
+    pub parts_required_json: ::prost::alloc::string::String,
 }
 /// UpdateWorkOrderResponse is the response for updating a work order
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -88,10 +102,10 @@ pub struct UpdateWorkOrderResponse {
     pub work_order: ::core::option::Option<WorkOrder>,
 }
 /// DeleteWorkOrderRequest is used to delete a work order
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteWorkOrderRequest {
-    #[prost(int32, tag = "1")]
-    pub id: i32,
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
 }
 /// DeleteWorkOrderResponse is the response for deleting a work order
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -100,14 +114,14 @@ pub struct DeleteWorkOrderResponse {
     pub success: bool,
 }
 /// ListWorkOrdersRequest is used to retrieve a list of work orders
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListWorkOrdersRequest {
     #[prost(enumeration = "WorkOrderStatus", tag = "1")]
     pub status: i32,
     #[prost(enumeration = "WorkOrderPriority", tag = "2")]
     pub priority: i32,
-    #[prost(int32, tag = "3")]
-    pub assigned_to: i32,
+    #[prost(string, tag = "3")]
+    pub assigned_to: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
     pub pagination: ::core::option::Option<super::common::PaginationRequest>,
 }
@@ -120,12 +134,12 @@ pub struct ListWorkOrdersResponse {
     pub pagination: ::core::option::Option<super::common::PaginationResponse>,
 }
 /// AssignWorkOrderRequest is used to assign a work order to a user
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AssignWorkOrderRequest {
-    #[prost(int32, tag = "1")]
-    pub id: i32,
-    #[prost(int32, tag = "2")]
-    pub user_id: i32,
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub user_id: ::prost::alloc::string::String,
 }
 /// AssignWorkOrderResponse is the response for assigning a work order
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -134,10 +148,10 @@ pub struct AssignWorkOrderResponse {
     pub work_order: ::core::option::Option<WorkOrder>,
 }
 /// CompleteWorkOrderRequest is used to mark a work order as completed
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CompleteWorkOrderRequest {
-    #[prost(int32, tag = "1")]
-    pub id: i32,
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
 }
 /// CompleteWorkOrderResponse is the response for completing a work order
 #[derive(Clone, PartialEq, ::prost::Message)]
