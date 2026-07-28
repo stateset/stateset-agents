@@ -202,7 +202,7 @@ def test_forwarder_scripts_are_at_most_15_lines_of_code(script_name):
     import ast
 
     path = REPO_ROOT / "examples" / script_name
-    source = path.read_text()
+    source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
     body = tree.body
     if (

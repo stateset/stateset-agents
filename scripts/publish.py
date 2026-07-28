@@ -131,7 +131,7 @@ class Publisher:
             content,
         )
 
-        with open(self.version_file, "w") as f:
+        with open(self.version_file, "w", encoding="utf-8") as f:
             f.write(content)
 
         # Update pyproject.toml
@@ -142,7 +142,7 @@ class Publisher:
             pyproject_content, new_version
         )
 
-        with open(self.pyproject_file, "w") as f:
+        with open(self.pyproject_file, "w", encoding="utf-8") as f:
             f.write(pyproject_content)
 
         # Update setup.py (if present)
@@ -370,7 +370,7 @@ print("Import test successful")
 
         lines.insert(insert_index, changelog_entry.strip())
 
-        with open(self.changelog_file, "w") as f:
+        with open(self.changelog_file, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
         print("Changelog updated")

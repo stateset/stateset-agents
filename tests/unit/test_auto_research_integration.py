@@ -157,7 +157,9 @@ class TestAutoResearchLoopIntegration:
         assert (tmp_path / "experiments.jsonl").exists()
 
         # Verify TSV has correct number of lines (header + 4 records)
-        tsv_lines = (tmp_path / "results.tsv").read_text().strip().split("\n")
+        tsv_lines = (
+            (tmp_path / "results.tsv").read_text(encoding="utf-8").strip().split("\n")
+        )
         assert len(tsv_lines) == 5  # header + 4 records
 
     @pytest.mark.asyncio

@@ -271,7 +271,7 @@ def _mermaid_to_svg(diagram: str, *, timeout: float = 15.0) -> str | None:
     except (urllib.error.URLError, OSError) as e:
         print(f"  [mermaid] fetch failed for diagram (len={len(diagram)}): {e}")
         return None
-    cache_path.write_text(svg)
+    cache_path.write_text(svg, encoding="utf-8")
     return svg
 
 

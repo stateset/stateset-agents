@@ -179,7 +179,7 @@ class TestExperimentTracker:
             )
         )
 
-        tsv = (tmp_dir / "results.tsv").read_text()
+        tsv = (tmp_dir / "results.tsv").read_text(encoding="utf-8")
         lines = tsv.strip().split("\n")
         assert len(lines) == 2  # header + 1 record
         assert "exp_1" in lines[1]
@@ -199,7 +199,7 @@ class TestExperimentTracker:
             )
         )
 
-        jsonl = (tmp_dir / "experiments.jsonl").read_text().strip()
+        jsonl = (tmp_dir / "experiments.jsonl").read_text(encoding="utf-8").strip()
         data = json.loads(jsonl)
         assert data["experiment_id"] == "exp_1"
         assert data["objective_value"] == 0.5

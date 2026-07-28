@@ -105,6 +105,6 @@ def test_router_uses_os_env_for_warning() -> None:
         / "api"
         / "routers"
         / "agents.py"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     assert "STATESET_DEFAULT_CHECKPOINT" in router_src
     assert "startup hook likely failed" in router_src

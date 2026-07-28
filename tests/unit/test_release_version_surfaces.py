@@ -10,7 +10,7 @@ from stateset_agents.utils.repo_hygiene import find_version_hygiene_issues
 
 def test_makefile_uses_package_version_for_docker_tags() -> None:
     makefile_path = Path(__file__).resolve().parents[2] / "Makefile"
-    contents = makefile_path.read_text()
+    contents = makefile_path.read_text(encoding="utf-8")
 
     assert "PACKAGE_VERSION := $(shell $(PYTHON_BIN) -c " in contents
     assert "stateset/stateset-agents-api:$(PACKAGE_VERSION)" in contents
@@ -32,8 +32,8 @@ def test_helm_values_use_current_package_version() -> None:
         / "stateset-agents"
         / "Chart.yaml"
     )
-    values_contents = values_path.read_text()
-    chart_contents = chart_path.read_text()
+    values_contents = values_path.read_text(encoding="utf-8")
+    chart_contents = chart_path.read_text(encoding="utf-8")
 
     assert f'tag: "{__version__}"' in values_contents
     assert f'appVersion: "{__version__}"' in chart_contents
@@ -52,7 +52,7 @@ def test_selected_kubernetes_and_docs_refs_use_current_package_version() -> None
     ]
 
     for target in targets:
-        contents = target.read_text()
+        contents = target.read_text(encoding="utf-8")
         assert "0.7.1" not in contents
         assert __version__ in contents
 
@@ -83,7 +83,7 @@ def test_public_deployment_examples_require_auth_by_default() -> None:
     ]
 
     for target in targets:
-        contents = target.read_text()
+        contents = target.read_text(encoding="utf-8")
         assert 'API_REQUIRE_AUTH: "true"' in contents
         assert 'API_REQUIRE_AUTH: "false"' not in contents
 
@@ -122,7 +122,7 @@ def test_public_docs_and_examples_do_not_embed_internal_identifiers() -> None:
     ]
 
     for target in targets:
-        contents = target.read_text()
+        contents = target.read_text(encoding="utf-8")
         for marker in forbidden_markers:
             assert marker not in contents
 

@@ -163,7 +163,7 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest -x --tb=short
+        pytest --tb=short
 
   security:
     runs-on: ubuntu-latest

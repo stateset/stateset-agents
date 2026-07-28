@@ -160,7 +160,9 @@ class TestEndToEndCLI:
         assert result.returncode == 0
         assert out.exists()
         lines = [
-            json.loads(line) for line in out.read_text().splitlines() if line.strip()
+            json.loads(line)
+            for line in out.read_text(encoding="utf-8").splitlines()
+            if line.strip()
         ]
         assert len(lines) == 2
         for line in lines:

@@ -34,7 +34,7 @@ def test_no_deprecated_shim_imports() -> None:
                 continue
             if any(part in EXCLUDED_ANYWHERE for part in parts):
                 continue
-            for line in path.read_text().splitlines():
+            for line in path.read_text(encoding="utf-8").splitlines():
                 if DEPRECATED_IMPORT_RE.search(line):
                     offenders.append((path.as_posix(), line.strip()))
                     break

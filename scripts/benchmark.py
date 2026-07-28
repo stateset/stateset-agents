@@ -231,7 +231,7 @@ class FrameworkBenchmark:
         """Save benchmark results to file."""
         filepath = self.output_dir / filename
 
-        with open(filepath, "w") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, default=str)
 
         logger.info(f"📊 Benchmark results saved to {filepath}")

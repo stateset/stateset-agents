@@ -60,7 +60,9 @@ class TestCustomerSupportTemplate:
         scaffold_project("customer-support", out)
         scenarios = [
             json.loads(line)
-            for line in (out / "scenarios.jsonl").read_text().splitlines()
+            for line in (out / "scenarios.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
             if line.strip()
         ]
         assert len(scenarios) > 0
@@ -74,7 +76,7 @@ class TestCustomerSupportTemplate:
         scaffold_project("customer-support", out)
         import yaml
 
-        cfg = yaml.safe_load((out / "config.yaml").read_text())
+        cfg = yaml.safe_load((out / "config.yaml").read_text(encoding="utf-8"))
         assert "model" in cfg
         assert "training" in cfg
         assert cfg["training"]["algorithm"] == "gspo"
@@ -92,20 +94,22 @@ class TestCustomerSupportTemplate:
     def test_marker_file_records_template(self, tmp_path: Path) -> None:
         out = tmp_path / "p"
         scaffold_project("customer-support", out, project_name="client-acme")
-        marker = json.loads((out / ".stateset-agents-starter.json").read_text())
+        marker = json.loads(
+            (out / ".stateset-agents-starter.json").read_text(encoding="utf-8")
+        )
         assert marker["template"] == "customer-support"
         assert marker["project_name"] == "client-acme"
 
     def test_project_name_substitution(self, tmp_path: Path) -> None:
         out = tmp_path / "client_acme"
         scaffold_project("customer-support", out)
-        readme = (out / "README.md").read_text()
+        readme = (out / "README.md").read_text(encoding="utf-8")
         assert "client_acme" in readme
 
     def test_explicit_project_name_overrides_dirname(self, tmp_path: Path) -> None:
         out = tmp_path / "p"
         scaffold_project("customer-support", out, project_name="explicit-name")
-        readme = (out / "README.md").read_text()
+        readme = (out / "README.md").read_text(encoding="utf-8")
         assert "explicit-name" in readme
 
 
@@ -121,7 +125,7 @@ class TestGSM8KMathTemplate:
     def test_train_script_imports_gsm8k_helpers(self, tmp_path: Path) -> None:
         out = tmp_path / "math"
         scaffold_project("gsm8k-math", out)
-        train = (out / "train.py").read_text()
+        train = (out / "train.py").read_text(encoding="utf-8")
         assert "load_gsm8k" in train
         assert "GSM8KReward" in train
 
@@ -144,7 +148,9 @@ class TestToolCallingAgentTemplate:
         scaffold_project("tool-calling-agent", out)
         scenarios = [
             json.loads(line)
-            for line in (out / "scenarios.jsonl").read_text().splitlines()
+            for line in (out / "scenarios.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
             if line.strip()
         ]
         assert len(scenarios) > 0
@@ -156,7 +162,7 @@ class TestToolCallingAgentTemplate:
     def test_tools_py_exports_sample_tools(self, tmp_path: Path) -> None:
         out = tmp_path / "tools"
         scaffold_project("tool-calling-agent", out)
-        body = (out / "tools.py").read_text()
+        body = (out / "tools.py").read_text(encoding="utf-8")
         # tools.py imports the bundled tools and exposes SAMPLE_TOOLS as the union
         # of the bundled set + user-supplied CUSTOM_TOOLS.
         assert "SAMPLE_TOOLS" in body
@@ -168,7 +174,7 @@ class TestToolCallingAgentTemplate:
         scaffold_project("tool-calling-agent", out)
         import yaml
 
-        cfg = yaml.safe_load((out / "config.yaml").read_text())
+        cfg = yaml.safe_load((out / "config.yaml").read_text(encoding="utf-8"))
         r = cfg["reward"]
         # Weights should sum to ~1.0.
         assert (
@@ -198,7 +204,7 @@ class TestClientNameCustomization:
             out,
             client_name="Acme Corp",
         )
-        config = (out / "config.yaml").read_text()
+        config = (out / "config.yaml").read_text(encoding="utf-8")
         # Default "outputs/customer_support_v1" should be replaced.
         assert "outputs/customer_support_v1" not in config
         assert "outputs/acme_corp_v1" in config
@@ -206,33 +212,35 @@ class TestClientNameCustomization:
     def test_adds_wandb_project(self, tmp_path: Path) -> None:
         out = tmp_path / "p"
         scaffold_project("customer-support", out, client_name="Acme")
-        config = (out / "config.yaml").read_text()
+        config = (out / "config.yaml").read_text(encoding="utf-8")
         assert "wandb_project: acme" in config
 
     def test_marker_records_client_name(self, tmp_path: Path) -> None:
         out = tmp_path / "p"
         scaffold_project("customer-support", out, client_name="Stateset Inc")
-        marker = json.loads((out / ".stateset-agents-starter.json").read_text())
+        marker = json.loads(
+            (out / ".stateset-agents-starter.json").read_text(encoding="utf-8")
+        )
         assert marker["client_name"] == "Stateset Inc"
 
     def test_tool_template_also_customized(self, tmp_path: Path) -> None:
         out = tmp_path / "tools"
         scaffold_project("tool-calling-agent", out, client_name="Foo Inc")
-        config = (out / "config.yaml").read_text()
+        config = (out / "config.yaml").read_text(encoding="utf-8")
         assert "outputs/foo_inc_v1" in config
         assert "outputs/tool_agent_v1" not in config
 
     def test_no_client_name_leaves_defaults(self, tmp_path: Path) -> None:
         out = tmp_path / "p"
         scaffold_project("customer-support", out)
-        config = (out / "config.yaml").read_text()
+        config = (out / "config.yaml").read_text(encoding="utf-8")
         assert "outputs/customer_support_v1" in config
         assert "wandb_project" not in config
 
     def test_special_chars_in_client_name_slugified(self, tmp_path: Path) -> None:
         out = tmp_path / "p"
         scaffold_project("customer-support", out, client_name="A&B! Co.")
-        config = (out / "config.yaml").read_text()
+        config = (out / "config.yaml").read_text(encoding="utf-8")
         assert "a_b__co" in config or "a_b_co" in config
 
 

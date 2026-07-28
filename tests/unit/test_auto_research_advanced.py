@@ -153,7 +153,7 @@ class TestDuplicateIdGuard:
 
         # JSONL should be empty (load_record doesn't persist)
         jsonl = tmp_path / "experiments.jsonl"
-        assert not jsonl.exists() or jsonl.read_text().strip() == ""
+        assert not jsonl.exists() or jsonl.read_text(encoding="utf-8").strip() == ""
 
     def test_load_then_record_new_works(self, tmp_path):
         tracker = ExperimentTracker(tmp_path)
@@ -219,7 +219,7 @@ class TestTSVHeaderRecovery:
 
         # Create tracker — should create TSV with header
         ExperimentTracker(tmp_path)
-        tsv = (tmp_path / "results.tsv").read_text()
+        tsv = (tmp_path / "results.tsv").read_text(encoding="utf-8")
         assert "experiment_id" in tsv
 
     def test_tsv_header_preserved_if_exists(self, tmp_path):
@@ -231,7 +231,7 @@ class TestTSVHeaderRecovery:
 
         ExperimentTracker(tmp_path)
         # Should not duplicate header
-        lines = tsv_path.read_text().strip().split("\n")
+        lines = tsv_path.read_text(encoding="utf-8").strip().split("\n")
         assert len(lines) == 1  # Just the header
 
 

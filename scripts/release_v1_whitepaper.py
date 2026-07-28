@@ -233,7 +233,7 @@ def main() -> int:
         summary_md = summary_path.read_text()
         section = render_whitepaper_section(summary_md, metadata)
         WHITEPAPER_SECTION_PATH.parent.mkdir(parents=True, exist_ok=True)
-        WHITEPAPER_SECTION_PATH.write_text(section)
+        WHITEPAPER_SECTION_PATH.write_text(section, encoding="utf-8")
         logger.info("Wrote %s", WHITEPAPER_SECTION_PATH)
     else:
         logger.warning(

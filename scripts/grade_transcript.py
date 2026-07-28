@@ -310,7 +310,7 @@ def main() -> int:
 
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(md)
+        args.output.write_text(md, encoding="utf-8")
         logger.info("Wrote %s", args.output)
         if args.json:
             json_path = args.output.with_suffix(".json")

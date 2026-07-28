@@ -7,7 +7,7 @@ from pathlib import Path
 
 def test_readme_points_users_to_stub_backed_quickstart() -> None:
     readme_path = Path(__file__).resolve().parents[2] / "README.md"
-    contents = readme_path.read_text()
+    contents = readme_path.read_text(encoding="utf-8")
 
     assert "python examples/quick_start.py" in contents
     assert 'model_name="stub://quickstart"' in contents
@@ -17,6 +17,6 @@ def test_readme_points_users_to_stub_backed_quickstart() -> None:
 
 def test_readme_real_model_example_uses_placeholder_model_id() -> None:
     readme_path = Path(__file__).resolve().parents[2] / "README.md"
-    contents = readme_path.read_text()
+    contents = readme_path.read_text(encoding="utf-8")
 
     assert 'model_name="your-real-model-id"' in contents

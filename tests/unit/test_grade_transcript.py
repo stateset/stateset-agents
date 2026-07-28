@@ -167,7 +167,7 @@ class TestWriteCuratedExamples:
         assert (
             n == 1
         ), f"Expected 1 example kept at threshold=0.7. Scores: {[r['score'] for r in rows]}"
-        line = curated_path.read_text().strip()
+        line = curated_path.read_text(encoding="utf-8").strip()
         entry = json.loads(line)
         assert "prompt" in entry
         assert "response" in entry
@@ -202,7 +202,7 @@ class TestWriteCuratedExamples:
                 threshold=0.5,
                 output_path=curated,
             )
-        lines = curated.read_text().splitlines()
+        lines = curated.read_text(encoding="utf-8").splitlines()
         assert len(lines) == 2
         sources = {json.loads(line)["source"] for line in lines}
         assert sources == {"s1.jsonl", "s2.jsonl"}
@@ -241,7 +241,7 @@ class TestWriteCuratedExamples:
             output_path=curated,
         )
         assert n2 == 0, "Second run should not duplicate"
-        assert len(curated.read_text().splitlines()) == 1
+        assert len(curated.read_text(encoding="utf-8").splitlines()) == 1
 
 
 class TestSummarizeGradedBatch:
@@ -384,6 +384,6 @@ class TestEndToEndScript:
         )
         assert result.returncode == 0, result.stderr
         assert out.exists()
-        body = out.read_text()
+        body = out.read_text(encoding="utf-8")
         assert "Mean score" in body
         assert "Total assistant turns" in body

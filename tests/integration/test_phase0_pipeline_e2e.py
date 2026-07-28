@@ -99,7 +99,9 @@ class TestEndToEndHappyPath:
         assert (project / "README.md").exists()
 
         # Verify scaffold marker recorded what was generated.
-        marker = json.loads((project / ".stateset-agents-starter.json").read_text())
+        marker = json.loads(
+            (project / ".stateset-agents-starter.json").read_text(encoding="utf-8")
+        )
         assert marker["template"] == "customer-support"
 
         # ----- Step 2: benchmark smoke test -----
@@ -147,19 +149,23 @@ class TestEndToEndHappyPath:
         assert (results_dir / "passes_gates.json").exists()
 
         # Summary.md should mention all three trainers.
-        summary = (results_dir / "summary.md").read_text()
+        summary = (results_dir / "summary.md").read_text(encoding="utf-8")
         for trainer in ("GSPO", "GRPO", "DAPO"):
             assert trainer in summary, f"missing {trainer} in summary.md"
 
         # Gates should pass (3 seeds each, +0.10 improvement, σ = 0).
-        gates = json.loads((results_dir / "passes_gates.json").read_text())
+        gates = json.loads(
+            (results_dir / "passes_gates.json").read_text(encoding="utf-8")
+        )
         for key, info in gates.items():
             assert info[
                 "passed"
             ], f"{key} unexpectedly failed gates: {info['failures']}"
 
         # CSV should have 9 data rows (header + 9).
-        csv_lines = (results_dir / "summary.csv").read_text().splitlines()
+        csv_lines = (
+            (results_dir / "summary.csv").read_text(encoding="utf-8").splitlines()
+        )
         assert len(csv_lines) == 10  # header + 9 rows
 
         # ----- Step 5: plot (text fallback — matplotlib may or may not be present) -----
@@ -173,7 +179,7 @@ class TestEndToEndHappyPath:
         result = _run(plot_cmd)
         assert result.returncode == 0, f"plot failed: {result.stderr}"
         assert (results_dir / "text_plots.md").exists()
-        text_plots = (results_dir / "text_plots.md").read_text()
+        text_plots = (results_dir / "text_plots.md").read_text(encoding="utf-8")
         assert "GSPO" in text_plots and "GRPO" in text_plots and "DAPO" in text_plots
 
     def test_aggregate_strict_fails_on_underspecified_group(

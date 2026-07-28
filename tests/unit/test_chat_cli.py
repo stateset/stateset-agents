@@ -82,7 +82,7 @@ class TestChatHistoryAndReplay:
         assert hist.exists()
         lines = [
             __import__("json").loads(line)
-            for line in hist.read_text().splitlines()
+            for line in hist.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
         # One user + one assistant turn.

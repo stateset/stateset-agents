@@ -8,7 +8,7 @@ from pathlib import Path
 
 def test_make_check_types_uses_stable_wrapper() -> None:
     makefile_path = Path(__file__).resolve().parents[2] / "Makefile"
-    contents = makefile_path.read_text()
+    contents = makefile_path.read_text(encoding="utf-8")
 
     assert "check-types: ## Run mypy type checking" in contents
     assert "\tpython scripts/check_types.py --all" in contents
@@ -17,7 +17,7 @@ def test_make_check_types_uses_stable_wrapper() -> None:
 
 def test_make_test_cov_targets_packaged_module() -> None:
     makefile_path = Path(__file__).resolve().parents[2] / "Makefile"
-    contents = makefile_path.read_text()
+    contents = makefile_path.read_text(encoding="utf-8")
 
     assert "test-cov: ## Run tests with coverage report" in contents
     assert (
@@ -28,7 +28,7 @@ def test_make_test_cov_targets_packaged_module() -> None:
 
 def test_make_ci_uses_read_only_checks() -> None:
     makefile_path = Path(__file__).resolve().parents[2] / "Makefile"
-    contents = makefile_path.read_text()
+    contents = makefile_path.read_text(encoding="utf-8")
 
     assert "ci: ## Simulate CI pipeline locally" in contents
     assert "\t$(MAKE) lint" in contents
@@ -39,7 +39,7 @@ def test_make_ci_uses_read_only_checks() -> None:
 
 def test_make_docs_uses_docs_safe_environment() -> None:
     makefile_path = Path(__file__).resolve().parents[2] / "Makefile"
-    contents = makefile_path.read_text()
+    contents = makefile_path.read_text(encoding="utf-8")
 
     assert (
         "SPHINX_DOCS_ENV := API_REQUIRE_AUTH=false INFERENCE_BACKEND=stub" in contents
