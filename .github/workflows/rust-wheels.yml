@@ -212,6 +212,9 @@ jobs:
           merge-multiple: true
 
       - name: Show what will be published
+        # download-artifact writes to the workspace root, not the job's
+        # default working-directory (rust_core) — run this from the root.
+        working-directory: .
         run: ls -la dist-staging
 
       - name: Publish to PyPI
