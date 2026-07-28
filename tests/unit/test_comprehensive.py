@@ -6,6 +6,7 @@ into the framework, ensuring production-ready quality.
 """
 
 import asyncio
+import importlib.machinery
 import random
 import sys
 import uuid
@@ -18,7 +19,9 @@ import pytest
 
 # Block vllm import to avoid torchvision issues
 if "vllm" not in sys.modules:
-    sys.modules["vllm"] = type(sys)("vllm")  # type: ignore
+    _vllm_stub = type(sys)("vllm")  # type: ignore
+    _vllm_stub.__spec__ = importlib.machinery.ModuleSpec("vllm", loader=None)
+    sys.modules["vllm"] = _vllm_stub
 
 # Try imports - skip tests if not available
 IMPORTS_AVAILABLE = True
