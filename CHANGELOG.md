@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — dashboard/mobile JS surface (A-grade pass)
+
+- `dashboard/src/api.ts`: `BASE` now reads `VITE_API_BASE_URL` (falling
+  back to the same-origin `/api/lab` default) instead of being hardcoded;
+  requests send an `X-API-Key` header and the WebSocket connection sends
+  `api_key` as a query param, sourced from `VITE_API_KEY` (build-time) or
+  a new runtime `setApiKey()`/`getApiKey()` pair persisted to
+  `localStorage` under `stateset.apiKey`. `connectWs()` derives its
+  `ws(s)://` origin from `BASE` when it's an absolute URL, otherwise keeps
+  the previous same-origin behavior. Added `dashboard/.env.example` and a
+  `src/vite-env.d.ts` typing the two env vars.
+- `dashboard/package.json`: added `engines.node >=20.19.0`; added
+  `dashboard/.nvmrc` (`20.20.0`) to mirror `mobile/.nvmrc`.
+- `mobile/lib/api.ts`: requests now send `X-API-Key` from a new
+  `EXPO_PUBLIC_API_KEY` env var, mirroring the dashboard's auth pattern.
+- `mobile/components/ui/DemoDataBanner.tsx`: new component making the
+  existing mock-data fallback (`useTrainingData().isMockData`) visible in
+  the UI, not just the console; wired into the dashboard tab screen
+  (`mobile/app/(tabs)/dashboard/index.tsx`) as the reference pattern for
+  the other screens.
+- Added `.github/workflows/mobile.yml`: path-filtered CI on `mobile/**`
+  running `npm ci` + `npm run typecheck` on Node 20 — mobile previously had
+  no CI at all.
+- `.github/workflows/dashboard.yml`: bundle artifact retention extended
+  7 → 30 days; added a comment noting the deploy target is still an open
+  decision (no deploy step added).
+
+### Fixed — Rust/Cargo packaging surface (A-grade pass)
+
+- Root `Cargo.toml`: removed two `[[example]]` stanzas pointing at
+  `examples/multi_agent_orchestration.rs` and `examples/fulfillment_agent.rs`,
+  which don't exist (`examples/` is the Python examples dir) — this made
+  `cargo check --all-targets` fail outright.
+- Root `Cargo.toml`: added `publish = false` — the root crate is an internal
+  StateSet commerce daemon that needs a sibling `stateset-api` repo to build
+  meaningfully, and its crates.io name would collide with the unrelated PyPI
+  package `stateset-agents`.
+- Added `docs/RUST_CRATES.md` clarifying the two unrelated Rust crates in
+  this repo (`rust_core`/`stateset-rl-core`, the pyo3 accelerator, vs. the
+  root crate, the internal commerce daemon), linked from the README
+  installation section.
+- `rust_core/Cargo.toml`: made `pyo3`/`numpy` optional dependencies gated
+  behind a new `python` feature (which also enables
+  `pyo3/extension-module`), so plain `cargo check`/`cargo test` and
+  docs.rs work without libpython. `rust_core/src/lib.rs` moved all pyo3
+  bindings into a `#[cfg(feature = "python")] mod python_bindings` block;
+  the pure-Rust algorithm modules (`advantage`, `gae`, `trajectory`,
+  `rewards`) remain unconditionally available. `rust_core/pyproject.toml`'s
+  `[tool.maturin] features` now points at `["python"]`. Verified with
+  `cargo check`/`cargo test` (default and `--features python`) and
+  `maturin build --release`.
+- Bumped `rust_core` 0.1.0 → 0.1.1 (`Cargo.toml` + `pyproject.toml`, kept
+  in lock-step per the publish workflow's tag assertion) to ship the
+  feature-gating fix.
+- Added `.github/workflows/rust-ci.yml`: `cargo check --all-targets` +
+  `cargo clippy -D warnings` (scoped with `-A dead_code -A
+  unused_variables -A unused_imports -A unused_mut` to avoid a mass
+  cleanup of the commerce daemon's WIP scaffolding) for the root crate,
+  plus `cargo check`/`clippy`/`cargo test` (17 unit tests) for `rust_core`.
+  Two small genuine clippy hits (`manual_is_multiple_of` in
+  `rust_core/src/advantage.rs` and `rewards.rs`, a nested `format!` in
+  `src/agents/customer_service.rs`) were fixed rather than allowed.
+- `pyproject.toml`: added `pyyaml>=6.0` to core `dependencies` — the wheel
+  ships runtime-loaded YAML presets that a bare `pip install
+  stateset-agents` previously couldn't read (it was only pulled in by the
+  `auto-research` extra).
+
 ## [0.17.1] - 2026-07-27 — Convergence e2e test + honest demo labeling
 
 ### Changed — Honest status labeling for dashboard/mobile; mock-data fallback surfaced (A+ final wave, Task 5)

@@ -100,11 +100,11 @@ Recent Orders:
             customer.email,
             orders.len(),
             recent_orders.iter()
-                .map(|o| format!("  - {} ({}): ${:.2} - {}",
+                .map(|o| format!("  - {} ({}): ${:.2} - {:?}",
                     o.order_number.as_deref().unwrap_or(&o.id),
                     o.created_at,
                     o.total_amount,
-                    format!("{:?}", o.status)
+                    o.status
                 ))
                 .collect::<Vec<_>>()
                 .join("\n")

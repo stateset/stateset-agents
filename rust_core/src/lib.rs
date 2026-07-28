@@ -9,12 +9,6 @@
 //! - Efficient reward normalization
 //! - Fast GAE computation
 
-use pyo3::prelude::*;
-use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, ToPyArray as _};
-use ndarray::Array1;
-use rayon::prelude::*;
-use std::collections::HashMap;
-
 mod advantage;
 mod gae;
 mod trajectory;
@@ -28,6 +22,23 @@ pub use rewards::{
     normalize_with_running_stats, batch_normalize, exponential_moving_average,
     shape_rewards, auto_scale_rewards, clip_rewards, RewardStatistics,
 };
+
+// The PyO3 bindings below are only compiled when the `python` feature is
+// enabled (which also pulls in `pyo3/extension-module` via maturin). This
+// keeps `cargo check`/`cargo test` working for plain Rust consumers and for
+// docs.rs (neither of which have libpython available), while the pure-Rust
+// algorithm modules above remain usable on their own.
+#[cfg(feature = "python")]
+mod python_bindings {
+    use pyo3::prelude::*;
+    use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, ToPyArray as _};
+    use ndarray::Array1;
+    use rayon::prelude::*;
+    use std::collections::HashMap;
+
+    use crate::advantage;
+    use crate::gae;
+    use crate::rewards;
 
 /// Compute group-relative advantages for GRPO training
 ///
@@ -323,7 +334,7 @@ fn compute_reward_statistics(rewards: Vec<f64>) -> PyResult<HashMap<String, f64>
 
     let mut sorted = rewards.clone();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let median = if sorted.len() % 2 == 0 {
+    let median = if sorted.len().is_multiple_of(2) {
         (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
     } else {
         sorted[sorted.len() / 2]
@@ -353,7 +364,9 @@ fn stateset_rl_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compute_reward_statistics, m)?)?;
 
     // Add version info
-    m.add("__version__", "0.1.0")?;
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
     Ok(())
 }
+
+} // mod python_bindings

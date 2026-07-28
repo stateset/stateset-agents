@@ -1,6 +1,6 @@
 [package]
 name = "stateset-rl-core"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["StateSet <engineering@stateset.io>"]
 description = "High-performance Rust core for reinforcement learning - GAE, advantage computation, reward normalization with optional Python bindings"
@@ -17,13 +17,18 @@ name = "stateset_rl_core"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Python bindings.
+# Python bindings (optional — enabled via the `python` feature).
 # `abi3-py310` opts into the stable Python ABI from 3.10 onward, so a single
 # wheel per (OS, arch) supports Python 3.10–3.13 (and forward). This shrinks
 # the CI matrix dramatically; the runtime overhead vs version-specific
 # extensions is negligible for this workload.
-pyo3 = { version = "0.22", features = ["extension-module", "abi3-py310"] }
-numpy = "0.22"
+#
+# pyo3 is optional so that plain `cargo check`/`cargo test` (and docs.rs,
+# which never has libpython available) work without the `extension-module`
+# feature. maturin builds enable the `python` feature below, which pulls in
+# `pyo3/extension-module`.
+pyo3 = { version = "0.22", features = ["abi3-py310"], optional = true }
+numpy = { version = "0.22", optional = true }
 
 # Performance
 rayon = "1.10"
@@ -38,6 +43,12 @@ serde_json = "1.0"
 thiserror = "1.0"
 uuid = { version = "1.10", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+
+[features]
+# Enabled by maturin builds (see pyproject.toml [tool.maturin] features).
+# Plain `cargo check`/`cargo test` run without it, so the crate builds
+# without libpython present.
+python = ["dep:pyo3", "dep:numpy", "pyo3/extension-module"]
 
 [profile.release]
 lto = true

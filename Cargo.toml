@@ -8,6 +8,11 @@ license = "BUSL-1.1"
 repository = "https://github.com/stateset/stateset-agents"
 keywords = ["ai", "agents", "commerce", "automation", "llm"]
 categories = ["api-bindings", "asynchronous"]
+# Internal StateSet commerce daemon — needs a sibling stateset-api repo to
+# build/run meaningfully, and the crates.io name would collide with the
+# unrelated PyPI package `stateset-agents`. Not published. See
+# docs/RUST_CRATES.md for how this relates to rust_core (the pyo3 accelerator).
+publish = false
 
 [dependencies]
 # Async runtime
@@ -80,11 +85,3 @@ full = ["rest", "grpc", "redis", "metrics"]
 [[bin]]
 name = "stateset-agents"
 path = "src/main.rs"
-
-[[example]]
-name = "fulfillment_agent"
-path = "examples/fulfillment_agent.rs"
-
-[[example]]
-name = "multi_agent_orchestration"
-path = "examples/multi_agent_orchestration.rs"

@@ -43,7 +43,8 @@ npm start          # Expo dev server; press i/a/w for iOS/Android/web
 
 Point the app at a non-default API host with `EXPO_PUBLIC_API_BASE_URL`
 (see `mobile/lib/api.ts`; defaults to `http://10.0.2.2:8000`, the Android
-emulator's alias for the host machine's `localhost`).
+emulator's alias for the host machine's `localhost`). Set
+`EXPO_PUBLIC_API_KEY` to send it as the `X-API-Key` header on every request.
 
 ## Scripts
 

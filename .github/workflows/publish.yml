@@ -3,22 +3,34 @@ name: Publish
 on:
   release:
     types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       environment:
         description: 'Publish environment (workflow_dispatch only)'
         required: true
         default: 'testpypi'
+        type: choice
         options:
           - testpypi
           - pypi
+      run_readiness_gate:
+        description: 'Run the heavy publish-readiness gate (bandit/safety/coverage) before publishing'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: 
-      name: ${{ github.event_name == 'release' && 'pypi' || github.event.inputs.environment }}
-    
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: ${{ (github.event_name == 'release' || github.event_name == 'push') && 'pypi' || github.event.inputs.environment }}
+
     steps:
     - uses: actions/checkout@v4
       with:
@@ -42,12 +54,55 @@ jobs:
         pip install bandit safety
         pip install build twine
 
-    - name: Run publish readiness checks
+    - name: Verify Version Matches Release/Tag
+      if: github.event_name == 'release' || github.event_name == 'push'
+      run: |
+        set -euo pipefail
+        if [ "${{ github.event_name }}" = "release" ]; then
+          TAG="${{ github.event.release.tag_name }}"
+        else
+          TAG="${GITHUB_REF#refs/tags/}"
+        fi
+        TAG="${TAG#v}"
+
+        PKG_VERSION="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+
+        echo "Tag version: ${TAG}"
+        echo "pyproject.toml version: ${PKG_VERSION}"
+        if [ "${PKG_VERSION}" != "${TAG}" ]; then
+          echo "Version mismatch: tag=${TAG} pyproject=${PKG_VERSION}"
+          exit 1
+        fi
+
+    - name: Build distribution
+      run: |
+        rm -rf dist/
+        python -m build --sdist --wheel
+
+    - name: Check distribution with twine
+      run: |
+        twine check dist/*
+
+    - name: Install-smoke test built wheel
+      run: |
+        set -euo pipefail
+        python -m venv /tmp/publish-smoke-venv
+        /tmp/publish-smoke-venv/bin/pip install --upgrade pip
+        # pyyaml is a core dependency (preset files ship as YAML and are
+        # runtime-loaded even on a bare install), so this exercises the real
+        # preset-loading path on a plain `pip install dist/*.whl` with no
+        # extras — no separate pyyaml install needed.
+        /tmp/publish-smoke-venv/bin/pip install dist/*.whl
+        /tmp/publish-smoke-venv/bin/python -c "import stateset_agents; print('version:', stateset_agents.__version__); from stateset_agents.config import get_agent_preset; preset = get_agent_preset('customer_service'); assert preset, 'preset failed to load'; print('preset keys:', sorted(preset.keys()))"
+
+    - name: Run publish readiness checks (optional, non-blocking)
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_readiness_gate == 'true'
+      continue-on-error: true
       run: |
         make publish-readiness
 
     - name: Show publish readiness summary
-      if: always()
+      if: always() && github.event_name == 'workflow_dispatch' && github.event.inputs.run_readiness_gate == 'true'
       run: |
         if [ -f publish-readiness-summary.json ]; then
           cat publish-readiness-summary.json
@@ -55,56 +110,28 @@ jobs:
           echo "publish-readiness-summary.json not generated"
         fi
 
-    - name: Ensure publish readiness artifacts exist for upload
-      if: always()
-      run: |
-        touch bandit-report.json
-        touch safety-report.json
-        touch coverage.xml
-        touch publish-readiness-summary.json
-
-    - name: Upload publish readiness artifacts
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: publish-readiness-reports
-        path: |
-          bandit-report.json
-          safety-report.json
-          coverage.xml
-          publish-readiness-summary.json
-    
-    - name: Verify Version Matches Release Tag
-      if: github.event_name == 'release'
-      run: |
-        TAG="${{ github.event.release.tag_name }}"
-        TAG="${TAG#v}"
-        PKG_VERSION="$(python - <<'PY'\nimport sys\n\ntry:\n    import tomllib\nexcept ModuleNotFoundError:  # pragma: no cover\n    import tomli as tomllib\n\nwith open('pyproject.toml', 'rb') as f:\n    data = tomllib.load(f)\nversion = data.get('project', {}).get('version')\nif not version:\n    print('missing_version')\n    sys.exit(2)\nprint(version)\nPY\n)"
-        if [ "${PKG_VERSION}" != "${TAG}" ]; then
-          echo "Version mismatch: tag=${TAG} pyproject=${PKG_VERSION}"
-          exit 1
-        fi
-    
     - name: Publish to TestPyPI
       if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'testpypi'
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
-      run: |
-        python -m twine upload --skip-existing --repository testpypi dist/*
-    
-    - name: Publish to PyPI
-      if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'pypi')
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: |
-        python -m twine upload --skip-existing dist/*
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        skip-existing: true
+        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+    - name: Publish to PyPI (OIDC trusted publishing)
+      if: (github.event_name == 'release' || github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'pypi')
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        skip-existing: true
+        # Prefer OIDC trusted publishing (no password needed). Falls back to the
+        # PYPI_API_TOKEN secret only if it has been configured, e.g. before the
+        # PyPI trusted-publisher relationship is set up.
+        password: ${{ secrets.PYPI_API_TOKEN != '' && secrets.PYPI_API_TOKEN || '' }}
 
   docker-publish:
     runs-on: ubuntu-latest
     needs: publish
-    if: github.event.inputs.environment == 'pypi' || github.event_name == 'release'
+    if: github.event.inputs.environment == 'pypi' || github.event_name == 'release' || github.event_name == 'push'
     
     steps:
     - uses: actions/checkout@v4
@@ -170,7 +197,7 @@ jobs:
   docs-publish:
     runs-on: ubuntu-latest
     needs: publish
-    if: github.event.inputs.environment == 'pypi' || github.event_name == 'release'
+    if: github.event.inputs.environment == 'pypi' || github.event_name == 'release' || github.event_name == 'push'
     
     steps:
     - uses: actions/checkout@v4

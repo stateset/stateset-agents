@@ -7,6 +7,7 @@ import { ModelCard } from '@/components/training/ModelCard';
 import { RunCard } from '@/components/training/RunCard';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { DemoDataBanner } from '@/components/ui/DemoDataBanner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { Screen } from '@/components/ui/Screen';
@@ -27,6 +28,7 @@ export default function DashboardScreen() {
     isLoading,
     isRefreshing,
     isLaunching,
+    isMockData,
     refetch,
     launchSampleRun,
   } = useTrainingData();
@@ -49,6 +51,10 @@ export default function DashboardScreen() {
 
   return (
     <Screen refreshing={isRefreshing} onRefresh={() => void refetch()}>
+      {/* Demo-data notice: this pattern (isMockData -> banner) applies to
+          any screen backed by useTrainingData()/useTrainingRun(); it's only
+          wired up here on the dashboard tab to establish the pattern. */}
+      {isMockData ? <DemoDataBanner /> : null}
       <View
         style={[
           styles.hero,
