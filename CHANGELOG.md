@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-07-27 — Convergence e2e test + honest demo labeling
+
 ### Changed — Honest status labeling for dashboard/mobile; mock-data fallback surfaced (A+ final wave, Task 5)
 
 - `dashboard/README.md` and `mobile/README.md` now lead with an explicit
