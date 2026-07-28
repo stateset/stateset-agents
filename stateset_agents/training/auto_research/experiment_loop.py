@@ -860,7 +860,7 @@ class AutoResearchLoop:
 
             # Save to file
             report_path = self.config.output_path / "analysis.txt"
-            report_path.write_text(report)
+            report_path.write_text(report, encoding="utf-8")
             logger.info("Analysis saved to %s", report_path)
         except Exception as exc:
             logger.debug("Analysis generation failed: %s", exc)

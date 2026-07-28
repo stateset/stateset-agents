@@ -162,7 +162,9 @@ class CheckpointManager:
                             model.base_model.model, "name_or_path", None
                         ) or getattr(model, "name_or_path", None)
                         if base_name:
-                            (path / "base_model_name.txt").write_text(base_name)
+                            (path / "base_model_name.txt").write_text(
+                                base_name, encoding="utf-8"
+                            )
                 except Exception:
                     pass
 

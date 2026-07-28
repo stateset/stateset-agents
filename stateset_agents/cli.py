@@ -684,7 +684,7 @@ def evaluate(
         if output:
             out_path = Path(output)
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(md)
+            out_path.write_text(md, encoding="utf-8")
             _echo(f"Wrote batch eval report → {output}")
         else:
             print(md)
