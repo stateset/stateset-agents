@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -83,6 +84,9 @@ class TestCustomerSupportTemplate:
         # Spot-check the GSPO clip range is the tight default, not 0.2.
         assert cfg["training"]["clip_range_left"] < 0.01
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX executable bits don't exist on Windows"
+    )
     def test_serve_sh_is_executable(self, tmp_path: Path) -> None:
         out = tmp_path / "p"
         scaffold_project("customer-support", out)

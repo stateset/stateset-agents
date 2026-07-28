@@ -591,7 +591,7 @@ def evaluate(
 
         rows = [
             json.loads(line)
-            for line in scenarios_path.read_text().splitlines()
+            for line in scenarios_path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
         if not rows:
@@ -1024,7 +1024,7 @@ def recipe(
         )
         return
 
-    body = cookbook.read_text()
+    body = cookbook.read_text(encoding="utf-8")
 
     # Extract every recipe by matching "## Recipe N — <title>" headers
     recipe_re = re.compile(r"^## Recipe (\d+) — (.+?)$", re.MULTILINE)
@@ -1127,7 +1127,7 @@ def tour() -> None:
             pass
 
     # Fallback: dump to stdout (CI / non-TTY).
-    print(tour_path.read_text())
+    print(tour_path.read_text(encoding="utf-8"))
 
 
 @app.command("starter")

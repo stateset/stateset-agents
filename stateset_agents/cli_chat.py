@@ -200,7 +200,7 @@ def chat(
         if not replay_path.exists():
             print(f"Replay path not found: {replay}", file=sys.stderr)
             raise typer.Exit(code=2)
-        for line in replay_path.read_text().splitlines():
+        for line in replay_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line:
                 continue

@@ -146,7 +146,7 @@ from stateset_agents.data.customer_support_bench import SupportRewardComposite
 
 def load_reward(config_path: str | Path = "config.yaml") -> SupportRewardComposite:
     """Construct the project reward from ``config.yaml``."""
-    cfg = yaml.safe_load(Path(config_path).read_text())
+    cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
     r = cfg.get("reward", {})
     return SupportRewardComposite(
         intent_weight=r.get("intent_weight", 0.6),
@@ -202,7 +202,7 @@ def load_scenarios(path: Path) -> list[dict]:
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
-    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    cfg = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
     set_all_seeds(cfg["training"]["seed"])
 
     scenarios = load_scenarios(Path(cfg["environment"]["scenarios_path"]))
@@ -301,7 +301,7 @@ async def main() -> None:
     parser.add_argument("--scenarios", default="scenarios.jsonl")
     args = parser.parse_args()
 
-    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    cfg = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
     reward = load_reward()
 
     config = AgentConfig(
@@ -316,7 +316,7 @@ async def main() -> None:
     agent = Agent(config=config)
     await agent.initialize()
 
-    scenarios = [json.loads(line) for line in Path(args.scenarios).read_text().splitlines() if line.strip()]
+    scenarios = [json.loads(line) for line in Path(args.scenarios).read_text(encoding="utf-8").splitlines() if line.strip()]
     scores = []
     for s in scenarios:
         response = await agent.generate_response(prompt_for(s))
@@ -352,7 +352,7 @@ fi
 
 exec stateset-agents serve \\
     --checkpoint "$CHECKPOINT" \\
-    --base-model "$(python -c 'import yaml,pathlib;print(yaml.safe_load(pathlib.Path(\"config.yaml\").read_text())[\"model\"][\"name\"])')" \\
+    --base-model "$(python -c 'import yaml,pathlib;print(yaml.safe_load(pathlib.Path(\"config.yaml\").read_text(encoding="utf-8"))[\"model\"][\"name\"])')" \\
     --port "${PORT:-8000}"
 """
 
@@ -459,7 +459,7 @@ from stateset_agents.utils.reproducibility import set_all_seeds
 
 
 async def main() -> None:
-    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    cfg = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
     set_all_seeds(cfg["training"]["seed"])
 
     train, _ = load_gsm8k(limit=cfg["training"]["num_train_examples"])
@@ -583,7 +583,7 @@ from stateset_agents.data.tool_calling_bench import ToolCallReward
 
 
 def load_reward(config_path: str | Path = "config.yaml") -> ToolCallReward:
-    cfg = yaml.safe_load(Path(config_path).read_text())
+    cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
     r = cfg.get("reward", {})
     return ToolCallReward(
         tool_selection_weight=r.get("tool_selection_weight", 0.4),
@@ -653,12 +653,12 @@ from stateset_agents.utils.reproducibility import set_all_seeds
 
 
 async def main() -> None:
-    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    cfg = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
     set_all_seeds(cfg["training"]["seed"])
 
     scenarios = [
         json.loads(line)
-        for line in Path(cfg["environment"]["scenarios_path"]).read_text().splitlines()
+        for line in Path(cfg["environment"]["scenarios_path"]).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     print(f"Loaded {len(scenarios)} scenarios with {len(SAMPLE_TOOLS)} tools")
