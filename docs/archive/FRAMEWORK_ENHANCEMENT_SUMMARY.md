@@ -75,7 +75,7 @@ evaluator.generate_evaluation_report(results, "report.json")
 
 ### 5. 📚 Enhanced Documentation & Examples
 - **Comprehensive README**: `ENHANCED_FRAMEWORK_README.md`
-- **Demo Script**: `examples/enhanced_framework_showcase.py`
+- **Demo Script**: `examples/archive/enhanced_framework_showcase.py`
 - **Integration Examples**: Backward-compatible with existing code
 - **Performance Benchmarks**: Detailed performance comparisons
 
@@ -172,7 +172,7 @@ core/enhanced/
 └── advanced_evaluation.py     # Comprehensive evaluation
 
 examples/
-└── enhanced_framework_showcase.py  # Full demo script
+└── archive/enhanced_framework_showcase.py  # Full demo script
 
 ENHANCED_FRAMEWORK_README.md    # Comprehensive documentation
 FRAMEWORK_ENHANCEMENT_SUMMARY.md # This summary

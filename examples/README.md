@@ -157,20 +157,6 @@ python examples/advanced_optimization_techniques.py \
 
 ### Customer Service
 
-#### Enhanced Customer Service
-
-Production-ready customer service agent:
-
-```bash
-python examples/enhanced_customer_service.py
-```
-
-**Features:**
-- Multi-turn conversations
-- Context management
-- Domain-specific rewards
-- Empathy and action-oriented responses
-
 #### Production Ready Customer Service
 
 Enterprise-grade implementation:
@@ -205,6 +191,25 @@ python examples/rag_agent_example.py
 
 StateSet Agents includes GSPO, a more stable alternative to GRPO.
 
+#### Unified Finetune Driver
+
+`examples/finetune_gspo.py` (backed by `examples/model_presets.py`) is a
+single parameterized driver covering the common agent/reward/GSPO-config
+wiring shared by every per-model script below:
+
+```bash
+python examples/finetune_gspo.py --list-models
+python examples/finetune_gspo.py --model kimi-k3 --dry-run
+python examples/finetune_gspo.py --model glm5.1 --task customer_service
+```
+
+Use it for a quick preview of any supported preset (`kimi-k3`, `kimi-k2.5`,
+`kimi-k2.6`, `glm5.1`, `glm5.2`, `qwen3`, `qwen3.5-0.8b`, `qwen3.5-27b`,
+`gemma3`, `gemma4-31b`, `llama3`, `mistral`). The dedicated per-model
+scripts below remain the supported path for model-specific features
+(starter profiles, `--write-config`, vLLM export, FP8 serving, etc.) that
+the unified driver intentionally does not reproduce.
+
 #### Qwen Models
 
 Fine-tune Qwen models with GSPO:
@@ -235,7 +240,7 @@ python examples/finetune_kimi_k3_gspo.py --list-profiles
 python examples/finetune_kimi_k25_gspo.py --model moonshotai/Kimi-K2.5 --task customer_service
 ```
 
-Use `examples/finetune_kimi_k2_6_gspo.py` when you want the packaged starter path with the same `balanced`, `memory`, and `quality` preset flow as the Qwen starter. `examples/finetune_kimi_k3_gspo.py` is the same flow for the provisional `moonshotai/Kimi-K3` ID (HF weights pending as of 2026-07-16).
+Use `examples/finetune_kimi_k2_6_gspo.py` when you want the packaged starter path with the same `balanced`, `memory`, and `quality` preset flow as the Qwen starter. `examples/finetune_kimi_k3_gspo.py` is the same flow for the provisional `moonshotai/Kimi-K3` ID (HF weights pending as of 2026-07-16). `examples/finetune_kimi_k2_5_gspo.py` is a deprecated forwarder that now delegates to `examples/finetune_kimi_k25_gspo.py` (a strict superset of its flags) and will be removed in a future release. `examples/kimi_k25_rewards.py` and `examples/kimi_k25_config.py` provide Kimi-K2.5-specific reward functions and hyperparameter defaults used by the finetune script; see `examples/kimi_k25/README.md` for the full walkthrough and `examples/kimi_k25/live_smoke_checks.py` for a live (network-dependent) model-loading smoke check.
 
 #### Gemma Models
 
@@ -267,6 +272,15 @@ alias such as `your-org/GLM-5.1-FP8` for single-host serving. See
 [GLM5_1_HOSTING_PLAN.md](../docs/GLM5_1_HOSTING_PLAN.md) for the full
 deployment recipe (Helm values, K8s manifests, multi-node topology, and
 the Helm values renderer in `scripts/render_glm5_1_helm_values.py`).
+`examples/finetune_glm5_2_gspo.py` is the equivalent starter for
+`zai-org/GLM-5.2`, mirroring the GLM 5.1 flags and profiles.
+
+`examples/gemma4_config.py`, `examples/glm5_1_config.py`,
+`examples/glm5_2_config.py`, `examples/kimi_k2_6_config.py`,
+`examples/kimi_k3_config.py`, and `examples/qwen3_5_config.py` are
+backward-compatible re-export shims over the packaged starter modules in
+`stateset_agents.training.*_starter`; import from the starter module
+directly in new code.
 
 #### Llama Models
 
@@ -319,20 +333,6 @@ python examples/grpo_showcase.py
 - Policy gradient updates
 - Value function training
 - Reward shaping
-
-### Enhanced Framework Showcase
-
-Advanced framework features:
-
-```bash
-python examples/enhanced_framework_showcase.py
-```
-
-**Includes:**
-- Circuit breaker patterns
-- Memory monitoring
-- Type safety features
-- Error handling
 
 ## 🔌 API Examples
 
@@ -391,6 +391,23 @@ python examples/backend_switch_demo.py
 - Real model backend
 - Runtime switching
 
+## 🧩 Additional Examples
+
+Miscellaneous standalone scripts not covered above:
+
+- `examples/model_presets.py` — the model-preset registry (`PRESETS`) backing `examples/finetune_gspo.py`; import `get_preset`/`list_preset_names` to reuse the hyperparameters in your own scripts.
+- `examples/advanced_features_demo.py` — end-to-end demo of curriculum learning, multi-agent coordination, offline RL (CQL/IQL), Bayesian uncertainty, and few-shot adaptation.
+- `examples/auto_research.py` — the autonomous hyperparameter-optimization research loop.
+- `examples/auto_research_quickstart.py` — a minimal, copy-and-modify runnable version of the auto-research loop.
+- `examples/continual_learning_planning.py` — long-term planning plus continual learning (replay + LwF) across multiple tasks.
+- `examples/customer_service_agent.py` — a focused GRPO customer-service training example (see "I want to... train a customer service agent" above).
+- `examples/custom_math_env.py` — a custom `MathEnvironment` showing how to build your own environment and reward.
+- `examples/qwen3b_gspo_demo.py` — a minimal single-GPU GSPO fine-tune of `Qwen/Qwen2.5-3B` with LoRA + 8-bit loading.
+- `examples/simple_rl_training.py` — the smallest possible GSPO training loop (GPT-2 + a toy environment).
+- `examples/training_modes_quickstart.py` — stub-backed tour of all 5 unified `train()` modes (online, offline, RLAIF, etc.).
+- `examples/train_with_gspo.py` — GSPO training walkthrough with `--task`/`--model`/`--use-gspo-token` CLI flags.
+- `examples/trl_grpo_demo.py` — the simplest TRL GRPO integration demo.
+
 ## 📦 Prerequisites
 
 ### Basic Requirements
@@ -437,7 +454,7 @@ pip install stateset-agents[dev,api,trl,hpo]
 → `hello_world.py` or `quick_start.py`
 
 #### ...train a customer service agent
-→ `enhanced_customer_service.py` or `production_ready_customer_service.py`
+→ `production_ready_customer_service.py` or `customer_service_agent.py`
 
 #### ...train on multiple GPUs
 → `distributed_multi_gpu_training.py` ⭐ NEW!
@@ -540,7 +557,7 @@ asyncio.run(example_module.main())
 
 ### Intermediate
 
-4. `enhanced_customer_service.py` - Build domain-specific agents
+4. `customer_service_agent.py` - Build domain-specific agents
 5. `custom_reward_functions.py` - Create custom rewards ⭐
 6. `train_with_trl_grpo.py` - Use HuggingFace TRL
 

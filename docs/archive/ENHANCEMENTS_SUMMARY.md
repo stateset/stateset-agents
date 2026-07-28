@@ -267,7 +267,7 @@ async def resilient_operation():
 ## 📞 Support & Documentation
 
 ### **Enhanced Documentation**
-- **New Demo Scripts**: `examples/enhanced_framework_demo.py`
+- **New Demo Scripts**: `examples/archive/enhanced_framework_demo.py`
 - **Comprehensive Tests**: `tests/test_enhanced_features.py`
 - **Migration Examples**: Step-by-step upgrade guides
 - **Performance Tuning**: Optimization best practices

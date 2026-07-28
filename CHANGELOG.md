@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — CI + deferred cleanup (surface consolidation, Plan 3 Task 4)
+
+- CI now runs `examples/getting_started/smoke.sh` against the checked-out
+  source tree (via the editable install already used for tests), in
+  addition to the existing PyPI-based `make getting-started-smoke` target
+  used for release checks.
+- Tightened `tests/unit/test_advanced_trainers.py::test_compute_gepo_coefficient`
+  to pass sequence *log*-probs (matching the real call signature) and to
+  assert the coefficients against the linear-space formula
+  `coef_i = p_i / (sum(q^2) / sum(q))`, not just "greater than zero".
+- Fixed `GSPOTokenTrainer.train_step_token_level`'s per-response token loss
+  to normalize by the actual response length instead of the full padded
+  sequence width, matching the sequence-level normalization used
+  elsewhere in GSPO/GSPO-token.
+- Corrected the comment on `_estimate_policy_entropy = compute_entropy_bonus`
+  in `stateset_agents/training/loss_computation.py`: it is not a drop-in
+  "backwards-compatible alias" (the signatures differ — the old estimator
+  and `compute_entropy_bonus` are not interchangeable); it exists only
+  because the one known external caller does `callable(_estimate_policy_entropy)`
+  rather than calling it with the old signature.
+- **Operational note:** `GSPOConfig.rescore_old_log_probs` now defaults to
+  `True` (see prior GSPO hardening). This means even vLLM-based rollout
+  deployments still require a local HF agent model + tokenizer at train
+  time — the rollout log-probs are always rescored against the current
+  policy before use, so a vLLM-only deployment with no HF model loaded
+  will fail. Set `rescore_old_log_probs=False` explicitly if you
+  intentionally want to trust the vLLM-reported log-probs instead (not
+  recommended; see `gspo_generation.py` for the numerical-stability
+  rationale).
+
+### Changed — docs consolidation (surface consolidation, Plan 3 Task 3)
+
+- Merged `docs/COMPARISON_TRL.md`, `docs/COMPARISON_LLM_FRAMEWORKS.md`,
+  `docs/COMPARISON_TRADITIONAL_RL.md`, and the prior `docs/COMPARISONS.md`
+  overview into a single `docs/COMPARISONS.md` with three clearly-headed
+  sections ("StateSet Agents vs Hugging Face TRL",
+  "StateSet Agents vs Traditional RL Frameworks",
+  "StateSet Agents vs LLM Orchestration Frameworks").
+- Archived the three superseded comparison files plus the dev-journal
+  artifacts `docs/ENHANCEMENTS_SUMMARY.md`,
+  `docs/FRAMEWORK_ENHANCEMENT_SUMMARY.md`, and root
+  `GYM_INTEGRATION_COMPLETE.md` to `docs/archive/`. No other doc, README,
+  or Sphinx toctree referenced these paths (verified by repo-wide grep
+  before moving), so no link fixes were required beyond the merged
+  `docs/COMPARISONS.md` itself.
+- Added `tests/unit/test_docs_structure.py` to keep the archived files out
+  of their old top-level paths and to assert `docs/COMPARISONS.md`
+  contains all three merged section headers.
+
+### Changed — examples cleanup (surface consolidation, Plan 3 Task 2)
+
+- `examples/finetune_kimi_k2_5_gspo.py` is now a deprecated forwarder to
+  `examples/finetune_kimi_k25_gspo.py` (a strict superset of its flags,
+  plus `--system-prompt`, `--use-vllm`, `--export-merged`, `--iterations`).
+  It will be removed in a future release.
+- `examples/README.md` now documents every top-level example script; a new
+  `tests/unit/test_examples_readme_complete.py` enforces this going
+  forward.
+- The other `examples/finetune_*_gspo.py` scripts and `examples/*_config.py`
+  files were evaluated for collapsing into `examples/finetune_gspo.py` /
+  `examples/model_presets.py` (from the prior "unified GSPO finetune
+  driver" change) but were kept as-is: each carries model-specific CLI
+  behavior (starter profiles, `--list-profiles`, `--write-config`, vLLM
+  export, FP8 serving, model-size branching) that the unified driver
+  intentionally does not reproduce, and the `*_config.py` files are
+  imported by dedicated unit tests and docs (e.g.
+  `tests/unit/test_kimi_k3_config.py`, `docs/glm5_1_starter.rst`).
+  `examples/finetune_gspo.py --model <preset> --dry-run` remains available
+  as a quick cross-model preview.
+
+### Archived
+
+- Moved `examples/enhanced_framework_demo.py`,
+  `examples/enhanced_framework_showcase.py`,
+  `examples/ultimate_customer_service_demo.py`,
+  `examples/enhanced_customer_service.py`, and
+  `examples/enhanced_grpo_demo.py` to `examples/archive/` — each was a
+  redundant variant of a canonical example already documented in
+  `examples/README.md` (`production_ready_customer_service.py`,
+  `grpo_showcase.py`). References in `docs/ENHANCEMENTS_SUMMARY.md` and
+  `docs/FRAMEWORK_ENHANCEMENT_SUMMARY.md` were updated to the new paths.
+
+### Fixed — misplaced/duplicated Kimi-K2.5 test files
+
+- `examples/test_kimi_k25.py` (a live, network-dependent smoke-check
+  script, not a pytest suite despite its name) moved to
+  `examples/kimi_k25/live_smoke_checks.py`.
+- `tests/test_kimi_k25_integration.py` (misplaced at the `tests/` root,
+  with test coverage that did not overlap
+  `tests/integration/test_kimi_k25_integration.py`) moved to
+  `tests/integration/test_kimi_k25_extended.py`.
+- `examples/kimi_k25/README.md` updated to reference the new paths.
+
 ## [0.16.0] - 2026-07-27 — RL-core correctness + API hardening
 
 ### Fixed — RL training core correctness
