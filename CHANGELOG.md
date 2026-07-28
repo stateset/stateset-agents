@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Rate limiter moved out of the deprecated `grpo` package; deprecation warning scoped (A+ final wave, Task 3)
+
+- `UnifiedRateLimiter` (and `RateLimitResult`, `get_rate_limiter`,
+  `reset_rate_limiter`, `MAX_BUCKETS`) moved from
+  `stateset_agents.api.grpo.rate_limiter` to `stateset_agents.api.rate_limiter`,
+  reflecting that it is shared infrastructure used by `middleware.py` on the
+  normal app path, not something specific to the secondary GRPO app.
+  `stateset_agents.api.grpo.rate_limiter` remains as a thin re-export for
+  backward compatibility.
+- `stateset_agents.api.grpo`'s `DeprecationWarning` no longer fires on
+  package import (previously it fired on every normal app startup via
+  `middleware.py`'s rate-limiter import). It now fires lazily, only when
+  the deprecated app-surface submodules (`service`, `service_routes`,
+  `router_v1`, `auth`) are actually accessed.
+
 ### Changed — Unified finetune driver absorbs shared flags (A+ final wave, Task 1)
 
 - `examples/finetune_gspo.py` now supports the full set of flag families

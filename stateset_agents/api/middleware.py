@@ -37,7 +37,7 @@ from .constants import (
     RATE_LIMIT_DEQUE_MAXLEN,
     SECURITY_HEADERS,
 )
-from .grpo.rate_limiter import UnifiedRateLimiter, get_rate_limiter
+from .rate_limiter import UnifiedRateLimiter, get_rate_limiter
 
 logger = logging.getLogger(__name__)
 
