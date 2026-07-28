@@ -196,10 +196,19 @@ class RateLimitConfig:
     burst_size: int = 10
     window_seconds: int = 60
     enabled: bool = True
+    trust_proxy_headers: bool = False
+    backend: str = "memory"
+    redis_url: str | None = None
 
     @classmethod
     def from_env(cls) -> "RateLimitConfig":
         """Load rate limit config from environment."""
+        backend = os.getenv("API_RATE_LIMIT_BACKEND", "memory").strip().lower()
+        if backend not in ("memory", "redis"):
+            logger.warning(
+                "Invalid API_RATE_LIMIT_BACKEND=%r; falling back to 'memory'", backend
+            )
+            backend = "memory"
         return cls(
             requests_per_minute=_get_int(
                 "API_RATE_LIMIT_PER_MIN", 60, min_val=1, max_val=10000
@@ -209,6 +218,9 @@ class RateLimitConfig:
                 "API_RATE_LIMIT_WINDOW", 60, min_val=1, max_val=3600
             ),
             enabled=_get_bool("API_RATE_LIMIT_ENABLED", True),
+            trust_proxy_headers=_get_bool("API_TRUST_PROXY_HEADERS", False),
+            backend=backend,
+            redis_url=os.getenv("API_RATE_LIMIT_REDIS_URL"),
         )
 
 
@@ -325,6 +337,7 @@ class APIConfig:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
+    enable_training_lab: bool = False
 
     @classmethod
     def from_env(cls) -> "APIConfig":
@@ -349,16 +362,19 @@ class APIConfig:
             security=SecurityConfig.from_env(),
             validation=ValidationConfig.from_env(),
             observability=ObservabilityConfig.from_env(),
+            enable_training_lab=_get_bool(
+                "API_ENABLE_TRAINING_LAB", environment == Environment.DEVELOPMENT
+            ),
         )
 
     def validate(self) -> list[str]:
         """Validate configuration and return list of warnings."""
         warnings = []
 
-        if self.environment == Environment.PRODUCTION:
-            if not self.security.api_keys and self.security.require_auth:
-                warnings.append("No API keys configured but authentication is required")
+        if self.security.require_auth and not self.security.api_keys:
+            warnings.append("No API keys configured but authentication is required")
 
+        if self.environment == Environment.PRODUCTION:
             if not self.cors.allowed_origins:
                 warnings.append(
                     "No CORS origins configured - API won't be accessible from browsers"
@@ -368,6 +384,15 @@ class APIConfig:
                 warnings.append("JWT secret not configured")
 
         return warnings
+
+    def has_no_auth_credentials(self) -> bool:
+        """Whether auth is required but no credential source (API keys or JWT
+        secret) is configured at all — the security-critical combination."""
+        return (
+            self.security.require_auth
+            and not self.security.api_keys
+            and not self.security.jwt_secret
+        )
 
     def is_production(self) -> bool:
         """Check if running in production."""

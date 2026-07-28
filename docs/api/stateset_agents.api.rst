@@ -62,14 +62,6 @@ stateset\_agents.api.distributed\_cache module
    :undoc-members:
    :show-inheritance:
 
-stateset\_agents.api.enhanced\_ultimate\_grpo\_service module
--------------------------------------------------------------
-
-.. automodule:: stateset_agents.api.enhanced_ultimate_grpo_service
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 stateset\_agents.api.errors module
 ----------------------------------
 
@@ -194,14 +186,6 @@ stateset\_agents.api.streaming module
 -------------------------------------
 
 .. automodule:: stateset_agents.api.streaming
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-stateset\_agents.api.ultimate\_grpo\_service module
----------------------------------------------------
-
-.. automodule:: stateset_agents.api.ultimate_grpo_service
    :members:
    :undoc-members:
    :show-inheritance:

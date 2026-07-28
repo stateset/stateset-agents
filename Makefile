@@ -480,10 +480,10 @@ TRAINER ?= gspo
 SEED ?= 42
 
 # Docker helpers
-docker-build: ## Build Docker image
-	docker build -t stateset-agents .
+docker-build: ## Build Rust commerce agent Docker image
+	docker build -f deployment/docker/Dockerfile.rust-commerce-agent -t stateset-agents .
 
-docker-run: ## Run Docker container
+docker-run: ## Run Rust commerce agent Docker container
 	docker run -p 8000:8000 stateset-agents
 
 docker-build-gateway: ## Build FastAPI gateway image (deployment/docker/Dockerfile)

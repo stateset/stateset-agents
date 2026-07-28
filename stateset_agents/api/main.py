@@ -2,15 +2,15 @@ import logging
 import time
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from .config import get_config
+from .config import ConfigurationError, get_config
 from .errors import setup_exception_handlers
 from .middleware import setup_middleware
 from .openapi import add_documentation_routes, setup_openapi
@@ -160,6 +160,17 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     config = get_config()
+
+    for warning in config.validate():
+        logger.warning("Configuration warning: %s", warning)
+
+    if config.is_production() and config.has_no_auth_credentials():
+        raise ConfigurationError(
+            "Authentication is required but no credential source is configured "
+            "(no API keys and no JWT secret). Set API_KEYS or API_JWT_SECRET, "
+            "or disable auth with API_REQUIRE_AUTH=false."
+        )
+
     health_checker = HealthChecker()
     app = FastAPI(
         title=config.title,
@@ -209,7 +220,9 @@ def create_app() -> FastAPI:
     app.include_router(v1.router)
     app.include_router(messages.router)
     app.include_router(openai.router)
-    app.include_router(training_lab.router)
+    if config.enable_training_lab:
+        app.include_router(training_lab.router)
+        app.include_router(training_lab.ws_router)
 
     # Compatibility aliases for legacy tests/clients
     app.add_api_route(
@@ -281,7 +294,7 @@ def create_app() -> FastAPI:
     )
     async def liveness_check() -> dict[str, Any]:
         """Kubernetes liveness probe endpoint."""
-        return {"status": "alive", "timestamp": datetime.utcnow().isoformat() + "Z"}
+        return {"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}
 
     # Circuit breaker status endpoint
     @app.get(
@@ -294,7 +307,7 @@ def create_app() -> FastAPI:
         """Get circuit breaker status for monitoring."""
         return {
             "circuits": get_all_circuit_stats(),
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
 
     return app

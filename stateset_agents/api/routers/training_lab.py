@@ -8,6 +8,7 @@ metrics in real-time.  Supports both simulated and real stateset-agents runs.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import math
@@ -19,18 +20,42 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel, Field
 
+from ..dependencies import require_auth_if_enabled
+
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/lab", tags=["training-lab"])
+router = APIRouter(
+    prefix="/api/lab",
+    tags=["training-lab"],
+    dependencies=[Depends(require_auth_if_enabled)],
+)
+
+# The WebSocket endpoint can't use the HTTP `Depends(require_auth_if_enabled)`
+# dependency (it expects a `Request`, not a `WebSocket`), so it lives on a
+# separate router with no router-level dependency and authenticates itself
+# explicitly via `_authorize_websocket` below. Both routers share the same
+# prefix and are mounted together in `main.py`.
+ws_router = APIRouter(prefix="/api/lab", tags=["training-lab"])
 
 # ---------------------------------------------------------------------------
 # In-memory state (swap for Redis/DB in production)
 # ---------------------------------------------------------------------------
 
+MAX_EXPERIMENTS = 100
+MAX_EPISODES_PER_EXPERIMENT = 1000
+MAX_LOGS_PER_EXPERIMENT = 5000
+
 _experiments: dict[str, dict[str, Any]] = {}
-_episodes: dict[str, list[dict[str, Any]]] = {}  # experiment_id -> episodes
+_episodes: dict[str, deque[dict[str, Any]]] = {}  # experiment_id -> episodes
 _logs: dict[str, deque[dict[str, Any]]] = {}  # experiment_id -> log entries
 _metrics_subscribers: dict[str, list[WebSocket]] = {}
 
@@ -41,6 +66,17 @@ class ExperimentStatus(str, Enum):
     PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+# Statuses considered "finished" — safe to evict when the experiment cap is
+# reached. CREATED experiments were never started, so they're evictable too.
+_EVICTABLE_STATUSES = frozenset(
+    {
+        ExperimentStatus.CREATED.value,
+        ExperimentStatus.COMPLETED.value,
+        ExperimentStatus.FAILED.value,
+    },
+)
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +429,7 @@ _running_tasks: dict[str, asyncio.Task[None]] = {}
 
 def _add_log(experiment_id: str, level: str, message: str, **extra: Any) -> None:
     entry = {"ts": time.time(), "level": level, "message": message, **extra}
-    _logs.setdefault(experiment_id, deque(maxlen=1000)).append(entry)
+    _logs.setdefault(experiment_id, deque(maxlen=MAX_LOGS_PER_EXPERIMENT)).append(entry)
 
 
 # ---------------------------------------------------------------------------
@@ -496,6 +532,9 @@ async def list_algorithms() -> list[dict[str, Any]]:
 @router.post("/experiments", response_model=ExperimentResponse, status_code=201)
 async def create_experiment(req: CreateExperimentRequest) -> ExperimentResponse:
     """Create a new training experiment."""
+    if len(_experiments) >= MAX_EXPERIMENTS:
+        _evict_oldest_finished_experiment()
+
     exp_id = str(uuid.uuid4())
     now = time.time()
     experiment = {
@@ -511,9 +550,33 @@ async def create_experiment(req: CreateExperimentRequest) -> ExperimentResponse:
         "updated_at": now,
     }
     _experiments[exp_id] = experiment
-    _episodes[exp_id] = []
+    _episodes[exp_id] = deque(maxlen=MAX_EPISODES_PER_EXPERIMENT)
     _add_log(exp_id, "info", f"Experiment '{req.name}' created")
     return ExperimentResponse(**experiment)
+
+
+def _evict_oldest_finished_experiment() -> None:
+    """Evict the oldest evictable (created/completed/failed) experiment to
+    make room for a new one. Raises 429 if every experiment is active
+    (running/paused).
+    """
+    evictable = [
+        (exp["created_at"], exp_id)
+        for exp_id, exp in _experiments.items()
+        if exp.get("status") in _EVICTABLE_STATUSES
+    ]
+    if not evictable:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Maximum of {MAX_EXPERIMENTS} experiments reached and all are "
+                "active (running/paused). Stop or delete an experiment before "
+                "creating a new one."
+            ),
+        )
+    evictable.sort(key=lambda item: item[0])
+    _, oldest_id = evictable[0]
+    _delete_experiment_state(oldest_id)
 
 
 @router.get("/experiments")
@@ -568,7 +631,9 @@ async def start_experiment(experiment_id: str) -> dict[str, Any]:
                     break
 
                 episode = await simulator.run_episode()
-                _episodes.setdefault(experiment_id, []).append(episode)
+                _episodes.setdefault(
+                    experiment_id, deque(maxlen=MAX_EPISODES_PER_EXPERIMENT),
+                ).append(episode)
                 exp["metrics"] = simulator._metrics.copy()
                 exp["updated_at"] = time.time()
 
@@ -658,6 +723,11 @@ async def stop_experiment(experiment_id: str) -> dict[str, str]:
     exp["status"] = ExperimentStatus.COMPLETED.value
     exp["updated_at"] = time.time()
     _add_log(experiment_id, "warn", "Training stopped by user")
+
+    task = _running_tasks.get(experiment_id)
+    if task is not None and not task.done():
+        task.cancel()
+
     return {"status": "stopped"}
 
 
@@ -693,6 +763,9 @@ async def clone_experiment(
     if not exp:
         raise HTTPException(status_code=404, detail="Experiment not found")
 
+    if len(_experiments) >= MAX_EXPERIMENTS:
+        _evict_oldest_finished_experiment()
+
     import copy
     new_id = str(uuid.uuid4())
     now = time.time()
@@ -714,21 +787,29 @@ async def clone_experiment(
                 cloned[section].update(overrides[section])
 
     _experiments[new_id] = cloned
-    _episodes[new_id] = []
+    _episodes[new_id] = deque(maxlen=MAX_EPISODES_PER_EXPERIMENT)
     _add_log(new_id, "info", f"Cloned from '{exp['name']}' ({experiment_id[:8]}...)")
     return ExperimentResponse(**cloned)
+
+
+def _delete_experiment_state(experiment_id: str) -> None:
+    """Remove all in-memory state for an experiment, cancelling its
+    background training task if one is still running.
+    """
+    task = _running_tasks.pop(experiment_id, None)
+    if task is not None and not task.done():
+        task.cancel()
+    _experiments.pop(experiment_id, None)
+    _episodes.pop(experiment_id, None)
+    _simulators.pop(experiment_id, None)
+    _logs.pop(experiment_id, None)
+    _metrics_subscribers.pop(experiment_id, None)
 
 
 @router.delete("/experiments/{experiment_id}")
 async def delete_experiment(experiment_id: str) -> dict[str, str]:
     """Delete an experiment and stop if running."""
-    if experiment_id in _running_tasks:
-        _running_tasks[experiment_id].cancel()
-        del _running_tasks[experiment_id]
-    _experiments.pop(experiment_id, None)
-    _episodes.pop(experiment_id, None)
-    _simulators.pop(experiment_id, None)
-    _logs.pop(experiment_id, None)
+    _delete_experiment_state(experiment_id)
     return {"status": "deleted"}
 
 
@@ -1226,9 +1307,55 @@ async def export_experiment(
     }
 
 
-@router.websocket("/experiments/{experiment_id}/ws")
+async def _authorize_websocket(websocket: WebSocket) -> bool:
+    """Validate API key / JWT credentials for the metrics WebSocket.
+
+    WebSocket connections can't use the standard HTTP ``Depends`` auth
+    dependency, so credentials are read from the ``api_key`` (or ``token``)
+    query parameter or the ``X-API-Key`` header and validated using the same
+    mechanisms as ``auth.authenticate_request``.
+    """
+    from ..auth import get_jwt_handler
+    from ..config import get_config
+
+    config = get_config()
+    if not config.security.require_auth:
+        return True
+
+    credential = (
+        websocket.query_params.get("api_key")
+        or websocket.query_params.get("token")
+        or websocket.headers.get("x-api-key")
+    )
+    if not credential:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            credential = auth_header.split(" ", 1)[1].strip()
+
+    if not credential:
+        return False
+
+    if any(
+        hmac.compare_digest(stored_key, credential)
+        for stored_key in config.security.api_keys
+    ):
+        return True
+
+    try:
+        jwt = get_jwt_handler()
+        payload = jwt.decode(credential)
+    except Exception:
+        payload = None
+
+    return payload is not None
+
+
+@ws_router.websocket("/experiments/{experiment_id}/ws")
 async def experiment_ws(websocket: WebSocket, experiment_id: str) -> None:
     """Stream real-time training metrics via WebSocket."""
+    if not await _authorize_websocket(websocket):
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
     _metrics_subscribers.setdefault(experiment_id, []).append(websocket)
     try:

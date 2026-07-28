@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Training Lab API gated behind auth + feature flag**: `/api/lab/*` (22 REST
+  endpoints + metrics WebSocket) previously had no authentication and was
+  mounted unconditionally. It is now opt-in via `enable_training_lab`
+  (env `API_ENABLE_TRAINING_LAB`, default `true` in development, `false`
+  otherwise) and, when mounted, every HTTP endpoint requires auth via
+  `Depends(require_auth_if_enabled)`. The metrics WebSocket authenticates
+  explicitly using an `api_key`/`token` query param (or `X-API-Key`/
+  `Authorization` header), closing with code `4401` on missing/invalid
+  credentials.
+- **Training Lab in-memory state is now bounded**: `/api/lab` previously kept
+  unbounded module-level dicts for experiments, episodes, and logs, and could
+  leak untracked background training tasks. Experiments are now capped at
+  `MAX_EXPERIMENTS = 100` (oldest created/completed/failed experiment is
+  evicted to make room; a `429` is returned if every experiment is
+  running/paused). Episodes and logs are bounded per-experiment via
+  `collections.deque` (`MAX_EPISODES_PER_EXPERIMENT = 1000`,
+  `MAX_LOGS_PER_EXPERIMENT = 5000`). Stopping or deleting an experiment now
+  cancels its background training task.
+- **`config.validate()` is now enforced at startup**: `create_app()` logs
+  every configuration warning (e.g. missing API keys while auth is required)
+  at `WARNING` level, and fails closed in production — raising
+  `ConfigurationError` — when auth is required but no credential source at
+  all (no API keys and no JWT secret) is configured.
+- **Rate limiting now keys on identity, not shared IP**: `RateLimitMiddleware`
+  previously bucketed by raw client IP (or a raw bearer/API key), so requests
+  behind a shared NAT/proxy could exhaust one another's quota, and credential
+  values leaked into limiter state. The bucket key is now the SHA-256 hash
+  (first 16 hex chars, matching `auth.py`'s identity derivation) of the
+  presented `Authorization`/`X-API-Key` credential when one is present,
+  otherwise the client IP. `X-Forwarded-For`'s first hop is honored only when
+  the new `trust_proxy_headers` flag (env `API_TRUST_PROXY_HEADERS`, default
+  `false`) is enabled — previously the raw `request.client.host` was always
+  used with no way to see through a trusted proxy, and there was no equivalent
+  spoofing protection to disable it. Added an optional Redis-backed limiter
+  (`API_RATE_LIMIT_BACKEND=redis` + `API_RATE_LIMIT_REDIS_URL`) for multi-pod
+  deployments, using a fixed-window INCR/EXPIRE approximation; it falls back
+  to the existing in-memory limiter (logged once) if `redis` isn't installed
+  or the connection fails. `redis` is now listed under the `api` extra as an
+  optional dependency.
+- **Constant-time API key comparison**: `auth.py`'s API-key lookup used plain
+  dict membership (`api_key in config.security.api_keys`), which is a
+  short-circuiting `==` under the hood and vulnerable to timing side-channels
+  against configured keys. It now compares the presented key against every
+  configured key with `hmac.compare_digest`.
+
+### Removed
+
+- **Legacy GRPO service shims**: deleted
+  `stateset_agents/api/ultimate_grpo_service.py` and
+  `stateset_agents/api/enhanced_ultimate_grpo_service.py` — unmaintained
+  duplicate FastAPI apps that shadowed `stateset_agents.api.main` and had no
+  internal callers. Added `tests/api/test_no_legacy_shims.py` to guard
+  against reintroduction; removed their Sphinx `automodule` entries.
+- **Root `Dockerfile`**: moved to
+  `deployment/docker/Dockerfile.rust-commerce-agent` with a header comment
+  clarifying it builds the unrelated Rust commerce daemon (`src/main.rs`),
+  not the Python FastAPI gateway (`deployment/docker/Dockerfile`). Updated
+  `docker-compose.yml` and the `Makefile`'s `docker-build`/`docker-run`
+  targets to the new path.
+
+### Changed
+
+- **Helm vLLM image tag pinned**: `deployment/helm/stateset-agents/values.yaml`
+  used `vllm/vllm-openai:nightly`, a moving target with no reproducibility
+  guarantee. Pinned to `v0.18.2` (matching the `vllm>=0.18.2` pin in
+  `pyproject.toml`'s `vllm` extra) with a `# pin by digest in production
+  overrides` comment for stricter deployments.
+- **`stateset_agents.api.grpo` deprecated**: importing the package now emits
+  a module-level `DeprecationWarning` pointing at `stateset_agents.api.main`
+  as the supported entry point; this starts the deprecation cycle ahead of
+  its eventual removal.
+
+### Fixed
+
+- `main.py` used `datetime.utcnow()` (deprecated, naive datetime) for the
+  `/live` and `/circuits` timestamps; switched to
+  `datetime.now(timezone.utc)`.
+- `main.py` imported `CORSMiddleware` from the deprecated
+  `fastapi.middleware.cors` re-export path; now imports from
+  `starlette.middleware.cors` directly.
+
 ### Added — Kimi-K3 starter path
 
 - **`stateset_agents/training/kimi_k3_starter.py`** — packaged GSPO starter for

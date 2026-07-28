@@ -266,8 +266,16 @@ def authenticate_request(request: Request) -> AuthenticatedUser:
     # Try API key authentication first
     api_key = _extract_api_key(request)
     if api_key:
-        if api_key in config.security.api_keys:
-            roles = config.security.api_keys[api_key]
+        matched_key = next(
+            (
+                stored_key
+                for stored_key in config.security.api_keys
+                if hmac.compare_digest(stored_key, api_key)
+            ),
+            None,
+        )
+        if matched_key is not None:
+            roles = config.security.api_keys[matched_key]
             provided_user_id = request.headers.get("X-User-ID")
             if provided_user_id:
                 logger.debug(

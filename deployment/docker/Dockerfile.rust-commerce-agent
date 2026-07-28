@@ -1,3 +1,6 @@
+# NOTE: This Dockerfile builds the unrelated Rust commerce daemon (src/main.rs,
+# Cargo.toml), NOT the Python FastAPI gateway. For the Python API image see
+# deployment/docker/Dockerfile.
 # StateSet Agents - Multi-stage Docker Build
 # Build stage
 FROM rust:1.82-bookworm as builder

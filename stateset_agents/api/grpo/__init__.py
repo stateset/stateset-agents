@@ -15,6 +15,8 @@ GRPO (Group Relative Policy Optimization) service with:
 - FastAPI application (service.py)
 """
 
+import warnings
+
 from .config import GRPOConfig, get_grpo_config, reset_config
 from .handlers import ConversationHandler, TrainingHandler, WebSocketHandler
 from .metrics import GRPOMetrics, get_grpo_metrics, reset_metrics
@@ -42,6 +44,13 @@ from .state import (
     TTLDict,
     get_state_manager,
     reset_state_manager,
+)
+
+warnings.warn(
+    "stateset_agents.api.grpo is a secondary GRPO API app and is deprecated; "
+    "use stateset_agents.api.main instead.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
 __all__ = [
