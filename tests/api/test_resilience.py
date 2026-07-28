@@ -614,7 +614,12 @@ class TestHealthChecker:
         checker.add_check("slow", slow_check)
 
         result = await checker.check("slow")
-        assert result.latency_ms >= 50
+        # Windows' default timer resolution (~15.6ms) means asyncio.sleep(0.05)
+        # can legitimately wake up a bit early (observed: ~47ms in CI) rather
+        # than sleeping for at least the full requested duration the way
+        # Linux/macOS's finer-grained timers do. Assert a tolerant lower
+        # bound instead of the exact requested duration.
+        assert result.latency_ms >= 40
 
     def test_remove_check(self):
         """Test removing a health check."""
