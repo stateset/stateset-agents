@@ -143,19 +143,19 @@ trained_agent = await train_with_gspo(
 
 Run integration tests:
 ```bash
-pytest tests/test_kimi_k25_integration.py -v
+pytest tests/integration/test_kimi_k25_integration.py tests/integration/test_kimi_k25_extended.py -v
 ```
 
 Test specific components:
 ```bash
 # Test configuration
-pytest tests/test_kimi_k25_integration.py::test_kimi_k25_config_creation
+pytest tests/integration/test_kimi_k25_integration.py::TestKimiK25Config
 
 # Test training pipeline
-pytest tests/test_kimi_k25_integration.py::test_kimi_k25_training_pipeline
+pytest tests/integration/test_kimi_k25_extended.py
 
-# Test inference
-pytest tests/test_kimi_k25_integration.py::test_kimi_k25_inference
+# Test inference / model loading (network access required, run manually)
+python examples/kimi_k25/live_smoke_checks.py
 ```
 
 ## 🐛 Troubleshooting
@@ -199,7 +199,7 @@ To contribute new examples:
 
 1. Add your example file to this directory
 2. Update this README with usage instructions
-3. Add tests to `tests/test_kimi_k25_integration.py`
+3. Add tests to `tests/integration/test_kimi_k25_integration.py` or `tests/integration/test_kimi_k25_extended.py`
 4. Follow AGENTS.md style guidelines
 
 ## 📄 License

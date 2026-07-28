@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — examples cleanup (surface consolidation, Plan 3 Task 2)
+
+- `examples/finetune_kimi_k2_5_gspo.py` is now a deprecated forwarder to
+  `examples/finetune_kimi_k25_gspo.py` (a strict superset of its flags,
+  plus `--system-prompt`, `--use-vllm`, `--export-merged`, `--iterations`).
+  It will be removed in a future release.
+- `examples/README.md` now documents every top-level example script; a new
+  `tests/unit/test_examples_readme_complete.py` enforces this going
+  forward.
+- The other `examples/finetune_*_gspo.py` scripts and `examples/*_config.py`
+  files were evaluated for collapsing into `examples/finetune_gspo.py` /
+  `examples/model_presets.py` (from the prior "unified GSPO finetune
+  driver" change) but were kept as-is: each carries model-specific CLI
+  behavior (starter profiles, `--list-profiles`, `--write-config`, vLLM
+  export, FP8 serving, model-size branching) that the unified driver
+  intentionally does not reproduce, and the `*_config.py` files are
+  imported by dedicated unit tests and docs (e.g.
+  `tests/unit/test_kimi_k3_config.py`, `docs/glm5_1_starter.rst`).
+  `examples/finetune_gspo.py --model <preset> --dry-run` remains available
+  as a quick cross-model preview.
+
+### Archived
+
+- Moved `examples/enhanced_framework_demo.py`,
+  `examples/enhanced_framework_showcase.py`,
+  `examples/ultimate_customer_service_demo.py`,
+  `examples/enhanced_customer_service.py`, and
+  `examples/enhanced_grpo_demo.py` to `examples/archive/` — each was a
+  redundant variant of a canonical example already documented in
+  `examples/README.md` (`production_ready_customer_service.py`,
+  `grpo_showcase.py`). References in `docs/ENHANCEMENTS_SUMMARY.md` and
+  `docs/FRAMEWORK_ENHANCEMENT_SUMMARY.md` were updated to the new paths.
+
+### Fixed — misplaced/duplicated Kimi-K2.5 test files
+
+- `examples/test_kimi_k25.py` (a live, network-dependent smoke-check
+  script, not a pytest suite despite its name) moved to
+  `examples/kimi_k25/live_smoke_checks.py`.
+- `tests/test_kimi_k25_integration.py` (misplaced at the `tests/` root,
+  with test coverage that did not overlap
+  `tests/integration/test_kimi_k25_integration.py`) moved to
+  `tests/integration/test_kimi_k25_extended.py`.
+- `examples/kimi_k25/README.md` updated to reference the new paths.
+
 ## [0.16.0] - 2026-07-27 — RL-core correctness + API hardening
 
 ### Fixed — RL training core correctness
