@@ -87,6 +87,39 @@ stateset-agents chat --model Qwen/Qwen3.5-0.8B --checkpoint outputs/sft_v2 \
 
 ---
 
+## Recipe 2b — Bring your own agent's logs
+
+**You want:** you already have a production agent — built with the OpenAI SDK directly, or with LangChain/LangGraph, anything — and you want its conversation logs to feed the same grade -> curate -> retrain loop as Recipe 2, without rewriting the agent or hand-converting the logs.
+
+```bash
+# Your OpenAI-format logs: one conversation per line, {"messages": [...], "reward"?}
+# (bare message lists also work — see the module docstring for exact shapes)
+stateset-agents ingest --format openai --input openai_logs.jsonl --output transcripts/session_ingest.jsonl
+
+# Or a LangChain/LangGraph message dump (flat {"type": ..., "data": {...}}
+# or dumpd/dumps constructor form — see the module docstring)
+stateset-agents ingest --format langchain --input lc_run.json --output transcripts/
+
+# From here it's the same loop as Recipe 2 — grade what came out:
+make grade-batch DIR=transcripts/ REWARD=customer_support \
+                 CURATED=curated.jsonl THRESHOLD=0.7
+```
+
+Programmatic equivalent, if you'd rather wire it into your own pipeline:
+
+```python
+from stateset_agents.data import from_openai_jsonl, to_grading_history
+
+trajectories = from_openai_jsonl("openai_logs.jsonl")
+for traj in trajectories:
+    # each dict is exactly what scripts/grade_transcript.py's loader expects
+    history = to_grading_history(traj)
+```
+
+**Why this works:** `stateset_agents.data.trajectory_ingest` maps OpenAI chat-completions messages and LangChain message dumps onto the framework's own `ConversationTurn`/`MultiTurnTrajectory` types faithfully — tool calls are preserved in turn metadata, multimodal content is flattened to text (with skipped parts noted, not silently dropped), and a per-conversation `reward`/`score` field in the source is carried through if present. `to_grading_history()` emits the plain `{"role", "content"}` dicts the grading loop already reads, so ingested logs are indistinguishable from transcripts captured via `stateset-agents chat --history`.
+
+---
+
 ## Recipe 3 — Reproduce a whitepaper number
 
 **You want:** confirm a specific published `eval_pass_at_1` from the whitepaper on your own hardware.

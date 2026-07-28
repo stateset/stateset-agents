@@ -34,6 +34,12 @@ from .tool_calling_bench import (
     load_tool_call_scenarios,
     make_tool_call_scenarios,
 )
+from .trajectory_ingest import (
+    from_langchain_json,
+    from_openai_jsonl,
+    from_openai_messages,
+    to_grading_history,
+)
 
 __all__ = [
     "ConversationDataset",
@@ -50,10 +56,14 @@ __all__ = [
     "extract_gold_answer",
     "extract_predicted_answer",
     "extract_tool_call",
+    "from_langchain_json",
+    "from_openai_jsonl",
+    "from_openai_messages",
     "load_gsm8k",
     "load_support_scenarios",
     "load_tool_call_scenarios",
     "make_gsm8k_scenarios",
     "make_support_scenarios",
     "make_tool_call_scenarios",
+    "to_grading_history",
 ]
