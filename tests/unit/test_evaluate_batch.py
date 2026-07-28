@@ -6,6 +6,7 @@ verify the CLI's argument-validation and error paths via subprocess.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -104,11 +105,26 @@ class TestEvaluateBatchValidation:
 
 class TestEvaluateBatchHelp:
     def test_help_documents_batch_mode(self) -> None:
+        # Force a wide, plain terminal: typer/rich picks its help-panel wrap
+        # width from the terminal size it detects (or falls back to a
+        # narrow default without one), and under a narrower/no-TTY CI
+        # environment it can wrap "--scenarios" across a line boundary or
+        # truncate it out of the captured stdout entirely, even though the
+        # option is genuinely documented. COLUMNS=200 forces a wide layout;
+        # TERM=dumb/NO_COLOR=1 avoid ANSI styling that could otherwise
+        # interleave with the text we're substring-matching.
+        env = {
+            **os.environ,
+            "COLUMNS": "200",
+            "TERM": "dumb",
+            "NO_COLOR": "1",
+        }
         result = subprocess.run(
             [sys.executable, "-m", "stateset_agents.cli", "evaluate", "--help"],
             capture_output=True,
             text=True,
             check=False,
+            env=env,
         )
         assert result.returncode == 0
         assert "--scenarios" in result.stdout

@@ -53,7 +53,7 @@ def load_csv(path: Path) -> list[dict[str, Any]]:
         "seed",
     }
     rows: list[dict[str, Any]] = []
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for row in csv.DictReader(f):
             for col in numeric_cols:
                 if col in row and row[col] not in (None, "", "None"):
@@ -117,7 +117,7 @@ def render_text_plots(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     out = output_dir / "text_plots.md"
-    out.write_text("\n".join(lines) + "\n")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     logger.info("Wrote %s", out)
 
 

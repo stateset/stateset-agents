@@ -399,19 +399,33 @@ class TestAdvancedMonitoringService:
                 return_value=request_size,
             ),
         ):
+            # `record_metric` re-checks the module-level `PROMETHEUS_AVAILABLE`
+            # flag (not a value captured at __init__ time) before touching any
+            # collector, so record_request/record_error must run while the
+            # patch context above is still active. Outside it,
+            # PROMETHEUS_AVAILABLE reverts to whatever this process's real
+            # `prometheus_client` import resolved to -- True if it happens to
+            # be installed transitively (e.g. via optional extras like vllm,
+            # which pull it in locally but not in CI's `.[dev,api]` install),
+            # False otherwise. Asserting outside the `with` block passed
+            # only by accident wherever prometheus_client was truly
+            # importable, and failed everywhere it wasn't (CI) with
+            # "Expected 'labels' to be called once. Called 0 times" since
+            # `record_metric` silently no-ops when PROMETHEUS_AVAILABLE is
+            # False.
             service = AdvancedMonitoringService(enable_tracing=False)
 
-        service.record_request("GET", "/api/health", 200, 0.05)
+            service.record_request("GET", "/api/health", 200, 0.05)
 
-        requests_total.labels.assert_called_once_with("GET", "/api/health", "200")
-        requests_total_bound.inc.assert_called_once_with(1)
-        request_duration.labels.assert_called_once_with("GET", "/api/health")
-        request_duration_bound.observe.assert_called_once_with(0.05)
+            requests_total.labels.assert_called_once_with("GET", "/api/health", "200")
+            requests_total_bound.inc.assert_called_once_with(1)
+            request_duration.labels.assert_called_once_with("GET", "/api/health")
+            request_duration_bound.observe.assert_called_once_with(0.05)
 
-        service.record_error("api", "ValueError", ValueError("boom"))
+            service.record_error("api", "ValueError", ValueError("boom"))
 
-        errors_total.labels.assert_called_once_with("api", "ValueError")
-        errors_total_bound.inc.assert_called_once_with(1)
+            errors_total.labels.assert_called_once_with("api", "ValueError")
+            errors_total_bound.inc.assert_called_once_with(1)
 
 
 class TestDistributedTracing:
