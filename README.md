@@ -155,8 +155,13 @@ pip install "stateset-agents[vllm]"          # vLLM generation backend
 pip install "stateset-agents[hpo]"           # Optuna/Ray Tune HPO
 pip install "stateset-agents[api]"           # FastAPI service
 pip install "stateset-agents[distributed]"   # DeepSpeed / multi‑GPU helpers
+pip install "stateset-agents[rust]"          # Rust-accelerated GAE/advantage kernels (stateset-rl-core)
 pip install "stateset-agents[full]"          # Most extras in one go
 ```
+
+> This repository also contains an internal, unpublished Rust crate at the repo root (a StateSet
+> commerce daemon) that is unrelated to the `stateset-rl-core` accelerator behind `[rust]` above.
+> See `docs/RUST_CRATES.md` for how the two Rust crates in this repo relate.
 
 ### Qwen 3.5 starter path
 

@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "stateset-rl-core"
 # Keep this in lock-step with rust_core/Cargo.toml [package].version — the
 # CI publish workflow asserts they match before uploading to PyPI.
-version = "0.1.0"
+version = "0.1.1"
 description = "High-performance Rust core for StateSet Agents (GAE, group advantages, GSPO importance ratios, reward normalization). Optional accelerator for the stateset-agents Python framework."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -44,5 +44,7 @@ Issues = "https://github.com/stateset/stateset-agents/issues"
 module-name = "stateset_rl_core"
 # Build with the PyO3 stable ABI from 3.10 onward (matches Cargo.toml's
 # abi3-py310 feature). One wheel per (OS, arch) covers Python 3.10–3.13.
-features = ["pyo3/extension-module"]
+# The `python` Cargo feature pulls in pyo3/numpy (both optional deps) plus
+# pyo3/extension-module — see rust_core/Cargo.toml [features].
+features = ["python"]
 strip = true

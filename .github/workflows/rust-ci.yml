@@ -1,0 +1,91 @@
+name: Rust CI
+
+# Fast lint/check/test gate for both Rust crates in this repo:
+#   * the root crate (internal StateSet commerce daemon, `publish = false`)
+#   * rust_core (`stateset-rl-core`, the pyo3 accelerator)
+#
+# This does NOT build Python wheels — see rust-wheels.yml for that.
+#
+# Clippy is scoped with `-A dead_code -A unused_variables -A unused_imports
+# -A unused_mut` on purpose: the root crate carries a fair amount of
+# scaffolding for the commerce daemon (unimplemented gRPC methods, WIP
+# fields) that isn't fully wired up yet, and a mass cleanup of those is out
+# of scope here. Real lint issues (correctness, style, etc.) still gate the
+# build.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.rs"
+      - "rust_core/**"
+      - ".github/workflows/rust-ci.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.rs"
+      - "rust_core/**"
+      - ".github/workflows/rust-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  root-check:
+    name: Root crate — check & clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
+      - name: cargo check --all-targets
+        run: cargo check --all-targets
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings -A dead_code -A unused_variables -A unused_imports -A unused_mut
+
+  rust-core-test:
+    name: rust_core — check, clippy & test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust_core
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "rust_core"
+
+      - name: cargo check (no python feature — libpython not required)
+        run: cargo check --all-targets
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings -A dead_code -A unused_variables -A unused_imports -A unused_mut
+
+      - name: cargo test
+        run: cargo test
