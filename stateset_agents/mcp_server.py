@@ -67,9 +67,7 @@ def list_rewards() -> dict[str, Any]:
     return {"rewards": list(KNOWN_REWARDS)}
 
 
-def ingest_transcripts(
-    input_path: str, format: str, output_dir: str
-) -> dict[str, Any]:
+def ingest_transcripts(input_path: str, format: str, output_dir: str) -> dict[str, Any]:
     """Convert an OpenAI/LangChain conversation log into transcript JSONLs.
 
     Wraps ``stateset_agents.data.trajectory_ingest`` + the same
@@ -94,7 +92,9 @@ def ingest_transcripts(
         )
 
         trajectories = (
-            from_openai_jsonl(source) if fmt == "openai" else from_langchain_json(source)
+            from_openai_jsonl(source)
+            if fmt == "openai"
+            else from_langchain_json(source)
         )
         if not trajectories:
             return {"error": f"No conversations found in {source}"}
@@ -119,8 +119,16 @@ def ingest_transcripts(
         return _err(exc)
 
 
-def grade_transcript(history_path: str, reward: str) -> dict[str, Any]:
-    """Grade a single transcript JSONL, returning mean score + breakdown."""
+def _grade_transcript_sync(history_path: str, reward: str) -> dict[str, Any]:
+    """Synchronous implementation of ``grade_transcript`` (calls ``asyncio.run``).
+
+    Must only ever be invoked off the event loop thread — see
+    ``grade_transcript`` below, which runs this via ``asyncio.to_thread``.
+    ``scripts/grade_transcript.py``'s ``grade_transcript`` coroutine is
+    itself driven with ``asyncio.run``, which raises ``RuntimeError: asyncio.
+    run() cannot be called from a running event loop`` if called directly
+    from within FastMCP's anyio event loop.
+    """
     try:
         history = Path(history_path)
         if not history.exists():
@@ -157,18 +165,38 @@ def grade_transcript(history_path: str, reward: str) -> dict[str, Any]:
             "breakdown": breakdown,
             "rows": rows,
         }
-    except (ValueError, OSError, json.JSONDecodeError) as exc:
+    except (ValueError, OSError, json.JSONDecodeError, RuntimeError) as exc:
         return _err(exc)
 
 
-def improve_run(
+async def grade_transcript(history_path: str, reward: str) -> dict[str, Any]:
+    """Grade a single transcript JSONL, returning mean score + breakdown.
+
+    Async tool wrapper: the real work (``_grade_transcript_sync``) calls
+    ``asyncio.run`` internally (delegating to ``scripts/grade_transcript.
+    py``'s coroutine API unchanged), which cannot run on FastMCP's own
+    event-loop thread. Offloading to a worker thread via ``asyncio.
+    to_thread`` gives that inner ``asyncio.run`` its own thread + loop.
+    """
+    return await asyncio.to_thread(_grade_transcript_sync, history_path, reward)
+
+
+def _improve_run_sync(
     transcripts_dir: str,
     reward: str,
     output_dir: str,
-    threshold: float = 0.7,
-    format: str = "transcripts",
+    threshold: float,
+    format: str,
 ) -> dict[str, Any]:
-    """Run the grade -> curate -> next-steps loop. Wraps ``cli_improve.run_improve``."""
+    """Synchronous implementation of ``improve_run``.
+
+    Must only ever be invoked off the event loop thread — see
+    ``improve_run`` below. ``cli_improve.run_improve`` transitively calls
+    ``asyncio.run`` (via ``_grade_all``), which raises ``RuntimeError:
+    asyncio.run() cannot be called from a running event loop`` if invoked
+    directly from within FastMCP's anyio event loop. Left ``cli_improve``'s
+    own (sync) behavior unchanged — the CLI still calls it directly.
+    """
     try:
         from stateset_agents.cli_improve import (
             ImproveDataError,
@@ -186,8 +214,26 @@ def improve_run(
             )
         except (ImproveUsageError, ImproveDataError) as exc:
             return {"error": str(exc)}
-    except (ValueError, OSError, json.JSONDecodeError) as exc:
+    except (ValueError, OSError, json.JSONDecodeError, RuntimeError) as exc:
         return _err(exc)
+
+
+async def improve_run(
+    transcripts_dir: str,
+    reward: str,
+    output_dir: str,
+    threshold: float = 0.7,
+    format: str = "transcripts",
+) -> dict[str, Any]:
+    """Run the grade -> curate -> next-steps loop. Wraps ``cli_improve.run_improve``.
+
+    Async tool wrapper: offloads the sync implementation (which internally
+    calls ``asyncio.run``) to a worker thread via ``asyncio.to_thread`` so
+    it gets its own event loop, independent of FastMCP's.
+    """
+    return await asyncio.to_thread(
+        _improve_run_sync, transcripts_dir, reward, output_dir, threshold, format
+    )
 
 
 def improve_status(output_dir: str) -> dict[str, Any]:

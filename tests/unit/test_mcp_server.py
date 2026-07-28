@@ -10,6 +10,7 @@ CLI and the CLI's missing-dependency behavior.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
@@ -66,9 +67,7 @@ class TestListRewards:
         from stateset_agents.mcp_server import list_rewards
 
         result = list_rewards()
-        assert result == {
-            "rewards": ["gsm8k", "customer_support", "tool_calling"]
-        }
+        assert result == {"rewards": ["gsm8k", "customer_support", "tool_calling"]}
 
 
 class TestListModelPresets:
@@ -120,11 +119,11 @@ class TestIngestTranscripts:
 
 
 class TestGradeTranscript:
-    def test_grades_transcript(self, tmp_path: Path) -> None:
+    async def test_grades_transcript(self, tmp_path: Path) -> None:
         from stateset_agents.mcp_server import grade_transcript
 
         transcripts_dir = _make_transcripts_dir(tmp_path)
-        result = grade_transcript(
+        result = await grade_transcript(
             str(transcripts_dir / "session1.jsonl"), "customer_support"
         )
         assert "error" not in result
@@ -132,38 +131,71 @@ class TestGradeTranscript:
         assert 0.0 <= result["mean_score"] <= 1.0
         assert isinstance(result["breakdown"], dict)
 
-    def test_unknown_reward_returns_error(self, tmp_path: Path) -> None:
+    async def test_unknown_reward_returns_error(self, tmp_path: Path) -> None:
         from stateset_agents.mcp_server import grade_transcript
 
         transcripts_dir = _make_transcripts_dir(tmp_path)
-        result = grade_transcript(
+        result = await grade_transcript(
             str(transcripts_dir / "session1.jsonl"), "not-a-real-reward"
         )
         assert "error" in result
 
-    def test_missing_history_returns_error(self, tmp_path: Path) -> None:
+    async def test_missing_history_returns_error(self, tmp_path: Path) -> None:
         from stateset_agents.mcp_server import grade_transcript
 
-        result = grade_transcript(
+        result = await grade_transcript(
             str(tmp_path / "nope.jsonl"), "customer_support"
         )
         assert "error" in result
 
+    async def test_runs_fine_from_inside_a_running_event_loop(
+        self, tmp_path: Path
+    ) -> None:
+        """Regression: the tool must not call ``asyncio.run`` on the caller's
+        loop. This test itself runs inside pytest-asyncio's event loop —
+        the same situation FastMCP's anyio loop puts the tool in — so a
+        naive ``asyncio.run(...)`` inside ``grade_transcript`` would raise
+        ``RuntimeError: asyncio.run() cannot be called from a running event
+        loop`` instead of returning a structured error result.
+        """
+        from stateset_agents.mcp_server import grade_transcript
+
+        transcripts_dir = _make_transcripts_dir(tmp_path)
+        result = await grade_transcript(
+            str(transcripts_dir / "session1.jsonl"), "customer_support"
+        )
+        assert "error" not in result, result
+
 
 class TestImproveRun:
     def test_matches_cli_output(self, tmp_path: Path) -> None:
+        # Deliberately sync (not `async def`): this test also drives the
+        # CLI via `CliRunner.invoke`, which calls `cli_improve.run_improve`
+        # -> `asyncio.run` directly (unchanged sync CLI behavior). Awaiting
+        # `improve_run` from inside pytest-asyncio's own running loop would
+        # put *this* call on that loop's thread too, and the CLI's inner
+        # `asyncio.run` would then hit the very
+        # "cannot be called from a running event loop" bug this test
+        # suite is guarding against — for the CLI path, which is out of
+        # scope for that fix (see module docstring). `asyncio.run` here
+        # gives `improve_run` (and its internal `asyncio.to_thread` hop) a
+        # fresh loop that exits before `runner.invoke` runs.
+        import asyncio as _asyncio
+
         from stateset_agents.mcp_server import improve_run
 
         transcripts_dir = _make_transcripts_dir(tmp_path)
         mcp_output_dir = tmp_path / "mcp_improved"
         cli_output_dir = tmp_path / "cli_improved"
 
-        mcp_summary = improve_run(
-            transcripts_dir=str(transcripts_dir),
-            reward="customer_support",
-            output_dir=str(mcp_output_dir),
-            threshold=0.7,
-            format="transcripts",
+        mcp_summary = _asyncio.run(
+            improve_run(
+                transcripts_dir=str(transcripts_dir),
+                reward="customer_support",
+                output_dir=str(mcp_output_dir),
+                threshold=0.7,
+                format="transcripts",
+            )
         )
         assert "error" not in mcp_summary
 
@@ -193,22 +225,22 @@ class TestImproveRun:
         assert mcp_summary["transcript_count"] == cli_summary["transcript_count"]
         assert (mcp_output_dir / "curated.jsonl").exists()
 
-    def test_missing_reward_returns_error(self, tmp_path: Path) -> None:
+    async def test_missing_reward_returns_error(self, tmp_path: Path) -> None:
         from stateset_agents.mcp_server import improve_run
 
         transcripts_dir = _make_transcripts_dir(tmp_path)
-        result = improve_run(
+        result = await improve_run(
             transcripts_dir=str(transcripts_dir),
             reward="",
             output_dir=str(tmp_path / "out"),
         )
         assert "error" in result
 
-    def test_unknown_reward_returns_error(self, tmp_path: Path) -> None:
+    async def test_unknown_reward_returns_error(self, tmp_path: Path) -> None:
         from stateset_agents.mcp_server import improve_run
 
         transcripts_dir = _make_transcripts_dir(tmp_path)
-        result = improve_run(
+        result = await improve_run(
             transcripts_dir=str(transcripts_dir),
             reward="bogus",
             output_dir=str(tmp_path / "out"),
@@ -217,12 +249,12 @@ class TestImproveRun:
 
 
 class TestImproveStatus:
-    def test_status_after_run(self, tmp_path: Path) -> None:
+    async def test_status_after_run(self, tmp_path: Path) -> None:
         from stateset_agents.mcp_server import improve_run, improve_status
 
         transcripts_dir = _make_transcripts_dir(tmp_path)
         output_dir = tmp_path / "improved"
-        improve_run(
+        await improve_run(
             transcripts_dir=str(transcripts_dir),
             reward="customer_support",
             output_dir=str(output_dir),
@@ -310,3 +342,84 @@ class TestCliRegistration:
         result = runner.invoke(app, ["mcp", "--transport", "sse"])
         assert result.exit_code == 2
         assert "stdio" in result.output.lower()
+
+
+class TestLiveProtocolSession:
+    """End-to-end regression over the real MCP stdio protocol.
+
+    Spawns ``python -m stateset_agents.cli mcp`` as a subprocess and drives
+    it with the ``mcp`` SDK's own client session (initialize -> list_tools
+    -> call_tool), the same path a real MCP client (Claude Code, Claude
+    Desktop, another agent) takes. This is the only test in this module
+    that actually exercises FastMCP's request dispatch — the tool-function
+    tests above call the underlying Python functions directly, which does
+    not run the tools inside FastMCP's own anyio event loop the way a real
+    session does. That distinction matters: ``grade_transcript`` and
+    ``improve_run`` internally call ``asyncio.run`` (via ``scripts/
+    grade_transcript.py`` / ``cli_improve.run_improve``), which raises
+    ``RuntimeError: asyncio.run() cannot be called from a running event
+    loop`` if invoked directly on FastMCP's loop thread instead of via
+    ``asyncio.to_thread`` — a failure mode only a live protocol session
+    reproduces.
+    """
+
+    async def test_initialize_list_and_call_tools_over_stdio(
+        self, tmp_path: Path
+    ) -> None:
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        transcripts_dir = _make_transcripts_dir(tmp_path)
+
+        env = dict(os.environ)
+        env["PYTHONPATH"] = f"{REPO_ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}"
+        server_params = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "stateset_agents.cli", "mcp"],
+            env=env,
+            cwd=str(REPO_ROOT),
+        )
+
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                init_result = await asyncio.wait_for(session.initialize(), timeout=30)
+                assert init_result.serverInfo.name == "stateset-agents"
+
+                tools_result = await asyncio.wait_for(session.list_tools(), timeout=30)
+                tool_names = {tool.name for tool in tools_result.tools}
+                assert tool_names == {
+                    "list_rewards",
+                    "ingest_transcripts",
+                    "grade_transcript",
+                    "improve_run",
+                    "improve_status",
+                    "list_model_presets",
+                    "dry_run_finetune",
+                }
+                assert len(tools_result.tools) == 7
+
+                rewards_result = await asyncio.wait_for(
+                    session.call_tool("list_rewards", {}), timeout=30
+                )
+                assert rewards_result.isError is not True
+                assert rewards_result.structuredContent is not None
+                assert set(rewards_result.structuredContent["rewards"]) == {
+                    "gsm8k",
+                    "customer_support",
+                    "tool_calling",
+                }
+
+                grade_result = await asyncio.wait_for(
+                    session.call_tool(
+                        "grade_transcript",
+                        {
+                            "history_path": str(transcripts_dir / "session1.jsonl"),
+                            "reward": "customer_support",
+                        },
+                    ),
+                    timeout=60,
+                )
+                assert grade_result.isError is not True, grade_result
+                assert grade_result.structuredContent is not None
+                assert "error" not in grade_result.structuredContent
+                assert grade_result.structuredContent["assistant_turn_count"] == 2
