@@ -603,7 +603,10 @@ class HuggingFaceGeneratorFallback:
 
             logger.info(f"Initializing HuggingFace fallback for {self.model_name}...")
 
-            self.tokenizer = AutoTokenizer.from_pretrained(
+            # self.model_name is a caller-supplied config value (public HF
+            # model repo id), not attacker-controlled input; pinning a fixed
+            # revision would break support for arbitrary user-chosen models.
+            self.tokenizer = AutoTokenizer.from_pretrained(  # nosec: B615
                 self.model_name,
                 trust_remote_code=True,
                 padding_side="left",
@@ -611,7 +614,7 @@ class HuggingFaceGeneratorFallback:
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
 
-            self.model = AutoModelForCausalLM.from_pretrained(
+            self.model = AutoModelForCausalLM.from_pretrained(  # nosec: B615
                 self.model_name,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 device_map="auto" if self.device == "cuda" else None,

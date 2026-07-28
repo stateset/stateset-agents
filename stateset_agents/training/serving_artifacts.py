@@ -89,7 +89,11 @@ def export_merged_model_for_serving(
 
     logger.info("Exporting merged model for serving...")
 
-    config = AutoConfig.from_pretrained(
+    # base_model_name is a caller-supplied config value (public HF model repo
+    # id), not attacker-controlled input; pinning a fixed revision would
+    # break support for arbitrary user-chosen base models. Applies to every
+    # from_pretrained() call in this function.
+    config = AutoConfig.from_pretrained(  # nosec: B615
         base_model_name,
         trust_remote_code=trust_remote_code,
     )
@@ -110,12 +114,14 @@ def export_merged_model_for_serving(
                 "This model requires `AutoModelForImageTextToText` for merged export. "
                 "Install a recent transformers build with Qwen3.5 support."
             )
-        model = AutoModelForImageTextToText.from_pretrained(
+        model = AutoModelForImageTextToText.from_pretrained(  # nosec: B615
             base_model_name,
             **model_kwargs,
         )
     else:
-        model = AutoModelForCausalLM.from_pretrained(base_model_name, **model_kwargs)
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model_name, **model_kwargs
+        )  # nosec: B615
 
     model = PeftModel.from_pretrained(model, adapter_dir)
     merged = model.merge_and_unload()
@@ -127,7 +133,7 @@ def export_merged_model_for_serving(
     processor_saved = False
     if AutoProcessor is not None:
         try:
-            processor = AutoProcessor.from_pretrained(
+            processor = AutoProcessor.from_pretrained(  # nosec: B615
                 base_model_name,
                 trust_remote_code=trust_remote_code,
             )
@@ -137,7 +143,7 @@ def export_merged_model_for_serving(
             logger.info("Processor export skipped for %s: %s", base_model_name, exc)
 
     try:
-        tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer = AutoTokenizer.from_pretrained(  # nosec: B615
             base_model_name,
             trust_remote_code=trust_remote_code,
         )

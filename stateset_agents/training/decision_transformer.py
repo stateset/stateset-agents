@@ -803,7 +803,7 @@ class DecisionTransformerTrainer:
 
     def save(self, path: str) -> None:
         """Save model checkpoint"""
-        torch.save(  # nosec: B614
+        torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),

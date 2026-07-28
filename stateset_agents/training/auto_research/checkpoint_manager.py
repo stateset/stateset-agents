@@ -175,7 +175,7 @@ class CheckpointManager:
             import torch
 
             state_dict = model.state_dict()
-            torch.save(state_dict, path / "model_state.pt")  # nosec: B614
+            torch.save(state_dict, path / "model_state.pt")
             logger.debug("Saved state_dict to %s", path / "model_state.pt")
         except Exception as exc:
             logger.warning("Could not save model weights: %s", exc)

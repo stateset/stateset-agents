@@ -741,7 +741,7 @@ class OfflineRLTrainer:
 
     def save(self, path: str) -> None:
         """Save trained model"""
-        torch.save(  # nosec: B614
+        torch.save(
             {
                 "algorithm": self.algorithm,
                 "learner_state": {

@@ -8,4 +8,3 @@ The gateway supports:
 
 These are intended to be fronted by a stable domain (for example
 `https://api.stateset.com`).
-

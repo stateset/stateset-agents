@@ -9,4 +9,3 @@ cluster_name = "grpo-framework"
 # Database credentials
 db_username = "grpo"
 db_password = "CHANGE_ME_STRONG"
-

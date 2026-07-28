@@ -683,7 +683,7 @@ class BatchConstrainedQLearning:
 
     def save(self, path: str) -> None:
         """Save model checkpoint"""
-        torch.save(  # nosec: B614
+        torch.save(
             {
                 "vae_state_dict": self.vae.state_dict(),
                 "perturbation_state_dict": self.perturbation.state_dict(),

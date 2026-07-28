@@ -755,7 +755,7 @@ class TransformerRewardTrainer:
         except REWARD_MODEL_EXCEPTIONS:
             config_payload = dict(getattr(self.config, "__dict__", {}))
 
-        torch.save(  # nosec: B614
+        torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
                 "optimizer_state_dict": (
@@ -785,9 +785,9 @@ class TransformerRewardTrainer:
                         path, map_location=self.device, weights_only=False
                     )
                 except TypeError:
-                    checkpoint = torch.load(
+                    checkpoint = torch.load(  # nosec: B614
                         path, map_location=self.device
-                    )  # nosec: B614
+                    )
             else:
                 raise
 

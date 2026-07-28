@@ -200,7 +200,7 @@ resource "google_sql_database_instance" "grpo_postgres" {
 
   settings {
     tier = "db-f1-micro"
-    
+
     backup_configuration {
       enabled    = true
       start_time = "03:00"

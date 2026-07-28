@@ -228,7 +228,10 @@ class ConversationDataset(TorchDataset):
             data_path=dataset_name, format="hf_dataset"
         )
 
-        hf_dataset = load_dataset(dataset_name, split=split)
+        # dataset_name is a caller-supplied config value (public HF dataset
+        # repo id), not attacker-controlled input; pinning a fixed revision
+        # would break support for arbitrary user-chosen datasets.
+        hf_dataset = load_dataset(dataset_name, split=split)  # nosec: B615
         trajectories = []
 
         for idx, item in enumerate(hf_dataset):

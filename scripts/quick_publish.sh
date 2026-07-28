@@ -78,11 +78,11 @@ check_prerequisites() {
     command -v pytest >/dev/null 2>&1 || { log_error "pytest is required but not installed. Run: pip install pytest"; exit 1; }
     command -v bandit >/dev/null 2>&1 || { log_error "bandit is required but not installed. Run: pip install bandit"; exit 1; }
     command -v safety >/dev/null 2>&1 || { log_error "safety is required but not installed. Run: pip install safety"; exit 1; }
-    
+
     # Check if build tools are installed
     "$PYTHON_BIN" -c "import build" 2>/dev/null || { log_error "build package not installed. Run: pip install build"; exit 1; }
     "$PYTHON_BIN" -c "import twine" 2>/dev/null || { log_error "twine package not installed. Run: pip install twine"; exit 1; }
-    
+
     log_success "Prerequisites check passed"
 }
 
@@ -129,35 +129,35 @@ run_publish_readiness() {
 # Test package
 test_package() {
     log_info "Testing package..."
-    
+
     # Find the wheel file
     WHEEL_FILE=$(ls dist/*.whl 2>/dev/null | head -1)
     if [ -z "$WHEEL_FILE" ]; then
         log_error "No wheel file found in dist/"
         exit 1
     fi
-    
+
     # Test installation
     "$PYTHON_BIN" -m pip install --force-reinstall --quiet "$WHEEL_FILE"
-    
+
     # Test import
     "$PYTHON_BIN" -c "import stateset_agents; print(f'✅ Package imported successfully: v{stateset_agents.__version__}')"
-    
+
     log_success "Package test passed"
 }
 
 # Publish to TestPyPI
 publish_test() {
     log_info "Publishing to TestPyPI..."
-    
+
     if [ -z "$TEST_PYPI_API_TOKEN" ]; then
         log_warning "TEST_PYPI_API_TOKEN not set. Using interactive mode."
         log_warning "Set TEST_PYPI_API_TOKEN environment variable for automated publishing"
     fi
-    
+
     "$PYTHON_BIN" -m twine upload --skip-existing --repository testpypi dist/*
     log_success "Published to TestPyPI"
-    
+
     log_info "Test installation:"
     log_info "pip install --index-url https://test.pypi.org/simple/ stateset-agents"
 }
@@ -165,12 +165,12 @@ publish_test() {
 # Publish to PyPI
 publish_production() {
     log_info "Publishing to PyPI..."
-    
+
     if [ -z "$PYPI_API_TOKEN" ]; then
         log_warning "PYPI_API_TOKEN not set. Using interactive mode."
         log_warning "Set PYPI_API_TOKEN environment variable for automated publishing"
     fi
-    
+
     # Confirmation
     echo
     log_warning "🚨 About to publish to PRODUCTION PyPI!"
@@ -180,10 +180,10 @@ publish_production() {
         log_info "Publishing cancelled"
         exit 0
     fi
-    
+
     "$PYTHON_BIN" -m twine upload --skip-existing dist/*
     log_success "Published to PyPI"
-    
+
     log_info "Installation:"
     log_info "pip install stateset-agents"
 }
@@ -192,19 +192,19 @@ publish_production() {
 create_git_tag() {
     local version=$1
     local tag="v$version"
-    
+
     log_info "Creating git tag: $tag"
-    
+
     # Check if tag already exists
     if git tag -l | grep -q "^$tag$"; then
         log_warning "Tag $tag already exists"
         return
     fi
-    
+
     # Create annotated tag
     git tag -a "$tag" -m "Release $tag"
     git push origin "$tag"
-    
+
     log_success "Git tag created and pushed: $tag"
 }
 
@@ -239,14 +239,14 @@ show_status() {
     echo "Git status: $(git status --porcelain | wc -l) changes"
     echo "Dist files: $(ls dist/ 2>/dev/null | wc -l) files"
     echo
-    
+
     # Check environment variables
     if [ -n "$TEST_PYPI_API_TOKEN" ]; then
         echo "✅ TestPyPI token configured"
     else
         echo "❌ TestPyPI token not configured"
     fi
-    
+
     if [ -n "$PYPI_API_TOKEN" ]; then
         echo "✅ PyPI token configured"
     else
@@ -282,7 +282,7 @@ PY
     else
         echo "  publish-readiness summary: not available"
     fi
-    
+
     echo
 }
 
@@ -290,11 +290,11 @@ PY
 main() {
     check_directory
     check_prerequisites
-    
+
     while true; do
         show_menu
         read -p "Enter choice (1-9): " choice
-        
+
         case $choice in
             1)
                 build_package
@@ -341,7 +341,7 @@ main() {
                 log_error "Invalid choice. Please enter 1-9."
                 ;;
         esac
-        
+
         echo
         read -p "Press Enter to continue..."
     done

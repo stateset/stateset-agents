@@ -164,13 +164,13 @@ if [ ${PIPESTATUS[0]} -eq 0 ]; then
     echo "✅ Training completed successfully!"
     echo "📁 Model saved in: ${OUTPUT_DIR}/final_model"
     echo "📋 Training log saved in: ${OUTPUT_DIR}/training_${TIMESTAMP}.log"
-    
+
     # Display final model info if available
     if [ -d "${OUTPUT_DIR}/final_model" ]; then
         echo "🏆 Final model information:"
         ls -lh "${OUTPUT_DIR}/final_model" | head -5
     fi
-    
+
     # Show evaluation results if available
     if [ -f "${OUTPUT_DIR}/evaluation_results.json" ]; then
         echo "📊 Evaluation results available at: ${OUTPUT_DIR}/evaluation_results.json"
@@ -195,4 +195,4 @@ fi
 echo "🎯 Production training pipeline completed!"
 echo "To view training progress in Weights & Biases (if enabled):"
 echo "  wandb login"
-echo "  Visit: https://wandb.ai/${WANDB_ENTITY:-your-entity}/${WANDB_PROJECT}" 
+echo "  Visit: https://wandb.ai/${WANDB_ENTITY:-your-entity}/${WANDB_PROJECT}"

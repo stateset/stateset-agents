@@ -376,12 +376,14 @@ class NeuralRewardTrainer:
                     self.patience_counter += 1
                     if self.patience_counter >= self.patience:
                         if verbose:
-                            print(f"Early stopping at epoch {epoch+1}")
+                            print(f"Early stopping at epoch {epoch + 1}")
                         break
 
             # Logging
             if verbose and (epoch + 1) % 10 == 0:
-                msg = f"Epoch {epoch+1}/{self.max_epochs}, Train Loss: {train_loss:.4f}"
+                msg = (
+                    f"Epoch {epoch + 1}/{self.max_epochs}, Train Loss: {train_loss:.4f}"
+                )
                 if val_loss is not None:
                     msg += f", Val Loss: {val_loss:.4f}"
                 print(msg)
@@ -481,7 +483,7 @@ class NeuralRewardTrainer:
 
     def save_model(self, path: str):
         """Save model checkpoint"""
-        torch.save(  # nosec: B614
+        torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),

@@ -14,4 +14,3 @@ Helm chart:
 
    helm upgrade --install stateset-agents deployment/helm/stateset-agents \
      --namespace stateset-agents
-

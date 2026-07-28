@@ -337,18 +337,18 @@ class InputValidator:
 
         for i, msg in enumerate(messages):
             if not isinstance(msg, dict):
-                raise ValueError(f"Message {i+1} must be a dictionary")
+                raise ValueError(f"Message {i + 1} must be a dictionary")
 
             if "role" not in msg:
-                raise ValueError(f"Message {i+1} missing 'role' field")
+                raise ValueError(f"Message {i + 1} missing 'role' field")
 
             if "content" not in msg:
-                raise ValueError(f"Message {i+1} missing 'content' field")
+                raise ValueError(f"Message {i + 1} missing 'content' field")
 
             role = msg["role"]
             if role not in valid_roles:
                 raise ValueError(
-                    f"Message {i+1} has invalid role '{role}'. "
+                    f"Message {i + 1} has invalid role '{role}'. "
                     f"Must be one of: {', '.join(valid_roles)}"
                 )
 
@@ -356,7 +356,7 @@ class InputValidator:
             content, event = cls.validate_string(
                 msg["content"],
                 max_length=max_content_length,
-                field_name=f"Message {i+1} content",
+                field_name=f"Message {i + 1} content",
                 check_injection=True,
             )
 

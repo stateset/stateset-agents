@@ -343,7 +343,7 @@ def get_auto_research_search_space(name: str) -> SearchSpace:
     if factory is None:
         available = ", ".join(sorted(AUTO_RESEARCH_SPACES))
         raise ValueError(
-            f"Unknown auto-research search space: {name!r}. " f"Available: {available}"
+            f"Unknown auto-research search space: {name!r}. Available: {available}"
         )
     return factory()
 

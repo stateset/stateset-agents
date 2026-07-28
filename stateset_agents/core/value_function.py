@@ -428,7 +428,7 @@ class ValueFunction:
     def save(self, path: str):
         """Save value function state"""
         _require_torch()
-        torch.save(  # nosec: B614
+        torch.save(
             {
                 "value_head_state_dict": self.value_head.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),

@@ -768,7 +768,7 @@ class SimToRealTransfer:
 
     def save(self, path: str) -> None:
         """Save transfer state"""
-        torch.save(  # nosec: B614
+        torch.save(
             {
                 "user_model_state_dict": self.user_model.state_dict(),
                 "domain_adapter_state_dict": self.domain_adapter.state_dict(),

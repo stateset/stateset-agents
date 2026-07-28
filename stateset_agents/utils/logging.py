@@ -177,7 +177,9 @@ class GRPOLogger:
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         file_handler = RotatingFileHandler(
-            log_file, maxBytes=10 * 1024 * 1024, backupCount=5  # 10MB
+            log_file,
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,  # 10MB
         )
 
         if self.enable_json:

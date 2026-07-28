@@ -34,7 +34,9 @@ def test_multi_hop_migration_applies_steps() -> None:
 
     data = {"prompt": "hello"}
     migrated = migrator.migrate(
-        data, DummyVersion.V1, DummyVersion.V3  # type: ignore[arg-type]
+        data,
+        DummyVersion.V1,
+        DummyVersion.V3,  # type: ignore[arg-type]
     )
     assert migrated == {"messages": "hello", "new_field": 123}
 

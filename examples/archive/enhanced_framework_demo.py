@@ -285,9 +285,9 @@ async def run_comprehensive_demo():
     results = {}
 
     for demo_name, demo_func in demo_functions:
-        logger.info(f"\n{'='*50}")
+        logger.info(f"\n{'=' * 50}")
         logger.info(f"Running: {demo_name}")
-        logger.info(f"{'='*50}")
+        logger.info(f"{'=' * 50}")
 
         try:
             start_time = asyncio.get_event_loop().time()
@@ -305,9 +305,9 @@ async def run_comprehensive_demo():
             results[demo_name] = {"success": False, "error": str(e)}
 
     # Summary
-    logger.info(f"\n{'='*50}")
+    logger.info(f"\n{'=' * 50}")
     logger.info("📊 DEMONSTRATION SUMMARY")
-    logger.info(f"{'='*50}")
+    logger.info(f"{'=' * 50}")
 
     total_demos = len(demo_functions)
     successful_demos = sum(1 for r in results.values() if r["success"])
@@ -315,7 +315,7 @@ async def run_comprehensive_demo():
     logger.info(f"Total demonstrations: {total_demos}")
     logger.info(f"Successful: {successful_demos}")
     logger.info(f"Failed: {total_demos - successful_demos}")
-    logger.info(f"Success rate: {successful_demos/total_demos*100:.1f}%")
+    logger.info(f"Success rate: {successful_demos / total_demos * 100:.1f}%")
 
     logger.info("\nDetailed Results:")
     for demo_name, result in results.items():

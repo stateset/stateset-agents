@@ -44,4 +44,3 @@ If you are migrating a traditional RL setup:
 - Keep your simulator or task logic, but expose it via a `ConversationEnvironment` or `TaskEnvironment`.
 - Map each episode to a `MultiTurnTrajectory` (StateSet handles grouping and advantage computation).
 - Reuse policy/value architecture ideas; StateSet’s trainers accept custom heads and value functions.
-

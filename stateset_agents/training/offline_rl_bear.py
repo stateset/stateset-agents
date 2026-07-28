@@ -738,7 +738,7 @@ class ConversationalBEAR:
 
     def save(self, path: str) -> None:
         """Save model checkpoint"""
-        torch.save(  # nosec: B614
+        torch.save(
             {
                 "actor_state_dict": self.actor.state_dict(),
                 "q1_state_dict": self.q1.state_dict(),

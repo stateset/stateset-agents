@@ -8,4 +8,3 @@ The canonical runtime is:
 
 For deployment patterns, see `deployment/helm/stateset-agents` and the Kimi-K2.5
 GKE guides in `docs/`.
-

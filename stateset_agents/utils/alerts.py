@@ -235,7 +235,7 @@ class EmailNotificationHandler(NotificationHandler):
 Alert: {alert.rule_name}
 Severity: {alert.severity.value.upper()}
 Status: {alert.status.value.upper()}
-Created: {alert.created_at.strftime('%Y-%m-%d %H:%M:%S')}
+Created: {alert.created_at.strftime("%Y-%m-%d %H:%M:%S")}
 
 Message:
 {alert.message}
@@ -663,10 +663,9 @@ def create_default_alert_rules() -> list[AlertRule]:
     rules.append(
         AlertRule(
             name="high_cpu_usage",
-            condition=lambda m: m.get("system_metrics", {})
-            .get("cpu_usage", {})
-            .get("current", 0)
-            > 80,
+            condition=lambda m: (
+                m.get("system_metrics", {}).get("cpu_usage", {}).get("current", 0) > 80
+            ),
             severity=AlertSeverity.MEDIUM,
             message="CPU usage is above 80%",
             labels={"category": "system", "resource": "cpu"},
@@ -676,10 +675,10 @@ def create_default_alert_rules() -> list[AlertRule]:
     rules.append(
         AlertRule(
             name="high_memory_usage",
-            condition=lambda m: m.get("system_metrics", {})
-            .get("memory_usage", {})
-            .get("current", 0)
-            > 85,
+            condition=lambda m: (
+                m.get("system_metrics", {}).get("memory_usage", {}).get("current", 0)
+                > 85
+            ),
             severity=AlertSeverity.HIGH,
             message="Memory usage is above 85%",
             labels={"category": "system", "resource": "memory"},
@@ -689,10 +688,9 @@ def create_default_alert_rules() -> list[AlertRule]:
     rules.append(
         AlertRule(
             name="high_disk_usage",
-            condition=lambda m: m.get("system_metrics", {})
-            .get("disk_usage", {})
-            .get("current", 0)
-            > 90,
+            condition=lambda m: (
+                m.get("system_metrics", {}).get("disk_usage", {}).get("current", 0) > 90
+            ),
             severity=AlertSeverity.HIGH,
             message="Disk usage is above 90%",
             labels={"category": "system", "resource": "disk"},
@@ -703,8 +701,9 @@ def create_default_alert_rules() -> list[AlertRule]:
     rules.append(
         AlertRule(
             name="high_error_rate",
-            condition=lambda m: m.get("application_metrics", {}).get("error_count", 0)
-            > 100,
+            condition=lambda m: (
+                m.get("application_metrics", {}).get("error_count", 0) > 100
+            ),
             severity=AlertSeverity.HIGH,
             message="Error rate is above 100 errors",
             labels={"category": "application", "type": "errors"},
@@ -714,10 +713,9 @@ def create_default_alert_rules() -> list[AlertRule]:
     rules.append(
         AlertRule(
             name="slow_response_time",
-            condition=lambda m: m.get("application_metrics", {}).get(
-                "average_response_time", 0
-            )
-            > 5.0,
+            condition=lambda m: (
+                m.get("application_metrics", {}).get("average_response_time", 0) > 5.0
+            ),
             severity=AlertSeverity.MEDIUM,
             message="Average response time is above 5 seconds",
             labels={"category": "application", "type": "performance"},
@@ -727,10 +725,9 @@ def create_default_alert_rules() -> list[AlertRule]:
     rules.append(
         AlertRule(
             name="low_training_reward",
-            condition=lambda m: m.get("application_metrics", {}).get(
-                "average_reward_score", 1.0
-            )
-            < 0.3,
+            condition=lambda m: (
+                m.get("application_metrics", {}).get("average_reward_score", 1.0) < 0.3
+            ),
             severity=AlertSeverity.MEDIUM,
             message="Training reward score is below 0.3",
             labels={"category": "training", "type": "performance"},

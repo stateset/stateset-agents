@@ -287,7 +287,7 @@ def version(
         "--json",
         "--json-output",
         help="Output machine-readable JSON",
-    )
+    ),
 ) -> None:
     """Show installed version, git commit, and key dependency versions.
 
@@ -420,9 +420,7 @@ def validate_config(
 
 @app.command()
 def serve(
-    host: str = typer.Option(
-        "0.0.0.0", help="Bind host"
-    ),  # nosec: B104 - intentional default for containerized deployment
+    host: str = typer.Option("0.0.0.0", help="Bind host"),  # nosec: B104
     port: int = typer.Option(8000, help="Bind port"),
     reload: bool = typer.Option(False, help="Enable auto-reload (development)"),
     dry_run: bool = typer.Option(
@@ -1076,10 +1074,7 @@ def recipe(
         import subprocess
 
         try:
-            subprocess.run(
-                shlex.split(pager), check=False, input=section, text=True
-            )  # nosec: B603 — no shell=True; pager command comes from a fixed
-            # default or the user's own $PAGER, split with shlex (not shell-parsed)
+            subprocess.run(shlex.split(pager), check=False, input=section, text=True)
             return
         except Exception:
             pass
@@ -1122,10 +1117,7 @@ def tour() -> None:
         import subprocess
 
         try:
-            subprocess.run(
-                [*shlex.split(pager), str(tour_path)], check=False
-            )  # nosec: B603 — no shell=True; pager command comes from a fixed
-            # default or the user's own $PAGER, split with shlex (not shell-parsed)
+            subprocess.run([*shlex.split(pager), str(tour_path)], check=False)
             return
         except Exception:
             pass

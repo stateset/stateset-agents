@@ -754,13 +754,13 @@ class PPOTrainer:
         self.tokenizer.save_pretrained(path)
 
         # Save value head
-        torch.save(  # nosec: B614
+        torch.save(
             self.value_head.state_dict(),
             os.path.join(path, "value_head.pt"),
         )
 
         # Save training state
-        torch.save(  # nosec: B614
+        torch.save(
             {
                 "policy_optimizer": self.policy_optimizer.state_dict(),
                 "value_optimizer": self.value_optimizer.state_dict(),

@@ -113,7 +113,7 @@ def _parse_model_map(raw_map: str) -> dict[str, str]:
         loaded = json.loads(raw_map)
     except json.JSONDecodeError:
         logger.warning(
-            "Invalid JSON in INFERENCE_MODEL_MAP; " "falling back to key=value parsing"
+            "Invalid JSON in INFERENCE_MODEL_MAP; falling back to key=value parsing"
         )
         for pair in raw_map.split(","):
             if "=" not in pair:

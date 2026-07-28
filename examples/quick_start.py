@@ -196,7 +196,9 @@ async def auto_training_example():
 
     logger.info("Starting automatic training...")
     trained_agent = await auto_trainer.train(
-        agent=agent, environment=environment, num_episodes=4  # Fast smoke-sized demo
+        agent=agent,
+        environment=environment,
+        num_episodes=4,  # Fast smoke-sized demo
     )
 
     logger.info("Automatic training completed!")

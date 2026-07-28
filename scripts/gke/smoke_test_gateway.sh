@@ -98,4 +98,3 @@ curl -fsS -N "http://127.0.0.1:${local_port}/v1/messages" \
 echo ""
 
 echo "ok"
-

@@ -39,9 +39,9 @@ check_http_endpoint() {
     local url=$1
     local expected_code=${2:-200}
     local timeout=${3:-10}
-    
+
     local response_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout $timeout "$url" || echo "000")
-    
+
     if [ "$response_code" = "$expected_code" ]; then
         log_success "✓ $url (HTTP $response_code)"
         return 0
@@ -54,85 +54,85 @@ check_http_endpoint() {
 check_api_functionality() {
     local base_url="http://$API_HOST:$API_PORT"
     local health_check_passed=true
-    
+
     log_info "Checking API functionality..."
-    
+
     # Health check endpoint
     if ! check_http_endpoint "$base_url/health" 200; then
         health_check_passed=false
     fi
-    
+
     # Readiness check endpoint
     if ! check_http_endpoint "$base_url/ready" 200; then
         health_check_passed=false
     fi
-    
+
     # Metrics endpoint
     if ! check_http_endpoint "$base_url/metrics" 200; then
         health_check_passed=false
     fi
-    
+
     # API documentation
     if ! check_http_endpoint "$base_url/docs" 200; then
         health_check_passed=false
     fi
-    
+
     # Chat API endpoint (POST)
     local chat_response=$(curl -s -X POST "$base_url/api/chat" \
         -H "Content-Type: application/json" \
         -d '{"message": "Hello, this is a health check", "strategy": "default"}' \
         -w "%{http_code}" || echo "000")
-    
+
     if [[ "$chat_response" == *"200" ]]; then
         log_success "✓ Chat API endpoint"
     else
         log_error "✗ Chat API endpoint (Response: $chat_response)"
         health_check_passed=false
     fi
-    
+
     return $health_check_passed
 }
 
 check_training_api() {
     local base_url="http://$API_HOST:$TRAINING_PORT"
     local training_check_passed=true
-    
+
     log_info "Checking Training API functionality..."
-    
+
     # Training health check
     if ! check_http_endpoint "$base_url/health" 200; then
         training_check_passed=false
     fi
-    
+
     # Training metrics
     if ! check_http_endpoint "$base_url/metrics" 200; then
         training_check_passed=false
     fi
-    
+
     # Start training endpoint (POST)
     local train_response=$(curl -s -X POST "$base_url/api/train" \
         -H "Content-Type: application/json" \
         -d '{"prompts": ["Health check prompt"], "strategy": "computational", "num_iterations": 1}' \
         -w "%{http_code}" || echo "000")
-    
+
     if [[ "$train_response" == *"200" ]]; then
         log_success "✓ Training API endpoint"
     else
         log_error "✗ Training API endpoint (Response: $train_response)"
         training_check_passed=false
     fi
-    
+
     return $training_check_passed
 }
 
 check_docker_deployment() {
     log_info "Checking Docker deployment..."
-    
+
     local docker_check_passed=true
-    
+
     # Check if containers are running
     local containers=("grpo-framework" "grpo-redis" "grpo-postgres" "grpo-monitoring" "grpo-grafana")
-    
+
     for container in "${containers[@]}"; do
         if docker ps --format "table {{.Names}}" | grep -q "$container"; then
             log_success "✓ Container $container is running"
@@ -141,7 +141,7 @@ check_docker_deployment() {
             docker_check_passed=false
         fi
     done
-    
+
     # Check container health
     local unhealthy_containers=$(docker ps --filter "health=unhealthy" --format "{{.Names}}")
     if [ -n "$unhealthy_containers" ]; then
@@ -150,16 +150,16 @@ check_docker_deployment() {
     else
         log_success "✓ All containers are healthy"
     fi
-    
+
     return $docker_check_passed
 }
 
 check_kubernetes_deployment() {
     log_info "Checking Kubernetes deployment..."
-    
+
     local k8s_check_passed=true
     local namespace="grpo-framework"
-    
+
     # Check namespace
     if kubectl get namespace "$namespace" &> /dev/null; then
         log_success "✓ Namespace $namespace exists"
@@ -168,12 +168,12 @@ check_kubernetes_deployment() {
         k8s_check_passed=false
         return $k8s_check_passed
     fi
-    
+
     # Check deployment
     if kubectl get deployment grpo-framework -n "$namespace" &> /dev/null; then
         local ready_replicas=$(kubectl get deployment grpo-framework -n "$namespace" -o jsonpath='{.status.readyReplicas}')
         local desired_replicas=$(kubectl get deployment grpo-framework -n "$namespace" -o jsonpath='{.spec.replicas}')
-        
+
         if [ "$ready_replicas" = "$desired_replicas" ]; then
             log_success "✓ Deployment grpo-framework ($ready_replicas/$desired_replicas replicas ready)"
         else
@@ -184,7 +184,7 @@ check_kubernetes_deployment() {
         log_error "✗ Deployment grpo-framework not found"
         k8s_check_passed=false
     fi
-    
+
     # Check services
     if kubectl get service grpo-framework-service -n "$namespace" &> /dev/null; then
         log_success "✓ Service grpo-framework-service exists"
@@ -192,7 +192,7 @@ check_kubernetes_deployment() {
         log_error "✗ Service grpo-framework-service not found"
         k8s_check_passed=false
     fi
-    
+
     # Check pods
     local pod_count=$(kubectl get pods -n "$namespace" --field-selector=status.phase=Running | wc -l)
     if [ "$pod_count" -gt 1 ]; then
@@ -201,15 +201,15 @@ check_kubernetes_deployment() {
         log_error "✗ No running pods found"
         k8s_check_passed=false
     fi
-    
+
     return $k8s_check_passed
 }
 
 check_database_connectivity() {
     log_info "Checking database connectivity..."
-    
+
     local db_check_passed=true
-    
+
     # Check PostgreSQL connectivity
     if [ "$DEPLOYMENT_TYPE" = "docker" ]; then
         if docker exec grpo-postgres pg_isready -U grpo &> /dev/null; then
@@ -218,7 +218,7 @@ check_database_connectivity() {
             log_error "✗ PostgreSQL is not ready"
             db_check_passed=false
         fi
-        
+
         # Check Redis connectivity
         if docker exec grpo-redis redis-cli ping | grep -q "PONG"; then
             log_success "✓ Redis is ready"
@@ -236,15 +236,15 @@ check_database_connectivity() {
             db_check_passed=false
         fi
     fi
-    
+
     return $db_check_passed
 }
 
 check_monitoring_stack() {
     log_info "Checking monitoring stack..."
-    
+
     local monitoring_check_passed=true
-    
+
     # Check Prometheus
     if [ "$DEPLOYMENT_TYPE" = "docker" ]; then
         if check_http_endpoint "http://localhost:9090/-/healthy" 200; then
@@ -253,7 +253,7 @@ check_monitoring_stack() {
             log_error "✗ Prometheus is not healthy"
             monitoring_check_passed=false
         fi
-        
+
         # Check Grafana
         if check_http_endpoint "http://localhost:3000/api/health" 200; then
             log_success "✓ Grafana is healthy"
@@ -262,32 +262,32 @@ check_monitoring_stack() {
             monitoring_check_passed=false
         fi
     fi
-    
+
     return $monitoring_check_passed
 }
 
 check_performance_metrics() {
     log_info "Checking performance metrics..."
-    
+
     local metrics_url="http://$API_HOST:$API_PORT/metrics"
     local metrics_response=$(curl -s "$metrics_url" || echo "")
-    
+
     if [ -n "$metrics_response" ]; then
         log_success "✓ Metrics endpoint is responding"
-        
+
         # Check for specific metrics
         if echo "$metrics_response" | grep -q "grpo_requests_total"; then
             log_success "✓ Request metrics are available"
         else
             log_warning "⚠ Request metrics not found"
         fi
-        
+
         if echo "$metrics_response" | grep -q "grpo_response_time"; then
             log_success "✓ Response time metrics are available"
         else
             log_warning "⚠ Response time metrics not found"
         fi
-        
+
         if echo "$metrics_response" | grep -q "grpo_active_conversations"; then
             log_success "✓ Conversation metrics are available"
         else
@@ -297,37 +297,37 @@ check_performance_metrics() {
         log_error "✗ Metrics endpoint is not responding"
         return 1
     fi
-    
+
     return 0
 }
 
 run_load_test() {
     log_info "Running basic load test..."
-    
+
     local base_url="http://$API_HOST:$API_PORT"
     local success_count=0
     local total_requests=10
-    
+
     for i in $(seq 1 $total_requests); do
         local response=$(curl -s -X POST "$base_url/api/chat" \
             -H "Content-Type: application/json" \
             -d "{\"message\": \"Load test message $i\", \"strategy\": \"default\"}" \
             -w "%{http_code}" || echo "000")
-        
+
         if [[ "$response" == *"200" ]]; then
             ((success_count++))
         fi
     done
-    
+
     local success_rate=$((success_count * 100 / total_requests))
-    
+
     if [ $success_rate -ge 90 ]; then
         log_success "✓ Load test passed ($success_count/$total_requests requests successful, $success_rate%)"
     else
         log_error "✗ Load test failed ($success_count/$total_requests requests successful, $success_rate%)"
         return 1
     fi
-    
+
     return 0
 }
 
@@ -358,14 +358,14 @@ main() {
         show_help
         exit 0
     fi
-    
+
     log_info "Starting GRPO Agent Framework health check"
     log_info "Deployment type: $DEPLOYMENT_TYPE"
     log_info "API endpoint: http://$API_HOST:$API_PORT"
     log_info "Training endpoint: http://$API_HOST:$TRAINING_PORT"
-    
+
     local overall_health=true
-    
+
     # Deployment-specific checks
     case $DEPLOYMENT_TYPE in
         "docker")
@@ -379,38 +379,38 @@ main() {
             fi
             ;;
     esac
-    
+
     # API functionality checks
     if ! check_api_functionality; then
         overall_health=false
     fi
-    
+
     if ! check_training_api; then
         overall_health=false
     fi
-    
+
     # Database connectivity
     if ! check_database_connectivity; then
         overall_health=false
     fi
-    
+
     # Monitoring stack (for Docker deployments)
     if [ "$DEPLOYMENT_TYPE" = "docker" ]; then
         if ! check_monitoring_stack; then
             overall_health=false
         fi
     fi
-    
+
     # Performance metrics
     if ! check_performance_metrics; then
         overall_health=false
     fi
-    
+
     # Load test
     if ! run_load_test; then
         overall_health=false
     fi
-    
+
     # Final result
     echo ""
     if [ "$overall_health" = true ]; then

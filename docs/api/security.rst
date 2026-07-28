@@ -7,4 +7,3 @@ Auth modes:
 - JWTs (if configured)
 
 See env vars in `stateset_agents/api/config.py` and OpenAPI (`/docs`).
-

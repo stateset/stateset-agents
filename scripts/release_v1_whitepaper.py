@@ -193,7 +193,7 @@ def main() -> int:
 
     if metadata["runs"] == 0:
         logger.warning(
-            "No benchmark runs found in %s. Run `make benchmark-phase0-all` " "first.",
+            "No benchmark runs found in %s. Run `make benchmark-phase0-all` first.",
             RESULTS_DIR,
         )
         if args.strict:
