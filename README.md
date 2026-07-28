@@ -30,18 +30,24 @@ If you want a framework that treats conversations as first‑class RL episodes (
 
 ## What's new
 
-**On master (unreleased):**
-
-- **Kimi-K3 starter path.** First-class starter for `moonshotai/Kimi-K3`: `stateset-agents kimi-k3` CLI command, `init --preset kimi-k3`, packaged module, examples, docs, and tests. The model ID and presets are provisional mirrors of the Kimi-K2.6 starter until Moonshot publishes HF weights (not out as of 2026-07-16).
-- **GLM 5.2 starter path.** Full parallel surface for `zai-org/GLM-5.2` (754B MoE): starter module, examples, Helm values, vLLM/training Kubernetes manifests, and hosting plan.
-
 **In v0.17.1 (latest release):**
 
-- **Rust accelerator wheels.** The `stateset-rl-core` crate ships as maturin-built wheels (abi3-py310 — one wheel covers Python 3.10–3.13) with a new `[rust]` extra.
-- **Inference observability.** Model-level Prometheus metrics (RPS, latency, TTFT, tokens/s, in-flight) across the OpenAI/Anthropic routes, plus a Grafana serving row.
-- **Honest coverage gate.** `fail_under` now tracks the measured floor (54%) with the ratchet policy documented inline; `pyproject.toml` is the single source of truth.
+- **Convergence proof in CI.** `tests/e2e/test_gspo_convergence_tiny.py` trains real GSPO on a tiny model and asserts the target-token probability provably increases (verified against zero-signal and reversed-reward controls); runs in the nightly benchmark workflow.
+- **Honest demo labeling.** `dashboard/` and `mobile/` are clearly marked as simulator-backed demos (not deployed); the mobile data hook now surfaces an `isMockData` flag instead of silently falling back.
 
-Earlier highlights: v0.15.2 split the 3,118-line `cli.py` into focused modules; v0.15.0 added the five-example getting-started path; v0.13.2 shipped the whitepaper §11.7 three-seed canonical benchmark (judge improvement **+0.079**, [artifact](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json)).
+**In v0.17.0:**
+
+- **Unified finetune driver.** `examples/finetune_gspo.py --model <preset>` replaces the per-model script maze: a 12-model preset registry (`examples/model_presets.py`), shared flags (`--use-lora`, `--use-4bit/--use-8bit`, `--use-vllm`, `--wandb`, `--export-merged`, `--starter-profile`, `--write-config`), safe `--dry-run` default, and a real training path via `--no-dry-run`.
+- **Rate-limiter hardening.** Bucket keys derive only from *validated* credentials (garbage keys share the IP bucket), the in-memory limiter is memory-capped, and the optional Redis backend retries after a cooldown with an atomic INCR+EXPIRE pipeline.
+- **`grpo` untangling.** Shared `rate_limiter` moved to `stateset_agents/api/rate_limiter.py`; the `api.grpo` deprecation warning now fires only for the deprecated app surface.
+
+**In v0.16.0:**
+
+- **RL-core correctness overhaul.** All five trainers fixed and behaviorally tested: DAPO freezes rollout-time old log probs and honors µ inner updates; GEPO runs in log space; GSPO scores exactly the text it sampled (shared chat-template convention) and rescores vLLM rollouts; GSPO-token regained its gradient path; VAPO clips values against rollout predictions with terminal-token rewards and decoupled GAE; the GRPO loss path uses length-normalized ratios. A cross-trainer ratio-invariant suite guards all of it, and VAPO uses the Rust GAE kernel when installed.
+- **API hardening.** The training-lab API is auth-gated behind `API_ENABLE_TRAINING_LAB` (off outside development) with bounded in-memory state; startup config validation fails closed in production; constant-time API-key comparison everywhere.
+- **Kimi-K3 and GLM 5.2 starter paths.** First-class starters for `moonshotai/Kimi-K3` (provisional presets until HF weights land) and `zai-org/GLM-5.2` (754B MoE) — CLI commands, packaged modules, Helm/Kubernetes manifests, docs, and tests.
+
+Earlier highlights: v0.15.3 shipped Rust accelerator wheels (abi3-py310) and model-level Prometheus inference metrics; v0.15.0 added the five-example getting-started path; v0.13.2 shipped the whitepaper §11.7 three-seed canonical benchmark (judge improvement **+0.079**, [artifact](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json)).
 
 Full breakdown in [CHANGELOG.md](CHANGELOG.md).
 
@@ -128,7 +134,7 @@ asyncio.run(main())
 pip install stateset-agents          # latest on PyPI (currently v0.13.4)
 ```
 
-> **PyPI currently lags the source tree.** `pip install stateset-agents` gets **v0.13.4**, while this repo is at **v0.17.1** plus unreleased starters (Kimi-K3, GLM 5.2) on master. For the newest surface, install from source:
+> **PyPI currently lags the source tree.** `pip install stateset-agents` gets **v0.13.4**, while this repo is at **v0.17.1** (RL-core correctness fixes, API hardening, unified finetune driver, Kimi-K3/GLM-5.2 starters). For the newest surface, install from source:
 >
 > ```bash
 > pip install "git+https://github.com/stateset/stateset-agents@master"
@@ -874,11 +880,12 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.17.1`; Kimi-K3 and GLM 5.2 starters are on master, unreleased).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.17.1`).
 
 Other entry points:
 
 - **[`examples/getting_started/`](examples/getting_started/)** — **start here after `pip install`**: five small examples (stub hello, custom reward, first GSPO fine-tune, LLM-judge eval, serve via FastAPI). All target the published PyPI version; the GPU-free three smoke-test the install end-to-end. Run `make getting-started-smoke` to verify all three at once.
+- `examples/finetune_gspo.py` – **unified finetune driver**: `--model <preset>` over the 12-model registry (`--list-models`), safe `--dry-run` by default, `--no-dry-run` to train
 - `examples/hello_world.py` – stub mode walkthrough
 - `examples/quick_start.py` – stub-backed onboarding example with training + smoke test
 - `examples/complete_grpo_training.py` – end‑to‑end GRPO training
