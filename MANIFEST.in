@@ -1,0 +1,18 @@
+include LICENSE
+include README.md
+recursive-include stateset_agents/config/presets *.yaml
+
+prune htmlcov
+prune outputs
+prune checkpoints
+prune benchmark_results
+prune docs/_build
+prune dist
+prune build
+prune .git
+prune .worktrees
+
+global-exclude *.log
+global-exclude coverage.xml
+global-exclude __pycache__
+global-exclude *.py[cod]

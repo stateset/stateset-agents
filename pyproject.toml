@@ -141,7 +141,7 @@ full = [
 [project.urls]
 Homepage = "https://github.com/stateset/stateset-agents"
 Repository = "https://github.com/stateset/stateset-agents"
-Documentation = "https://stateset-agents.readthedocs.io/"
+Documentation = "https://docs.stateset.ai"
 Issues = "https://github.com/stateset/stateset-agents/issues"
 
 [project.scripts]
@@ -165,7 +165,7 @@ exclude = [
 include-package-data = true
 
 [tool.setuptools.package-data]
-"stateset_agents" = ["py.typed"]
+"stateset_agents" = ["py.typed", "config/presets/**/*.yaml"]
 
 
 # Black configuration
