@@ -199,84 +199,17 @@ pytest --cov=stateset_agents --cov-report=xml
 printf "\n[4/8] Running security scans...\n"
 CURRENT_STEP="security_scans"
 bandit -r stateset_agents -f json -o "$BANDIT_REPORT_PATH" || true
-"$PYTHON_BIN" - <<PY
-import json
-import traceback
-import sys
-from pathlib import Path
-
-path = Path("$BANDIT_REPORT_PATH")
-if not path.exists() or not path.read_text().strip():
-    print('Bandit report not generated')
-    sys.exit(1)
-
-try:
-    report = json.loads(path.read_text())
-except json.JSONDecodeError as exc:
-    print(f"Bandit report JSON decode failed: {exc}")
-    traceback.print_exc()
-    sys.exit(1)
-
-results = []
-if isinstance(report, dict):
-    results = report.get('results', [])
-elif isinstance(report, list):
-    results = report
-else:
-    print(f"Unexpected Bandit report type: {type(report).__name__}")
-    sys.exit(1)
-high_findings = [
-    item
-    for item in results
-    if str(item.get('issue_severity', '')).upper() in {'MEDIUM', 'HIGH', 'CRITICAL'}
-]
-if high_findings:
-    print(f'Bandit: failing due to {len(high_findings)} medium/high/critical findings')
-    for finding in high_findings[:5]:
-        print(f" - {finding.get('filename')}:{finding.get('line_number')} "
-              f"{finding.get('test_id')} {finding.get('issue_text')}")
-    sys.exit(1)
-print('Bandit: no medium/high/critical findings')
-PY
-safety check --json > "$SAFETY_REPORT_PATH" || true
-"$PYTHON_BIN" - <<PY
-import json
-import traceback
-import sys
-from pathlib import Path
-
-path = Path("$SAFETY_REPORT_PATH")
-if not path.exists() or not path.read_text().strip():
-    print("Safety report not generated")
-    sys.exit(1)
-try:
-    payload = json.loads(path.read_text())
-except json.JSONDecodeError as exc:
-    print(f'Safety JSON decode failed: {exc}')
-    traceback.print_exc()
-    sys.exit(1)
-
-vulnerabilities = (
-    payload.get('vulnerabilities')
-    if isinstance(payload, dict)
-    else payload
-)
-if not vulnerabilities:
-    vulnerabilities = []
-high_vulns = [
-    item
-    for item in vulnerabilities
-    if str(item.get('severity', '')).upper() in {'HIGH', 'CRITICAL'}
-]
-if high_vulns:
-    print(f'Safety: failing due to {len(high_vulns)} high/critical vulnerabilities')
-    for vuln in high_vulns[:5]:
-        pkg = vuln.get('package_name') or vuln.get('package')
-        vuln_id = vuln.get('id') or vuln.get('cve') or vuln.get('vulnerability_id')
-        print(f' - {pkg}: {vuln_id}')
-    sys.exit(1)
-print('Safety: no high/critical vulnerabilities reported')
-PY
+# --save-json writes the JSON straight to a file; piping `--json` stdout to
+# a file (the previous form here) captures safety's banner/deprecation
+# notice ahead of the payload too, corrupting a naive json.loads() the same
+# way `make security-scan-strict` hit before it was fixed. Match the
+# Makefile's invocation exactly so both paths behave identically.
+safety check --save-json "$SAFETY_REPORT_PATH" > /dev/null 2>&1 || true
+# Route both reports through check_security_findings.py's lenient parser
+# (raw_decode from the first '{', ignoring any surrounding banner text)
+# instead of a second, stricter inline copy of this same parsing logic --
+# one implementation for both `make security-scan-strict` and this script.
+"$PYTHON_BIN" scripts/check_security_findings.py
 
 printf "\n[5/8] Building package...\n"
 CURRENT_STEP="build"
