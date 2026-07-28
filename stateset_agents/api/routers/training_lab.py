@@ -8,6 +8,7 @@ metrics in real-time.  Supports both simulated and real stateset-agents runs.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import math
@@ -1334,7 +1335,10 @@ async def _authorize_websocket(websocket: WebSocket) -> bool:
     if not credential:
         return False
 
-    if credential in config.security.api_keys:
+    if any(
+        hmac.compare_digest(stored_key, credential)
+        for stored_key in config.security.api_keys
+    ):
         return True
 
     try:
