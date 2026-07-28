@@ -61,7 +61,7 @@ def _can_access_conversation(
 def _agent_config_to_dict(config: Any) -> dict[str, Any]:
     if isinstance(config, dict):
         return config
-    if is_dataclass(config):
+    if is_dataclass(config) and not isinstance(config, type):
         return asdict(config)
     return {}
 

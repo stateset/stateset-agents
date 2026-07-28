@@ -1013,8 +1013,8 @@ async def get_episodes(
     sort: str = Query("desc", pattern="^(asc|desc)$"),
 ) -> dict[str, Any]:
     """Get paginated episodes for an experiment."""
-    eps = _episodes.get(experiment_id, [])
-    sorted_eps = eps if sort == "asc" else list(reversed(eps))
+    eps = _episodes.get(experiment_id, deque())
+    sorted_eps = list(eps) if sort == "asc" else list(reversed(eps))
     return {
         "total": len(eps),
         "offset": offset,
@@ -1026,7 +1026,7 @@ async def get_episodes(
 @router.get("/experiments/{experiment_id}/episodes/{episode_num}")
 async def get_episode(experiment_id: str, episode_num: int) -> dict[str, Any]:
     """Get a specific episode by number."""
-    eps = _episodes.get(experiment_id, [])
+    eps = _episodes.get(experiment_id, deque())
     for ep in eps:
         if ep.get("episode_num") == episode_num:
             return ep
@@ -1547,7 +1547,7 @@ async def export_experiment(
     if not exp:
         raise HTTPException(status_code=404, detail="Experiment not found")
 
-    eps = _episodes.get(experiment_id, [])
+    eps = _episodes.get(experiment_id, deque())
 
     if format == "csv":
         import csv

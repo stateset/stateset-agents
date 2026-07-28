@@ -20,6 +20,12 @@ import typer
 # means attribute lookup happens at call time, which is what the test patches
 # rely on.
 from stateset_agents import cli as _cli
+from stateset_agents.cli import (
+    CLI_CONFIG_EXCEPTIONS,
+    CLI_IMPORT_EXCEPTIONS,
+    CLI_TRAIN_EXCEPTIONS,
+    app,
+)
 
 # Convenience re-exports — these helpers are NOT patched by any test, so a
 # local rebinding is fine and keeps function bodies readable.
@@ -28,11 +34,6 @@ _coerce_positive_int = _cli._coerce_positive_int
 _normalize_training_profile = _cli._normalize_training_profile
 _load_config = _cli._load_config
 _validate_config = _cli._validate_config
-CLI_IMPORT_EXCEPTIONS = _cli.CLI_IMPORT_EXCEPTIONS
-CLI_CONFIG_EXCEPTIONS = _cli.CLI_CONFIG_EXCEPTIONS
-CLI_TRAIN_EXCEPTIONS = _cli.CLI_TRAIN_EXCEPTIONS
-
-app = _cli.app
 
 
 @app.command()

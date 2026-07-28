@@ -39,10 +39,17 @@ TRL_GRPO_AVAILABLE = False
 GRPOConfig = None
 TRLGRPOTrainer = None
 
-try:
-    import wandb as _wandb
-except ImportError:  # pragma: no cover - optional dependency
-    _wandb = None
+
+def _try_import_wandb() -> Any | None:
+    try:
+        import wandb
+
+        return wandb
+    except ImportError:  # pragma: no cover - optional dependency
+        return None
+
+
+_wandb: Any | None = _try_import_wandb()
 wandb: Any | None = _wandb
 
 try:

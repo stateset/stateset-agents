@@ -19,7 +19,7 @@ PRESETS_DIR = Path(__file__).parent / "presets"
 def _load_yaml(path: Path) -> dict[str, Any]:
     """Load a YAML file, falling back to JSON if yaml is unavailable."""
     try:
-        import yaml  # type: ignore[import-untyped]
+        import yaml
 
         with open(path) as f:
             return cast(dict[str, Any], yaml.safe_load(f) or {})

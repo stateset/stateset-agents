@@ -18,14 +18,13 @@ from pathlib import Path
 import typer
 
 from stateset_agents import cli as _cli
+from stateset_agents.cli import (
+    app,
+)
 
 _echo = _cli._echo
 _load_config = _cli._load_config
 _coerce_positive_int = _cli._coerce_positive_int
-CLI_IMPORT_EXCEPTIONS = _cli.CLI_IMPORT_EXCEPTIONS
-CLI_CONFIG_EXCEPTIONS = _cli.CLI_CONFIG_EXCEPTIONS
-CLI_TRAIN_EXCEPTIONS = _cli.CLI_TRAIN_EXCEPTIONS
-app = _cli.app
 
 
 @app.command("chat")
@@ -123,7 +122,9 @@ def chat(
         raise typer.Exit(code=2) from e
 
     # Set up live grader if requested.
-    live_reward = None
+    from stateset_agents.core.reward_base import RewardFunction
+
+    live_reward: RewardFunction | None = None
     if grade:
         try:
             if grade == "gsm8k":

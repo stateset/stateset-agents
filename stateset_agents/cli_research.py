@@ -16,14 +16,15 @@ from pathlib import Path
 import typer
 
 from stateset_agents import cli as _cli
+from stateset_agents.cli import (
+    CLI_IMPORT_EXCEPTIONS,
+    CLI_TRAIN_EXCEPTIONS,
+    app,
+)
 
 _echo = _cli._echo
 _load_config = _cli._load_config
 _coerce_positive_int = _cli._coerce_positive_int
-CLI_IMPORT_EXCEPTIONS = _cli.CLI_IMPORT_EXCEPTIONS
-CLI_CONFIG_EXCEPTIONS = _cli.CLI_CONFIG_EXCEPTIONS
-CLI_TRAIN_EXCEPTIONS = _cli.CLI_TRAIN_EXCEPTIONS
-app = _cli.app
 
 
 @app.command("auto-research")

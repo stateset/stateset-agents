@@ -245,7 +245,7 @@ def validate(
             config = json.load(f)
         elif path.suffix in [".yaml", ".yml"]:
             try:
-                import yaml  # type: ignore[import-untyped]
+                import yaml
 
                 config = yaml.safe_load(f)
             except ImportError as exc:

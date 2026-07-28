@@ -74,7 +74,7 @@ class GSM8KExample:
         }
 
 
-def _parse_number(s: str) -> float | None:
+def _parse_number(s: str | None) -> float | None:
     """Parse a number string, tolerating commas and currency symbols."""
     if s is None:
         return None
