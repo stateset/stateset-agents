@@ -319,17 +319,17 @@ class ExperimentTracker:
                 pass
 
         # Write header
-        with open(self._tsv_path, "w", newline="", encoding="utf-8", encoding="utf-8") as f:
+        with open(self._tsv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f, delimiter="\t")
             writer.writerow(_TSV_HEADER)
 
     def _append_jsonl(self, record: ExperimentRecord) -> None:
-        with open(self._json_path, "a", encoding="utf-8", encoding="utf-8") as f:
+        with open(self._json_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record.to_dict()) + "\n")
             f.flush()
 
     def _append_tsv(self, record: ExperimentRecord) -> None:
-        with open(self._tsv_path, "a", newline="", encoding="utf-8", encoding="utf-8") as f:
+        with open(self._tsv_path, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f, delimiter="\t")
             writer.writerow(
                 [
