@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Unified finetune driver absorbs shared flags (A+ final wave, Task 1)
+
+- `examples/finetune_gspo.py` now supports the full set of flag families
+  shared by the packaged-starter per-model scripts:
+  `--use-lora/--no-lora`, `--use-4bit`, `--use-8bit`, `--use-vllm`,
+  `--wandb`/`--wandb-project`, `--export-merged`, `--learning-rate`,
+  `--epochs`, `--steps`, and, for presets with a packaged starter
+  (`ModelPreset.starter_module`), `--starter-profile
+  {balanced,memory,quality}`, `--config PATH`, `--write-config PATH`, and
+  `--list-profiles`. `--dry-run` now defaults to `True` (use `--no-dry-run`
+  for a real run), matching the safe-by-default behavior of the starter
+  scripts it now covers.
+- **Fixed:** the driver's non-dry-run ("real run") mode used to be a
+  no-op — it logged "wire this into your training entry point" and
+  exited 0 without training anything. It now actually invokes the real
+  training entry point: the packaged starter's own `run_<name>_config`
+  coroutine for starter-backed presets, or
+  `stateset_agents.training.gspo_entrypoints.train_with_gspo` for the rest.
+- `ModelPreset` gained a `starter_module: str | None` field naming the
+  packaged `stateset_agents.training.*_starter` module backing a preset's
+  `--starter-profile` delegation, set for `kimi-k3`, `kimi-k2.6`,
+  `glm5.1`, `glm5.2`, `gemma4-31b`, and `qwen3.5-0.8b`.
+- Converted `examples/finetune_kimi_k3_gspo.py`,
+  `examples/finetune_kimi_k2_6_gspo.py`,
+  `examples/finetune_gemma4_31b_gspo.py`, and
+  `examples/finetune_qwen3_5_0_8b_gspo.py` into thin (<=15 line) deprecated
+  forwarders onto `examples/finetune_gspo.py --model <preset>`, now that
+  the driver reproduces their entire CLI. The remaining per-model scripts
+  (GLM's serving-only flags, the multi-size branching family scripts, and
+  the already-forwarding `finetune_kimi_k2_5_gspo.py`) are kept; see
+  `examples/README.md` for why each one still carries unique logic.
+
 ### Changed — CI + deferred cleanup (surface consolidation, Plan 3 Task 4)
 
 - CI now runs `examples/getting_started/smoke.sh` against the checked-out

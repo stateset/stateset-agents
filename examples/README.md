@@ -205,10 +205,33 @@ python examples/finetune_gspo.py --model glm5.1 --task customer_service
 
 Use it for a quick preview of any supported preset (`kimi-k3`, `kimi-k2.5`,
 `kimi-k2.6`, `glm5.1`, `glm5.2`, `qwen3`, `qwen3.5-0.8b`, `qwen3.5-27b`,
-`gemma3`, `gemma4-31b`, `llama3`, `mistral`). The dedicated per-model
-scripts below remain the supported path for model-specific features
-(starter profiles, `--write-config`, vLLM export, FP8 serving, etc.) that
-the unified driver intentionally does not reproduce.
+`gemma3`, `gemma4-31b`, `llama3`, `mistral`), or a full real run — without
+`--dry-run` the driver invokes the actual training entry point (the
+packaged starter's `run_<name>_config` for starter-backed presets, or
+`stateset_agents.training.gspo_entrypoints.train_with_gspo` otherwise).
+
+The driver also absorbs every flag family shared across the packaged-starter
+scripts: `--use-lora/--no-lora`, `--use-4bit/--use-8bit`, `--use-vllm`,
+`--wandb`/`--wandb-project`, `--export-merged`, `--learning-rate`,
+`--epochs`/`--steps`, and, for presets whose `ModelPreset.starter_module` is
+set, `--starter-profile {balanced,memory,quality}`, `--config PATH`,
+`--write-config PATH`, and `--list-profiles`. Four per-model scripts whose
+entire CLI is now reproducible this way —
+`finetune_kimi_k3_gspo.py`, `finetune_kimi_k2_6_gspo.py`,
+`finetune_gemma4_31b_gspo.py`, and `finetune_qwen3_5_0_8b_gspo.py` — are now
+thin deprecated forwarders onto `examples/finetune_gspo.py --model <preset>`
+and will be removed in a future release. The other dedicated per-model
+scripts below are kept because they carry genuinely unique logic the driver
+does not (and, for some, should not) generalize: `finetune_glm5_1_gspo.py`
+and `finetune_glm5_2_gspo.py` add serving-only flags (`--fp8-serving`,
+`--disable-auto-tool-choice`); `finetune_kimi_k25_gspo.py`,
+`finetune_qwen3_gspo.py`, `finetune_qwen3_5_27b_gspo.py`,
+`finetune_gemma3_gspo.py`, `finetune_llama3_gspo.py`, and
+`finetune_mistral_gspo.py` branch internally across multiple model sizes /
+MoE variants (a single `ModelPreset` only captures one representative
+branch each — see each preset's `notes` field in `examples/model_presets.py`
+for which branch); `finetune_kimi_k2_5_gspo.py` is already a deprecated
+forwarder onto `finetune_kimi_k25_gspo.py`.
 
 #### Qwen Models
 
@@ -222,7 +245,7 @@ python examples/finetune_qwen3_5_27b_gspo.py --dry-run
 python examples/finetune_qwen3_5_27b_gspo.py --task customer_service --output-dir /models/qwen3-5-27b
 ```
 
-See [QWEN3_FINETUNING_GUIDE.md](../docs/QWEN3_FINETUNING_GUIDE.md) for a getting-started walkthrough for post-training `Qwen/Qwen3.5-0.8B`, including the built-in `balanced`, `memory`, and `quality` starter profiles and the new profile-discovery mode. The family-wide fallback script remains `examples/finetune_qwen3_gspo.py`.
+See [QWEN3_FINETUNING_GUIDE.md](../docs/QWEN3_FINETUNING_GUIDE.md) for a getting-started walkthrough for post-training `Qwen/Qwen3.5-0.8B`, including the built-in `balanced`, `memory`, and `quality` starter profiles and the new profile-discovery mode. The family-wide fallback script remains `examples/finetune_qwen3_gspo.py`. `examples/finetune_qwen3_5_0_8b_gspo.py` is now a deprecated forwarder; prefer `python examples/finetune_gspo.py --model qwen3.5-0.8b`.
 For `Qwen/Qwen3.5-27B`, the dedicated starter emits `serving_manifest.json`
 plus merged checkpoints so you can render Helm values or deploy the raw
 Kubernetes manifests in `deployment/kubernetes/`.
@@ -240,7 +263,7 @@ python examples/finetune_kimi_k3_gspo.py --list-profiles
 python examples/finetune_kimi_k25_gspo.py --model moonshotai/Kimi-K2.5 --task customer_service
 ```
 
-Use `examples/finetune_kimi_k2_6_gspo.py` when you want the packaged starter path with the same `balanced`, `memory`, and `quality` preset flow as the Qwen starter. `examples/finetune_kimi_k3_gspo.py` is the same flow for the provisional `moonshotai/Kimi-K3` ID (HF weights pending as of 2026-07-16). `examples/finetune_kimi_k2_5_gspo.py` is a deprecated forwarder that now delegates to `examples/finetune_kimi_k25_gspo.py` (a strict superset of its flags) and will be removed in a future release. `examples/kimi_k25_rewards.py` and `examples/kimi_k25_config.py` provide Kimi-K2.5-specific reward functions and hyperparameter defaults used by the finetune script; see `examples/kimi_k25/README.md` for the full walkthrough and `examples/kimi_k25/live_smoke_checks.py` for a live (network-dependent) model-loading smoke check.
+`examples/finetune_kimi_k2_6_gspo.py` and `examples/finetune_kimi_k3_gspo.py` are now deprecated forwarders onto `examples/finetune_gspo.py --model kimi-k2.6` / `--model kimi-k3` (the same `balanced`/`memory`/`quality` starter profile flow, including `--config`/`--write-config`/`--list-profiles`, is reproduced by the driver). `examples/finetune_kimi_k3_gspo.py` covers the provisional `moonshotai/Kimi-K3` ID (HF weights pending as of 2026-07-16). `examples/finetune_kimi_k2_5_gspo.py` is a deprecated forwarder that now delegates to `examples/finetune_kimi_k25_gspo.py` (a strict superset of its flags) and will be removed in a future release. `examples/kimi_k25_rewards.py` and `examples/kimi_k25_config.py` provide Kimi-K2.5-specific reward functions and hyperparameter defaults used by the finetune script; see `examples/kimi_k25/README.md` for the full walkthrough and `examples/kimi_k25/live_smoke_checks.py` for a live (network-dependent) model-loading smoke check.
 
 #### Gemma Models
 
@@ -255,6 +278,8 @@ python examples/finetune_gemma4_31b_gspo.py --no-dry-run --task customer_service
 The dedicated Gemma 4 starter targets `google/gemma-4-31B-it` with GSPO-ready
 QLoRA defaults for StateSet Agents. The older family-wide fallback script remains
 `examples/finetune_gemma3_gspo.py` for Gemma 2 era checkpoints.
+`examples/finetune_gemma4_31b_gspo.py` is now a deprecated forwarder; prefer
+`python examples/finetune_gspo.py --model gemma4-31b`.
 
 #### GLM Models
 
