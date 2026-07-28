@@ -181,6 +181,11 @@ def _render_next_steps(summary: dict[str, Any], output_dir: Path) -> str:
         "",
         f"    {curated_path}",
         "",
+        "(`curated_count` in improve_summary.json can be lower than "
+        "`above_threshold_count` — curation dedups by exact (prompt, "
+        "response) pairs across transcripts within this run, so an "
+        "identical pair appearing in two transcripts is only written once.)",
+        "",
         "## Option A — supervised fine-tune (fast, CPU-friendly path check)",
         "",
         "```bash",
@@ -195,19 +200,34 @@ def _render_next_steps(summary: dict[str, Any], output_dir: Path) -> str:
         "    --num-epochs 3 --lora-r 16",
         "```",
         "",
-        "## Option B — RL fine-tune with GSPO on the same signal",
+        "## Option B — continue with RL (GSPO) using the same reward",
+        "",
+        "GSPO trains against the reward function live (an environment + "
+        "reward, not a static dataset), so it does not take a --dataset "
+        "flag. Option A above is how the curated set itself gets consumed; "
+        "to keep training with reinforcement learning under the same "
+        f"reward (`{summary['reward']}`), point the driver at a model "
+        "preset and the same task label:",
         "",
         "```bash",
         "python examples/finetune_gspo.py \\",
-        f"    --reward {summary['reward']} \\",
-        f"    --dataset {curated_path}",
+        "    --model qwen3.5-0.8b \\",
+        f"    --task {summary['reward']}",
         "```",
         "",
-        "Then chat with the result and grade again:",
+        "(Add `--no-dry-run` once you're ready for a real, GPU-backed run; "
+        "see `--list-models` for other presets and docs/COOKBOOK.md Recipe 1 "
+        "for wiring custom scenarios.)",
+        "",
+        "Then chat with whichever checkpoint you trained and grade again — "
+        "note `improve run --transcripts` takes a **directory** of "
+        "transcript files (one conversation per file), so collect the new "
+        "session(s) into a directory before regrading:",
         "",
         "```bash",
-        f"stateset-agents chat --checkpoint {sft_output_dir} --history session2.jsonl",
-        f"stateset-agents improve run --transcripts session2.jsonl --reward "
+        "mkdir -p round2",
+        f"stateset-agents chat --checkpoint {sft_output_dir} --history round2/session.jsonl",
+        f"stateset-agents improve run --transcripts round2/ --reward "
         f"{summary['reward']} --output {output_dir}",
         "```",
     ]
