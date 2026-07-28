@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-28 — Bring-your-own-agent: trajectory ingestion + one-command improve loop
+
 ### Added — `stateset-agents improve`: the grade -> curate -> retrain loop in one command
 
 - New CLI subcommand `stateset-agents improve run --transcripts DIR --reward

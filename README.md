@@ -30,9 +30,16 @@ If you want a framework that treats conversations as first‑class RL episodes (
 
 ## What's new
 
-**In v0.17.3 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**In v0.18.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
 
-- **PyPI is current again.** `pip install stateset-agents` now installs the latest release (the 0.13.4 → 0.17.3 gap is closed), wheels finally ship the runtime config presets, and [`stateset-rl-core`](https://pypi.org/project/stateset-rl-core/) 0.1.1 is on PyPI — `pip install stateset-agents[rust]` and `[full]` resolve for the first time.
+- **Bring your own agent's logs.** `stateset-agents ingest` converts OpenAI chat-format and LangChain conversation dumps into framework trajectories — production logs from agents built *anywhere* plug straight into the grade → curate → retrain loop.
+- **The improvement loop in one command.** `stateset-agents improve run --transcripts DIR --reward NAME --output DIR` grades every transcript, curates the best turns, and emits verified-runnable next-step training commands (a regression test executes the suggestions against the real CLI parsers).
+- **Flagship benchmark recipe.** `make flagship-benchmark-all` — a reproducible 3-seed GSPO run on an 8B model with publish gates (`benchmarks/FLAGSHIP.md`).
+- **Nightly training guard operational.** The nightly benchmark + CPU convergence pipeline is green end-to-end for the first time.
+
+**In v0.17.3:**
+
+- **PyPI is current again.** `pip install stateset-agents` installs the latest release (the 0.13.4-era gap is closed), wheels finally ship the runtime config presets, and [`stateset-rl-core`](https://pypi.org/project/stateset-rl-core/) 0.1.1 is on PyPI — `pip install stateset-agents[rust]` and `[full]` resolve for the first time.
 - **First fully green CI since v0.15.2** (10/10 jobs including Windows): pinned toolchain (mypy, numpy, pre-commit hooks), utf-8 file IO everywhere, Windows clock/codepage fixes, repaired strict security scan.
 
 **In v0.17.2:**
@@ -140,7 +147,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.17.3)
+pip install stateset-agents          # latest release (v0.18.0)
 ```
 
 > PyPI tracks the release tags. For unreleased work on master:
@@ -894,7 +901,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.17.3`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.18.0`).
 
 Other entry points:
 
