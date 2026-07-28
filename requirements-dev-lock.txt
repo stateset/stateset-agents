@@ -390,6 +390,8 @@ psutil==7.2.2
     #   accelerate
     #   peft
     #   stateset-agents (pyproject.toml)
+py-cpuinfo==9.0.0
+    # via pytest-benchmark
 pyarrow==25.0.0
     # via datasets
 pycodestyle==2.14.0
@@ -427,9 +429,12 @@ pyproject-hooks==1.2.0
 pytest==9.1.1
     # via
     #   pytest-asyncio
+    #   pytest-benchmark
     #   pytest-cov
     #   stateset-agents (pyproject.toml)
 pytest-asyncio==1.4.0
+    # via stateset-agents (pyproject.toml)
+pytest-benchmark==5.2.3
     # via stateset-agents (pyproject.toml)
 pytest-cov==7.1.0
     # via stateset-agents (pyproject.toml)
