@@ -119,7 +119,8 @@ class ComputationalGRPOEngine:
         trajectories = await asyncio.gather(*tasks)
 
         # Update metrics
-        elapsed = time.time() - start_time
+        # Windows clocks can report zero elapsed time for fast batches.
+        elapsed = max(time.time() - start_time, 1e-9)
         self.metrics["trajectories_per_second"] = len(trajectories) / elapsed
         self.total_computation += elapsed * self.num_workers
 
