@@ -4,6 +4,17 @@
 // plus the `API_ENABLE_TRAINING_LAB` server flag — it is disabled by
 // default and NOT deployed anywhere. See ../README.md for status/how to
 // run locally. Requests here will 401/404 against a default deployment.
+//
+// Base URL: defaults to the same-origin `/api/lab` path (works when the
+// dashboard is served behind a proxy that forwards to the API). Set
+// `VITE_API_BASE_URL` at build time to point at an absolute origin
+// instead (e.g. `https://api.example.com/api/lab`) — see ../.env.example.
+//
+// Auth: the server's auth layer accepts an API key via the `X-API-Key`
+// header (HTTP) or `api_key`/`token` query params (WebSocket). Provide one
+// via `VITE_API_KEY` at build time, or at runtime with `setApiKey()`
+// (persisted to localStorage under `stateset.apiKey`) — runtime values
+// take precedence over the build-time default.
 import type {
   Experiment,
   EnvironmentPreset,
@@ -11,11 +22,39 @@ import type {
   Episode,
 } from './types';
 
-const BASE = '/api/lab';
+const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/lab';
+const BUILD_API_KEY = import.meta.env.VITE_API_KEY;
+const STORAGE_KEY = 'stateset.apiKey';
+
+export function getApiKey(): string | undefined {
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored) return stored;
+  } catch {
+    // localStorage unavailable (SSR, privacy mode, etc.) — fall through.
+  }
+  return BUILD_API_KEY || undefined;
+}
+
+export function setApiKey(key: string | null): void {
+  try {
+    if (key) {
+      window.localStorage.setItem(STORAGE_KEY, key);
+    } else {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {
+    // localStorage unavailable — key can still be supplied via VITE_API_KEY.
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const apiKey = getApiKey();
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+    },
     ...init,
   });
   if (!res.ok) {
@@ -75,6 +114,20 @@ export const api = {
 };
 
 export function connectWs(experimentId: string): WebSocket {
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return new WebSocket(`${protocol}://${window.location.host}${BASE}/experiments/${experimentId}/ws`);
+  const apiKey = getApiKey();
+  const query = apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : '';
+
+  let wsBase: string;
+  if (/^https?:\/\//i.test(BASE)) {
+    // Absolute VITE_API_BASE_URL — derive ws(s):// from its origin.
+    const url = new URL(BASE);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    wsBase = url.toString().replace(/\/$/, '');
+  } else {
+    // Same-origin relative path (default behavior).
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    wsBase = `${protocol}://${window.location.host}${BASE}`;
+  }
+
+  return new WebSocket(`${wsBase}/experiments/${experimentId}/ws${query}`);
 }

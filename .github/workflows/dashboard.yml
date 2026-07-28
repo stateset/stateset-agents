@@ -49,10 +49,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Deploy target is an open decision (Vercel/Netlify/static host/etc.)
+      # — no deploy step is wired up here. This just archives the build
+      # output so it can be inspected or manually deployed.
       - name: Upload bundle stats
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: dashboard-dist
           path: dashboard/dist
-          retention-days: 7
+          retention-days: 30

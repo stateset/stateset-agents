@@ -11,6 +11,10 @@ export const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://10.0.2.2
 const LAB_BASE = `${API_BASE}/api/lab`;
 const TIMEOUT_MS = 15_000;
 
+// Sent as the `X-API-Key` header on every request when set. The server's
+// auth layer accepts it there (or as an `api_key`/`token` query param).
+const API_KEY = process.env.EXPO_PUBLIC_API_KEY;
+
 type LabExperiment = {
   id: string;
   name: string;
@@ -66,6 +70,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: {
         'Content-Type': 'application/json',
+        ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
         ...(init?.headers ?? {}),
       },
       signal: controller.signal,

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — dashboard/mobile JS surface (A-grade pass)
+
+- `dashboard/src/api.ts`: `BASE` now reads `VITE_API_BASE_URL` (falling
+  back to the same-origin `/api/lab` default) instead of being hardcoded;
+  requests send an `X-API-Key` header and the WebSocket connection sends
+  `api_key` as a query param, sourced from `VITE_API_KEY` (build-time) or
+  a new runtime `setApiKey()`/`getApiKey()` pair persisted to
+  `localStorage` under `stateset.apiKey`. `connectWs()` derives its
+  `ws(s)://` origin from `BASE` when it's an absolute URL, otherwise keeps
+  the previous same-origin behavior. Added `dashboard/.env.example` and a
+  `src/vite-env.d.ts` typing the two env vars.
+- `dashboard/package.json`: added `engines.node >=20.19.0`; added
+  `dashboard/.nvmrc` (`20.20.0`) to mirror `mobile/.nvmrc`.
+- `mobile/lib/api.ts`: requests now send `X-API-Key` from a new
+  `EXPO_PUBLIC_API_KEY` env var, mirroring the dashboard's auth pattern.
+- `mobile/components/ui/DemoDataBanner.tsx`: new component making the
+  existing mock-data fallback (`useTrainingData().isMockData`) visible in
+  the UI, not just the console; wired into the dashboard tab screen
+  (`mobile/app/(tabs)/dashboard/index.tsx`) as the reference pattern for
+  the other screens.
+- Added `.github/workflows/mobile.yml`: path-filtered CI on `mobile/**`
+  running `npm ci` + `npm run typecheck` on Node 20 — mobile previously had
+  no CI at all.
+- `.github/workflows/dashboard.yml`: bundle artifact retention extended
+  7 → 30 days; added a comment noting the deploy target is still an open
+  decision (no deploy step added).
+
 ### Fixed — Rust/Cargo packaging surface (A-grade pass)
 
 - Root `Cargo.toml`: removed two `[[example]]` stanzas pointing at
