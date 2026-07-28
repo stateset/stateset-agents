@@ -207,14 +207,13 @@ jobs:
       - name: Download all wheels + sdist
         uses: actions/download-artifact@v4
         with:
-          path: dist-staging
+          path: rust_core/dist-staging
           pattern: "{wheels-*,sdist}"
           merge-multiple: true
 
       - name: Show what will be published
-        # download-artifact writes to the workspace root, not the job's
-        # default working-directory (rust_core) — run this from the root.
-        working-directory: .
+        # download-artifact stages into rust_core/dist-staging, which is the
+        # job's default working-directory.
         run: ls -la dist-staging
 
       - name: Publish to PyPI
@@ -223,6 +222,6 @@ jobs:
           working-directory: rust_core
           command: upload
           # --skip-existing makes a re-run on the same tag idempotent.
-          args: --skip-existing --non-interactive ../dist-staging/*
+          args: --skip-existing --non-interactive dist-staging/*
         env:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
