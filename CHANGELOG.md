@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-27 — Unified finetune driver, rate-limiter hardening, grpo untangling
+
 ### Changed — Rate limiter moved out of the deprecated `grpo` package; deprecation warning scoped (A+ final wave, Task 3)
 
 - `UnifiedRateLimiter` (and `RateLimitResult`, `get_rate_limiter`,
