@@ -2,11 +2,11 @@ import logging
 import time
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
@@ -294,7 +294,7 @@ def create_app() -> FastAPI:
     )
     async def liveness_check() -> dict[str, Any]:
         """Kubernetes liveness probe endpoint."""
-        return {"status": "alive", "timestamp": datetime.utcnow().isoformat() + "Z"}
+        return {"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}
 
     # Circuit breaker status endpoint
     @app.get(
@@ -307,7 +307,7 @@ def create_app() -> FastAPI:
         """Get circuit breaker status for monitoring."""
         return {
             "circuits": get_all_circuit_stats(),
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
 
     return app

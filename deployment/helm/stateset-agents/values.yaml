@@ -65,7 +65,9 @@ vllm:
   affinity: {}
   image:
     repository: vllm/vllm-openai
-    tag: "nightly"
+    # Matches the vllm>=0.18.2 pin in pyproject.toml's `vllm` extra.
+    # pin by digest in production overrides
+    tag: "v0.18.2"
     digest: ""
     pullPolicy: IfNotPresent
   modelSync:

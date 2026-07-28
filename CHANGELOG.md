@@ -48,6 +48,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the existing in-memory limiter (logged once) if `redis` isn't installed
   or the connection fails. `redis` is now listed under the `api` extra as an
   optional dependency.
+- **Constant-time API key comparison**: `auth.py`'s API-key lookup used plain
+  dict membership (`api_key in config.security.api_keys`), which is a
+  short-circuiting `==` under the hood and vulnerable to timing side-channels
+  against configured keys. It now compares the presented key against every
+  configured key with `hmac.compare_digest`.
+
+### Removed
+
+- **Legacy GRPO service shims**: deleted
+  `stateset_agents/api/ultimate_grpo_service.py` and
+  `stateset_agents/api/enhanced_ultimate_grpo_service.py` — unmaintained
+  duplicate FastAPI apps that shadowed `stateset_agents.api.main` and had no
+  internal callers. Added `tests/api/test_no_legacy_shims.py` to guard
+  against reintroduction; removed their Sphinx `automodule` entries.
+- **Root `Dockerfile`**: moved to
+  `deployment/docker/Dockerfile.rust-commerce-agent` with a header comment
+  clarifying it builds the unrelated Rust commerce daemon (`src/main.rs`),
+  not the Python FastAPI gateway (`deployment/docker/Dockerfile`). Updated
+  `docker-compose.yml` and the `Makefile`'s `docker-build`/`docker-run`
+  targets to the new path.
+
+### Changed
+
+- **Helm vLLM image tag pinned**: `deployment/helm/stateset-agents/values.yaml`
+  used `vllm/vllm-openai:nightly`, a moving target with no reproducibility
+  guarantee. Pinned to `v0.18.2` (matching the `vllm>=0.18.2` pin in
+  `pyproject.toml`'s `vllm` extra) with a `# pin by digest in production
+  overrides` comment for stricter deployments.
+- **`stateset_agents.api.grpo` deprecated**: importing the package now emits
+  a module-level `DeprecationWarning` pointing at `stateset_agents.api.main`
+  as the supported entry point; this starts the deprecation cycle ahead of
+  its eventual removal.
+
+### Fixed
+
+- `main.py` used `datetime.utcnow()` (deprecated, naive datetime) for the
+  `/live` and `/circuits` timestamps; switched to
+  `datetime.now(timezone.utc)`.
+- `main.py` imported `CORSMiddleware` from the deprecated
+  `fastapi.middleware.cors` re-export path; now imports from
+  `starlette.middleware.cors` directly.
 
 ### Added — Kimi-K3 starter path
 

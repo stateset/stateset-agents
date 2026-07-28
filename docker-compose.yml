@@ -5,7 +5,7 @@ services:
   stateset-agents:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: deployment/docker/Dockerfile.rust-commerce-agent
     container_name: stateset-agents
     restart: unless-stopped
     environment:
