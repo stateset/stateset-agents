@@ -57,7 +57,7 @@ def load_runs(results_dir: Path) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
     for path in sorted(results_dir.glob("*.json")):
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             logger.warning("Skipping %s: invalid JSON (%s)", path.name, e)
             continue
@@ -239,7 +239,7 @@ def render_csv(runs: list[dict[str, Any]], path: Path) -> None:
         "peak_vram_mb",
         "wandb_run_url",
     ]
-    with path.open("w", newline="") as f:
+    with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for run in runs:
@@ -302,7 +302,7 @@ def main() -> int:
 
     md = render_markdown(grouped_summary, gate_results)
     md_path = output_dir / "summary.md"
-    md_path.write_text(md)
+    md_path.write_text(md, encoding="utf-8")
     logger.info("Wrote %s", md_path)
 
     csv_path = output_dir / "summary.csv"
@@ -322,7 +322,8 @@ def main() -> int:
             },
             indent=2,
             default=str,
-        )
+        ),
+        encoding="utf-8",
     )
     logger.info("Wrote %s", gates_path)
 

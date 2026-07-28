@@ -669,7 +669,7 @@ def main() -> int:
                 logger.info("Post-train pass@1: %.3f", post["pass_at_1"])
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2))
+    args.output.write_text(json.dumps(result, indent=2), encoding="utf-8")
     logger.info("Wrote result to %s", args.output)
     return 0
 
