@@ -30,11 +30,11 @@ If you want a framework that treats conversations as first‑class RL episodes (
 
 ## What's new
 
-**Unreleased:**
+**In v0.19.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
 
 - **MCP server.** `stateset-agents mcp` (`pip install stateset-agents[mcp]`) exposes the grade → curate → retrain improve loop as MCP tools for any MCP client (Claude Code/Desktop, other agents) — see [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
 
-**In v0.18.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**In v0.19.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
 
 - **Bring your own agent's logs.** `stateset-agents ingest` converts OpenAI chat-format and LangChain conversation dumps into framework trajectories — production logs from agents built *anywhere* plug straight into the grade → curate → retrain loop.
 - **The improvement loop in one command.** `stateset-agents improve run --transcripts DIR --reward NAME --output DIR` grades every transcript, curates the best turns, and emits verified-runnable next-step training commands (a regression test executes the suggestions against the real CLI parsers).
@@ -151,7 +151,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.18.0)
+pip install stateset-agents          # latest release (v0.19.0)
 ```
 
 > PyPI tracks the release tags. For unreleased work on master:
@@ -905,7 +905,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.18.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.19.0`).
 
 Other entry points:
 
