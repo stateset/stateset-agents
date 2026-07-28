@@ -14,6 +14,10 @@ import pytest
 if "vllm" not in sys.modules:
     _vllm_stub = type(sys)("vllm")  # type: ignore
     _vllm_stub.__spec__ = importlib.machinery.ModuleSpec("vllm", loader=None)
+    # See tests/e2e/test_customer_service_scenario.py for why this needs a
+    # real __version__: trl (>=1.9) crashes with InvalidVersion('N/A') if
+    # this stub is importable but lacks one.
+    _vllm_stub.__version__ = "0.24.0"
     sys.modules["vllm"] = _vllm_stub
 
 INTEGRATION_AVAILABLE = True

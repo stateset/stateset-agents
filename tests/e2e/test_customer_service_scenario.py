@@ -15,6 +15,15 @@ import pytest
 if "vllm" not in sys.modules:
     _vllm_stub = type(sys)("vllm")  # type: ignore
     _vllm_stub.__spec__ = importlib.machinery.ModuleSpec("vllm", loader=None)
+    # trl's is_vllm_available() unconditionally parses this as a
+    # packaging.version.Version once it finds the module importable; a
+    # missing __version__ falls back to the literal string "N/A", which
+    # trl (>=1.9) does not guard against and crashes with InvalidVersion.
+    # Give the stub a real version string within trl's supported vLLM
+    # range so any code that eagerly probes vllm availability (e.g.
+    # `from trl import GRPOTrainer` in stateset_agents.training.trl_grpo_trainer)
+    # doesn't explode when this stub leaks into a later test's collection.
+    _vllm_stub.__version__ = "0.24.0"
     sys.modules["vllm"] = _vllm_stub
 
 E2E_AVAILABLE = True
