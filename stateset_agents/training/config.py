@@ -253,7 +253,7 @@ class TrainingConfig:
             # Ensure all tags are strings
             config_dict["wandb_tags"] = [str(tag) for tag in config_dict["wandb_tags"]]
 
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(config_dict, f, indent=2, default=str)
 
     @classmethod

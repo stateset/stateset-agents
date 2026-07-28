@@ -890,7 +890,7 @@ class GSPOTrainer:
 
         # Save training metrics
         metrics_path = os.path.join(output_dir, "training_metrics.json")
-        with open(metrics_path, "w") as f:
+        with open(metrics_path, "w", encoding="utf-8") as f:
             json.dump(self.training_metrics, f, indent=2)
 
         logger.info(f"Model saved to {output_dir}")

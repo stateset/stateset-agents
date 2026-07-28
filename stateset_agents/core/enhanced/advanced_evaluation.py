@@ -803,7 +803,7 @@ class AdvancedEvaluator:
         }
 
         # Save report
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, default=str)
 
         logger.info(f"Evaluation report saved to {output_path}")

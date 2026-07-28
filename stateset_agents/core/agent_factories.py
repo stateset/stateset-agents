@@ -102,7 +102,7 @@ async def save_agent_checkpoint(
             agent.tokenizer.save_pretrained(checkpoint_dir)
 
     config_path = checkpoint_dir / "agent_config.json"
-    with open(config_path, "w") as f:
+    with open(config_path, "w", encoding="utf-8") as f:
         json.dump(asdict(agent.config), f, indent=2, default=str)
 
 

@@ -166,7 +166,7 @@ class HPOResult:
 
     def save(self, path: Path):
         """Save result to JSON file."""
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
 
 
@@ -212,7 +212,7 @@ class HPOSummary:
 
     def save(self, path: Path):
         """Save summary to JSON file."""
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
 
     def print_summary(self):

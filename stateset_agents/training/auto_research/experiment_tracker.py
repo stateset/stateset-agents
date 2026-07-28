@@ -319,7 +319,7 @@ class ExperimentTracker:
                 pass
 
         # Write header
-        with open(self._tsv_path, "w", newline="") as f:
+        with open(self._tsv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f, delimiter="\t")
             writer.writerow(_TSV_HEADER)
 

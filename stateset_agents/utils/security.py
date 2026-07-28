@@ -255,7 +255,7 @@ class SecureConfig:
             "secrets_keys": list(self._secrets.keys()),  # Just keys, not values
         }
 
-        with open(self.config_file, "w") as f:
+        with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(config_data, f, indent=2)
 
     def load_config(self):

@@ -339,7 +339,7 @@ class MultiTurnTrajectory:
 
     def save(self, filepath: str) -> None:
         """Save trajectory to file"""
-        with open(filepath, "w") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, default=str)
 
     @classmethod

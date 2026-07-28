@@ -960,7 +960,7 @@ class DAPOTrainer:
 
         # Save config
         config_path = os.path.join(output_dir, "dapo_config.json")
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(self.config.to_dict(), f, indent=2)
 
         logger.info(f"Checkpoint saved to {output_dir}")

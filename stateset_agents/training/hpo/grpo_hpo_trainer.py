@@ -343,12 +343,12 @@ class GRPOHPOTrainer:
 
         # Save search space
         search_space_path = self.hpo_config.output_dir / "search_space.json"
-        with open(search_space_path, "w") as f:
+        with open(search_space_path, "w", encoding="utf-8") as f:
             json.dump(self.search_space.to_dict(), f, indent=2)
 
         # Save config
         config_path = self.hpo_config.output_dir / "hpo_config.json"
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(self.hpo_config.to_dict(), f, indent=2)
 
         # Save individual trial results
