@@ -25,6 +25,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   training entry point: the packaged starter's own `run_<name>_config`
   coroutine for starter-backed presets, or
   `stateset_agents.training.gspo_entrypoints.train_with_gspo` for the rest.
+  The dry-run exit message now explicitly says "pass --no-dry-run to
+  train", and every doc/docstring example of a real run now shows
+  `--no-dry-run` explicitly.
+- **Fixed:** `--wandb`/`--wandb-project` were parsed but never reached
+  `GSPOConfig` for non-starter presets (silent no-op even on real runs).
+  `build_gspo_config` now sets `report_to="wandb"` plus `wandb_project`/
+  `wandb_tags` when `--wandb` is passed (and `report_to="none"` otherwise),
+  on both the starter and non-starter paths.
+- **Fixed:** `--export-merged` was parsed but wired to nothing (silent
+  no-op). It now calls `export_merged_model_for_serving` after a real,
+  non-starter-backed training run (skipping with a warning if LoRA is
+  disabled, since there is nothing to merge), and exits with a clear error
+  for starter-backed presets, since none of the packaged starters currently
+  expose a merge-export path.
+- **Fixed:** the forwarder scripts silently dropped the old `--iterations`
+  flag (the driver had no such flag, so passing it errored with
+  "unrecognized arguments" instead of doing the thing the old script did).
+  The driver now accepts `--iterations`, mapping it to a starter's
+  `num_outer_iterations` override for starter-backed presets, and exiting
+  with a clear error for non-starter presets ("use --epochs or --steps
+  instead") rather than either silently dropping it or hard-failing with a
+  generic argparse error.
 - `ModelPreset` gained a `starter_module: str | None` field naming the
   packaged `stateset_agents.training.*_starter` module backing a preset's
   `--starter-profile` delegation, set for `kimi-k3`, `kimi-k2.6`,

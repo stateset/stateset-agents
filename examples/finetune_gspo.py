@@ -17,15 +17,16 @@ of one script per model, pick a preset from :mod:`examples.model_presets`:
     # generic GSPOConfig builder:
     python examples/finetune_gspo.py --model kimi-k3 --starter-profile memory --dry-run
 
-    # Run for real (requires the real model weights + GPU)
-    python examples/finetune_gspo.py --model llama3
+    # Run for real (requires the real model weights + GPU). --dry-run
+    # defaults to True, so a real run always requires --no-dry-run.
+    python examples/finetune_gspo.py --model llama3 --no-dry-run
 
-``--dry-run`` builds the agent (with ``use_stub_model=True``), the reward
-function, and the GSPO training config, prints a summary, and exits 0
-without launching training. Without ``--dry-run`` the driver invokes the
-real training entry point: for starter-backed presets that is the packaged
-starter's own ``run_<name>_config`` coroutine; for the rest it is
-``stateset_agents.training.gspo_entrypoints.train_with_gspo``.
+``--dry-run`` (the default) builds the agent (with ``use_stub_model=True``),
+the reward function, and the GSPO training config, prints a summary, and
+exits 0 without launching training. Pass ``--no-dry-run`` to actually train:
+the driver then invokes the real training entry point -- for starter-backed
+presets that is the packaged starter's own ``run_<name>_config`` coroutine;
+for the rest it is ``stateset_agents.training.gspo_entrypoints.train_with_gspo``.
 """
 
 # ruff: noqa: E402
@@ -130,6 +131,8 @@ def build_gspo_config(
     learning_rate: float | None = None,
     epochs: int | None = None,
     steps: int | None = None,
+    use_wandb: bool = False,
+    wandb_project: str | None = None,
 ) -> Any:
     """Build a ``GSPOConfig`` reproducing the preset's hyperparameters,
     with optional CLI overrides layered on top."""
@@ -154,6 +157,12 @@ def build_gspo_config(
         kwargs["num_train_epochs"] = epochs
     if steps is not None:
         kwargs["max_steps"] = steps
+    if use_wandb:
+        kwargs["report_to"] = "wandb"
+        kwargs["wandb_project"] = wandb_project or f"{preset.model_id.split('/')[-1]}-gspo-{task}"
+        kwargs["wandb_tags"] = ["gspo", task, preset.model_id.split("/")[-1]]
+    else:
+        kwargs["report_to"] = "none"
     return GSPOConfig(**kwargs)
 
 
@@ -220,6 +229,8 @@ async def _run_starter_backed(args: argparse.Namespace, preset: ModelPreset) -> 
             overrides["max_steps"] = args.steps
         if args.epochs is not None:
             overrides["num_train_epochs"] = args.epochs
+        if args.iterations is not None:
+            overrides["num_outer_iterations"] = args.iterations
         resolved_config = fns["get_config"](
             model_name=preset.model_id,
             task=args.task,
@@ -242,7 +253,10 @@ async def _run_starter_backed(args: argparse.Namespace, preset: ModelPreset) -> 
     if args.dry_run:
         preview = fns["create_preview"](resolved_config)
         print(json.dumps(preview, indent=2, default=str))
-        logger.info("Dry run complete for preset %s -- no training performed.", args.model)
+        logger.info(
+            "Dry run complete for preset %s -- dry run only, no training performed. Pass --no-dry-run to train.",
+            args.model,
+        )
         return 0
 
     logger.info(
@@ -258,11 +272,37 @@ async def _run_starter_backed(args: argparse.Namespace, preset: ModelPreset) -> 
 async def run(args: argparse.Namespace) -> int:
     preset = get_preset(args.model)
 
+    if args.export_merged and preset.starter_module is not None:
+        # None of the packaged starters currently expose a merge-export
+        # path (they have no `export_merged` parameter on get_*_config /
+        # run_*_config). Fail loudly instead of silently ignoring the flag.
+        print(
+            f"--export-merged is not supported for preset {args.model!r}: "
+            f"its packaged starter (stateset_agents.training."
+            f"{preset.starter_module}) has no merge-export path. This flag "
+            "is only wired for non-starter-backed presets.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.iterations is not None and preset.starter_module is None:
+        # --iterations maps to a starter's num_outer_iterations override,
+        # which only exists for starter-backed presets. Fail loudly instead
+        # of silently dropping it for the rest.
+        print(
+            f"--iterations is not supported for preset {args.model!r} "
+            "(no packaged starter with an outer-iteration count backs it). "
+            "Use --epochs or --steps instead.",
+            file=sys.stderr,
+        )
+        return 2
+
     if preset.starter_module is not None and (
         args.starter_profile is not None
         or args.config
         or args.write_config
         or args.list_profiles
+        or args.iterations is not None
         or not args.dry_run
     ):
         # Only take the starter-delegation path when the caller actually
@@ -290,12 +330,17 @@ async def run(args: argparse.Namespace) -> int:
         learning_rate=args.learning_rate,
         epochs=args.epochs,
         steps=args.steps,
+        use_wandb=args.wandb,
+        wandb_project=args.wandb_project,
     )
 
     if args.dry_run:
         payload = preview_payload(args.model, preset, gspo_config)
         print(json.dumps(payload, indent=2, default=str))
-        logger.info("Dry run complete for preset %s -- no training performed.", args.model)
+        logger.info(
+            "Dry run complete for preset %s -- dry run only, no training performed. Pass --no-dry-run to train.",
+            args.model,
+        )
         return 0
 
     environment = build_environment()
@@ -311,6 +356,26 @@ async def run(args: argparse.Namespace) -> int:
         config=gspo_config,
     )
     logger.info("Training run complete for preset %s.", args.model)
+
+    if args.export_merged:
+        if gspo_config.use_lora:
+            from stateset_agents.training.serving_artifacts import (
+                export_merged_model_for_serving,
+            )
+
+            merged_dir = export_merged_model_for_serving(
+                base_model_name=preset.model_id,
+                adapter_dir=gspo_config.output_dir,
+                output_dir=f"{gspo_config.output_dir}/merged",
+            )
+            logger.info("Exported merged checkpoint to %s", merged_dir)
+        else:
+            logger.warning(
+                "Skipping --export-merged because LoRA is disabled for "
+                "preset %s; no adapter weights were produced to merge.",
+                args.model,
+            )
+
     return 0
 
 
@@ -417,6 +482,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Override the maximum number of training steps.",
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=None,
+        help=(
+            "Override the number of outer GSPO iterations. Only supported "
+            "for presets backed by a packaged starter (see "
+            "ModelPreset.starter_module); fails clearly otherwise."
+        ),
     )
     parser.add_argument(
         "--starter-profile",

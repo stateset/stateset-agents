@@ -262,6 +262,170 @@ def test_real_run_invokes_starter_run_config_for_starter_backed_preset(monkeypat
     assert calls[0][1] is False
 
 
+def test_dry_run_message_tells_the_user_how_to_train_for_real(capsys, caplog):
+    """Regression test: the dry-run exit message must explicitly say how to
+    trigger a real run, not just that nothing happened."""
+    import logging
+
+    with caplog.at_level(logging.INFO):
+        exit_code = finetune_gspo.main(["--model", "llama3", "--dry-run"])
+    assert exit_code == 0
+    assert any("--no-dry-run" in record.message for record in caplog.records)
+
+
+def test_wandb_flags_reach_gspo_config_for_non_starter_preset():
+    """--wandb/--wandb-project must actually configure GSPOConfig.report_to
+    and wandb_project, not just be parsed and discarded."""
+    preset = get_preset("llama3")
+
+    cfg_with_wandb = finetune_gspo.build_gspo_config(
+        preset,
+        task="customer_service",
+        output_dir="./out",
+        use_wandb=True,
+        wandb_project="my-project",
+    )
+    assert cfg_with_wandb.report_to == "wandb"
+    assert cfg_with_wandb.wandb_project == "my-project"
+
+    cfg_without_wandb = finetune_gspo.build_gspo_config(
+        preset, task="customer_service", output_dir="./out"
+    )
+    assert cfg_without_wandb.report_to == "none"
+
+
+def test_wandb_flags_reach_gspo_config_via_cli(monkeypatch):
+    """End-to-end: --wandb on the driver's real-run path must produce a
+    GSPOConfig with W&B reporting enabled."""
+    calls = []
+
+    class _FakeAgent:
+        def __init__(self, config):
+            self.config = config
+
+        async def initialize(self):
+            return None
+
+    async def _fake_train_with_gspo(**kwargs):
+        calls.append(kwargs)
+        return object()
+
+    monkeypatch.setattr("stateset_agents.core.agent.MultiTurnAgent", _FakeAgent)
+    monkeypatch.setattr(
+        "stateset_agents.training.gspo_entrypoints.train_with_gspo",
+        _fake_train_with_gspo,
+    )
+
+    exit_code = finetune_gspo.main(
+        ["--model", "llama3", "--no-dry-run", "--wandb", "--wandb-project", "cli-proj"]
+    )
+    assert exit_code == 0
+    assert calls[0]["config"].report_to == "wandb"
+    assert calls[0]["config"].wandb_project == "cli-proj"
+
+
+def test_export_merged_errors_clearly_for_starter_backed_preset():
+    """No packaged starter supports merge export; --export-merged must fail
+    loudly for those presets rather than being silently accepted."""
+    exit_code = finetune_gspo.main(["--model", "kimi-k3", "--export-merged", "--dry-run"])
+    assert exit_code != 0
+
+
+def test_export_merged_invokes_export_for_non_starter_preset(monkeypatch, tmp_path):
+    """--export-merged on a non-starter real run must actually call the
+    merge-export helper, not silently no-op."""
+    calls = []
+
+    class _FakeAgent:
+        def __init__(self, config):
+            self.config = config
+
+        async def initialize(self):
+            return None
+
+    async def _fake_train_with_gspo(**kwargs):
+        return object()
+
+    def _fake_export_merged_model_for_serving(**kwargs):
+        calls.append(kwargs)
+        return str(tmp_path / "merged")
+
+    monkeypatch.setattr("stateset_agents.core.agent.MultiTurnAgent", _FakeAgent)
+    monkeypatch.setattr(
+        "stateset_agents.training.gspo_entrypoints.train_with_gspo",
+        _fake_train_with_gspo,
+    )
+    monkeypatch.setattr(
+        "stateset_agents.training.serving_artifacts.export_merged_model_for_serving",
+        _fake_export_merged_model_for_serving,
+    )
+
+    exit_code = finetune_gspo.main(
+        [
+            "--model",
+            "llama3",
+            "--no-dry-run",
+            "--export-merged",
+            "--output-dir",
+            str(tmp_path),
+        ]
+    )
+    assert exit_code == 0
+    assert len(calls) == 1
+    assert calls[0]["base_model_name"] == get_preset("llama3").model_id
+
+
+def test_export_merged_warns_without_erroring_when_lora_disabled(monkeypatch, tmp_path, caplog):
+    """--export-merged with --no-lora has nothing to merge; it should warn,
+    not silently pass and not crash."""
+    import logging
+
+    class _FakeAgent:
+        def __init__(self, config):
+            self.config = config
+
+        async def initialize(self):
+            return None
+
+    async def _fake_train_with_gspo(**kwargs):
+        return object()
+
+    monkeypatch.setattr("stateset_agents.core.agent.MultiTurnAgent", _FakeAgent)
+    monkeypatch.setattr(
+        "stateset_agents.training.gspo_entrypoints.train_with_gspo",
+        _fake_train_with_gspo,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        exit_code = finetune_gspo.main(
+            [
+                "--model",
+                "llama3",
+                "--no-dry-run",
+                "--export-merged",
+                "--no-lora",
+                "--output-dir",
+                str(tmp_path),
+            ]
+        )
+    assert exit_code == 0
+    assert any("Skipping --export-merged" in record.message for record in caplog.records)
+
+
+def test_iterations_flag_errors_clearly_for_non_starter_preset():
+    exit_code = finetune_gspo.main(["--model", "llama3", "--iterations", "5", "--dry-run"])
+    assert exit_code != 0
+
+
+def test_iterations_flag_maps_to_num_outer_iterations_for_starter_backed_preset(capsys):
+    exit_code = finetune_gspo.main(
+        ["--model", "kimi-k3", "--iterations", "5", "--dry-run"]
+    )
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["config"]["num_outer_iterations"] == 5
+
+
 def test_list_models_subprocess_prints_all_names():
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "examples" / "finetune_gspo.py"), "--list-models"],

@@ -200,23 +200,31 @@ wiring shared by every per-model script below:
 ```bash
 python examples/finetune_gspo.py --list-models
 python examples/finetune_gspo.py --model kimi-k3 --dry-run
-python examples/finetune_gspo.py --model glm5.1 --task customer_service
+python examples/finetune_gspo.py --model glm5.1 --task customer_service --no-dry-run
 ```
 
 Use it for a quick preview of any supported preset (`kimi-k3`, `kimi-k2.5`,
 `kimi-k2.6`, `glm5.1`, `glm5.2`, `qwen3`, `qwen3.5-0.8b`, `qwen3.5-27b`,
-`gemma3`, `gemma4-31b`, `llama3`, `mistral`), or a full real run — without
-`--dry-run` the driver invokes the actual training entry point (the
-packaged starter's `run_<name>_config` for starter-backed presets, or
-`stateset_agents.training.gspo_entrypoints.train_with_gspo` otherwise).
+`gemma3`, `gemma4-31b`, `llama3`, `mistral`), or a full real run. `--dry-run`
+defaults to `True`; pass `--no-dry-run` to actually invoke the training
+entry point (the packaged starter's `run_<name>_config` for starter-backed
+presets, or `stateset_agents.training.gspo_entrypoints.train_with_gspo`
+otherwise).
 
 The driver also absorbs every flag family shared across the packaged-starter
 scripts: `--use-lora/--no-lora`, `--use-4bit/--use-8bit`, `--use-vllm`,
-`--wandb`/`--wandb-project`, `--export-merged`, `--learning-rate`,
-`--epochs`/`--steps`, and, for presets whose `ModelPreset.starter_module` is
-set, `--starter-profile {balanced,memory,quality}`, `--config PATH`,
-`--write-config PATH`, and `--list-profiles`. Four per-model scripts whose
-entire CLI is now reproducible this way —
+`--wandb`/`--wandb-project` (wired into `GSPOConfig.report_to`/
+`wandb_project`/`wandb_tags` on both the starter and non-starter paths),
+`--export-merged` (wired into `export_merged_model_for_serving` for
+non-starter presets; exits with a clear error for starter-backed presets,
+since none of the packaged starters currently support merge export),
+`--learning-rate`, `--epochs`/`--steps`, `--iterations` (maps to a starter's
+`num_outer_iterations` override; errors clearly for non-starter presets
+instead of being silently dropped), and, for presets whose
+`ModelPreset.starter_module` is set, `--starter-profile
+{balanced,memory,quality}`, `--config PATH`, `--write-config PATH`, and
+`--list-profiles`. Four per-model scripts whose entire CLI is now
+reproducible this way —
 `finetune_kimi_k3_gspo.py`, `finetune_kimi_k2_6_gspo.py`,
 `finetune_gemma4_31b_gspo.py`, and `finetune_qwen3_5_0_8b_gspo.py` — are now
 thin deprecated forwarders onto `examples/finetune_gspo.py --model <preset>`
