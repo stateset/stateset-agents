@@ -275,3 +275,4 @@ mlruns/
 # Cache directories
 .cache/
 .parquet_cache/
+.worktrees/
