@@ -29,21 +29,31 @@ repos:
 
   # mypy - Static type checker
   #
-  # No additional_dependencies here: `types-all` (previously used) is a
-  # deprecated meta-package that now fails to install (it depends on
-  # `types-pkg-resources`, which has been removed from PyPI), breaking
-  # `pre-commit run --all-files` with an environment-setup error before any
-  # linting even runs. mypy.ini already sets `ignore_missing_imports = true`
-  # and doesn't need third-party type stubs. Point this hook at the same
-  # config CI's separate "Run type checking" step uses
-  # (`mypy --config-file mypy.ini`), and let mypy.ini's own `files =` list
-  # choose what gets checked instead of pre-commit passing the full set of
-  # changed filenames (which would run against files mypy.ini deliberately
-  # excludes from the gated, incrementally-typed surface).
+  # No `types-all` here: that deprecated meta-package (previously used)
+  # depends on `types-pkg-resources`, which has been removed from PyPI,
+  # breaking `pre-commit run --all-files` with an environment-setup error
+  # before any linting even runs. mypy.ini already sets
+  # `ignore_missing_imports = true` and doesn't need third-party type stubs.
+  # Point this hook at the same config CI's separate "Run type checking"
+  # step uses (`mypy --config-file mypy.ini`), and let mypy.ini's own
+  # `files =` list choose what gets checked instead of pre-commit passing
+  # the full set of changed filenames (which would run against files
+  # mypy.ini deliberately excludes from the gated, incrementally-typed
+  # surface).
+  #
+  # `wandb` IS listed here (as the one real runtime dependency): CI's
+  # "Run type checking" step runs against `pip install -e ".[dev,api]"`,
+  # which always has wandb installed, so mypy resolves `import wandb` to a
+  # concrete Module type there. Without wandb in this hook's isolated env,
+  # mypy instead falls back to Any (via ignore_missing_imports), which
+  # changes how trl_grpo_trainer.py's optional-import fallback type-checks
+  # and made this hook diverge from CI on the exact same source line.
+  # Installing wandb here keeps both mypy runs seeing the same types.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.3.0
     hooks:
       - id: mypy
+        additional_dependencies: ["wandb>=0.15.0"]
         args: ["--config-file=mypy.ini"]
         pass_filenames: false
         exclude: ^(tests/|examples/)

@@ -18,15 +18,15 @@ from pathlib import Path
 import typer
 
 from stateset_agents import cli as _cli
+from stateset_agents.cli import (
+    CLI_IMPORT_EXCEPTIONS,
+    app,
+)
 
 # Late-bound helper aliases — these are unpatched in tests.
 _echo = _cli._echo
 _load_config = _cli._load_config
 _validate_config = _cli._validate_config
-CLI_IMPORT_EXCEPTIONS = _cli.CLI_IMPORT_EXCEPTIONS
-CLI_CONFIG_EXCEPTIONS = _cli.CLI_CONFIG_EXCEPTIONS
-CLI_TRAIN_EXCEPTIONS = _cli.CLI_TRAIN_EXCEPTIONS
-app = _cli.app
 
 # NOTE: _collect_dependency_status and _collect_import_status are NOT
 # imported as local names — tests patch them via stateset_agents.cli, so

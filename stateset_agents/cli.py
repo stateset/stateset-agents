@@ -37,8 +37,8 @@ TRAIN_PROFILE_ALIASES = {
 }
 
 
-def _echo(s: str) -> None:
-    typer.echo(s)
+def _echo(s: str, err: bool = False) -> None:
+    typer.echo(s, err=err)
 
 
 def _coerce_positive_int(value: t.Any, name: str, default: int) -> int:
@@ -86,7 +86,7 @@ def _load_config(config_path: str | None) -> dict[str, t.Any]:
 
     if suffix in {".yaml", ".yml"}:
         try:
-            import yaml  # type: ignore
+            import yaml
         except ImportError as exc:
             _echo(
                 "PyYAML is required for YAML config files. Install with: pip install pyyaml"
@@ -307,9 +307,10 @@ def version(
         import pathlib
         import subprocess
 
-        pkg_root = (
-            pathlib.Path(__import__("stateset_agents").__file__).resolve().parent.parent
-        )
+        _pkg_file = __import__("stateset_agents").__file__
+        if _pkg_file is None:
+            raise RuntimeError("stateset_agents.__file__ is unset")
+        pkg_root = pathlib.Path(_pkg_file).resolve().parent.parent
         if (pkg_root / ".git").exists():
             result = subprocess.run(
                 ["git", "rev-parse", "--short", "HEAD"],
@@ -598,6 +599,9 @@ def evaluate(
             raise typer.Exit(code=2)
 
         # Build the reward function.
+        from stateset_agents.core.reward_base import RewardFunction
+
+        reward_fn: RewardFunction
         if reward == "gsm8k":
             from stateset_agents.data.gsm8k import GSM8KReward
 
@@ -690,7 +694,7 @@ def evaluate(
     async def _run() -> str:
         agent = await load_agent_from_checkpoint(checkpoint, load_model=True)
         resp = await agent.generate_response([{"role": "user", "content": message}])
-        return resp
+        return str(resp)
 
     try:
         resp = asyncio.run(_run())

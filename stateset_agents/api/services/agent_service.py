@@ -226,7 +226,6 @@ class AgentService:
         # Attach the checkpoint path as metadata so /v1/agents/{id} can
         # surface what was loaded.
         try:
-            agent.metadata = getattr(agent, "metadata", {}) or {}
             agent.metadata["checkpoint_path"] = agent_metadata_path
             agent.metadata["base_model"] = base_model
         except Exception:  # noqa: BLE001 — metadata is best-effort

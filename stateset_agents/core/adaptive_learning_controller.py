@@ -329,7 +329,7 @@ class ExplorationController:
                 )
                 ucb_values.append(mean_reward + confidence)
 
-        return available_actions[np.argmax(ucb_values)]
+        return str(available_actions[np.argmax(ucb_values)])
 
     async def _curiosity_action_selection(self, available_actions: list[str]) -> str:
         """Select action based on curiosity"""
@@ -337,7 +337,7 @@ class ExplorationController:
         curiosity_scores = [
             self.curiosity_scores.get(action, 1.0) for action in available_actions
         ]
-        return available_actions[np.argmax(curiosity_scores)]
+        return str(available_actions[np.argmax(curiosity_scores)])
 
     async def _update_curiosity_scores(self, action: str, reward: float, state: Any):
         """Update curiosity scores based on prediction error"""

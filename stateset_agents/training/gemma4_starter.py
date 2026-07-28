@@ -58,7 +58,7 @@ def _read_mapping_file(path: Path) -> dict[str, Any]:
             payload = json.load(handle) or {}
     else:
         try:
-            import yaml  # type: ignore
+            import yaml
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
                 "PyYAML is required for YAML Gemma starter config files. Install with: pip install pyyaml"

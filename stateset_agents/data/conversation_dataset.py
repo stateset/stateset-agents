@@ -321,9 +321,12 @@ class ConversationDataset(TorchDataset):
                     if isinstance(conv, dict):
                         turns.append(
                             ConversationTurnData(
-                                role=conv.get("role", conv.get("from", "user")),
-                                content=conv.get(
-                                    "content", conv.get("value", conv.get("text", ""))
+                                role=str(conv.get("role", conv.get("from", "user"))),
+                                content=str(
+                                    conv.get(
+                                        "content",
+                                        conv.get("value", conv.get("text", "")),
+                                    )
                                 ),
                             )
                         )

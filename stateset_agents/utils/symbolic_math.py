@@ -104,9 +104,9 @@ class _SafeEvaluator(ast.NodeVisitor):
         raise ValueError("Unsupported constant type")
 
     def visit_Num(self, node: ast.Num) -> float:  # pragma: no cover - py<3.8
-        if isinstance(node.n, complex):
-            raise ValueError("Complex numbers are not supported")
-        return float(node.n)
+        if isinstance(node.n, (int, float)) and not isinstance(node.n, bool):
+            return float(node.n)
+        raise ValueError("Unsupported constant type")
 
     def visit_Name(self, node: ast.Name) -> float:
         name = node.id

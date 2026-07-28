@@ -434,13 +434,13 @@ class AuthService:
         import bcrypt
 
         salt = bcrypt.gensalt(rounds=12)
-        return bcrypt.hashpw(password.encode(), salt).decode()
+        return str(bcrypt.hashpw(password.encode(), salt).decode())
 
     def _verify_password(self, password: str, hashed: str) -> bool:
         """Verify password against hash."""
         import bcrypt
 
-        return bcrypt.checkpw(password.encode(), hashed.encode())
+        return bool(bcrypt.checkpw(password.encode(), hashed.encode()))
 
     def _generate_session_token(self) -> str:
         """Generate secure session token."""

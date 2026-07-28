@@ -368,11 +368,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if config.rate_limit.trust_proxy_headers:
             forwarded_for = request.headers.get("X-Forwarded-For")
             if forwarded_for:
-                first_hop = forwarded_for.split(",")[0].strip()
+                first_hop = str(forwarded_for).split(",")[0].strip()
                 if first_hop:
                     return first_hop
 
-        return request.client.host if request.client else "unknown"
+        return str(request.client.host) if request.client else "unknown"
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         config = get_config()

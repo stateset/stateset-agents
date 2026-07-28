@@ -108,6 +108,11 @@ class MultiTurnAgent(Agent):
                     logger.warning("Failed to init PlanningManager: %s", exc)
         self.planning_manager = planning_manager
 
+        # Arbitrary caller-attached metadata (e.g. the API layer records the
+        # checkpoint path/base model a registered agent was loaded from here
+        # so /v1/agents/{id} can surface it). Not used by the agent itself.
+        self.metadata: dict[str, Any] = {}
+
         # Active conversations
         self.active_conversations: dict[str, ConversationContext] = {}
 

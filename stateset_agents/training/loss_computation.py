@@ -750,8 +750,12 @@ def _prepare_inputs_and_labels(
         padding=True,
     )
     input_ids = inputs.get("input_ids")
-    labels = input_ids.clone() if hasattr(input_ids, "clone") else input_ids
-    if "attention_mask" in inputs and torch.is_tensor(labels):
+    labels = (
+        input_ids.clone()
+        if input_ids is not None and hasattr(input_ids, "clone")
+        else input_ids
+    )
+    if "attention_mask" in inputs and isinstance(labels, torch.Tensor):
         labels = labels.masked_fill(inputs["attention_mask"].eq(0), -100)
 
     inputs = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}

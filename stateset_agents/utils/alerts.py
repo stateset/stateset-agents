@@ -226,7 +226,7 @@ class EmailNotificationHandler(NotificationHandler):
 
             # Create message
             msg = MIMEMultipart()
-            msg["From"] = from_email
+            msg["From"] = str(from_email) if from_email is not None else ""
             msg["To"] = ", ".join(to_emails)
             msg["Subject"] = f"[{alert.severity.value.upper()}] {alert.rule_name}"
 
@@ -437,7 +437,7 @@ class AlertManager:
     def __init__(self):
         self.alert_rules: dict[str, AlertRule] = {}
         self.active_alerts: dict[str, Alert] = {}
-        self.alert_history: deque = deque(maxlen=1000)
+        self.alert_history: deque[Alert] = deque(maxlen=1000)
         self.notification_handlers: list[NotificationHandler] = []
         self.silenced_rules: dict[str, datetime] = {}
         self.statistics = {
