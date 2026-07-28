@@ -153,20 +153,27 @@ def load_gsm8k(
                 break
         return examples
 
-    # Dataset repo id ("gsm8k") is a fixed, well-known public benchmark name,
-    # not attacker-controlled input; pinning a revision would require this
-    # module to track upstream commit hashes for a dataset it doesn't own.
+    # Dataset repo id ("openai/gsm8k") is a fixed, well-known public
+    # benchmark name, not attacker-controlled input; pinning a revision
+    # would require this module to track upstream commit hashes for a
+    # dataset it doesn't own. The bare "gsm8k" repo id (no namespace) that
+    # used to resolve here no longer does -- recent `datasets`/
+    # `huggingface_hub` releases validate repo ids as "namespace/name"
+    # before ever hitting the network, so "gsm8k" alone fails locally with
+    # `HFValidationError: Repository id must be 'namespace/name', got
+    # 'gsm8k'` regardless of connectivity. "openai/gsm8k" is the correct,
+    # currently-resolving repo id with the same "main" config/schema.
     if split is not None:
         ds = load_dataset(
-            "gsm8k", "main", split=split, cache_dir=cache_dir
+            "openai/gsm8k", "main", split=split, cache_dir=cache_dir
         )  # nosec: B615
         return _to_examples(ds)
 
     train = load_dataset(
-        "gsm8k", "main", split="train", cache_dir=cache_dir
+        "openai/gsm8k", "main", split="train", cache_dir=cache_dir
     )  # nosec: B615
     test = load_dataset(
-        "gsm8k", "main", split="test", cache_dir=cache_dir
+        "openai/gsm8k", "main", split="test", cache_dir=cache_dir
     )  # nosec: B615
     return _to_examples(train), _to_examples(test)
 
