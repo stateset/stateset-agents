@@ -12,6 +12,7 @@ on:
         description: 'Publish environment (workflow_dispatch only)'
         required: true
         default: 'testpypi'
+        type: choice
         options:
           - testpypi
           - pypi
@@ -87,11 +88,11 @@ jobs:
         set -euo pipefail
         python -m venv /tmp/publish-smoke-venv
         /tmp/publish-smoke-venv/bin/pip install --upgrade pip
+        # pyyaml is a core dependency (preset files ship as YAML and are
+        # runtime-loaded even on a bare install), so this exercises the real
+        # preset-loading path on a plain `pip install dist/*.whl` with no
+        # extras — no separate pyyaml install needed.
         /tmp/publish-smoke-venv/bin/pip install dist/*.whl
-        # pyyaml is not a core dependency (only pulled in by the auto-research
-        # extra), but preset files ship as YAML, so install it for the smoke
-        # test to exercise the real preset-loading path end to end.
-        /tmp/publish-smoke-venv/bin/pip install pyyaml
         /tmp/publish-smoke-venv/bin/python -c "import stateset_agents; print('version:', stateset_agents.__version__); from stateset_agents.config import get_agent_preset; preset = get_agent_preset('customer_service'); assert preset, 'preset failed to load'; print('preset keys:', sorted(preset.keys()))"
 
     - name: Run publish readiness checks (optional, non-blocking)
@@ -130,7 +131,7 @@ jobs:
   docker-publish:
     runs-on: ubuntu-latest
     needs: publish
-    if: github.event.inputs.environment == 'pypi' || github.event_name == 'release'
+    if: github.event.inputs.environment == 'pypi' || github.event_name == 'release' || github.event_name == 'push'
     
     steps:
     - uses: actions/checkout@v4
@@ -196,7 +197,7 @@ jobs:
   docs-publish:
     runs-on: ubuntu-latest
     needs: publish
-    if: github.event.inputs.environment == 'pypi' || github.event_name == 'release'
+    if: github.event.inputs.environment == 'pypi' || github.event_name == 'release' || github.event_name == 'push'
     
     steps:
     - uses: actions/checkout@v4

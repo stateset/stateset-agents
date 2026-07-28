@@ -188,6 +188,11 @@ jobs:
 
       - name: Verify tag matches crate + pyproject versions
         shell: bash
+        # Override the workflow-level `defaults.run.working-directory:
+        # rust_core` — the grep paths below are already relative to the repo
+        # root, and with the default in effect they'd resolve to the
+        # nonexistent rust_core/rust_core/Cargo.toml.
+        working-directory: .
         run: |
           set -euo pipefail
           tag_version="${GITHUB_REF_NAME#rust-core-v}"
