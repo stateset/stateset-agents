@@ -41,7 +41,7 @@ repos:
   # mypy.ini deliberately excludes from the gated, incrementally-typed
   # surface).
   #
-  # `wandb` IS listed here (as the one real runtime dependency): CI's
+  # `wandb` IS listed here (as one real runtime dependency): CI's
   # "Run type checking" step runs against `pip install -e ".[dev,api]"`,
   # which always has wandb installed, so mypy resolves `import wandb` to a
   # concrete Module type there. Without wandb in this hook's isolated env,
@@ -49,11 +49,23 @@ repos:
   # changes how trl_grpo_trainer.py's optional-import fallback type-checks
   # and made this hook diverge from CI on the exact same source line.
   # Installing wandb here keeps both mypy runs seeing the same types.
+  #
+  # `numpy` is pinned to the SAME `<2.5.0` upper bound as pyproject.toml's
+  # `dev` extra (see the comment there for why): several curated files
+  # (reward_base.py, gspo_trainer.py, dapo_trainer.py, vapo_trainer.py)
+  # import numpy, and this hook's isolated env has no numpy at all unless
+  # listed here -- which happened to *avoid* round 4's
+  # "numpy/__init__.pyi:737: Type statement is only supported in Python
+  # 3.12 and greater" crash locally by omission (ignore_missing_imports
+  # papered over the missing package) while CI's real `.[dev,api]` install
+  # hit it for real. Pinning it here makes this hook's failure mode match
+  # CI's instead of silently diverging by having a different set of
+  # installed packages.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.3.0
     hooks:
       - id: mypy
-        additional_dependencies: ["wandb>=0.15.0"]
+        additional_dependencies: ["wandb>=0.15.0", "numpy<2.5.0"]
         args: ["--config-file=mypy.ini"]
         pass_filenames: false
         exclude: ^(tests/|examples/)
@@ -118,6 +130,18 @@ repos:
       - id: bandit
         exclude: ^(tests/|examples/)
         args: ["-c", "pyproject.toml", "--severity-level=medium"]
+        # `-c pyproject.toml` requires bandit to parse TOML. Python 3.11+
+        # covers that via the stdlib `tomllib`, but this hook's isolated
+        # env is built with whichever Python runs pre-commit itself --
+        # under Python 3.10 (test (3.10)'s job, and this repo's own
+        # baseline interpreter) there is no stdlib TOML parser, and
+        # bandit fails outright with "toml parser not available, reinstall
+        # with toml extra" before scanning a single file. The `[toml]`
+        # extra pulls in `tomli` as a 3.10-compatible fallback. Harmless
+        # (a no-op) on 3.11+, where bandit prefers stdlib `tomllib`
+        # anyway -- verified this hook is green under both a Python 3.10
+        # and a Python 3.12 pre-commit run.
+        additional_dependencies: ["bandit[toml]"]
 
   # Local repo hygiene checks
   - repo: local

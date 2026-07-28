@@ -24,6 +24,7 @@ from stateset_agents.exceptions import (
     ATTRIBUTE_VALUE_EXCEPTIONS as INPUT_GRADS_EXCEPTIONS,
 )
 from stateset_agents.exceptions import GPU_EXCEPTIONS as GPU_PROPERTIES_EXCEPTIONS
+from stateset_agents.exceptions import IMPORT_EXCEPTIONS
 from stateset_agents.exceptions import (
     IMPORT_EXCEPTIONS as BITSANDBYTES_IMPORT_EXCEPTIONS,
 )
@@ -78,8 +79,21 @@ try:
     GRPOConfig = _GRPOConfig
     TRLGRPOTrainer = _TRLGRPOTrainer
     TRL_GRPO_AVAILABLE = True
-except ImportError:  # pragma: no cover - optional dependency
-    pass
+except IMPORT_EXCEPTIONS:
+    # trl's own lazy-module loader (trl._lazy_module) wraps *any* failure
+    # while importing a submodule -- including transitively optional,
+    # environment-dependent ones like an unusable/absent vllm -- in a bare
+    # RuntimeError, not ImportError. `from trl import GRPOTrainer` walks
+    # trl.trainer.grpo_trainer -> trl.generation -> trl.generation.
+    # vllm_generation -> trl.generation.vllm_client, and the last of those
+    # unconditionally imports vllm.distributed internals whenever trl's
+    # own `is_vllm_available()` says yes. A narrow `except ImportError`
+    # here does not catch that RuntimeError, so trl being present but its
+    # optional vllm integration being broken/absent/mocked would crash
+    # this module's import instead of falling back to
+    # TRL_GRPO_AVAILABLE = False as intended. IMPORT_EXCEPTIONS covers
+    # both.
+    pass  # pragma: no cover - optional dependency
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_loaded = False
