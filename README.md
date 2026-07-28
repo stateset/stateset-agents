@@ -30,11 +30,16 @@ If you want a framework that treats conversations as first‑class RL episodes (
 
 ## What's new
 
-**In v0.17.3 (latest release):**
+**In v0.17.3 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
 
-- **Packaging repair.** PyPI publishing now fires on version tags with OIDC trusted-publishing support; wheels finally ship the runtime config presets; `stateset-rl-core` 0.1.1 publishes to PyPI (fixing `pip install stateset-agents[rust]` and `[full]`); Rust CI covers both crates; dashboard/mobile gained env-based API config, API-key auth, Node pins, and mobile CI.
+- **PyPI is current again.** `pip install stateset-agents` now installs the latest release (the 0.13.4 → 0.17.3 gap is closed), wheels finally ship the runtime config presets, and [`stateset-rl-core`](https://pypi.org/project/stateset-rl-core/) 0.1.1 is on PyPI — `pip install stateset-agents[rust]` and `[full]` resolve for the first time.
+- **First fully green CI since v0.15.2** (10/10 jobs including Windows): pinned toolchain (mypy, numpy, pre-commit hooks), utf-8 file IO everywhere, Windows clock/codepage fixes, repaired strict security scan.
 
-**In v0.17.3:**
+**In v0.17.2:**
+
+- **Packaging repair.** Tag-triggered publishing with OIDC trusted-publishing support, Rust CI for both crates, dashboard/mobile env-based API config + API-key auth + Node pins + mobile CI.
+
+**In v0.17.1:**
 
 - **Convergence proof in CI.** `tests/e2e/test_gspo_convergence_tiny.py` trains real GSPO on a tiny model and asserts the target-token probability provably increases (verified against zero-signal and reversed-reward controls); runs in the nightly benchmark workflow.
 - **Honest demo labeling.** `dashboard/` and `mobile/` are clearly marked as simulator-backed demos (not deployed); the mobile data hook now surfaces an `isMockData` flag instead of silently falling back.
@@ -135,10 +140,10 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest on PyPI (currently v0.13.4)
+pip install stateset-agents          # latest release (v0.17.3)
 ```
 
-> **PyPI currently lags the source tree.** `pip install stateset-agents` gets **v0.13.4**, while this repo is at **v0.17.3** (RL-core correctness fixes, API hardening, unified finetune driver, Kimi-K3/GLM-5.2 starters). For the newest surface, install from source:
+> PyPI tracks the release tags. For unreleased work on master:
 >
 > ```bash
 > pip install "git+https://github.com/stateset/stateset-agents@master"
