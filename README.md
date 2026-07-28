@@ -34,7 +34,7 @@ If you want a framework that treats conversations as first‑class RL episodes (
 
 - **Packaging repair.** PyPI publishing now fires on version tags with OIDC trusted-publishing support; wheels finally ship the runtime config presets; `stateset-rl-core` 0.1.1 publishes to PyPI (fixing `pip install stateset-agents[rust]` and `[full]`); Rust CI covers both crates; dashboard/mobile gained env-based API config, API-key auth, Node pins, and mobile CI.
 
-**In v0.17.1:**
+**In v0.17.2:**
 
 - **Convergence proof in CI.** `tests/e2e/test_gspo_convergence_tiny.py` trains real GSPO on a tiny model and asserts the target-token probability provably increases (verified against zero-signal and reversed-reward controls); runs in the nightly benchmark workflow.
 - **Honest demo labeling.** `dashboard/` and `mobile/` are clearly marked as simulator-backed demos (not deployed); the mobile data hook now surfaces an `isMockData` flag instead of silently falling back.
