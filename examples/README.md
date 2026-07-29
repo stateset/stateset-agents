@@ -16,6 +16,16 @@ Welcome to the StateSet Agents examples directory! This collection demonstrates 
 
 ## 🚀 Quick Start Examples
 
+### Five-Minute Demo
+
+The fastest path from `pip install stateset-agents` to a curated training set — offline, no GPU, no API key:
+
+```bash
+bash examples/five_minute_demo.sh
+```
+
+Writes three sample customer-support conversation logs (OpenAI chat-completions format), ingests them with `stateset-agents ingest`, grades + curates them with `stateset-agents improve run --reward customer_support`, and prints the graded report. See also the Colab version: [`notebooks/improve_your_agent_5min.ipynb`](../notebooks/improve_your_agent_5min.ipynb).
+
 ### Hello World
 
 The fastest way to get started - runs instantly with no downloads:

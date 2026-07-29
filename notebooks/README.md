@@ -38,10 +38,11 @@ Six runnable Colab notebooks covering the full developer journey. Each pins to a
                                             └──► back to top of pipeline
 ```
 
-## The thirteen core notebooks
+## The fourteen core notebooks
 
 | Notebook | Stage | A100 runtime | Cost | What it produces |
 |----------|-------|--------------|------|------------------|
+| [`improve_your_agent_5min.ipynb`](./improve_your_agent_5min.ipynb) | Five-minute win | ~2 min | $0 | No GPU, no API key. `pip install stateset-agents` -> ingest sample logs -> grade + curate with `stateset-agents improve` -> curated JSONL + graded report, in one sitting. Same flow as [`examples/five_minute_demo.sh`](../examples/five_minute_demo.sh). |
 | [`quickstart_first_finetune.ipynb`](./quickstart_first_finetune.ipynb) | First touch | ~3 h | ~$2 | Working LoRA adapter on a multi-turn customer-support corpus, REPL-tested, with provenance JSON for handoff. Mirrors [Cookbook Recipe 1](../docs/COOKBOOK.md). |
 | [`customer_support_3seed_judge.ipynb`](./customer_support_3seed_judge.ipynb) | Canonical whitepaper result | ~25 min | ~$0.70 | **The whitepaper §11.7 publication-gate notebook.** Three seeds (42 / 1337 / 2026), both rubric and LLM-judge eval (local `Qwen2.5-1.5B-Instruct` judge — no API key), KL anchor enabled. Closes the keyword-rubric-blindness gap exposed by `customer_support_4h.ipynb`. |
 | [`whitepaper_v1_comparative_trainers.ipynb`](./whitepaper_v1_comparative_trainers.ipynb) | Comparative result for §5.6 / §11.3 | ~45 min | ~$1.30 | **TRL GRPO vs GSPO vs DAPO on the §11.7 protocol.** Three trainers × three seeds = nine training runs, same rubric + LLM-judge eval as §11.7. Fills the comparative trainer table that's currently empty in the whitepaper. |
@@ -56,7 +57,7 @@ Six runnable Colab notebooks covering the full developer journey. Each pins to a
 | [`judge_driven_training_loop.ipynb`](./judge_driven_training_loop.ipynb) | Closed-loop RLHF approximation | ~90 min | ~$0.80 | Two consecutive GSPO iterations, each evaluated by a local `Qwen2.5-1.5B-Instruct` judge. The cheapest realistic version of the RLHF loop short of human labels — `train → judge → curate → retrain`. |
 | [`rag_agent_finetune.ipynb`](./rag_agent_finetune.ipynb) | RL train, retrieval-augmented | ~75 min | ~$0.50 | Tiny BM25 retriever + a 10-doc KB + a `GroundingReward` that penalizes uncited claims. Teaches the agent *when* to lean on retrieved context and *not* to hallucinate when retrieval fails. |
 
-Three legacy notebooks (`00_environment_setup.ipynb`, `01_qwen_support_agent_gspo.ipynb`, `02_qwen_sales_agent_gspo.ipynb`) remain for backward compatibility but are superseded by the thirteen above.
+Three legacy notebooks (`00_environment_setup.ipynb`, `01_qwen_support_agent_gspo.ipynb`, `02_qwen_sales_agent_gspo.ipynb`) remain for backward compatibility but are superseded by the fourteen above.
 
 ## Common patterns across notebooks
 
@@ -72,6 +73,7 @@ Every notebook:
 
 | Situation | Notebook |
 |-----------|----------|
+| "Five minutes, no GPU, just show me the grade -> curate loop" | `improve_your_agent_5min` |
 | "I just want to see this work" | `quickstart_first_finetune` |
 | "Reproduce a whitepaper benchmark (binary reward)" | `whitepaper_v1_gsm8k_benchmark` |
 | "Reproduce a whitepaper benchmark (dense reward, A/B)" | `whitepaper_v1_gsm8k_benchmark_v2` |

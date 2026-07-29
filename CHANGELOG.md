@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Five-minute onboarding demo.** `examples/five_minute_demo.sh` — a
+  self-contained, offline, no-GPU script that writes sample customer-support
+  conversation logs, ingests them with `stateset-agents ingest`, grades +
+  curates them with `stateset-agents improve run --reward customer_support`,
+  and prints the graded report — the fastest path from `pip install
+  stateset-agents` to a curated training set. Colab equivalent:
+  `notebooks/improve_your_agent_5min.ipynb`.
+
 ## [0.19.0] - 2026-07-28 — MCP server: the improvement loop as tools for any MCP client
 
 ### Added
