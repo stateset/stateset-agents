@@ -14,60 +14,90 @@
 
 StateSet Agents is a production‑oriented RL stack for training and serving LLM‑backed agents that improve through **multi‑turn interaction**. The library provides:
 
+- An **improvement loop** that turns your agent's own logs into a better agent: `ingest` → `improve` (grade → curate) → fine‑tune.
 - Async‑first **agent APIs** (`MultiTurnAgent`, `ToolAgent`) with Hugging Face and stub backends.
 - **Environments** for conversational and task‑oriented episodes.
 - **Trajectories** and value/advantage utilities tailored to dialogue.
-- Composable **reward functions** (heuristic, domain, multi‑objective, neural).
+- Composable **reward functions** (heuristic, domain, multi‑objective, neural, LLM‑judge).
 - A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF.
 - **Offline RL algorithms** for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
 - **Sim‑to‑Real transfer** for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
 - **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).
+- An **MCP server** so Claude Code/Desktop — or any MCP client — can drive the loop conversationally.
 - Optional **performance layers** (vLLM generation, Rust acceleration, distributed training, HPO, FastAPI service).
 
 If you want a framework that treats conversations as first‑class RL episodes (rather than single turns), this is it.
 
 ---
 
+## The improvement loop
+
+Your agent already produces conversation logs. They are a training set.
+
+```bash
+pip install stateset-agents
+
+# 1. Bring your own logs — OpenAI chat format or LangChain traces
+stateset-agents ingest --format openai --input my_agent_logs.jsonl --output transcripts/
+
+# 2. Grade every conversation, curate the best turns, get your next command
+stateset-agents improve run \
+  --transcripts transcripts/ \
+  --reward customer_support \
+  --output improved/
+
+# 3. Train on what worked (the exact command is printed in improved/next_steps.md)
+python scripts/sft_from_curated.py --dataset improved/curated.jsonl --base-model <model>
+```
+
+`improve` writes three things: `improve_summary.json` (machine‑readable scores
+and per‑reward breakdown), `curated.jsonl` (the turns above your threshold, ready
+to train on), and `next_steps.md` (runnable training commands — regression‑tested
+against the real CLI so they never drift).
+
+**Try it in five minutes, offline, no GPU and no API key:**
+
+```bash
+bash examples/five_minute_demo.sh
+```
+
+It writes sample logs, runs the whole loop, and shows you the graded output.
+Colab version: [`notebooks/improve_your_agent_5min.ipynb`](notebooks/improve_your_agent_5min.ipynb).
+
+**Or let an agent drive it:**
+
+```bash
+pip install "stateset-agents[mcp]"
+claude mcp add stateset-agents -- stateset-agents mcp
+```
+
+Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
+`improve_run`, `improve_status`, `list_model_presets`, `dry_run_finetune`) — see
+[`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
+
+---
+
 ## What's new
 
-**In v0.19.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.19.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
 
-- **MCP server.** `stateset-agents mcp` (`pip install stateset-agents[mcp]`) exposes the grade → curate → retrain improve loop as MCP tools for any MCP client (Claude Code/Desktop, other agents) — see [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
+- **MCP server.** `stateset-agents mcp` (`pip install stateset-agents[mcp]`) exposes the improvement loop as tools for any MCP client — Claude Code/Desktop or your own agent. Seven tools, stdio transport, dry‑run‑only training. [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)
 
-**In v0.19.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.18.0:**
 
-- **Bring your own agent's logs.** `stateset-agents ingest` converts OpenAI chat-format and LangChain conversation dumps into framework trajectories — production logs from agents built *anywhere* plug straight into the grade → curate → retrain loop.
-- **The improvement loop in one command.** `stateset-agents improve run --transcripts DIR --reward NAME --output DIR` grades every transcript, curates the best turns, and emits verified-runnable next-step training commands (a regression test executes the suggestions against the real CLI parsers).
-- **Flagship benchmark recipe.** `make flagship-benchmark-all` — a reproducible 3-seed GSPO run on an 8B model with publish gates (`benchmarks/FLAGSHIP.md`).
-- **Nightly training guard operational.** The nightly benchmark + CPU convergence pipeline is green end-to-end for the first time.
+- **Bring your own agent's logs.** `stateset-agents ingest` converts OpenAI chat‑format and LangChain conversation dumps into framework trajectories — logs from agents built *anywhere* plug straight into the loop.
+- **The improvement loop in one command.** `stateset-agents improve run` grades, curates, and emits verified‑runnable training commands (a regression test executes every suggestion against the real CLI parsers).
+- **Flagship benchmark recipe.** `make flagship-benchmark-all` — a reproducible 3‑seed GSPO run on an 8B model with publish gates ([`benchmarks/FLAGSHIP.md`](benchmarks/FLAGSHIP.md)).
 
-**In v0.17.3:**
+**v0.16.0 – v0.17.3 (correctness and distribution):**
 
-- **PyPI is current again.** `pip install stateset-agents` installs the latest release (the 0.13.4-era gap is closed), wheels finally ship the runtime config presets, and [`stateset-rl-core`](https://pypi.org/project/stateset-rl-core/) 0.1.1 is on PyPI — `pip install stateset-agents[rust]` and `[full]` resolve for the first time.
-- **First fully green CI since v0.15.2** (10/10 jobs including Windows): pinned toolchain (mypy, numpy, pre-commit hooks), utf-8 file IO everywhere, Windows clock/codepage fixes, repaired strict security scan.
+- **RL‑core correctness overhaul.** All five trainers fixed and behaviorally tested: DAPO freezes rollout‑time old log probs and honors µ inner updates; GEPO runs in log space; GSPO scores exactly the text it sampled and rescores vLLM rollouts; GSPO‑token regained its gradient path; VAPO clips values against rollout predictions with terminal‑token rewards and decoupled GAE; the GRPO loss path uses length‑normalized ratios. A cross‑trainer ratio‑invariant suite guards all of it.
+- **Convergence proof in CI.** A nightly job trains a real (tiny) model and asserts the target‑token probability strictly increases — verified against zero‑signal and reversed‑reward controls.
+- **API hardening.** Training‑lab routes auth‑gated behind `API_ENABLE_TRAINING_LAB` (off outside development), bounded in‑memory state, fail‑closed production config validation, constant‑time key comparison, identity‑keyed rate limiting.
+- **Distribution repaired.** PyPI is current again, wheels ship the runtime config presets, [`stateset-rl-core`](https://pypi.org/project/stateset-rl-core/) is published so `[rust]` and `[full]` resolve, and CI is green across 4 Python versions + Windows.
+- **Unified finetune driver.** `examples/finetune_gspo.py --model <preset>` replaced the per‑model script maze with a 12‑model preset registry.
 
-**In v0.17.2:**
-
-- **Packaging repair.** Tag-triggered publishing with OIDC trusted-publishing support, Rust CI for both crates, dashboard/mobile env-based API config + API-key auth + Node pins + mobile CI.
-
-**In v0.17.1:**
-
-- **Convergence proof in CI.** `tests/e2e/test_gspo_convergence_tiny.py` trains real GSPO on a tiny model and asserts the target-token probability provably increases (verified against zero-signal and reversed-reward controls); runs in the nightly benchmark workflow.
-- **Honest demo labeling.** `dashboard/` and `mobile/` are clearly marked as simulator-backed demos (not deployed); the mobile data hook now surfaces an `isMockData` flag instead of silently falling back.
-
-**In v0.17.0:**
-
-- **Unified finetune driver.** `examples/finetune_gspo.py --model <preset>` replaces the per-model script maze: a 12-model preset registry (`examples/model_presets.py`), shared flags (`--use-lora`, `--use-4bit/--use-8bit`, `--use-vllm`, `--wandb`, `--export-merged`, `--starter-profile`, `--write-config`), safe `--dry-run` default, and a real training path via `--no-dry-run`.
-- **Rate-limiter hardening.** Bucket keys derive only from *validated* credentials (garbage keys share the IP bucket), the in-memory limiter is memory-capped, and the optional Redis backend retries after a cooldown with an atomic INCR+EXPIRE pipeline.
-- **`grpo` untangling.** Shared `rate_limiter` moved to `stateset_agents/api/rate_limiter.py`; the `api.grpo` deprecation warning now fires only for the deprecated app surface.
-
-**In v0.16.0:**
-
-- **RL-core correctness overhaul.** All five trainers fixed and behaviorally tested: DAPO freezes rollout-time old log probs and honors µ inner updates; GEPO runs in log space; GSPO scores exactly the text it sampled (shared chat-template convention) and rescores vLLM rollouts; GSPO-token regained its gradient path; VAPO clips values against rollout predictions with terminal-token rewards and decoupled GAE; the GRPO loss path uses length-normalized ratios. A cross-trainer ratio-invariant suite guards all of it, and VAPO uses the Rust GAE kernel when installed.
-- **API hardening.** The training-lab API is auth-gated behind `API_ENABLE_TRAINING_LAB` (off outside development) with bounded in-memory state; startup config validation fails closed in production; constant-time API-key comparison everywhere.
-- **Kimi-K3 and GLM 5.2 starter paths.** First-class starters for `moonshotai/Kimi-K3` (provisional presets until HF weights land) and `zai-org/GLM-5.2` (754B MoE) — CLI commands, packaged modules, Helm/Kubernetes manifests, docs, and tests.
-
-Earlier highlights: v0.15.3 shipped Rust accelerator wheels (abi3-py310) and model-level Prometheus inference metrics; v0.15.0 added the five-example getting-started path; v0.13.2 shipped the whitepaper §11.7 three-seed canonical benchmark (judge improvement **+0.079**, [artifact](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json)).
+Earlier highlights: v0.15.3 shipped Rust accelerator wheels (abi3‑py310) and model‑level Prometheus inference metrics; v0.15.0 added the getting‑started ladder; v0.13.2 shipped the whitepaper §11.7 three‑seed canonical benchmark (judge improvement **+0.079**, [artifact](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json)).
 
 Full breakdown in [CHANGELOG.md](CHANGELOG.md).
 
@@ -154,7 +184,8 @@ asyncio.run(main())
 pip install stateset-agents          # latest release (v0.19.0)
 ```
 
-**Five-minute demo:** `bash examples/five_minute_demo.sh` — offline, no GPU, no API key: ingest sample conversation logs, grade + curate them with `stateset-agents improve`, and see a curated training set land in under a minute. (Colab version: [`notebooks/improve_your_agent_5min.ipynb`](notebooks/improve_your_agent_5min.ipynb).)
+That's enough for the [five-minute demo](#the-improvement-loop), the stub
+backend, and the CLI. Training real models needs `[training]` below.
 
 > PyPI tracks the release tags. For unreleased work on master:
 >
@@ -185,112 +216,38 @@ pip install "stateset-agents[full]"          # Most extras in one go
 > commerce daemon) that is unrelated to the `stateset-rl-core` accelerator behind `[rust]` above.
 > See `docs/RUST_CRATES.md` for how the two Rust crates in this repo relate.
 
-### Qwen 3.5 starter path
+### Model starter paths
 
-If you want the fastest path to a first post-training run for `Qwen/Qwen3.5-0.8B`, use the dedicated CLI starter or the equivalent example script:
-
-```bash
-pip install "stateset-agents[training,trl]"
-stateset-agents qwen3-5-0-8b --json-output
-stateset-agents qwen3-5-0-8b --starter-profile memory --json-output
-stateset-agents qwen3-5-0-8b --list-profiles --json-output
-stateset-agents qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json
-stateset-agents qwen3-5-0-8b --config ./qwen3_5_0_8b.json --no-dry-run
-python examples/finetune_qwen3_5_0_8b_gspo.py --dry-run
-```
-
-Use `--list-profiles` when you want to compare the built-in `balanced`, `memory`, and `quality` presets before saving or running one.
-
-For the repo-specific walkthrough, see `docs/QWEN3_FINETUNING_GUIDE.md`.
-
-### Kimi-K2.6 starter path
-
-If you want the fastest path to a first post-training run for `moonshotai/Kimi-K2.6`, use the dedicated CLI starter or the equivalent example script:
+One driver covers every supported model — `--dry-run` is the default, so nothing
+trains until you ask:
 
 ```bash
 pip install "stateset-agents[training,trl]"
-stateset-agents kimi-k2-6 --json-output
-stateset-agents kimi-k2-6 --starter-profile memory --json-output
-stateset-agents kimi-k2-6 --list-profiles --json-output
-stateset-agents kimi-k2-6 --write-config ./kimi_k2_6.json
-stateset-agents kimi-k2-6 --config ./kimi_k2_6.json --no-dry-run
-python examples/finetune_kimi_k2_6_gspo.py --dry-run
+python examples/finetune_gspo.py --list-models              # 12 presets
+python examples/finetune_gspo.py --model qwen3.5-0.8b       # dry run: show the resolved config
+python examples/finetune_gspo.py --model qwen3.5-0.8b --no-dry-run   # actually train
 ```
 
-Use `--list-profiles` when you want to compare the built-in `balanced`, `memory`, and `quality` presets before saving or running one.
+Useful flags: `--starter-profile {balanced,memory,quality}` (the `memory` profile
+uses 4‑bit quantization and smaller context/group sizes), `--use-lora/--no-lora`,
+`--use-4bit/--use-8bit`, `--use-vllm`, `--wandb`, `--export-merged`,
+`--write-config PATH`.
 
-### Kimi-K3 starter path
+Six models also ship a dedicated starter with tuned defaults and a hosting plan:
 
-The same starter flow ships for `moonshotai/Kimi-K3`. Note: Kimi K3 weights are not yet published on HuggingFace (as of 2026-07-16); the model ID and presets are provisional mirrors of the Kimi-K2.6 starter pending the official release. The `kimi-k3` command lives on master (not yet in a PyPI release) — install from source as shown above.
+| Model | Dedicated entry point | Notes |
+|---|---|---|
+| `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | Cheapest path to a first run — see `docs/QWEN3_FINETUNING_GUIDE.md` |
+| `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` | Use `--starter-profile memory` on tighter GPU budgets |
+| `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | |
+| `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` | **Provisional** — HF weights unpublished as of 2026‑07‑16; presets mirror Kimi‑K2.6 |
+| `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | 754B MoE, QLoRA‑only + vLLM; `docs/GLM5_1_HOSTING_PLAN.md` |
+| `zai-org/GLM-5.2` | `python examples/finetune_glm5_2_gspo.py` | 754B MoE, QLoRA‑only + vLLM; `docs/GLM5_2_HOSTING_PLAN.md` |
 
-```bash
-stateset-agents kimi-k3 --json-output
-stateset-agents kimi-k3 --starter-profile memory --json-output
-stateset-agents kimi-k3 --list-profiles --json-output
-stateset-agents kimi-k3 --write-config ./kimi_k3.json
-stateset-agents kimi-k3 --config ./kimi_k3.json --no-dry-run
-python examples/finetune_kimi_k3_gspo.py --dry-run
-```
-
-### Gemma 4 31B starter path
-
-If you want the fastest path to a first post-training run for `google/gemma-4-31B-it`, use the dedicated CLI starter or the equivalent example script:
-
-```bash
-pip install "stateset-agents[training,trl]"
-stateset-agents gemma-4-31b --json-output
-stateset-agents gemma-4-31b --starter-profile memory --json-output
-stateset-agents gemma-4-31b --list-profiles --json-output
-stateset-agents gemma-4-31b --write-config ./gemma4_31b.json
-stateset-agents gemma-4-31b --config ./gemma4_31b.json --no-dry-run
-python examples/finetune_gemma4_31b_gspo.py --dry-run
-```
-
-The `memory` profile uses 4-bit quantization and smaller context/group sizes for tighter GPU budgets.
-
-### GLM 5.1 starter path
-
-`zai-org/GLM-5.1` is a 754B-parameter MoE model (QLoRA-only, vLLM generation, multi-node or 8× H200/B200 serving). It ships as a starter module + example script rather than a CLI command:
-
-```bash
-pip install "stateset-agents[training,trl,vllm]"
-python examples/finetune_glm5_1_gspo.py --dry-run
-python examples/finetune_glm5_1_gspo.py --config ./glm5_1.json --no-dry-run
-```
-
-Import the helpers directly for programmatic use:
-
-```python
-from stateset_agents.training.glm5_1_starter import (
-    get_glm5_1_config,
-    describe_glm5_1_starter_profiles,
-    run_glm5_1_config,
-)
-```
-
-See `docs/GLM5_1_HOSTING_PLAN.md` for the FP8 multi-node topology.
-
-### GLM 5.2 starter path
-
-`zai-org/GLM-5.2` is a 754B-parameter MoE model (QLoRA-only, vLLM generation, multi-node or 8× H200/B200 serving). It ships as a starter module + example script rather than a CLI command:
-
-```bash
-pip install "stateset-agents[training,trl,vllm]"
-python examples/finetune_glm5_2_gspo.py --dry-run
-python examples/finetune_glm5_2_gspo.py --config ./glm5_2.json --no-dry-run
-```
-
-Import the helpers directly for programmatic use:
-
-```python
-from stateset_agents.training.glm5_2_starter import (
-    get_glm5_2_config,
-    describe_glm5_2_starter_profiles,
-    run_glm5_2_config,
-)
-```
-
-See `docs/GLM5_2_HOSTING_PLAN.md` for the FP8 multi-node topology.
+Every CLI starter accepts the same flags: `--json-output`, `--list-profiles`,
+`--starter-profile NAME`, `--write-config PATH`, `--config PATH --no-dry-run`.
+The GLM starters are importable too (`from stateset_agents.training.glm5_2_starter
+import get_glm5_2_config, run_glm5_2_config`), as are the others.
 
 ### Supported models
 

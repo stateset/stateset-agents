@@ -7,6 +7,7 @@ contains all three comparison sections.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -40,3 +41,28 @@ def test_comparisons_doc_has_all_three_sections() -> None:
     assert "## StateSet Agents vs Hugging Face TRL" in contents
     assert "## StateSet Agents vs Traditional RL Frameworks" in contents
     assert "## StateSet Agents vs LLM Orchestration Frameworks" in contents
+
+
+def test_readme_marks_exactly_one_latest_release() -> None:
+    """Guard against the version-bump sed mangling What's-new headers.
+
+    Release bumps rewrite version strings across the README; twice now that
+    rewrote a historical ``**vX.Y.Z:**`` heading into a second block claiming
+    to be the latest release. Exactly one block may carry the marker, and its
+    version must match the packaged version.
+    """
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    markers = re.findall(r"\*\*v([0-9.]+) \(latest release", readme)
+
+    assert len(markers) == 1, (
+        f"README must mark exactly one release as latest; found {len(markers)}: "
+        f"{markers}"
+    )
+
+    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    version_match = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE)
+    assert version_match is not None, "could not read version from pyproject.toml"
+    assert markers[0] == version_match.group(1), (
+        f"README's latest-release block says v{markers[0]} but pyproject.toml "
+        f"says {version_match.group(1)}"
+    )
