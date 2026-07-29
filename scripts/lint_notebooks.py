@@ -42,6 +42,7 @@ BUNDLED_NOTEBOOKS = [
     "ecommerce_returns_agent.ipynb",
     "judge_driven_training_loop.ipynb",
     "rag_agent_finetune.ipynb",
+    "improve_your_agent_5min.ipynb",
 ]
 
 # Pattern → human-readable diagnostic. False positives can be suppressed

@@ -154,6 +154,8 @@ asyncio.run(main())
 pip install stateset-agents          # latest release (v0.19.0)
 ```
 
+**Five-minute demo:** `bash examples/five_minute_demo.sh` — offline, no GPU, no API key: ingest sample conversation logs, grade + curate them with `stateset-agents improve`, and see a curated training set land in under a minute. (Colab version: [`notebooks/improve_your_agent_5min.ipynb`](notebooks/improve_your_agent_5min.ipynb).)
+
 > PyPI tracks the release tags. For unreleased work on master:
 >
 > ```bash
