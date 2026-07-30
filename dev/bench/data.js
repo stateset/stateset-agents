@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785318277980,
+  "lastUpdate": 1785404172097,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -124,6 +124,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.996213259404273e-8",
             "extra": "mean: 470.74468847180725 nsec\nrounds: 103746"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "e04ce40997d30499d48cf562c318e6de7568ac3c",
+          "message": "docs: lead README with the improvement loop; condense model starters and What's-new\n\n- New 'The improvement loop' section up top: ingest -> improve -> train,\n  the five-minute offline demo, and MCP registration (every command verified\n  end-to-end, including a corrected 'ingest --input' invocation).\n- Collapsed six near-identical model starter sections into one table plus the\n  unified finetune driver (~100 lines removed).\n- Trimmed What's-new from six release blocks to three and fixed two blocks\n  both claiming 'latest release' (release-sed damage).\n- New guard test asserting exactly one latest-release marker, matching\n  pyproject's version, so the bump can't mangle it again.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-29T16:55:20Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/e04ce40997d30499d48cf562c318e6de7568ac3c"
+        },
+        "date": 1785404171799,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8551.784151359052,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000149631883157013",
+            "extra": "mean: 116.9346632586698 usec\nrounds: 1369"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9145.33328868003,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014828026730397644",
+            "extra": "mean: 109.34538615861997 usec\nrounds: 1994"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6656.749901168978,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000157818927227652",
+            "extra": "mean: 150.22345962320023 usec\nrounds: 2972"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 828.3621598673008,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003191910166108091",
+            "extra": "mean: 1.2072014493759526 msec\nrounds: 721"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 161.79019569117554,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006106814665457789",
+            "extra": "mean: 6.1808442454003565 msec\nrounds: 163"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2259285.905973281,
+            "unit": "iter/sec",
+            "range": "stddev: 1.0570662033027616e-7",
+            "extra": "mean: 442.61773038822577 nsec\nrounds: 107829"
           }
         ]
       }
