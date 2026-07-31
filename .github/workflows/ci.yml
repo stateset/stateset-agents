@@ -33,7 +33,16 @@ jobs:
 
     - name: Verify lock files are in sync with pyproject.toml
       run: |
-        pip install pip-tools
+        # pip is capped below 26 for this step only. pip-tools reaches into
+        # pip's private API (`from pip._internal.utils.compat import
+        # stdlib_pkgs`), which pip 26 removed, so `pip install --upgrade pip`
+        # above silently breaks every pip-tools invocation:
+        #   ImportError: cannot import name 'stdlib_pkgs'
+        # Verified: pip-tools 7.5.3 AND the current 7.6.0 both fail on pip
+        # 26.2 and both work on pip 25.3 — so upgrading pip-tools is not a
+        # fix and the cap has to be on pip. Remove this once a pip-tools
+        # release stops using the private import.
+        pip install "pip<26" pip-tools
         make lock-check
 
     - name: Run publish readiness checks
