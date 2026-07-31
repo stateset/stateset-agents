@@ -32,7 +32,7 @@ jobs:
       name: ${{ (github.event_name == 'release' || github.event_name == 'push') && 'pypi' || github.event.inputs.environment }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
@@ -134,7 +134,7 @@ jobs:
     if: github.event.inputs.environment == 'pypi' || github.event_name == 'release' || github.event_name == 'push'
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -200,7 +200,7 @@ jobs:
     if: github.event.inputs.environment == 'pypi' || github.event_name == 'release' || github.event_name == 'push'
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Set up Python
       uses: actions/setup-python@v5
