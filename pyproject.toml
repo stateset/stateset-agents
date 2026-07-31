@@ -167,6 +167,18 @@ mcp = [
     # API this server is written against until that migration is done.
     "mcp>=1.25.0,<2",
 ]
+remote = [
+    # `stateset-agents train-remote` runs the SFT job from `improve` on
+    # another machine. The base extra covers the local provider, which only
+    # needs the training stack the job itself uses.
+    "stateset-agents[training]",
+]
+modal = [
+    # Modal provider for `train-remote --provider modal`. Not a core
+    # dependency: the framework imports and lists the provider without it,
+    # and only errors — naming this extra — at submit time.
+    "modal>=0.63",
+]
 full = [
     "stateset-agents[training,api,hpo,auto-research,vllm,rust]",
 ]

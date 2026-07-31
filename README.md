@@ -50,6 +50,14 @@ stateset-agents improve run \
 python scripts/sft_from_curated.py --dataset improved/curated.jsonl --base-model <model>
 ```
 
+**No GPU?** Step 3 is the only part that needs one. `train-remote` runs that
+same job on rented compute:
+
+```bash
+stateset-agents train-remote --provider modal --gpu A100 \
+  --dataset improved/curated.jsonl --base-model <model>
+```
+
 `improve` writes three things: `improve_summary.json` (machine‑readable scores
 and per‑reward breakdown), `curated.jsonl` (the turns above your threshold, ready
 to train on), and `next_steps.md` (runnable training commands — regression‑tested
