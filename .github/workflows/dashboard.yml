@@ -54,7 +54,7 @@ jobs:
       # output so it can be inspected or manually deployed.
       - name: Upload bundle stats
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dashboard-dist
           path: dashboard/dist
