@@ -50,6 +50,14 @@ stateset-agents improve run \
 python scripts/sft_from_curated.py --dataset improved/curated.jsonl --base-model <model>
 ```
 
+**No GPU?** Step 3 is the only part that needs one. `train-remote` runs that
+same job on rented compute:
+
+```bash
+stateset-agents train-remote --provider modal --gpu A100 \
+  --dataset improved/curated.jsonl --base-model <model>
+```
+
 `improve` writes three things: `improve_summary.json` (machine‑readable scores
 and per‑reward breakdown), `curated.jsonl` (the turns above your threshold, ready
 to train on), and `next_steps.md` (runnable training commands — regression‑tested
@@ -79,7 +87,11 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.19.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.20.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Run the fine‑tune step without a GPU.** `stateset-agents train-remote` runs the SFT job from `improve` on rented compute (`--provider local|modal`), closing the last gap in the improvement loop. The job itself is unchanged whichever provider runs it, and remote runs install a pinned published package rather than syncing your working tree. [`docs/CLI_REFERENCE.md`](docs/CLI_REFERENCE.md)
+
+**v0.19.0:**
 
 - **MCP server.** `stateset-agents mcp` (`pip install stateset-agents[mcp]`) exposes the improvement loop as tools for any MCP client — Claude Code/Desktop or your own agent. Seven tools, stdio transport, dry‑run‑only training. [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)
 
@@ -181,7 +193,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.19.0)
+pip install stateset-agents          # latest release (v0.20.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -864,7 +876,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.19.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.20.0`).
 
 Other entry points:
 

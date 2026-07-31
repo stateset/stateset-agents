@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateset-agents"
-version = "0.19.0"
+version = "0.20.0"
 description = "Production-ready RL framework for training multi-turn conversational AI agents using GRPO and GSPO"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -166,6 +166,18 @@ mcp = [
     # restructured under mcp.server.mcpserver) — stick to the 1.x FastMCP
     # API this server is written against until that migration is done.
     "mcp>=1.25.0,<2",
+]
+remote = [
+    # `stateset-agents train-remote` runs the SFT job from `improve` on
+    # another machine. The base extra covers the local provider, which only
+    # needs the training stack the job itself uses.
+    "stateset-agents[training]",
+]
+modal = [
+    # Modal provider for `train-remote --provider modal`. Not a core
+    # dependency: the framework imports and lists the provider without it,
+    # and only errors — naming this extra — at submit time.
+    "modal>=0.63",
 ]
 full = [
     "stateset-agents[training,api,hpo,auto-research,vllm,rust]",

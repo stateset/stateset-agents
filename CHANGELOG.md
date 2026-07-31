@@ -7,7 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-31 — train-remote: run the fine-tune step without a GPU
+
 ### Added
+
+- **`stateset-agents train-remote`.** Runs the SFT job from `improve run` on
+  local or rented compute, closing the last gap in the improvement loop —
+  `ingest` and `improve` are CPU-only and cheap, but the fine-tune that
+  consumes `curated.jsonl` needs a GPU. New `stateset_agents.remote` package:
+  a provider-agnostic `RemoteJobSpec`, a five-method stateless `RemoteExecutor`
+  contract, a `LocalExecutor` (subprocess), and a `ModalExecutor`. New extras:
+  `remote` and `modal` (`pip install "stateset-agents[modal]"`).
+
+  ```bash
+  stateset-agents train-remote --provider modal --gpu A100 \
+      --dataset improved/curated.jsonl --base-model Qwen/Qwen3.5-0.8B
+  ```
+
+  Remote runs install a pinned published `stateset-agents[training]` rather
+  than syncing the local working tree, so a run is reproducible; the tradeoff
+  is that testing an unreleased change remotely needs a dev release. A run
+  succeeds only if it actually produces an adapter — a container that exits
+  cleanly having written nothing is reported as a failure, not as success with
+  an empty output directory.
+
+  **Known limitation:** the Modal network transport is written against the
+  documented SDK API but has not yet been verified against a live Modal
+  account. `--provider local` is verified end-to-end. See
+  `docs/superpowers/specs/2026-07-30-remote-executor-design.md`.
 
 - **Five-minute onboarding demo.** `examples/five_minute_demo.sh` — a
   self-contained, offline, no-GPU script that writes sample customer-support
@@ -16,6 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and prints the graded report — the fastest path from `pip install
   stateset-agents` to a curated training set. Colab equivalent:
   `notebooks/improve_your_agent_5min.ipynb`.
+
+### Changed
+
+- **The SFT job moved into the installed package** as
+  `stateset_agents.training.sft`, runnable via `python -m
+  stateset_agents.training.sft`. `scripts/` is excluded from the wheel, so a
+  remote worker that installs the package could not have run the job from
+  there. `scripts/sft_from_curated.py` is now a thin CLI that re-exports every
+  public name it previously defined — existing callers and imports are
+  unaffected.
 
 ## [0.19.0] - 2026-07-28 — MCP server: the improvement loop as tools for any MCP client
 
