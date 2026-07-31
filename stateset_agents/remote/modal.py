@@ -1,23 +1,34 @@
 """Run the fine-tune job on Modal.
 
-The remote environment is a **pinned install of the published package**, not a
-sync of the local working tree. That is the single most important decision in
-this module: it is what makes a remote run reproducible, and what stops this
-executor from rotting every time the local dependency matrix shifts. The cost
-is that testing an unreleased change remotely requires a dev release.
+Two decisions shape this module.
 
-The ``modal`` SDK is imported lazily, mirroring the ``RUNPOD_AVAILABLE``
-pattern in ``deployment/runpod_deployment.py`` — the framework imports fine
-without it.
+**Artifacts ship, not code.** The container installs a pinned, published
+``stateset-agents[training]`` rather than syncing the local working tree. That
+is what makes a remote run reproducible and what stops this executor rotting
+every time the local dependency matrix shifts. The cost is real: testing an
+unreleased change remotely needs a dev release. It also means the job must be
+importable from the wheel — which is why it lives in
+``stateset_agents.training.sft`` and not in ``scripts/`` (excluded from the
+wheel by ``[tool.setuptools.packages.find]``).
+
+**Status comes from the work, never from having submitted.** The job's own
+return value decides SUCCEEDED or FAILED, and a run that produces no adapter
+fails even if the container exited cleanly. An earlier version reported
+success on submission alone; a user would then point ``serve --checkpoint`` at
+a directory that was never written, and discover the problem far from its
+cause.
+
+The ``modal`` SDK is optional and resolved at call time, so installing it
+later works without restarting.
 """
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterator
 
 from stateset_agents.exceptions import IMPORT_EXCEPTIONS
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
@@ -37,6 +48,7 @@ except IMPORT_EXCEPTIONS:
 __all__ = ["MODAL_AVAILABLE", "ModalExecutor"]
 
 _APP_NAME = "stateset-agents-sft"
+_DEFAULT_MOUNT = "/outputs"
 
 
 def _running_version() -> str:
@@ -45,11 +57,31 @@ def _running_version() -> str:
     return str(__version__)
 
 
+def _remote_entrypoint(payload: dict[str, Any]) -> dict[str, Any]:
+    """The body that executes inside the container.
+
+    Imports from the installed package only — it has no checkout to fall back
+    on. Returns the job outcome plus the adapter's location in the mounted
+    volume so the caller can download it.
+    """
+    from stateset_agents.training.sft import run_sft_job
+
+    outcome = run_sft_job(payload)
+    produced = Path(outcome["output_dir"])
+    outcome["artifacts"] = (
+        sorted(str(p.relative_to(produced)) for p in produced.rglob("*") if p.is_file())
+        if produced.exists()
+        else []
+    )
+    return outcome
+
+
 @dataclass
 class _ModalJob:
     spec: RemoteJobSpec
     status: JobStatus
-    logs: list[str]
+    logs: list[str] = field(default_factory=list)
+    fetched: Path | None = None
 
 
 class ModalExecutor(RemoteExecutor):
@@ -57,11 +89,12 @@ class ModalExecutor(RemoteExecutor):
 
     name = "modal"
 
-    def __init__(self) -> None:
+    def __init__(self, remote_mount: str = _DEFAULT_MOUNT) -> None:
         self._jobs: dict[str, _ModalJob] = {}
-        #: Recorded so callers (and tests) can inspect how the function was
-        #: provisioned without reaching into the SDK.
-        self.last_function_kwargs: dict[str, Any] = {}
+        #: Where the adapter volume is mounted inside the container.
+        self.remote_mount = remote_mount
+
+    # -- SDK plumbing ------------------------------------------------------
 
     def _require_sdk(self) -> Any:
         if not MODAL_AVAILABLE:
@@ -75,43 +108,105 @@ class ModalExecutor(RemoteExecutor):
         return sdk
 
     def build_image(self, spec: RemoteJobSpec) -> Any:
-        """Construct the Modal image the training job runs in."""
+        """Construct the container image: a pinned install, nothing local."""
         sdk = self._require_sdk()
         version = spec.package_version or _running_version()
         return sdk.Image.debian_slim(python_version="3.10").pip_install(
             f"stateset-agents[training]=={version}"
         )
 
-    def _spawn(self, spec: RemoteJobSpec, image: Any) -> str:
-        """Provision the function and start the job. Returns a provider job id.
+    def _run_remote(
+        self, spec: RemoteJobSpec, job_id: str
+    ) -> tuple[dict[str, Any], Any]:
+        """Provision and run the job. Returns (outcome, volume).
 
-        Isolated so the transport layer — the only part not covered by CI —
-        is a single seam.
+        The single seam not covered by CI — everything the executor *decides*
+        is tested around it, but the network transport itself is verified
+        manually against a live account.
         """
         sdk = self._require_sdk()
-        self.last_function_kwargs = {
-            "image": image,
-            "gpu": spec.gpu,
-            "timeout": spec.timeout_s,
-        }
-        sdk.App(_APP_NAME)
-        return uuid.uuid4().hex
+        image = self.build_image(spec)
+        volume = sdk.Volume.from_name(
+            f"stateset-sft-{job_id}", create_if_missing=True
+        )
+        app = sdk.App(_APP_NAME)
+
+        function = app.function(
+            image=image,
+            gpu=spec.gpu,
+            timeout=spec.timeout_s,
+            volumes={self.remote_mount: volume},
+        )(_remote_entrypoint)
+
+        payload = spec.to_dict()
+        # Redirect the job's output into the mounted volume; the caller's
+        # requested output_dir is a *local* path and means nothing in there.
+        payload["output_dir"] = f"{self.remote_mount.rstrip('/')}/{job_id}"
+
+        with app.run():
+            outcome = function.remote(payload)
+
+        return outcome, volume
+
+    # -- Executor interface ------------------------------------------------
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
-        image = self.build_image(spec)
+        job_id = uuid.uuid4().hex
+        handle = JobHandle(provider=self.name, job_id=job_id)
+
         try:
-            job_id = self._spawn(spec, image)
+            outcome, volume = self._run_remote(spec, job_id)
         except RemoteExecutionError:
             raise
-        except Exception as exc:  # provider SDK failure
+        except Exception as exc:  # provider SDK / transport failure
             raise RemoteExecutionError.wrap(
-                exc, "failed to submit job to Modal", provider=self.name
+                exc, "failed to run job on Modal", provider=self.name
             ) from exc
 
+        logs = list(outcome.get("logs", []))
+
+        if outcome.get("returncode", 1) != 0:
+            self._jobs[job_id] = _ModalJob(spec, JobStatus.FAILED, logs)
+            return handle
+
+        if spec.dry_run:
+            # Nothing is written on a dry run — that is the whole point.
+            self._jobs[job_id] = _ModalJob(spec, JobStatus.SUCCEEDED, logs)
+            return handle
+
+        try:
+            downloaded = self._download(volume, job_id, spec.output_dir)
+        except Exception as exc:
+            logs.append(f"failed to download adapter: {exc}")
+            self._jobs[job_id] = _ModalJob(spec, JobStatus.FAILED, logs)
+            return handle
+
+        if not downloaded:
+            logs.append(
+                "job exited cleanly but produced no artifacts — "
+                "nothing was written to the output volume"
+            )
+            self._jobs[job_id] = _ModalJob(spec, JobStatus.FAILED, logs)
+            return handle
+
         self._jobs[job_id] = _ModalJob(
-            spec=spec, status=JobStatus.SUCCEEDED, logs=[]
+            spec, JobStatus.SUCCEEDED, logs, fetched=spec.output_dir
         )
-        return JobHandle(provider=self.name, job_id=job_id)
+        return handle
+
+    def _download(self, volume: Any, job_id: str, dest: Path) -> list[Path]:
+        """Copy the adapter out of the volume onto local disk."""
+        volume.reload()
+        written: list[Path] = []
+        for entry in volume.iterdir(job_id, recursive=True):
+            relative = Path(entry.path).relative_to(job_id)
+            target = dest / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with open(target, "wb") as handle:
+                for chunk in volume.read_file(entry.path):
+                    handle.write(chunk)
+            written.append(target)
+        return written
 
     def _job(self, handle: JobHandle) -> _ModalJob:
         try:
@@ -138,4 +233,5 @@ class ModalExecutor(RemoteExecutor):
 
     def cancel(self, handle: JobHandle) -> None:
         job = self._job(handle)
-        job.status = JobStatus.CANCELLED
+        if not job.status.is_terminal:
+            job.status = JobStatus.CANCELLED

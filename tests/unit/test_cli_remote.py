@@ -121,3 +121,71 @@ class TestFailurePaths:
         )
 
         assert result.exit_code != 0
+
+
+class TestOptionPassthrough:
+    """Resource flags must reach the executor, not be silently dropped."""
+
+    def _capture_spec(self, monkeypatch):
+        captured = {}
+
+        from stateset_agents.remote.local import LocalExecutor
+
+        original = LocalExecutor.submit
+
+        def spy(self, spec):
+            captured["spec"] = spec
+            return original(self, spec)
+
+        monkeypatch.setattr(LocalExecutor, "submit", spy)
+        return captured
+
+    def test_resource_and_hyperparameter_flags_reach_the_spec(
+        self, dataset, tmp_path, monkeypatch
+    ):
+        captured = self._capture_spec(monkeypatch)
+
+        result = runner.invoke(
+            app,
+            [
+                "train-remote",
+                "--provider", "local",
+                "--dataset", str(dataset),
+                "--base-model", "Qwen/Qwen3.5-0.8B",
+                "--output-dir", str(tmp_path / "out"),
+                "--gpu", "H100",
+                "--timeout", "900",
+                "--package-version", "1.2.3",
+                "--lora-r", "8",
+                "--num-epochs", "7",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        spec = captured["spec"]
+        assert spec.gpu == "H100"
+        assert spec.timeout_s == 900
+        assert spec.package_version == "1.2.3"
+        assert spec.lora_r == 8
+        assert spec.num_epochs == 7
+
+    def test_invalid_hyperparameter_is_rejected_before_submitting(
+        self, dataset, tmp_path, monkeypatch
+    ):
+        captured = self._capture_spec(monkeypatch)
+
+        result = runner.invoke(
+            app,
+            [
+                "train-remote",
+                "--provider", "local",
+                "--dataset", str(dataset),
+                "--base-model", "Qwen/Qwen3.5-0.8B",
+                "--num-epochs", "0",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "num_epochs" in result.output
+        assert "spec" not in captured

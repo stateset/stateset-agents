@@ -1,7 +1,8 @@
 # Remote Fine-Tune Executor — Design
 
 **Date:** 2026-07-30
-**Status:** Approved, pending implementation plan
+**Status:** Implemented. Amended 2026-07-31 — see "Corrections found during
+implementation", which changed two decisions in this document.
 
 ## Problem
 
@@ -206,6 +207,47 @@ TDD order:
 
 Modal's real network path is **not** covered by CI. It is manually verified
 and marked as such; the test suite will not imply otherwise.
+
+## Corrections found during implementation
+
+Two decisions above were wrong. Both are recorded here rather than silently
+rewritten, because each was a plausible-looking choice that testing caught.
+
+**1. The job could not live in `scripts/`.** This document froze
+`scripts/sft_from_curated.py` as the job contract. But `scripts*` is excluded
+from the wheel by `[tool.setuptools.packages.find]`, so a container that
+`pip install`s the pinned package would not contain that file — the Modal
+design as specified was unbuildable, not merely untested. The logic now lives
+in `stateset_agents.training.sft`, runnable as
+`python -m stateset_agents.training.sft`, which is the only invocation a
+worker holding a wheel and no checkout has. `scripts/sft_from_curated.py` is
+now a thin CLI that re-exports every public name it previously defined, so
+existing callers and its own tests are unaffected. Both executors invoke the
+packaged module, so local and remote run byte-identical code.
+
+**2. "Untested transport" understated a real defect.** The first
+implementation hardcoded `status=SUCCEEDED` on submission and returned an
+output directory that was never written. With the SDK installed, the CLI
+printed `Done. Adapter written to outputs/sft_v1` and exited 0 having trained
+nothing — a silent false success, the worst available failure mode, and worse
+than an unimplemented feature.
+
+The cause was in the tests, not only the code: every Modal test asserted on
+values the executor had *recorded* (`last_function_kwargs`) rather than on any
+effect in the world, so a suite of passing assertions certified a component
+that did nothing. `tests/unit/fake_modal.py` replaces those mocks with a
+behavioural fake that really executes the registered function and really
+stores what it writes, so the tests assert an adapter arrives on local disk.
+
+Consequently, status is now derived from the job's own return value, and a run
+that exits cleanly but produces no artifacts is reported as FAILED with an
+explanatory log line rather than as success.
+
+**Not fixed:** `JobHandle` originally claimed a job could be polled from a
+later process. Both executors run synchronously inside `submit()` and hold
+outcomes in memory, so that is false; the docstring now says so. Making it
+true needs asynchronous submission (`Function.spawn` + `FunctionCall.from_id`)
+and is deliberately left undone rather than half-claimed.
 
 ## Risks
 

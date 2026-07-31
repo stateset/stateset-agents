@@ -208,6 +208,27 @@ class TestImproveRun:
         assert "examples/finetune_gspo.py" in next_steps
         assert str(curated_path) in next_steps
 
+    def test_next_steps_offers_a_path_for_users_without_a_gpu(
+        self, tmp_path: Path
+    ) -> None:
+        """Step 3 is the only GPU-bound step; next_steps.md must say how to
+        run it without one, or the loop dead-ends for those users."""
+        transcripts_dir = _make_transcripts_dir(tmp_path)
+        output_dir = tmp_path / "improved"
+        result = runner.invoke(
+            app,
+            [
+                "improve", "run",
+                "--transcripts", str(transcripts_dir),
+                "--reward", "customer_support",
+                "--output", str(output_dir),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        next_steps = (output_dir / "next_steps.md").read_text(encoding="utf-8")
+        assert "train-remote" in next_steps
+
     def test_next_steps_commands_parse_against_real_cli_surfaces(
         self, tmp_path: Path
     ) -> None:

@@ -8,6 +8,7 @@ submit -> poll -> fetch path is exercisable on CPU-only CI.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -130,3 +131,71 @@ class TestLocalExecutorRun:
 
         assert result.status is JobStatus.FAILED
         assert any("timed out" in line for line in result.logs)
+
+
+class TestWaitPolling:
+    """`wait()` is shared by every provider, so its polling is worth pinning."""
+
+    def test_polls_until_the_job_reaches_a_terminal_state(self, spec):
+        from stateset_agents.remote.executor import RemoteExecutor
+        from stateset_agents.remote.job import RemoteJobResult
+
+        class SlowExecutor(RemoteExecutor):
+            name = "slow"
+
+            def __init__(self):
+                self.polls = 0
+
+            def submit(self, spec):
+                return JobHandle(provider=self.name, job_id="1")
+
+            def status(self, handle):
+                self.polls += 1
+                return (
+                    JobStatus.SUCCEEDED if self.polls >= 3 else JobStatus.RUNNING
+                )
+
+            def logs(self, handle):
+                yield "done"
+
+            def fetch(self, handle, dest=None):
+                return Path("/tmp/adapter")
+
+            def cancel(self, handle):
+                pass
+
+        executor = SlowExecutor()
+        result = executor.wait(executor.submit(spec), poll_interval_s=0.01)
+
+        assert executor.polls == 3
+        assert isinstance(result, RemoteJobResult)
+        assert result.status is JobStatus.SUCCEEDED
+
+    def test_does_not_fetch_when_the_job_failed(self, spec):
+        from stateset_agents.remote.executor import RemoteExecutor
+
+        class FailingExecutor(RemoteExecutor):
+            name = "failing"
+            fetched = False
+
+            def submit(self, spec):
+                return JobHandle(provider=self.name, job_id="1")
+
+            def status(self, handle):
+                return JobStatus.FAILED
+
+            def logs(self, handle):
+                yield "boom"
+
+            def fetch(self, handle, dest=None):
+                type(self).fetched = True
+                return Path("/tmp/nope")
+
+            def cancel(self, handle):
+                pass
+
+        executor = FailingExecutor()
+        result = executor.wait(executor.submit(spec), poll_interval_s=0.01)
+
+        assert result.output_dir is None
+        assert FailingExecutor.fetched is False

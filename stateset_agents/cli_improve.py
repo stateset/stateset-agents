@@ -200,6 +200,18 @@ def _render_next_steps(summary: dict[str, Any], output_dir: Path) -> str:
         "    --num-epochs 3 --lora-r 16",
         "```",
         "",
+        "No GPU? This is the only step that needs one. Run the same job on "
+        "rented compute instead (requires `pip install "
+        '"stateset-agents[modal]"`):',
+        "",
+        "```bash",
+        "stateset-agents train-remote \\",
+        "    --provider modal --gpu A100 \\",
+        f"    --dataset {sft_dataset_path} \\",
+        "    --base-model Qwen/Qwen3.5-0.8B \\",
+        f"    --output-dir {sft_output_dir}",
+        "```",
+        "",
         "## Option B — continue with RL (GSPO) using the same reward",
         "",
         "GSPO trains against the reward function live (an environment + "

@@ -23,9 +23,11 @@ from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
 
 __all__ = ["LocalExecutor"]
 
-_SFT_SCRIPT = (
-    Path(__file__).resolve().parents[2] / "scripts" / "sft_from_curated.py"
-)
+#: The job, as an installed module. Deliberately not ``scripts/
+#: sft_from_curated.py``: ``scripts*`` is excluded from the wheel, so a remote
+#: worker cannot run it. Using the module here means the local and remote
+#: providers execute byte-identical code.
+_SFT_MODULE = "stateset_agents.training.sft"
 
 
 @dataclass
@@ -51,7 +53,7 @@ class LocalExecutor(RemoteExecutor):
 
         Isolated so tests can substitute a stand-in process.
         """
-        return [str(_SFT_SCRIPT)]
+        return ["-m", _SFT_MODULE]
 
     def _job(self, handle: JobHandle) -> _LocalJob:
         try:

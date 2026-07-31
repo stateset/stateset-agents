@@ -53,10 +53,13 @@ class JobStatus(enum.Enum):
 
 @dataclass(frozen=True)
 class JobHandle:
-    """Opaque, serializable pointer to a submitted job.
+    """Opaque pointer to a submitted job.
 
-    Serializable so a job submitted in one process can be polled from another
-    — the executors are stateless and hold no in-memory job table.
+    Serializable, but note the current limit: both shipped executors run the
+    job synchronously inside ``submit()`` and keep outcomes in memory, so a
+    handle is only meaningful to the process that created it. Reconnecting to
+    a job from a later process needs asynchronous submission (Modal's
+    ``Function.spawn`` + ``FunctionCall.from_id``), which is not implemented.
     """
 
     provider: str

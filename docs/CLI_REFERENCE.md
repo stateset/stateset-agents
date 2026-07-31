@@ -52,10 +52,15 @@ stateset-agents train-remote --dataset improved/curated.jsonl \
     --base-model Qwen/Qwen3.5-0.8B --dry-run
 ```
 
-The job itself is `scripts/sft_from_curated.py` — identical whichever provider
-runs it. Remote runs install a pinned published `stateset-agents[training]`
-rather than syncing your working tree, so a remote run is reproducible; the
-tradeoff is that testing an unreleased change remotely needs a dev release.
+The job itself is `stateset_agents.training.sft` — identical whichever provider
+runs it (`scripts/sft_from_curated.py` is a thin CLI over the same code).
+Remote runs install a pinned published `stateset-agents[training]` rather than
+syncing your working tree, so a remote run is reproducible; the tradeoff is
+that testing an unreleased change remotely needs a dev release.
+
+A remote run succeeds only if it actually produces an adapter: a container
+that exits cleanly having written nothing is reported as a failure, not a
+success with an empty output directory.
 
 #### Options
 
