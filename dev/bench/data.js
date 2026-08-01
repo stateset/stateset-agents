@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785491513132,
+  "lastUpdate": 1785575581722,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -248,6 +248,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.052715447266533e-8",
             "extra": "mean: 473.83718863126376 nsec\nrounds: 105742"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "f53e9d8a0c73088e95b0da4c987a853b4ac96014",
+          "message": "fix(ci): make train-remote CLI tests width-proof; unbreak lock-check\n\nTwo separate CI failures on master, one mine and one not.\n\nMine: test_cli_remote asserted \"--provider\" appears in `--help` output.\nOn the Windows 3.13 runner rich renders into a narrow terminal and\ntruncates the flag, so the test failed for reasons unrelated to the CLI.\nReproduced locally at COLUMNS=40. test_cli_improve already documented this\nexact trap in _help_flags and I did not apply the lesson. Registration is\nnow asserted against the parser itself (rendering-independent) and the\nremaining help-text test runs under a pinned wide, plain terminal.\n\nNot mine: publish-readiness broke because `pip install --upgrade pip` now\ninstalls pip 26, which removed the private `pip._internal.utils.compat.\nstdlib_pkgs` that pip-tools imports — so `make lock-check` dies before it\nchecks anything. Verified in a clean venv that pip-tools 7.5.3 *and* the\nnewer 7.6.0 both fail on pip 26.2 and both work on pip 25.3, so upgrading\npip-tools is not the fix; pip is capped for that step only, with the\nfinding recorded inline.\n\nAlso confirmed the lock files themselves are unaffected by this release:\nextras never propagate into them (vllm/optuna/deepspeed are absent; the\nlone `mcp` entry is `via semgrep`), so the new `remote`/`modal` extras\nrequire no lock regeneration.\n\nThe Benchmark workflow has failed on every run since at least 2026-07-28\n(`pytest benchmarks/` exits 5 — that directory holds scripts, not tests).\nPre-existing and untouched here.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-31T23:16:22Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/f53e9d8a0c73088e95b0da4c987a853b4ac96014"
+        },
+        "date": 1785575581255,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 14167.590861289242,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008326181460825144",
+            "extra": "mean: 70.58363061092805 usec\nrounds: 1849"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 15021.42857835728,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000006914422303378233",
+            "extra": "mean: 66.57156440105769 usec\nrounds: 2663"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 11031.129715568055,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008315569573008569",
+            "extra": "mean: 90.65254654640822 usec\nrounds: 3996"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1311.3283625179838,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013107660674266643",
+            "extra": "mean: 762.5855038167725 usec\nrounds: 1048"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 326.26097523933475,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0003543639924381293",
+            "extra": "mean: 3.065030990195599 msec\nrounds: 306"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 3635163.597820326,
+            "unit": "iter/sec",
+            "range": "stddev: 2.9790337764699448e-8",
+            "extra": "mean: 275.0907828741486 nsec\nrounds: 192827"
           }
         ]
       }
