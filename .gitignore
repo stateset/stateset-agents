@@ -276,3 +276,10 @@ mlruns/
 .cache/
 .parquet_cache/
 .worktrees/
+
+# Backup/temp artifacts. `make lock-check` writes requirements-*.txt.bak
+# before regenerating, and an interrupted run leaves them behind — where a
+# `git add -A` will happily commit them and fail check_repo_hygiene.py.
+*.bak
+*.orig
+*.rej
