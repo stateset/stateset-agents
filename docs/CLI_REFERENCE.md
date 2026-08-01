@@ -47,6 +47,11 @@ stateset-agents train-remote --dataset improved/curated.jsonl \
 stateset-agents train-remote --provider modal --gpu A100 \
     --dataset improved/curated.jsonl --base-model Qwen/Qwen3.5-0.8B
 
+# Or on RunPod (GPU names are RunPod's own, e.g. "NVIDIA RTX A4000")
+export RUNPOD_API_KEY=...
+stateset-agents train-remote --provider runpod --gpu "NVIDIA RTX A4000" \
+    --dataset improved/curated.jsonl --base-model Qwen/Qwen3.5-0.8B
+
 # See the plan without training (works with no GPU)
 stateset-agents train-remote --dataset improved/curated.jsonl \
     --base-model Qwen/Qwen3.5-0.8B --dry-run
@@ -66,7 +71,7 @@ success with an empty output directory.
 
 - `--dataset PATH`: Chat-format JSONL to train on (required).
 - `--base-model TEXT`: Hugging Face base model (required).
-- `--provider [local|modal]`: Where to run. Default `local`.
+- `--provider [local|modal|runpod]`: Where to run. Default `local`.
 - `--output-dir PATH`: Adapter output directory. Default `outputs/sft_v1`.
 - `--num-epochs`, `--lora-r`, `--lora-alpha`, `--learning-rate`,
   `--max-length`, `--per-device-batch-size`,
@@ -77,8 +82,27 @@ success with an empty output directory.
   running version.
 - `--dry-run`: Print the training plan without training.
 
-Requires the `modal` extra for `--provider modal`:
-`pip install "stateset-agents[modal]"`.
+#### Providers
+
+| Provider | Needs | Transport | Notes |
+|---|---|---|---|
+| `local` | a GPU on this machine | none | Verified end-to-end |
+| `runpod` | `RUNPOD_API_KEY`, an SSH keypair, `ssh`/`scp` on PATH | SSH/SCP to a rented pod | **Verified end-to-end on live hardware** (RTX A4000, Qwen3.5-0.8B, ~5 min). GPU names are RunPod's own (`"NVIDIA RTX A4000"`) |
+| `modal` | `pip install "stateset-agents[modal]"` | Modal Volume | Transport **not** yet verified against a live account |
+
+RunPod creates the pod with TCP 22 exposed and your public key
+(`~/.ssh/id_ed25519.pub` or `id_rsa.pub`) injected, copies the dataset in,
+runs the job, copies the adapter back, and **terminates the pod on every exit
+path** — including failures and timeouts — so nothing keeps billing. No
+network volume is created, so there is no storage cost after the run.
+
+To test an unreleased change on real hardware, point the RunPod executor at a
+locally built wheel instead of PyPI (the pinned version cannot resolve before
+it is published):
+
+```python
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.20.0-py3-none-any.whl"))
+```
 
 ### `stateset-agents qwen3-5-0-8b`
 

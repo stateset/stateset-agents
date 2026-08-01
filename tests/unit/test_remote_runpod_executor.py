@@ -277,3 +277,133 @@ class TestRegistry:
 
         with pytest.raises(RemoteExecutionError, match="RUNPOD_API_KEY"):
             RunPodExecutor().submit(spec)
+
+
+class TestWheelInstall:
+    """Installing a locally built wheel is how an *unreleased* change gets
+    verified on real hardware — the PyPI pin cannot work before publish."""
+
+    def test_uploads_and_installs_the_wheel_instead_of_pypi(
+        self, make_executor, spec, tmp_path
+    ):
+        wheel = tmp_path / "stateset_agents-0.20.0-py3-none-any.whl"
+        wheel.write_bytes(b"WHEELBYTES")
+        ssh = FakeSsh()
+
+        make_executor(ssh=ssh, wheel=wheel).submit(spec)
+
+        assert any(local == wheel for local, _ in ssh.uploaded)
+        install = next(c for c in ssh.commands if "pip install" in c)
+        assert wheel.name in install
+        assert "stateset-agents[training]==" not in install
+
+    def test_installs_the_training_extra_from_the_wheel(
+        self, make_executor, spec, tmp_path
+    ):
+        wheel = tmp_path / "stateset_agents-0.20.0-py3-none-any.whl"
+        wheel.write_bytes(b"WHEELBYTES")
+        ssh = FakeSsh()
+
+        make_executor(ssh=ssh, wheel=wheel).submit(spec)
+
+        install = next(c for c in ssh.commands if "pip install" in c)
+        assert "[training]" in install
+
+    def test_without_a_wheel_the_pypi_pin_is_used(self, make_executor, spec):
+        ssh = FakeSsh()
+
+        make_executor(ssh=ssh).submit(spec)
+
+        assert any(
+            "stateset-agents[training]==0.20.0" in c for c in ssh.commands
+        )
+
+
+class TestDefaultImage:
+    def test_default_image_ships_torch_at_least_2_6(self):
+        """Regression guard from a real live run.
+
+        runpod/pytorch:2.4.0 failed with `cannot import name 'DTensor' from
+        torch.distributed.tensor` because transformers>=4.57.1 needs a torch
+        that has DTensor there (2.6+). The pod provisions fine and the job
+        starts, so this is only caught by actually running it.
+        """
+        import re
+
+        from stateset_agents.remote.runpod import _DEFAULT_IMAGE
+
+        match = re.search(r"torch(\d)(\d)(\d)", _DEFAULT_IMAGE)
+        assert match, f"cannot read a torch version from {_DEFAULT_IMAGE!r}"
+        major, minor = int(match.group(1)), int(match.group(2))
+        assert (major, minor) >= (2, 6), f"{_DEFAULT_IMAGE} has torch too old for transformers"
+
+
+class TestDownloadFailureHandling:
+    """A download failure must not discard the job's logs.
+
+    Found live: training succeeded on the pod, scp then failed, and the
+    executor raised — throwing away every line of output from a run that had
+    actually worked. The user is left with a stack trace and no evidence.
+    """
+
+    def test_download_failure_is_reported_as_failed_with_logs_intact(
+        self, make_executor, spec
+    ):
+        ssh = FakeSsh()
+
+        def boom(*args, **kwargs):
+            raise RemoteExecutionError("scp failed: unexpected filename: .")
+
+        ssh.download_dir = boom
+        executor = make_executor(ssh=ssh)
+
+        result = executor.wait(executor.submit(spec))
+
+        assert result.status is JobStatus.FAILED
+        assert any("training.sft" in line for line in result.logs)
+        assert any("scp failed" in line for line in result.logs)
+
+    def test_pod_still_terminated_when_download_fails(self, make_executor, spec):
+        api = FakePodApi()
+        ssh = FakeSsh()
+
+        def boom(*args, **kwargs):
+            raise RemoteExecutionError("scp exploded")
+
+        ssh.download_dir = boom
+        make_executor(api=api, ssh=ssh).submit(spec)
+
+        assert api.terminated == ["pod-abc"]
+
+
+class TestScpCommandForm:
+    """OpenSSH 9 runs scp over SFTP, which rejects `.` as a filename."""
+
+    def test_recursive_download_does_not_use_the_dot_form(self, tmp_path):
+        from stateset_agents.remote.runpod import SshTransport
+
+        captured = {}
+
+        transport = SshTransport()
+        transport._host, transport._port = "1.2.3.4", 22
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+
+            class R:
+                returncode = 0
+                stderr = ""
+
+            return R()
+
+        import subprocess
+
+        original = subprocess.run
+        subprocess.run = fake_run
+        try:
+            transport.download_dir("/workspace/out", tmp_path / "dest")
+        finally:
+            subprocess.run = original
+
+        joined = " ".join(captured["cmd"])
+        assert "/." not in joined, f"dot-form path is rejected by OpenSSH 9: {joined}"

@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **RunPod provider for `train-remote`.** `--provider runpod` rents a GPU pod,
+  runs the same packaged job every other provider runs, and copies the adapter
+  back. Needs `RUNPOD_API_KEY`, an SSH keypair, and `ssh`/`scp` on PATH — no
+  extra Python dependency.
+
+  ```bash
+  export RUNPOD_API_KEY=...
+  stateset-agents train-remote --provider runpod --gpu "NVIDIA RTX A4000" \
+      --dataset improved/curated.jsonl --base-model Qwen/Qwen3.5-0.8B
+  ```
+
+  RunPod rents a machine rather than a function, so there is no managed
+  filesystem like Modal's Volumes: the pod is created with TCP 22 exposed and
+  the caller's public key injected, and files move over `scp`. **The pod is
+  terminated on every exit path** — success, non-zero job exit, transport
+  exception, and never-became-reachable — because an orphaned pod bills by the
+  hour. No network volume is created, so there is no storage cost after a run.
+
+- **`RunPodExecutor(wheel=...)`.** Installs a locally built wheel on the pod
+  instead of resolving the pinned version from PyPI, which is the only way to
+  verify an unreleased change on real hardware.
+
+  Verified end-to-end on live hardware: RTX A4000, `Qwen/Qwen3.5-0.8B`, LoRA
+  r=8, ~5.5 minutes wall clock, returning a 12.8 MB adapter (192 tensors) to
+  local disk with the pod terminated afterwards.
+
+### Fixed
+
+- **LoRA `target_modules` are now passed explicitly.** `run_sft` previously
+  relied on peft inferring them from the architecture, which only works for
+  models in peft's built-in mapping — anything else (Qwen3.5, for one) died
+  with "Please specify `target_modules`". The failure needs a real model on a
+  GPU to reproduce, so the CPU dry-run path never reached it. New
+  `stateset_agents.training.sft.infer_lora_target_modules()` inspects the
+  loaded model and selects the standard projection layers actually present
+  (separate q/k/v/o, fused `c_attn`, and MLP projections), excluding the
+  output head. Pre-existing: it affected `scripts/sft_from_curated.py` too.
+
 ## [0.20.0] - 2026-07-31 — train-remote: run the fine-tune step without a GPU
 
 ### Added

@@ -119,6 +119,50 @@ def print_training_plan(
     print("=" * 60)
 
 
+#: Linear-layer names LoRA is normally applied to, across common decoder
+#: architectures: separate q/k/v/o projections (Llama, Qwen, Mistral), fused
+#: qkv (GPT-2 style ``c_attn``), and the MLP projections.
+_LORA_TARGET_CANDIDATES = (
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj",
+    "c_attn",
+    "c_proj",
+    "c_fc",
+    "query_key_value",
+    "dense",
+    "fc1",
+    "fc2",
+)
+
+
+def infer_lora_target_modules(model: Any) -> list[str]:
+    """Pick the module names LoRA should adapt on ``model``.
+
+    peft can infer these itself, but only for architectures in its built-in
+    mapping; for anything else it raises "Please specify ``target_modules``".
+    That failure only appears once the real model is loaded on a GPU, so it
+    escapes every CPU dry run.
+
+    Returns the recognised names present on this model, or an empty list —
+    which means "we did not recognise anything, let peft try" rather than a
+    guess that would fail confusingly later.
+    """
+    found = set()
+    for name, _module in model.named_modules():
+        leaf = name.rsplit(".", 1)[-1]
+        if leaf in _LORA_TARGET_CANDIDATES:
+            found.add(leaf)
+    # The output head is deliberately excluded: adapting it inflates the
+    # adapter with a vocab-sized matrix for no benefit on SFT.
+    found.discard("lm_head")
+    return sorted(found)
+
+
 def run_sft(
     rows: list[dict[str, Any]],
     base_model: str,
@@ -164,13 +208,23 @@ def run_sft(
         torch_dtype="bfloat16",
     )
 
-    logger.info("Applying LoRA adapter (r=%d, alpha=%d)", lora_r, lora_alpha)
+    target_modules = infer_lora_target_modules(model)
+    logger.info(
+        "Applying LoRA adapter (r=%d, alpha=%d, targets=%s)",
+        lora_r,
+        lora_alpha,
+        ",".join(target_modules) or "<peft default>",
+    )
     lora_config = LoraConfig(
         r=lora_r,
         lora_alpha=lora_alpha,
         lora_dropout=0.05,
         bias="none",
         task_type=TaskType.CAUSAL_LM,
+        # Passed explicitly: peft only infers these for architectures in its
+        # built-in mapping and raises on anything else (hit for real on
+        # Qwen3.5). None means "nothing recognised — let peft try".
+        target_modules=target_modules or None,
     )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()

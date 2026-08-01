@@ -35,7 +35,14 @@ __all__ = ["RunPodApi", "RunPodExecutor", "SshTransport"]
 _API_ROOT = "https://rest.runpod.io/v1"
 #: Official RunPod PyTorch image — ships a preconfigured sshd that reads
 #: PUBLIC_KEY, so no custom start command is needed.
-_DEFAULT_IMAGE = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04"
+#:
+#: torch 2.8 specifically: the older ``runpod/pytorch:2.4.0`` image fails at
+#: import with ``cannot import name 'DTensor' from torch.distributed.tensor``
+#: because transformers>=4.57.1 requires a torch that exposes DTensor there
+#: (2.6+). The pod provisions and the job starts before hitting it, so nothing
+#: short of a real run catches it — see the guard in
+#: tests/unit/test_remote_runpod_executor.py.
+_DEFAULT_IMAGE = "runpod/pytorch:1.1.0-rc.154-cu1290-torch280-ubuntu2204"
 _REMOTE_WORKDIR = "/workspace"
 _REMOTE_OUTPUT = "/workspace/out"
 
@@ -152,13 +159,37 @@ class SshTransport:
         self._scp(str(local), f"{self.user}@{self._host}:{remote}")
 
     def download_dir(self, remote_dir: str, local_dir: Path) -> list[Path]:
-        Path(local_dir).mkdir(parents=True, exist_ok=True)
-        self._scp(
-            f"{self.user}@{self._host}:{remote_dir.rstrip('/')}/.",
-            str(local_dir),
-            recursive=True,
-        )
-        return [p for p in Path(local_dir).rglob("*") if p.is_file()]
+        """Copy a remote directory's contents into ``local_dir``.
+
+        Deliberately *not* the ``remote:/path/.`` form: OpenSSH 9 runs scp
+        over SFTP, which rejects ``.`` as a filename ("unexpected filename:
+        ."). Instead the directory is fetched whole into a staging area and
+        its contents moved up, which is portable across scp implementations.
+        """
+        import shutil
+        import tempfile
+
+        remote = remote_dir.rstrip("/")
+        local_dir = Path(local_dir)
+        local_dir.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory() as staging:
+            self._scp(
+                f"{self.user}@{self._host}:{remote}",
+                staging,
+                recursive=True,
+            )
+            fetched = Path(staging) / Path(remote).name
+            if not fetched.exists():
+                return []
+            for item in fetched.iterdir():
+                destination = local_dir / item.name
+                if destination.exists():
+                    shutil.rmtree(destination, ignore_errors=True)
+                    destination.unlink(missing_ok=True)
+                shutil.move(str(item), str(destination))
+
+        return [p for p in local_dir.rglob("*") if p.is_file()]
 
     def _scp(self, src: str, dest: str, recursive: bool = False) -> None:
         cmd = ["scp", *self._base_opts(), "-P", str(self._port)]
@@ -207,12 +238,17 @@ class RunPodExecutor(RemoteExecutor):
         *,
         public_key: str | None = None,
         image: str = _DEFAULT_IMAGE,
+        wheel: Path | None = None,
         ready_timeout_s: int = 600,
         poll_interval_s: float = 10.0,
     ) -> None:
         self._api = api
         self._ssh = ssh
         self._public_key = public_key
+        #: Install this locally built wheel instead of pulling the pinned
+        #: version from PyPI. This is how an *unreleased* change gets verified
+        #: on real hardware — the PyPI pin cannot resolve before publish.
+        self.wheel = Path(wheel) if wheel else None
         self.image = image
         self.ready_timeout_s = ready_timeout_s
         self.poll_interval_s = poll_interval_s
@@ -273,10 +309,15 @@ class RunPodExecutor(RemoteExecutor):
             time.sleep(self.poll_interval_s)
 
     def _remote_commands(self, spec: RemoteJobSpec, dataset_remote: str) -> list[str]:
-        version = spec.package_version
-        pin = f"stateset-agents[training]=={version}" if version else (
-            "stateset-agents[training]"
-        )
+        if self.wheel:
+            pin = f"{_REMOTE_WORKDIR}/{self.wheel.name}[training]"
+        else:
+            version = spec.package_version
+            pin = (
+                f"stateset-agents[training]=={version}"
+                if version
+                else "stateset-agents[training]"
+            )
         args = " ".join(
             [
                 "--dataset", dataset_remote,
@@ -328,6 +369,10 @@ class RunPodExecutor(RemoteExecutor):
             ssh.upload(spec.dataset, dataset_remote)
             logs.append(f"uploaded {spec.dataset.name}")
 
+            if self.wheel:
+                ssh.upload(self.wheel, f"{_REMOTE_WORKDIR}/{self.wheel.name}")
+                logs.append(f"uploaded {self.wheel.name}")
+
             exit_code = 0
             for command in self._remote_commands(spec, dataset_remote):
                 exit_code, output = ssh.run(command)
@@ -344,7 +389,16 @@ class RunPodExecutor(RemoteExecutor):
                 self._jobs[job_id] = _RunPodJob(spec, JobStatus.SUCCEEDED, logs)
                 return handle
 
-            downloaded = ssh.download_dir(_REMOTE_OUTPUT, spec.output_dir)
+            try:
+                downloaded = ssh.download_dir(_REMOTE_OUTPUT, spec.output_dir)
+            except Exception as exc:
+                # Reported, not raised: by this point the job itself has
+                # already succeeded, and raising would discard every line of
+                # its output — leaving a stack trace and no evidence.
+                logs.append(f"failed to download adapter: {exc}")
+                self._jobs[job_id] = _RunPodJob(spec, JobStatus.FAILED, logs)
+                return handle
+
             if not downloaded:
                 logs.append(
                     "job exited cleanly but produced no artifacts — "

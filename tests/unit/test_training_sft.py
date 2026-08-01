@@ -168,3 +168,71 @@ class TestModuleEntrypoint:
         )
 
         assert result.returncode != 0
+
+
+class TestLoraTargetModules:
+    """peft only infers target_modules for architectures in its built-in map.
+
+    For anything else (Qwen3.5, for one) it raises "Please specify
+    `target_modules`". Found on real GPU hardware — the job downloads the
+    model and dies at adapter construction, so CPU dry-runs never see it.
+    """
+
+    def _model(self, names):
+        """A stand-in exposing just the named_modules surface we inspect."""
+
+        class FakeLinear:
+            pass
+
+        class FakeModel:
+            def named_modules(self):
+                return [(n, FakeLinear()) for n in names]
+
+        return FakeModel()
+
+    def test_picks_standard_projection_modules_when_present(self):
+        model = self._model(
+            [
+                "",
+                "model.layers.0.self_attn.q_proj",
+                "model.layers.0.self_attn.k_proj",
+                "model.layers.0.self_attn.v_proj",
+                "model.layers.0.self_attn.o_proj",
+                "model.layers.0.mlp.gate_proj",
+                "model.layers.0.mlp.up_proj",
+                "model.layers.0.mlp.down_proj",
+                "lm_head",
+            ]
+        )
+
+        targets = sft.infer_lora_target_modules(model)
+
+        assert set(targets) == {
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "gate_proj", "up_proj", "down_proj",
+        }
+
+    def test_never_targets_the_output_head(self):
+        """Adapting lm_head bloats the adapter and is not what we want."""
+        model = self._model(["model.layers.0.self_attn.q_proj", "lm_head"])
+
+        assert "lm_head" not in sft.infer_lora_target_modules(model)
+
+    def test_handles_architectures_using_fused_qkv(self):
+        model = self._model(
+            [
+                "transformer.h.0.attn.c_attn",
+                "transformer.h.0.attn.c_proj",
+                "transformer.h.0.mlp.c_fc",
+            ]
+        )
+
+        targets = sft.infer_lora_target_modules(model)
+
+        assert "c_attn" in targets
+
+    def test_returns_empty_when_nothing_recognisable(self):
+        """Empty means 'let peft try'; it must not invent a bogus name."""
+        model = self._model(["weird.thing", "another.module"])
+
+        assert sft.infer_lora_target_modules(model) == []
