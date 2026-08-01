@@ -66,7 +66,7 @@ def _remote_entrypoint(payload: dict[str, Any]) -> dict[str, Any]:
     """
     from stateset_agents.training.sft import run_sft_job
 
-    outcome = run_sft_job(payload)
+    outcome: dict[str, Any] = run_sft_job(payload)
     produced = Path(outcome["output_dir"])
     outcome["artifacts"] = (
         sorted(str(p.relative_to(produced)) for p in produced.rglob("*") if p.is_file())

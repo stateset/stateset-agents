@@ -27,9 +27,16 @@ def _load_modal() -> RemoteExecutor:
     return ModalExecutor()
 
 
+def _load_runpod() -> RemoteExecutor:
+    from stateset_agents.remote.runpod import RunPodExecutor
+
+    return RunPodExecutor()
+
+
 _PROVIDERS: dict[str, Callable[[], RemoteExecutor]] = {
     "local": _load_local,
     "modal": _load_modal,
+    "runpod": _load_runpod,
 }
 
 
