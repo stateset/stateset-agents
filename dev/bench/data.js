@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786262319655,
+  "lastUpdate": 1786351576761,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -806,6 +806,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.99944305114263e-8",
             "extra": "mean: 470.4854703851004 nsec\nrounds: 105519"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "322521228c5e643bc6b6404b9e86466aa0fa89bb",
+          "message": "fix(remote,sft): four bugs found by running RunPod on real hardware\n\nThe RunPod provider now works end-to-end, verified on live hardware: RTX\nA4000, Qwen/Qwen3.5-0.8B, LoRA r=8, 342s wall clock, returning a 12.8 MB\nadapter (192 tensors) to local disk with the pod terminated afterwards and\nthe account back to $0/hr.\n\nIt took four runs. Every failure was real and none was reachable without\nlive hardware:\n\n1. Default image `runpod/pytorch:2.4.0` ships torch 2.4, but\n   transformers>=4.57.1 needs DTensor from torch.distributed.tensor (2.6+).\n   The pod provisions and the job starts before dying, so only a real run\n   sees it. Default is now torch 2.8, guarded by a test that parses the\n   torch version out of the image tag.\n\n2. PRE-EXISTING: run_sft built LoraConfig without target_modules, relying\n   on peft's architecture inference — which only covers models in peft's\n   built-in mapping. Qwen3.5 is not one, so the job died with \"Please\n   specify `target_modules`\". This affected scripts/sft_from_curated.py\n   just as much; the CPU dry-run path exits before loading a model, which\n   is why no existing test caught it. New infer_lora_target_modules()\n   inspects the loaded model and selects the projection layers actually\n   present (separate q/k/v/o, fused c_attn, MLP), excluding lm_head.\n\n3. download_dir used the `remote:/path/.` form, which OpenSSH 9 rejects —\n   it runs scp over SFTP (\"unexpected filename: .\"). Now fetches the\n   directory into a staging dir and moves contents up.\n\n4. A download failure raised, discarding the job's logs. Training had\n   actually succeeded on the pod and the user would have seen a stack\n   trace and no evidence. Download failures are now reported as FAILED\n   with logs intact, matching the existing no-artifacts handling.\n\n24 RunPod tests, all red-first. Pods were terminated on all four runs,\nconfirmed by a sweep that queries the account independently of executor\nlogic.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-01T22:47:39Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/322521228c5e643bc6b6404b9e86466aa0fa89bb"
+        },
+        "date": 1786351576048,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5930.988682252427,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017371741696301907",
+            "extra": "mean: 168.60595316803528 usec\nrounds: 1452"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6379.22955344665,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016753792722821207",
+            "extra": "mean: 156.75874204271383 usec\nrounds: 2105"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4929.898323709762,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001699408845188216",
+            "extra": "mean: 202.84394004448703 usec\nrounds: 3586"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 732.5903646772448,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000634535783240238",
+            "extra": "mean: 1.365019318047634 msec\nrounds: 676"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 173.28429874785854,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00477891182846681",
+            "extra": "mean: 5.770863299363746 msec\nrounds: 157"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2109325.8671524203,
+            "unit": "iter/sec",
+            "range": "stddev: 4.88758204249655e-8",
+            "extra": "mean: 474.08511675343703 nsec\nrounds: 104406"
           }
         ]
       }
