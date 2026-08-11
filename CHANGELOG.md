@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-11 — Architecture consolidation + Nemotron 3.5 Lightning
+
 ### Added
 
 - **First-class Nemotron 3.5 Lightning starter** — packaged
