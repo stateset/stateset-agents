@@ -231,6 +231,10 @@ jobs:
         PY
 
   dependency-review:
+    # The action diffs dependencies between two refs, which only exist on
+    # pull_request events; on push it errors with "base ref and head ref
+    # must be provided".
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:

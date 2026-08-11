@@ -1,0 +1,15 @@
+# Accepted-risk entries for the Security Scan gate. Every entry needs a
+# reason and a removal condition. Remove the entry as soon as the condition
+# is met — the gate fails on anything not listed here.
+
+# mobile/ demo app (not shipped with the PyPI package): image-size has no
+# fixed release for either CVE as of 2026-08-11. Remove when a patched
+# image-size ships and `npm update image-size` picks it up.
+CVE-2025-71329
+CVE-2025-71330
+
+# rust_core: fix requires pyo3 0.22 -> 0.29, a major API-breaking upgrade of
+# the stateset-rl-core bindings. Tracked as follow-up work; remove when the
+# pyo3 port lands. The advisory concerns Python-object lifetime handling in
+# bindings code, not a remotely reachable surface.
+GHSA-36hh-v3qg-5jq4
