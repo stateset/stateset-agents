@@ -14,9 +14,7 @@ GitHub: https://github.com/BytedTsinghua-SIA/DAPO
 """
 
 import asyncio
-import json
 import logging
-import os
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
@@ -25,6 +23,12 @@ import torch
 import torch.nn.functional as F
 
 from .dapo_config import DAPOConfig
+from .trainer_runtime import (
+    SharedModelManager,
+    build_group_batch,
+    hf_generate_group,
+    save_checkpoint_artifacts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,66 +146,21 @@ def _load_vllm_backend() -> bool:
         return False
 
 
-class DAPOModelManager:
+class DAPOModelManager(SharedModelManager):
     """Manages model loading for DAPO training"""
 
     def __init__(self, config: DAPOConfig):
-        self.config = config
-        self.model: Any | None = None
-        self.tokenizer: Any | None = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        super().__init__(config)
 
-    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
-        """Load model and tokenizer with optional LoRA"""
-        logger.info(f"Loading model: {self.config.model_name}")
+    def _get_transformers(self) -> tuple[Any, Any]:
         _require_transformers_dapo()
-        auto_tokenizer = AutoTokenizer
-        auto_model = AutoModelForCausalLM
-        if auto_tokenizer is None or auto_model is None:
+        if AutoTokenizer is None or AutoModelForCausalLM is None:
             raise ImportError("transformers exports are unavailable for DAPO")
+        return AutoTokenizer, AutoModelForCausalLM
 
-        # Load tokenizer
-        self.tokenizer = auto_tokenizer.from_pretrained(
-            self.config.model_name,
-            trust_remote_code=True,
-            padding_side="left",
-        )
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        # Model loading kwargs
-        model_kwargs = {
-            "torch_dtype": (
-                torch.float16
-                if self.config.fp16
-                else (torch.bfloat16 if self.config.bf16 else torch.float32)
-            ),
-            "device_map": "auto" if torch.cuda.is_available() else None,
-            "trust_remote_code": True,
-        }
-
-        # Load base model
-        base_model = auto_model.from_pretrained(self.config.model_name, **model_kwargs)
-
-        # Add LoRA adapters if configured
-        if self.config.use_lora:
-            _require_peft()
-            lora_config = LoraConfig(
-                r=self.config.lora_r,
-                lora_alpha=self.config.lora_alpha,
-                target_modules=["q_proj", "v_proj"],
-                lora_dropout=self.config.lora_dropout,
-                bias="none",
-                task_type=TaskType.CAUSAL_LM,
-            )
-            model_with_lora = get_peft_model(base_model, lora_config)
-            model_with_lora.print_trainable_parameters()
-            self.model = model_with_lora
-        else:
-            self.model = base_model
-
-        logger.info(f"Model loaded on {self.device}")
-        return self.model, self.tokenizer
+    def _peft_components(self) -> tuple[Any, Any, Any]:
+        _require_peft()
+        return LoraConfig, TaskType, get_peft_model
 
 
 class DAPORewardShaper:
@@ -642,57 +601,14 @@ class DAPOTrainer:
 
     async def _generate_with_hf(self, prompt: str) -> list[dict[str, Any]]:
         """Generate responses using HuggingFace (sequential fallback)"""
-        responses = []
-
-        # Tokenize prompt
-        prompt_tokens = self.tokenizer(
+        responses: list[dict[str, Any]] = await hf_generate_group(
+            self.model,
+            self.tokenizer,
+            self.config,
+            self.device,
             prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
+            self.config.group_size,
         )
-        prompt_length = prompt_tokens["input_ids"].shape[1]
-
-        self.model.eval()
-        with torch.no_grad():
-            for _ in range(self.config.group_size):
-                input_ids = prompt_tokens["input_ids"].to(self.device)
-                attention_mask = prompt_tokens["attention_mask"].to(self.device)
-
-                # Generate with DAPO parameters
-                outputs = self.model.generate(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    max_new_tokens=self.config.max_completion_length,
-                    temperature=self.config.temperature,
-                    top_p=self.config.top_p,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-
-                full_ids = outputs[0]
-                response_length = len(full_ids) - prompt_length
-
-                # Create response mask (1 for response tokens, 0 for prompt)
-                response_mask = torch.zeros(len(full_ids), device=self.device)
-                response_mask[prompt_length:] = 1.0
-
-                response_text = self.tokenizer.decode(
-                    full_ids[prompt_length:], skip_special_tokens=True
-                )
-
-                responses.append(
-                    {
-                        "response": response_text,
-                        "input_ids": full_ids,
-                        "attention_mask": torch.ones_like(full_ids),
-                        "response_mask": response_mask,
-                        "sequence_length": response_length,
-                        "prompt_length": prompt_length,
-                    }
-                )
-
-        self.model.train()
         return responses
 
     def compute_group_accuracy(
@@ -714,23 +630,10 @@ class DAPOTrainer:
         self, responses: list[dict[str, Any]]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Pad a group of response dicts into batch tensors."""
-        max_len = max(len(r["input_ids"]) for r in responses)
-        batch_size = len(responses)
-
-        batch_input_ids = torch.zeros(
-            batch_size, max_len, dtype=torch.long, device=self.device
+        batch_input_ids, batch_attention_mask, batch_response_mask = build_group_batch(
+            responses, self.device
         )
-        batch_attention_mask = torch.zeros(
-            batch_size, max_len, dtype=torch.long, device=self.device
-        )
-        batch_response_mask = torch.zeros(batch_size, max_len, device=self.device)
-
-        for i, resp in enumerate(responses):
-            seq_len = len(resp["input_ids"])
-            batch_input_ids[i, :seq_len] = resp["input_ids"]
-            batch_attention_mask[i, :seq_len] = resp["attention_mask"]
-            batch_response_mask[i, :seq_len] = resp["response_mask"]
-
+        assert batch_response_mask is not None
         return batch_input_ids, batch_attention_mask, batch_response_mask
 
     async def collect_samples_with_dynamic_sampling(
@@ -945,25 +848,18 @@ class DAPOTrainer:
 
     def save_checkpoint(self, output_dir: str) -> None:
         """Save model checkpoint"""
-        os.makedirs(output_dir, exist_ok=True)
-
-        self.model.save_pretrained(output_dir)
-        self.tokenizer.save_pretrained(output_dir)
-
-        # Save training state
-        state = {
-            "global_step": self.global_step,
-            "optimizer_state_dict": self.optimizer.state_dict(),
-            "metrics_history": self.metrics_history,
-        }
-        torch.save(state, os.path.join(output_dir, "training_state.pt"))
-
-        # Save config
-        config_path = os.path.join(output_dir, "dapo_config.json")
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(self.config.to_dict(), f, indent=2)
-
-        logger.info(f"Checkpoint saved to {output_dir}")
+        save_checkpoint_artifacts(
+            self.model,
+            self.tokenizer,
+            output_dir,
+            training_state={
+                "global_step": self.global_step,
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "metrics_history": self.metrics_history,
+            },
+            config_dict=self.config.to_dict(),
+            config_filename="dapo_config.json",
+        )
 
 
 from .dapo_entrypoints import train_reasoning_with_dapo, train_with_dapo

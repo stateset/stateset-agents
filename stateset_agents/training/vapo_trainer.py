@@ -16,7 +16,6 @@ for long chain-of-thought reasoning. It achieves state-of-the-art results
 Reference: https://arxiv.org/abs/2504.05118
 """
 
-import json
 import logging
 import os
 from collections.abc import Awaitable, Callable
@@ -29,6 +28,12 @@ import torch.nn.functional as F
 
 from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
+from .trainer_runtime import (
+    SharedModelManager,
+    build_group_batch,
+    hf_generate_group,
+    save_checkpoint_artifacts,
+)
 from .vapo_config import VAPOConfig
 
 logger = logging.getLogger(__name__)
@@ -112,70 +117,23 @@ def _require_wandb() -> None:
         )
 
 
-class VAPOModelManager:
+class VAPOModelManager(SharedModelManager):
     """Manages model loading for VAPO training"""
 
     def __init__(self, config: VAPOConfig):
-        self.config = config
-        self.model = None
-        self.tokenizer = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        super().__init__(config)
 
-    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
-        """Load model and tokenizer with optional LoRA"""
-        logger.info(f"Loading model: {self.config.model_name}")
+    def _get_transformers(self) -> tuple[Any, Any]:
         _require_transformers_vapo()
-        tokenizer_cls = AutoTokenizer
-        model_cls = AutoModelForCausalLM
-        if tokenizer_cls is None or model_cls is None:
+        if AutoTokenizer is None or AutoModelForCausalLM is None:
             raise ImportError("transformers is required for VAPO training")
+        return AutoTokenizer, AutoModelForCausalLM
 
-        # Load tokenizer
-        tokenizer = tokenizer_cls.from_pretrained(
-            self.config.model_name,
-            trust_remote_code=True,
-            padding_side="left",
-        )
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        self.tokenizer = tokenizer
-
-        # Model loading kwargs
-        model_kwargs = {
-            "torch_dtype": (
-                torch.float16
-                if self.config.fp16
-                else (torch.bfloat16 if self.config.bf16 else torch.float32)
-            ),
-            "device_map": "auto" if torch.cuda.is_available() else None,
-            "trust_remote_code": True,
-        }
-
-        # Load base model
-        base_model = model_cls.from_pretrained(self.config.model_name, **model_kwargs)
-
-        # Add LoRA adapters if configured
-        if self.config.use_lora:
-            _require_peft()
-            peft_model_factory = get_peft_model
-            if peft_model_factory is None:
-                raise ImportError("PEFT is required for VAPO LoRA training")
-            lora_config = LoraConfig(
-                r=self.config.lora_r,
-                lora_alpha=self.config.lora_alpha,
-                target_modules=["q_proj", "v_proj"],
-                lora_dropout=self.config.lora_dropout,
-                bias="none",
-                task_type=TaskType.CAUSAL_LM,
-            )
-            model = peft_model_factory(base_model, lora_config)
-            model.print_trainable_parameters()
-            self.model = model
-        else:
-            self.model = base_model
-
-        logger.info(f"Model loaded on {self.device}")
-        return self.model, self.tokenizer
+    def _peft_components(self) -> tuple[Any, Any, Any]:
+        _require_peft()
+        if get_peft_model is None:
+            raise ImportError("PEFT is required for VAPO LoRA training")
+        return LoraConfig, TaskType, get_peft_model
 
 
 class ValueHead(nn.Module):
@@ -576,54 +534,14 @@ class VAPOTrainer:
         prompt: str,
     ) -> list[dict[str, Any]]:
         """Generate a group of responses for VAPO"""
-        responses = []
-
-        prompt_tokens = self.tokenizer(
+        responses: list[dict[str, Any]] = await hf_generate_group(
+            self.model,
+            self.tokenizer,
+            self.config,
+            self.device,
             prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
+            self.config.group_size,
         )
-        prompt_length = prompt_tokens["input_ids"].shape[1]
-
-        self.model.eval()
-        with torch.no_grad():
-            for _ in range(self.config.group_size):
-                input_ids = prompt_tokens["input_ids"].to(self.device)
-                attention_mask = prompt_tokens["attention_mask"].to(self.device)
-
-                outputs = self.model.generate(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    max_new_tokens=self.config.max_completion_length,
-                    temperature=self.config.temperature,
-                    top_p=self.config.top_p,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-
-                full_ids = outputs[0]
-                response_length = len(full_ids) - prompt_length
-
-                response_mask = torch.zeros(len(full_ids), device=self.device)
-                response_mask[prompt_length:] = 1.0
-
-                response_text = self.tokenizer.decode(
-                    full_ids[prompt_length:], skip_special_tokens=True
-                )
-
-                responses.append(
-                    {
-                        "response": response_text,
-                        "input_ids": full_ids,
-                        "attention_mask": torch.ones_like(full_ids),
-                        "response_mask": response_mask,
-                        "sequence_length": response_length,
-                        "prompt_length": prompt_length,
-                    }
-                )
-
-        self.model.train()
         return responses
 
     async def warmup_value_network(
@@ -660,22 +578,14 @@ class VAPOTrainer:
                 rewards.append(reward)
 
             # Prepare batch
-            max_len = max(len(r["input_ids"]) for r in responses)
             batch_size = len(responses)
-
-            batch_input_ids = torch.zeros(
-                batch_size, max_len, dtype=torch.long, device=self.device
-            )
-            batch_attention_mask = torch.zeros(
-                batch_size, max_len, dtype=torch.long, device=self.device
-            )
-            batch_response_mask = torch.zeros(batch_size, max_len, device=self.device)
-
-            for i, resp in enumerate(responses):
-                seq_len = len(resp["input_ids"])
-                batch_input_ids[i, :seq_len] = resp["input_ids"]
-                batch_attention_mask[i, :seq_len] = resp["attention_mask"]
-                batch_response_mask[i, :seq_len] = resp["response_mask"]
+            (
+                batch_input_ids,
+                batch_attention_mask,
+                batch_response_mask,
+            ) = build_group_batch(responses, self.device)
+            assert batch_response_mask is not None
+            max_len = batch_input_ids.shape[1]
 
             # Monte-Carlo return targets (same reward for all tokens in response)
             rewards_tensor = torch.tensor(rewards, device=self.device)
@@ -922,23 +832,17 @@ class VAPOTrainer:
             all_rewards.extend(rewards)
 
             # Prepare batch
-            max_len = max(len(r["input_ids"]) for r in responses)
             batch_size = len(responses)
+            (
+                batch_input_ids,
+                batch_attention_mask,
+                batch_response_mask,
+            ) = build_group_batch(responses, self.device)
+            assert batch_response_mask is not None
+            max_len = batch_input_ids.shape[1]
 
-            batch_input_ids = torch.zeros(
-                batch_size, max_len, dtype=torch.long, device=self.device
-            )
-            batch_attention_mask = torch.zeros(
-                batch_size, max_len, dtype=torch.long, device=self.device
-            )
-            batch_response_mask = torch.zeros(batch_size, max_len, device=self.device)
             sequence_lengths = torch.zeros(batch_size, device=self.device)
-
             for i, resp in enumerate(responses):
-                seq_len = len(resp["input_ids"])
-                batch_input_ids[i, :seq_len] = resp["input_ids"]
-                batch_attention_mask[i, :seq_len] = resp["attention_mask"]
-                batch_response_mask[i, :seq_len] = resp["response_mask"]
                 sequence_lengths[i] = resp["sequence_length"]
 
             # Positive mask for LM loss (correct samples only)
@@ -1100,32 +1004,27 @@ class VAPOTrainer:
         """Save model checkpoint"""
         os.makedirs(output_dir, exist_ok=True)
 
-        self.model.save_pretrained(output_dir)
-        self.tokenizer.save_pretrained(output_dir)
-
         # Save value head
         torch.save(
             self.value_head.state_dict(), os.path.join(output_dir, "value_head.pt")
         )
 
-        # Save training state
-        state = {
-            "global_step": self.global_step,
-            "value_warmup_complete": self.value_warmup_complete,
-            "actor_optimizer_state_dict": self.actor_optimizer.state_dict(),
-            "critic_optimizer_state_dict": self.critic_optimizer.state_dict(),
-            "actor_scheduler_state_dict": self.actor_scheduler.state_dict(),
-            "critic_scheduler_state_dict": self.critic_scheduler.state_dict(),
-            "metrics_history": self.metrics_history,
-        }
-        torch.save(state, os.path.join(output_dir, "training_state.pt"))
-
-        # Save config
-        config_path = os.path.join(output_dir, "vapo_config.json")
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(self.config.to_dict(), f, indent=2)
-
-        logger.info(f"Checkpoint saved to {output_dir}")
+        save_checkpoint_artifacts(
+            self.model,
+            self.tokenizer,
+            output_dir,
+            training_state={
+                "global_step": self.global_step,
+                "value_warmup_complete": self.value_warmup_complete,
+                "actor_optimizer_state_dict": self.actor_optimizer.state_dict(),
+                "critic_optimizer_state_dict": self.critic_optimizer.state_dict(),
+                "actor_scheduler_state_dict": self.actor_scheduler.state_dict(),
+                "critic_scheduler_state_dict": self.critic_scheduler.state_dict(),
+                "metrics_history": self.metrics_history,
+            },
+            config_dict=self.config.to_dict(),
+            config_filename="vapo_config.json",
+        )
 
     def load_checkpoint(self, checkpoint_dir: str) -> None:
         """Load checkpoint"""

@@ -12,9 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
-import json
 import logging
-import os
 from typing import Any
 
 import numpy as np
@@ -45,6 +43,7 @@ from .gspo_generation import (
     build_scoring_text,
     render_prompt_for_scoring,
 )
+from .trainer_runtime import SharedModelManager, save_checkpoint_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -194,20 +193,16 @@ def normalize_total_loss(total_loss: torch.Tensor, num_groups: int) -> torch.Ten
     return total_loss / max(num_groups, 1)
 
 
-class GSPOModelManager:
+class GSPOModelManager(SharedModelManager):
     """Manages model loading and LoRA configuration for GSPO training"""
 
+    _loaded_message = "Model loaded successfully on {device}"
+
     def __init__(self, config: GSPOConfig):
-        self.config = config
-        self.model: Any | None = None
-        self.tokenizer: Any | None = None
-        self.ref_model: Any | None = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        super().__init__(config)
 
-    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
-        """Load model and tokenizer with LoRA if specified"""
-        logger.info(f"Loading model: {self.config.model_name}")
-
+    def _warn_low_gpu_memory(self) -> None:
+        """Warn when a mid-size Qwen model is loaded unquantized on a small GPU."""
         model_name_lower = self.config.model_name.lower()
         if (
             torch.cuda.is_available()
@@ -231,117 +226,97 @@ class GSPOModelManager:
                     self.config.model_name,
                 )
 
+    def _get_transformers(self) -> tuple[Any, Any]:
         # Load transformers lazily
         if not _load_transformers():
             raise ImportError("transformers is required but failed to load")
         if AutoTokenizer is None or AutoModelForCausalLM is None:
             raise RuntimeError("transformers GSPO loader did not initialize correctly")
+        return AutoTokenizer, AutoModelForCausalLM
+
+    def _peft_components(self) -> tuple[Any, Any, Any]:
+        return LoraConfig, TaskType, get_peft_model
+
+    def _lora_target_modules(self) -> list[str]:
+        # Determine target modules based on model architecture
+        if self.config.lora_target_modules:
+            return list(self.config.lora_target_modules)
+        elif "gpt2" in self.config.model_name.lower():
+            return ["c_attn", "c_proj"]
+        elif (
+            "llama" in self.config.model_name.lower()
+            or "qwen" in self.config.model_name.lower()
+        ):
+            return ["q_proj", "k_proj", "v_proj", "o_proj"]
+        else:
+            return ["q_proj", "v_proj"]
+
+    def _prepare_model_kwargs(self, model_kwargs: dict[str, Any]) -> None:
+        # PEFT is required for LoRA or k-bit training features
+        if self.config.use_lora or self.config.use_8bit or self.config.use_4bit:
+            _require_peft()
+
+        # Add quantization if specified
+        if self.config.use_8bit:
+            _require_bitsandbytes()
+            model_kwargs["load_in_8bit"] = True
+        elif self.config.use_4bit:
+            _require_bitsandbytes()
+            model_kwargs["load_in_4bit"] = True
+
+    def _prepare_base_model(self, base_model: Any) -> Any:
+        # Enable gradient checkpointing if specified
+        if self.config.gradient_checkpointing:
+            if hasattr(base_model, "config") and hasattr(
+                base_model.config, "use_cache"
+            ):
+                base_model.config.use_cache = False
+            if hasattr(base_model, "gradient_checkpointing_enable"):
+                base_model.gradient_checkpointing_enable()
+            else:  # pragma: no cover
+                logger.warning(
+                    "gradient_checkpointing requested but model does not support it"
+                )
+            if self.config.use_lora and not (
+                self.config.use_8bit or self.config.use_4bit
+            ):
+                _enable_input_require_grads(base_model)
+
+        # Prepare model for training if using quantization
+        if self.config.use_8bit or self.config.use_4bit:
+            base_model = prepare_model_for_kbit_training(base_model)
+
+        return base_model
+
+    def _apply_lora(self, base_model: Any) -> Any:
+        model = super()._apply_lora(base_model)
+        logger.info("LoRA adapters added to model")
+        return model
+
+    def _load_reference_model(
+        self, model_cls: Any, model_kwargs: dict[str, Any]
+    ) -> None:
+        # Load reference model if using KL penalty
+        if self.config.beta > 0 and self.config.use_reference_model:
+            logger.info("Loading reference model for KL penalty...")
+            self.ref_model = model_cls.from_pretrained(
+                self.config.model_name,
+                torch_dtype=model_kwargs["torch_dtype"],
+                device_map="auto" if torch.cuda.device_count() > 1 else None,
+            )
+            if self.ref_model is not None:
+                self.ref_model.eval()
+
+    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
+        """Load model and tokenizer with LoRA if specified"""
+        logger.info(f"Loading model: {self.config.model_name}")
+        self._warn_low_gpu_memory()
+
+        tokenizer_cls, model_cls = self._get_transformers()
 
         try:
-            # Load tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.config.model_name,
-                trust_remote_code=True,
-                padding_side="left",
-            )
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
-
-            # Model loading kwargs
-            model_kwargs = {
-                "torch_dtype": (
-                    torch.float16
-                    if self.config.fp16
-                    else (torch.bfloat16 if self.config.bf16 else torch.float32)
-                ),
-                "device_map": "auto" if torch.cuda.is_available() else None,
-                "trust_remote_code": True,
-            }
-
-            # PEFT is required for LoRA or k-bit training features
-            if self.config.use_lora or self.config.use_8bit or self.config.use_4bit:
-                _require_peft()
-
-            # Add quantization if specified
-            if self.config.use_8bit:
-                _require_bitsandbytes()
-                model_kwargs["load_in_8bit"] = True
-            elif self.config.use_4bit:
-                _require_bitsandbytes()
-                model_kwargs["load_in_4bit"] = True
-
-            # Load base model
-            base_model = AutoModelForCausalLM.from_pretrained(
-                self.config.model_name, **model_kwargs
-            )
-
-            # Enable gradient checkpointing if specified
-            if self.config.gradient_checkpointing:
-                if hasattr(base_model, "config") and hasattr(
-                    base_model.config, "use_cache"
-                ):
-                    base_model.config.use_cache = False
-                if hasattr(base_model, "gradient_checkpointing_enable"):
-                    base_model.gradient_checkpointing_enable()
-                else:  # pragma: no cover
-                    logger.warning(
-                        "gradient_checkpointing requested but model does not support it"
-                    )
-                if self.config.use_lora and not (
-                    self.config.use_8bit or self.config.use_4bit
-                ):
-                    _enable_input_require_grads(base_model)
-
-            # Prepare model for training if using quantization
-            if self.config.use_8bit or self.config.use_4bit:
-                base_model = prepare_model_for_kbit_training(base_model)
-
-            # Add LoRA adapters
-            if self.config.use_lora:
-                # Determine target modules based on model architecture
-                if self.config.lora_target_modules:
-                    target_modules = self.config.lora_target_modules
-                elif "gpt2" in self.config.model_name.lower():
-                    target_modules = ["c_attn", "c_proj"]
-                elif (
-                    "llama" in self.config.model_name.lower()
-                    or "qwen" in self.config.model_name.lower()
-                ):
-                    target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
-                else:
-                    target_modules = ["q_proj", "v_proj"]
-
-                lora_config = LoraConfig(
-                    r=self.config.lora_r,
-                    lora_alpha=self.config.lora_alpha,
-                    target_modules=target_modules,
-                    lora_dropout=self.config.lora_dropout,
-                    bias="none",
-                    task_type=TaskType.CAUSAL_LM,
-                )
-
-                self.model = get_peft_model(base_model, lora_config)
-                if self.model is not None:
-                    self.model.print_trainable_parameters()
-
-                logger.info("LoRA adapters added to model")
-            else:
-                self.model = base_model
-
-            # Load reference model if using KL penalty
-            if self.config.beta > 0 and self.config.use_reference_model:
-                logger.info("Loading reference model for KL penalty...")
-                self.ref_model = AutoModelForCausalLM.from_pretrained(
-                    self.config.model_name,
-                    torch_dtype=model_kwargs["torch_dtype"],
-                    device_map="auto" if torch.cuda.device_count() > 1 else None,
-                )
-                if self.ref_model is not None:
-                    self.ref_model.eval()
-
-            logger.info(f"Model loaded successfully on {self.device}")
-            return self.model, self.tokenizer
-
+            loaded: tuple[Any, Any] = self._load_impl(tokenizer_cls, model_cls)
+            return loaded
         except MODEL_LOAD_EXCEPTIONS as e:
             logger.error(f"Failed to load model: {e}")
             raise
@@ -882,18 +857,13 @@ class GSPOTrainer:
 
     def save_model(self, output_dir: str) -> None:
         """Save the trained model"""
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Save model
-        self.model.save_pretrained(output_dir)
-        self.tokenizer.save_pretrained(output_dir)
-
-        # Save training metrics
-        metrics_path = os.path.join(output_dir, "training_metrics.json")
-        with open(metrics_path, "w", encoding="utf-8") as f:
-            json.dump(self.training_metrics, f, indent=2)
-
-        logger.info(f"Model saved to {output_dir}")
+        save_checkpoint_artifacts(
+            self.model,
+            self.tokenizer,
+            output_dir,
+            extra_json={"training_metrics.json": self.training_metrics},
+            log_label="Model",
+        )
 
 
 from .gspo_entrypoints import train_customer_service_with_gspo, train_with_gspo

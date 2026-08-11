@@ -13,7 +13,6 @@ Key innovations:
 Reference: https://arxiv.org/abs/2508.17850
 """
 
-import json
 import logging
 import os
 from collections.abc import Callable
@@ -25,6 +24,11 @@ import torch
 import torch.nn.functional as F
 
 from .config import TrainingConfig
+from .trainer_runtime import (
+    SharedModelManager,
+    build_group_batch,
+    save_checkpoint_artifacts,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -125,19 +129,13 @@ class GEPOConfig(TrainingConfig):
         return cls(**config_dict)
 
 
-class GEPOModelManager:
+class GEPOModelManager(SharedModelManager):
     """Manages model loading for GEPO training"""
 
     def __init__(self, config: GEPOConfig):
-        self.config = config
-        self.model: Any | None = None
-        self.tokenizer: Any | None = None
-        self.ref_model: Any | None = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        super().__init__(config)
 
-    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
-        """Load model and tokenizer with optional LoRA"""
-        logger.info(f"Loading model: {self.config.model_name}")
+    def _get_transformers(self) -> tuple[Any, Any]:
         if not _load_transformers_gepo():
             raise ImportError(
                 "transformers is required for GEPO training. "
@@ -145,50 +143,10 @@ class GEPOModelManager:
             )
         if AutoTokenizer is None or AutoModelForCausalLM is None:
             raise RuntimeError("transformers GEPO loader did not initialize correctly")
+        return AutoTokenizer, AutoModelForCausalLM
 
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.config.model_name,
-            trust_remote_code=True,
-            padding_side="left",
-        )
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        # Model loading kwargs
-        model_kwargs = {
-            "torch_dtype": (
-                torch.float16
-                if self.config.fp16
-                else (torch.bfloat16 if self.config.bf16 else torch.float32)
-            ),
-            "device_map": "auto" if torch.cuda.is_available() else None,
-            "trust_remote_code": True,
-        }
-
-        # Load base model
-        base_model = AutoModelForCausalLM.from_pretrained(
-            self.config.model_name, **model_kwargs
-        )
-
-        # Add LoRA adapters if configured
-        if self.config.use_lora:
-            lora_config = LoraConfig(
-                r=self.config.lora_r,
-                lora_alpha=self.config.lora_alpha,
-                target_modules=["q_proj", "v_proj"],
-                lora_dropout=self.config.lora_dropout,
-                bias="none",
-                task_type=TaskType.CAUSAL_LM,
-            )
-            self.model = get_peft_model(base_model, lora_config)
-            if self.model is not None:
-                self.model.print_trainable_parameters()
-        else:
-            self.model = base_model
-
-        logger.info(f"Model loaded on {self.device}")
-        return self.model, self.tokenizer
+    def _peft_components(self) -> tuple[Any, Any, Any]:
+        return LoraConfig, TaskType, get_peft_model
 
 
 class GEPOTrainer:
@@ -528,18 +486,9 @@ class GEPOTrainer:
             all_advantages.extend(advantages.tolist())
 
             # Stack inputs for batch processing
-            max_len = max(r["input_ids"].shape[0] for r in group_responses)
-            batch_input_ids = torch.zeros(
-                len(group_responses), max_len, dtype=torch.long, device=self.device
+            batch_input_ids, batch_attention_mask, _ = build_group_batch(
+                group_responses, self.device, include_response_mask=False
             )
-            batch_attention_mask = torch.zeros(
-                len(group_responses), max_len, dtype=torch.long, device=self.device
-            )
-
-            for i, resp in enumerate(group_responses):
-                seq_len = resp["input_ids"].shape[0]
-                batch_input_ids[i, :seq_len] = resp["input_ids"]
-                batch_attention_mask[i, :seq_len] = resp["attention_mask"]
 
             response_start_idx = group_responses[0]["response_start_idx"]
 
@@ -619,26 +568,19 @@ class GEPOTrainer:
 
     def save_checkpoint(self, output_dir: str) -> None:
         """Save model checkpoint"""
-        os.makedirs(output_dir, exist_ok=True)
-
-        self.model.save_pretrained(output_dir)
-        self.tokenizer.save_pretrained(output_dir)
-
-        # Save training state
-        state = {
-            "global_step": self.global_step,
-            "optimizer_state_dict": self.optimizer.state_dict(),
-            "scheduler_state_dict": self.scheduler.state_dict(),
-            "metrics_history": self.metrics_history,
-        }
-        torch.save(state, os.path.join(output_dir, "training_state.pt"))
-
-        # Save config
-        config_path = os.path.join(output_dir, "gepo_config.json")
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(self.config.to_dict(), f, indent=2)
-
-        logger.info(f"Checkpoint saved to {output_dir}")
+        save_checkpoint_artifacts(
+            self.model,
+            self.tokenizer,
+            output_dir,
+            training_state={
+                "global_step": self.global_step,
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "scheduler_state_dict": self.scheduler.state_dict(),
+                "metrics_history": self.metrics_history,
+            },
+            config_dict=self.config.to_dict(),
+            config_filename="gepo_config.json",
+        )
 
     def load_checkpoint(self, checkpoint_dir: str) -> None:
         """Load model checkpoint"""
