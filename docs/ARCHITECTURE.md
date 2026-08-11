@@ -168,7 +168,7 @@ stateset-agents/
 │   ├── quick_start.py
 │   ├── complete_grpo_training.py
 │   ├── production_ready_customer_service.py
-│   └── starters/                  # Qwen-3.5 / Kimi-K2.6 / Gemma-4 / GLM-5.1
+│   └── starters/                  # Qwen-3.5 / Kimi-K2.6 / Kimi-K3 / Gemma-4 / GLM-5.1 / GLM-5.2 / Muse Glimmer
 │
 ├── notebooks/                     # 13 Colab notebooks (lint-gated in CI)
 ├── docs/                          # 53 markdown guides + Sphinx site
