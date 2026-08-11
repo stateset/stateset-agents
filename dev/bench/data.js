@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786351576761,
+  "lastUpdate": 1786436091176,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -868,6 +868,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.88758204249655e-8",
             "extra": "mean: 474.08511675343703 nsec\nrounds: 104406"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "da35472c296bfda1f4924113a5409d520bb4724e",
+          "message": "chore(release): v0.21.0 — Muse Glimmer 30B starter\n\nfeat(training): first-class starter for meta-models/Muse-Glimmer-30B —\nMeta's open agentic model (Aug 2026; dense 30B, 131K+ ctx, Apache-2.0).\nPackaged starter module, muse-glimmer CLI command, init --preset scaffold,\nunified-driver preset, docs page, and unit + integration tests.\n\nVersion 0.21.0 across pyproject, package, helm chart, k8s manifests, docs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-11T04:10:37Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/da35472c296bfda1f4924113a5409d520bb4724e"
+        },
+        "date": 1786436090790,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8444.337490717655,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014752889120938403",
+            "extra": "mean: 118.42255252105201 usec\nrounds: 1428"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9213.28057366609,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001318995879213812",
+            "extra": "mean: 108.53897175977204 usec\nrounds: 1983"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6686.2133552686455,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001547495479824493",
+            "extra": "mean: 149.5614852331946 usec\nrounds: 3386"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 817.1165375276395,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000830392035669359",
+            "extra": "mean: 1.2238156420450301 msec\nrounds: 704"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 177.88480683064432,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002804101112632436",
+            "extra": "mean: 5.621615571430182 msec\nrounds: 14"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2306076.290691803,
+            "unit": "iter/sec",
+            "range": "stddev: 4.588089048326028e-8",
+            "extra": "mean: 433.6369980630643 nsec\nrounds: 107957"
           }
         ]
       }
