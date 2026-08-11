@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786460521413,
+  "lastUpdate": 1786467640117,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1124,6 +1124,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.7008987740839355e-8",
             "extra": "mean: 400.11642615960056 nsec\nrounds: 119818"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "ff20021adf758271debde4a779463afd8d4c67a9",
+          "message": "chore(release): v0.23.0 — Qwen3 Coder, gpt-oss, DeepSeek V4 starters\n\nVersion 0.23.0 across pyproject, package, helm chart, k8s manifests, docs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-11T09:57:01-07:00",
+          "tree_id": "6858dc98da41291b4ecf8b5bdbc40fc5ae863c32",
+          "url": "https://github.com/stateset/stateset-agents/commit/ff20021adf758271debde4a779463afd8d4c67a9"
+        },
+        "date": 1786467636790,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 9634.675771969598,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012926252024054574",
+            "extra": "mean: 103.79176462889649 usec\nrounds: 1521"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9904.020581391498,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001550293879387914",
+            "extra": "mean: 100.96909550843257 usec\nrounds: 1937"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 7366.841621211767,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000019181305235359925",
+            "extra": "mean: 135.7433824993119 usec\nrounds: 3017"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 890.2324343976447,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002088051260945655",
+            "extra": "mean: 1.123302141509399 msec\nrounds: 742"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 227.47919511273267,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000032146316382405504",
+            "extra": "mean: 4.396006410627691 msec\nrounds: 207"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2424697.7785615507,
+            "unit": "iter/sec",
+            "range": "stddev: 4.340561690599275e-8",
+            "extra": "mean: 412.42253316751453 nsec\nrounds: 115168"
           }
         ]
       }
