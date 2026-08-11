@@ -16,7 +16,7 @@ MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 # Floor = number of files in mypy.ini's `files =` list as of 2026-08-11.
 # Raise this whenever files are added to the gate; never lower it without
 # a written justification in the commit that does so.
-ALLOWLIST_FLOOR = 35
+ALLOWLIST_FLOOR = 36
 
 
 def _allowlisted_files() -> list[str]:
