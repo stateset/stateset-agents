@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `TrainingArguments` construction filters kwargs against the installed
     transformers' signature — 5.x removed `warmup_ratio`, which crashed the
     job after the full model download.
+  - `infer_lora_target_modules` skips vision-tower/projector modules on
+    multimodal composites — their fc1/fc2 layers matched decoder-MLP names
+    and were adapted despite receiving no gradient from text-only SFT.
 
 ## [0.23.0] - 2026-08-11 — Qwen3 Coder, gpt-oss, DeepSeek V4 starters
 

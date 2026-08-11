@@ -325,3 +325,35 @@ class TestBuildTrainingArguments:
 
         args = sft.build_training_arguments(Flexible, anything=1, at_all=2)
         assert args.kw == {"anything": 1, "at_all": 2}
+
+
+class TestVisionTowerExclusion:
+    """Text-only SFT must not adapt vision-tower projections (no gradient
+    flows there), even when their leaf names match decoder-MLP candidates."""
+
+    def _model(self, names):
+        class FakeLinear:
+            pass
+
+        class FakeModel:
+            def named_modules(self):
+                return [(n, FakeLinear()) for n in names]
+
+        return FakeModel()
+
+    def test_vision_tower_fc_layers_are_skipped(self):
+        model = self._model(
+            [
+                "language_model.layers.0.self_attn.q_proj",
+                "language_model.layers.0.mlp.gate_proj",
+                "vision_tower.blocks.0.mlp.fc1",
+                "vision_tower.blocks.0.mlp.fc2",
+                "multi_modal_projector.fc1",
+            ]
+        )
+        targets = sft.infer_lora_target_modules(model)
+        assert targets == ["gate_proj", "q_proj"]
+
+    def test_text_stack_fc_layers_still_count(self):
+        model = self._model(["model.decoder.layers.0.fc1"])
+        assert sft.infer_lora_target_modules(model) == ["fc1"]

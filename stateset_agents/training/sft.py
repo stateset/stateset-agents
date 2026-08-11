@@ -141,6 +141,22 @@ _LORA_TARGET_CANDIDATES = (
     "fc2",
 )
 
+#: Module-path components that mark the non-text stack of a multimodal
+#: composite model. Anything under these gets no gradient from text-only SFT.
+_NON_TEXT_STACK_MARKERS = frozenset(
+    {
+        "vision_tower",
+        "vision_model",
+        "visual",
+        "vision_encoder",
+        "image_processor",
+        "perception_encoder",
+        "multi_modal_projector",
+        "mm_projector",
+        "audio_tower",
+    }
+)
+
 
 def build_training_arguments(training_arguments_cls: Any, **kwargs: Any) -> Any:
     """Construct ``TrainingArguments`` tolerating removed keyword arguments.
@@ -224,6 +240,13 @@ def infer_lora_target_modules(model: Any) -> list[str]:
     """
     found = set()
     for name, _module in model.named_modules():
+        # Multimodal composites carry a vision tower whose projections
+        # (fc1/fc2 in ViT blocks) share names with decoder MLP layers.
+        # Text-only SFT gets no gradient signal through the vision path, so
+        # adapting it only bloats the adapter (observed on
+        # meta-models/Muse-Glimmer-30B: fc1/fc2 came from the ViT).
+        if any(part in _NON_TEXT_STACK_MARKERS for part in name.split(".")):
+            continue
         leaf = name.rsplit(".", 1)[-1]
         if leaf in _LORA_TARGET_CANDIDATES:
             found.add(leaf)
