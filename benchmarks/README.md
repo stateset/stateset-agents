@@ -121,6 +121,42 @@ python benchmarks/real_performance_benchmarks.py
 # - Memory profiling
 ```
 
+### 6. Improvement-Loop Benchmark (`improvement_loop.py`)
+Measures the framework's closed improvement loop — ingest third-party logs →
+grade → curate — against a planted ground truth, so the loop's value is a
+number instead of a claim.
+
+Generates a deterministic, seeded synthetic corpus of OpenAI chat-format
+conversation logs with a controlled good/bad mix, runs the **real**
+`stateset-agents improve run` pipeline via the library API, then scores
+curation against the planted labels.
+
+**Usage:**
+```bash
+# Defaults: 60 conversations, 60% good, seed 42, customer_support reward
+python benchmarks/improvement_loop.py
+make benchmark-loop
+
+# Bigger corpus, save metrics JSON
+python benchmarks/improvement_loop.py --conversations 200 --seed 7 --output results.json
+```
+
+**Metrics reported** (human table + JSON):
+- Curation precision / recall / F1 against planted ground truth
+- Dataset yield (curated examples / corpus size)
+- Grade distribution (mean score, turns above threshold)
+- False positives broken down by planted bad flavor
+
+**Gates:** exits non-zero if precision or recall drops below the floors
+(`--min-precision 0.75`, `--min-recall 0.95` by default — set slightly below
+measured, ratchet-style). Measured on the default corpus: precision **0.818**,
+recall **1.0**, yield **0.733**. The precision gap is a real, documented
+grader limitation: the `deflection` bad flavor (safety-clean, 10+ words,
+unhelpful) scores 0.75 under the context-free rule-based reward and slips
+past the 0.7 threshold.
+
+No GPU, network, or API keys required; runs in seconds.
+
 ## Quick Start
 
 ### Run All Benchmarks (Fast Test)

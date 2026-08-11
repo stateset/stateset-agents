@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`benchmarks/improvement_loop.py` + `make benchmark-loop`** — measurable
+  benchmark of the closed improvement loop. Generates a seeded synthetic
+  OpenAI-format corpus with a planted good/bad mix, runs the real
+  ingest → grade → curate pipeline (`run_improve`), and reports curation
+  precision/recall/F1, dataset yield, and grade distribution against the
+  planted ground truth (JSON + human table). Exits non-zero below
+  configurable floors (defaults `--min-precision 0.75`, `--min-recall 0.95`;
+  measured 0.818 / 1.0 on the default corpus — the precision gap is the
+  documented `deflection` false positive of context-free rule-based
+  grading). Covered by `tests/unit/test_improvement_loop_benchmark.py`.
+
 ### Changed
 
 - **`dashboard/` and `mobile/` extracted to their own repositories**
