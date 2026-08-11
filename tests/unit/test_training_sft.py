@@ -208,8 +208,13 @@ class TestLoraTargetModules:
         targets = sft.infer_lora_target_modules(model)
 
         assert set(targets) == {
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
         }
 
     def test_never_targets_the_output_head(self):

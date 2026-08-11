@@ -56,9 +56,7 @@ class TestCommandRegistration:
     def test_command_exposes_the_provider_option(self):
         import inspect
 
-        command = next(
-            c for c in app.registered_commands if c.name == "train-remote"
-        )
+        command = next(c for c in app.registered_commands if c.name == "train-remote")
         params = inspect.signature(command.callback).parameters
 
         assert "provider" in params
@@ -177,15 +175,24 @@ class TestOptionPassthrough:
             app,
             [
                 "train-remote",
-                "--provider", "local",
-                "--dataset", str(dataset),
-                "--base-model", "Qwen/Qwen3.5-0.8B",
-                "--output-dir", str(tmp_path / "out"),
-                "--gpu", "H100",
-                "--timeout", "900",
-                "--package-version", "1.2.3",
-                "--lora-r", "8",
-                "--num-epochs", "7",
+                "--provider",
+                "local",
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--output-dir",
+                str(tmp_path / "out"),
+                "--gpu",
+                "H100",
+                "--timeout",
+                "900",
+                "--package-version",
+                "1.2.3",
+                "--lora-r",
+                "8",
+                "--num-epochs",
+                "7",
                 "--dry-run",
             ],
         )
@@ -207,10 +214,14 @@ class TestOptionPassthrough:
             app,
             [
                 "train-remote",
-                "--provider", "local",
-                "--dataset", str(dataset),
-                "--base-model", "Qwen/Qwen3.5-0.8B",
-                "--num-epochs", "0",
+                "--provider",
+                "local",
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--num-epochs",
+                "0",
             ],
         )
 

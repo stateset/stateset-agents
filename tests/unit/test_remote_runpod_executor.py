@@ -126,6 +126,11 @@ def make_executor():
     from stateset_agents.remote.runpod import RunPodExecutor
 
     def build(api=None, ssh=None, **kwargs):
+        # An explicit key by default: without it the executor reads the host's
+        # ~/.ssh, so the suite would pass or fail on whether the machine
+        # running it happens to have a keypair. (It does locally; the Windows
+        # CI runner does not, which is how this was found.)
+        kwargs.setdefault("public_key", "ssh-rsa AAAATESTKEY")
         return RunPodExecutor(
             api=api or FakePodApi(),
             ssh=ssh or FakeSsh(),
@@ -177,9 +182,7 @@ class TestJobExecution:
         ssh = FakeSsh()
         make_executor(ssh=ssh).submit(spec)
 
-        assert any(
-            "stateset-agents[training]==0.20.0" in cmd for cmd in ssh.commands
-        )
+        assert any("stateset-agents[training]==0.20.0" in cmd for cmd in ssh.commands)
 
     def test_runs_the_packaged_job_module(self, make_executor, spec):
         """The same entrypoint every other provider uses."""
@@ -314,9 +317,7 @@ class TestWheelInstall:
 
         make_executor(ssh=ssh).submit(spec)
 
-        assert any(
-            "stateset-agents[training]==0.20.0" in c for c in ssh.commands
-        )
+        assert any("stateset-agents[training]==0.20.0" in c for c in ssh.commands)
 
 
 class TestDefaultImage:
@@ -335,7 +336,10 @@ class TestDefaultImage:
         match = re.search(r"torch(\d)(\d)(\d)", _DEFAULT_IMAGE)
         assert match, f"cannot read a torch version from {_DEFAULT_IMAGE!r}"
         major, minor = int(match.group(1)), int(match.group(2))
-        assert (major, minor) >= (2, 6), f"{_DEFAULT_IMAGE} has torch too old for transformers"
+        assert (major, minor) >= (
+            2,
+            6,
+        ), f"{_DEFAULT_IMAGE} has torch too old for transformers"
 
 
 class TestDownloadFailureHandling:
@@ -407,3 +411,36 @@ class TestScpCommandForm:
 
         joined = " ".join(captured["cmd"])
         assert "/." not in joined, f"dot-form path is rejected by OpenSSH 9: {joined}"
+
+
+class TestPublicKeyDiscovery:
+    """Key discovery reads the host's ~/.ssh, so it is tested against a
+    fake home rather than whatever the machine running the suite has."""
+
+    def _executor(self):
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        return RunPodExecutor(api=FakePodApi(), ssh=FakeSsh(), poll_interval_s=0)
+
+    def test_prefers_ed25519(self, tmp_path, monkeypatch):
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+        (ssh_dir / "id_ed25519.pub").write_text("ssh-ed25519 ED\n")
+        (ssh_dir / "id_rsa.pub").write_text("ssh-rsa RSA\n")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+        assert self._executor()._require_public_key() == "ssh-ed25519 ED"
+
+    def test_falls_back_to_rsa(self, tmp_path, monkeypatch):
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+        (ssh_dir / "id_rsa.pub").write_text("ssh-rsa RSA\n")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+        assert self._executor()._require_public_key() == "ssh-rsa RSA"
+
+    def test_no_key_at_all_is_an_actionable_error(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+        with pytest.raises(RemoteExecutionError, match="no SSH public key"):
+            self._executor()._require_public_key()

@@ -53,7 +53,13 @@ def train_remote(
     max_length: int = typer.Option(1024, "--max-length"),
     per_device_batch_size: int = typer.Option(2, "--per-device-batch-size"),
     gradient_accumulation_steps: int = typer.Option(4, "--gradient-accumulation-steps"),
-    gpu: str = typer.Option("A10G", "--gpu", help="GPU type to request (remote only)."),
+    gpu: str | None = typer.Option(
+        None,
+        "--gpu",
+        help="GPU to request, in the provider's own vocabulary (Modal: "
+        '"A10G"; RunPod: "NVIDIA RTX A4000"). Defaults to the provider\'s '
+        "own default.",
+    ),
     timeout: int = typer.Option(3600, "--timeout", help="Job timeout in seconds."),
     package_version: str | None = typer.Option(
         None,
@@ -108,7 +114,4 @@ def train_remote(
         raise typer.Exit(code=1)
 
     _echo(f"Done. Adapter written to {result.output_dir}")
-    _echo(
-        "Use it with: stateset-agents serve --checkpoint "
-        f"{result.output_dir}"
-    )
+    _echo("Use it with: stateset-agents serve --checkpoint " f"{result.output_dir}")

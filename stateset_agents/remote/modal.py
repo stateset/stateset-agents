@@ -88,6 +88,8 @@ class ModalExecutor(RemoteExecutor):
     """Executes the job on Modal-provisioned GPU compute."""
 
     name = "modal"
+    #: Modal's own GPU vocabulary.
+    DEFAULT_GPU = "A10G"
 
     def __init__(self, remote_mount: str = _DEFAULT_MOUNT) -> None:
         self._jobs: dict[str, _ModalJob] = {}
@@ -126,14 +128,12 @@ class ModalExecutor(RemoteExecutor):
         """
         sdk = self._require_sdk()
         image = self.build_image(spec)
-        volume = sdk.Volume.from_name(
-            f"stateset-sft-{job_id}", create_if_missing=True
-        )
+        volume = sdk.Volume.from_name(f"stateset-sft-{job_id}", create_if_missing=True)
         app = sdk.App(_APP_NAME)
 
         function = app.function(
             image=image,
-            gpu=spec.gpu,
+            gpu=spec.gpu or self.DEFAULT_GPU,
             timeout=spec.timeout_s,
             volumes={self.remote_mount: volume},
         )(_remote_entrypoint)

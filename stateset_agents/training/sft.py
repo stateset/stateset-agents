@@ -328,9 +328,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         learning_rate=job["learning_rate"],
                         max_length=job["max_length"],
                         per_device_batch_size=job["per_device_batch_size"],
-                        gradient_accumulation_steps=job[
-                            "gradient_accumulation_steps"
-                        ],
+                        gradient_accumulation_steps=job["gradient_accumulation_steps"],
                     )
     except Exception as exc:  # reported, never raised — see docstring
         logger.error("SFT job failed: %s", exc)
@@ -350,7 +348,9 @@ def build_parser() -> Any:
     """Argument parser for the job. Shared by the CLI and the ``scripts/`` wrapper."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Supervised fine-tune from curated data.")
+    parser = argparse.ArgumentParser(
+        description="Supervised fine-tune from curated data."
+    )
     parser.add_argument(
         "--dataset",
         type=Path,

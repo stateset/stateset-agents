@@ -139,8 +139,16 @@ class SshTransport:
         last_error = ""
         while time.monotonic() < deadline:
             probe = subprocess.run(
-                ["ssh", *self._base_opts(), "-p", str(port), "-o",
-                 "ConnectTimeout=10", f"{self.user}@{host}", "true"],
+                [
+                    "ssh",
+                    *self._base_opts(),
+                    "-p",
+                    str(port),
+                    "-o",
+                    "ConnectTimeout=10",
+                    f"{self.user}@{host}",
+                    "true",
+                ],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -230,6 +238,9 @@ class RunPodExecutor(RemoteExecutor):
     """Executes the job on a RunPod GPU pod, over SSH."""
 
     name = "runpod"
+    #: RunPod's own GPU vocabulary. 16 GB is enough for a small-model LoRA
+    #: SFT and is among the cheapest widely-available options.
+    DEFAULT_GPU = "NVIDIA RTX A4000"
 
     def __init__(
         self,
@@ -320,15 +331,24 @@ class RunPodExecutor(RemoteExecutor):
             )
         args = " ".join(
             [
-                "--dataset", dataset_remote,
-                "--base-model", spec.base_model,
-                "--output-dir", _REMOTE_OUTPUT,
-                "--num-epochs", str(spec.num_epochs),
-                "--lora-r", str(spec.lora_r),
-                "--lora-alpha", str(spec.lora_alpha),
-                "--learning-rate", str(spec.learning_rate),
-                "--max-length", str(spec.max_length),
-                "--per-device-batch-size", str(spec.per_device_batch_size),
+                "--dataset",
+                dataset_remote,
+                "--base-model",
+                spec.base_model,
+                "--output-dir",
+                _REMOTE_OUTPUT,
+                "--num-epochs",
+                str(spec.num_epochs),
+                "--lora-r",
+                str(spec.lora_r),
+                "--lora-alpha",
+                str(spec.lora_alpha),
+                "--learning-rate",
+                str(spec.learning_rate),
+                "--max-length",
+                str(spec.max_length),
+                "--per-device-batch-size",
+                str(spec.per_device_batch_size),
                 "--gradient-accumulation-steps",
                 str(spec.gradient_accumulation_steps),
             ]
@@ -352,12 +372,12 @@ class RunPodExecutor(RemoteExecutor):
         pod = api.create_pod(
             name=f"stateset-sft-{job_id}",
             image=self.image,
-            gpu_type_id=spec.gpu,
+            gpu_type_id=spec.gpu or self.DEFAULT_GPU,
             ports=["22/tcp"],
             env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
         )
         pod_id = str(pod["id"])
-        logs.append(f"created pod {pod_id} ({spec.gpu})")
+        logs.append(f"created pod {pod_id} ({spec.gpu or self.DEFAULT_GPU})")
 
         # Everything from here must terminate the pod, whatever happens.
         try:

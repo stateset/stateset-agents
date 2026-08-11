@@ -218,10 +218,14 @@ class TestImproveRun:
         result = runner.invoke(
             app,
             [
-                "improve", "run",
-                "--transcripts", str(transcripts_dir),
-                "--reward", "customer_support",
-                "--output", str(output_dir),
+                "improve",
+                "run",
+                "--transcripts",
+                str(transcripts_dir),
+                "--reward",
+                "customer_support",
+                "--output",
+                str(output_dir),
             ],
         )
         assert result.exit_code == 0, result.output

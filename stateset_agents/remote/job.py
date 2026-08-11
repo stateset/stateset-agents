@@ -91,7 +91,11 @@ class RemoteJobSpec:
     dry_run: bool = False
 
     # --- Provider resources: never reach the training script ---------------
-    gpu: str = "A10G"
+    #: GPU to request. Deliberately has no default: GPU names are provider
+    #: vocabulary ("A10G" on Modal, "NVIDIA RTX A4000" on RunPod), so a shared
+    #: default would silently send an invalid id to whichever provider did not
+    #: coin it. ``None`` means "use the executor's own default".
+    gpu: str | None = None
     timeout_s: int = 3600
     package_version: str | None = None
 

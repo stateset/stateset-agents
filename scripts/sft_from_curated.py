@@ -49,11 +49,13 @@ from stateset_agents.training.sft import (  # noqa: F401
     gpu_available,
     load_chat_dataset,
     logger,
+)
+from stateset_agents.training.sft import main as _main
+from stateset_agents.training.sft import (  # noqa: F401
     print_training_plan,
     run_sft,
     run_sft_job,
 )
-from stateset_agents.training.sft import main as _main
 
 __all__ = [
     "gpu_available",

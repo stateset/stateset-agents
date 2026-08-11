@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Iterator
 
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec

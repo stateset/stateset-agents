@@ -177,3 +177,33 @@ class TestRemoteJobResult:
         )
 
         assert result.succeeded is False
+
+
+class TestGpuDefaultIsProviderSpecific:
+    """GPU names are provider vocabulary, not portable values.
+
+    "A10G" is Modal's name; RunPod calls its hardware "NVIDIA RTX A4000".
+    A single shared default silently sends an invalid id to whichever
+    provider did not coin it, so the spec carries no default at all and each
+    executor supplies its own.
+    """
+
+    def test_spec_has_no_baked_in_gpu_default(self, dataset):
+        spec = RemoteJobSpec(dataset=dataset, base_model="Qwen/Qwen3.5-0.8B")
+
+        assert spec.gpu is None
+
+    def test_explicit_gpu_is_preserved(self, dataset):
+        spec = RemoteJobSpec(
+            dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", gpu="H100"
+        )
+
+        assert spec.gpu == "H100"
+
+    def test_each_executor_declares_its_own_default(self):
+        from stateset_agents.remote.modal import ModalExecutor
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        assert ModalExecutor.DEFAULT_GPU
+        assert RunPodExecutor.DEFAULT_GPU
+        assert ModalExecutor.DEFAULT_GPU != RunPodExecutor.DEFAULT_GPU

@@ -15,10 +15,10 @@ decorator, ``app.run()`` as a context manager, and ``Function.remote()``.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable, Iterator
 
 
 class FakeImage:

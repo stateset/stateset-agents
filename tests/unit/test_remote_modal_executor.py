@@ -105,7 +105,9 @@ class TestImage:
     def test_installs_the_pinned_published_package(self, executor, spec):
         executor.submit(spec)
 
-        assert "stateset-agents[training]==0.19.0" in executor.build_image(spec).installed
+        assert (
+            "stateset-agents[training]==0.19.0" in executor.build_image(spec).installed
+        )
 
     def test_falls_back_to_the_running_version_when_unpinned(
         self, executor, dataset, tmp_path
@@ -150,7 +152,9 @@ class TestSuccessfulJob:
 
         assert result.status is JobStatus.SUCCEEDED
         assert (spec.output_dir / "adapter_config.json").exists()
-        assert (spec.output_dir / "adapter_model.safetensors").read_bytes() == b"WEIGHTS"
+        assert (
+            spec.output_dir / "adapter_model.safetensors"
+        ).read_bytes() == b"WEIGHTS"
 
     def test_adapter_contents_survive_the_round_trip(
         self, executor, spec, trains_for_real
@@ -211,7 +215,9 @@ class TestFailingJob:
         assert result.status is JobStatus.FAILED
         assert any("no artifacts" in line.lower() for line in result.logs)
 
-    def test_provider_errors_are_wrapped_with_the_cause(self, executor, spec, monkeypatch):
+    def test_provider_errors_are_wrapped_with_the_cause(
+        self, executor, spec, monkeypatch
+    ):
         boom = RuntimeError("modal is down")
         monkeypatch.setattr(
             executor, "_run_remote", lambda *a, **k: (_ for _ in ()).throw(boom)

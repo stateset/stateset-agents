@@ -124,7 +124,9 @@ class TestLocalExecutorRun:
         spec.timeout_s = 1
         executor = LocalExecutor()
         monkeypatch.setattr(
-            LocalExecutor, "_entrypoint_args", lambda self: ["-c", "import time;time.sleep(30)"]
+            LocalExecutor,
+            "_entrypoint_args",
+            lambda self: ["-c", "import time;time.sleep(30)"],
         )
 
         result = executor.wait(executor.submit(spec))
@@ -151,9 +153,7 @@ class TestWaitPolling:
 
             def status(self, handle):
                 self.polls += 1
-                return (
-                    JobStatus.SUCCEEDED if self.polls >= 3 else JobStatus.RUNNING
-                )
+                return JobStatus.SUCCEEDED if self.polls >= 3 else JobStatus.RUNNING
 
             def logs(self, handle):
                 yield "done"

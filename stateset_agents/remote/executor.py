@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import abc
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterator
 
 from stateset_agents.core.errors import ErrorCode, StateSetError, wrap_exception
 from stateset_agents.remote.job import (
@@ -76,9 +76,7 @@ class RemoteExecutor(abc.ABC):
     def cancel(self, handle: JobHandle) -> None:
         """Stop the job if it is still running."""
 
-    def wait(
-        self, handle: JobHandle, poll_interval_s: float = 1.0
-    ) -> RemoteJobResult:
+    def wait(self, handle: JobHandle, poll_interval_s: float = 1.0) -> RemoteJobResult:
         """Poll until the job reaches a terminal state, then collect it.
 
         Shared by every provider — the per-provider work is only in the four
