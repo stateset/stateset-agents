@@ -18,10 +18,7 @@ from pathlib import Path
 import typer
 
 from stateset_agents import cli as _cli
-from stateset_agents.cli import (
-    CLI_IMPORT_EXCEPTIONS,
-    app,
-)
+from stateset_agents.cli import CLI_IMPORT_EXCEPTIONS, app
 
 # Late-bound helper aliases — these are unpatched in tests.
 _echo = _cli._echo

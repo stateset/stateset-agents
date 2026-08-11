@@ -18,9 +18,7 @@ from pathlib import Path
 import typer
 
 from stateset_agents import cli as _cli
-from stateset_agents.cli import (
-    app,
-)
+from stateset_agents.cli import app
 
 _echo = _cli._echo
 _load_config = _cli._load_config

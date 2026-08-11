@@ -75,12 +75,10 @@ impl StateSetClient {
 
     /// Choose the appropriate client for an operation
     fn choose_client(&self) -> &dyn CommerceApi {
-        if self.prefer_grpc && self.grpc_client.is_some() {
-            // gRPC is preferred and available
-            // Note: In practice, check if the specific operation is implemented
-            self.grpc_client.as_ref().unwrap() as &dyn CommerceApi
-        } else {
-            &self.rest_client as &dyn CommerceApi
+        // Note: In practice, check if the specific operation is implemented
+        match &self.grpc_client {
+            Some(grpc) if self.prefer_grpc => grpc as &dyn CommerceApi,
+            _ => &self.rest_client as &dyn CommerceApi,
         }
     }
 }
