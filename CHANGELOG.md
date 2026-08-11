@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Starter modules deduplicated onto `training/starter_common.py`.** The seven
+  `*_starter.py` modules were near-verbatim copies (4,452 lines total); shared
+  config-file IO, profile plumbing, preview/run scaffolding, and the
+  `StarterConfigMixin` dataclass base now live in one module, and each starter
+  is a thin definition layer (2,902 lines total). Public API, error strings,
+  and test patch targets are unchanged — the full starter test suite passes
+  unmodified. `docs/SUPPORTED_MODELS.md` documents the new thin-module pattern
+  for adding starters.
+- **Security workflow actually enforces.** CodeQL action v2 → v3 (v2 is
+  retired and failing), dependency-review-action v3 → v4, TruffleHog pinned to
+  v3.96.0, Trivy installed via its official installer (it was previously
+  `pip install trivy`, which is not a real package, silently masked by
+  `|| true`). The high-severity gate now runs on every trigger — not just
+  pull requests — and fails when an expected scanner report is missing instead
+  of silently passing.
+- **Deployment images pinned.** All 14 vLLM manifests move from
+  `vllm/vllm-openai:nightly` to `v0.27.1`; the legacy `grpo-framework:latest`
+  deployment is pinned to the release version, and `deploy.sh` now tags images
+  with the version from `pyproject.toml`.
+- **`[dev]` extra completeness enforced.** `[dev]` had drifted from
+  `[training]`/`[api]` (missing `gymnasium` and `redis`); the missing packages
+  are restored and a new guardrail test
+  (`tests/unit/test_pyproject_extras.py`) asserts `[dev]` stays a superset of
+  both. (Self-referential extras would make this structural, but they send
+  pip-compile into `ResolutionTooDeepError`, so the duplication is deliberate
+  and documented in-line.) Dev lock file regenerated.
+
+### Added
+
+- **CLI reference completeness guardrail.** `docs/CLI_REFERENCE.md` gained the
+  12 undocumented commands (`improve`, `ingest`, `mcp`, `chat`, `benchmark`,
+  `recipe`, `starter`, `tour`, `fine-tune`, `auto-research`, `init-config`,
+  `gemma-4-31b`), generated from the live Typer app, and a new meta-test
+  (`tests/unit/test_cli_reference_complete.py`) fails CI whenever a command is
+  added, renamed, or removed without updating the reference.
+
 ## [0.21.0] - 2026-08-10 — Muse Glimmer 30B starter + RunPod hardening
 
 ### Added

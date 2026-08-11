@@ -105,13 +105,30 @@ See `TESTING.md` for the full stub-backend fixture catalog.
 
 ## Adding a new first-class starter
 
-The `stateset_agents/training/*_starter.py` modules follow a uniform shape. To
-propose a new first-class starter:
+The `stateset_agents/training/*_starter.py` modules are thin definition layers
+over the shared machinery in `stateset_agents/training/starter_common.py`. A
+starter module supplies only its family-specific pieces — constants
+(`<FAMILY>_BASE_MODEL`, `<FAMILY>_SUPPORTED_VARIANTS`, profile choices and
+descriptions, LoRA target modules, output dir), a `_PROFILE_OVERRIDES` table, a
+`@dataclass` config (subclassing `starter_common.StarterConfigMixin`, with
+family defaults, `_system_prompt`/`_wandb_base_tags`/`_wandb_project_default`
+class attributes), and a family-specific `validate_<family>_config` — then
+binds the public API as named wrapper functions that delegate to
+`starter_common` (`select_system_prompt`, `select_profile_overrides`,
+`resolve_starter_config`, `build_gspo_overrides`, `create_preview`,
+`load_config_file`/`write_config_file`, `run_starter_config`,
+`finetune_starter`). Keep the module-level `get_config_for_task` import in the
+starter module so test patch targets keep working, and keep wrappers as real
+`def`s with full signatures and docstrings (not `functools.partial`).
 
-1. Create `stateset_agents/training/<family>_starter.py` exporting
-   `<FAMILY>_BASE_MODEL`, `<FAMILY>_SUPPORTED_VARIANTS`, profile catalog,
-   `get_<family>_config`, `create_<family>_preview`, `run_<family>_config`,
-   `write_<family>_config_file`, `load_<family>_config_file`.
+To propose a new first-class starter:
+
+1. Create `stateset_agents/training/<family>_starter.py` following the thin
+   pattern above (copy an existing starter, e.g. `kimi_k3_starter.py`),
+   exporting `<FAMILY>_BASE_MODEL`, `<FAMILY>_SUPPORTED_VARIANTS`, profile
+   catalog, `get_<family>_config`, `create_<family>_preview`,
+   `run_<family>_config`, `write_<family>_config_file`,
+   `load_<family>_config_file`.
 2. Wire it into `stateset_agents/training/__init__.py` lazy-import map.
 3. Add a `@app.command("<family>-short-name")` in `stateset_agents/cli.py`.
 4. Ship `examples/finetune_<family>_gspo.py` + `docs/<family>_starter.rst`.

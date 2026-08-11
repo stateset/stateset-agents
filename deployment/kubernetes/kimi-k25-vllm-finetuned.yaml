@@ -22,7 +22,7 @@ spec:
       containers:
       - name: vllm
         # Pin to a tested tag or digest for production.
-        image: vllm/vllm-openai:nightly
+        image: vllm/vllm-openai:v0.27.1
         imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false

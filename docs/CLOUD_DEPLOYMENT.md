@@ -194,7 +194,7 @@ sudo systemctl restart docker
 
 # Run vLLM (GPU inference, OpenAI-compatible)
 docker run -d --gpus all --network host \
-  vllm/vllm-openai:nightly \
+  vllm/vllm-openai:v0.27.1 \
   python3 -m vllm.entrypoints.openai.api_server \
     --model moonshotai/Kimi-K2.5 \
     --host 0.0.0.0 \
@@ -405,7 +405,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: vllm
-          image: vllm/vllm-openai:nightly
+          image: vllm/vllm-openai:v0.27.1
           resources:
             limits:
               nvidia.com/gpu: 1

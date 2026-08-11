@@ -36,7 +36,12 @@ jobs:
     - name: Install security tools
       run: |
         python -m pip install --upgrade pip
-        pip install bandit safety semgrep trivy
+        pip install bandit safety semgrep
+
+    - name: Install Trivy
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+          | sh -s -- -b /usr/local/bin v0.73.0
 
     - name: Run Bandit security linter
       run: |
@@ -100,7 +105,6 @@ jobs:
         echo "✅ Security scanning completed" >> $GITHUB_STEP_SUMMARY
 
     - name: Fail on critical security issues
-      if: github.event_name == 'pull_request'
       run: |
         python - <<'PY'
         import json
@@ -108,6 +112,19 @@ jobs:
         from pathlib import Path
 
         parse_errors = []
+
+        expected_reports = [
+            "bandit-report.json",
+            "safety-report.json",
+            "semgrep-report.json",
+            "trivy-report.json",
+        ]
+        missing = [name for name in expected_reports if not Path(name).exists()]
+        if missing:
+            print("🚨 Security gate failed: expected reports were not produced.")
+            for item in missing:
+                print(f"  - {item} missing (scanner did not run or crashed)")
+            sys.exit(1)
 
         bandit_issues = []
         bandit_path = Path("bandit-report.json")
@@ -198,13 +215,13 @@ jobs:
                 trivy_issues = []
 
         if parse_errors:
-            print("🚨 Security gate failed on pull_request: security report parsing failed.")
+            print("🚨 Security gate failed: security report parsing failed.")
             for item in parse_errors:
                 print(f"  - {item}")
             sys.exit(1)
 
         if bandit_issues or safety_issues or semgrep_issues or trivy_issues:
-            print("🚨 Security gate failed on pull_request: high-severity findings detected.")
+            print("🚨 Security gate failed: high-severity findings detected.")
             if bandit_issues:
                 print(f"  - Bandit findings: {len(bandit_issues)}")
             if safety_issues:
@@ -227,7 +244,7 @@ jobs:
         fetch-depth: 0
 
     - name: Dependency Review
-      uses: actions/dependency-review-action@v3
+      uses: actions/dependency-review-action@v4
       with:
         config-file: '.github/dependency-review-config.yml'
 
@@ -240,12 +257,12 @@ jobs:
         fetch-depth: 0
 
     - name: Secret Detection
-      uses: trufflesecurity/trufflehog@main
+      uses: trufflesecurity/trufflehog@v3.96.0
       with:
         path: ./
         base: main
         head: HEAD
-        extra_args: --debug --only-verified
+        extra_args: --only-verified
 
   codeql-analysis:
     runs-on: ubuntu-latest
@@ -254,13 +271,13 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v2
+      uses: github/codeql-action/init@v3
       with:
         languages: python
         config-file: ./.github/codeql-config.yml
 
     - name: Autobuild
-      uses: github/codeql-action/autobuild@v2
+      uses: github/codeql-action/autobuild@v3
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v2
+      uses: github/codeql-action/analyze@v3

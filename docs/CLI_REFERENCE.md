@@ -367,6 +367,195 @@ Options:
 - `--fail-on-warnings`: Fail when validation warnings are present.
 - `--json-output`: Return JSON payload with dependency/import/config status.
 
+### `stateset-agents chat`
+
+Open an interactive REPL against an in-process agent.
+
+```bash
+stateset-agents chat
+```
+
+#### Options
+
+- `--model, -m TEXT`: HF model name or stub://<id> for the in-process REPL.
+- `--checkpoint, -c TEXT`: Path to a LoRA adapter to load on top of --model.
+- `--system TEXT`: Optional system prompt prepended to every conversation.
+- `--max-new-tokens INTEGER`: Generation length cap per response.
+- `--history TEXT`: Path to a JSONL file to APPEND each turn (one JSON object per line). Capture interesting conversations to replay or grade later with `make grade-transcript`.
+- `--replay TEXT`: Path to a JSONL transcript to replay as initial conversation context. Useful for resuming a debugging session.
+- `--grade TEXT`: Score each assistant turn live with the named reward function. Options: gsm8k, customer_support, tool_calling. Mismatches between intuition and score surface reward-function bugs.
+
+### `stateset-agents fine-tune`
+
+Fine-tune from a curated JSONL in one command.
+
+```bash
+stateset-agents fine-tune CURATED
+```
+
+#### Options
+
+- `--base-model, -m TEXT`: HF base model to fine-tune.
+- `--output-dir, -o TEXT`: Where the LoRA adapter is saved.
+- `--min-score FLOAT`: Drop curated examples below this score before SFT.
+- `--num-epochs, -e INTEGER`: Training epochs.
+- `--lora-r INTEGER`: LoRA rank.
+- `--dry-run`: Print the training plan without running it (forced when no GPU).
+
+### `stateset-agents improve`
+
+Run the grade -> curate -> retrain loop as a single command.
+
+```bash
+stateset-agents improve ACTION
+```
+
+#### Options
+
+- `--transcripts TEXT`: For --format transcripts: a directory of transcript JSONL files (one conversation per file, {'role','content'} per line — the shape `stateset-agents chat --history` writes). For --format openai/langchain: the single source log file to ingest first.
+- `--reward TEXT`: Reward function: gsm8k, customer_support, or tool_calling (rule-based, no API key required).
+- `--output, -o TEXT`: Output directory for curated data + reports.
+- `--threshold FLOAT`: Minimum score for curation (default: 0.7).
+- `--format, -f TEXT`: Input format: 'transcripts' (already chat-history JSONL), 'openai', or 'langchain' (ingested first via stateset_agents.data.trajectory_ingest).
+
+### `stateset-agents ingest`
+
+Convert third-party conversation logs into graded-history JSONL.
+
+```bash
+stateset-agents ingest
+```
+
+#### Options
+
+- `--format, -f TEXT`: Source log format: 'openai' (chat-completions messages JSONL) or 'langchain' (LangChain/LangGraph message-dump JSON).
+- `--input, -i TEXT`: Path to the source log file. For --format openai: JSONL, one conversation per line ({'messages': [...]} or a bare message list). For --format langchain: a single JSON file (see stateset_agents.data.trajectory_ingest docstring for supported shapes).
+- `--output, -o TEXT`: Output path. If it ends in .jsonl, all conversations are concatenated into one graded-history JSONL file (turns from different conversations are separated by a blank line — note the grader treats such a file as ONE transcript; use directory mode to grade conversations separately). Otherwise it is treated as a directory and one <output>/conversation_<N>.jsonl file is written per conversation — feed any of them to `python scripts/grade_transcript.py --history <file>`.
+
+### `stateset-agents mcp`
+
+Run the StateSet Agents MCP server (stdio transport by default).
+
+```bash
+stateset-agents mcp
+```
+
+#### Options
+
+- `--transport TEXT`: MCP transport to serve over (default: stdio).
+
+### `stateset-agents auto-research`
+
+Run the autonomous research loop to optimize agent training.
+
+```bash
+stateset-agents auto-research
+```
+
+#### Options
+
+- `--config, -c TEXT`: Path to auto-research config file (YAML/JSON).
+- `--max-experiments, -n INTEGER`: Maximum experiments to run (0 = unlimited).
+- `--time-budget, -t INTEGER`: Wall-clock seconds per experiment.
+- `--proposer, -p TEXT`: Proposer strategy: perturbation, smart, adaptive, random, grid, bayesian, llm.
+- `--algorithm, -a TEXT`: Training algorithm: gspo, grpo, dapo, vapo.
+- `--output-dir, -o TEXT`: Directory for results and checkpoints.
+- `--search-space, -s TEXT`: Search space: grpo, auto_research, quick, reward, model, multi_algorithm, full.
+- `--improvement-patience INTEGER`: Stop after this many consecutive non-improvements (0 = disabled).
+- `--max-wall-clock INTEGER`: Total wall-clock budget in seconds (0 = unlimited).
+- `--wandb`: Log experiments to Weights & Biases.
+- `--wandb-project TEXT`: W&B project name.
+- `--stub`: Run with stub model for testing the loop without GPU.
+- `--dry-run`: Validate config and show plan without running.
+
+### `stateset-agents benchmark`
+
+Run and aggregate Phase 0 / whitepaper-v1 benchmarks.
+
+Subcommands:
+
+- `aggregate`: Aggregate all *.json results in a directory into summary.md + summary.csv.
+- `phase0`: Run a single Phase 0 benchmark and emit a schema-compliant JSON result.
+- `plot`: Generate publication figures from aggregated benchmark results.
+- `smoke`: Quick end-to-end smoke test of the GSM8K benchmark pipeline (no training).
+
+```bash
+stateset-agents benchmark --help
+```
+
+### `stateset-agents recipe`
+
+Open a cookbook recipe in $PAGER, or `list` them all.
+
+```bash
+stateset-agents recipe NAME
+```
+
+### `stateset-agents starter`
+
+Scaffold a fork-and-go fine-tuning project.
+
+```bash
+stateset-agents starter TEMPLATE OUTPUT
+```
+
+#### Options
+
+- `--name, -n TEXT`: Project name (defaults to the basename of the output directory).
+- `--force, -f`: Overwrite an existing non-empty directory.
+- `--client-name TEXT`: Client name (slugified) — patches output_dir paths and the W&B project name throughout the scaffold.
+
+### `stateset-agents tour`
+
+Open the platform tour — the one document that walks the full developer journey.
+
+```bash
+stateset-agents tour
+```
+
+### `stateset-agents init-config`
+
+Alias for `init`.
+
+```bash
+stateset-agents init-config
+```
+
+#### Options
+
+- `--path TEXT`: Path for a starter config
+- `--overwrite`: Overwrite existing file
+- `--format, -f TEXT`: Output format: yaml or json
+- `--preset TEXT`: Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, or muse-glimmer
+- `--task TEXT`: Task preset for model-specific starter presets.
+- `--starter-profile TEXT`: Starter profile for model-specific starter presets.
+
+### `stateset-agents gemma-4-31b`
+
+Preview or run the dedicated Gemma 4 31B GSPO starter path.
+
+```bash
+stateset-agents gemma-4-31b
+```
+
+#### Options
+
+- `--config, -c TEXT`: Path to a Gemma 4 31B starter config file (JSON/YAML).
+- `--task TEXT`: Task preset for the Gemma 4 31B starter path.
+- `--starter-profile TEXT`: Starter profile: balanced, memory, or quality.
+- `--list-profiles`: Describe all built-in starter profiles and exit.
+- `--model TEXT`: Model name. For post-training, use google/gemma-4-31B-it.
+- `--use-lora / --no-lora`: Override LoRA usage. Defaults come from --starter-profile.
+- `--use-4bit / --no-use-4bit`: Override 4-bit quantization. Defaults come from --starter-profile.
+- `--use-8bit / --no-use-8bit`: Override 8-bit quantization. Defaults come from --starter-profile.
+- `--output-dir TEXT`: Override the output directory for checkpoints and adapters.
+- `--iterations INTEGER`: Override the outer GSPO iteration count for the starter run.
+- `--wandb`: Enable Weights & Biases logging.
+- `--wandb-project TEXT`: Optional W&B project name.
+- `--write-config TEXT`: Write the resolved Gemma starter config to JSON/YAML and exit.
+- `--dry-run / --no-dry-run`: Preview the resolved config instead of loading a model.
+- `--json, --json-output`: Output machine-readable JSON.
+
 ## Exit behavior
 
 - Non-zero exit codes indicate command failures (e.g., missing modules or invalid input).

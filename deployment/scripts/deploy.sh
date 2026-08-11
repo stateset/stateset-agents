@@ -101,7 +101,8 @@ build_docker_image() {
 
     cd "$(dirname "$0")/../.."
 
-    docker build -t grpo-framework:latest -f deployment/docker/Dockerfile .
+    VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+    docker build -t "grpo-framework:${VERSION}" -t grpo-framework:latest -f deployment/docker/Dockerfile .
 
     log_success "Docker image built successfully"
 }
