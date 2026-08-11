@@ -496,6 +496,100 @@ _OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{__name__}.muse_glimmer_starter",
         "write_muse_glimmer_config_file",
     ),
+    # Nemotron 3.5 starter path
+    "NEMOTRON_3_5_BASE_MODEL": (
+        f"{__name__}.nemotron_3_5_starter",
+        "NEMOTRON_3_5_BASE_MODEL",
+    ),
+    "NEMOTRON_3_5_CONFIG_SUFFIXES": (
+        f"{__name__}.nemotron_3_5_starter",
+        "NEMOTRON_3_5_CONFIG_SUFFIXES",
+    ),
+    "NEMOTRON_3_5_DEFAULT_OUTPUT_DIR": (
+        f"{__name__}.nemotron_3_5_starter",
+        "NEMOTRON_3_5_DEFAULT_OUTPUT_DIR",
+    ),
+    "NEMOTRON_3_5_LORA_TARGET_MODULES": (
+        f"{__name__}.nemotron_3_5_starter",
+        "NEMOTRON_3_5_LORA_TARGET_MODULES",
+    ),
+    "NEMOTRON_3_5_STARTER_PROFILE_CHOICES": (
+        f"{__name__}.nemotron_3_5_starter",
+        "NEMOTRON_3_5_STARTER_PROFILE_CHOICES",
+    ),
+    "NEMOTRON_3_5_STARTER_PROFILE_DESCRIPTIONS": (
+        f"{__name__}.nemotron_3_5_starter",
+        "NEMOTRON_3_5_STARTER_PROFILE_DESCRIPTIONS",
+    ),
+    "NEMOTRON_3_5_SUPPORTED_VARIANTS": (
+        f"{__name__}.nemotron_3_5_starter",
+        "NEMOTRON_3_5_SUPPORTED_VARIANTS",
+    ),
+    "NEMOTRON_3_5_TASK_CHOICES": (
+        f"{__name__}.nemotron_3_5_starter",
+        "NEMOTRON_3_5_TASK_CHOICES",
+    ),
+    "Nemotron35Config": (f"{__name__}.nemotron_3_5_starter", "Nemotron35Config"),
+    "create_nemotron_3_5_agent_config": (
+        f"{__name__}.nemotron_3_5_starter",
+        "create_nemotron_3_5_agent_config",
+    ),
+    "create_nemotron_3_5_preview": (
+        f"{__name__}.nemotron_3_5_starter",
+        "create_nemotron_3_5_preview",
+    ),
+    "describe_nemotron_3_5_starter_profiles": (
+        f"{__name__}.nemotron_3_5_starter",
+        "describe_nemotron_3_5_starter_profiles",
+    ),
+    "finetune_nemotron_3_5": (
+        f"{__name__}.nemotron_3_5_starter",
+        "finetune_nemotron_3_5",
+    ),
+    "get_nemotron_3_5_config": (
+        f"{__name__}.nemotron_3_5_starter",
+        "get_nemotron_3_5_config",
+    ),
+    "get_nemotron_3_5_gspo_config": (
+        f"{__name__}.nemotron_3_5_starter",
+        "get_nemotron_3_5_gspo_config",
+    ),
+    "get_nemotron_3_5_gspo_overrides": (
+        f"{__name__}.nemotron_3_5_starter",
+        "get_nemotron_3_5_gspo_overrides",
+    ),
+    "get_nemotron_3_5_profile_description": (
+        f"{__name__}.nemotron_3_5_starter",
+        "get_nemotron_3_5_profile_description",
+    ),
+    "get_nemotron_3_5_profile_overrides": (
+        f"{__name__}.nemotron_3_5_starter",
+        "get_nemotron_3_5_profile_overrides",
+    ),
+    "get_nemotron_3_5_system_prompt": (
+        f"{__name__}.nemotron_3_5_starter",
+        "get_nemotron_3_5_system_prompt",
+    ),
+    "load_nemotron_3_5_config_file": (
+        f"{__name__}.nemotron_3_5_starter",
+        "load_nemotron_3_5_config_file",
+    ),
+    "run_nemotron_3_5_config": (
+        f"{__name__}.nemotron_3_5_starter",
+        "run_nemotron_3_5_config",
+    ),
+    "summarize_nemotron_3_5_config": (
+        f"{__name__}.nemotron_3_5_starter",
+        "summarize_nemotron_3_5_config",
+    ),
+    "validate_nemotron_3_5_config": (
+        f"{__name__}.nemotron_3_5_starter",
+        "validate_nemotron_3_5_config",
+    ),
+    "write_nemotron_3_5_config_file": (
+        f"{__name__}.nemotron_3_5_starter",
+        "write_nemotron_3_5_config_file",
+    ),
     # Serving artifacts
     "build_serving_manifest": (
         f"{__name__}.serving_artifacts",
@@ -973,6 +1067,30 @@ __all__ = [
     "summarize_muse_glimmer_config",
     "validate_muse_glimmer_config",
     "write_muse_glimmer_config_file",
+    "NEMOTRON_3_5_BASE_MODEL",
+    "NEMOTRON_3_5_CONFIG_SUFFIXES",
+    "NEMOTRON_3_5_DEFAULT_OUTPUT_DIR",
+    "NEMOTRON_3_5_LORA_TARGET_MODULES",
+    "NEMOTRON_3_5_STARTER_PROFILE_CHOICES",
+    "NEMOTRON_3_5_STARTER_PROFILE_DESCRIPTIONS",
+    "NEMOTRON_3_5_SUPPORTED_VARIANTS",
+    "NEMOTRON_3_5_TASK_CHOICES",
+    "Nemotron35Config",
+    "create_nemotron_3_5_agent_config",
+    "create_nemotron_3_5_preview",
+    "describe_nemotron_3_5_starter_profiles",
+    "finetune_nemotron_3_5",
+    "get_nemotron_3_5_config",
+    "get_nemotron_3_5_gspo_config",
+    "get_nemotron_3_5_gspo_overrides",
+    "get_nemotron_3_5_profile_description",
+    "get_nemotron_3_5_profile_overrides",
+    "get_nemotron_3_5_system_prompt",
+    "load_nemotron_3_5_config_file",
+    "run_nemotron_3_5_config",
+    "summarize_nemotron_3_5_config",
+    "validate_nemotron_3_5_config",
+    "write_nemotron_3_5_config_file",
     "build_serving_manifest",
     "export_merged_model_for_serving",
     "write_serving_manifest",

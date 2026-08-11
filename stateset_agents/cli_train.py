@@ -1533,3 +1533,267 @@ def muse_glimmer(
         return
 
     _echo("Muse Glimmer starter run complete.")
+
+
+@app.command("nemotron-3-5")
+def nemotron_3_5(
+    config: str | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to a nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 starter config file (JSON/YAML).",
+    ),
+    task: str = typer.Option(
+        "customer_service",
+        help="Task preset for the nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 starter path.",
+    ),
+    starter_profile: str = typer.Option(
+        "balanced",
+        "--starter-profile",
+        help="Starter profile: balanced, memory, or quality.",
+    ),
+    list_profiles: bool = typer.Option(
+        False,
+        "--list-profiles",
+        help="Describe all built-in starter profiles and exit.",
+    ),
+    model: str = typer.Option(
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        "--model",
+        help="Model name. For post-training, prefer nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16.",
+    ),
+    use_lora: bool | None = typer.Option(
+        None,
+        "--use-lora/--no-lora",
+        help="Override LoRA usage. Defaults come from --starter-profile.",
+    ),
+    use_4bit: bool | None = typer.Option(
+        None,
+        "--use-4bit/--no-use-4bit",
+        help="Override 4-bit quantization. Defaults come from --starter-profile.",
+    ),
+    use_8bit: bool | None = typer.Option(
+        None,
+        "--use-8bit/--no-use-8bit",
+        help="Override 8-bit quantization. Defaults come from --starter-profile.",
+    ),
+    output_dir: str | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Override the output directory for checkpoints and adapters.",
+    ),
+    iterations: int | None = typer.Option(
+        None,
+        "--iterations",
+        help="Override the outer GSPO iteration count for the starter run.",
+    ),
+    wandb: bool = typer.Option(
+        False,
+        "--wandb",
+        help="Enable Weights & Biases logging.",
+    ),
+    wandb_project: str | None = typer.Option(
+        None,
+        "--wandb-project",
+        help="Optional W&B project name.",
+    ),
+    write_config: str | None = typer.Option(
+        None,
+        "--write-config",
+        help="Write the resolved Nemotron 3.5 starter config to JSON/YAML and exit.",
+    ),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Preview the resolved config instead of loading a model.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "--json-output",
+        help="Output machine-readable JSON.",
+    ),
+) -> None:
+    """Preview or run the dedicated nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 GSPO starter path."""
+    try:
+        from stateset_agents.training.nemotron_3_5_starter import (
+            NEMOTRON_3_5_BASE_MODEL,
+            NEMOTRON_3_5_STARTER_PROFILE_CHOICES,
+            NEMOTRON_3_5_TASK_CHOICES,
+            create_nemotron_3_5_preview,
+            describe_nemotron_3_5_starter_profiles,
+            get_nemotron_3_5_config,
+            load_nemotron_3_5_config_file,
+            run_nemotron_3_5_config,
+            write_nemotron_3_5_config_file,
+        )
+    except CLI_IMPORT_EXCEPTIONS as e:
+        _echo("Nemotron 3.5 starter helpers unavailable. Install training extras.")
+        _echo(f"Details: {e}")
+        raise typer.Exit(code=2) from e
+
+    if list_profiles:
+        if config is not None:
+            _echo("`--list-profiles` cannot be combined with `--config`.")
+            raise typer.Exit(code=2)
+        if task not in NEMOTRON_3_5_TASK_CHOICES:
+            _echo(
+                f"Unsupported task. Use one of: {', '.join(NEMOTRON_3_5_TASK_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+
+        profile_catalog = describe_nemotron_3_5_starter_profiles(
+            task=task,
+            model_name=model,
+        )
+        if json_output:
+            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo("Available Nemotron 3.5 starter profiles:")
+        _echo(f"Model: {profile_catalog['model_name']}")
+        _echo(f"Task: {profile_catalog['task']}")
+        for profile_name in NEMOTRON_3_5_STARTER_PROFILE_CHOICES:
+            profile_payload = profile_catalog["profiles"][profile_name]
+            summary = profile_payload["summary"]
+            _echo(f"- {profile_name}: {profile_payload['description']}")
+            _echo(
+                "  "
+                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
+                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
+                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
+            )
+        return
+
+    if config:
+        conflicting_options: list[str] = []
+        if task != "customer_service":
+            conflicting_options.append("--task")
+        if starter_profile != "balanced":
+            conflicting_options.append("--starter-profile")
+        if model != NEMOTRON_3_5_BASE_MODEL:
+            conflicting_options.append("--model")
+        if use_lora is not None:
+            conflicting_options.append("--use-lora/--no-lora")
+        if use_4bit is not None:
+            conflicting_options.append("--use-4bit")
+        if use_8bit is not None:
+            conflicting_options.append("--use-8bit")
+        if output_dir is not None:
+            conflicting_options.append("--output-dir")
+        if iterations is not None:
+            conflicting_options.append("--iterations")
+        if wandb:
+            conflicting_options.append("--wandb")
+        if wandb_project is not None:
+            conflicting_options.append("--wandb-project")
+        if conflicting_options:
+            _echo(
+                "`--config` cannot be combined with starter override options: "
+                + ", ".join(conflicting_options)
+            )
+            raise typer.Exit(code=2)
+        try:
+            resolved_config = load_nemotron_3_5_config_file(config)
+        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
+            _echo(f"Failed to load Nemotron 3.5 config: {e}")
+            raise typer.Exit(code=2) from e
+    else:
+        if task not in NEMOTRON_3_5_TASK_CHOICES:
+            _echo(
+                f"Unsupported task. Use one of: {', '.join(NEMOTRON_3_5_TASK_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+        if starter_profile not in NEMOTRON_3_5_STARTER_PROFILE_CHOICES:
+            _echo(
+                f"Unsupported starter profile. Use one of: {', '.join(NEMOTRON_3_5_STARTER_PROFILE_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+        config_overrides: dict[str, t.Any] = {}
+        if iterations is not None:
+            config_overrides["num_outer_iterations"] = _coerce_positive_int(
+                iterations,
+                "iterations",
+                16,
+            )
+        resolved_config = get_nemotron_3_5_config(
+            model_name=model,
+            task=task,
+            starter_profile=starter_profile,
+            use_lora=use_lora,
+            use_4bit=use_4bit,
+            use_8bit=use_8bit,
+            output_dir=output_dir,
+            use_wandb=wandb,
+            wandb_project=wandb_project,
+            **config_overrides,
+        )
+
+    preview = create_nemotron_3_5_preview(resolved_config)
+
+    if write_config:
+        try:
+            written_path = write_nemotron_3_5_config_file(resolved_config, write_config)
+        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
+            _echo(f"Failed to write Nemotron 3.5 config: {e}")
+            raise typer.Exit(code=2) from e
+
+        if json_output:
+            payload = dict(preview)
+            payload["config_file"] = str(written_path)
+            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo(f"Wrote Nemotron 3.5 config to {written_path}")
+        return
+
+    if dry_run:
+        if json_output:
+            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo("Dry-run: Nemotron 3.5 starter config resolved.")
+        _echo(f"Model: {preview['config']['model_name']}")
+        _echo(f"Task: {preview['config']['task']}")
+        _echo(f"Starter profile: {preview['config']['starter_profile']}")
+        _echo(f"Output dir: {preview['config']['output_dir']}")
+        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
+        _echo(
+            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
+        )
+        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
+        for warning in preview.get("warnings", []):
+            _echo(f"Warning: {warning}")
+        _echo("Run with:")
+        _echo("  stateset-agents nemotron-3-5 --no-dry-run --task customer_service")
+        _echo("Or try the low-memory preset:")
+        _echo("  stateset-agents nemotron-3-5 --starter-profile memory --json-output")
+        _echo("Or save a reusable config:")
+        _echo("  stateset-agents nemotron-3-5 --write-config ./nemotron_3_5.json")
+        return
+
+    import asyncio
+
+    try:
+        result = asyncio.run(run_nemotron_3_5_config(resolved_config, dry_run=False))
+    except CLI_IMPORT_EXCEPTIONS as e:
+        _echo("Nemotron 3.5 training components unavailable. Install training extras.")
+        _echo(f"Details: {e}")
+        raise typer.Exit(code=2) from e
+    except CLI_TRAIN_EXCEPTIONS as e:
+        _echo(f"Nemotron 3.5 starter failed: {e}")
+        raise typer.Exit(code=2) from e
+
+    if json_output:
+        payload = {
+            "status": "completed",
+            "task": resolved_config.task,
+            "starter_profile": resolved_config.starter_profile,
+            "model_name": resolved_config.model_name,
+            "output_dir": resolved_config.output_dir,
+            "result": str(result),
+        }
+        _echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    _echo("Nemotron 3.5 starter run complete.")

@@ -37,6 +37,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
             "sales",
             "memory",
         ),
+        (
+            "nemotron-3-5",
+            "nemotron-3-5",
+            "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+            "sales",
+            "memory",
+        ),
     ],
 )
 def test_model_specific_starter_configs_round_trip_via_cli(

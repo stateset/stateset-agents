@@ -35,6 +35,7 @@ FORWARDER_SCRIPTS = [
 def test_presets_registry_has_expected_models():
     expected = {
         "muse-glimmer",
+        "nemotron-3-5",
         "kimi-k3",
         "kimi-k2.5",
         "kimi-k2.6",

@@ -24,6 +24,7 @@ Each first-class starter provides:
 | **GLM 5.2** | `zai-org/GLM-5.2` (754B MoE) | — (module + example only) | `examples/finetune_glm5_2_gspo.py` | QLoRA-only; vLLM generation; FP8 alias supported |
 | **Kimi-K3** | `moonshotai/Kimi-K3` *(provisional — HF weights pending as of 2026-07-16)* | `stateset-agents kimi-k3` | `examples/finetune_kimi_k3_gspo.py` | Mirrors K2.6 presets pending official specs |
 | **Muse Glimmer 30B** | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | `examples/finetune_muse_glimmer_gspo.py` | Meta's open agentic model (Aug 2026); dense 30B, 131K ctx, Apache-2.0; QLoRA 4-bit by default |
+| **Nemotron 3.5 Lightning 30B A3B** | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` | `examples/finetune_nemotron_3_5_gspo.py` | NVIDIA's hybrid Mamba-2/attention/MoE model (Aug 2026); 30B total / ~3B active, 256K ctx, OpenMDW-1.1; QLoRA 4-bit on the BF16 checkpoint (NVFP4 is inference-only) |
 
 Each CLI command supports `--list-profiles`, `--write-config`, `--config`,
 `--starter-profile {balanced,memory,quality}`, `--task`, `--json-output`, and

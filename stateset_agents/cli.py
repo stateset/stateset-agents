@@ -721,7 +721,7 @@ def init(
     preset: str = typer.Option(
         "default",
         "--preset",
-        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, or muse-glimmer",
+        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, or nemotron-3-5",
     ),
     task: str = typer.Option(
         "customer_service",
@@ -746,15 +746,16 @@ def init(
         "kimi-k3",
         "gemma-4-31b",
         "muse-glimmer",
+        "nemotron-3-5",
     }:
         _echo(
-            "Unsupported preset. Use one of: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer."
+            "Unsupported preset. Use one of: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, nemotron-3-5."
         )
         raise typer.Exit(code=2)
 
     if preset == "default" and starter_profile != "balanced":
         _echo(
-            "`--starter-profile` only applies to --preset qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, or muse-glimmer."
+            "`--starter-profile` only applies to --preset qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, or nemotron-3-5."
         )
         raise typer.Exit(code=2)
 
@@ -945,6 +946,43 @@ def init(
                 )
                 raise typer.Exit(code=2) from e
             serialized = yaml.safe_dump(cfg, sort_keys=False)
+    elif preset == "nemotron-3-5":
+        try:
+            from stateset_agents.training.nemotron_3_5_starter import (
+                NEMOTRON_3_5_STARTER_PROFILE_CHOICES,
+                NEMOTRON_3_5_TASK_CHOICES,
+                get_nemotron_3_5_config,
+            )
+        except CLI_IMPORT_EXCEPTIONS as e:
+            _echo("Nemotron 3.5 starter helpers unavailable. Install training extras.")
+            _echo(f"Details: {e}")
+            raise typer.Exit(code=2) from e
+
+        if task not in NEMOTRON_3_5_TASK_CHOICES:
+            _echo(
+                f"Unsupported task. Use one of: {', '.join(NEMOTRON_3_5_TASK_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+        if starter_profile not in NEMOTRON_3_5_STARTER_PROFILE_CHOICES:
+            _echo(
+                f"Unsupported starter profile. Use one of: {', '.join(NEMOTRON_3_5_STARTER_PROFILE_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+
+        cfg = get_nemotron_3_5_config(
+            task=task, starter_profile=starter_profile
+        ).to_dict()
+        if format == "json":
+            serialized = json.dumps(cfg, indent=2) + "\n"
+        else:
+            try:
+                import yaml
+            except ImportError as e:
+                _echo(
+                    "PyYAML is required for YAML starter configs. Install with: pip install pyyaml"
+                )
+                raise typer.Exit(code=2) from e
+            serialized = yaml.safe_dump(cfg, sort_keys=False)
     else:
         try:
             from stateset_agents.training.gemma4_starter import (
@@ -1009,7 +1047,7 @@ def init_config(
     preset: str = typer.Option(
         "default",
         "--preset",
-        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, or muse-glimmer",
+        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, or nemotron-3-5",
     ),
     task: str = typer.Option(
         "customer_service",

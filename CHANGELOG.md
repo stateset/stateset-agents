@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **First-class Nemotron 3.5 Lightning starter** — packaged
+  `stateset_agents/training/nemotron_3_5_starter.py` for
+  `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` (NVIDIA's hybrid
+  Mamba-2/attention/MoE open model, Aug 2026; 30B total / ~3B active params,
+  256K practical context, OpenMDW-1.1), with the standard thin-starter
+  surface: `stateset-agents nemotron-3-5` CLI command, `init --preset
+  nemotron-3-5`, `examples/finetune_gspo.py --model nemotron-3-5` preset
+  (plus the thin forwarder `examples/finetune_nemotron_3_5_gspo.py`),
+  balanced/memory/quality profiles, docs (`docs/nemotron_3_5_starter.rst`),
+  and unit/integration tests. LoRA targets attention plus Mamba-2
+  `in_proj`/`out_proj`; presets target QLoRA post-training of the BF16
+  checkpoint (the NVFP4 variant is inference-only).
 - **`benchmarks/improvement_loop.py` + `make benchmark-loop`** — measurable
   benchmark of the closed improvement loop. Generates a seeded synthetic
   OpenAI-format corpus with a planted good/bad mix, runs the real

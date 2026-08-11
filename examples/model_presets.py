@@ -72,6 +72,31 @@ PRESETS: dict[str, ModelPreset] = {
         ),
         starter_module="muse_glimmer_starter",
     ),
+    "nemotron-3-5": ModelPreset(
+        model_id="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        tokenizer_id="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        lora_target_modules=(
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "in_proj",
+            "out_proj",
+        ),
+        max_prompt_length=4096,
+        max_completion_length=1024,
+        learning_rate=3e-6,
+        num_generations=4,
+        bf16=True,
+        use_4bit=False,
+        use_8bit=False,
+        notes=(
+            "Values copied from stateset_agents.training.nemotron_3_5_starter "
+            "(NEMOTRON_3_5_*). examples/finetune_nemotron_3_5_gspo.py delegates "
+            "to the packaged starter rather than duplicating hyperparameters."
+        ),
+        starter_module="nemotron_3_5_starter",
+    ),
     "kimi-k3": ModelPreset(
         model_id="moonshotai/Kimi-K3",
         tokenizer_id="moonshotai/Kimi-K3",

@@ -924,6 +924,7 @@ StateSet Agents ships first-class starters (with dedicated CLI commands, configu
 | GLM 5.2 (754B MoE) | `zai-org/GLM-5.2` | module + example (QLoRA-only) |
 | Kimi-K3 (provisional) | `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` |
 | Muse Glimmer 30B | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` |
+| Nemotron 3.5 Lightning 30B A3B | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` |
 
 Reference models with examples and Kubernetes manifests: Qwen 3.5 27B, Qwen 3, Qwen 2.5 3B Instruct, Kimi-K2.5, Gemma 3 / 2 27B IT, Llama 3, Llama 2 7B, Mistral 7B, GPT-2. Generic support: any Hugging Face causal LM compatible with `AutoModelForCausalLM` and TRL GRPO.
 
