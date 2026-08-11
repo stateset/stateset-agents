@@ -41,7 +41,10 @@ jobs:
 
     - name: Run benchmarks
       run: |
-        python -m pytest benchmarks/ -v --benchmark-json=benchmark-results.json
+        # The pytest-benchmark regression tests live in tests/performance/
+        # (benchmarks/ holds standalone scripts, which pytest collects as 0
+        # items and exits 5). -m benchmark overrides the default deselect.
+        python -m pytest tests/performance -m benchmark -v --benchmark-json=benchmark-results.json
 
     - name: Store benchmark result
       uses: benchmark-action/github-action-benchmark@v1

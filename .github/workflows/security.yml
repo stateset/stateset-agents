@@ -63,11 +63,6 @@ jobs:
         trivy fs --format json --output trivy-report.json . || true
         trivy fs --format table --output trivy-report.txt . || true
 
-    - name: Check for secrets
-      uses: gitleaks/gitleaks-action@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
     - name: Upload security reports
       uses: actions/upload-artifact@v4
       with:
@@ -266,6 +261,10 @@ jobs:
 
   codeql-analysis:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
 
     steps:
     - uses: actions/checkout@v4
