@@ -241,3 +241,87 @@ class TestLoraTargetModules:
         model = self._model(["weird.thing", "another.module"])
 
         assert sft.infer_lora_target_modules(model) == []
+
+
+class TestLoadBaseModelForSft:
+    """Multimodal fallback: AutoModelForCausalLM -> AutoModelForImageTextToText."""
+
+    def _fake_transformers(self, monkeypatch, causal_raises, has_itt=True):
+        import sys
+        import types
+
+        calls = {}
+        fake = types.ModuleType("transformers")
+
+        class FakeCausal:
+            @staticmethod
+            def from_pretrained(name, **kwargs):
+                calls["causal"] = (name, kwargs)
+                if causal_raises:
+                    raise ValueError(
+                        "Unrecognized configuration class for AutoModelForCausalLM"
+                    )
+                return "causal-model"
+
+        fake.AutoModelForCausalLM = FakeCausal
+        if has_itt:
+
+            class FakeITT:
+                @staticmethod
+                def from_pretrained(name, **kwargs):
+                    calls["itt"] = (name, kwargs)
+                    return "itt-model"
+
+            fake.AutoModelForImageTextToText = FakeITT
+        monkeypatch.setitem(sys.modules, "transformers", fake)
+        return calls
+
+    def test_causal_path_used_when_supported(self, monkeypatch):
+        calls = self._fake_transformers(monkeypatch, causal_raises=False)
+        assert sft.load_base_model_for_sft("some/model") == "causal-model"
+        assert "itt" not in calls
+
+    def test_falls_back_to_image_text_to_text(self, monkeypatch):
+        calls = self._fake_transformers(monkeypatch, causal_raises=True)
+        assert (
+            sft.load_base_model_for_sft("meta-models/Muse-Glimmer-30B") == "itt-model"
+        )
+        assert calls["itt"][0] == "meta-models/Muse-Glimmer-30B"
+        assert calls["itt"][1]["trust_remote_code"] is True
+
+    def test_reraises_original_error_without_itt_class(self, monkeypatch):
+        self._fake_transformers(monkeypatch, causal_raises=True, has_itt=False)
+        with pytest.raises(ValueError, match="Unrecognized configuration"):
+            sft.load_base_model_for_sft("meta-models/Muse-Glimmer-30B")
+
+
+class TestBuildTrainingArguments:
+    """transformers-5.x kwarg removals must degrade gracefully, not crash."""
+
+    class _StrictArgs:
+        def __init__(self, output_dir, learning_rate=1e-4, bf16=False):
+            self.output_dir = output_dir
+            self.learning_rate = learning_rate
+            self.bf16 = bf16
+
+    def test_passes_supported_kwargs_through(self):
+        args = sft.build_training_arguments(
+            self._StrictArgs, output_dir="x", learning_rate=2e-5, bf16=True
+        )
+        assert args.learning_rate == 2e-5 and args.bf16 is True
+
+    def test_drops_removed_kwargs_instead_of_crashing(self, caplog):
+        with caplog.at_level("WARNING", logger="sft_from_curated"):
+            args = sft.build_training_arguments(
+                self._StrictArgs, output_dir="x", warmup_ratio=0.1
+            )
+        assert args.output_dir == "x"
+        assert "warmup_ratio" in caplog.text
+
+    def test_var_keyword_ctor_gets_everything(self):
+        class Flexible:
+            def __init__(self, **kw):
+                self.kw = kw
+
+        args = sft.build_training_arguments(Flexible, anything=1, at_all=2)
+        assert args.kw == {"anything": 1, "at_all": 2}

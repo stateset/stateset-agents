@@ -250,6 +250,7 @@ class RunPodExecutor(RemoteExecutor):
         public_key: str | None = None,
         image: str = _DEFAULT_IMAGE,
         wheel: Path | None = None,
+        container_disk_gb: int = 40,
         ready_timeout_s: int = 600,
         poll_interval_s: float = 10.0,
     ) -> None:
@@ -261,6 +262,12 @@ class RunPodExecutor(RemoteExecutor):
         #: on real hardware — the PyPI pin cannot resolve before publish.
         self.wheel = Path(wheel) if wheel else None
         self.image = image
+        #: Container disk for the pod. The default fits small models; a 30B
+        #: BF16 checkpoint alone is ~60GB, so size this at roughly 2.5x the
+        #: model download or the job dies mid-download with an opaque
+        #: "File reconstruction error" from the HF cache writer (hit for
+        #: real on meta-models/Muse-Glimmer-30B with the old fixed 40GB).
+        self.container_disk_gb = container_disk_gb
         self.ready_timeout_s = ready_timeout_s
         self.poll_interval_s = poll_interval_s
         self._jobs: dict[str, _RunPodJob] = {}
@@ -375,6 +382,7 @@ class RunPodExecutor(RemoteExecutor):
             gpu_type_id=spec.gpu or self.DEFAULT_GPU,
             ports=["22/tcp"],
             env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
+            container_disk_gb=self.container_disk_gb,
         )
         pod_id = str(pod["id"])
         logs.append(f"created pod {pod_id} ({spec.gpu or self.DEFAULT_GPU})")

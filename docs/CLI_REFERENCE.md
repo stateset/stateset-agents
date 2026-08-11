@@ -87,7 +87,7 @@ success with an empty output directory.
 | Provider | Needs | Transport | Notes |
 |---|---|---|---|
 | `local` | a GPU on this machine | none | Verified end-to-end |
-| `runpod` | `RUNPOD_API_KEY`, an SSH keypair, `ssh`/`scp` on PATH | SSH/SCP to a rented pod | **Verified end-to-end on live hardware** (RTX A4000, Qwen3.5-0.8B, ~5 min). GPU names are RunPod's own (`"NVIDIA RTX A4000"`) |
+| `runpod` | `RUNPOD_API_KEY`, an SSH keypair, `ssh`/`scp` on PATH | SSH/SCP to a rented pod | **Verified end-to-end on live hardware** (RTX A4000 + Qwen3.5-0.8B, ~5 min; H100 80GB + Muse-Glimmer-30B multimodal, 63GB checkpoint, `container_disk_gb=160`). GPU names are RunPod's own (`"NVIDIA RTX A4000"`) |
 | `modal` | `pip install "stateset-agents[modal]"` | Modal Volume | Transport **not** yet verified against a live account |
 
 RunPod creates the pod with TCP 22 exposed and your public key

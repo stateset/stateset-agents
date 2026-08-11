@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`train-remote` now handles large multimodal checkpoints** — three fixes
+  found by training `meta-models/Muse-Glimmer-30B` on live RunPod hardware
+  (verified end-to-end on an H100 80GB: 63GB BF16 download, LoRA on the text
+  stack, 258MB adapter returned, pod terminated):
+  - `sft.py` falls back to `AutoModelForImageTextToText` when
+    `AutoModelForCausalLM` rejects a composite multimodal architecture
+    (transformers registers `muse_glimmer` only under image-text-to-text).
+  - `RunPodExecutor(container_disk_gb=...)` is now configurable — the fixed
+    40GB default killed the 63GB download mid-stream with an opaque HF-cache
+    "File reconstruction error".
+  - `TrainingArguments` construction filters kwargs against the installed
+    transformers' signature — 5.x removed `warmup_ratio`, which crashed the
+    job after the full model download.
+
 ## [0.23.0] - 2026-08-11 — Qwen3 Coder, gpt-oss, DeepSeek V4 starters
 
 ### Added

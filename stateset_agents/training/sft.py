@@ -38,7 +38,9 @@ from typing import Any
 logger = logging.getLogger("sft_from_curated")
 
 __all__ = [
+    "build_training_arguments",
     "gpu_available",
+    "load_base_model_for_sft",
     "load_chat_dataset",
     "print_training_plan",
     "run_sft",
@@ -140,6 +142,74 @@ _LORA_TARGET_CANDIDATES = (
 )
 
 
+def build_training_arguments(training_arguments_cls: Any, **kwargs: Any) -> Any:
+    """Construct ``TrainingArguments`` tolerating removed keyword arguments.
+
+    transformers 5.x dropped arguments the 4.x line accepted (hit for real on
+    a RunPod pod resolving transformers 5.15.0: ``warmup_ratio`` no longer
+    exists and the job died after a 63GB model download). Filter kwargs
+    against the constructor's actual signature and log what was dropped, so
+    an optional tuning knob degrades gracefully instead of killing the run.
+    """
+    import inspect
+
+    try:
+        accepted = set(inspect.signature(training_arguments_cls.__init__).parameters)
+    except (TypeError, ValueError):  # exotic __init__; pass everything through
+        return training_arguments_cls(**kwargs)
+    if any(
+        param.kind == inspect.Parameter.VAR_KEYWORD
+        for param in inspect.signature(
+            training_arguments_cls.__init__
+        ).parameters.values()
+    ):
+        return training_arguments_cls(**kwargs)
+    dropped = sorted(k for k in kwargs if k not in accepted)
+    if dropped:
+        logger.warning(
+            "TrainingArguments does not accept %s in this transformers "
+            "version; continuing without them.",
+            ", ".join(dropped),
+        )
+    return training_arguments_cls(**{k: v for k, v in kwargs.items() if k in accepted})
+
+
+def load_base_model_for_sft(base_model: str):
+    """Load ``base_model`` for text-only SFT, tolerating multimodal repos.
+
+    Composite multimodal checkpoints (e.g. ``meta-models/Muse-Glimmer-30B``,
+    model_type ``muse_glimmer``) register only under transformers'
+    image-text-to-text auto-mapping, so ``AutoModelForCausalLM`` raises
+    ValueError on them. Text-only SFT of the language stack still works:
+    retry via ``AutoModelForImageTextToText`` and let LoRA target the
+    text-stack projections.
+    """
+    from transformers import AutoModelForCausalLM
+
+    try:
+        return AutoModelForCausalLM.from_pretrained(  # nosec: B615
+            base_model,
+            trust_remote_code=True,
+            torch_dtype="bfloat16",
+        )
+    except ValueError as causal_exc:
+        try:
+            from transformers import AutoModelForImageTextToText
+        except ImportError:
+            raise causal_exc from None
+        logger.info(
+            "AutoModelForCausalLM rejected %s (%s); retrying as an "
+            "image-text-to-text checkpoint and training the text stack.",
+            base_model,
+            causal_exc,
+        )
+        return AutoModelForImageTextToText.from_pretrained(  # nosec: B615
+            base_model,
+            trust_remote_code=True,
+            torch_dtype="bfloat16",
+        )
+
+
 def infer_lora_target_modules(model: Any) -> list[str]:
     """Pick the module names LoRA should adapt on ``model``.
 
@@ -186,7 +256,6 @@ def run_sft(
     from datasets import Dataset
     from peft import LoraConfig, TaskType, get_peft_model
     from transformers import (
-        AutoModelForCausalLM,
         AutoTokenizer,
         DataCollatorForLanguageModeling,
         Trainer,
@@ -202,11 +271,7 @@ def run_sft(
     )  # nosec: B615
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained(  # nosec: B615
-        base_model,
-        trust_remote_code=True,
-        torch_dtype="bfloat16",
-    )
+    model = load_base_model_for_sft(base_model)
 
     target_modules = infer_lora_target_modules(model)
     logger.info(
@@ -249,7 +314,8 @@ def run_sft(
         remove_columns=["text"],
     )
 
-    args = TrainingArguments(
+    args = build_training_arguments(
+        TrainingArguments,
         output_dir=str(output_dir),
         num_train_epochs=num_epochs,
         per_device_train_batch_size=per_device_batch_size,

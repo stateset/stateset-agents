@@ -444,3 +444,22 @@ class TestPublicKeyDiscovery:
 
         with pytest.raises(RemoteExecutionError, match="no SSH public key"):
             self._executor()._require_public_key()
+
+
+class TestContainerDiskSize:
+    """The pod disk must scale with the model: 40GB default, configurable.
+
+    Found on real hardware: meta-models/Muse-Glimmer-30B (~63GB BF16) died
+    mid-download on the fixed 40GB disk with an opaque HF-cache
+    "File reconstruction error".
+    """
+
+    def test_default_disk_is_40gb(self, make_executor, spec):
+        api = FakePodApi()
+        make_executor(api=api).submit(spec)
+        assert api.created[0]["container_disk_gb"] == 40
+
+    def test_disk_size_is_configurable(self, make_executor, spec):
+        api = FakePodApi()
+        make_executor(api=api, container_disk_gb=160).submit(spec)
+        assert api.created[0]["container_disk_gb"] == 160
