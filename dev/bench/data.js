@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786467640117,
+  "lastUpdate": 1786480911380,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1188,6 +1188,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.340561690599275e-8",
             "extra": "mean: 412.42253316751453 nsec\nrounds: 115168"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "a33d7d4f73b2eec281a2744e05e72fbeb246300b",
+          "message": "fix(remote,sft): three bugs found by training Muse Glimmer 30B on live RunPod hardware\n\nVerified end-to-end on an H100 80GB (63GB BF16 multimodal checkpoint,\n160GB pod disk, LoRA r=8 on the text stack, 3 steps/1 epoch on the smoke\ndataset, 258.7MB adapter copied back, pod terminated on completion):\n\n1. sft.py: fall back to AutoModelForImageTextToText when\n   AutoModelForCausalLM rejects a composite multimodal arch (muse_glimmer\n   registers only under the image-text-to-text auto-mapping)\n2. RunPodExecutor: container_disk_gb is now a constructor parameter; the\n   fixed 40GB default killed the 63GB download at ~29GB with an opaque\n   HF-cache 'File reconstruction error'\n3. sft.py: build_training_arguments() filters kwargs against the installed\n   transformers signature — 5.x removed warmup_ratio, crashing the job\n   after the full download\n\nAlso observed and noted: the A100-80GB-PCIe secure-cloud pool failed to\nassign pod networking twice (NET_003); the H100 pool worked immediately.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-11T13:38:56-07:00",
+          "tree_id": "2ed41a15d7fd54189beafca4febcda67d05780fd",
+          "url": "https://github.com/stateset/stateset-agents/commit/a33d7d4f73b2eec281a2744e05e72fbeb246300b"
+        },
+        "date": 1786480910295,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 10753.850049123863,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011520096779695414",
+            "extra": "mean: 92.98995201085883 usec\nrounds: 1417"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 10799.075685642285,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011577879643019218",
+            "extra": "mean: 92.60051777667711 usec\nrounds: 1997"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8095.853745341611,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000131840062565565",
+            "extra": "mean: 123.52001795677255 usec\nrounds: 2506"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 982.9751744398831,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006791928728656126",
+            "extra": "mean: 1.0173196902656447 msec\nrounds: 791"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 237.435530091394,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003324607891114718",
+            "extra": "mean: 4.211669582960388 msec\nrounds: 223"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2462372.196880864,
+            "unit": "iter/sec",
+            "range": "stddev: 3.952422461297707e-8",
+            "extra": "mean: 406.11244769036944 nsec\nrounds: 118765"
           }
         ]
       }
