@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786436091176,
+  "lastUpdate": 1786455954607,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -930,6 +930,72 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.588089048326028e-8",
             "extra": "mean: 433.6369980630643 nsec\nrounds: 107957"
+          }
+        ]
+      }
+    ],
+    "Python Benchmark": [
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "55f62fc5a9b87bd6eb7c213a02206a8f18e12cb0",
+          "message": "fix(ci): isort compliance and clippy error surfaced by the hardening pass\n\n- isort starter_common.py (new file missed isort, which gates separately\n  from ruff) and cli_meta/cli_research/cli_chat (pre-existing drift)\n- rust: replace is_some/unwrap with a match guard in choose_client —\n  clippy's deny-by-default unnecessary_unwrap failed the root-crate job\n  the moment Cargo.lock changes retriggered it\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-11T06:43:26-07:00",
+          "tree_id": "77faeb886637dbc8ca708d2656c3e1b826d21b17",
+          "url": "https://github.com/stateset/stateset-agents/commit/55f62fc5a9b87bd6eb7c213a02206a8f18e12cb0"
+        },
+        "date": 1786455953648,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5901.06020196323,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002202036839887804",
+            "extra": "mean: 169.4610740739959 usec\nrounds: 1215"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6413.651321197301,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018945367640796277",
+            "extra": "mean: 155.91742517947173 usec\nrounds: 1811"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4873.795735353936,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000024812568616914796",
+            "extra": "mean: 205.17889019150283 usec\nrounds: 3242"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 725.0250639313449,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000028639158918450283",
+            "extra": "mean: 1.3792626624211346 msec\nrounds: 628"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 179.48173750896873,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00010575457343747766",
+            "extra": "mean: 5.57159749999651 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2092410.642231229,
+            "unit": "iter/sec",
+            "range": "stddev: 5.040018442290622e-8",
+            "extra": "mean: 477.91766100637693 nsec\nrounds: 103972"
           }
         ]
       }
