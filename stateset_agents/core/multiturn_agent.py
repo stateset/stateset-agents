@@ -13,9 +13,9 @@ from typing import Any
 
 from stateset_agents.utils.cache import CacheService
 
+from ..experimental.long_term_planning import PlanningConfig, PlanningManager
 from .agent import Agent
 from .agent_config import AgentConfig
-from .long_term_planning import PlanningConfig, PlanningManager
 from .multiturn_analysis import (
     analyze_user_input,
     compress_conversation_context,

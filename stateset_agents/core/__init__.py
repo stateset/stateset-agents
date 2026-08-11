@@ -116,7 +116,7 @@ _LAZY_EXPORTS.update(
 )
 _LAZY_EXPORTS.update(
     _export_group(
-        "stateset_agents.core.long_term_planning",
+        "stateset_agents.experimental.long_term_planning",
         [
             "PlanningConfig",
             "PlanningManager",

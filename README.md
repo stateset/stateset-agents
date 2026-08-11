@@ -273,6 +273,16 @@ First-class starters ship for **Qwen 3.5 0.8B**, **Gemma 4 31B IT**, **Kimi-K2.6
 
 See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
 
+### Experimental namespace
+
+Research-grade modules (neural architecture search, multimodal processing,
+long-term planning, few-shot adaptation, the intelligent orchestrator,
+adaptive learning controller, and multi-agent coordination) live in
+`stateset_agents.experimental`. They carry **no API-stability guarantees**
+and may change or be removed in any release. The former
+`stateset_agents.core.<module>` import paths still work for one deprecation
+cycle and emit a `DeprecationWarning`.
+
 ### Dashboard and mobile app (separate repos)
 
 The React + Vite dashboard and Expo mobile app — working clients for the

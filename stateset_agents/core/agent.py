@@ -12,9 +12,9 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from typing import Any, cast
 
+from ..experimental.long_term_planning import PlanningConfig, PlanningManager
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
-from .long_term_planning import PlanningConfig, PlanningManager
 from .trajectory import ConversationTurn
 
 try:

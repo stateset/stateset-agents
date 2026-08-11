@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Research modules moved to `stateset_agents.experimental`.**
+  `neural_architecture_search`, `multimodal_processing`, `long_term_planning`,
+  `few_shot_adaptation`, `intelligent_orchestrator` (+ `_logic`/`_models`),
+  `adaptive_learning_controller`, and `multi_agent_coordination` relocated
+  from `stateset_agents.core` to the new `stateset_agents.experimental`
+  namespace, which carries no API-stability guarantees. The old
+  `stateset_agents.core.<module>` import paths still work for one deprecation
+  cycle via shims that emit a `DeprecationWarning`.
+
 - **`dashboard/` and `mobile/` extracted to their own repositories**
   ([stateset-agents-dashboard](https://github.com/stateset/stateset-agents-dashboard),
   [stateset-agents-mobile](https://github.com/stateset/stateset-agents-mobile),

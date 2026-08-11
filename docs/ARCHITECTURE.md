@@ -120,6 +120,15 @@ stateset-agents/
 │   │   ├── agent_backends.py      # StubModel/StubTokenizer for CI
 │   │   └── rust_accelerator.py    # Optional Rust GAE (falls back to NumPy)
 │   │
+│   ├── experimental/              # Research modules — NO API stability
+│   │   ├── long_term_planning.py  # Planning manager (opt-in via AgentConfig)
+│   │   ├── neural_architecture_search.py
+│   │   ├── multimodal_processing.py
+│   │   ├── few_shot_adaptation.py
+│   │   ├── intelligent_orchestrator*.py
+│   │   ├── adaptive_learning_controller.py
+│   │   └── multi_agent_coordination.py
+│   │
 │   ├── training/                  # Trainers (~29K lines, 58 modules)
 │   │   ├── trl_grpo_trainer.py    # GRPO via Hugging Face TRL
 │   │   ├── gspo_trainer.py        # Sequence-level GSPO (852 LOC)
