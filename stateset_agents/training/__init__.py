@@ -402,6 +402,100 @@ _OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{__name__}.kimi_k3_starter",
         "write_kimi_k3_config_file",
     ),
+    # Muse Glimmer starter path
+    "MUSE_GLIMMER_BASE_MODEL": (
+        f"{__name__}.muse_glimmer_starter",
+        "MUSE_GLIMMER_BASE_MODEL",
+    ),
+    "MUSE_GLIMMER_CONFIG_SUFFIXES": (
+        f"{__name__}.muse_glimmer_starter",
+        "MUSE_GLIMMER_CONFIG_SUFFIXES",
+    ),
+    "MUSE_GLIMMER_DEFAULT_OUTPUT_DIR": (
+        f"{__name__}.muse_glimmer_starter",
+        "MUSE_GLIMMER_DEFAULT_OUTPUT_DIR",
+    ),
+    "MUSE_GLIMMER_LORA_TARGET_MODULES": (
+        f"{__name__}.muse_glimmer_starter",
+        "MUSE_GLIMMER_LORA_TARGET_MODULES",
+    ),
+    "MUSE_GLIMMER_STARTER_PROFILE_CHOICES": (
+        f"{__name__}.muse_glimmer_starter",
+        "MUSE_GLIMMER_STARTER_PROFILE_CHOICES",
+    ),
+    "MUSE_GLIMMER_STARTER_PROFILE_DESCRIPTIONS": (
+        f"{__name__}.muse_glimmer_starter",
+        "MUSE_GLIMMER_STARTER_PROFILE_DESCRIPTIONS",
+    ),
+    "MUSE_GLIMMER_SUPPORTED_VARIANTS": (
+        f"{__name__}.muse_glimmer_starter",
+        "MUSE_GLIMMER_SUPPORTED_VARIANTS",
+    ),
+    "MUSE_GLIMMER_TASK_CHOICES": (
+        f"{__name__}.muse_glimmer_starter",
+        "MUSE_GLIMMER_TASK_CHOICES",
+    ),
+    "MuseGlimmerConfig": (f"{__name__}.muse_glimmer_starter", "MuseGlimmerConfig"),
+    "create_muse_glimmer_agent_config": (
+        f"{__name__}.muse_glimmer_starter",
+        "create_muse_glimmer_agent_config",
+    ),
+    "create_muse_glimmer_preview": (
+        f"{__name__}.muse_glimmer_starter",
+        "create_muse_glimmer_preview",
+    ),
+    "describe_muse_glimmer_starter_profiles": (
+        f"{__name__}.muse_glimmer_starter",
+        "describe_muse_glimmer_starter_profiles",
+    ),
+    "finetune_muse_glimmer": (
+        f"{__name__}.muse_glimmer_starter",
+        "finetune_muse_glimmer",
+    ),
+    "get_muse_glimmer_config": (
+        f"{__name__}.muse_glimmer_starter",
+        "get_muse_glimmer_config",
+    ),
+    "get_muse_glimmer_gspo_config": (
+        f"{__name__}.muse_glimmer_starter",
+        "get_muse_glimmer_gspo_config",
+    ),
+    "get_muse_glimmer_gspo_overrides": (
+        f"{__name__}.muse_glimmer_starter",
+        "get_muse_glimmer_gspo_overrides",
+    ),
+    "get_muse_glimmer_profile_description": (
+        f"{__name__}.muse_glimmer_starter",
+        "get_muse_glimmer_profile_description",
+    ),
+    "get_muse_glimmer_profile_overrides": (
+        f"{__name__}.muse_glimmer_starter",
+        "get_muse_glimmer_profile_overrides",
+    ),
+    "get_muse_glimmer_system_prompt": (
+        f"{__name__}.muse_glimmer_starter",
+        "get_muse_glimmer_system_prompt",
+    ),
+    "load_muse_glimmer_config_file": (
+        f"{__name__}.muse_glimmer_starter",
+        "load_muse_glimmer_config_file",
+    ),
+    "run_muse_glimmer_config": (
+        f"{__name__}.muse_glimmer_starter",
+        "run_muse_glimmer_config",
+    ),
+    "summarize_muse_glimmer_config": (
+        f"{__name__}.muse_glimmer_starter",
+        "summarize_muse_glimmer_config",
+    ),
+    "validate_muse_glimmer_config": (
+        f"{__name__}.muse_glimmer_starter",
+        "validate_muse_glimmer_config",
+    ),
+    "write_muse_glimmer_config_file": (
+        f"{__name__}.muse_glimmer_starter",
+        "write_muse_glimmer_config_file",
+    ),
     # Serving artifacts
     "build_serving_manifest": (
         f"{__name__}.serving_artifacts",
@@ -855,6 +949,30 @@ __all__ = [
     "summarize_kimi_k3_config",
     "validate_kimi_k3_config",
     "write_kimi_k3_config_file",
+    "MUSE_GLIMMER_BASE_MODEL",
+    "MUSE_GLIMMER_CONFIG_SUFFIXES",
+    "MUSE_GLIMMER_DEFAULT_OUTPUT_DIR",
+    "MUSE_GLIMMER_LORA_TARGET_MODULES",
+    "MUSE_GLIMMER_STARTER_PROFILE_CHOICES",
+    "MUSE_GLIMMER_STARTER_PROFILE_DESCRIPTIONS",
+    "MUSE_GLIMMER_SUPPORTED_VARIANTS",
+    "MUSE_GLIMMER_TASK_CHOICES",
+    "MuseGlimmerConfig",
+    "create_muse_glimmer_agent_config",
+    "create_muse_glimmer_preview",
+    "describe_muse_glimmer_starter_profiles",
+    "finetune_muse_glimmer",
+    "get_muse_glimmer_config",
+    "get_muse_glimmer_gspo_config",
+    "get_muse_glimmer_gspo_overrides",
+    "get_muse_glimmer_profile_description",
+    "get_muse_glimmer_profile_overrides",
+    "get_muse_glimmer_system_prompt",
+    "load_muse_glimmer_config_file",
+    "run_muse_glimmer_config",
+    "summarize_muse_glimmer_config",
+    "validate_muse_glimmer_config",
+    "write_muse_glimmer_config_file",
     "build_serving_manifest",
     "export_merged_model_for_serving",
     "write_serving_manifest",

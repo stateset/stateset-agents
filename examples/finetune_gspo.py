@@ -61,6 +61,7 @@ logger = logging.getLogger(__name__)
 # starter exposes ``get_qwen3_5_config``/``run_qwen3_5_0_8b_config``), so it
 # is recorded explicitly rather than derived by string munging.
 STARTER_FN_SUFFIX: dict[str, str] = {
+    "muse_glimmer_starter": "muse_glimmer",
     "kimi_k3_starter": "kimi_k3",
     "kimi_k2_6_starter": "kimi_k2_6",
     "glm5_1_starter": "glm5_1",

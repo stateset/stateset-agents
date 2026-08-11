@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-08-10 — Muse Glimmer 30B starter + RunPod hardening
+
 ### Added
+
+- **Muse Glimmer 30B first-class starter.** `meta-models/Muse-Glimmer-30B`
+  (Meta's open agentic model, Aug 2026: dense 30B, 131K+ ctx, Apache-2.0) now
+  ships a packaged starter (`stateset_agents.training.muse_glimmer_starter`),
+  a `stateset-agents muse-glimmer` CLI command, an `init --preset muse-glimmer`
+  scaffold, a `muse-glimmer` preset in the unified `examples/finetune_gspo.py`
+  driver, and `docs/muse_glimmer_starter.rst`.
 
 - **RunPod provider for `train-remote`.** `--provider runpod` rents a GPU pod,
   runs the same packaged job every other provider runs, and copies the adapter
@@ -34,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Verified end-to-end on live hardware: RTX A4000, `Qwen/Qwen3.5-0.8B`, LoRA
   r=8, ~5.5 minutes wall clock, returning a 12.8 MB adapter (192 tensors) to
   local disk with the pod terminated afterwards.
+
+### Changed
+
+- **`RemoteJobSpec.gpu` no longer hard-codes `"A10G"`.** GPU names are provider
+  vocabulary ("A10G" on Modal, "NVIDIA RTX A4000" on RunPod), so a shared
+  default silently sent an invalid id to whichever provider did not coin it.
+  The field is now `None` by default and each executor supplies its own.
 
 ### Fixed
 

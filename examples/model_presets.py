@@ -46,6 +46,32 @@ class ModelPreset:
 
 
 PRESETS: dict[str, ModelPreset] = {
+    "muse-glimmer": ModelPreset(
+        model_id="meta-models/Muse-Glimmer-30B",
+        tokenizer_id="meta-models/Muse-Glimmer-30B",
+        lora_target_modules=(
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ),
+        max_prompt_length=4096,
+        max_completion_length=1024,
+        learning_rate=3e-6,
+        num_generations=4,
+        bf16=True,
+        use_4bit=False,
+        use_8bit=False,
+        notes=(
+            "Values copied from stateset_agents.training.muse_glimmer_starter "
+            "(MUSE_GLIMMER_*). examples/finetune_muse_glimmer_gspo.py delegates "
+            "to the packaged starter rather than duplicating hyperparameters."
+        ),
+        starter_module="muse_glimmer_starter",
+    ),
     "kimi-k3": ModelPreset(
         model_id="moonshotai/Kimi-K3",
         tokenizer_id="moonshotai/Kimi-K3",

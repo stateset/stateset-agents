@@ -204,6 +204,40 @@ stateset-agents kimi-k3 --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
+### `stateset-agents muse-glimmer`
+
+Preview or run the dedicated starter path for `meta-models/Muse-Glimmer-30B`,
+Meta's open agentic model (Aug 2026; dense 30B, 131K ctx, Apache-2.0).
+The command defaults to a dry-run so you can inspect the resolved config before loading a model.
+
+```bash
+stateset-agents muse-glimmer
+stateset-agents muse-glimmer --json-output
+stateset-agents muse-glimmer --starter-profile memory --json-output
+stateset-agents muse-glimmer --list-profiles --json-output
+stateset-agents muse-glimmer --write-config ./muse_glimmer.json
+stateset-agents muse-glimmer --config ./muse_glimmer.json --no-dry-run
+stateset-agents muse-glimmer --no-dry-run --task customer_service --use-4bit
+```
+
+#### Options
+
+- `--config PATH`: Load a saved Muse Glimmer starter config file (`json` or `yaml`).
+- `--task TEXT`: Starter task preset (`customer_service`, `technical_support`, `sales`, `conversational`).
+- `--starter-profile TEXT`: Starter profile (`balanced`, `memory`, `quality`).
+- `--list-profiles`: Describe all built-in starter profiles and exit.
+- `--model TEXT`: Model name (`meta-models/Muse-Glimmer-30B` recommended).
+- `--use-lora / --no-lora`: Override LoRA for the run.
+- `--use-4bit / --no-use-4bit`: Override 4-bit quantization.
+- `--use-8bit / --no-use-8bit`: Override 8-bit quantization.
+- `--output-dir PATH`: Override the output directory for checkpoints and adapters.
+- `--iterations INTEGER`: Override the outer GSPO iteration count (must be > 0).
+- `--wandb`: Enable Weights & Biases logging.
+- `--wandb-project TEXT`: Optional W&B project name.
+- `--write-config PATH`: Write the resolved starter config to `json`/`yaml` and exit.
+- `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
+- `--json-output`: Emit a machine-readable preview/result payload.
+
 ### `stateset-agents validate-config`
 
 Validate a training config without running training.
@@ -278,7 +312,7 @@ Options:
 - `--path PATH`: Output config path.
 - `--overwrite`: Replace an existing file.
 - `--format [yaml|json]`: Output file format.
-- `--preset [default|qwen3-5-0-8b|kimi-k2-6|kimi-k3|gemma-4-31b]`: Starter config preset.
+- `--preset [default|qwen3-5-0-8b|kimi-k2-6|kimi-k3|gemma-4-31b|muse-glimmer]`: Starter config preset.
 - `--task TEXT`: Task preset for model-specific starter configs.
 - `--starter-profile TEXT`: Starter profile for model-specific starter configs.
 

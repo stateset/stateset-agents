@@ -13,7 +13,7 @@ Gateway image (FastAPI, `/v1/messages`):
 
 ```bash
 docker build -f deployment/docker/Dockerfile \
-  -t stateset/stateset-agents-api:0.20.0 \
+  -t stateset/stateset-agents-api:0.21.0 \
   .
 ```
 
@@ -21,7 +21,7 @@ Trainer image (Kubernetes Jobs):
 
 ```bash
 docker build -f deployment/docker/Dockerfile.trainer \
-  -t stateset/stateset-agents-trainer:0.20.0 \
+  -t stateset/stateset-agents-trainer:0.21.0 \
   .
 ```
 

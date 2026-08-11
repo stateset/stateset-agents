@@ -23,6 +23,7 @@ Each first-class starter provides:
 | **GLM 5.1** | `zai-org/GLM-5.1` (754B MoE) | — (module + example only) | `examples/finetune_glm5_1_gspo.py` | QLoRA-only; vLLM generation; FP8 alias supported |
 | **GLM 5.2** | `zai-org/GLM-5.2` (754B MoE) | — (module + example only) | `examples/finetune_glm5_2_gspo.py` | QLoRA-only; vLLM generation; FP8 alias supported |
 | **Kimi-K3** | `moonshotai/Kimi-K3` *(provisional — HF weights pending as of 2026-07-16)* | `stateset-agents kimi-k3` | `examples/finetune_kimi_k3_gspo.py` | Mirrors K2.6 presets pending official specs |
+| **Muse Glimmer 30B** | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | `examples/finetune_muse_glimmer_gspo.py` | Meta's open agentic model (Aug 2026); dense 30B, 131K ctx, Apache-2.0; QLoRA 4-bit by default |
 
 Each CLI command supports `--list-profiles`, `--write-config`, `--config`,
 `--starter-profile {balanced,memory,quality}`, `--task`, `--json-output`, and

@@ -87,7 +87,12 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.20.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.21.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Muse Glimmer 30B first‑class starter.** `stateset-agents muse-glimmer` targets `meta-models/Muse-Glimmer-30B` — Meta's open agentic model (Aug 2026; dense 30B, 131K ctx, Apache‑2.0) — with the standard balanced/memory/quality QLoRA profiles, `init --preset muse-glimmer`, and a `muse-glimmer` preset in the unified finetune driver. [`docs/muse_glimmer_starter.rst`](docs/muse_glimmer_starter.rst)
+- **RunPod provider for `train-remote`.** `--provider runpod` rents a GPU pod over SSH, runs the same packaged job every other provider runs, and copies the adapter back. GPU defaults are now per‑provider — `RemoteJobSpec.gpu` no longer hard‑codes a Modal‑specific name.
+
+**v0.20.0:**
 
 - **Run the fine‑tune step without a GPU.** `stateset-agents train-remote` runs the SFT job from `improve` on rented compute (`--provider local|modal`), closing the last gap in the improvement loop. The job itself is unchanged whichever provider runs it, and remote runs install a pinned published package rather than syncing your working tree. [`docs/CLI_REFERENCE.md`](docs/CLI_REFERENCE.md)
 
@@ -193,7 +198,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.20.0)
+pip install stateset-agents          # latest release (v0.21.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -245,7 +250,7 @@ uses 4‑bit quantization and smaller context/group sizes), `--use-lora/--no-lor
 `--use-4bit/--use-8bit`, `--use-vllm`, `--wandb`, `--export-merged`,
 `--write-config PATH`.
 
-Six models also ship a dedicated starter with tuned defaults and a hosting plan:
+Seven models also ship a dedicated starter with tuned defaults and a hosting plan:
 
 | Model | Dedicated entry point | Notes |
 |---|---|---|
@@ -253,6 +258,7 @@ Six models also ship a dedicated starter with tuned defaults and a hosting plan:
 | `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` | Use `--starter-profile memory` on tighter GPU budgets |
 | `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | |
 | `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` | **Provisional** — HF weights unpublished as of 2026‑07‑16; presets mirror Kimi‑K2.6 |
+| `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | Meta's open agentic model (Aug 2026); dense 30B, 131K ctx, Apache‑2.0 |
 | `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | 754B MoE, QLoRA‑only + vLLM; `docs/GLM5_1_HOSTING_PLAN.md` |
 | `zai-org/GLM-5.2` | `python examples/finetune_glm5_2_gspo.py` | 754B MoE, QLoRA‑only + vLLM; `docs/GLM5_2_HOSTING_PLAN.md` |
 
@@ -263,7 +269,7 @@ import get_glm5_2_config, run_glm5_2_config`), as are the others.
 
 ### Supported models
 
-First-class starters ship for **Qwen 3.5 0.8B**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
+First-class starters ship for **Qwen 3.5 0.8B**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **Muse Glimmer 30B**, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
 
 See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
 
@@ -876,7 +882,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.20.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.21.0`).
 
 Other entry points:
 

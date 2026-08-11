@@ -30,6 +30,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
             "technical_support",
             "memory",
         ),
+        (
+            "muse-glimmer",
+            "muse-glimmer",
+            "meta-models/Muse-Glimmer-30B",
+            "sales",
+            "memory",
+        ),
     ],
 )
 def test_model_specific_starter_configs_round_trip_via_cli(
