@@ -721,7 +721,7 @@ def init(
     preset: str = typer.Option(
         "default",
         "--preset",
-        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, or nemotron-3-5",
+        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, nemotron-3-5, qwen3-coder, gpt-oss, or deepseek-v4",
     ),
     task: str = typer.Option(
         "customer_service",
@@ -747,15 +747,18 @@ def init(
         "gemma-4-31b",
         "muse-glimmer",
         "nemotron-3-5",
+        "qwen3-coder",
+        "gpt-oss",
+        "deepseek-v4",
     }:
         _echo(
-            "Unsupported preset. Use one of: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, nemotron-3-5."
+            "Unsupported preset. Use one of: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, nemotron-3-5, qwen3-coder, gpt-oss, deepseek-v4."
         )
         raise typer.Exit(code=2)
 
     if preset == "default" and starter_profile != "balanced":
         _echo(
-            "`--starter-profile` only applies to --preset qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, or nemotron-3-5."
+            "`--starter-profile` only applies to --preset qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, nemotron-3-5, qwen3-coder, gpt-oss, or deepseek-v4."
         )
         raise typer.Exit(code=2)
 
@@ -983,6 +986,113 @@ def init(
                 )
                 raise typer.Exit(code=2) from e
             serialized = yaml.safe_dump(cfg, sort_keys=False)
+    elif preset == "qwen3-coder":
+        try:
+            from stateset_agents.training.qwen3_coder_starter import (
+                QWEN3_CODER_STARTER_PROFILE_CHOICES,
+                QWEN3_CODER_TASK_CHOICES,
+                get_qwen3_coder_config,
+            )
+        except CLI_IMPORT_EXCEPTIONS as e:
+            _echo("Qwen3 Coder starter helpers unavailable. Install training extras.")
+            _echo(f"Details: {e}")
+            raise typer.Exit(code=2) from e
+
+        if task not in QWEN3_CODER_TASK_CHOICES:
+            _echo(
+                f"Unsupported task. Use one of: {', '.join(QWEN3_CODER_TASK_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+        if starter_profile not in QWEN3_CODER_STARTER_PROFILE_CHOICES:
+            _echo(
+                f"Unsupported starter profile. Use one of: {', '.join(QWEN3_CODER_STARTER_PROFILE_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+
+        cfg = get_qwen3_coder_config(
+            task=task, starter_profile=starter_profile
+        ).to_dict()
+        if format == "json":
+            serialized = json.dumps(cfg, indent=2) + "\n"
+        else:
+            try:
+                import yaml
+            except ImportError as e:
+                _echo(
+                    "PyYAML is required for YAML starter configs. Install with: pip install pyyaml"
+                )
+                raise typer.Exit(code=2) from e
+            serialized = yaml.safe_dump(cfg, sort_keys=False)
+    elif preset == "gpt-oss":
+        try:
+            from stateset_agents.training.gpt_oss_starter import (
+                GPT_OSS_STARTER_PROFILE_CHOICES,
+                GPT_OSS_TASK_CHOICES,
+                get_gpt_oss_config,
+            )
+        except CLI_IMPORT_EXCEPTIONS as e:
+            _echo("gpt-oss starter helpers unavailable. Install training extras.")
+            _echo(f"Details: {e}")
+            raise typer.Exit(code=2) from e
+
+        if task not in GPT_OSS_TASK_CHOICES:
+            _echo(f"Unsupported task. Use one of: {', '.join(GPT_OSS_TASK_CHOICES)}.")
+            raise typer.Exit(code=2)
+        if starter_profile not in GPT_OSS_STARTER_PROFILE_CHOICES:
+            _echo(
+                f"Unsupported starter profile. Use one of: {', '.join(GPT_OSS_STARTER_PROFILE_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+
+        cfg = get_gpt_oss_config(task=task, starter_profile=starter_profile).to_dict()
+        if format == "json":
+            serialized = json.dumps(cfg, indent=2) + "\n"
+        else:
+            try:
+                import yaml
+            except ImportError as e:
+                _echo(
+                    "PyYAML is required for YAML starter configs. Install with: pip install pyyaml"
+                )
+                raise typer.Exit(code=2) from e
+            serialized = yaml.safe_dump(cfg, sort_keys=False)
+    elif preset == "deepseek-v4":
+        try:
+            from stateset_agents.training.deepseek_v4_starter import (
+                DEEPSEEK_V4_STARTER_PROFILE_CHOICES,
+                DEEPSEEK_V4_TASK_CHOICES,
+                get_deepseek_v4_config,
+            )
+        except CLI_IMPORT_EXCEPTIONS as e:
+            _echo("deepseek-v4 starter helpers unavailable. Install training extras.")
+            _echo(f"Details: {e}")
+            raise typer.Exit(code=2) from e
+
+        if task not in DEEPSEEK_V4_TASK_CHOICES:
+            _echo(
+                f"Unsupported task. Use one of: {', '.join(DEEPSEEK_V4_TASK_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+        if starter_profile not in DEEPSEEK_V4_STARTER_PROFILE_CHOICES:
+            _echo(
+                f"Unsupported starter profile. Use one of: {', '.join(DEEPSEEK_V4_STARTER_PROFILE_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+
+        cfg = get_deepseek_v4_config(
+            task=task, starter_profile=starter_profile
+        ).to_dict()
+        if format == "json":
+            serialized = json.dumps(cfg, indent=2) + "\n"
+        else:
+            try:
+                import yaml
+            except ImportError as e:
+                _echo(
+                    "PyYAML is required for YAML starter configs. Install with: pip install pyyaml"
+                )
+                raise typer.Exit(code=2) from e
+            serialized = yaml.safe_dump(cfg, sort_keys=False)
     else:
         try:
             from stateset_agents.training.gemma4_starter import (
@@ -1047,7 +1157,7 @@ def init_config(
     preset: str = typer.Option(
         "default",
         "--preset",
-        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, or nemotron-3-5",
+        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, nemotron-3-5, qwen3-coder, gpt-oss, or deepseek-v4",
     ),
     task: str = typer.Option(
         "customer_service",

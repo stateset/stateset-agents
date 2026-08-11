@@ -272,6 +272,108 @@ stateset-agents nemotron-3-5 --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
+### `stateset-agents qwen3-coder`
+
+Preview or run the dedicated starter path for `Qwen/Qwen3-Coder-30B-A3B-Instruct`,
+Alibaba's open coding MoE model (30B total / ~3B active, 128 experts / 8 active, 256K ctx, Apache-2.0).
+The command defaults to a dry-run so you can inspect the resolved config before loading a model.
+
+```bash
+stateset-agents qwen3-coder
+stateset-agents qwen3-coder --json-output
+stateset-agents qwen3-coder --starter-profile memory --json-output
+stateset-agents qwen3-coder --list-profiles --json-output
+stateset-agents qwen3-coder --write-config ./qwen3_coder.json
+stateset-agents qwen3-coder --config ./qwen3_coder.json --no-dry-run
+stateset-agents qwen3-coder --no-dry-run --task customer_service --use-4bit
+```
+
+#### Options
+
+- `--config PATH`: Load a saved Qwen3 Coder starter config file (`json` or `yaml`).
+- `--task TEXT`: Starter task preset (`customer_service`, `technical_support`, `sales`, `conversational`).
+- `--starter-profile TEXT`: Starter profile (`balanced`, `memory`, `quality`).
+- `--list-profiles`: Describe all built-in starter profiles and exit.
+- `--model TEXT`: Model name (`Qwen/Qwen3-Coder-30B-A3B-Instruct` recommended).
+- `--use-lora / --no-lora`: Override LoRA for the run.
+- `--use-4bit / --no-use-4bit`: Override 4-bit quantization.
+- `--use-8bit / --no-use-8bit`: Override 8-bit quantization.
+- `--output-dir PATH`: Override the output directory for checkpoints and adapters.
+- `--iterations INTEGER`: Override the outer GSPO iteration count (must be > 0).
+- `--wandb`: Enable Weights & Biases logging.
+- `--wandb-project TEXT`: Optional W&B project name.
+- `--write-config PATH`: Write the resolved starter config to `json`/`yaml` and exit.
+- `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
+- `--json-output`: Emit a machine-readable preview/result payload.
+
+### `stateset-agents gpt-oss`
+
+Preview or run the dedicated starter path for `openai/gpt-oss-20b`,
+OpenAI's open-weight reasoning MoE model (32 experts / 4 active, 131K ctx, Apache-2.0).
+The command defaults to a dry-run so you can inspect the resolved config before loading a model.
+
+```bash
+stateset-agents gpt-oss
+stateset-agents gpt-oss --json-output
+stateset-agents gpt-oss --starter-profile memory --json-output
+stateset-agents gpt-oss --list-profiles --json-output
+stateset-agents gpt-oss --write-config ./gpt_oss.json
+stateset-agents gpt-oss --config ./gpt_oss.json --no-dry-run
+stateset-agents gpt-oss --no-dry-run --task customer_service --use-4bit
+```
+
+#### Options
+
+- `--config PATH`: Load a saved gpt-oss starter config file (`json` or `yaml`).
+- `--task TEXT`: Starter task preset (`customer_service`, `technical_support`, `sales`, `conversational`).
+- `--starter-profile TEXT`: Starter profile (`balanced`, `memory`, `quality`).
+- `--list-profiles`: Describe all built-in starter profiles and exit.
+- `--model TEXT`: Model name (`openai/gpt-oss-20b` recommended).
+- `--use-lora / --no-lora`: Override LoRA for the run.
+- `--use-4bit / --no-use-4bit`: Override 4-bit quantization.
+- `--use-8bit / --no-use-8bit`: Override 8-bit quantization.
+- `--output-dir PATH`: Override the output directory for checkpoints and adapters.
+- `--iterations INTEGER`: Override the outer GSPO iteration count (must be > 0).
+- `--wandb`: Enable Weights & Biases logging.
+- `--wandb-project TEXT`: Optional W&B project name.
+- `--write-config PATH`: Write the resolved starter config to `json`/`yaml` and exit.
+- `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
+- `--json-output`: Emit a machine-readable preview/result payload.
+
+### `stateset-agents deepseek-v4`
+
+Preview or run the dedicated starter path for `deepseek-ai/DeepSeek-V4-Flash`,
+DeepSeek's large MoE with MLA attention (256 routed experts / 6 active, up to 1M positions, MIT; QLoRA-only, vLLM generation).
+The command defaults to a dry-run so you can inspect the resolved config before loading a model.
+
+```bash
+stateset-agents deepseek-v4
+stateset-agents deepseek-v4 --json-output
+stateset-agents deepseek-v4 --starter-profile memory --json-output
+stateset-agents deepseek-v4 --list-profiles --json-output
+stateset-agents deepseek-v4 --write-config ./deepseek_v4.json
+stateset-agents deepseek-v4 --config ./deepseek_v4.json --no-dry-run
+stateset-agents deepseek-v4 --no-dry-run --task customer_service --use-4bit
+```
+
+#### Options
+
+- `--config PATH`: Load a saved deepseek-v4 starter config file (`json` or `yaml`).
+- `--task TEXT`: Starter task preset (`customer_service`, `technical_support`, `sales`, `conversational`).
+- `--starter-profile TEXT`: Starter profile (`balanced`, `memory`, `quality`).
+- `--list-profiles`: Describe all built-in starter profiles and exit.
+- `--model TEXT`: Model name (`deepseek-ai/DeepSeek-V4-Flash` recommended).
+- `--use-lora / --no-lora`: Override LoRA for the run.
+- `--use-4bit / --no-use-4bit`: Override 4-bit quantization.
+- `--use-8bit / --no-use-8bit`: Override 8-bit quantization.
+- `--output-dir PATH`: Override the output directory for checkpoints and adapters.
+- `--iterations INTEGER`: Override the outer GSPO iteration count (must be > 0).
+- `--wandb`: Enable Weights & Biases logging.
+- `--wandb-project TEXT`: Optional W&B project name.
+- `--write-config PATH`: Write the resolved starter config to `json`/`yaml` and exit.
+- `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
+- `--json-output`: Emit a machine-readable preview/result payload.
+
 ### `stateset-agents validate-config`
 
 Validate a training config without running training.

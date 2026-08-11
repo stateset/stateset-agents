@@ -1797,3 +1797,791 @@ def nemotron_3_5(
         return
 
     _echo("Nemotron 3.5 starter run complete.")
+
+
+@app.command("qwen3-coder")
+def qwen3_coder(
+    config: str | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to a Qwen/Qwen3-Coder-30B-A3B-Instruct starter config file (JSON/YAML).",
+    ),
+    task: str = typer.Option(
+        "customer_service",
+        help="Task preset for the Qwen/Qwen3-Coder-30B-A3B-Instruct starter path.",
+    ),
+    starter_profile: str = typer.Option(
+        "balanced",
+        "--starter-profile",
+        help="Starter profile: balanced, memory, or quality.",
+    ),
+    list_profiles: bool = typer.Option(
+        False,
+        "--list-profiles",
+        help="Describe all built-in starter profiles and exit.",
+    ),
+    model: str = typer.Option(
+        "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        "--model",
+        help="Model name. For post-training, prefer Qwen/Qwen3-Coder-30B-A3B-Instruct.",
+    ),
+    use_lora: bool | None = typer.Option(
+        None,
+        "--use-lora/--no-lora",
+        help="Override LoRA usage. Defaults come from --starter-profile.",
+    ),
+    use_4bit: bool | None = typer.Option(
+        None,
+        "--use-4bit/--no-use-4bit",
+        help="Override 4-bit quantization. Defaults come from --starter-profile.",
+    ),
+    use_8bit: bool | None = typer.Option(
+        None,
+        "--use-8bit/--no-use-8bit",
+        help="Override 8-bit quantization. Defaults come from --starter-profile.",
+    ),
+    output_dir: str | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Override the output directory for checkpoints and adapters.",
+    ),
+    iterations: int | None = typer.Option(
+        None,
+        "--iterations",
+        help="Override the outer GSPO iteration count for the starter run.",
+    ),
+    wandb: bool = typer.Option(
+        False,
+        "--wandb",
+        help="Enable Weights & Biases logging.",
+    ),
+    wandb_project: str | None = typer.Option(
+        None,
+        "--wandb-project",
+        help="Optional W&B project name.",
+    ),
+    write_config: str | None = typer.Option(
+        None,
+        "--write-config",
+        help="Write the resolved Qwen3 Coder starter config to JSON/YAML and exit.",
+    ),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Preview the resolved config instead of loading a model.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "--json-output",
+        help="Output machine-readable JSON.",
+    ),
+) -> None:
+    """Preview or run the dedicated Qwen/Qwen3-Coder-30B-A3B-Instruct GSPO starter path."""
+    try:
+        from stateset_agents.training.qwen3_coder_starter import (
+            QWEN3_CODER_BASE_MODEL,
+            QWEN3_CODER_STARTER_PROFILE_CHOICES,
+            QWEN3_CODER_TASK_CHOICES,
+            create_qwen3_coder_preview,
+            describe_qwen3_coder_starter_profiles,
+            get_qwen3_coder_config,
+            load_qwen3_coder_config_file,
+            run_qwen3_coder_config,
+            write_qwen3_coder_config_file,
+        )
+    except CLI_IMPORT_EXCEPTIONS as e:
+        _echo("Qwen3 Coder starter helpers unavailable. Install training extras.")
+        _echo(f"Details: {e}")
+        raise typer.Exit(code=2) from e
+
+    if list_profiles:
+        if config is not None:
+            _echo("`--list-profiles` cannot be combined with `--config`.")
+            raise typer.Exit(code=2)
+        if task not in QWEN3_CODER_TASK_CHOICES:
+            _echo(
+                f"Unsupported task. Use one of: {', '.join(QWEN3_CODER_TASK_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+
+        profile_catalog = describe_qwen3_coder_starter_profiles(
+            task=task,
+            model_name=model,
+        )
+        if json_output:
+            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo("Available Qwen3 Coder starter profiles:")
+        _echo(f"Model: {profile_catalog['model_name']}")
+        _echo(f"Task: {profile_catalog['task']}")
+        for profile_name in QWEN3_CODER_STARTER_PROFILE_CHOICES:
+            profile_payload = profile_catalog["profiles"][profile_name]
+            summary = profile_payload["summary"]
+            _echo(f"- {profile_name}: {profile_payload['description']}")
+            _echo(
+                "  "
+                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
+                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
+                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
+            )
+        return
+
+    if config:
+        conflicting_options: list[str] = []
+        if task != "customer_service":
+            conflicting_options.append("--task")
+        if starter_profile != "balanced":
+            conflicting_options.append("--starter-profile")
+        if model != QWEN3_CODER_BASE_MODEL:
+            conflicting_options.append("--model")
+        if use_lora is not None:
+            conflicting_options.append("--use-lora/--no-lora")
+        if use_4bit is not None:
+            conflicting_options.append("--use-4bit")
+        if use_8bit is not None:
+            conflicting_options.append("--use-8bit")
+        if output_dir is not None:
+            conflicting_options.append("--output-dir")
+        if iterations is not None:
+            conflicting_options.append("--iterations")
+        if wandb:
+            conflicting_options.append("--wandb")
+        if wandb_project is not None:
+            conflicting_options.append("--wandb-project")
+        if conflicting_options:
+            _echo(
+                "`--config` cannot be combined with starter override options: "
+                + ", ".join(conflicting_options)
+            )
+            raise typer.Exit(code=2)
+        try:
+            resolved_config = load_qwen3_coder_config_file(config)
+        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
+            _echo(f"Failed to load Qwen3 Coder config: {e}")
+            raise typer.Exit(code=2) from e
+    else:
+        if task not in QWEN3_CODER_TASK_CHOICES:
+            _echo(
+                f"Unsupported task. Use one of: {', '.join(QWEN3_CODER_TASK_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+        if starter_profile not in QWEN3_CODER_STARTER_PROFILE_CHOICES:
+            _echo(
+                f"Unsupported starter profile. Use one of: {', '.join(QWEN3_CODER_STARTER_PROFILE_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+        config_overrides: dict[str, t.Any] = {}
+        if iterations is not None:
+            config_overrides["num_outer_iterations"] = _coerce_positive_int(
+                iterations,
+                "iterations",
+                16,
+            )
+        resolved_config = get_qwen3_coder_config(
+            model_name=model,
+            task=task,
+            starter_profile=starter_profile,
+            use_lora=use_lora,
+            use_4bit=use_4bit,
+            use_8bit=use_8bit,
+            output_dir=output_dir,
+            use_wandb=wandb,
+            wandb_project=wandb_project,
+            **config_overrides,
+        )
+
+    preview = create_qwen3_coder_preview(resolved_config)
+
+    if write_config:
+        try:
+            written_path = write_qwen3_coder_config_file(resolved_config, write_config)
+        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
+            _echo(f"Failed to write Qwen3 Coder config: {e}")
+            raise typer.Exit(code=2) from e
+
+        if json_output:
+            payload = dict(preview)
+            payload["config_file"] = str(written_path)
+            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo(f"Wrote Qwen3 Coder config to {written_path}")
+        return
+
+    if dry_run:
+        if json_output:
+            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo("Dry-run: Qwen3 Coder starter config resolved.")
+        _echo(f"Model: {preview['config']['model_name']}")
+        _echo(f"Task: {preview['config']['task']}")
+        _echo(f"Starter profile: {preview['config']['starter_profile']}")
+        _echo(f"Output dir: {preview['config']['output_dir']}")
+        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
+        _echo(
+            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
+        )
+        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
+        for warning in preview.get("warnings", []):
+            _echo(f"Warning: {warning}")
+        _echo("Run with:")
+        _echo("  stateset-agents qwen3-coder --no-dry-run --task customer_service")
+        _echo("Or try the low-memory preset:")
+        _echo("  stateset-agents qwen3-coder --starter-profile memory --json-output")
+        _echo("Or save a reusable config:")
+        _echo("  stateset-agents qwen3-coder --write-config ./qwen3_coder.json")
+        return
+
+    import asyncio
+
+    try:
+        result = asyncio.run(run_qwen3_coder_config(resolved_config, dry_run=False))
+    except CLI_IMPORT_EXCEPTIONS as e:
+        _echo("Qwen3 Coder training components unavailable. Install training extras.")
+        _echo(f"Details: {e}")
+        raise typer.Exit(code=2) from e
+    except CLI_TRAIN_EXCEPTIONS as e:
+        _echo(f"Qwen3 Coder starter failed: {e}")
+        raise typer.Exit(code=2) from e
+
+    if json_output:
+        payload = {
+            "status": "completed",
+            "task": resolved_config.task,
+            "starter_profile": resolved_config.starter_profile,
+            "model_name": resolved_config.model_name,
+            "output_dir": resolved_config.output_dir,
+            "result": str(result),
+        }
+        _echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    _echo("Qwen3 Coder starter run complete.")
+
+
+@app.command("gpt-oss")
+def gpt_oss(
+    config: str | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to a openai/gpt-oss-20b starter config file (JSON/YAML).",
+    ),
+    task: str = typer.Option(
+        "customer_service",
+        help="Task preset for the openai/gpt-oss-20b starter path.",
+    ),
+    starter_profile: str = typer.Option(
+        "balanced",
+        "--starter-profile",
+        help="Starter profile: balanced, memory, or quality.",
+    ),
+    list_profiles: bool = typer.Option(
+        False,
+        "--list-profiles",
+        help="Describe all built-in starter profiles and exit.",
+    ),
+    model: str = typer.Option(
+        "openai/gpt-oss-20b",
+        "--model",
+        help="Model name. For post-training, prefer openai/gpt-oss-20b.",
+    ),
+    use_lora: bool | None = typer.Option(
+        None,
+        "--use-lora/--no-lora",
+        help="Override LoRA usage. Defaults come from --starter-profile.",
+    ),
+    use_4bit: bool | None = typer.Option(
+        None,
+        "--use-4bit/--no-use-4bit",
+        help="Override 4-bit quantization. Defaults come from --starter-profile.",
+    ),
+    use_8bit: bool | None = typer.Option(
+        None,
+        "--use-8bit/--no-use-8bit",
+        help="Override 8-bit quantization. Defaults come from --starter-profile.",
+    ),
+    output_dir: str | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Override the output directory for checkpoints and adapters.",
+    ),
+    iterations: int | None = typer.Option(
+        None,
+        "--iterations",
+        help="Override the outer GSPO iteration count for the starter run.",
+    ),
+    wandb: bool = typer.Option(
+        False,
+        "--wandb",
+        help="Enable Weights & Biases logging.",
+    ),
+    wandb_project: str | None = typer.Option(
+        None,
+        "--wandb-project",
+        help="Optional W&B project name.",
+    ),
+    write_config: str | None = typer.Option(
+        None,
+        "--write-config",
+        help="Write the resolved gpt-oss starter config to JSON/YAML and exit.",
+    ),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Preview the resolved config instead of loading a model.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "--json-output",
+        help="Output machine-readable JSON.",
+    ),
+) -> None:
+    """Preview or run the dedicated openai/gpt-oss-20b GSPO starter path."""
+    try:
+        from stateset_agents.training.gpt_oss_starter import (
+            GPT_OSS_BASE_MODEL,
+            GPT_OSS_STARTER_PROFILE_CHOICES,
+            GPT_OSS_TASK_CHOICES,
+            create_gpt_oss_preview,
+            describe_gpt_oss_starter_profiles,
+            get_gpt_oss_config,
+            load_gpt_oss_config_file,
+            run_gpt_oss_config,
+            write_gpt_oss_config_file,
+        )
+    except CLI_IMPORT_EXCEPTIONS as e:
+        _echo("gpt-oss starter helpers unavailable. Install training extras.")
+        _echo(f"Details: {e}")
+        raise typer.Exit(code=2) from e
+
+    if list_profiles:
+        if config is not None:
+            _echo("`--list-profiles` cannot be combined with `--config`.")
+            raise typer.Exit(code=2)
+        if task not in GPT_OSS_TASK_CHOICES:
+            _echo(f"Unsupported task. Use one of: {', '.join(GPT_OSS_TASK_CHOICES)}.")
+            raise typer.Exit(code=2)
+
+        profile_catalog = describe_gpt_oss_starter_profiles(
+            task=task,
+            model_name=model,
+        )
+        if json_output:
+            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo("Available gpt-oss starter profiles:")
+        _echo(f"Model: {profile_catalog['model_name']}")
+        _echo(f"Task: {profile_catalog['task']}")
+        for profile_name in GPT_OSS_STARTER_PROFILE_CHOICES:
+            profile_payload = profile_catalog["profiles"][profile_name]
+            summary = profile_payload["summary"]
+            _echo(f"- {profile_name}: {profile_payload['description']}")
+            _echo(
+                "  "
+                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
+                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
+                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
+            )
+        return
+
+    if config:
+        conflicting_options: list[str] = []
+        if task != "customer_service":
+            conflicting_options.append("--task")
+        if starter_profile != "balanced":
+            conflicting_options.append("--starter-profile")
+        if model != GPT_OSS_BASE_MODEL:
+            conflicting_options.append("--model")
+        if use_lora is not None:
+            conflicting_options.append("--use-lora/--no-lora")
+        if use_4bit is not None:
+            conflicting_options.append("--use-4bit")
+        if use_8bit is not None:
+            conflicting_options.append("--use-8bit")
+        if output_dir is not None:
+            conflicting_options.append("--output-dir")
+        if iterations is not None:
+            conflicting_options.append("--iterations")
+        if wandb:
+            conflicting_options.append("--wandb")
+        if wandb_project is not None:
+            conflicting_options.append("--wandb-project")
+        if conflicting_options:
+            _echo(
+                "`--config` cannot be combined with starter override options: "
+                + ", ".join(conflicting_options)
+            )
+            raise typer.Exit(code=2)
+        try:
+            resolved_config = load_gpt_oss_config_file(config)
+        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
+            _echo(f"Failed to load gpt-oss config: {e}")
+            raise typer.Exit(code=2) from e
+    else:
+        if task not in GPT_OSS_TASK_CHOICES:
+            _echo(f"Unsupported task. Use one of: {', '.join(GPT_OSS_TASK_CHOICES)}.")
+            raise typer.Exit(code=2)
+        if starter_profile not in GPT_OSS_STARTER_PROFILE_CHOICES:
+            _echo(
+                f"Unsupported starter profile. Use one of: {', '.join(GPT_OSS_STARTER_PROFILE_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+        config_overrides: dict[str, t.Any] = {}
+        if iterations is not None:
+            config_overrides["num_outer_iterations"] = _coerce_positive_int(
+                iterations,
+                "iterations",
+                16,
+            )
+        resolved_config = get_gpt_oss_config(
+            model_name=model,
+            task=task,
+            starter_profile=starter_profile,
+            use_lora=use_lora,
+            use_4bit=use_4bit,
+            use_8bit=use_8bit,
+            output_dir=output_dir,
+            use_wandb=wandb,
+            wandb_project=wandb_project,
+            **config_overrides,
+        )
+
+    preview = create_gpt_oss_preview(resolved_config)
+
+    if write_config:
+        try:
+            written_path = write_gpt_oss_config_file(resolved_config, write_config)
+        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
+            _echo(f"Failed to write gpt-oss config: {e}")
+            raise typer.Exit(code=2) from e
+
+        if json_output:
+            payload = dict(preview)
+            payload["config_file"] = str(written_path)
+            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo(f"Wrote gpt-oss config to {written_path}")
+        return
+
+    if dry_run:
+        if json_output:
+            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo("Dry-run: gpt-oss starter config resolved.")
+        _echo(f"Model: {preview['config']['model_name']}")
+        _echo(f"Task: {preview['config']['task']}")
+        _echo(f"Starter profile: {preview['config']['starter_profile']}")
+        _echo(f"Output dir: {preview['config']['output_dir']}")
+        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
+        _echo(
+            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
+        )
+        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
+        for warning in preview.get("warnings", []):
+            _echo(f"Warning: {warning}")
+        _echo("Run with:")
+        _echo("  stateset-agents gpt-oss --no-dry-run --task customer_service")
+        _echo("Or try the low-memory preset:")
+        _echo("  stateset-agents gpt-oss --starter-profile memory --json-output")
+        _echo("Or save a reusable config:")
+        _echo("  stateset-agents gpt-oss --write-config ./gpt_oss.json")
+        return
+
+    import asyncio
+
+    try:
+        result = asyncio.run(run_gpt_oss_config(resolved_config, dry_run=False))
+    except CLI_IMPORT_EXCEPTIONS as e:
+        _echo("gpt-oss training components unavailable. Install training extras.")
+        _echo(f"Details: {e}")
+        raise typer.Exit(code=2) from e
+    except CLI_TRAIN_EXCEPTIONS as e:
+        _echo(f"gpt-oss starter failed: {e}")
+        raise typer.Exit(code=2) from e
+
+    if json_output:
+        payload = {
+            "status": "completed",
+            "task": resolved_config.task,
+            "starter_profile": resolved_config.starter_profile,
+            "model_name": resolved_config.model_name,
+            "output_dir": resolved_config.output_dir,
+            "result": str(result),
+        }
+        _echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    _echo("gpt-oss starter run complete.")
+
+
+@app.command("deepseek-v4")
+def deepseek_v4(
+    config: str | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to a deepseek-ai/DeepSeek-V4-Flash starter config file (JSON/YAML).",
+    ),
+    task: str = typer.Option(
+        "customer_service",
+        help="Task preset for the deepseek-ai/DeepSeek-V4-Flash starter path.",
+    ),
+    starter_profile: str = typer.Option(
+        "balanced",
+        "--starter-profile",
+        help="Starter profile: balanced, memory, or quality.",
+    ),
+    list_profiles: bool = typer.Option(
+        False,
+        "--list-profiles",
+        help="Describe all built-in starter profiles and exit.",
+    ),
+    model: str = typer.Option(
+        "deepseek-ai/DeepSeek-V4-Flash",
+        "--model",
+        help="Model name. For post-training, prefer deepseek-ai/DeepSeek-V4-Flash.",
+    ),
+    use_lora: bool | None = typer.Option(
+        None,
+        "--use-lora/--no-lora",
+        help="Override LoRA usage. Defaults come from --starter-profile.",
+    ),
+    use_4bit: bool | None = typer.Option(
+        None,
+        "--use-4bit/--no-use-4bit",
+        help="Override 4-bit quantization. Defaults come from --starter-profile.",
+    ),
+    use_8bit: bool | None = typer.Option(
+        None,
+        "--use-8bit/--no-use-8bit",
+        help="Override 8-bit quantization. Defaults come from --starter-profile.",
+    ),
+    output_dir: str | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Override the output directory for checkpoints and adapters.",
+    ),
+    iterations: int | None = typer.Option(
+        None,
+        "--iterations",
+        help="Override the outer GSPO iteration count for the starter run.",
+    ),
+    wandb: bool = typer.Option(
+        False,
+        "--wandb",
+        help="Enable Weights & Biases logging.",
+    ),
+    wandb_project: str | None = typer.Option(
+        None,
+        "--wandb-project",
+        help="Optional W&B project name.",
+    ),
+    write_config: str | None = typer.Option(
+        None,
+        "--write-config",
+        help="Write the resolved deepseek-v4 starter config to JSON/YAML and exit.",
+    ),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Preview the resolved config instead of loading a model.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "--json-output",
+        help="Output machine-readable JSON.",
+    ),
+) -> None:
+    """Preview or run the dedicated deepseek-ai/DeepSeek-V4-Flash GSPO starter path."""
+    try:
+        from stateset_agents.training.deepseek_v4_starter import (
+            DEEPSEEK_V4_BASE_MODEL,
+            DEEPSEEK_V4_STARTER_PROFILE_CHOICES,
+            DEEPSEEK_V4_TASK_CHOICES,
+            create_deepseek_v4_preview,
+            describe_deepseek_v4_starter_profiles,
+            get_deepseek_v4_config,
+            load_deepseek_v4_config_file,
+            run_deepseek_v4_config,
+            write_deepseek_v4_config_file,
+        )
+    except CLI_IMPORT_EXCEPTIONS as e:
+        _echo("deepseek-v4 starter helpers unavailable. Install training extras.")
+        _echo(f"Details: {e}")
+        raise typer.Exit(code=2) from e
+
+    if list_profiles:
+        if config is not None:
+            _echo("`--list-profiles` cannot be combined with `--config`.")
+            raise typer.Exit(code=2)
+        if task not in DEEPSEEK_V4_TASK_CHOICES:
+            _echo(
+                f"Unsupported task. Use one of: {', '.join(DEEPSEEK_V4_TASK_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+
+        profile_catalog = describe_deepseek_v4_starter_profiles(
+            task=task,
+            model_name=model,
+        )
+        if json_output:
+            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo("Available deepseek-v4 starter profiles:")
+        _echo(f"Model: {profile_catalog['model_name']}")
+        _echo(f"Task: {profile_catalog['task']}")
+        for profile_name in DEEPSEEK_V4_STARTER_PROFILE_CHOICES:
+            profile_payload = profile_catalog["profiles"][profile_name]
+            summary = profile_payload["summary"]
+            _echo(f"- {profile_name}: {profile_payload['description']}")
+            _echo(
+                "  "
+                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
+                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
+                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
+            )
+        return
+
+    if config:
+        conflicting_options: list[str] = []
+        if task != "customer_service":
+            conflicting_options.append("--task")
+        if starter_profile != "balanced":
+            conflicting_options.append("--starter-profile")
+        if model != DEEPSEEK_V4_BASE_MODEL:
+            conflicting_options.append("--model")
+        if use_lora is not None:
+            conflicting_options.append("--use-lora/--no-lora")
+        if use_4bit is not None:
+            conflicting_options.append("--use-4bit")
+        if use_8bit is not None:
+            conflicting_options.append("--use-8bit")
+        if output_dir is not None:
+            conflicting_options.append("--output-dir")
+        if iterations is not None:
+            conflicting_options.append("--iterations")
+        if wandb:
+            conflicting_options.append("--wandb")
+        if wandb_project is not None:
+            conflicting_options.append("--wandb-project")
+        if conflicting_options:
+            _echo(
+                "`--config` cannot be combined with starter override options: "
+                + ", ".join(conflicting_options)
+            )
+            raise typer.Exit(code=2)
+        try:
+            resolved_config = load_deepseek_v4_config_file(config)
+        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
+            _echo(f"Failed to load deepseek-v4 config: {e}")
+            raise typer.Exit(code=2) from e
+    else:
+        if task not in DEEPSEEK_V4_TASK_CHOICES:
+            _echo(
+                f"Unsupported task. Use one of: {', '.join(DEEPSEEK_V4_TASK_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+        if starter_profile not in DEEPSEEK_V4_STARTER_PROFILE_CHOICES:
+            _echo(
+                f"Unsupported starter profile. Use one of: {', '.join(DEEPSEEK_V4_STARTER_PROFILE_CHOICES)}."
+            )
+            raise typer.Exit(code=2)
+        config_overrides: dict[str, t.Any] = {}
+        if iterations is not None:
+            config_overrides["num_outer_iterations"] = _coerce_positive_int(
+                iterations,
+                "iterations",
+                16,
+            )
+        resolved_config = get_deepseek_v4_config(
+            model_name=model,
+            task=task,
+            starter_profile=starter_profile,
+            use_lora=use_lora,
+            use_4bit=use_4bit,
+            use_8bit=use_8bit,
+            output_dir=output_dir,
+            use_wandb=wandb,
+            wandb_project=wandb_project,
+            **config_overrides,
+        )
+
+    preview = create_deepseek_v4_preview(resolved_config)
+
+    if write_config:
+        try:
+            written_path = write_deepseek_v4_config_file(resolved_config, write_config)
+        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
+            _echo(f"Failed to write deepseek-v4 config: {e}")
+            raise typer.Exit(code=2) from e
+
+        if json_output:
+            payload = dict(preview)
+            payload["config_file"] = str(written_path)
+            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo(f"Wrote deepseek-v4 config to {written_path}")
+        return
+
+    if dry_run:
+        if json_output:
+            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
+            return
+
+        _echo("Dry-run: deepseek-v4 starter config resolved.")
+        _echo(f"Model: {preview['config']['model_name']}")
+        _echo(f"Task: {preview['config']['task']}")
+        _echo(f"Starter profile: {preview['config']['starter_profile']}")
+        _echo(f"Output dir: {preview['config']['output_dir']}")
+        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
+        _echo(
+            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
+        )
+        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
+        for warning in preview.get("warnings", []):
+            _echo(f"Warning: {warning}")
+        _echo("Run with:")
+        _echo("  stateset-agents deepseek-v4 --no-dry-run --task customer_service")
+        _echo("Or try the low-memory preset:")
+        _echo("  stateset-agents deepseek-v4 --starter-profile memory --json-output")
+        _echo("Or save a reusable config:")
+        _echo("  stateset-agents deepseek-v4 --write-config ./deepseek_v4.json")
+        return
+
+    import asyncio
+
+    try:
+        result = asyncio.run(run_deepseek_v4_config(resolved_config, dry_run=False))
+    except CLI_IMPORT_EXCEPTIONS as e:
+        _echo("deepseek-v4 training components unavailable. Install training extras.")
+        _echo(f"Details: {e}")
+        raise typer.Exit(code=2) from e
+    except CLI_TRAIN_EXCEPTIONS as e:
+        _echo(f"deepseek-v4 starter failed: {e}")
+        raise typer.Exit(code=2) from e
+
+    if json_output:
+        payload = {
+            "status": "completed",
+            "task": resolved_config.task,
+            "starter_profile": resolved_config.starter_profile,
+            "model_name": resolved_config.model_name,
+            "output_dir": resolved_config.output_dir,
+            "result": str(result),
+        }
+        _echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    _echo("deepseek-v4 starter run complete.")

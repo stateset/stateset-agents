@@ -97,6 +97,83 @@ PRESETS: dict[str, ModelPreset] = {
         ),
         starter_module="nemotron_3_5_starter",
     ),
+    "qwen3-coder": ModelPreset(
+        model_id="Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        tokenizer_id="Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        lora_target_modules=(
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+        ),
+        max_prompt_length=4096,
+        max_completion_length=1024,
+        learning_rate=3e-6,
+        num_generations=4,
+        bf16=True,
+        use_4bit=False,
+        use_8bit=False,
+        notes=(
+            "Values copied from stateset_agents.training.qwen3_coder_starter "
+            "(QWEN3_CODER_*). examples/finetune_qwen3_coder_gspo.py delegates "
+            "to the packaged starter rather than duplicating hyperparameters. "
+            "LoRA targets are attention-only: the 128-expert MoE MLPs are "
+            "impractical LoRA targets."
+        ),
+        starter_module="qwen3_coder_starter",
+    ),
+    "gpt-oss": ModelPreset(
+        model_id="openai/gpt-oss-20b",
+        tokenizer_id="openai/gpt-oss-20b",
+        lora_target_modules=(
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+        ),
+        max_prompt_length=4096,
+        max_completion_length=1024,
+        learning_rate=3e-6,
+        num_generations=4,
+        bf16=True,
+        use_4bit=False,
+        use_8bit=False,
+        notes=(
+            "Values copied from stateset_agents.training.gpt_oss_starter "
+            "(GPT_OSS_*). examples/finetune_gpt_oss_gspo.py delegates to the "
+            "packaged starter rather than duplicating hyperparameters. LoRA "
+            "targets are attention-only (verified against the gpt-oss-20b "
+            "weight map); the MoE expert weights are fused per-layer tensors."
+        ),
+        starter_module="gpt_oss_starter",
+    ),
+    "deepseek-v4": ModelPreset(
+        model_id="deepseek-ai/DeepSeek-V4-Flash",
+        tokenizer_id="deepseek-ai/DeepSeek-V4-Flash",
+        lora_target_modules=(
+            "wq_a",
+            "wq_b",
+            "wkv",
+            "wo_a",
+            "wo_b",
+        ),
+        max_prompt_length=8192,
+        max_completion_length=1536,
+        learning_rate=2e-6,
+        num_generations=4,
+        bf16=True,
+        use_4bit=True,
+        use_8bit=False,
+        notes=(
+            "Values copied from stateset_agents.training.deepseek_v4_starter "
+            "(DEEPSEEK_V4_*). examples/finetune_deepseek_v4_gspo.py delegates "
+            "to the packaged starter rather than duplicating hyperparameters. "
+            "LoRA targets use the checkpoint's MLA projection names (verified "
+            "against the safetensors weight map); llama-style q_proj/k_proj/"
+            "v_proj do not exist in this architecture."
+        ),
+        starter_module="deepseek_v4_starter",
+    ),
     "kimi-k3": ModelPreset(
         model_id="moonshotai/Kimi-K3",
         tokenizer_id="moonshotai/Kimi-K3",

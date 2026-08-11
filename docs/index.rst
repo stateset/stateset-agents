@@ -72,6 +72,9 @@ Run the maintained smoke-tested example with ``python examples/quick_start.py``.
    kimi_k3_starter
    muse_glimmer_starter
    nemotron_3_5_starter
+   qwen3_coder_starter
+   gpt_oss_starter
+   deepseek_v4_starter
    glm5_1_starter
    glm5_2_starter
    examples

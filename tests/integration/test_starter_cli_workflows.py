@@ -44,6 +44,27 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
             "sales",
             "memory",
         ),
+        (
+            "qwen3-coder",
+            "qwen3-coder",
+            "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+            "technical_support",
+            "memory",
+        ),
+        (
+            "gpt-oss",
+            "gpt-oss",
+            "openai/gpt-oss-20b",
+            "sales",
+            "memory",
+        ),
+        (
+            "deepseek-v4",
+            "deepseek-v4",
+            "deepseek-ai/DeepSeek-V4-Flash",
+            "technical_support",
+            "memory",
+        ),
     ],
 )
 def test_model_specific_starter_configs_round_trip_via_cli(

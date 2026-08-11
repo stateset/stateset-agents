@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Three new first-class model starters** — packaged thin starter modules
+  with the full standard surface (CLI command, `init --preset`,
+  `examples/finetune_gspo.py` preset + thin forwarder, balanced/memory/quality
+  profiles, docs, and unit/integration tests) for:
+  - **Qwen3 Coder 30B A3B** (`stateset_agents/training/qwen3_coder_starter.py`,
+    `stateset-agents qwen3-coder`) — `Qwen/Qwen3-Coder-30B-A3B-Instruct`,
+    Alibaba's open coding MoE (30B total / ~3B active, 128 experts / 8 active,
+    256K ctx, Apache-2.0). Attention-only LoRA targets: the 128-expert MoE
+    MLPs are impractical LoRA targets.
+  - **gpt-oss 20B** (`stateset_agents/training/gpt_oss_starter.py`,
+    `stateset-agents gpt-oss`) — `openai/gpt-oss-20b`, OpenAI's open-weight
+    reasoning MoE (32 experts / 4 active, 131K ctx, Apache-2.0; adjustable
+    reasoning effort, harmony format). `openai/gpt-oss-120b` is listed as a
+    variant with a multi-GPU validation warning. Attention-only LoRA targets
+    verified against the checkpoint weight map.
+  - **DeepSeek V4 Flash** (`stateset_agents/training/deepseek_v4_starter.py`,
+    `stateset-agents deepseek-v4`) — `deepseek-ai/DeepSeek-V4-Flash`, a large
+    MoE with MLA attention (256 routed experts / 6 active, up to 1M positions,
+    MIT). Modeled on the GLM large-MoE starters: QLoRA-only, vLLM-backed
+    generation, memory warnings. LoRA targets use the checkpoint's actual MLA
+    projection names (`wq_a`/`wq_b`/`wkv`/`wo_a`/`wo_b`, verified against the
+    safetensors weight map — llama-style `q_proj`/`k_proj`/`v_proj` do not
+    exist in this architecture).
+
 ## [0.22.0] - 2026-08-11 — Architecture consolidation + Nemotron 3.5 Lightning
 
 ### Added
