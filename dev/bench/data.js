@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786460074630,
+  "lastUpdate": 1786460521413,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1060,6 +1060,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.768856277091286e-8",
             "extra": "mean: 369.0070031722127 nsec\nrounds: 123901"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "14a1f862abe8eae726c46c75b9f303c05328a5a3",
+          "message": "chore(release): v0.22.0 — architecture consolidation + Nemotron 3.5 Lightning\n\nVersion 0.22.0 across pyproject, package, helm chart, k8s manifests, docs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-11T07:59:06-07:00",
+          "tree_id": "879583bc206ec55b9466843508a6fe2e186b21e5",
+          "url": "https://github.com/stateset/stateset-agents/commit/14a1f862abe8eae726c46c75b9f303c05328a5a3"
+        },
+        "date": 1786460520006,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 9953.811839177908,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011142503217137953",
+            "extra": "mean: 100.46402485367763 usec\nrounds: 1529"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 10435.112674667354,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008315584031604334",
+            "extra": "mean: 95.83030209416283 usec\nrounds: 2006"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 7768.6194808532655,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013164345110646054",
+            "extra": "mean: 128.72299930053535 usec\nrounds: 2861"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 925.1491675885861,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000024949271819746237",
+            "extra": "mean: 1.0809067716144778 msec\nrounds: 775"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 237.80500171383636,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000028399792455626937",
+            "extra": "mean: 4.205126018347395 msec\nrounds: 218"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2499272.5482385335,
+            "unit": "iter/sec",
+            "range": "stddev: 4.7008987740839355e-8",
+            "extra": "mean: 400.11642615960056 nsec\nrounds: 119818"
           }
         ]
       }
