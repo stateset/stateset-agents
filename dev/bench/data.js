@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786455954607,
+  "lastUpdate": 1786460074630,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -996,6 +996,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.040018442290622e-8",
             "extra": "mean: 477.91766100637693 nsec\nrounds: 103972"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "a02db743a202dce9cde0511b0ed232a2b542ac24",
+          "message": "feat(training): NVIDIA Nemotron 3.5 Lightning first-class starter\n\nnvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 (released 2026-08-11):\nhybrid Mamba-2 + attention MoE, 30B total / ~3B active, 256K practical\ncontext, OpenMDW-1.1. First starter built on the thin starter_common\npattern from scratch. Mamba-aware LoRA targets (q/k/v/o_proj +\nin_proj/out_proj — not the llama-style MLP list); NVFP4 variant flagged\ninference-only; trust_remote_code for the nemotron_h architecture.\n\nFull surface: CLI command, init --preset, unified-driver preset +\nforwarder, docs page + all reference lists, config/module-export tests,\nintegration round-trip row. Guardrail meta-tests (CLI reference,\nexamples README, preset registry) pass.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-11T07:51:31-07:00",
+          "tree_id": "76c5c4d6f999e138b90f80b20c2341fc9f2c15d3",
+          "url": "https://github.com/stateset/stateset-agents/commit/a02db743a202dce9cde0511b0ed232a2b542ac24"
+        },
+        "date": 1786460073256,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 10361.324576586985,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001260386677907855",
+            "extra": "mean: 96.51275689786368 usec\nrounds: 1341"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 10727.963412082241,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012397015135381286",
+            "extra": "mean: 93.21433729665426 usec\nrounds: 2523"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 7858.576751107029,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001904409415937453",
+            "extra": "mean: 127.24950479857961 usec\nrounds: 3647"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 958.5452413185911,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000729686021911779",
+            "extra": "mean: 1.0432475765300164 msec\nrounds: 784"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 244.46805756082918,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00012436179678226918",
+            "extra": "mean: 4.090513950891835 msec\nrounds: 224"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2709975.6682214183,
+            "unit": "iter/sec",
+            "range": "stddev: 3.768856277091286e-8",
+            "extra": "mean: 369.0070031722127 nsec\nrounds: 123901"
           }
         ]
       }
