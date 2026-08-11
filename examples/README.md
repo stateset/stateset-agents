@@ -238,7 +238,10 @@ reproducible this way —
 `finetune_kimi_k3_gspo.py`, `finetune_kimi_k2_6_gspo.py`,
 `finetune_gemma4_31b_gspo.py`, and `finetune_qwen3_5_0_8b_gspo.py` — are now
 thin deprecated forwarders onto `examples/finetune_gspo.py --model <preset>`
-and will be removed in a future release. The other dedicated per-model
+and will be removed in a future release. `finetune_muse_glimmer_gspo.py` is a
+thin forwarder of the same shape for the `muse-glimmer` preset
+(`meta-models/Muse-Glimmer-30B`); prefer
+`python examples/finetune_gspo.py --model muse-glimmer` directly. The other dedicated per-model
 scripts below are kept because they carry genuinely unique logic the driver
 does not (and, for some, should not) generalize: `finetune_glm5_1_gspo.py`
 and `finetune_glm5_2_gspo.py` add serving-only flags (`--fp8-serving`,
