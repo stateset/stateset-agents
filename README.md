@@ -87,7 +87,11 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.22.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.23.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Three new first-class starters.** `stateset-agents qwen3-coder` (`Qwen/Qwen3-Coder-30B-A3B-Instruct`, 256K ctx, Apache‑2.0), `stateset-agents gpt-oss` (`openai/gpt-oss-20b`, 128K, Apache‑2.0; 120B variant flagged multi‑GPU), and `stateset-agents deepseek-v4` (`deepseek-ai/DeepSeek-V4-Flash`, 1M ctx, MIT — GLM‑style QLoRA+vLLM path with MLA‑correct LoRA targets verified from the weight map).
+
+**v0.22.0:**
 
 - **Architecture consolidation.** The four flagship trainers (GSPO/DAPO/GEPO/VAPO) share one model-loading/checkpoint runtime (`training/trainer_runtime.py`); the seven model starters are thin definition layers over `training/starter_common.py`; research modules moved to `stateset_agents.experimental` (old paths warn for one cycle). All RL math and public APIs unchanged — the full suite passes unmodified.
 - **NVIDIA Nemotron 3.5 Lightning starter.** `stateset-agents nemotron-3-5` targets `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` (hybrid Mamba‑2 + MoE, 30B total / 3B active, 256K ctx, OpenMDW‑1.1) with Mamba-aware LoRA targets. [`docs/nemotron_3_5_starter.rst`](docs/nemotron_3_5_starter.rst)
@@ -205,7 +209,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.22.0)
+pip install stateset-agents          # latest release (v0.23.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -901,7 +905,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.22.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.23.0`).
 
 Other entry points:
 
