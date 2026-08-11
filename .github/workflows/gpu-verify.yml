@@ -1,0 +1,142 @@
+name: GPU Verify
+
+# Weekly proof that the packaged training job still works on real rented
+# hardware — the property the docs advertise ("verified end-to-end on live
+# hardware") kept true continuously instead of asserted once.
+#
+# Rents a RunPod GPU via the same `train-remote --provider runpod` path users
+# run, trains a real QLoRA adapter on Qwen3.5-0.8B from a tiny inline
+# dataset, and fails unless an adapter with tensors comes back. The executor
+# terminates the pod on every exit path, so a failed run does not keep
+# billing. Cost per run is a few cents (RTX A4000, ~5-10 minutes).
+#
+# Requires the RUNPOD_API_KEY repository secret; without it the job reports
+# itself as skipped rather than failing, so forks stay green.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Mondays 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      gpu:
+        description: 'RunPod GPU type'
+        required: false
+        default: 'NVIDIA RTX A4000'
+
+permissions:
+  contents: read
+
+jobs:
+  sft-live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check for RunPod credentials
+      id: creds
+      run: |
+        if [ -n "$RUNPOD_API_KEY" ]; then
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::RUNPOD_API_KEY secret not set — skipping GPU verification."
+        fi
+
+    - name: Set up Python
+      if: steps.creds.outputs.present == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install package
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[remote]" 2>/dev/null || pip install -e .
+
+    - name: Generate ephemeral SSH keypair
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -q
+
+    - name: Build a wheel of the checked-out source
+      # The remote job installs a pinned published package by default; a
+      # wheel of the current checkout verifies HEAD, not last release.
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        pip install build
+        python -m build --wheel
+
+    - name: Write smoke dataset
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        python - <<'PY'
+        import json
+
+        rows = [
+            {
+                "messages": [
+                    {"role": "user", "content": f"Say the number {i}."},
+                    {"role": "assistant", "content": f"The number is {i}."},
+                ]
+            }
+            for i in range(32)
+        ]
+        with open("gpu_smoke.jsonl", "w", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row) + "\n")
+        PY
+
+    - name: Run live QLoRA training on RunPod
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        python - <<'PY'
+        import glob
+        import sys
+        from pathlib import Path
+
+        from stateset_agents.remote.job import RemoteJobSpec
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        wheel = next(iter(glob.glob("dist/stateset_agents-*.whl")), None)
+        assert wheel, "wheel not built"
+
+        gpu = "${{ github.event.inputs.gpu || 'NVIDIA RTX A4000' }}"
+        spec = RemoteJobSpec(
+            dataset=Path("gpu_smoke.jsonl"),
+            base_model="Qwen/Qwen3.5-0.8B",
+            output_dir=Path("outputs/gpu_verify"),
+            num_epochs=1,
+            lora_r=8,
+            gpu=gpu,
+            timeout_s=1800,
+        )
+        executor = RunPodExecutor(wheel=Path(wheel))
+        result = executor.wait(executor.submit(spec))
+        for line in result.logs:
+            print(line)
+        if not result.succeeded:
+            print(f"::error::Remote job {result.status.value}.")
+            sys.exit(1)
+        print("Adapter written to", result.output_dir)
+
+        adapter_files = list(Path("outputs/gpu_verify").rglob("*.safetensors"))
+        if not adapter_files:
+            print("::error::No adapter tensors returned from the GPU run.")
+            sys.exit(1)
+        for f in adapter_files:
+            print(f, f.stat().st_size, "bytes")
+        PY
+
+    - name: Upload adapter artifact
+      if: steps.creds.outputs.present == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: gpu-verify-adapter
+        path: outputs/gpu_verify
+        retention-days: 14

@@ -273,15 +273,17 @@ First-class starters ship for **Qwen 3.5 0.8B**, **Gemma 4 31B IT**, **Kimi-K2.6
 
 See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
 
-### Dashboard and mobile app (demo, not deployed)
+### Dashboard and mobile app (separate repos)
 
-[`dashboard/`](dashboard/) (React + Vite) and [`mobile/`](mobile/) (Expo)
-are working clients for a simulator-backed `/api/lab/*` "Training Lab"
-router. Both are real code you can run locally, but neither has a
-deployment path today — the router is gated behind auth and the
-`API_ENABLE_TRAINING_LAB` flag (off by default), and there is no hosted
-instance of either app. See [`dashboard/README.md`](dashboard/README.md)
-and [`mobile/README.md`](mobile/README.md) for status and how to run them.
+The React + Vite dashboard and Expo mobile app — working clients for the
+simulator-backed `/api/lab/*` "Training Lab" router — live in their own
+repositories:
+[stateset-agents-dashboard](https://github.com/stateset/stateset-agents-dashboard)
+and
+[stateset-agents-mobile](https://github.com/stateset/stateset-agents-mobile)
+(extracted from this repo with full history, 2026-08-11). Both are runnable
+locally but have no deployment path today — the router is gated behind auth
+and the `API_ENABLE_TRAINING_LAB` flag (off by default).
 
 ### API serving (/v1/messages)
 

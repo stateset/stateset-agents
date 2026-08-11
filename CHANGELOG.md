@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`dashboard/` and `mobile/` extracted to their own repositories**
+  ([stateset-agents-dashboard](https://github.com/stateset/stateset-agents-dashboard),
+  [stateset-agents-mobile](https://github.com/stateset/stateset-agents-mobile),
+  full history preserved via `git subtree split`). They were demo clients
+  with no deployment path whose lockfiles and CI repeatedly cost this repo
+  maintenance (36 of the 45 security findings cleared this release came from
+  `mobile/`'s lockfile). Their workflows are retired here.
+
 - **Starter modules deduplicated onto `training/starter_common.py`.** The seven
   `*_starter.py` modules were near-verbatim copies (4,452 lines total); shared
   config-file IO, profile plumbing, preview/run scaffolding, and the
@@ -38,6 +46,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Self-moving quality ratchets.** CI now fails when measured coverage
+  exceeds the `fail_under` floor by a full point ("raise the floor"), and
+  `tests/unit/test_mypy_allowlist_ratchet.py` stops the mypy typed-surface
+  allowlist from ever shrinking — making both floors monotonic instead of
+  policy-only.
+- **Weekly GPU verification (`gpu-verify.yml`).** Rents a RunPod GPU via the
+  same `train-remote` path users run, trains a real QLoRA adapter on
+  Qwen3.5-0.8B from the current checkout's wheel, and fails unless adapter
+  tensors come back. Skips cleanly when the `RUNPOD_API_KEY` secret is
+  absent. Turns "verified on live hardware" into a standing weekly property.
 - **CLI reference completeness guardrail.** `docs/CLI_REFERENCE.md` gained the
   12 undocumented commands (`improve`, `ingest`, `mcp`, `chat`, `benchmark`,
   `recipe`, `starter`, `tour`, `fine-tune`, `auto-research`, `init-config`,

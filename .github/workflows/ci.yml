@@ -129,6 +129,35 @@ jobs:
       run: |
         pytest --cov=stateset_agents --cov-report=xml --cov-report=term
 
+    - name: Coverage ratchet
+      # fail_under tracks the measured floor, never an aspiration. When
+      # measured coverage exceeds the floor by >= 1 full point, this step
+      # fails so the floor gets raised in the same PR that earned it —
+      # making coverage monotonic instead of policy-only.
+      if: matrix.python-version == '3.11'
+      run: |
+        python - <<'PY'
+        import sys
+        import xml.etree.ElementTree as ET
+
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+
+        with open("pyproject.toml", "rb") as fh:
+            floor = tomllib.load(fh)["tool"]["coverage"]["report"]["fail_under"]
+        measured = float(ET.parse("coverage.xml").getroot().attrib["line-rate"]) * 100
+        print(f"measured={measured:.2f} floor={floor}")
+        if measured >= floor + 1:
+            print(
+                f"::error::Coverage is {measured:.2f}%, more than 1 point above "
+                f"the fail_under floor of {floor}. Raise fail_under in "
+                f"pyproject.toml to {int(measured)} so the gain is locked in."
+            )
+            sys.exit(1)
+        PY
+
     - name: Run example-testing patterns (examples/testing/)
       run: |
         pytest examples/testing/ -q --no-header

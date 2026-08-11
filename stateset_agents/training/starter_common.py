@@ -27,7 +27,7 @@ from collections.abc import Callable
 from dataclasses import asdict
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from stateset_agents.core.agent import AgentConfig
 
@@ -248,6 +248,34 @@ class StarterConfigMixin:
     _wandb_base_tags: tuple[str, ...] = ()
     _wandb_project_default: str = ""
 
+    if TYPE_CHECKING:
+        # The concrete fields live on each family's @dataclass subclass (so
+        # field order and defaults stay family-specific). Declared here for
+        # the type checker only — never at runtime, which would turn them
+        # into inherited dataclass fields and change every subclass's field
+        # order.
+        _system_prompt: Callable[[str], str]
+        model_name: str
+        task: str
+        starter_profile: str
+        system_prompt: str | None
+        use_lora: bool
+        lora_r: int | None
+        lora_alpha: int | None
+        use_4bit: bool
+        use_8bit: bool
+        use_wandb: bool
+        report_to: str
+        wandb_project: str | None
+        wandb_tags: list[str]
+        per_device_train_batch_size: int
+        gradient_accumulation_steps: int
+
+        # Subclasses are dataclasses whose generated __init__ accepts their
+        # fields as keywords; declared so generic construction through
+        # type[ConfigT] typechecks.
+        def __init__(self, **kwargs: Any) -> None: ...
+
     def __post_init__(self) -> None:
         if self.system_prompt is None:
             self.system_prompt = self._system_prompt(self.task)
@@ -272,15 +300,18 @@ class StarterConfigMixin:
         return dict(self.__dict__)
 
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]):
+    def from_dict(cls: type[ConfigT], config_dict: dict[str, Any]) -> ConfigT:
         return cls(**config_dict)
 
     def get_effective_batch_size(self) -> int:
         return int(self.per_device_train_batch_size * self.gradient_accumulation_steps)
 
 
+ConfigT = TypeVar("ConfigT", bound=StarterConfigMixin)
+
+
 def resolve_starter_config(
-    config_cls: type,
+    config_cls: type[ConfigT],
     profile_overrides_fn: Callable[[str], dict[str, Any]],
     display_name: str,
     logger: logging.Logger,
@@ -295,7 +326,7 @@ def resolve_starter_config(
     wandb_project: str | None,
     output_dir: str | None,
     **overrides: Any,
-) -> Any:
+) -> ConfigT:
     """Resolve a tuned first-run starter configuration."""
     resolved_overrides = profile_overrides_fn(starter_profile)
     if use_lora is not None:
@@ -428,12 +459,12 @@ def create_preview(
 def load_config_file(
     path: str | Path,
     *,
-    config_cls: type,
+    config_cls: type[ConfigT],
     suffixes: set[str],
     family_label: str,
     display_name: str,
     logger: logging.Logger,
-) -> Any:
+) -> ConfigT:
     """Load a starter config from JSON or YAML."""
     config_path = Path(path)
     if not config_path.exists():
