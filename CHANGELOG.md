@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-08-12 — train-remote fixes verified live on Muse Glimmer 30B
+
 ### Fixed
 
 - **`train-remote` now handles large multimodal checkpoints** — three fixes

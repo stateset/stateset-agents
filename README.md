@@ -87,7 +87,11 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.23.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.23.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **`train-remote` handles large multimodal checkpoints** — four fixes found and verified by training `meta-models/Muse-Glimmer-30B` end-to-end on a rented H100 (63GB BF16 download, LoRA on the text stack, 258MB adapter returned): multimodal-architecture fallback in the SFT loader, configurable RunPod pod disk (`container_disk_gb`), transformers-5.x-proof `TrainingArguments` construction, and vision-tower exclusion from LoRA target inference.
+
+**v0.23.0:**
 
 - **Three new first-class starters.** `stateset-agents qwen3-coder` (`Qwen/Qwen3-Coder-30B-A3B-Instruct`, 256K ctx, Apache‑2.0), `stateset-agents gpt-oss` (`openai/gpt-oss-20b`, 128K, Apache‑2.0; 120B variant flagged multi‑GPU), and `stateset-agents deepseek-v4` (`deepseek-ai/DeepSeek-V4-Flash`, 1M ctx, MIT — GLM‑style QLoRA+vLLM path with MLA‑correct LoRA targets verified from the weight map).
 
