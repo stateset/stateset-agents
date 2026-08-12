@@ -115,6 +115,11 @@ jobs:
             lora_r=8,
             gpu=gpu,
             timeout_s=1800,
+            # Held-out prompts: the job returns eval_results.json with
+            # base-vs-finetuned completions, so the weekly check asserts
+            # the tuned model actually generates, not just that adapter
+            # tensors exist.
+            eval_prompts=["Say the number 41.", "Say the number 77."],
         )
         executor = RunPodExecutor(wheel=Path(wheel))
         result = executor.wait(executor.submit(spec))
@@ -131,6 +136,20 @@ jobs:
             sys.exit(1)
         for f in adapter_files:
             print(f, f.stat().st_size, "bytes")
+
+        import json
+
+        eval_path = Path("outputs/gpu_verify/eval_results.json")
+        if not eval_path.exists():
+            print("::error::eval_results.json was not returned.")
+            sys.exit(1)
+        rows = json.loads(eval_path.read_text())
+        bad = [r for r in rows if not (r.get("base") and r.get("finetuned"))]
+        if len(rows) != 2 or bad:
+            print(f"::error::eval comparison incomplete: {rows}")
+            sys.exit(1)
+        for r in rows:
+            print("EVAL", r["prompt"], "->", r["finetuned"][:60])
         PY
 
     - name: Upload adapter artifact
