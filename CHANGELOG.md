@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-08-12 — train-remote: eval prompts, disk sizing, effective vision exclusion
+
 ### Added
 
 - **`train-remote --container-disk-gb`** — sets the RunPod pod's container

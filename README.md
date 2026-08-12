@@ -87,7 +87,12 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.23.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.24.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Fine‑tune and call it, one command.** `train-remote` gains `--eval-prompts FILE` (the job generates base‑vs‑finetuned completions for held‑out prompts, greedy for comparability, returning `eval_results.json` beside the adapter) and `--container-disk-gb` (pod disk sized to the checkpoint — a 63GB model needs ~160). Verified live on an H100: Muse‑Glimmer‑30B tuned on 140 support conversations answers held‑out order numbers in the trained persona while the base model stalls in its reasoning channel.
+- **Vision‑exclusion that actually works.** LoRA target inference is two‑pass — leaf names existing only in vision/audio stacks are dropped (peft matches names model‑wide), shrinking multimodal adapters ~13%; base‑eval generation now runs on GPU.
+
+**v0.23.1:**
 
 - **`train-remote` handles large multimodal checkpoints** — four fixes found and verified by training `meta-models/Muse-Glimmer-30B` end-to-end on a rented H100 (63GB BF16 download, LoRA on the text stack, 258MB adapter returned): multimodal-architecture fallback in the SFT loader, configurable RunPod pod disk (`container_disk_gb`), transformers-5.x-proof `TrainingArguments` construction, and vision-tower exclusion from LoRA target inference.
 
