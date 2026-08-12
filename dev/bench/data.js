@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786550100287,
+  "lastUpdate": 1786554443108,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1762,6 +1762,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.893408527905058e-8",
             "extra": "mean: 468.07993695350643 nsec\nrounds: 108179"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "2f242c95ce16ba808bb6343c7fc4d1a159e07f50",
+          "message": "fix(remote): ssh keepalives — dead pods must fail fast, not hang\n\nObserved live: RunPod restarted a pod underneath a running training job\n(new public IP, all processes gone); without ServerAliveInterval the\nexecutor's blocking ssh read hung indefinitely — 20+ minutes of blind\nidle billing before manual intervention. Keepalives bound peer loss\ndetection to ~2 minutes. chat_session inherits via _base_opts.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T10:04:09-07:00",
+          "tree_id": "5de3fae63823e154877a2cdf7eee5f9483d08eca",
+          "url": "https://github.com/stateset/stateset-agents/commit/2f242c95ce16ba808bb6343c7fc4d1a159e07f50"
+        },
+        "date": 1786554441836,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5961.685305348859,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001767201858571203",
+            "extra": "mean: 167.7378037889377 usec\nrounds: 1478"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6456.685967568988,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001630885510048697",
+            "extra": "mean: 154.87821539143414 usec\nrounds: 2131"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4968.680648235162,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017578106180546574",
+            "extra": "mean: 201.26067074872128 usec\nrounds: 3593"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 741.1630814178659,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00009163612730877011",
+            "extra": "mean: 1.3492307227270033 msec\nrounds: 660"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 173.65736195570062,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005013293231984718",
+            "extra": "mean: 5.758465916665811 msec\nrounds: 156"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2119588.63089613,
+            "unit": "iter/sec",
+            "range": "stddev: 4.907182145008326e-8",
+            "extra": "mean: 471.78966023101145 nsec\nrounds: 105631"
           }
         ]
       }
