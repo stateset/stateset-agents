@@ -87,7 +87,12 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.24.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.25.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Talk to your fine‑tuned model.** `stateset-agents chat-remote --base-model X --adapter DIR` rents a GPU pod, loads base + adapter, and holds a multi‑turn conversation (SSH‑piped, pod terminated on every exit path; `--prompt` for scripted mode). Live‑verified: a Muse‑Glimmer‑30B adapter resolved "I got double charged for it" to the order number from the previous turn.
+- **Dead pods fail fast.** SSH keepalives bound peer-loss detection to ~2 minutes (a pod restarting under a running job previously hung the executor indefinitely).
+
+**v0.24.0:**
 
 - **Fine‑tune and call it, one command.** `train-remote` gains `--eval-prompts FILE` (the job generates base‑vs‑finetuned completions for held‑out prompts, greedy for comparability, returning `eval_results.json` beside the adapter) and `--container-disk-gb` (pod disk sized to the checkpoint — a 63GB model needs ~160). Verified live on an H100: Muse‑Glimmer‑30B tuned on 140 support conversations answers held‑out order numbers in the trained persona while the base model stalls in its reasoning channel.
 - **Vision‑exclusion that actually works.** LoRA target inference is two‑pass — leaf names existing only in vision/audio stacks are dropped (peft matches names model‑wide), shrinking multimodal adapters ~13%; base‑eval generation now runs on GPU.
