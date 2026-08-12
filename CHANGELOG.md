@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`stateset-agents chat-remote`** — an ephemeral interactive chat session
+  with a fine-tuned model on a rented RunPod GPU. Rents a pod, loads the
+  base model plus a local LoRA adapter there, chats over one persistent SSH
+  channel (JSON-lines protocol, full multi-turn history kept on the pod),
+  and **terminates the pod on every exit path** — no open ports, no idle
+  billing. `--prompt` (repeatable) gives a non-interactive scripted mode
+  for verification. New modules: `stateset_agents.remote.chat_session`
+  (local orchestration) and `stateset_agents.remote.chat_repl` (the on-pod
+  server).
+
 ## [0.24.0] - 2026-08-12 — train-remote: eval prompts, disk sizing, effective vision exclusion
 
 ### Added

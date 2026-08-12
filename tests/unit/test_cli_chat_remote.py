@@ -1,0 +1,173 @@
+"""Unit tests for ``stateset-agents chat-remote``.
+
+The session is faked at the ``RemoteChatSession`` seam — no pods, no ssh.
+What matters here: the scripted ``--prompt`` mode drives the session in
+order, a bad adapter path is rejected before renting anything, and the
+session is ALWAYS closed — the pod bills until it is.
+"""
+
+from __future__ import annotations
+
+import pytest
+from typer.testing import CliRunner
+
+from stateset_agents.cli import app
+from stateset_agents.remote import chat_session
+from stateset_agents.remote.executor import RemoteExecutionError
+
+runner = CliRunner()
+
+
+class FakeSession:
+    instances: list[FakeSession] = []
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.started_with: dict | None = None
+        self.asked: list[str] = []
+        self.close_calls = 0
+        self.ask_raises: Exception | None = None
+        FakeSession.instances.append(self)
+
+    def start(self, base_model, adapter_dir=None, gpu=None):
+        self.started_with = {
+            "base_model": base_model,
+            "adapter_dir": adapter_dir,
+            "gpu": gpu,
+        }
+
+    def ask(self, prompt, timeout_s=120):
+        if self.ask_raises is not None:
+            raise self.ask_raises
+        self.asked.append(prompt)
+        return f"echo:{prompt}"
+
+    def close(self):
+        self.close_calls += 1
+
+
+@pytest.fixture(autouse=True)
+def fake_session(monkeypatch):
+    FakeSession.instances = []
+    monkeypatch.setattr(chat_session, "RemoteChatSession", FakeSession)
+    return FakeSession
+
+
+def invoke(*args):
+    return runner.invoke(app, ["chat-remote", *args])
+
+
+class TestScriptedMode:
+    def test_each_prompt_is_sent_and_each_reply_printed(self):
+        result = invoke(
+            "--base-model",
+            "Qwen/Qwen3.5-0.8B",
+            "--prompt",
+            "hi",
+            "--prompt",
+            "how are you?",
+        )
+
+        assert result.exit_code == 0, result.output
+        session = FakeSession.instances[0]
+        assert session.asked == ["hi", "how are you?"]
+        assert "echo:hi" in result.output
+        assert "echo:how are you?" in result.output
+
+    def test_session_options_reach_start(self, tmp_path):
+        adapter = tmp_path / "adapter"
+        adapter.mkdir()
+
+        result = invoke(
+            "--base-model",
+            "Qwen/Qwen3.5-0.8B",
+            "--adapter",
+            str(adapter),
+            "--gpu",
+            "NVIDIA RTX A4000",
+            "--container-disk-gb",
+            "80",
+            "--prompt",
+            "hi",
+        )
+
+        assert result.exit_code == 0, result.output
+        session = FakeSession.instances[0]
+        assert session.kwargs["container_disk_gb"] == 80
+        assert session.started_with == {
+            "base_model": "Qwen/Qwen3.5-0.8B",
+            "adapter_dir": adapter,
+            "gpu": "NVIDIA RTX A4000",
+        }
+
+    def test_session_is_closed_after_a_scripted_run(self):
+        invoke("--base-model", "m", "--prompt", "hi")
+
+        assert FakeSession.instances[0].close_calls == 1
+
+
+class TestInteractiveMode:
+    def test_exit_word_ends_the_session(self):
+        result = runner.invoke(
+            app, ["chat-remote", "--base-model", "m"], input="hello\nexit\n"
+        )
+
+        assert result.exit_code == 0, result.output
+        session = FakeSession.instances[0]
+        assert session.asked == ["hello"]
+        assert session.close_calls == 1
+
+    def test_eof_ends_the_session(self):
+        result = runner.invoke(app, ["chat-remote", "--base-model", "m"], input="")
+
+        assert result.exit_code == 0, result.output
+        assert FakeSession.instances[0].close_calls == 1
+
+    def test_max_turns_caps_the_session(self):
+        result = runner.invoke(
+            app,
+            ["chat-remote", "--base-model", "m", "--max-turns", "2"],
+            input="one\ntwo\nthree\n",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert FakeSession.instances[0].asked == ["one", "two"]
+        assert "max-turns" in result.output
+
+
+class TestFailurePaths:
+    def test_missing_adapter_dir_exits_2_before_renting_anything(self, tmp_path):
+        result = invoke(
+            "--base-model",
+            "m",
+            "--adapter",
+            str(tmp_path / "absent"),
+            "--prompt",
+            "hi",
+        )
+
+        assert result.exit_code == 2
+        assert "does not exist" in result.output
+        assert FakeSession.instances == []  # no session, so no pod
+
+    def test_ask_failure_exits_1_and_closes_the_session(self, monkeypatch):
+        def failing_ask(self, prompt, timeout_s=120):
+            raise RemoteExecutionError("pod exploded", provider="runpod")
+
+        monkeypatch.setattr(FakeSession, "ask", failing_ask)
+
+        result = invoke("--base-model", "m", "--prompt", "hi")
+
+        assert result.exit_code == 1
+        assert "pod exploded" in result.output
+        assert FakeSession.instances[0].close_calls == 1
+
+
+class TestRegistration:
+    def test_command_is_registered(self):
+        names = {
+            command.name or command.callback.__name__
+            for command in app.registered_commands
+        }
+
+        assert "chat-remote" in names

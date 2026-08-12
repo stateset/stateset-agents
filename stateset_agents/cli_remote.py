@@ -26,6 +26,94 @@ from stateset_agents.remote.registry import available_providers, get_executor
 _echo = _cli._echo
 
 
+@app.command("chat-remote")
+def chat_remote(
+    base_model: str = typer.Option(
+        ..., "--base-model", help="Hugging Face base model (e.g. Qwen/Qwen3.5-0.8B)."
+    ),
+    adapter: Path | None = typer.Option(
+        None,
+        "--adapter",
+        help="Local LoRA adapter directory (e.g. outputs/sft_v1) to load on "
+        "top of the base model. Uploaded to the pod for the session.",
+    ),
+    gpu: str = typer.Option(
+        "NVIDIA H100 80GB HBM3",
+        "--gpu",
+        help="RunPod GPU type to rent, in RunPod's own vocabulary.",
+    ),
+    container_disk_gb: int = typer.Option(
+        160,
+        "--container-disk-gb",
+        help="Container disk in GB for the model download — size it at "
+        "roughly 2.5x the checkpoint.",
+    ),
+    max_turns: int = typer.Option(
+        50,
+        "--max-turns",
+        help="Safety cap on interactive turns; the pod bills while you type.",
+    ),
+    prompt: list[str] = typer.Option(
+        [],
+        "--prompt",
+        help="Non-interactive mode: send this prompt (repeatable, in order), "
+        "print each reply, and exit. Skips the input() loop entirely.",
+    ),
+) -> None:
+    """Chat with a fine-tuned model on a rented RunPod GPU, ephemerally.
+
+    Rents a pod, loads the base model plus your LoRA adapter there, and
+    opens a REPL over SSH. The pod is terminated when the session ends —
+    no open ports, no idle billing. Type ``exit``/``quit`` or Ctrl+D/Ctrl+C
+    to leave.
+    """
+    from stateset_agents.remote import chat_session
+
+    if adapter is not None and not adapter.exists():
+        _echo(f"Adapter directory does not exist: {adapter}", err=True)
+        raise typer.Exit(code=2)
+
+    session = chat_session.RemoteChatSession(container_disk_gb=container_disk_gb)
+    exit_code = 0
+    try:
+        _echo(f"Renting a {gpu} pod and loading {base_model}…")
+        if adapter is not None:
+            _echo(f"With adapter: {adapter}")
+        session.start(base_model=base_model, adapter_dir=adapter, gpu=gpu)
+        _echo("Model ready. The pod bills until you exit.")
+
+        if prompt:
+            for text in prompt:
+                _echo(f"you> {text}")
+                _echo(f"agent> {session.ask(text)}")
+        else:
+            turns = 0
+            while turns < max_turns:
+                try:
+                    user_input = input("\nyou> ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    break
+                if not user_input:
+                    continue
+                if user_input in ("exit", "quit"):
+                    break
+                _echo(f"agent> {session.ask(user_input)}")
+                turns += 1
+            else:
+                _echo(f"Reached --max-turns ({max_turns}); ending the session.")
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        exit_code = 1
+    finally:
+        _echo("Terminating the pod…")
+        session.close()
+
+    if exit_code:
+        raise typer.Exit(code=exit_code)
+    _echo("Session ended; pod terminated.")
+
+
 @app.command("train-remote")
 def train_remote(
     dataset: Path = typer.Option(

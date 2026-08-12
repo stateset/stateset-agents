@@ -535,6 +535,49 @@ stateset-agents chat
 - `--replay TEXT`: Path to a JSONL transcript to replay as initial conversation context. Useful for resuming a debugging session.
 - `--grade TEXT`: Score each assistant turn live with the named reward function. Options: gsm8k, customer_support, tool_calling. Mismatches between intuition and score surface reward-function bugs.
 
+### `stateset-agents chat-remote`
+
+Chat with a fine-tuned model on a rented RunPod GPU, ephemerally. Rents a
+pod, installs the package, loads the base model plus your local LoRA adapter
+there, and opens a REPL over SSH. **The pod is terminated when the session
+ends** — including on errors and Ctrl+C — so there are no open ports and no
+idle billing. Type `exit`/`quit` or Ctrl+D/Ctrl+C to leave.
+
+```bash
+export RUNPOD_API_KEY=...
+
+# Interactive chat with a fine-tune too big for the local machine
+stateset-agents chat-remote --base-model meta-models/Muse-Glimmer-30B \
+    --adapter outputs/sft_v1
+
+# Scripted spot-check: send prompts, print replies, exit (and kill the pod)
+stateset-agents chat-remote --base-model Qwen/Qwen3.5-0.8B \
+    --adapter outputs/sft_v1 \
+    --prompt "what's the return policy?" --prompt "and for sale items?"
+```
+
+The remote side is `stateset_agents.remote.chat_repl`: a JSON-lines chat
+server on the pod that keeps the full multi-turn history and generates
+greedily through the model's chat template (the same decoding as the
+`train-remote --eval-prompts` comparison). The transport is one persistent
+SSH channel — no port beyond RunPod's own SSH one is exposed.
+
+Requirements match `train-remote --provider runpod`: `RUNPOD_API_KEY`, an SSH
+keypair (`~/.ssh/id_ed25519.pub` or `id_rsa.pub`), and `ssh`/`scp` on PATH.
+
+#### Options
+
+- `--base-model TEXT`: Hugging Face base model (required).
+- `--adapter PATH`: Local LoRA adapter directory (e.g. `outputs/sft_v1`),
+  uploaded to the pod for the session.
+- `--gpu TEXT`: RunPod GPU type to rent. Default `NVIDIA H100 80GB HBM3`.
+- `--container-disk-gb INTEGER`: Container disk for the model download, in
+  GB. Size it at roughly 2.5x the checkpoint. Default `160`.
+- `--max-turns INTEGER`: Safety cap on interactive turns — the pod bills
+  while you type. Default `50`.
+- `--prompt TEXT`: Non-interactive mode; repeatable. Sends each prompt in
+  order, prints each reply, and exits.
+
 ### `stateset-agents fine-tune`
 
 Fine-tune from a curated JSONL in one command.

@@ -32,7 +32,7 @@ from typing import Any
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
 
-__all__ = ["RunPodApi", "RunPodExecutor", "SshTransport"]
+__all__ = ["RunPodApi", "RunPodExecutor", "SshTransport", "package_pin"]
 
 _API_ROOT = "https://rest.runpod.io/v1"
 #: Official RunPod PyTorch image — ships a preconfigured sshd that reads
@@ -47,6 +47,21 @@ _API_ROOT = "https://rest.runpod.io/v1"
 _DEFAULT_IMAGE = "runpod/pytorch:1.1.0-rc.154-cu1290-torch280-ubuntu2204"
 _REMOTE_WORKDIR = "/workspace"
 _REMOTE_OUTPUT = "/workspace/out"
+
+
+def package_pin(wheel: Path | None, package_version: str | None) -> str:
+    """The pip requirement a pod installs to get this package.
+
+    A locally built ``wheel`` (already uploaded to the pod's workdir) wins —
+    that is how an *unreleased* change gets verified on real hardware, since
+    the PyPI pin cannot resolve before publish. Otherwise pin the published
+    package to ``package_version``, or float when no version is known.
+    """
+    if wheel:
+        return f"{_REMOTE_WORKDIR}/{wheel.name}[training]"
+    if package_version:
+        return f"stateset-agents[training]=={package_version}"
+    return "stateset-agents[training]"
 
 
 class RunPodApi:
@@ -329,15 +344,7 @@ class RunPodExecutor(RemoteExecutor):
             time.sleep(self.poll_interval_s)
 
     def _remote_commands(self, spec: RemoteJobSpec, dataset_remote: str) -> list[str]:
-        if self.wheel:
-            pin = f"{_REMOTE_WORKDIR}/{self.wheel.name}[training]"
-        else:
-            version = spec.package_version
-            pin = (
-                f"stateset-agents[training]=={version}"
-                if version
-                else "stateset-agents[training]"
-            )
+        pin = package_pin(self.wheel, spec.package_version)
         args = " ".join(
             [
                 "--dataset",
