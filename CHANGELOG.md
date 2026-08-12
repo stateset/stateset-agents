@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`chat-remote` transcripts close the improvement loop.** Every
+  `stateset-agents chat-remote` conversation is now saved on exit (every
+  exit path, aborted sessions included) as an OpenAI chat-format JSONL
+  transcript — default `./chat_transcripts/chat_<timestamp>.jsonl`, tunable
+  with `--save-transcript PATH`, opt out with `--no-save`. The file is
+  exactly what `stateset-agents ingest --format openai --input <file>`
+  accepts, so chat -> ingest -> improve -> train-remote is a flywheel; the
+  command prints the next step on save. `RemoteChatSession` grew a
+  client-side conversation mirror and a `transcript` property (messages +
+  session metadata: base model, adapter, GPU, start time); only
+  successfully answered turns are recorded, matching the on-pod history.
+
 ## [0.25.0] - 2026-08-12 — chat-remote: converse with your fine-tuned model
 
 ### Added

@@ -8,6 +8,8 @@ session is ALWAYS closed — the pod bills until it is.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from typer.testing import CliRunner
 
@@ -42,12 +44,27 @@ class FakeSession:
         self.asked.append(prompt)
         return f"echo:{prompt}"
 
+    @property
+    def transcript(self):
+        # Same shape as the real RemoteChatSession.transcript.
+        messages = []
+        for prompt in self.asked:
+            messages.append({"role": "user", "content": prompt})
+            messages.append({"role": "assistant", "content": f"echo:{prompt}"})
+        return {
+            "messages": messages,
+            "metadata": {"source": "chat-remote", "base_model": "m"},
+        }
+
     def close(self):
         self.close_calls += 1
 
 
 @pytest.fixture(autouse=True)
-def fake_session(monkeypatch):
+def fake_session(monkeypatch, tmp_path):
+    # chdir: the default transcript path is relative (./chat_transcripts/),
+    # and tests must never write into the repo.
+    monkeypatch.chdir(tmp_path)
     FakeSession.instances = []
     monkeypatch.setattr(chat_session, "RemoteChatSession", FakeSession)
     return FakeSession
@@ -161,6 +178,90 @@ class TestFailurePaths:
         assert result.exit_code == 1
         assert "pod exploded" in result.output
         assert FakeSession.instances[0].close_calls == 1
+
+
+class TestTranscriptSaving:
+    """Every chat is training data: saved by default, ingest-ready."""
+
+    def test_default_run_saves_an_ingest_ready_transcript(self, tmp_path):
+        result = invoke("--base-model", "m", "--prompt", "hi")
+
+        assert result.exit_code == 0, result.output
+        files = list((tmp_path / "chat_transcripts").glob("chat_*.jsonl"))
+        assert len(files) == 1
+        row = json.loads(files[0].read_text().strip())
+        assert row["messages"] == [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "echo:hi"},
+        ]
+        assert "Transcript saved to" in result.output
+        assert (
+            f"ingest --format openai --input chat_transcripts/{files[0].name}"
+            in result.output
+        )
+
+    def test_save_transcript_flag_picks_the_path(self, tmp_path):
+        target = tmp_path / "logs" / "session.jsonl"
+
+        result = invoke(
+            "--base-model", "m", "--prompt", "hi", "--save-transcript", str(target)
+        )
+
+        assert result.exit_code == 0, result.output
+        assert target.exists()
+        assert str(target) in result.output
+
+    def test_no_save_writes_nothing(self, tmp_path):
+        result = invoke("--base-model", "m", "--prompt", "hi", "--no-save")
+
+        assert result.exit_code == 0, result.output
+        assert not (tmp_path / "chat_transcripts").exists()
+        assert "Transcript saved" not in result.output
+
+    def test_empty_conversation_writes_no_file(self, tmp_path):
+        result = runner.invoke(app, ["chat-remote", "--base-model", "m"], input="")
+
+        assert result.exit_code == 0, result.output
+        assert not (tmp_path / "chat_transcripts").exists()
+
+    def test_aborted_chat_still_persists_completed_turns(self, tmp_path, monkeypatch):
+        calls = {"n": 0}
+
+        def flaky_ask(self, prompt, timeout_s=120):
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise RemoteExecutionError("pod exploded", provider="runpod")
+            self.asked.append(prompt)
+            return f"echo:{prompt}"
+
+        monkeypatch.setattr(FakeSession, "ask", flaky_ask)
+
+        result = invoke("--base-model", "m", "--prompt", "one", "--prompt", "two")
+
+        assert result.exit_code == 1
+        files = list((tmp_path / "chat_transcripts").glob("chat_*.jsonl"))
+        assert len(files) == 1
+        row = json.loads(files[0].read_text().strip())
+        assert [m["content"] for m in row["messages"]] == ["one", "echo:one"]
+
+    def test_saved_transcript_round_trips_through_the_ingest_parser(self, tmp_path):
+        """The contract: chat-remote output IS ingest --format openai input."""
+        from stateset_agents.data.trajectory_ingest import from_openai_jsonl
+
+        invoke("--base-model", "m", "--prompt", "hi", "--prompt", "bye")
+
+        files = list((tmp_path / "chat_transcripts").glob("chat_*.jsonl"))
+        trajectories = from_openai_jsonl(files[0])
+
+        assert len(trajectories) == 1
+        turns = trajectories[0].turns
+        assert [(t.role, t.content) for t in turns] == [
+            ("user", "hi"),
+            ("assistant", "echo:hi"),
+            ("user", "bye"),
+            ("assistant", "echo:bye"),
+        ]
+        assert trajectories[0].metadata["metadata"]["source"] == "chat-remote"
 
 
 class TestRegistration:

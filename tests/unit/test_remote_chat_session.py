@@ -281,6 +281,86 @@ class TestAsk:
             session.ask("hi")
 
 
+class TestTranscript:
+    """The client-side conversation mirror that feeds the improve flywheel."""
+
+    def _started(self, make_session, replies):
+        session = make_session(process=FakeChatProcess(replies=replies))
+        session.start("Qwen/Qwen3.5-0.8B")
+        return session
+
+    def test_each_answered_turn_is_recorded_in_order(self, make_session):
+        session = self._started(
+            make_session, ['{"response": "hello!"}', '{"response": "bye!"}']
+        )
+        session.ask("hi")
+        session.ask("later")
+
+        assert session.transcript["messages"] == [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello!"},
+            {"role": "user", "content": "later"},
+            {"role": "assistant", "content": "bye!"},
+        ]
+
+    def test_a_failed_turn_is_not_recorded(self, make_session):
+        session = self._started(make_session, ['{"error": "generation failed: oom"}'])
+        with pytest.raises(RemoteExecutionError):
+            session.ask("hi")
+
+        assert session.transcript["messages"] == []
+
+    def test_metadata_describes_the_session(
+        self, make_session, adapter_dir, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "stateset_agents.remote.chat_session.time.time", lambda: 1723500000.0
+        )
+        session = make_session()
+        session.start("Qwen/Qwen3.5-0.8B", adapter_dir=adapter_dir, gpu="H100")
+
+        meta = session.transcript["metadata"]
+        assert meta == {
+            "source": "chat-remote",
+            "base_model": "Qwen/Qwen3.5-0.8B",
+            "adapter": str(adapter_dir),
+            "gpu": "H100",
+            "started_at": 1723500000.0,
+        }
+
+    def test_transcript_survives_close(self, make_session):
+        session = self._started(make_session, ['{"response": "hello!"}'])
+        session.ask("hi")
+        session.close()
+
+        assert len(session.transcript["messages"]) == 2
+
+    def test_transcript_round_trips_through_the_openai_ingest_parser(
+        self, make_session, tmp_path
+    ):
+        """The contract behind chat -> ingest -> improve -> retrain."""
+        from stateset_agents.data.trajectory_ingest import from_openai_jsonl
+
+        session = self._started(
+            make_session, ['{"response": "hello!"}', '{"response": "bye!"}']
+        )
+        session.ask("hi")
+        session.ask("later")
+
+        path = tmp_path / "chat.jsonl"
+        path.write_text(json.dumps(session.transcript) + "\n")
+        trajectories = from_openai_jsonl(path)
+
+        assert len(trajectories) == 1
+        assert [(t.role, t.content) for t in trajectories[0].turns] == [
+            ("user", "hi"),
+            ("assistant", "hello!"),
+            ("user", "later"),
+            ("assistant", "bye!"),
+        ]
+        assert trajectories[0].metadata["metadata"]["source"] == "chat-remote"
+
+
 class TestClose:
     """A leaked pod bills by the hour. It must die exactly once, always."""
 

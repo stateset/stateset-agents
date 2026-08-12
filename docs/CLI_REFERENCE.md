@@ -565,6 +565,18 @@ SSH channel — no port beyond RunPod's own SSH one is exposed.
 Requirements match `train-remote --provider runpod`: `RUNPOD_API_KEY`, an SSH
 keypair (`~/.ssh/id_ed25519.pub` or `id_rsa.pub`), and `ssh`/`scp` on PATH.
 
+**Every chat is training data.** On exit — including Ctrl+C and errors — the
+conversation is saved by default to `./chat_transcripts/chat_<timestamp>.jsonl`
+in OpenAI chat format, ready for the improvement flywheel:
+
+```bash
+stateset-agents ingest --format openai --input chat_transcripts/chat_<ts>.jsonl \
+    --output graded.jsonl
+# then: improve -> train-remote -> chat-remote again, on the better adapter
+```
+
+Disable with `--no-save`, or pick the destination with `--save-transcript`.
+
 #### Options
 
 - `--base-model TEXT`: Hugging Face base model (required).
@@ -577,6 +589,12 @@ keypair (`~/.ssh/id_ed25519.pub` or `id_rsa.pub`), and `ssh`/`scp` on PATH.
   while you type. Default `50`.
 - `--prompt TEXT`: Non-interactive mode; repeatable. Sends each prompt in
   order, prints each reply, and exits.
+- `--save-transcript PATH`: Where to save the conversation transcript
+  (OpenAI chat-format JSONL). Default
+  `./chat_transcripts/chat_<timestamp>.jsonl`.
+- `--save / --no-save`: Save the transcript on exit. Default on; only
+  successfully answered turns are recorded, and empty sessions write
+  nothing.
 
 ### `stateset-agents fine-tune`
 

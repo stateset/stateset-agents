@@ -98,6 +98,12 @@ class RemoteChatSession:
         self._pod_id: str | None = None
         self._process: Any = None
         self._closed = False
+        # Client-side mirror of the conversation. The pod keeps the
+        # authoritative history for generation, but every prompt and reply
+        # passes through ask(), so the transcript can be rebuilt locally —
+        # no round-trip to a pod that may already be dead.
+        self._messages: list[dict[str, str]] = []
+        self._session_meta: dict[str, Any] = {}
 
     # -- lazily resolved collaborators (mirrors RunPodExecutor) ------------
 
@@ -166,6 +172,14 @@ class RemoteChatSession:
         api = self._require_api()
         public_key = self._require_public_key()
         ssh = self._require_ssh()
+
+        self._session_meta = {
+            "source": "chat-remote",
+            "base_model": base_model,
+            "adapter": str(adapter_dir) if adapter_dir is not None else None,
+            "gpu": gpu or self.DEFAULT_GPU,
+            "started_at": time.time(),
+        }
 
         session_id = uuid.uuid4().hex[:12]
         pod = api.create_pod(
@@ -311,7 +325,11 @@ class RemoteChatSession:
             # Anything else ({"log": ...} etc.) is startup chatter — skip it.
 
     def ask(self, prompt: str, timeout_s: int = 120) -> str:
-        """Send one prompt, block for the reply. History lives on the pod."""
+        """Send one prompt, block for the reply.
+
+        Generation history lives on the pod; a client-side mirror feeds
+        :attr:`transcript`.
+        """
         process = self._process
         if process is None or self._closed:
             raise RemoteExecutionError(
@@ -322,13 +340,34 @@ class RemoteChatSession:
         while True:
             event = self._read_event(timeout_s=timeout_s)
             if "response" in event:
-                return str(event["response"])
+                reply = str(event["response"])
+                # Recorded only on success, mirroring chat_repl's rollback:
+                # a failed generation never entered the pod's history either.
+                self._messages.append({"role": "user", "content": prompt})
+                self._messages.append({"role": "assistant", "content": reply})
+                return reply
             if "error" in event:
                 raise RemoteExecutionError(
                     f"remote generation failed: {event['error']}",
                     provider=self.provider,
                 )
             # {"log": ...} and any unknown event: informational, keep reading.
+
+    @property
+    def transcript(self) -> dict[str, Any]:
+        """The conversation so far, in OpenAI chat format.
+
+        One ``json.dumps`` of this dict is a valid line for
+        ``stateset-agents ingest --format openai`` — the shape
+        :func:`stateset_agents.data.trajectory_ingest.from_openai_jsonl`
+        parses: ``{"messages": [{"role", "content"}, ...], "metadata": {...}}``.
+        Only successfully answered turns appear. Safe to read after
+        ``close()`` — the history is client-side.
+        """
+        return {
+            "messages": [dict(m) for m in self._messages],
+            "metadata": dict(self._session_meta),
+        }
 
     # -- teardown ----------------------------------------------------------
 

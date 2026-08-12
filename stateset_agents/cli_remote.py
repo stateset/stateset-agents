@@ -13,6 +13,7 @@ Picks up where ``improve`` leaves off::
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import typer
@@ -24,6 +25,40 @@ from stateset_agents.remote.job import RemoteJobSpec
 from stateset_agents.remote.registry import available_providers, get_executor
 
 _echo = _cli._echo
+
+
+def _save_transcript(
+    session: object, path: Path | None, *, now: Callable[[], float]
+) -> None:
+    """Persist a chat session as one ingest-ready JSONL line, best-effort.
+
+    Runs on the ``finally`` path of ``chat-remote`` so aborted chats persist
+    too — every conversation is training data for the ingest -> improve ->
+    train-remote flywheel. Nothing is written for an empty conversation, and
+    a disk error is reported but never masks the session's own outcome.
+    """
+    import json
+    import time
+
+    transcript = session.transcript  # type: ignore[attr-defined]
+    if not transcript["messages"]:
+        return
+    if path is None:
+        stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(now()))
+        path = Path("chat_transcripts") / f"chat_{stamp}.jsonl"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(transcript) + "\n")
+    except OSError as exc:
+        _echo(f"Could not save transcript to {path}: {exc}", err=True)
+        return
+    _echo(f"Transcript saved to {path}")
+    _echo("Feed it back into training with:")
+    _echo(
+        f"  stateset-agents ingest --format openai --input {path} "
+        "--output graded.jsonl"
+    )
 
 
 @app.command("chat-remote")
@@ -59,14 +94,31 @@ def chat_remote(
         help="Non-interactive mode: send this prompt (repeatable, in order), "
         "print each reply, and exit. Skips the input() loop entirely.",
     ),
+    save_transcript: Path | None = typer.Option(
+        None,
+        "--save-transcript",
+        help="Where to save the conversation transcript (OpenAI chat-format "
+        "JSONL, ready for `stateset-agents ingest --format openai`). "
+        "Defaults to ./chat_transcripts/chat_<timestamp>.jsonl.",
+    ),
+    save: bool = typer.Option(
+        True,
+        "--save/--no-save",
+        help="Save the transcript on exit (default: on). Every chat is "
+        "training data — the transcript feeds ingest -> improve -> "
+        "train-remote.",
+    ),
 ) -> None:
     """Chat with a fine-tuned model on a rented RunPod GPU, ephemerally.
 
     Rents a pod, loads the base model plus your LoRA adapter there, and
     opens a REPL over SSH. The pod is terminated when the session ends —
     no open ports, no idle billing. Type ``exit``/``quit`` or Ctrl+D/Ctrl+C
-    to leave.
+    to leave. On exit the conversation is saved as an ingest-ready
+    transcript (disable with ``--no-save``).
     """
+    import time as _time
+
     from stateset_agents.remote import chat_session
 
     if adapter is not None and not adapter.exists():
@@ -106,8 +158,11 @@ def chat_remote(
         _echo(str(exc), err=True)
         exit_code = 1
     finally:
+        # Close first — the pod bills until it dies; the transcript can wait.
         _echo("Terminating the pod…")
         session.close()
+        if save:
+            _save_transcript(session, save_transcript, now=_time.time)
 
     if exit_code:
         raise typer.Exit(code=exit_code)
