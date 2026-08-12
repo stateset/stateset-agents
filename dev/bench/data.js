@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786481130287,
+  "lastUpdate": 1786523117053,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -930,6 +930,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.588089048326028e-8",
             "extra": "mean: 433.6369980630643 nsec\nrounds: 107957"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "62de02ccc6d8a8f4d4b626206f5e9d0aeba20085",
+          "message": "fix(sft): exclude vision-tower modules from LoRA target inference\n\nOn multimodal composites, ViT-block fc1/fc2 share leaf names with\ndecoder-MLP candidates and were being adapted despite text-only SFT\nsending no gradient through the vision path (observed on the live\nMuse-Glimmer-30B run). Non-text stacks (vision_tower, visual,\nperception_encoder, projectors, audio_tower) are now skipped.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-11T20:42:45Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/62de02ccc6d8a8f4d4b626206f5e9d0aeba20085"
+        },
+        "date": 1786523116549,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6088.369699895318,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001569910433515164",
+            "extra": "mean: 164.24758174872227 usec\nrounds: 1578"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6550.892282074449,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015593880420983654",
+            "extra": "mean: 152.65096065407036 usec\nrounds: 1957"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5040.0330302232705,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017146960138567605",
+            "extra": "mean: 198.41139810063916 usec\nrounds: 3685"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 739.1750371304522,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000025547284508626667",
+            "extra": "mean: 1.3528595390370528 msec\nrounds: 666"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 185.34724129457516,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005240733828206711",
+            "extra": "mean: 5.395278575582815 msec\nrounds: 172"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2124977.7121019643,
+            "unit": "iter/sec",
+            "range": "stddev: 4.874766085917368e-8",
+            "extra": "mean: 470.593171074171 nsec\nrounds: 103435"
           }
         ]
       }
