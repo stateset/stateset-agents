@@ -30,7 +30,7 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, cast
 
 from stateset_agents.remote.executor import RemoteExecutionError
 from stateset_agents.remote.runpod import (
@@ -248,7 +248,7 @@ class RemoteChatSession:
             raise RemoteExecutionError(
                 "chat session is not started", provider=self.provider
             )
-        return self._process.stdout
+        return cast(IO[str], self._process.stdout)
 
     def _read_event(self, timeout_s: float | None) -> dict[str, Any]:
         """Read the next protocol line, raising on EOF, garbage, or timeout."""
