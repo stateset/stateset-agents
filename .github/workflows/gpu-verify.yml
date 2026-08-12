@@ -168,3 +168,111 @@ jobs:
         name: gpu-verify-adapter
         path: outputs/gpu_verify
         retention-days: 14
+
+  # Same weekly proof for the RL path: rents the same cheap GPU and runs a
+  # short real GSPO training (tiny GPT-2, single-token preference task),
+  # asserting the target-token probability strictly increases — the same
+  # convergence property the nightly CPU e2e test checks, now on real CUDA.
+  rl-live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check for RunPod credentials
+      id: creds
+      run: |
+        if [ -n "$RUNPOD_API_KEY" ]; then
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::RUNPOD_API_KEY secret not set — skipping RL GPU verification."
+        fi
+
+    - name: Set up Python
+      if: steps.creds.outputs.present == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install package
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[remote]" 2>/dev/null || pip install -e .
+
+    - name: Generate ephemeral SSH keypair
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -q
+
+    - name: Build a wheel of the checked-out source
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        pip install build
+        python -m build --wheel
+
+    - name: Run live GSPO verification on RunPod
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        python - <<'PY'
+        import glob
+        import sys
+        import uuid
+        from pathlib import Path
+
+        from stateset_agents.remote.runpod import (
+            RunPodApi,
+            RunPodExecutor,
+            SshTransport,
+            package_pin,
+        )
+
+        wheel_path = next(iter(glob.glob("dist/stateset_agents-*.whl")), None)
+        assert wheel_path, "wheel not built"
+        wheel = Path(wheel_path)
+
+        gpu = "${{ github.event.inputs.gpu || 'NVIDIA RTX A4000' }}"
+        executor = RunPodExecutor(wheel=wheel)
+        api = executor._require_api()
+        public_key = executor._require_public_key()
+
+        job_id = uuid.uuid4().hex[:12]
+        pod = api.create_pod(
+            name=f"gpu-verify-rl-{job_id}",
+            image=executor.image,
+            gpu_type_id=gpu,
+            ports=["22/tcp"],
+            env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
+        )
+        pod_id = str(pod["id"])
+        print(f"created pod {pod_id} ({gpu})")
+
+        exit_code = 1
+        try:
+            host, port = executor._wait_for_ssh_endpoint(api, pod_id)
+            print(f"pod reachable at {host}:{port}")
+            ssh = SshTransport()
+            ssh.wait_until_reachable(host, port, executor.ready_timeout_s)
+            ssh.upload(wheel, f"/workspace/{wheel.name}")
+
+            pin = package_pin(wheel, None)
+            exit_code, output = ssh.run(
+                "set -o pipefail; "
+                f"pip install --quiet '{pin}' && "
+                "python -m stateset_agents.training.gpu_verify_rl"
+            )
+            print(output)
+        finally:
+            # Unconditional: an orphaned pod bills by the hour.
+            api.terminate_pod(pod_id)
+            print(f"terminated pod {pod_id}")
+
+        if exit_code != 0:
+            print(f"::error::RL GPU verification exited {exit_code}.")
+            sys.exit(1)
+        PY
