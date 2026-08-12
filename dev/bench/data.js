@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786536970567,
+  "lastUpdate": 1786543142209,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1506,6 +1506,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.177381166281942e-8",
             "extra": "mean: 483.94160477796424 nsec\nrounds: 101123"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "71789cdb8200b3e2d47f6422c66238a102deb5af",
+          "message": "feat(remote): --container-disk-gb and --eval-prompts for train-remote\n\nVerified end-to-end on live H100 hardware with Muse-Glimmer-30B: one\ntrain-remote invocation now sizes the pod disk from the spec, trains, and\nreturns eval_results.json with a base-vs-finetuned comparison on held-out\nprompts through the standard fetch path.\n\n- RemoteJobSpec.container_disk_gb (provider resource, ignored by the job);\n  RunPod uses it over the executor default\n- RemoteJobSpec.eval_prompts flows into the SFT job (--eval-prompts-json,\n  shell-quoted through ssh); base completions generate BEFORE LoRA is\n  applied and tuned completions after; greedy decoding keeps them\n  comparable\n- Live-hardware bug #7 fixed en route: base-eval generation ran on CPU\n  (the Trainer only moves the model to GPU later), grinding a 30B generate\n  while the H100 sat idle — the model now moves to GPU before base eval,\n  with an ordering-guard test\n- CLI: train-remote --container-disk-gb INT, --eval-prompts FILE (one\n  prompt per line)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T06:55:59-07:00",
+          "tree_id": "db7a524f4e1ec34208f33b97092fa27ab54ae536",
+          "url": "https://github.com/stateset/stateset-agents/commit/71789cdb8200b3e2d47f6422c66238a102deb5af"
+        },
+        "date": 1786543141017,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5901.789332727643,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000177417196611274",
+            "extra": "mean: 169.44013817210038 usec\nrounds: 1433"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6410.476613006324,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015471066040198048",
+            "extra": "mean: 155.99464132995712 usec\nrounds: 2105"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5015.918808415286,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015991536680841782",
+            "extra": "mean: 199.3652684972261 usec\nrounds: 3568"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 734.4624567738488,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00008429960155354561",
+            "extra": "mean: 1.3615399817609928 msec\nrounds: 658"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 182.5821061359876,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004562436487808045",
+            "extra": "mean: 5.47698797633103 msec\nrounds: 169"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2168972.8722701864,
+            "unit": "iter/sec",
+            "range": "stddev: 5.765378475175215e-8",
+            "extra": "mean: 461.0477211516877 nsec\nrounds: 105843"
           }
         ]
       }
