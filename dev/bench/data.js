@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786543264046,
+  "lastUpdate": 1786547066982,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1634,6 +1634,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.287531396423908e-8",
             "extra": "mean: 443.2418580614912 nsec\nrounds: 109458"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "21cdf7fa941ce2af57774952515766657d464989",
+          "message": "feat(remote): chat-remote — ephemeral chat with a fine-tuned model on RunPod\n\nstateset-agents chat-remote --base-model X --adapter DIR rents a pod,\nloads base + LoRA adapter, and holds a multi-turn conversation over an\nSSH-piped JSON-lines protocol; the pod is terminated on every exit path\n(close/context-manager/atexit/startup failure). --prompt gives a scripted\nnon-interactive mode.\n\nLive-verified on an H100 with the Muse-Glimmer-30B Astra adapter: 3-turn\nconversation in which turn 2's 'I also got double charged for it'\nresolved to the order number from turn 1 via the on-pod history —\nmulti-turn state working on real hardware. Pod terminated after.\n\n39 new unit tests (session protocol/lifecycle, repl loop, CLI); pip pin\nlogic extracted to runpod.package_pin and shared.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T08:01:29-07:00",
+          "tree_id": "cc22f06f6686dfe8d22a859150c432204fe29fb3",
+          "url": "https://github.com/stateset/stateset-agents/commit/21cdf7fa941ce2af57774952515766657d464989"
+        },
+        "date": 1786547065804,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8422.776584907017,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014482755481400918",
+            "extra": "mean: 118.7256945401977 usec\nrounds: 1447"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9057.370088370588,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013808295899900667",
+            "extra": "mean: 110.40732466966017 usec\nrounds: 2193"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6584.096083360328,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002248322948688984",
+            "extra": "mean: 151.88113711269378 usec\nrounds: 2487"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 822.9612199199232,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002427259417175058",
+            "extra": "mean: 1.2151240857950796 msec\nrounds: 711"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 175.420396156011,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00010464641394769843",
+            "extra": "mean: 5.700591390243156 msec\nrounds: 164"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2294400.9331508866,
+            "unit": "iter/sec",
+            "range": "stddev: 4.933922371914272e-8",
+            "extra": "mean: 435.8436163232841 nsec\nrounds: 108190"
           }
         ]
       }
