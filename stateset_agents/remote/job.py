@@ -13,6 +13,7 @@ read from the environment at submit time and never serialized.
 from __future__ import annotations
 
 import enum
+import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,9 @@ __all__ = ["JobHandle", "JobStatus", "RemoteJobResult", "RemoteJobSpec"]
 
 #: Fields that configure the *provider*, not the training script. These are
 #: excluded from ``to_cli_args()``.
-_RESOURCE_FIELDS = frozenset({"gpu", "timeout_s", "package_version"})
+_RESOURCE_FIELDS = frozenset(
+    {"gpu", "timeout_s", "package_version", "container_disk_gb"}
+)
 
 #: Positive-valued hyperparameters, validated uniformly in ``__post_init__``.
 _POSITIVE_FIELDS = (
@@ -89,6 +92,11 @@ class RemoteJobSpec:
     per_device_batch_size: int = 2
     gradient_accumulation_steps: int = 4
     dry_run: bool = False
+    #: Prompts to compare base-vs-tuned after training. When set, the job
+    #: generates a completion per prompt with the base model before LoRA is
+    #: applied and again with the trained adapter, and writes
+    #: ``eval_results.json`` into the output directory.
+    eval_prompts: list[str] | None = None
 
     # --- Provider resources: never reach the training script ---------------
     #: GPU to request. Deliberately has no default: GPU names are provider
@@ -98,6 +106,11 @@ class RemoteJobSpec:
     gpu: str | None = None
     timeout_s: int = 3600
     package_version: str | None = None
+    #: GPU-pool container disk (GiB) for the model download — RunPod only.
+    #: Size it at roughly 2.5x the checkpoint: a 63GB BF16 checkpoint dies
+    #: mid-download on the old fixed 40GB (verified live). ``None`` means
+    #: "use the executor's own default".
+    container_disk_gb: int | None = None
 
     def __post_init__(self) -> None:
         self.dataset = Path(self.dataset)
@@ -112,6 +125,11 @@ class RemoteJobSpec:
             value = getattr(self, name)
             if value <= 0:
                 raise ValueError(f"{name} must be positive, got {value!r}")
+
+        if self.container_disk_gb is not None and self.container_disk_gb <= 0:
+            raise ValueError(
+                f"container_disk_gb must be positive, got {self.container_disk_gb!r}"
+            )
 
     def to_cli_args(self) -> list[str]:
         """Render as ``sft_from_curated.py`` command-line arguments."""
@@ -139,6 +157,8 @@ class RemoteJobSpec:
         ]
         if self.dry_run:
             args.append("--dry-run")
+        if self.eval_prompts:
+            args += ["--eval-prompts-json", json.dumps(self.eval_prompts)]
         return args
 
     def to_dict(self) -> dict[str, Any]:

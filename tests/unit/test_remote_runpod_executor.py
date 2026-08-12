@@ -463,3 +463,45 @@ class TestContainerDiskSize:
         api = FakePodApi()
         make_executor(api=api, container_disk_gb=160).submit(spec)
         assert api.created[0]["container_disk_gb"] == 160
+
+    def test_spec_disk_size_overrides_the_executor_default(self, make_executor, spec):
+        """`--container-disk-gb` reaches the pod without rebuilding the executor."""
+        api = FakePodApi()
+        spec.container_disk_gb = 200
+        make_executor(api=api, container_disk_gb=160).submit(spec)
+        assert api.created[0]["container_disk_gb"] == 200
+
+    def test_unset_spec_disk_falls_back_to_the_executor_default(
+        self, make_executor, spec
+    ):
+        api = FakePodApi()
+        assert spec.container_disk_gb is None
+        make_executor(api=api, container_disk_gb=120).submit(spec)
+        assert api.created[0]["container_disk_gb"] == 120
+
+
+class TestEvalPrompts:
+    """The prompts ride the ssh command as one JSON argument, so they must
+    survive a real shell — including quotes and spaces inside a prompt."""
+
+    PROMPTS = ["what's the return policy?", "plain prompt"]
+
+    def _train_command(self, ssh: FakeSsh) -> str:
+        return next(c for c in ssh.commands if "training.sft" in c)
+
+    def test_prompts_are_shell_quoted_and_json_decodable(self, make_executor, spec):
+        import shlex
+
+        ssh = FakeSsh()
+        spec.eval_prompts = self.PROMPTS
+        make_executor(ssh=ssh).submit(spec)
+
+        tokens = shlex.split(self._train_command(ssh))
+        blob = tokens[tokens.index("--eval-prompts-json") + 1]
+        assert json.loads(blob) == self.PROMPTS
+
+    def test_no_flag_when_no_prompts(self, make_executor, spec):
+        ssh = FakeSsh()
+        make_executor(ssh=ssh).submit(spec)
+
+        assert "--eval-prompts-json" not in self._train_command(ssh)

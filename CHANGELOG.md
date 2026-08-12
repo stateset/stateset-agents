@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`train-remote --container-disk-gb`** — sets the RunPod pod's container
+  disk from the CLI (previously only reachable by constructing
+  `RunPodExecutor(container_disk_gb=...)` in Python). Size it at roughly
+  2.5x the model download; verified live where a 63GB checkpoint dies on
+  the old fixed 40GB.
+- **`train-remote --eval-prompts FILE`** — post-train base-vs-tuned
+  comparison. A local text file of prompts (one per line); each is answered
+  greedily by the base model before LoRA is applied and again by the trained
+  adapter, and the pairs are written to `output_dir/eval_results.json`. The
+  prompts travel inside the job spec (as `--eval-prompts-json` on the
+  packaged `stateset_agents.training.sft` CLI), so remote pods need no
+  second file upload. Dry runs are unaffected.
+
 ### Fixed
 
 - **Vision-tower exclusion now actually works on real multimodal models.**

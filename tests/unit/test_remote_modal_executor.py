@@ -170,6 +170,28 @@ class TestSuccessfulJob:
 
         assert any("Loaded 3 examples" in line for line in result.logs)
 
+    def test_eval_prompts_reach_the_training_job(
+        self, executor, spec, trains_for_real, monkeypatch
+    ):
+        """Modal ships the whole spec dict as the payload, so a job-level
+        field must arrive at run_sft unmodified."""
+        from stateset_agents.training import sft
+
+        received = {}
+        original = sft.run_sft
+
+        def spy(**kwargs):
+            received["eval_prompts"] = kwargs.get("eval_prompts")
+            return original(**kwargs)
+
+        monkeypatch.setattr(sft, "run_sft", spy)
+        spec.eval_prompts = ["what's the return policy?"]
+
+        result = executor.wait(executor.submit(spec))
+
+        assert result.status is JobStatus.SUCCEEDED
+        assert received["eval_prompts"] == ["what's the return policy?"]
+
 
 class TestFailingJob:
     def test_empty_dataset_reports_failure_not_success(self, executor, tmp_path):

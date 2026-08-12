@@ -49,6 +49,12 @@ class TestRemoteJobSpecDefaults:
         assert spec.gradient_accumulation_steps == 4
         assert spec.dry_run is False
 
+    def test_new_optional_fields_default_to_none(self, dataset):
+        spec = RemoteJobSpec(dataset=dataset, base_model="Qwen/Qwen3.5-0.8B")
+
+        assert spec.container_disk_gb is None
+        assert spec.eval_prompts is None
+
 
 class TestRemoteJobSpecValidation:
     def test_rejects_missing_dataset(self, tmp_path):
@@ -78,6 +84,13 @@ class TestRemoteJobSpecValidation:
         with pytest.raises(ValueError, match=field):
             RemoteJobSpec(
                 dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", **{field: value}
+            )
+
+    def test_rejects_non_positive_container_disk(self, dataset):
+        """None means "executor default"; zero is always a mistake."""
+        with pytest.raises(ValueError, match="container_disk_gb"):
+            RemoteJobSpec(
+                dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", container_disk_gb=0
             )
 
 
@@ -130,13 +143,48 @@ class TestRemoteJobSpecSerialization:
     def test_resource_fields_are_not_passed_to_the_training_script(self, dataset):
         """gpu/timeout/package_version configure the provider, not the job."""
         spec = RemoteJobSpec(
-            dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", gpu="A100"
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            gpu="A100",
+            container_disk_gb=160,
         )
 
         args = spec.to_cli_args()
 
         assert "--gpu" not in args
         assert "A100" not in args
+        assert "--container-disk-gb" not in args
+        assert "160" not in args
+
+    def test_eval_prompts_are_a_job_field_and_travel_as_json(self, dataset):
+        """Unlike resource fields, eval prompts must reach the training script."""
+        prompts = ["what's the return policy?", "hello there"]
+        spec = RemoteJobSpec(
+            dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", eval_prompts=prompts
+        )
+
+        args = spec.to_cli_args()
+
+        assert "--eval-prompts-json" in args
+        blob = args[args.index("--eval-prompts-json") + 1]
+        assert json.loads(blob) == prompts
+
+    def test_eval_prompts_flag_omitted_when_unset(self, dataset):
+        spec = RemoteJobSpec(dataset=dataset, base_model="Qwen/Qwen3.5-0.8B")
+
+        assert "--eval-prompts-json" not in spec.to_cli_args()
+
+    def test_eval_prompts_round_trip_through_json(self, dataset):
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            eval_prompts=["a", "b"],
+            container_disk_gb=160,
+        )
+
+        restored = RemoteJobSpec.from_dict(json.loads(json.dumps(spec.to_dict())))
+
+        assert restored == spec
 
 
 class TestJobHandle:

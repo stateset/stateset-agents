@@ -52,6 +52,11 @@ export RUNPOD_API_KEY=...
 stateset-agents train-remote --provider runpod --gpu "NVIDIA RTX A4000" \
     --dataset improved/curated.jsonl --base-model Qwen/Qwen3.5-0.8B
 
+# Large checkpoint on RunPod, with a base-vs-tuned comparison afterwards
+stateset-agents train-remote --provider runpod --gpu "NVIDIA H100 80GB HBM3" \
+    --container-disk-gb 160 --eval-prompts prompts.txt \
+    --dataset improved/curated.jsonl --base-model meta-models/Muse-Glimmer-30B
+
 # See the plan without training (works with no GPU)
 stateset-agents train-remote --dataset improved/curated.jsonl \
     --base-model Qwen/Qwen3.5-0.8B --dry-run
@@ -80,6 +85,15 @@ success with an empty output directory.
 - `--timeout INTEGER`: Job timeout in seconds. Default `3600`.
 - `--package-version TEXT`: Version installed remotely. Defaults to the
   running version.
+- `--container-disk-gb INTEGER`: RunPod only — container disk for the pod, in
+  GB. Size it at roughly 2.5x the model download (a 30B BF16 checkpoint is
+  ~63GB and dies mid-download on the 40GB default). Defaults to the
+  executor's default (40).
+- `--eval-prompts PATH`: Local text file of prompts, one per line (blank
+  lines skipped). After training, each prompt is answered by both the base
+  model and the tuned adapter (greedy decoding), and the side-by-side
+  comparison is written to `output_dir/eval_results.json` as a list of
+  `{"prompt", "base", "finetuned"}`. No effect on dry runs.
 - `--dry-run`: Print the training plan without training.
 
 #### Providers

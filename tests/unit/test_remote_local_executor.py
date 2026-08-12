@@ -85,6 +85,25 @@ class TestLocalExecutorRun:
         combined = "\n".join(result.logs)
         assert "Qwen/Qwen3.5-0.8B" in combined
 
+    def test_tolerates_the_provider_and_eval_fields(self, dataset, tmp_path):
+        """A spec carrying container_disk_gb (RunPod-only) and eval_prompts
+        must still run: the former never reaches the script, the latter rides
+        --eval-prompts-json and is a no-op on a dry run."""
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            output_dir=tmp_path / "out",
+            num_epochs=1,
+            dry_run=True,
+            container_disk_gb=160,
+            eval_prompts=["what's up?"],
+        )
+        executor = LocalExecutor()
+
+        result = executor.wait(executor.submit(spec))
+
+        assert result.status is JobStatus.SUCCEEDED, "\n".join(result.logs)
+
     def test_status_is_terminal_after_completion(self, spec):
         executor = LocalExecutor()
 

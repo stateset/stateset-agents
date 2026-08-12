@@ -39,17 +39,21 @@ logger = logging.getLogger("sft_from_curated")
 
 __all__ = [
     "build_training_arguments",
+    "generate_completions",
     "gpu_available",
     "load_base_model_for_sft",
     "load_chat_dataset",
     "print_training_plan",
     "run_sft",
     "run_sft_job",
+    "write_eval_results",
 ]
 
 #: Keys of a ``RemoteJobSpec`` dict that configure the provider rather than the
 #: job. ``run_sft_job`` ignores them so a full spec can be passed straight in.
-_PROVIDER_ONLY_KEYS = frozenset({"gpu", "timeout_s", "package_version"})
+_PROVIDER_ONLY_KEYS = frozenset(
+    {"gpu", "timeout_s", "package_version", "container_disk_gb"}
+)
 
 
 def load_chat_dataset(path: Path) -> list[dict[str, Any]]:
@@ -276,6 +280,43 @@ def infer_lora_target_modules(model: Any) -> list[str]:
     return sorted(text_found)
 
 
+def generate_completions(
+    model: Any,
+    tokenizer: Any,
+    prompts: list[str],
+    max_new_tokens: int = 90,
+) -> list[str]:
+    """Greedily generate one completion per prompt through ``model``.
+
+    Used for the post-train base-vs-tuned comparison: each prompt is rendered
+    through the model's chat template (with the generation prompt appended)
+    and decoded back to just the completion text. Greedy decoding keeps the
+    two runs comparable — sampling noise would swamp the tuning signal.
+    """
+    import torch
+
+    completions: list[str] = []
+    for prompt in prompts:
+        text = tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        inputs = tokenizer(text, return_tensors="pt").to(model.device)
+        with torch.no_grad():
+            output = model.generate(
+                **inputs,
+                do_sample=False,
+                max_new_tokens=max_new_tokens,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+        prompt_length = inputs["input_ids"].shape[1]
+        completions.append(
+            tokenizer.decode(output[0][prompt_length:], skip_special_tokens=True)
+        )
+    return completions
+
+
 def run_sft(
     rows: list[dict[str, Any]],
     base_model: str,
@@ -287,8 +328,13 @@ def run_sft(
     max_length: int,
     per_device_batch_size: int,
     gradient_accumulation_steps: int,
+    eval_prompts: list[str] | None = None,
 ) -> Path:
     """Run the actual SFT training on GPU.
+
+    When ``eval_prompts`` is given, a completion per prompt is generated with
+    the base model *before* LoRA is applied and again through the trained
+    adapter afterwards; the pairs land in ``output_dir/eval_results.json``.
 
     Uses ``transformers.Trainer`` directly with a PEFT LoRA adapter on top of
     the base model. The result is saved as a LoRA adapter directory
@@ -315,6 +361,20 @@ def run_sft(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = load_base_model_for_sft(base_model)
+
+    base_completions: list[str] = []
+    if eval_prompts:
+        logger.info(
+            "Generating base-model completions for %d eval prompt(s)…",
+            len(eval_prompts),
+        )
+        # The Trainer moves the model to GPU later; base-eval generation runs
+        # BEFORE that, and a 30B generate on CPU takes tens of minutes of
+        # billed pod time (hit for real on an H100 pod: GPU idle, CPU
+        # grinding). Move it now when a GPU exists.
+        if gpu_available():
+            model = model.to("cuda")
+        base_completions = generate_completions(model, tokenizer, eval_prompts)
 
     target_modules = infer_lora_target_modules(model)
     logger.info(
@@ -383,7 +443,41 @@ def run_sft(
     logger.info("Training complete. Saving adapter to %s", output_dir)
     model.save_pretrained(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
+
+    if eval_prompts:
+        logger.info(
+            "Generating fine-tuned completions for %d eval prompt(s)…",
+            len(eval_prompts),
+        )
+        model.eval()
+        tuned_completions = generate_completions(model, tokenizer, eval_prompts)
+        results_path = write_eval_results(
+            output_dir, eval_prompts, base_completions, tuned_completions
+        )
+        logger.info("Eval comparison written to %s", results_path)
+
     return output_dir
+
+
+def write_eval_results(
+    output_dir: Path,
+    prompts: list[str],
+    base: list[str],
+    finetuned: list[str],
+) -> Path:
+    """Write the base-vs-tuned comparison as ``eval_results.json``."""
+    path = Path(output_dir) / "eval_results.json"
+    path.write_text(
+        json.dumps(
+            [
+                {"prompt": p, "base": b, "finetuned": f}
+                for p, b, f in zip(prompts, base, finetuned, strict=True)
+            ],
+            indent=2,
+        )
+        + "\n"
+    )
+    return path
 
 
 def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -438,6 +532,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         max_length=job["max_length"],
                         per_device_batch_size=job["per_device_batch_size"],
                         gradient_accumulation_steps=job["gradient_accumulation_steps"],
+                        eval_prompts=job.get("eval_prompts"),
                     )
     except Exception as exc:  # reported, never raised — see docstring
         logger.error("SFT job failed: %s", exc)
@@ -485,6 +580,13 @@ def build_parser() -> Any:
         help="Print the training plan without running it (forced "
         "automatically when no GPU is detected).",
     )
+    parser.add_argument(
+        "--eval-prompts-json",
+        default=None,
+        help="JSON-encoded list of prompts for a post-train base-vs-tuned "
+        "comparison, written to output_dir/eval_results.json. JSON rather "
+        "than a file path so remote workers need no second upload.",
+    )
     return parser
 
 
@@ -500,6 +602,19 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
 
+    eval_prompts: list[str] | None = None
+    if args.eval_prompts_json:
+        try:
+            eval_prompts = json.loads(args.eval_prompts_json)
+        except json.JSONDecodeError as exc:
+            print(f"--eval-prompts-json is not valid JSON: {exc}")
+            return 2
+        if not isinstance(eval_prompts, list) or not all(
+            isinstance(p, str) for p in eval_prompts
+        ):
+            print("--eval-prompts-json must be a JSON list of strings")
+            return 2
+
     outcome = run_sft_job(
         {
             "dataset": str(args.dataset),
@@ -513,6 +628,7 @@ def main(argv: list[str] | None = None) -> int:
             "per_device_batch_size": args.per_device_batch_size,
             "gradient_accumulation_steps": args.gradient_accumulation_steps,
             "dry_run": args.dry_run,
+            "eval_prompts": eval_prompts,
         }
     )
 

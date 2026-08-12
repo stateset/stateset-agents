@@ -149,27 +149,29 @@ class TestFailurePaths:
         assert result.exit_code != 0
 
 
+def capture_spec(monkeypatch):
+    """Spy on LocalExecutor.submit, recording the spec the CLI built."""
+    captured = {}
+
+    from stateset_agents.remote.local import LocalExecutor
+
+    original = LocalExecutor.submit
+
+    def spy(self, spec):
+        captured["spec"] = spec
+        return original(self, spec)
+
+    monkeypatch.setattr(LocalExecutor, "submit", spy)
+    return captured
+
+
 class TestOptionPassthrough:
     """Resource flags must reach the executor, not be silently dropped."""
-
-    def _capture_spec(self, monkeypatch):
-        captured = {}
-
-        from stateset_agents.remote.local import LocalExecutor
-
-        original = LocalExecutor.submit
-
-        def spy(self, spec):
-            captured["spec"] = spec
-            return original(self, spec)
-
-        monkeypatch.setattr(LocalExecutor, "submit", spy)
-        return captured
 
     def test_resource_and_hyperparameter_flags_reach_the_spec(
         self, dataset, tmp_path, monkeypatch
     ):
-        captured = self._capture_spec(monkeypatch)
+        captured = capture_spec(monkeypatch)
 
         result = runner.invoke(
             app,
@@ -189,6 +191,8 @@ class TestOptionPassthrough:
                 "900",
                 "--package-version",
                 "1.2.3",
+                "--container-disk-gb",
+                "160",
                 "--lora-r",
                 "8",
                 "--num-epochs",
@@ -202,13 +206,14 @@ class TestOptionPassthrough:
         assert spec.gpu == "H100"
         assert spec.timeout_s == 900
         assert spec.package_version == "1.2.3"
+        assert spec.container_disk_gb == 160
         assert spec.lora_r == 8
         assert spec.num_epochs == 7
 
     def test_invalid_hyperparameter_is_rejected_before_submitting(
         self, dataset, tmp_path, monkeypatch
     ):
-        captured = self._capture_spec(monkeypatch)
+        captured = capture_spec(monkeypatch)
 
         result = runner.invoke(
             app,
@@ -227,4 +232,64 @@ class TestOptionPassthrough:
 
         assert result.exit_code == 2
         assert "num_epochs" in result.output
+        assert "spec" not in captured
+
+
+class TestEvalPromptsOption:
+    """--eval-prompts is a local file, read on this machine — the prompts
+    travel inside the spec so pods need no second upload."""
+
+    def _invoke(self, dataset, tmp_path, *extra):
+        return runner.invoke(
+            app,
+            [
+                "train-remote",
+                "--provider",
+                "local",
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--output-dir",
+                str(tmp_path / "out"),
+                "--dry-run",
+                *extra,
+            ],
+        )
+
+    def test_prompts_file_is_read_into_the_spec(self, dataset, tmp_path, monkeypatch):
+        captured = capture_spec(monkeypatch)
+        prompts_file = tmp_path / "prompts.txt"
+        prompts_file.write_text("what's the return policy?\n\n  plain prompt  \n")
+
+        result = self._invoke(dataset, tmp_path, "--eval-prompts", str(prompts_file))
+
+        assert result.exit_code == 0, result.output
+        assert captured["spec"].eval_prompts == [
+            "what's the return policy?",
+            "plain prompt",
+        ]
+
+    def test_omitting_the_option_leaves_the_spec_unset(
+        self, dataset, tmp_path, monkeypatch
+    ):
+        captured = capture_spec(monkeypatch)
+
+        result = self._invoke(dataset, tmp_path)
+
+        assert result.exit_code == 0, result.output
+        assert captured["spec"].eval_prompts is None
+
+    def test_missing_prompts_file_exits_2_with_a_clear_message(
+        self, dataset, tmp_path, monkeypatch
+    ):
+        captured = capture_spec(monkeypatch)
+
+        result = self._invoke(
+            dataset, tmp_path, "--eval-prompts", str(tmp_path / "absent.txt")
+        )
+
+        assert result.exit_code == 2
+        assert "does not exist" in result.output
+        assert "absent.txt" in result.output
         assert "spec" not in captured

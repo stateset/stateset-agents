@@ -67,11 +67,37 @@ def train_remote(
         help="stateset-agents version installed remotely. Defaults to the "
         "running version.",
     ),
+    container_disk_gb: int | None = typer.Option(
+        None,
+        "--container-disk-gb",
+        help="RunPod only: GPU-pool container disk in GB for the model "
+        "download. Size it at roughly 2.5x the checkpoint (a 30B BF16 "
+        "model is ~63GB). Defaults to the executor's own default.",
+    ),
+    eval_prompts: Path | None = typer.Option(
+        None,
+        "--eval-prompts",
+        help="Local text file of prompts, one per line (blanks skipped). "
+        "After training, each prompt is answered by both the base model "
+        "and the tuned adapter; the comparison lands in "
+        "output_dir/eval_results.json.",
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Print the training plan without training."
     ),
 ) -> None:
     """Run the SFT job from `improve` on local or rented GPU compute."""
+    prompts: list[str] | None = None
+    if eval_prompts is not None:
+        if not eval_prompts.exists():
+            _echo(f"Eval prompts file does not exist: {eval_prompts}", err=True)
+            raise typer.Exit(code=2)
+        prompts = [
+            line.strip()
+            for line in eval_prompts.read_text().splitlines()
+            if line.strip()
+        ]
+
     try:
         spec = RemoteJobSpec(
             dataset=dataset,
@@ -85,9 +111,11 @@ def train_remote(
             per_device_batch_size=per_device_batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
             dry_run=dry_run,
+            eval_prompts=prompts,
             gpu=gpu,
             timeout_s=timeout,
             package_version=package_version,
+            container_disk_gb=container_disk_gb,
         )
     except ValueError as exc:
         _echo(f"Invalid job: {exc}", err=True)

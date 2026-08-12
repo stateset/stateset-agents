@@ -18,7 +18,9 @@ binaries, so there is no extra install beyond ``[training]``.
 
 from __future__ import annotations
 
+import json
 import os
+import shlex
 import subprocess
 import time
 import uuid
@@ -362,6 +364,10 @@ class RunPodExecutor(RemoteExecutor):
         )
         if spec.dry_run:
             args += " --dry-run"
+        if spec.eval_prompts:
+            # The command travels through ssh + bash, so the JSON blob must
+            # survive a real shell — hence shlex.quote, not manual quoting.
+            args += f" --eval-prompts-json {shlex.quote(json.dumps(spec.eval_prompts))}"
         return [
             f"pip install --quiet '{pin}'",
             f"python -m stateset_agents.training.sft {args}",
@@ -382,7 +388,7 @@ class RunPodExecutor(RemoteExecutor):
             gpu_type_id=spec.gpu or self.DEFAULT_GPU,
             ports=["22/tcp"],
             env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
-            container_disk_gb=self.container_disk_gb,
+            container_disk_gb=spec.container_disk_gb or self.container_disk_gb,
         )
         pod_id = str(pod["id"])
         logs.append(f"created pod {pod_id} ({spec.gpu or self.DEFAULT_GPU})")

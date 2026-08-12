@@ -108,10 +108,27 @@ class TestRunSftJob:
     def test_ignores_provider_only_fields(self, dataset):
         """A full RemoteJobSpec dict carries resource fields the job must not choke on."""
         outcome = sft.run_sft_job(
-            payload(dataset, gpu="A100", timeout_s=60, package_version="0.19.0")
+            payload(
+                dataset,
+                gpu="A100",
+                timeout_s=60,
+                package_version="0.19.0",
+                container_disk_gb=160,
+            )
         )
 
         assert outcome["returncode"] == 0
+
+    def test_dry_run_with_eval_prompts_writes_nothing(self, dataset, tmp_path):
+        """Eval needs a trained model; the no-GPU dry-run path must be untouched."""
+        out = tmp_path / "adapter"
+
+        outcome = sft.run_sft_job(
+            payload(dataset, output_dir=str(out), eval_prompts=["hi"])
+        )
+
+        assert outcome["returncode"] == 0
+        assert not (out / "eval_results.json").exists()
 
 
 class TestModuleEntrypoint:
@@ -327,6 +344,155 @@ class TestBuildTrainingArguments:
         assert args.kw == {"anything": 1, "at_all": 2}
 
 
+class FakeChatTokenizer:
+    """Chat-template + tokenize + decode surface used by the eval helper."""
+
+    eos_token_id = 0
+
+    def __init__(self):
+        self.templated: list[list[dict]] = []
+
+    def apply_chat_template(self, messages, tokenize, add_generation_prompt):
+        assert tokenize is False and add_generation_prompt is True
+        self.templated.append(messages)
+        return f"<user>{messages[0]['content']}<assistant>"
+
+    def __call__(self, text, return_tensors):
+        import torch
+
+        class Batch(dict):
+            def to(self, device):
+                return self
+
+        # One token id per character keeps prompt lengths distinguishable.
+        return Batch(input_ids=torch.tensor([[ord(c) % 100 for c in text]]))
+
+    def decode(self, token_ids, skip_special_tokens):
+        return "".join(chr(96 + int(t) % 26) for t in token_ids)
+
+
+class FakeGreedyModel:
+    """Echoes fixed continuation tokens; records how it was asked to decode."""
+
+    device = "cpu"
+
+    def __init__(self):
+        self.generate_kwargs: list[dict] = []
+
+    def generate(self, input_ids, **kwargs):
+        import torch
+
+        self.generate_kwargs.append(kwargs)
+        continuation = torch.tensor([[1, 2, 3]])
+        return torch.cat([input_ids, continuation], dim=1)
+
+
+class TestGenerateCompletions:
+    def test_generates_one_completion_per_prompt(self):
+        model = FakeGreedyModel()
+        tokenizer = FakeChatTokenizer()
+
+        out = sft.generate_completions(model, tokenizer, ["hello", "what's up?"])
+
+        assert len(out) == 2
+        # Only the continuation is decoded, never the prompt tokens.
+        assert all(len(c) == 3 for c in out)
+
+    def test_decoding_is_greedy_and_bounded(self):
+        """Sampling noise would swamp the base-vs-tuned comparison."""
+        model = FakeGreedyModel()
+
+        sft.generate_completions(model, FakeChatTokenizer(), ["hi"])
+
+        kwargs = model.generate_kwargs[0]
+        assert kwargs["do_sample"] is False
+        assert kwargs["max_new_tokens"] == 90
+        assert kwargs["pad_token_id"] == FakeChatTokenizer.eos_token_id
+
+    def test_renders_prompts_through_the_chat_template(self):
+        tokenizer = FakeChatTokenizer()
+
+        sft.generate_completions(FakeGreedyModel(), tokenizer, ["hello"])
+
+        assert tokenizer.templated == [[{"role": "user", "content": "hello"}]]
+
+
+class TestWriteEvalResults:
+    def test_writes_prompt_base_finetuned_triples(self, tmp_path):
+        path = sft.write_eval_results(
+            tmp_path, ["p1", "p2"], ["b1", "b2"], ["f1", "f2"]
+        )
+
+        assert path == tmp_path / "eval_results.json"
+        results = json.loads(path.read_text())
+        assert results == [
+            {"prompt": "p1", "base": "b1", "finetuned": "f1"},
+            {"prompt": "p2", "base": "b2", "finetuned": "f2"},
+        ]
+
+
+class TestEvalPromptsCli:
+    def test_eval_prompts_json_reaches_the_job(self, dataset, monkeypatch):
+        captured = {}
+
+        def fake_run_sft_job(job):
+            captured.update(job)
+            return {"returncode": 0, "logs": [], "output_dir": "out"}
+
+        monkeypatch.setattr(sft, "run_sft_job", fake_run_sft_job)
+
+        code = sft.main(
+            [
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--dry-run",
+                "--eval-prompts-json",
+                json.dumps(["what's up?", "plain"]),
+            ]
+        )
+
+        assert code == 0
+        assert captured["eval_prompts"] == ["what's up?", "plain"]
+
+    def test_invalid_json_is_rejected_before_any_work(self, dataset, monkeypatch):
+        monkeypatch.setattr(
+            sft, "run_sft_job", lambda job: pytest.fail("job must not run")
+        )
+
+        code = sft.main(
+            [
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--eval-prompts-json",
+                "not json",
+            ]
+        )
+
+        assert code == 2
+
+    def test_a_json_object_is_rejected(self, dataset, monkeypatch):
+        monkeypatch.setattr(
+            sft, "run_sft_job", lambda job: pytest.fail("job must not run")
+        )
+
+        code = sft.main(
+            [
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--eval-prompts-json",
+                '{"not": "a list"}',
+            ]
+        )
+
+        assert code == 2
+
+
 class TestVisionTowerExclusion:
     """Text-only SFT must not adapt vision-tower projections (no gradient
     flows there), even when their leaf names match decoder-MLP candidates."""
@@ -381,3 +547,14 @@ class TestVisionTowerExclusion:
             ]
         )
         assert sft.infer_lora_target_modules(model) == ["q_proj"]
+
+    def test_base_eval_moves_model_to_gpu_first(self, monkeypatch):
+        """Base-eval generation must not run a 30B generate on CPU: when a
+        GPU exists, the model moves to cuda BEFORE the pre-train
+        completions (hit for real: H100 pod billing with the GPU idle)."""
+        import inspect
+
+        source = inspect.getsource(sft.run_sft)
+        base_gen = source.index("base_completions = generate_completions")
+        gpu_move = source.index('model.to("cuda")')
+        assert gpu_move < base_gen
