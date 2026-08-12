@@ -144,6 +144,14 @@ class SshTransport:
             "UserKnownHostsFile=/dev/null",
             "-o",
             "LogLevel=ERROR",
+            # Without keepalives a dead peer (pod crash/restart mid-job —
+            # observed live: RunPod restarted a pod under a running job and
+            # its IP changed) leaves the blocking ssh read hung for hours.
+            # 12 x 10s: gone-for-2-minutes means gone.
+            "-o",
+            "ServerAliveInterval=10",
+            "-o",
+            "ServerAliveCountMax=12",
         ]
         if self.key_path:
             opts += ["-i", str(self.key_path)]
