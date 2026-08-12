@@ -33,26 +33,53 @@ MAJOR.MINOR.PATCH
 
 ### Quick Release Commands
 
+`make release` runs the codified release procedure in `scripts/release.py` —
+the exact sequence performed manually for v0.21.0 through v0.25.0:
+
 ```bash
-# Patch release (1.0.0 -> 1.0.1)
-make release-patch
+# Dry run: print every change it would make, touch nothing
+make release VERSION=0.26.0 TITLE="short release title" RELEASE_FLAGS="--dry-run"
 
-# Minor release (1.0.0 -> 1.1.0)  
-make release-minor
+# Real release: bump versions, update CHANGELOG/README, run guard tests,
+# commit + annotated tag (no push, no publish — dry-safe for the remote world)
+make release VERSION=0.26.0 TITLE="short release title" NOTES_FILE=notes.md
 
-# Major release (1.0.0 -> 2.0.0)
-make release-major
+# Push master + tag and publish to PyPI
+make release VERSION=0.26.0 TITLE="..." RELEASE_FLAGS="--push --publish"
+```
 
-# Release candidate
-make release VERSION=1.2.3-rc.1
+The procedure it codifies:
 
-# Custom version release (explicit)
-make release VERSION=1.2.3
+1. **Preflight** — clean working tree, on `master`, `VERSION` is semver
+   greater than the current version, and the `## [Unreleased]` section of
+   `CHANGELOG.md` is non-empty.
+2. **Anchored version bumps** (each anchor must occur exactly once — never a
+   blind sweep, which once corrupted `pytest-asyncio>=0.21.0`) in
+   `pyproject.toml`, `stateset_agents/__init__.py`, and the helm
+   `Chart.yaml`; plain old→new replacement in the helm README/values, the
+   kubernetes training-job/deployment manifests, `docs/ARCHITECTURE.md`, and
+   `docs/KIMI_K25_GKE_AUTOPILOT.md` (warns when a file contains zero
+   occurrences).
+3. **CHANGELOG** — inserts `## [<new>] - <today> — <TITLE>` under
+   `## [Unreleased]`.
+4. **README** — promotes the new version into the What's-new latest-release
+   heading (bullets from `NOTES_FILE`, or a TODO line), demotes the old
+   block, refreshes the other two "latest release" mentions.
+5. **Guard tests** — `pytest tests/unit/test_readme_onboarding.py
+   tests/unit/test_pyproject_extras.py -q`.
+6. **Commit + tag** — `chore(release): v<new> — <TITLE>` and annotated tag
+   `v<new>`.
+7. **Optional** `--push` (master + tag) and `--publish` (`python -m build`,
+   `twine check`, `twine upload`). Publishing reads the PyPI token from
+   `STATESET_PYPI_TOKEN`, falling back to the first line of the local file
+   `/home/dom/pypi`.
 
-# Shorthand version bumps
-make release VERSION=patch
-make release VERSION=minor
-make release VERSION=major
+Legacy shorthand bumps (older `scripts/publish.py` flow):
+
+```bash
+make release-patch   # 1.0.0 -> 1.0.1
+make release-minor   # 1.0.0 -> 1.1.0
+make release-major   # 1.0.0 -> 2.0.0
 ```
 
 ### Manual Release Process

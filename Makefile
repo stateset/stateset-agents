@@ -139,15 +139,15 @@ publish: ## Publish to PyPI
 	$(MAKE) publish-readiness
 	$(PYTHON_BIN) -m twine upload --skip-existing dist/*
 
-release: ## Create a release with custom version
-	@if [ -z "$(VERSION)" ]; then \
-		echo "Usage: make release VERSION=<version|patch|minor|major>"; \
-		echo "Example: make release VERSION=1.2.3"; \
+release: ## Run the codified release procedure (scripts/release.py). VERSION + TITLE required; optional NOTES_FILE, RELEASE_FLAGS="--push --publish --dry-run"
+	@if [ -z "$(VERSION)" ] || [ -z "$(TITLE)" ]; then \
+		echo "Usage: make release VERSION=<X.Y.Z> TITLE=\"short release title\" [NOTES_FILE=notes.md] [RELEASE_FLAGS=\"--dry-run|--push|--publish\"]"; \
+		echo "Example: make release VERSION=0.26.0 TITLE=\"release-script automation\""; \
 		exit 1; \
 	fi
 	$(MAKE) require-release-branch
-	$(MAKE) publish-readiness
-	python scripts/publish.py --skip-readiness --production --version $${VERSION}
+	python scripts/release.py --version "$(VERSION)" --title "$(TITLE)" \
+		$(if $(NOTES_FILE),--notes-file "$(NOTES_FILE)") $(RELEASE_FLAGS)
 
 release-patch: ## Create patch release
 	$(MAKE) require-release-branch
