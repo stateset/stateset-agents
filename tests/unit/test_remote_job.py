@@ -174,6 +174,34 @@ class TestRemoteJobSpecSerialization:
 
         assert "--eval-prompts-json" not in spec.to_cli_args()
 
+    def test_eval_max_new_tokens_travels_with_the_prompts(self, dataset):
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            eval_prompts=["hi"],
+            eval_max_new_tokens=300,
+        )
+
+        args = spec.to_cli_args()
+
+        assert args[args.index("--eval-max-new-tokens") + 1] == "300"
+
+    def test_eval_max_new_tokens_flag_omitted_without_prompts(self, dataset):
+        """The budget only means something when there are prompts to answer."""
+        spec = RemoteJobSpec(
+            dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", eval_max_new_tokens=300
+        )
+
+        assert "--eval-max-new-tokens" not in spec.to_cli_args()
+
+    def test_eval_max_new_tokens_must_be_positive(self, dataset):
+        with pytest.raises(ValueError, match="eval_max_new_tokens"):
+            RemoteJobSpec(
+                dataset=dataset,
+                base_model="Qwen/Qwen3.5-0.8B",
+                eval_max_new_tokens=0,
+            )
+
     def test_eval_prompts_round_trip_through_json(self, dataset):
         spec = RemoteJobSpec(
             dataset=dataset,

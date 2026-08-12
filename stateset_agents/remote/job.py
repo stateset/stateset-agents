@@ -35,6 +35,7 @@ _POSITIVE_FIELDS = (
     "max_length",
     "per_device_batch_size",
     "gradient_accumulation_steps",
+    "eval_max_new_tokens",
     "timeout_s",
 )
 
@@ -97,6 +98,9 @@ class RemoteJobSpec:
     #: applied and again with the trained adapter, and writes
     #: ``eval_results.json`` into the output directory.
     eval_prompts: list[str] | None = None
+    #: Token budget per eval completion. 90 suits direct-answer models;
+    #: reasoning models (thinking preamble before the answer) need more.
+    eval_max_new_tokens: int = 90
 
     # --- Provider resources: never reach the training script ---------------
     #: GPU to request. Deliberately has no default: GPU names are provider
@@ -159,6 +163,7 @@ class RemoteJobSpec:
             args.append("--dry-run")
         if self.eval_prompts:
             args += ["--eval-prompts-json", json.dumps(self.eval_prompts)]
+            args += ["--eval-max-new-tokens", str(self.eval_max_new_tokens)]
         return args
 
     def to_dict(self) -> dict[str, Any]:

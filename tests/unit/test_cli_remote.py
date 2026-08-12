@@ -279,6 +279,15 @@ class TestEvalPromptsOption:
 
         assert result.exit_code == 0, result.output
         assert captured["spec"].eval_prompts is None
+        assert captured["spec"].eval_max_new_tokens == 90
+
+    def test_eval_max_new_tokens_reaches_the_spec(self, dataset, tmp_path, monkeypatch):
+        captured = capture_spec(monkeypatch)
+
+        result = self._invoke(dataset, tmp_path, "--eval-max-new-tokens", "300")
+
+        assert result.exit_code == 0, result.output
+        assert captured["spec"].eval_max_new_tokens == 300
 
     def test_missing_prompts_file_exits_2_with_a_clear_message(
         self, dataset, tmp_path, monkeypatch

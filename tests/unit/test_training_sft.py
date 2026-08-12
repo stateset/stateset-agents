@@ -387,6 +387,20 @@ class FakeGreedyModel:
         return torch.cat([input_ids, continuation], dim=1)
 
 
+class FakeThinkingTokenizer(FakeChatTokenizer):
+    """Template that accepts ``enable_thinking``, like reasoning models'."""
+
+    def __init__(self):
+        super().__init__()
+        self.enable_thinking: list[bool] = []
+
+    def apply_chat_template(
+        self, messages, tokenize, add_generation_prompt, enable_thinking=True
+    ):
+        self.enable_thinking.append(enable_thinking)
+        return super().apply_chat_template(messages, tokenize, add_generation_prompt)
+
+
 class TestGenerateCompletions:
     def test_generates_one_completion_per_prompt(self):
         model = FakeGreedyModel()
@@ -415,6 +429,32 @@ class TestGenerateCompletions:
         sft.generate_completions(FakeGreedyModel(), tokenizer, ["hello"])
 
         assert tokenizer.templated == [[{"role": "user", "content": "hello"}]]
+
+    def test_thinking_is_disabled_when_the_template_supports_it(self):
+        """Reasoning models default to thinking mode, which eats the whole
+        token budget as preamble; the eval must ask for the answer directly."""
+        tokenizer = FakeThinkingTokenizer()
+
+        sft.generate_completions(FakeGreedyModel(), tokenizer, ["hello"])
+
+        assert tokenizer.enable_thinking == [False]
+
+    def test_falls_back_when_the_template_rejects_enable_thinking(self):
+        """Non-reasoning templates (e.g. Muse Glimmer's) raise TypeError on
+        the kwarg and must keep working through the plain call."""
+        tokenizer = FakeChatTokenizer()
+
+        out = sft.generate_completions(FakeGreedyModel(), tokenizer, ["hello"])
+
+        assert len(out) == 1
+        assert tokenizer.templated == [[{"role": "user", "content": "hello"}]]
+
+    def test_max_new_tokens_is_configurable(self):
+        model = FakeGreedyModel()
+
+        sft.generate_completions(model, FakeChatTokenizer(), ["hi"], max_new_tokens=300)
+
+        assert model.generate_kwargs[0]["max_new_tokens"] == 300
 
 
 class TestWriteEvalResults:
@@ -455,6 +495,31 @@ class TestEvalPromptsCli:
 
         assert code == 0
         assert captured["eval_prompts"] == ["what's up?", "plain"]
+        assert captured["eval_max_new_tokens"] == 90
+
+    def test_eval_max_new_tokens_reaches_the_job(self, dataset, monkeypatch):
+        captured = {}
+
+        def fake_run_sft_job(job):
+            captured.update(job)
+            return {"returncode": 0, "logs": [], "output_dir": "out"}
+
+        monkeypatch.setattr(sft, "run_sft_job", fake_run_sft_job)
+
+        code = sft.main(
+            [
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--dry-run",
+                "--eval-max-new-tokens",
+                "300",
+            ]
+        )
+
+        assert code == 0
+        assert captured["eval_max_new_tokens"] == 300
 
     def test_invalid_json_is_rejected_before_any_work(self, dataset, monkeypatch):
         monkeypatch.setattr(

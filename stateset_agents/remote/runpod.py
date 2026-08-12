@@ -383,6 +383,7 @@ class RunPodExecutor(RemoteExecutor):
             # The command travels through ssh + bash, so the JSON blob must
             # survive a real shell — hence shlex.quote, not manual quoting.
             args += f" --eval-prompts-json {shlex.quote(json.dumps(spec.eval_prompts))}"
+            args += f" --eval-max-new-tokens {spec.eval_max_new_tokens}"
         return [
             f"pip install --quiet '{pin}'",
             f"python -m stateset_agents.training.sft {args}",

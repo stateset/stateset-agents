@@ -505,3 +505,20 @@ class TestEvalPrompts:
         make_executor(ssh=ssh).submit(spec)
 
         assert "--eval-prompts-json" not in self._train_command(ssh)
+
+    def test_eval_max_new_tokens_travels_with_the_prompts(self, make_executor, spec):
+        import shlex
+
+        ssh = FakeSsh()
+        spec.eval_prompts = self.PROMPTS
+        spec.eval_max_new_tokens = 300
+        make_executor(ssh=ssh).submit(spec)
+
+        tokens = shlex.split(self._train_command(ssh))
+        assert tokens[tokens.index("--eval-max-new-tokens") + 1] == "300"
+
+    def test_no_token_budget_flag_when_no_prompts(self, make_executor, spec):
+        ssh = FakeSsh()
+        make_executor(ssh=ssh).submit(spec)
+
+        assert "--eval-max-new-tokens" not in self._train_command(ssh)

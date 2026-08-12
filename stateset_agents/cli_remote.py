@@ -170,6 +170,12 @@ def train_remote(
         "and the tuned adapter; the comparison lands in "
         "output_dir/eval_results.json.",
     ),
+    eval_max_new_tokens: int = typer.Option(
+        90,
+        "--eval-max-new-tokens",
+        help="Token budget per eval completion. Raise it for reasoning "
+        "models whose answers follow a long preamble.",
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Print the training plan without training."
     ),
@@ -200,6 +206,7 @@ def train_remote(
             gradient_accumulation_steps=gradient_accumulation_steps,
             dry_run=dry_run,
             eval_prompts=prompts,
+            eval_max_new_tokens=eval_max_new_tokens,
             gpu=gpu,
             timeout_s=timeout,
             package_version=package_version,

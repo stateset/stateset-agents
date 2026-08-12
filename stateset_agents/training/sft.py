@@ -292,16 +292,32 @@ def generate_completions(
     through the model's chat template (with the generation prompt appended)
     and decoded back to just the completion text. Greedy decoding keeps the
     two runs comparable — sampling noise would swamp the tuning signal.
+
+    Reasoning models (e.g. NVIDIA Nemotron 3.5 Lightning) default to thinking
+    mode in their chat template, so the whole ``max_new_tokens`` budget goes
+    to the reasoning preamble and the comparison is truncated garbage (hit
+    for real on an H100 pod). ``enable_thinking=False`` turns that off;
+    templates that don't accept the kwarg (e.g. Muse Glimmer's) raise
+    TypeError and get the plain call instead.
     """
     import torch
 
     completions: list[str] = []
     for prompt in prompts:
-        text = tokenizer.apply_chat_template(
-            [{"role": "user", "content": prompt}],
-            tokenize=False,
-            add_generation_prompt=True,
-        )
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            text = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+        except TypeError:
+            text = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
         inputs = tokenizer(text, return_tensors="pt").to(model.device)
         with torch.no_grad():
             output = model.generate(
@@ -329,6 +345,7 @@ def run_sft(
     per_device_batch_size: int,
     gradient_accumulation_steps: int,
     eval_prompts: list[str] | None = None,
+    eval_max_new_tokens: int = 90,
 ) -> Path:
     """Run the actual SFT training on GPU.
 
@@ -374,7 +391,9 @@ def run_sft(
         # grinding). Move it now when a GPU exists.
         if gpu_available():
             model = model.to("cuda")
-        base_completions = generate_completions(model, tokenizer, eval_prompts)
+        base_completions = generate_completions(
+            model, tokenizer, eval_prompts, max_new_tokens=eval_max_new_tokens
+        )
 
     target_modules = infer_lora_target_modules(model)
     logger.info(
@@ -450,7 +469,9 @@ def run_sft(
             len(eval_prompts),
         )
         model.eval()
-        tuned_completions = generate_completions(model, tokenizer, eval_prompts)
+        tuned_completions = generate_completions(
+            model, tokenizer, eval_prompts, max_new_tokens=eval_max_new_tokens
+        )
         results_path = write_eval_results(
             output_dir, eval_prompts, base_completions, tuned_completions
         )
@@ -533,6 +554,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         per_device_batch_size=job["per_device_batch_size"],
                         gradient_accumulation_steps=job["gradient_accumulation_steps"],
                         eval_prompts=job.get("eval_prompts"),
+                        eval_max_new_tokens=job.get("eval_max_new_tokens", 90),
                     )
     except Exception as exc:  # reported, never raised — see docstring
         logger.error("SFT job failed: %s", exc)
@@ -587,6 +609,13 @@ def build_parser() -> Any:
         "comparison, written to output_dir/eval_results.json. JSON rather "
         "than a file path so remote workers need no second upload.",
     )
+    parser.add_argument(
+        "--eval-max-new-tokens",
+        type=int,
+        default=90,
+        help="Token budget per eval completion. Raise it for reasoning "
+        "models whose answers follow a long preamble.",
+    )
     return parser
 
 
@@ -629,6 +658,7 @@ def main(argv: list[str] | None = None) -> int:
             "gradient_accumulation_steps": args.gradient_accumulation_steps,
             "dry_run": args.dry_run,
             "eval_prompts": eval_prompts,
+            "eval_max_new_tokens": args.eval_max_new_tokens,
         }
     )
 
