@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786560784132,
+  "lastUpdate": 1786561541112,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2018,6 +2018,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.4812703753727236e-8",
             "extra": "mean: 431.93111567491235 nsec\nrounds: 57091"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "a13f173b3cd5a5259595d69aa60fa157e76fcff4",
+          "message": "feat(training): GSPO GPU verification job, verified live on RunPod\n\nAdd stateset_agents/training/gpu_verify_rl.py — a runnable module\n(python -m stateset_agents.training.gpu_verify_rl) that runs a short\nreal GSPO training on a tiny GPT-2 and asserts the same convergence\nproperty as the nightly CPU e2e test (target-token probability\nstrictly increases), on CUDA when available and CPU otherwise. Prints\na GPU_VERIFY_RL_SUMMARY JSON line and exits 0/1.\n\nAdd an rl-live-smoke job to .github/workflows/gpu-verify.yml mirroring\nthe SFT job's secret gating, built from RunPodApi + SshTransport\nprimitives with unconditional pod termination.\n\nVerified live on a RunPod NVIDIA RTX A4500 (A4000 had no availability):\ntarget-token prob 2.81e-05 -> 0.1246 over 40 GSPO steps, exit 0, pod\nterminated (0 pods remaining).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T12:02:32-07:00",
+          "tree_id": "eb8bf9cdd04e1e78c1334710aa8a873940bd4591",
+          "url": "https://github.com/stateset/stateset-agents/commit/a13f173b3cd5a5259595d69aa60fa157e76fcff4"
+        },
+        "date": 1786561540536,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 7481.488909420528,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000402311545302002",
+            "extra": "mean: 133.6632336299826 usec\nrounds: 1237"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9185.683874196298,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013702458669070229",
+            "extra": "mean: 108.86505715803278 usec\nrounds: 1907"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6697.873122626291,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016127808554517387",
+            "extra": "mean: 149.3011261473242 usec\nrounds: 2941"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 836.3369911060641,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000019765370966086413",
+            "extra": "mean: 1.1956902667637477 msec\nrounds: 686"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 180.30896301452538,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005995476878156711",
+            "extra": "mean: 5.546035999993199 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2338999.8426800147,
+            "unit": "iter/sec",
+            "range": "stddev: 3.37929006335874e-8",
+            "extra": "mean: 427.5331625735403 nsec\nrounds: 57684"
           }
         ]
       }
