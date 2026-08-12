@@ -357,3 +357,27 @@ class TestVisionTowerExclusion:
     def test_text_stack_fc_layers_still_count(self):
         model = self._model(["model.decoder.layers.0.fc1"])
         assert sft.infer_lora_target_modules(model) == ["fc1"]
+
+    def test_names_shared_between_stacks_are_kept_with_warning(self, caplog):
+        model = self._model(
+            [
+                "language_model.layers.0.mlp.fc1",
+                "vision_tower.blocks.0.mlp.fc1",
+            ]
+        )
+        with caplog.at_level("WARNING", logger="sft_from_curated"):
+            targets = sft.infer_lora_target_modules(model)
+        assert targets == ["fc1"]
+        assert "both text and non-text" in caplog.text
+
+    def test_vision_adapter_and_projection_are_excluded(self):
+        """Names observed on the real Muse-Glimmer-30B weight map."""
+        model = self._model(
+            [
+                "model.language_model.layers.0.self_attn.q_proj",
+                "model.vision_adapter.fc1",
+                "model.vision_projection.fc2",
+                "model.vision_tower.layers.0.mlp.fc1",
+            ]
+        )
+        assert sft.infer_lora_target_modules(model) == ["q_proj"]

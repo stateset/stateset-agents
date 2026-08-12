@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Vision-tower exclusion now actually works on real multimodal models.**
+  Verified live on the published 0.23.1: peft matches `target_modules` by
+  leaf name across the whole model, so skipping vision modules during
+  inference was insufficient — and Muse Glimmer's `vision_adapter` /
+  `vision_projection` weren't in the marker list. Inference is now two-pass
+  (names existing only in non-text stacks are dropped from the list) and
+  the marker set carries the names observed on the real weight map.
+
 ## [0.23.1] - 2026-08-12 — train-remote fixes verified live on Muse Glimmer 30B
 
 ### Fixed

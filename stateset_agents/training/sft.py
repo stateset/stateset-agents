@@ -150,6 +150,9 @@ _NON_TEXT_STACK_MARKERS = frozenset(
         "visual",
         "vision_encoder",
         "image_processor",
+        "vision_adapter",
+        "vision_projection",
+        "vision_projector",
         "perception_encoder",
         "multi_modal_projector",
         "mm_projector",
@@ -238,22 +241,39 @@ def infer_lora_target_modules(model: Any) -> list[str]:
     which means "we did not recognise anything, let peft try" rather than a
     guess that would fail confusingly later.
     """
-    found = set()
+    # peft matches target_modules by leaf name across the WHOLE model, so a
+    # name that only exists in a vision tower/adapter must be dropped from
+    # the list entirely — skipping it during the walk is not enough
+    # (verified live on meta-models/Muse-Glimmer-30B: fc1/fc2 exist only
+    # under model.vision_tower/model.vision_adapter, and listing them
+    # adapted the ViT despite text-only SFT sending it no gradient).
+    text_found: set[str] = set()
+    non_text_found: set[str] = set()
     for name, _module in model.named_modules():
-        # Multimodal composites carry a vision tower whose projections
-        # (fc1/fc2 in ViT blocks) share names with decoder MLP layers.
-        # Text-only SFT gets no gradient signal through the vision path, so
-        # adapting it only bloats the adapter (observed on
-        # meta-models/Muse-Glimmer-30B: fc1/fc2 came from the ViT).
-        if any(part in _NON_TEXT_STACK_MARKERS for part in name.split(".")):
-            continue
         leaf = name.rsplit(".", 1)[-1]
-        if leaf in _LORA_TARGET_CANDIDATES:
-            found.add(leaf)
+        if leaf not in _LORA_TARGET_CANDIDATES:
+            continue
+        if any(part in _NON_TEXT_STACK_MARKERS for part in name.split(".")):
+            non_text_found.add(leaf)
+        else:
+            text_found.add(leaf)
+    dropped = non_text_found - text_found
+    if dropped:
+        logger.info(
+            "Skipping LoRA candidates that exist only in non-text stacks: %s",
+            ", ".join(sorted(dropped)),
+        )
+    shared = non_text_found & text_found
+    if shared:
+        logger.warning(
+            "LoRA candidates %s exist in both text and non-text stacks; "
+            "peft's leaf-name matching will adapt both.",
+            ", ".join(sorted(shared)),
+        )
     # The output head is deliberately excluded: adapting it inflates the
     # adapter with a vocab-sized matrix for no benefit on SFT.
-    found.discard("lm_head")
-    return sorted(found)
+    text_found.discard("lm_head")
+    return sorted(text_found)
 
 
 def run_sft(
