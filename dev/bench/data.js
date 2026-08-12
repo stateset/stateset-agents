@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786556316720,
+  "lastUpdate": 1786560784132,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1954,6 +1954,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.48725542285405e-8",
             "extra": "mean: 344.65286173346306 nsec\nrounds: 137836"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "b1cc1f3a05e353f22f62692d64c776e1ec9b9a8f",
+          "message": "feat(sft): eval prompts can assert — pass/fail gate on the finetuned model\n\neval_prompts entries may now be spec dicts {\"prompt\", \"expect\",\n\"forbid\", \"judge\", \"min_judge_score\"} alongside plain strings.\nexpect/forbid substrings match case-insensitively against the finetuned\ncompletion; rows in eval_results.json gain checks {expect_hits,\nforbid_hits, passed} and, when a domain judge is importable on the\nworker, judge_score (degrading to a logged warning otherwise). When any\nassertion fails, run_sft_job exits non-zero AFTER the adapter and\neval_results.json are saved, so a red run never destroys the artifacts.\n\n- train-remote --eval-prompts file: a line that parses as a JSON object\n  is a prompt spec; any other line stays a plain prompt (back-compat)\n- RemoteJobSpec validates spec entries at submit time, before a GPU is\n  rented; dict prompts ride the existing shlex-quoted JSON blob to pods\n- gpu-verify.yml now gates on completion content (expect: [\"number\"]),\n  not just adapter tensors\n- docs: CLI_REFERENCE train-remote file format; CHANGELOG [Unreleased]\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T11:49:26-07:00",
+          "tree_id": "db7f067ce9baf88ed9bd1b108b3c4ca979e49759",
+          "url": "https://github.com/stateset/stateset-agents/commit/b1cc1f3a05e353f22f62692d64c776e1ec9b9a8f"
+        },
+        "date": 1786560783618,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8499.94955114605,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015263968562270185",
+            "extra": "mean: 117.6477570817076 usec\nrounds: 1412"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9169.112132376107,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001436954512273119",
+            "extra": "mean: 109.06181378990918 usec\nrounds: 2132"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6639.278138264141,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016579780065992793",
+            "extra": "mean: 150.61878402664013 usec\nrounds: 3005"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 830.0615464685093,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000022589097541090507",
+            "extra": "mean: 1.2047299435258658 msec\nrounds: 726"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 178.65770003530326,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00007047275706134504",
+            "extra": "mean: 5.597295833330425 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2315183.9812175925,
+            "unit": "iter/sec",
+            "range": "stddev: 3.4812703753727236e-8",
+            "extra": "mean: 431.93111567491235 nsec\nrounds: 57091"
           }
         ]
       }
