@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786555106443,
+  "lastUpdate": 1786556316720,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1890,6 +1890,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.734759093015654e-8",
             "extra": "mean: 460.9660374526282 nsec\nrounds: 106747"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "ba9036a68a7836776a3488207d1bfa8ad084e63f",
+          "message": "fix(sft): reasoning-aware eval — disable thinking, configurable token budget\n\nNVIDIA Nemotron 3.5 Lightning's chat template defaults to thinking mode,\nso the fixed max_new_tokens=90 eval budget was consumed entirely by the\nreasoning preamble and the base-vs-tuned comparison was truncated garbage\n(hit for real on an H100 pod).\n\n- generate_completions now passes enable_thinking=False to\n  apply_chat_template, falling back on TypeError for templates that don't\n  accept the kwarg (Muse Glimmer's doesn't).\n- New job-level RemoteJobSpec.eval_max_new_tokens (default 90), flowed\n  through run_sft_job/run_sft, the module CLI (--eval-max-new-tokens),\n  RunPod command construction, and train-remote.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T10:35:29-07:00",
+          "tree_id": "9954e849e2e5dd4db24611cc7b5d0d94e5151a8a",
+          "url": "https://github.com/stateset/stateset-agents/commit/ba9036a68a7836776a3488207d1bfa8ad084e63f"
+        },
+        "date": 1786556315455,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 10931.709992492579,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001566628563985655",
+            "extra": "mean: 91.47699679983793 usec\nrounds: 1562"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11922.311755563518,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011373463054274318",
+            "extra": "mean: 83.8763505352351 usec\nrounds: 2616"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 9139.942096136827,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009473724636169114",
+            "extra": "mean: 109.40988350710333 usec\nrounds: 4026"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1076.5656056098037,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002168487833295286",
+            "extra": "mean: 928.8797587338541 usec\nrounds: 916"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 267.66113405572224,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00010578767077948366",
+            "extra": "mean: 3.736067261045894 msec\nrounds: 249"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2901470.1777620786,
+            "unit": "iter/sec",
+            "range": "stddev: 3.48725542285405e-8",
+            "extra": "mean: 344.65286173346306 nsec\nrounds: 137836"
           }
         ]
       }
