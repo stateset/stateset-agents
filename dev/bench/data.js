@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786535944037,
+  "lastUpdate": 1786536970567,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1442,6 +1442,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.937611426409446e-8",
             "extra": "mean: 473.36631985819093 nsec\nrounds: 104189"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "ea78de94e18359a98c7f62ad402cfd4e4dd24b27",
+          "message": "fix(sft): make vision-tower LoRA exclusion effective on real models\n\nLive rerun on published 0.23.1 showed fc1/fc2 still adapted: peft matches\ntarget_modules by leaf name model-wide, so skipping vision modules during\nthe walk changes nothing when the name never occurs in the text stack's\ncandidate set anyway — and Muse Glimmer's vision_adapter/vision_projection\nweren't in the marker list. Two-pass inference now drops names that exist\nonly in non-text stacks (kept with a warning when shared), and the marker\nset includes the names from the real weight map.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T05:13:18-07:00",
+          "tree_id": "ea5dcdd723cf7da5df897d235e006eb66010eebc",
+          "url": "https://github.com/stateset/stateset-agents/commit/ea78de94e18359a98c7f62ad402cfd4e4dd24b27"
+        },
+        "date": 1786536969194,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5983.06743414436,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017917716922215294",
+            "extra": "mean: 167.1383468441569 usec\nrounds: 1505"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6567.079802341841,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001716052383403732",
+            "extra": "mean: 152.27468374046512 usec\nrounds: 2128"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5093.4102817452795,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017495821444022488",
+            "extra": "mean: 196.33211241277533 usec\nrounds: 3158"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 737.9806292267548,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000031247033822413255",
+            "extra": "mean: 1.355049117004311 msec\nrounds: 641"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 186.40938679952063,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004066446448175061",
+            "extra": "mean: 5.364536717646515 msec\nrounds: 170"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2066365.0120737331,
+            "unit": "iter/sec",
+            "range": "stddev: 5.177381166281942e-8",
+            "extra": "mean: 483.94160477796424 nsec\nrounds: 101123"
           }
         ]
       }
