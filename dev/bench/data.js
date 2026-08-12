@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786523117053,
+  "lastUpdate": 1786535944037,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1378,6 +1378,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.3374425651190226e-8",
             "extra": "mean: 277.6921274767783 nsec\nrounds: 171292"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "52245558f99217749a909ec1274b38e383cfec4c",
+          "message": "chore(release): v0.23.1 — train-remote fixes verified live on Muse Glimmer 30B\n\nVersion 0.23.1 across pyproject, package, helm chart, k8s manifests, docs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T04:56:16-07:00",
+          "tree_id": "cb4fab88ac9870939bdf6dfa6a1d5211abc5535b",
+          "url": "https://github.com/stateset/stateset-agents/commit/52245558f99217749a909ec1274b38e383cfec4c"
+        },
+        "date": 1786535942966,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6020.4125643265525,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015501178884185818",
+            "extra": "mean: 166.10157349106203 usec\nrounds: 1592"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6545.811101982855,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014592502116579066",
+            "extra": "mean: 152.769455827572 usec\nrounds: 2128"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4971.799015254918,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016176446765935806",
+            "extra": "mean: 201.1344378426623 usec\nrounds: 3652"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 717.5625716911154,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00018226029939470375",
+            "extra": "mean: 1.393606689439292 msec\nrounds: 644"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 179.96887560418213,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006510369655915982",
+            "extra": "mean: 5.556516351190461 msec\nrounds: 168"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2112528.8345389166,
+            "unit": "iter/sec",
+            "range": "stddev: 4.937611426409446e-8",
+            "extra": "mean: 473.36631985819093 nsec\nrounds: 104189"
           }
         ]
       }
