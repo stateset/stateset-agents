@@ -500,6 +500,22 @@ class TestEvalPrompts:
         blob = tokens[tokens.index("--eval-prompts-json") + 1]
         assert json.loads(blob) == self.PROMPTS
 
+    def test_spec_dict_prompts_survive_the_shell_as_json(self, make_executor, spec):
+        """Prompt-spec objects add nested quotes/brackets to the JSON blob;
+        shlex quoting must keep the whole thing one decodable argument."""
+        import shlex
+
+        ssh = FakeSsh()
+        spec.eval_prompts = [
+            "plain prompt",
+            {"prompt": "what's the policy?", "expect": ["30 days"], "forbid": ["no"]},
+        ]
+        make_executor(ssh=ssh).submit(spec)
+
+        tokens = shlex.split(self._train_command(ssh))
+        blob = tokens[tokens.index("--eval-prompts-json") + 1]
+        assert json.loads(blob) == spec.eval_prompts
+
     def test_no_flag_when_no_prompts(self, make_executor, spec):
         ssh = FakeSsh()
         make_executor(ssh=ssh).submit(spec)

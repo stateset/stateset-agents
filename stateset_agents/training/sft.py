@@ -38,11 +38,16 @@ from typing import Any
 logger = logging.getLogger("sft_from_curated")
 
 __all__ = [
+    "build_eval_extras",
     "build_training_arguments",
+    "eval_gate_failures",
+    "evaluate_checks",
     "generate_completions",
     "gpu_available",
+    "judge_completion",
     "load_base_model_for_sft",
     "load_chat_dataset",
+    "normalize_eval_prompts",
     "print_training_plan",
     "run_sft",
     "run_sft_job",
@@ -333,6 +338,169 @@ def generate_completions(
     return completions
 
 
+#: Keys an eval prompt-spec dict may carry. Anything else is a typo the user
+#: should hear about before renting a GPU.
+_EVAL_SPEC_KEYS = frozenset({"prompt", "expect", "forbid", "judge", "min_judge_score"})
+
+
+def normalize_eval_prompts(
+    entries: list[str | dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Normalize eval prompt entries to spec dicts.
+
+    An entry may be a plain string (a bare prompt, no assertions — the
+    original format) or a dict ``{"prompt": str, "expect": [substrings],
+    "forbid": [substrings], "judge": str, "min_judge_score": float}`` where
+    everything but ``prompt`` is optional. Raises ``ValueError`` on anything
+    else — this runs before the GPU is rented, so it should be loud.
+    """
+    specs: list[dict[str, Any]] = []
+    for i, entry in enumerate(entries):
+        if isinstance(entry, str):
+            specs.append({"prompt": entry})
+            continue
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"eval prompt {i} must be a string or an object, got "
+                f"{type(entry).__name__}"
+            )
+        unknown = sorted(set(entry) - _EVAL_SPEC_KEYS)
+        if unknown:
+            raise ValueError(
+                f"eval prompt {i} has unknown key(s): {', '.join(unknown)}"
+            )
+        if not isinstance(entry.get("prompt"), str) or not entry["prompt"].strip():
+            raise ValueError(f"eval prompt {i} needs a non-empty 'prompt' string")
+        for key in ("expect", "forbid"):
+            value = entry.get(key, [])
+            if not isinstance(value, list) or not all(
+                isinstance(s, str) for s in value
+            ):
+                raise ValueError(f"eval prompt {i}: '{key}' must be a list of strings")
+        if "judge" in entry and not isinstance(entry["judge"], str):
+            raise ValueError(f"eval prompt {i}: 'judge' must be a string")
+        if "min_judge_score" in entry and not isinstance(
+            entry["min_judge_score"], (int, float)
+        ):
+            raise ValueError(f"eval prompt {i}: 'min_judge_score' must be a number")
+        specs.append(dict(entry))
+    return specs
+
+
+def evaluate_checks(
+    completion: str, expect: list[str], forbid: list[str]
+) -> dict[str, Any]:
+    """Case-insensitively match ``expect``/``forbid`` substrings.
+
+    Passes when every ``expect`` substring appears in ``completion`` and no
+    ``forbid`` substring does.
+    """
+    haystack = completion.lower()
+    expect_hits = [s for s in expect if s.lower() in haystack]
+    forbid_hits = [s for s in forbid if s.lower() in haystack]
+    return {
+        "expect_hits": expect_hits,
+        "forbid_hits": forbid_hits,
+        "passed": len(expect_hits) == len(expect) and not forbid_hits,
+    }
+
+
+def _create_domain_reward(name: str) -> Any:
+    """Import hook for the optional judge — split out so tests can fake it."""
+    from stateset_agents.rewards.multi_objective_reward import create_domain_reward
+
+    return create_domain_reward(name)
+
+
+def judge_completion(judge: str, prompt: str, completion: str) -> float | None:
+    """Score ``completion`` with a domain reward, if one is importable here.
+
+    The judge is a nicety on top of the substring checks, and the reward
+    stack may simply not be installed on the pod — so every failure mode
+    degrades to a logged warning and ``None``, never an exception.
+    """
+    try:
+        reward = _create_domain_reward(judge)
+    except Exception as exc:
+        logger.warning(
+            "Judge %r unavailable on this worker (%s); skipping judge score.",
+            judge,
+            exc,
+        )
+        return None
+    try:
+        import asyncio
+
+        result = asyncio.run(
+            reward.compute_reward(
+                turns=[
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": completion},
+                ]
+            )
+        )
+        return float(result.score)
+    except Exception as exc:
+        logger.warning("Judge %r failed to score (%s); skipping.", judge, exc)
+        return None
+
+
+def build_eval_extras(
+    specs: list[dict[str, Any]], finetuned: list[str]
+) -> list[dict[str, Any]]:
+    """Per-row extra fields for ``eval_results.json``.
+
+    Rows for plain prompts stay exactly as before (empty extras); rows whose
+    spec carries assertions gain ``checks``, and specs naming a ``judge``
+    gain ``judge_score`` (when the judge could run).
+    """
+    extras: list[dict[str, Any]] = []
+    for spec, completion in zip(specs, finetuned, strict=True):
+        extra: dict[str, Any] = {}
+        expect = spec.get("expect", [])
+        forbid = spec.get("forbid", [])
+        if expect or forbid:
+            extra["checks"] = evaluate_checks(completion, expect, forbid)
+        if spec.get("judge"):
+            score = judge_completion(spec["judge"], spec["prompt"], completion)
+            if score is not None:
+                extra["judge_score"] = score
+        extras.append(extra)
+    return extras
+
+
+def eval_gate_failures(
+    specs: list[dict[str, Any]], rows: list[dict[str, Any]]
+) -> list[str]:
+    """Human-readable assertion failures across the eval rows.
+
+    A row fails when its substring checks did not pass, or when the spec set
+    ``min_judge_score`` and a judge score exists below it. A judge that could
+    not run never fails the gate — judge failures degrade, by design.
+    """
+    failures: list[str] = []
+    for spec, row in zip(specs, rows, strict=True):
+        prompt = spec["prompt"]
+        checks = row.get("checks")
+        if checks and not checks["passed"]:
+            missing = [
+                s for s in spec.get("expect", []) if s not in checks["expect_hits"]
+            ]
+            parts = []
+            if missing:
+                parts.append(f"missing expected {missing!r}")
+            if checks["forbid_hits"]:
+                parts.append(f"contains forbidden {checks['forbid_hits']!r}")
+            failures.append(f"{prompt!r}: {'; '.join(parts)}")
+        min_score = spec.get("min_judge_score")
+        score = row.get("judge_score")
+        if min_score is not None and score is not None and score < min_score:
+            failures.append(
+                f"{prompt!r}: judge_score {score:.3f} < min_judge_score {min_score}"
+            )
+    return failures
+
+
 def run_sft(
     rows: list[dict[str, Any]],
     base_model: str,
@@ -344,7 +512,7 @@ def run_sft(
     max_length: int,
     per_device_batch_size: int,
     gradient_accumulation_steps: int,
-    eval_prompts: list[str] | None = None,
+    eval_prompts: list[str | dict[str, Any]] | None = None,
     eval_max_new_tokens: int = 90,
 ) -> Path:
     """Run the actual SFT training on GPU.
@@ -352,6 +520,11 @@ def run_sft(
     When ``eval_prompts`` is given, a completion per prompt is generated with
     the base model *before* LoRA is applied and again through the trained
     adapter afterwards; the pairs land in ``output_dir/eval_results.json``.
+    Entries may be plain strings or spec dicts (see
+    ``normalize_eval_prompts``); assertion results are recorded per row, and
+    the assertion *gate* — exiting non-zero on failure — belongs to
+    ``run_sft_job``, so a failed assertion never destroys the adapter this
+    function already saved.
 
     Uses ``transformers.Trainer`` directly with a PEFT LoRA adapter on top of
     the base model. The result is saved as a LoRA adapter directory
@@ -379,11 +552,14 @@ def run_sft(
         tokenizer.pad_token = tokenizer.eos_token
     model = load_base_model_for_sft(base_model)
 
+    eval_specs = normalize_eval_prompts(eval_prompts or [])
+    eval_prompt_texts = [spec["prompt"] for spec in eval_specs]
+
     base_completions: list[str] = []
-    if eval_prompts:
+    if eval_prompt_texts:
         logger.info(
             "Generating base-model completions for %d eval prompt(s)…",
-            len(eval_prompts),
+            len(eval_prompt_texts),
         )
         # The Trainer moves the model to GPU later; base-eval generation runs
         # BEFORE that, and a 30B generate on CPU takes tens of minutes of
@@ -392,7 +568,7 @@ def run_sft(
         if gpu_available():
             model = model.to("cuda")
         base_completions = generate_completions(
-            model, tokenizer, eval_prompts, max_new_tokens=eval_max_new_tokens
+            model, tokenizer, eval_prompt_texts, max_new_tokens=eval_max_new_tokens
         )
 
     target_modules = infer_lora_target_modules(model)
@@ -463,19 +639,28 @@ def run_sft(
     model.save_pretrained(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
 
-    if eval_prompts:
+    if eval_prompt_texts:
         logger.info(
             "Generating fine-tuned completions for %d eval prompt(s)…",
-            len(eval_prompts),
+            len(eval_prompt_texts),
         )
         model.eval()
         tuned_completions = generate_completions(
-            model, tokenizer, eval_prompts, max_new_tokens=eval_max_new_tokens
+            model, tokenizer, eval_prompt_texts, max_new_tokens=eval_max_new_tokens
         )
+        extras = build_eval_extras(eval_specs, tuned_completions)
         results_path = write_eval_results(
-            output_dir, eval_prompts, base_completions, tuned_completions
+            output_dir,
+            eval_prompt_texts,
+            base_completions,
+            tuned_completions,
+            extras=extras,
         )
         logger.info("Eval comparison written to %s", results_path)
+        checked = [e for e in extras if "checks" in e]
+        if checked:
+            passed = sum(1 for e in checked if e["checks"]["passed"])
+            logger.info("Eval checks: %d/%d prompt(s) passed.", passed, len(checked))
 
     return output_dir
 
@@ -485,20 +670,58 @@ def write_eval_results(
     prompts: list[str],
     base: list[str],
     finetuned: list[str],
+    extras: list[dict[str, Any]] | None = None,
 ) -> Path:
-    """Write the base-vs-tuned comparison as ``eval_results.json``."""
+    """Write the base-vs-tuned comparison as ``eval_results.json``.
+
+    ``extras`` (from ``build_eval_extras``) merges per-row assertion fields —
+    ``checks``, ``judge_score`` — into the corresponding row; rows for plain
+    prompts stay the original three-key shape.
+    """
+    if extras is None:
+        extras = [{} for _ in prompts]
     path = Path(output_dir) / "eval_results.json"
     path.write_text(
         json.dumps(
             [
-                {"prompt": p, "base": b, "finetuned": f}
-                for p, b, f in zip(prompts, base, finetuned, strict=True)
+                {"prompt": p, "base": b, "finetuned": f, **extra}
+                for p, b, f, extra in zip(prompts, base, finetuned, extras, strict=True)
             ],
             indent=2,
         )
         + "\n"
     )
     return path
+
+
+def _apply_eval_gate(
+    eval_prompts: list[str | dict[str, Any]] | None, output_dir: Path
+) -> int:
+    """Return the job exit code the eval assertions call for.
+
+    Runs strictly AFTER ``run_sft`` has saved the adapter and written
+    ``eval_results.json`` — a failed assertion turns the job red without
+    destroying the training artifacts.
+    """
+    if not eval_prompts:
+        return 0
+    specs = normalize_eval_prompts(eval_prompts)
+    results_path = output_dir / "eval_results.json"
+    if not results_path.exists():  # e.g. eval skipped; nothing to gate on
+        return 0
+    rows = json.loads(results_path.read_text())
+    failures = eval_gate_failures(specs, rows)
+    if not failures:
+        return 0
+    for failure in failures:
+        logger.error("Eval assertion failed: %s", failure)
+    logger.error(
+        "%d eval assertion(s) failed — exiting non-zero. The adapter and "
+        "eval_results.json in %s were saved before this gate ran.",
+        len(failures),
+        output_dir,
+    )
+    return 1
 
 
 def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -556,6 +779,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         eval_prompts=job.get("eval_prompts"),
                         eval_max_new_tokens=job.get("eval_max_new_tokens", 90),
                     )
+                    returncode = _apply_eval_gate(job.get("eval_prompts"), output_dir)
     except Exception as exc:  # reported, never raised — see docstring
         logger.error("SFT job failed: %s", exc)
         returncode = 1
@@ -605,8 +829,11 @@ def build_parser() -> Any:
     parser.add_argument(
         "--eval-prompts-json",
         default=None,
-        help="JSON-encoded list of prompts for a post-train base-vs-tuned "
-        "comparison, written to output_dir/eval_results.json. JSON rather "
+        help="JSON-encoded list of eval entries for a post-train base-vs-"
+        "tuned comparison, written to output_dir/eval_results.json. Each "
+        "entry is a plain prompt string, or a spec object {'prompt', "
+        "'expect', 'forbid', 'judge', 'min_judge_score'} whose assertions "
+        "gate the job's exit code (after artifacts are saved). JSON rather "
         "than a file path so remote workers need no second upload.",
     )
     parser.add_argument(
@@ -631,17 +858,23 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
 
-    eval_prompts: list[str] | None = None
+    eval_prompts: list[str | dict[str, Any]] | None = None
     if args.eval_prompts_json:
         try:
             eval_prompts = json.loads(args.eval_prompts_json)
         except json.JSONDecodeError as exc:
             print(f"--eval-prompts-json is not valid JSON: {exc}")
             return 2
-        if not isinstance(eval_prompts, list) or not all(
-            isinstance(p, str) for p in eval_prompts
-        ):
-            print("--eval-prompts-json must be a JSON list of strings")
+        if not isinstance(eval_prompts, list):
+            print(
+                "--eval-prompts-json must be a JSON list of strings or "
+                "prompt-spec objects"
+            )
+            return 2
+        try:
+            normalize_eval_prompts(eval_prompts)
+        except ValueError as exc:
+            print(f"--eval-prompts-json is invalid: {exc}")
             return 2
 
     outcome = run_sft_job(

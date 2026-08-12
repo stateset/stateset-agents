@@ -623,3 +623,351 @@ class TestVisionTowerExclusion:
         base_gen = source.index("base_completions = generate_completions")
         gpu_move = source.index('model.to("cuda")')
         assert gpu_move < base_gen
+
+
+class TestNormalizeEvalPrompts:
+    def test_plain_strings_pass_through_as_prompt_only_specs(self):
+        specs = sft.normalize_eval_prompts(["hi", "there"])
+
+        assert specs == [{"prompt": "hi"}, {"prompt": "there"}]
+
+    def test_spec_dicts_are_kept_verbatim(self):
+        spec = {"prompt": "p", "expect": ["a"], "forbid": ["b"]}
+
+        assert sft.normalize_eval_prompts([spec]) == [spec]
+
+    def test_strings_and_dicts_mix(self):
+        specs = sft.normalize_eval_prompts(["plain", {"prompt": "p"}])
+
+        assert specs == [{"prompt": "plain"}, {"prompt": "p"}]
+
+    def test_missing_prompt_is_rejected(self):
+        with pytest.raises(ValueError, match="non-empty 'prompt'"):
+            sft.normalize_eval_prompts([{"expect": ["x"]}])
+
+    def test_unknown_keys_are_rejected(self):
+        """A typo'd key must be loud — this runs before a GPU is rented."""
+        with pytest.raises(ValueError, match="expects"):
+            sft.normalize_eval_prompts([{"prompt": "p", "expects": ["x"]}])
+
+    def test_non_list_expect_is_rejected(self):
+        with pytest.raises(ValueError, match="'expect' must be a list"):
+            sft.normalize_eval_prompts([{"prompt": "p", "expect": "x"}])
+
+    def test_non_string_entry_is_rejected(self):
+        with pytest.raises(ValueError, match="string or an object"):
+            sft.normalize_eval_prompts([42])
+
+    def test_non_numeric_min_judge_score_is_rejected(self):
+        with pytest.raises(ValueError, match="min_judge_score"):
+            sft.normalize_eval_prompts([{"prompt": "p", "min_judge_score": "high"}])
+
+
+class TestEvaluateChecks:
+    def test_passes_when_every_expect_hits_and_no_forbid_does(self):
+        checks = sft.evaluate_checks(
+            "The number is 41.", expect=["number", "41"], forbid=["error"]
+        )
+
+        assert checks == {
+            "expect_hits": ["number", "41"],
+            "forbid_hits": [],
+            "passed": True,
+        }
+
+    def test_matching_is_case_insensitive_both_ways(self):
+        checks = sft.evaluate_checks(
+            "REFUND Granted", expect=["refund"], forbid=["GRANTED"]
+        )
+
+        assert checks["expect_hits"] == ["refund"]
+        assert checks["forbid_hits"] == ["GRANTED"]
+        assert checks["passed"] is False
+
+    def test_missing_expect_fails(self):
+        checks = sft.evaluate_checks("nothing here", expect=["number"], forbid=[])
+
+        assert checks == {
+            "expect_hits": [],
+            "forbid_hits": [],
+            "passed": False,
+        }
+
+    def test_no_assertions_trivially_passes(self):
+        assert sft.evaluate_checks("anything", expect=[], forbid=[])["passed"]
+
+
+class FakeJudge:
+    """Stands in for a domain reward: async compute_reward -> .score."""
+
+    def __init__(self, score):
+        self._score = score
+
+    async def compute_reward(self, turns):
+        self.turns = turns
+
+        class Result:
+            score = self._score
+
+        return Result()
+
+
+class TestJudgeCompletion:
+    def test_scores_through_the_domain_reward(self, monkeypatch):
+        judge = FakeJudge(0.75)
+        monkeypatch.setattr(sft, "_create_domain_reward", lambda name: judge)
+
+        score = sft.judge_completion("customer_support", "q", "a")
+
+        assert score == 0.75
+        assert judge.turns == [
+            {"role": "user", "content": "q"},
+            {"role": "assistant", "content": "a"},
+        ]
+
+    def test_unimportable_reward_degrades_to_none_with_a_warning(
+        self, monkeypatch, caplog
+    ):
+        """The reward stack may simply not be installed on the pod."""
+
+        def boom(name):
+            raise ImportError("no rewards on this worker")
+
+        monkeypatch.setattr(sft, "_create_domain_reward", boom)
+
+        with caplog.at_level("WARNING", logger="sft_from_curated"):
+            assert sft.judge_completion("customer_support", "q", "a") is None
+        assert "skipping judge score" in caplog.text
+
+    def test_scoring_failure_degrades_to_none_with_a_warning(self, monkeypatch, caplog):
+        class Broken:
+            async def compute_reward(self, turns):
+                raise RuntimeError("judge exploded")
+
+        monkeypatch.setattr(sft, "_create_domain_reward", lambda name: Broken())
+
+        with caplog.at_level("WARNING", logger="sft_from_curated"):
+            assert sft.judge_completion("customer_support", "q", "a") is None
+        assert "failed to score" in caplog.text
+
+
+class TestBuildEvalExtras:
+    def test_plain_prompts_get_empty_extras(self):
+        extras = sft.build_eval_extras([{"prompt": "p"}], ["whatever"])
+
+        assert extras == [{}]
+
+    def test_specs_with_assertions_get_checks(self):
+        extras = sft.build_eval_extras(
+            [{"prompt": "p", "expect": ["41"], "forbid": ["sorry"]}],
+            ["The answer is 41."],
+        )
+
+        assert extras[0]["checks"]["passed"] is True
+        assert "judge_score" not in extras[0]
+
+    def test_judge_score_is_recorded_when_the_judge_runs(self, monkeypatch):
+        monkeypatch.setattr(sft, "_create_domain_reward", lambda name: FakeJudge(0.9))
+
+        extras = sft.build_eval_extras(
+            [{"prompt": "p", "judge": "customer_support"}], ["a"]
+        )
+
+        assert extras == [{"judge_score": 0.9}]
+
+    def test_a_failed_judge_leaves_the_row_without_a_score(self, monkeypatch):
+        def boom(name):
+            raise ImportError("nope")
+
+        monkeypatch.setattr(sft, "_create_domain_reward", boom)
+
+        extras = sft.build_eval_extras(
+            [{"prompt": "p", "judge": "customer_support", "expect": ["a"]}],
+            ["a fine answer"],
+        )
+
+        assert "judge_score" not in extras[0]
+        assert extras[0]["checks"]["passed"] is True
+
+
+class TestEvalGateFailures:
+    def test_no_assertions_means_no_failures(self):
+        specs = [{"prompt": "p"}]
+        rows = [{"prompt": "p", "base": "b", "finetuned": "f"}]
+
+        assert sft.eval_gate_failures(specs, rows) == []
+
+    def test_failed_checks_are_reported_with_the_reason(self):
+        specs = [{"prompt": "p", "expect": ["number"], "forbid": ["sorry"]}]
+        rows = [
+            {
+                "prompt": "p",
+                "checks": {
+                    "expect_hits": [],
+                    "forbid_hits": ["sorry"],
+                    "passed": False,
+                },
+            }
+        ]
+
+        (failure,) = sft.eval_gate_failures(specs, rows)
+        assert "missing expected" in failure
+        assert "number" in failure
+        assert "forbidden" in failure
+
+    def test_judge_below_the_gate_fails(self):
+        specs = [{"prompt": "p", "judge": "cs", "min_judge_score": 0.8}]
+        rows = [{"prompt": "p", "judge_score": 0.5}]
+
+        (failure,) = sft.eval_gate_failures(specs, rows)
+        assert "min_judge_score" in failure
+
+    def test_a_judge_that_could_not_run_never_fails_the_gate(self):
+        """Judge failures degrade — an absent score must not turn the job red."""
+        specs = [{"prompt": "p", "judge": "cs", "min_judge_score": 0.8}]
+        rows = [{"prompt": "p"}]
+
+        assert sft.eval_gate_failures(specs, rows) == []
+
+
+class TestEvalGateInRunSftJob:
+    """A failed assertion turns the job red AFTER the artifacts are saved."""
+
+    SPECS = [{"prompt": "Say the number 41.", "expect": ["number"]}]
+
+    def _fake_run_sft(self, finetuned: str):
+        def fake(rows, base_model, output_dir, eval_prompts, **kwargs):
+            # Mimic the real ordering: adapter first, then eval results.
+            (output_dir / "adapter_model.safetensors").write_text("tensors")
+            specs = sft.normalize_eval_prompts(eval_prompts)
+            sft.write_eval_results(
+                output_dir,
+                [s["prompt"] for s in specs],
+                ["base"],
+                [finetuned],
+                extras=sft.build_eval_extras(specs, [finetuned]),
+            )
+            return output_dir
+
+        return fake
+
+    def test_failed_assertion_exits_nonzero_with_artifacts_intact(
+        self, dataset, tmp_path, monkeypatch
+    ):
+        out = tmp_path / "adapter"
+        monkeypatch.setattr(sft, "gpu_available", lambda: True)
+        monkeypatch.setattr(sft, "run_sft", self._fake_run_sft("I refuse."))
+
+        outcome = sft.run_sft_job(
+            payload(
+                dataset, output_dir=str(out), dry_run=False, eval_prompts=self.SPECS
+            )
+        )
+
+        assert outcome["returncode"] == 1
+        # The gate ran after the save: both artifacts survive the red exit.
+        assert (out / "adapter_model.safetensors").exists()
+        assert (out / "eval_results.json").exists()
+        assert any("Eval assertion failed" in line for line in outcome["logs"])
+        assert any("saved before this gate ran" in line for line in outcome["logs"])
+
+    def test_passing_assertions_exit_zero(self, dataset, tmp_path, monkeypatch):
+        out = tmp_path / "adapter"
+        monkeypatch.setattr(sft, "gpu_available", lambda: True)
+        monkeypatch.setattr(sft, "run_sft", self._fake_run_sft("The number is 41."))
+
+        outcome = sft.run_sft_job(
+            payload(
+                dataset, output_dir=str(out), dry_run=False, eval_prompts=self.SPECS
+            )
+        )
+
+        assert outcome["returncode"] == 0
+
+    def test_plain_string_prompts_never_gate(self, dataset, tmp_path, monkeypatch):
+        """Back-compat: bare prompts keep today's compare-only behavior."""
+        out = tmp_path / "adapter"
+        monkeypatch.setattr(sft, "gpu_available", lambda: True)
+        monkeypatch.setattr(sft, "run_sft", self._fake_run_sft("anything at all"))
+
+        outcome = sft.run_sft_job(
+            payload(
+                dataset,
+                output_dir=str(out),
+                dry_run=False,
+                eval_prompts=["Say the number 41."],
+            )
+        )
+
+        assert outcome["returncode"] == 0
+
+
+class TestEvalSpecCli:
+    def test_spec_dicts_ride_eval_prompts_json(self, dataset, monkeypatch):
+        captured = {}
+
+        def fake_run_sft_job(job):
+            captured.update(job)
+            return {"returncode": 0, "logs": [], "output_dir": "out"}
+
+        monkeypatch.setattr(sft, "run_sft_job", fake_run_sft_job)
+        entries = ["plain", {"prompt": "p", "expect": ["number"]}]
+
+        code = sft.main(
+            [
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--dry-run",
+                "--eval-prompts-json",
+                json.dumps(entries),
+            ]
+        )
+
+        assert code == 0
+        assert captured["eval_prompts"] == entries
+
+    def test_a_malformed_spec_is_rejected_before_any_work(
+        self, dataset, monkeypatch, capsys
+    ):
+        monkeypatch.setattr(
+            sft, "run_sft_job", lambda job: pytest.fail("job must not run")
+        )
+
+        code = sft.main(
+            [
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--eval-prompts-json",
+                json.dumps([{"expect": ["no prompt key"]}]),
+            ]
+        )
+
+        assert code == 2
+        assert "prompt" in capsys.readouterr().out
+
+
+class TestWriteEvalResultsExtras:
+    def test_extras_merge_into_their_rows(self, tmp_path):
+        checks = {"expect_hits": ["41"], "forbid_hits": [], "passed": True}
+
+        path = sft.write_eval_results(
+            tmp_path,
+            ["p1", "p2"],
+            ["b1", "b2"],
+            ["f1", "f2"],
+            extras=[{}, {"checks": checks, "judge_score": 0.9}],
+        )
+
+        results = json.loads(path.read_text())
+        assert results[0] == {"prompt": "p1", "base": "b1", "finetuned": "f1"}
+        assert results[1] == {
+            "prompt": "p2",
+            "base": "b2",
+            "finetuned": "f2",
+            "checks": checks,
+            "judge_score": 0.9,
+        }

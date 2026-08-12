@@ -96,8 +96,12 @@ class RemoteJobSpec:
     #: Prompts to compare base-vs-tuned after training. When set, the job
     #: generates a completion per prompt with the base model before LoRA is
     #: applied and again with the trained adapter, and writes
-    #: ``eval_results.json`` into the output directory.
-    eval_prompts: list[str] | None = None
+    #: ``eval_results.json`` into the output directory. An entry is a plain
+    #: prompt string, or a spec dict ``{"prompt": str, "expect": [substr],
+    #: "forbid": [substr], "judge": str, "min_judge_score": float}`` whose
+    #: assertions gate the job's exit code (checked against the finetuned
+    #: completion, case-insensitively, after the adapter is saved).
+    eval_prompts: list[str | dict[str, Any]] | None = None
     #: Token budget per eval completion. 90 suits direct-answer models;
     #: reasoning models (thinking preamble before the answer) need more.
     eval_max_new_tokens: int = 90
@@ -129,6 +133,13 @@ class RemoteJobSpec:
             value = getattr(self, name)
             if value <= 0:
                 raise ValueError(f"{name} must be positive, got {value!r}")
+
+        if self.eval_prompts is not None:
+            # Validate spec entries at submit time — on this machine, before
+            # a GPU is rented — with the same rules the job applies.
+            from stateset_agents.training.sft import normalize_eval_prompts
+
+            normalize_eval_prompts(self.eval_prompts)
 
         if self.container_disk_gb is not None and self.container_disk_gb <= 0:
             raise ValueError(

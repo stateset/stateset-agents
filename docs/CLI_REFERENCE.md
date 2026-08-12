@@ -89,11 +89,35 @@ success with an empty output directory.
   GB. Size it at roughly 2.5x the model download (a 30B BF16 checkpoint is
   ~63GB and dies mid-download on the 40GB default). Defaults to the
   executor's default (40).
-- `--eval-prompts PATH`: Local text file of prompts, one per line (blank
+- `--eval-prompts PATH`: Local text file of eval entries, one per line (blank
   lines skipped). After training, each prompt is answered by both the base
   model and the tuned adapter (greedy decoding), and the side-by-side
   comparison is written to `output_dir/eval_results.json` as a list of
   `{"prompt", "base", "finetuned"}`. No effect on dry runs.
+
+  **File format** — two kinds of line:
+  - A plain line is a bare prompt (compare-only, exactly as before).
+  - A line that parses as a **JSON object** is a prompt spec:
+
+    ```json
+    {"prompt": "What is your return window?", "expect": ["30 days"], "forbid": ["no returns"], "judge": "customer_support", "min_judge_score": 0.5}
+    ```
+
+    Only `prompt` is required. `expect`/`forbid` are substrings matched
+    **case-insensitively against the finetuned completion only**; the row
+    gains `"checks": {"expect_hits", "forbid_hits", "passed"}`. `judge`
+    names a domain for
+    `stateset_agents.rewards.multi_objective_reward.create_domain_reward`
+    (e.g. `customer_support`) — if importable on the worker it scores the
+    finetuned completion into `"judge_score"`; if not, the row just lacks
+    the score (a warning is logged, never a crash). `min_judge_score`
+    fails the row when a judge score exists below it.
+
+    When **any** assertion fails, the job exits non-zero **after** the
+    adapter and `eval_results.json` are saved — the artifacts survive, but
+    `train-remote` reports the job as failed, so CI can gate on content.
+    (JSON lines that aren't objects, e.g. a bare array, are treated as
+    plain prompt text.)
 - `--dry-run`: Print the training plan without training.
 
 #### Providers

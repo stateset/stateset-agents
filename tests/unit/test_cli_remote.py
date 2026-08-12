@@ -270,6 +270,41 @@ class TestEvalPromptsOption:
             "plain prompt",
         ]
 
+    def test_json_object_lines_become_spec_dicts_amid_plain_lines(
+        self, dataset, tmp_path, monkeypatch
+    ):
+        """A line that parses as a JSON object is a prompt spec; every other
+        line — including JSON that isn't an object — stays a plain prompt."""
+        captured = capture_spec(monkeypatch)
+        prompts_file = tmp_path / "prompts.txt"
+        prompts_file.write_text(
+            "plain prompt\n"
+            '{"prompt": "Say 41.", "expect": ["41"], "forbid": ["sorry"]}\n'
+            '["not", "an", "object"]\n'
+        )
+
+        result = self._invoke(dataset, tmp_path, "--eval-prompts", str(prompts_file))
+
+        assert result.exit_code == 0, result.output
+        assert captured["spec"].eval_prompts == [
+            "plain prompt",
+            {"prompt": "Say 41.", "expect": ["41"], "forbid": ["sorry"]},
+            '["not", "an", "object"]',
+        ]
+
+    def test_a_malformed_spec_line_exits_2_with_the_reason(
+        self, dataset, tmp_path, monkeypatch
+    ):
+        captured = capture_spec(monkeypatch)
+        prompts_file = tmp_path / "prompts.txt"
+        prompts_file.write_text('{"expect": ["no prompt key"]}\n')
+
+        result = self._invoke(dataset, tmp_path, "--eval-prompts", str(prompts_file))
+
+        assert result.exit_code == 2
+        assert "prompt" in result.output
+        assert "spec" not in captured
+
     def test_omitting_the_option_leaves_the_spec_unset(
         self, dataset, tmp_path, monkeypatch
     ):

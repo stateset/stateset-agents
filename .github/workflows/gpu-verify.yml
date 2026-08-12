@@ -115,11 +115,15 @@ jobs:
             lora_r=8,
             gpu=gpu,
             timeout_s=1800,
-            # Held-out prompts: the job returns eval_results.json with
-            # base-vs-finetuned completions, so the weekly check asserts
-            # the tuned model actually generates, not just that adapter
-            # tensors exist.
-            eval_prompts=["Say the number 41.", "Say the number 77."],
+            # Held-out prompts with expect-specs: the job returns
+            # eval_results.json with base-vs-finetuned completions AND
+            # exits non-zero unless each finetuned completion contains
+            # "number" — the weekly check gates on content, not just on
+            # adapter tensors existing.
+            eval_prompts=[
+                {"prompt": "Say the number 41.", "expect": ["number"]},
+                {"prompt": "Say the number 77.", "expect": ["number"]},
+            ],
         )
         executor = RunPodExecutor(wheel=Path(wheel))
         result = executor.wait(executor.submit(spec))
@@ -144,9 +148,14 @@ jobs:
             print("::error::eval_results.json was not returned.")
             sys.exit(1)
         rows = json.loads(eval_path.read_text())
-        bad = [r for r in rows if not (r.get("base") and r.get("finetuned"))]
+        bad = [
+            r
+            for r in rows
+            if not (r.get("base") and r.get("finetuned"))
+            or not r.get("checks", {}).get("passed")
+        ]
         if len(rows) != 2 or bad:
-            print(f"::error::eval comparison incomplete: {rows}")
+            print(f"::error::eval comparison incomplete or failed checks: {rows}")
             sys.exit(1)
         for r in rows:
             print("EVAL", r["prompt"], "->", r["finetuned"][:60])

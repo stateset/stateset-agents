@@ -169,6 +169,30 @@ class TestRemoteJobSpecSerialization:
         blob = args[args.index("--eval-prompts-json") + 1]
         assert json.loads(blob) == prompts
 
+    def test_eval_spec_dicts_travel_as_json_too(self, dataset):
+        """Prompt-spec entries (expect/forbid/judge) ride the same JSON blob."""
+        prompts = [
+            "plain prompt",
+            {"prompt": "Say 41.", "expect": ["41"], "forbid": ["sorry"]},
+        ]
+        spec = RemoteJobSpec(
+            dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", eval_prompts=prompts
+        )
+
+        args = spec.to_cli_args()
+
+        blob = args[args.index("--eval-prompts-json") + 1]
+        assert json.loads(blob) == prompts
+
+    def test_malformed_eval_spec_is_rejected_at_construction(self, dataset):
+        """Validated on this machine, before a GPU is rented."""
+        with pytest.raises(ValueError, match="prompt"):
+            RemoteJobSpec(
+                dataset=dataset,
+                base_model="Qwen/Qwen3.5-0.8B",
+                eval_prompts=[{"expect": ["no prompt key"]}],
+            )
+
     def test_eval_prompts_flag_omitted_when_unset(self, dataset):
         spec = RemoteJobSpec(dataset=dataset, base_model="Qwen/Qwen3.5-0.8B")
 

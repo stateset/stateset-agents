@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Eval prompts can now assert, turning the post-train comparison into a
+  pass/fail gate.** `--eval-prompts` file lines (and `RemoteJobSpec.
+  eval_prompts` entries) may be JSON objects `{"prompt", "expect",
+  "forbid", "judge", "min_judge_score"}` alongside plain prompt strings.
+  `expect`/`forbid` substrings are matched case-insensitively against the
+  finetuned completion; results land per-row in `eval_results.json` as
+  `"checks": {"expect_hits", "forbid_hits", "passed"}`. The optional
+  `judge` scores the completion with `create_domain_reward(<name>)` into
+  `"judge_score"` when the reward stack is importable on the worker
+  (degrading to a logged warning otherwise), and `min_judge_score` gates
+  on it. When any assertion fails the job exits non-zero **after** saving
+  the adapter and `eval_results.json`, so a red run never destroys the
+  training artifacts. The weekly `gpu-verify` workflow now gates on
+  completion content (`expect: ["number"]`), not just adapter tensors.
+
 - **`chat-remote` transcripts close the improvement loop.** Every
   `stateset-agents chat-remote` conversation is now saved on exit (every
   exit path, aborted sessions included) as an OpenAI chat-format JSONL

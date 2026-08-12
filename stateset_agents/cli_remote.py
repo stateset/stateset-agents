@@ -169,6 +169,24 @@ def chat_remote(
     _echo("Session ended; pod terminated.")
 
 
+def _parse_eval_prompt_line(line: str) -> str | dict:
+    """One line of the --eval-prompts file.
+
+    A line that parses as a JSON *object* is a prompt-spec dict
+    (``{"prompt", "expect", "forbid", "judge", "min_judge_score"}``);
+    anything else — including JSON that isn't an object — is a plain prompt
+    string, exactly as before. Spec contents are validated by
+    ``RemoteJobSpec``, so a malformed spec exits 2 with the reason.
+    """
+    import json
+
+    try:
+        parsed = json.loads(line)
+    except json.JSONDecodeError:
+        return line
+    return parsed if isinstance(parsed, dict) else line
+
+
 @app.command("train-remote")
 def train_remote(
     dataset: Path = typer.Option(
@@ -221,8 +239,11 @@ def train_remote(
         None,
         "--eval-prompts",
         help="Local text file of prompts, one per line (blanks skipped). "
-        "After training, each prompt is answered by both the base model "
-        "and the tuned adapter; the comparison lands in "
+        "A line that parses as a JSON object is a prompt spec — "
+        '{"prompt", "expect", "forbid", "judge", "min_judge_score"} — '
+        "whose assertions gate the job's exit code; any other line is a "
+        "plain prompt. After training, each prompt is answered by both "
+        "the base model and the tuned adapter; the comparison lands in "
         "output_dir/eval_results.json.",
     ),
     eval_max_new_tokens: int = typer.Option(
@@ -236,13 +257,13 @@ def train_remote(
     ),
 ) -> None:
     """Run the SFT job from `improve` on local or rented GPU compute."""
-    prompts: list[str] | None = None
+    prompts: list[str | dict] | None = None
     if eval_prompts is not None:
         if not eval_prompts.exists():
             _echo(f"Eval prompts file does not exist: {eval_prompts}", err=True)
             raise typer.Exit(code=2)
         prompts = [
-            line.strip()
+            _parse_eval_prompt_line(line.strip())
             for line in eval_prompts.read_text().splitlines()
             if line.strip()
         ]
