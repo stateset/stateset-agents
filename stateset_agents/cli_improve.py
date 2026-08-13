@@ -246,6 +246,91 @@ def _render_next_steps(summary: dict[str, Any], output_dir: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _load_persona(persona_path: str) -> dict[str, Any]:
+    """Load and validate a persona config file.
+
+    The file is JSON: ``{"opener": ["hi, this is"], "signoff": ["best,"]}``.
+    Both keys are optional lists of case-insensitive substrings; the opener
+    must appear in the first assistant turn, the signoff in the last.
+    """
+    path = Path(persona_path)
+    if not path.exists():
+        raise ImproveUsageError(f"--persona file not found: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ImproveUsageError(f"Failed to read --persona {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ImproveUsageError(
+            f"--persona {path} must be a JSON object with optional "
+            "'opener'/'signoff' string lists."
+        )
+    unknown = set(data) - {"opener", "signoff"}
+    if unknown:
+        raise ImproveUsageError(
+            f"--persona {path} has unknown key(s): {', '.join(sorted(unknown))}. "
+            "Allowed: opener, signoff."
+        )
+    for key in ("opener", "signoff"):
+        value = data.get(key, [])
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) for item in value
+        ):
+            raise ImproveUsageError(
+                f"--persona {path}: {key!r} must be a list of strings."
+            )
+    if not data.get("opener") and not data.get("signoff"):
+        raise ImproveUsageError(
+            f"--persona {path} must define at least one of 'opener'/'signoff'."
+        )
+    return data
+
+
+def _build_reward(
+    reward: str,
+    persona: dict[str, Any] | None,
+    llm_judge: bool,
+    log: Any,
+) -> Any:
+    """Build the grading reward: rule-based, optionally judge-blended.
+
+    With ``llm_judge=True``, the rule-based reward is blended with an LLM
+    judge **only if one is configured** (API key resolvable and optional
+    dependencies installed) — otherwise this logs and degrades gracefully to
+    the pure rule-based reward, keeping the loop offline-safe.
+    """
+    import grade_transcript as gt  # local import: sys.path was patched above
+
+    try:
+        reward_fn = gt.get_reward(reward, persona=persona)
+    except ValueError as exc:
+        raise ImproveUsageError(str(exc)) from exc
+    if not llm_judge:
+        return reward_fn
+
+    judge = None
+    try:
+        from stateset_agents.rewards.llm_judge import JudgeConfig, LLMJudge
+
+        config = JudgeConfig()
+        if config.api_key:
+            judge = LLMJudge(config)
+    except (ImportError, ValueError, RuntimeError, OSError) as exc:
+        log(f"LLM judge unavailable ({exc}); continuing rule-based.")
+
+    if judge is None:
+        log(
+            "LLM judge requested but not configured (no API key found); "
+            "grading with the rule-based reward only."
+        )
+        return reward_fn
+
+    from stateset_agents.rewards.llm_judge_adapter import LLMJudgeRewardWithFallback
+
+    log("LLM judge active: blending judge scores with the rule-based reward.")
+    return LLMJudgeRewardWithFallback(judge=judge, heuristic=reward_fn)
+
+
 class ImproveUsageError(ValueError):
     """Raised by :func:`run_improve` for bad arguments (CLI exit code 2)."""
 
@@ -261,6 +346,8 @@ def run_improve(
     output: str,
     threshold: float = 0.7,
     format: str = "transcripts",
+    persona: str | None = None,
+    llm_judge: bool = False,
     echo: Any = None,
 ) -> dict[str, Any]:
     """Run the grade -> curate -> retrain loop and return the summary dict.
@@ -272,6 +359,12 @@ def run_improve(
     :class:`ImproveDataError` for data problems (CLI maps this to exit code
     1). ``echo`` is an optional ``callable(str) -> None`` used for progress
     messages (defaults to no-op).
+
+    ``persona`` is an optional path to a JSON persona config
+    (``{"opener": [...], "signoff": [...]}``) scored as a persona-fidelity
+    component (customer_support reward only). ``llm_judge=True`` blends an
+    LLM judge into grading when one is configured (API key present),
+    degrading gracefully to rule-based grading otherwise.
     """
     _log = echo if echo is not None else (lambda _msg: None)
 
@@ -299,6 +392,8 @@ def run_improve(
         raise ImproveUsageError(
             f"Unknown --reward '{reward}'. Choose one of: {', '.join(KNOWN_REWARDS)}."
         )
+
+    persona_config = _load_persona(persona) if persona else None
 
     transcripts_path = Path(transcripts)
     if not transcripts_path.exists():
@@ -337,7 +432,7 @@ def run_improve(
     # Phase 2: grade.
     import grade_transcript as gt  # local import: sys.path was patched above
 
-    reward_fn = gt.get_reward(reward)
+    reward_fn = _build_reward(reward, persona_config, llm_judge, _log)
     per_transcript = asyncio.run(_grade_all(transcript_files, reward_fn))
     total_turns = sum(len(e["rows"]) for e in per_transcript)
     if total_turns == 0:
@@ -430,6 +525,20 @@ def improve(
         "'openai', or 'langchain' (ingested first via stateset_agents.data."
         "trajectory_ingest).",
     ),
+    persona: str | None = typer.Option(
+        None,
+        "--persona",
+        help="Path to a JSON persona config ({'opener': [...], 'signoff': "
+        "[...]}) scored as a persona-fidelity component "
+        "(customer_support reward only).",
+    ),
+    llm_judge: bool = typer.Option(
+        False,
+        "--llm-judge",
+        help="Blend an LLM judge into grading when one is configured "
+        "(API key present); degrades gracefully to rule-based grading "
+        "otherwise.",
+    ),
 ) -> None:
     """Run the grade -> curate -> retrain loop as a single command.
 
@@ -467,6 +576,8 @@ def improve(
             output=output,
             threshold=threshold,
             format=format,
+            persona=persona,
+            llm_judge=llm_judge,
             echo=_echo,
         )
     except ImproveUsageError as exc:

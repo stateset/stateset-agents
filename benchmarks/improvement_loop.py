@@ -20,13 +20,15 @@ This benchmark makes that loop's value measurable instead of a claim:
 Measured on the default corpus (60 conversations, 60% good, seed 42,
 threshold 0.7, reward customer_support):
 
-* precision ~= 0.818 — the ``deflection`` bad flavor (a 10+ word, safety-clean
-  but unhelpful reply) slips past the rule-based reward, which scores it 0.75.
-  This is a genuine, documented gap of context-free rule-based grading.
+* precision = 1.0 — the ``deflection`` bad flavor (a 10+ word, safety-clean
+  but unhelpful reply) used to slip past the rule-based reward at 0.75; the
+  resolution/concreteness component of ``SupportRewardComposite`` now scores
+  it ~0.625, below the 0.7 curation threshold. (Historical: precision was
+  0.818 before that component existed.)
 * recall = 1.0 — every planted good reply is curated.
 
 Floors default slightly below measured (coverage-ratchet philosophy):
-``--min-precision 0.75``, ``--min-recall 0.95``.
+``--min-precision 0.95``, ``--min-recall 0.95``.
 
 Usage::
 
@@ -52,7 +54,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-DEFAULT_MIN_PRECISION = 0.75
+DEFAULT_MIN_PRECISION = 0.95
 DEFAULT_MIN_RECALL = 0.95
 
 TOPICS = [
@@ -96,8 +98,9 @@ def _bad_reply(flavor: str, topic_phrase: str, order_id: int) -> str:
         # One word -> heavy brand-voice length penalty.
         return "ok"
     # "deflection": safety-clean, 10+ words, zero politeness, zero help.
-    # The rule-based reward scores this ~0.75 — a known grader gap this
-    # benchmark measures rather than hides.
+    # Historically scored ~0.75 (a documented grader gap); the resolution/
+    # concreteness component now penalizes the deflection phrasing and the
+    # absence of any commitment/timeframe, scoring it ~0.625 (< 0.7).
     return (
         f"Regarding {topic_phrase} #{order_id}: that is not something this "
         "channel handles. Check the website yourself for more information."
@@ -341,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=DEFAULT_MIN_PRECISION,
         help=f"Fail if curation precision drops below this "
-        f"(default: {DEFAULT_MIN_PRECISION}, measured ~0.818 on defaults).",
+        f"(default: {DEFAULT_MIN_PRECISION}, measured 1.0 on defaults).",
     )
     parser.add_argument(
         "--min-recall",

@@ -187,6 +187,7 @@ class LLMJudgeRewardWithFallback(RewardFunction):
         judge_weight: float = 0.7,
         heuristic_weight: float = 0.3,
         name: str = "LLMJudgeRewardWithFallback",
+        heuristic: RewardFunction | None = None,
     ):
         super().__init__(weight=1.0, reward_type=RewardType.IMMEDIATE, name=name)
         self.judge = judge
@@ -194,8 +195,8 @@ class LLMJudgeRewardWithFallback(RewardFunction):
         self.heuristic_weight = heuristic_weight
         self._judge_available = judge is not None
 
-        # Lazy-init heuristic fallback
-        self._heuristic: RewardFunction | None = None
+        # Injected heuristic, or lazy-init default fallback.
+        self._heuristic: RewardFunction | None = heuristic
 
     def _get_heuristic(self) -> RewardFunction:
         if self._heuristic is None:

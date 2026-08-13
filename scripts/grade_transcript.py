@@ -79,8 +79,18 @@ def load_contexts(path: Path | None) -> list[dict[str, Any]]:
     return out
 
 
-def get_reward(reward_name: str) -> Any:
-    """Map a reward name to a reward function instance."""
+def get_reward(reward_name: str, persona: dict[str, Any] | None = None) -> Any:
+    """Map a reward name to a reward function instance.
+
+    ``persona`` (optional, customer_support only) is a
+    ``{"opener": [...], "signoff": [...]}`` config scored as a
+    persona-fidelity component of ``SupportRewardComposite``.
+    """
+    if persona and reward_name != "customer_support":
+        raise ValueError(
+            f"persona config is only supported for the customer_support reward, "
+            f"not {reward_name!r}."
+        )
     if reward_name == "gsm8k":
         from stateset_agents.data.gsm8k import GSM8KReward
 
@@ -88,7 +98,7 @@ def get_reward(reward_name: str) -> Any:
     if reward_name == "customer_support":
         from stateset_agents.data.customer_support_bench import SupportRewardComposite
 
-        return SupportRewardComposite()
+        return SupportRewardComposite(persona=persona)
     if reward_name == "tool_calling":
         from stateset_agents.data.tool_calling_bench import ToolCallReward
 

@@ -135,11 +135,13 @@ class TestRealPipeline:
         assert "Improvement-loop benchmark" in out
         saved = json.loads((tmp_path / "metrics.json").read_text())
         assert saved["passed"] is True
-        assert saved["floors"] == {"min_precision": 0.75, "min_recall": 0.95}
+        # Ratcheted floors: precision measured 1.0 since the resolution/
+        # concreteness component closed the deflection gap (was 0.75/0.818).
+        assert saved["floors"] == {"min_precision": 0.95, "min_recall": 0.95}
 
     def test_floors_gate_exit_code(self, tmp_path, capsys):
-        # An all-bad corpus curates only deflection false positives:
-        # precision and recall both collapse, so the floors must trip.
+        # An all-bad corpus curates nothing: precision and recall both
+        # collapse to 0.0, so the floors must trip.
         rc = il.main(
             [
                 "--conversations",
@@ -155,14 +157,19 @@ class TestRealPipeline:
         assert "FAIL" in captured.err
 
     def test_precision_floor_alone_gates(self, tmp_path, capsys):
-        # Default corpus measures precision ~0.82; a floor of 0.99 must fail
-        # even though recall (1.0) passes.
+        # This test used to plant the deflection blind spot (default corpus
+        # measured precision ~0.82, so a 0.99 floor tripped). The resolution
+        # component fixed that gap (precision now 1.0), so gate precision
+        # alone with an all-bad corpus (nothing curated -> precision 0.0)
+        # while disabling the recall floor.
         rc = il.main(
             [
                 "--conversations",
-                "12",
-                "--min-precision",
-                "0.99",
+                "9",
+                "--good-fraction",
+                "0.0",
+                "--min-recall",
+                "0.0",
                 "--workdir",
                 str(tmp_path),
             ]

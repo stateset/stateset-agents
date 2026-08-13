@@ -37,6 +37,7 @@ Usage::
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -298,19 +299,171 @@ def _brand_voice_score(text: str) -> tuple[float, dict[str, float]]:
     return 0.5 * length_score + 0.5 * politeness, breakdown
 
 
+# Markers of a reply that *does something*: a commitment, an action taken, or a
+# concrete information request that moves the case forward.
+_ACTION_MARKERS = [
+    "i'll",
+    "i will",
+    "i've",
+    "i have",
+    "i'm going to",
+    "let me",
+    "i can ",
+    "we'll",
+    "we will",
+    "here's",
+    "here is",
+    "next step",
+    "walk you through",
+    "process",
+    "issued",
+    "initiated",
+    "escalate",
+    "right away",
+    "could you share",
+    "could you provide",
+    "can you share",
+    "can you provide",
+    "may i have",
+    "please share",
+    "please provide",
+]
+
+# Markers of a concrete timeframe.
+_TIMEFRAME_MARKERS = [
+    "one moment",
+    "a moment",
+    "right now",
+    "right away",
+    "today",
+    "shortly",
+    "immediately",
+    "business day",
+    "within",
+    "24 hours",
+    "48 hours",
+]
+
+# Markers of deflection: acknowledging the customer while sending them away
+# without doing anything.
+_DEFLECTION_MARKERS = [
+    "check the website",
+    "check our website",
+    "read the faq",
+    "check the faq",
+    "look it up",
+    "not something this channel",
+    "not something we handle",
+    "we don't handle",
+    "we do not handle",
+    "can't help with that",
+    "cannot help with that",
+    "yourself for more information",
+    "on your own",
+    "somewhere else",
+    "someone else",
+    "figure it out",
+    "google it",
+]
+
+# A concrete reference: an order/ticket id, or an explicit ask for one.
+_REFERENCE_RE = re.compile(
+    r"#\d+|\b(?:order|ticket|case|reference|account|invoice)\s*(?:number|id|#)",
+    re.IGNORECASE,
+)
+
+
+def _resolution_score(text: str) -> tuple[float, dict[str, float]]:
+    """Heuristic resolution/concreteness — does the reply move the case forward?
+
+    Polite-but-useless "deflection" replies (acknowledge the customer, then
+    send them away with no action, timeframe, or concrete reference) used to
+    score 0.75 under the intent+voice composite and slip past the 0.7 curation
+    threshold. This component makes concreteness a measured signal:
+
+    * **action** (60%) — commitments, actions taken, or concrete information
+      requests (``I'll``, ``let me``, ``could you share`` ...).
+    * **timeframe** (20%) — an explicit "when" (``one moment``, ``within`` ...).
+    * **reference** (20%) — an order/ticket id (``#4521``) or an explicit ask
+      for one (``your order number``).
+    * **deflection penalty** — each deflection marker ("check the website",
+      "we don't handle" ...) subtracts 0.5.
+    """
+    breakdown: dict[str, float] = {}
+    lower = text.lower()
+
+    action_hits = _contains_any(text, _ACTION_MARKERS)
+    timeframe_hits = _contains_any(text, _TIMEFRAME_MARKERS)
+    reference = 1.0 if _REFERENCE_RE.search(text) else 0.0
+    deflection_hits = sum(1 for marker in _DEFLECTION_MARKERS if marker in lower)
+
+    raw = (
+        0.6 * min(1.0, action_hits / 2.0)
+        + 0.2 * min(1.0, float(timeframe_hits))
+        + 0.2 * reference
+        - 0.5 * deflection_hits
+    )
+    score = max(0.0, min(1.0, raw))
+
+    breakdown["action_hits"] = float(action_hits)
+    breakdown["timeframe_hits"] = float(timeframe_hits)
+    breakdown["reference"] = reference
+    breakdown["deflection_hits"] = float(deflection_hits)
+    return score, breakdown
+
+
+def _persona_score(
+    turns: list[ConversationTurn], persona: dict[str, Any]
+) -> tuple[float, dict[str, float]]:
+    """Optional persona fidelity — expected opener/signoff substrings.
+
+    ``persona`` is ``{"opener": [str, ...], "signoff": [str, ...]}``. The
+    opener must appear (case-insensitive) in the *first* assistant turn, the
+    signoff in the *last* assistant turn. Each present list contributes an
+    equal share of the score; an empty persona scores 1.0 (nothing required).
+    """
+    assistant_turns = [t for t in turns if t.role == "assistant" and t.content]
+    first = assistant_turns[0].content.lower() if assistant_turns else ""
+    last = assistant_turns[-1].content.lower() if assistant_turns else ""
+
+    checks: list[float] = []
+    breakdown: dict[str, float] = {}
+    openers = [str(s).lower() for s in persona.get("opener", []) if str(s).strip()]
+    signoffs = [str(s).lower() for s in persona.get("signoff", []) if str(s).strip()]
+    if openers:
+        opener_ok = 1.0 if any(s in first for s in openers) else 0.0
+        breakdown["persona_opener"] = opener_ok
+        checks.append(opener_ok)
+    if signoffs:
+        signoff_ok = 1.0 if any(s in last for s in signoffs) else 0.0
+        breakdown["persona_signoff"] = signoff_ok
+        checks.append(signoff_ok)
+
+    score = sum(checks) / len(checks) if checks else 1.0
+    return score, breakdown
+
+
 class SupportRewardComposite(RewardFunction):
     """Composite reward for customer-support agents.
 
-    Combines three rule-based signals:
+    Combines four rule-based signals:
 
     * **Intent acknowledgement** — does the response mention the things the
       scenario requires (e.g., "refund", "order")?
     * **Brand voice** — length-window check + politeness keyword count.
+    * **Resolution** — concreteness heuristic: commitments, timeframes, and
+      order/ticket references score; deflection phrasing ("check the website
+      yourself") is penalized. Closes the polite-but-useless grader gap where
+      deflection replies scored 0.75 and slipped past a 0.7 curation
+      threshold.
     * **Safety** — multiplicative gate; any safety failure zeroes the score.
 
-    The weighting matches what production customer-support deployments tend
-    to use: ~60% on intent (the task), ~30% on brand voice (the experience),
-    ~10% as a safety multiplier.
+    Weights: ~45% intent (the task), ~25% brand voice (the experience),
+    ~30% resolution (did the reply move the case forward), with safety as a
+    multiplier. An optional ``persona`` config ({"opener": [...],
+    "signoff": [...]}) adds a persona-fidelity component that takes
+    ``persona_weight`` of the total (the other weights are scaled down
+    proportionally).
 
     Like ``GSM8KReward``, this is deliberately rule-based so the benchmark
     is reproducible without external API calls. For production use, swap in
@@ -322,14 +475,20 @@ class SupportRewardComposite(RewardFunction):
     def __init__(
         self,
         weight: float = 1.0,
-        intent_weight: float = 0.6,
-        brand_voice_weight: float = 0.3,
+        intent_weight: float = 0.45,
+        brand_voice_weight: float = 0.25,
+        resolution_weight: float = 0.3,
         require_safety: bool = True,
+        persona: dict[str, Any] | None = None,
+        persona_weight: float = 0.15,
     ) -> None:
         super().__init__(weight=weight, reward_type=RewardType.SPARSE, name=self.name)
         self.intent_weight = intent_weight
         self.brand_voice_weight = brand_voice_weight
+        self.resolution_weight = resolution_weight
         self.require_safety = require_safety
+        self.persona = persona or None
+        self.persona_weight = persona_weight
 
     async def compute_reward(
         self,
@@ -369,25 +528,51 @@ class SupportRewardComposite(RewardFunction):
         # 2) Brand voice.
         voice_score, voice_breakdown = _brand_voice_score(assistant_text)
 
-        # 3) Safety (multiplicative).
+        # 3) Resolution / concreteness.
+        resolution_score, resolution_breakdown = _resolution_score(assistant_text)
+
+        # 4) Safety (multiplicative).
         safety_score, safety_reason = _safety_check(assistant_text)
 
-        composite = (
-            self.intent_weight * intent_score + self.brand_voice_weight * voice_score
-        ) * (safety_score if self.require_safety else 1.0)
+        weighted = (
+            self.intent_weight * intent_score
+            + self.brand_voice_weight * voice_score
+            + self.resolution_weight * resolution_score
+        )
+
+        # 5) Optional persona fidelity: takes persona_weight of the total,
+        # scaling the rule-based portion down proportionally.
+        if self.persona:
+            persona_score, persona_breakdown = _persona_score(turns, self.persona)
+            weighted = (
+                1.0 - self.persona_weight
+            ) * weighted + self.persona_weight * persona_score
+        else:
+            persona_score, persona_breakdown = 1.0, {}
+
+        composite = weighted * (safety_score if self.require_safety else 1.0)
 
         breakdown = {
             "intent_score": intent_score,
             "intent_avoid_penalty": avoid_penalty,
             "brand_voice_score": voice_score,
+            "resolution_score": resolution_score,
             "safety_score": safety_score,
         }
         breakdown.update({f"voice_{k}": v for k, v in voice_breakdown.items()})
+        breakdown.update(
+            {f"resolution_{k}": v for k, v in resolution_breakdown.items()}
+        )
+        if self.persona:
+            breakdown["persona_score"] = persona_score
+            breakdown.update(persona_breakdown)
 
         explanation = (
             f"intent={intent} ack_score={intent_score:.2f} voice={voice_score:.2f}"
-            f" safety={safety_score:.2f}"
+            f" resolution={resolution_score:.2f} safety={safety_score:.2f}"
         )
+        if self.persona:
+            explanation += f" persona={persona_score:.2f}"
         if safety_reason:
             explanation += f" safety_fail={safety_reason}"
 
