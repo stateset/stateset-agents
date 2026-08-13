@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786644493565,
+  "lastUpdate": 1786649114610,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2528,6 +2528,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.4054480195872004e-8",
             "extra": "mean: 472.5067670610908 nsec\nrounds: 105186"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "3c11e424b0a58c77e87701fc185d9a352535b0b3",
+          "message": "feat(sft): log device placement; --gpu-count verified on real 2-GPU hardware\n\nLive proof: meta-models/Muse-Glimmer-30B (63GB bf16) trained across two\n48GB L40S cards — a model that cannot fit on either card alone — logging\n'Model sharded across devices: 0=24 module(s), 1=36 module(s)'. Adapter\nreturned, $0.35, zero pods left. --gpu-count is no longer an unproven flag.\n\nThe first attempt succeeded and proved nothing: capacity forced a fallback\nto cards big enough to hold the whole model, so device_map='auto' was never\nobliged to split it, and an external nvidia-smi poller sampled only idle\nmoments. That gap was the real finding — a multi-GPU run was\nindistinguishable from a single-GPU one in its own logs. Placement is now\nlogged (with the single-device case) and returns counts for tests.\n\nAlso removes the duplicate placement logger I wrote before noticing the\ninterrupted agent had already added one.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-13T12:22:40-07:00",
+          "tree_id": "58d71cef0507828566fa12f8d973e2fadec84538",
+          "url": "https://github.com/stateset/stateset-agents/commit/3c11e424b0a58c77e87701fc185d9a352535b0b3"
+        },
+        "date": 1786649114026,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5990.13069279194,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000169835712454527",
+            "extra": "mean: 166.9412657729359 usec\nrounds: 1490"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6485.197693852359,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001535994786755668",
+            "extra": "mean: 154.19730395388711 usec\nrounds: 2099"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4968.094163144558,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018888888547835833",
+            "extra": "mean: 201.28442963469303 usec\nrounds: 3226"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 739.7696193329147,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005224269269894205",
+            "extra": "mean: 1.3517721921342856 msec\nrounds: 661"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 183.702830269801,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000046480531647760154",
+            "extra": "mean: 5.443574269004556 msec\nrounds: 171"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2127830.8806821643,
+            "unit": "iter/sec",
+            "range": "stddev: 4.083853472747542e-8",
+            "extra": "mean: 469.96216150383555 nsec\nrounds: 53548"
           }
         ]
       }
