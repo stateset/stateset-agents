@@ -313,9 +313,18 @@ class TestLoadBaseModelForSft:
 
 
 def _fake_torch(monkeypatch, device_count, available=True):
+    """Install a torch whose CUDA reports what the test wants.
+
+    The fake proxies every other attribute to the real module: replacing
+    ``sys.modules["torch"]`` outright breaks anything that reaches back
+    through it while the patch is live (the suite's autouse
+    ``reset_torch_default_dtype`` fixture calls real
+    ``torch.set_default_dtype`` at teardown and blew up on a bare stub).
+    """
     import sys
     import types
 
+    real = sys.modules.get("torch")
     fake = types.ModuleType("torch")
 
     class FakeCuda:
@@ -328,6 +337,8 @@ def _fake_torch(monkeypatch, device_count, available=True):
             return device_count
 
     fake.cuda = FakeCuda()
+    if real is not None:
+        fake.__getattr__ = lambda name, _real=real: getattr(_real, name)  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "torch", fake)
 
 

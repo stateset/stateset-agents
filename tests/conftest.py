@@ -224,10 +224,23 @@ def isolate_cost_ledger(tmp_path_factory, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_torch_default_dtype():
-    """Keep the suite isolated from tests that mutate PyTorch global dtype."""
-    torch.set_default_dtype(torch.float32)
+    """Keep the suite isolated from tests that mutate PyTorch global dtype.
+
+    Guarded: some tests deliberately simulate a torch-less environment (by
+    removing it from ``sys.modules`` or making its import fail), and this
+    fixture's teardown can run while that simulation is still in place.
+    Isolation must not turn such a test into an error.
+    """
+
+    def _reset() -> None:
+        try:
+            torch.set_default_dtype(torch.float32)
+        except Exception:  # pragma: no cover - torch simulated away
+            pass
+
+    _reset()
     yield
-    torch.set_default_dtype(torch.float32)
+    _reset()
 
 
 @pytest.fixture(autouse=True)
