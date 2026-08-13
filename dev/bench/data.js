@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786635692579,
+  "lastUpdate": 1786640567661,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2336,6 +2336,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.4511969619883664e-8",
             "extra": "mean: 444.05490146851486 nsec\nrounds: 55565"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "9c1438fa10c0aafcfaa4dda179e260bf58d8463d",
+          "message": "feat(remote): --gpu-count for multi-GPU pods and --network-volume-id for durable checkpoints\n\nTwo capabilities that extend the training envelope past a single ephemeral\n80GB GPU:\n- RemoteJobSpec.gpu_count -> create_pod gpuCount, with device_map='auto'\n  in sft.py when torch reports >1 CUDA device (single-GPU path unchanged)\n- RemoteJobSpec.network_volume_id -> pod attaches a RunPod network volume\n  at /workspace, so checkpoints survive pod death and the retry path can\n  resume instead of restarting from scratch (the documented v1 gap)\n\nNOT LIVE-VERIFIED: both agents were interrupted before their live runs\ncompleted, so unit tests and the API payload shapes are green but neither\nhas been proven on real hardware. Live verification is the next step for\neach; treat these flags as experimental until then.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-13T10:00:03-07:00",
+          "tree_id": "9937aeb0d129baf417c0c77cf166f7b7a7b0dafc",
+          "url": "https://github.com/stateset/stateset-agents/commit/9c1438fa10c0aafcfaa4dda179e260bf58d8463d"
+        },
+        "date": 1786640567063,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8507.43135238018,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001714987332108311",
+            "extra": "mean: 117.54429258135872 usec\nrounds: 1415"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9173.592248882149,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015836341294403684",
+            "extra": "mean: 109.00855116182598 usec\nrounds: 2023"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6635.279897347419,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018139272584346964",
+            "extra": "mean: 150.70954284833851 usec\nrounds: 3384"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 827.2801086820164,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000026678702247088748",
+            "extra": "mean: 1.208780423347967 msec\nrounds: 711"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 161.02125206459343,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007596235421609609",
+            "extra": "mean: 6.210360354165247 msec\nrounds: 144"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2222259.124591361,
+            "unit": "iter/sec",
+            "range": "stddev: 5.679030700634087e-8",
+            "extra": "mean: 449.99252739434 nsec\nrounds: 56861"
           }
         ]
       }
