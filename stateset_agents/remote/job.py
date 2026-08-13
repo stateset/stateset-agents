@@ -31,6 +31,7 @@ _RESOURCE_FIELDS = frozenset(
         "container_disk_gb",
         "cloud_type",
         "network_volume_id",
+        "max_cost_usd",
     }
 )
 
@@ -155,6 +156,10 @@ class RemoteJobSpec:
     #: datacenter-scoped: pod creation is pinned to the volume's datacenter.
     #: RunPod only. ``None`` (default) keeps the ephemeral-disk behaviour.
     network_volume_id: str | None = None
+    #: Refuse to run if the pod's worst case (its full ``timeout_s`` at the
+    #: provider's quoted hourly rate) would exceed this many dollars. None
+    #: means no ceiling — the historical behavior.
+    max_cost_usd: float | None = None
 
     def __post_init__(self) -> None:
         self.dataset = Path(self.dataset)
@@ -184,6 +189,8 @@ class RemoteJobSpec:
 
         if self.network_volume_id is not None and not self.network_volume_id.strip():
             raise ValueError("network_volume_id must be non-empty when set")
+        if self.max_cost_usd is not None and self.max_cost_usd <= 0:
+            raise ValueError("max_cost_usd must be positive when set")
 
         self.cloud_type = str(self.cloud_type).upper()
         if self.cloud_type not in _CLOUD_TYPES:
@@ -244,6 +251,10 @@ class RemoteJobResult:
     status: JobStatus
     output_dir: Path | None
     logs: list[str] = field(default_factory=list)
+    #: Measured pod lifetime and spend. None means the provider quoted no
+    #: price — unknown, never free.
+    duration_s: float | None = None
+    cost_usd: float | None = None
 
     @property
     def succeeded(self) -> bool:

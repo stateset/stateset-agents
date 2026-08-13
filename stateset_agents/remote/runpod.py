@@ -36,6 +36,13 @@ from typing import Any
 
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
+from stateset_agents.remote.ledger import (
+    BudgetExceeded,
+    CostEntry,
+    check_budget,
+    estimate_cost_usd,
+    record_entry,
+)
 
 __all__ = ["RunPodApi", "RunPodExecutor", "SshTransport", "package_pin"]
 
@@ -321,6 +328,10 @@ class _RunPodJob:
     spec: RemoteJobSpec
     status: JobStatus
     logs: list[str] = field(default_factory=list)
+    #: Measured pod lifetime and the resulting spend. None when the provider
+    #: reported no price — unknown must never render as free.
+    duration_s: float | None = None
+    cost_usd: float | None = None
 
 
 class _PodDiedMidJob(RemoteExecutionError):
@@ -351,6 +362,7 @@ class RunPodExecutor(RemoteExecutor):
         wheel: Path | None = None,
         container_disk_gb: int = 40,
         ready_timeout_s: int = 600,
+        ledger_path: Path | None = None,
         poll_interval_s: float = 10.0,
         max_provision_attempts: int = 2,
     ) -> None:
@@ -369,6 +381,8 @@ class RunPodExecutor(RemoteExecutor):
         #: real on meta-models/Muse-Glimmer-30B with the old fixed 40GB).
         self.container_disk_gb = container_disk_gb
         self.ready_timeout_s = ready_timeout_s
+        #: Override the cost-ledger location (tests, or per-project accounting).
+        self.ledger_path = ledger_path
         self.poll_interval_s = poll_interval_s
         #: How many pods to try before giving up when one dies *under a
         #: running job* (keepalive-detected death, connection reset — the
@@ -377,6 +391,8 @@ class RunPodExecutor(RemoteExecutor):
         #: reruns the job.
         self.max_provision_attempts = max(1, max_provision_attempts)
         self._jobs: dict[str, _RunPodJob] = {}
+        self._last_duration_s: float | None = None
+        self._last_cost_usd: float | None = None
 
     # -- lazily resolved collaborators ------------------------------------
 
@@ -547,7 +563,35 @@ class RunPodExecutor(RemoteExecutor):
                         f"{self.max_provision_attempts})"
                     )
                 continue
-            self._jobs[job_id] = _RunPodJob(spec, status, logs)
+            self._jobs[job_id] = _RunPodJob(
+                spec,
+                status,
+                logs,
+                duration_s=self._last_duration_s,
+                cost_usd=self._last_cost_usd,
+            )
+            record_entry(
+                CostEntry(
+                    provider=self.name,
+                    job_id=job_id,
+                    base_model=spec.base_model,
+                    gpu=spec.gpu or self.DEFAULT_GPU,
+                    gpu_count=spec.gpu_count,
+                    cost_per_hr=(
+                        round(self._last_cost_usd / (self._last_duration_s / 3600), 4)
+                        if self._last_cost_usd and self._last_duration_s
+                        else None
+                    ),
+                    duration_s=(
+                        round(self._last_duration_s, 1)
+                        if self._last_duration_s is not None
+                        else None
+                    ),
+                    cost_usd=self._last_cost_usd,
+                    status=status.value,
+                ),
+                path=self.ledger_path,
+            )
             return handle
 
         raise AssertionError("unreachable")  # pragma: no cover
@@ -585,11 +629,37 @@ class RunPodExecutor(RemoteExecutor):
             data_center_id=data_center_id,
         )
         pod_id = str(pod["id"])
+        # Billing starts at creation, so the clock does too.
+        pod_started_at = time.time()
+        cost_per_hr = pod.get("costPerHr")
+        try:
+            cost_per_hr = float(cost_per_hr) if cost_per_hr is not None else None
+        except (TypeError, ValueError):
+            cost_per_hr = None
         logs.append(
             f"created pod {pod_id} "
             f"({spec.gpu_count}x {spec.gpu or self.DEFAULT_GPU}, "
-            f"{spec.cloud_type})"
+            f"{spec.cloud_type}"
+            + (f", ${cost_per_hr}/hr)" if cost_per_hr is not None else ")")
         )
+
+        # A ceiling is checked before a single second of work: refusing costs
+        # only the seconds this pod has existed, which we then terminate.
+        try:
+            check_budget(
+                cost_per_hr,
+                spec.timeout_s,
+                spec.max_cost_usd,
+                gpu_count=spec.gpu_count,
+            )
+        except BudgetExceeded as exc:
+            try:
+                api.terminate_pod(pod_id)
+            except Exception:  # pragma: no cover - defensive
+                pass
+            raise RemoteExecutionError(
+                str(exc), provider=self.name, pod_id=pod_id
+            ) from exc
 
         # Everything from here must terminate the pod, whatever happens.
         try:
@@ -674,8 +744,32 @@ class RunPodExecutor(RemoteExecutor):
                 api.terminate_pod(pod_id)
             except Exception:  # never mask the original failure
                 pass
+            # Bookkeeping last: the money was spent whether or not the job
+            # worked, so the ledger records failures too.
+            self._last_duration_s = time.time() - pod_started_at
+            self._last_cost_usd = estimate_cost_usd(
+                (
+                    (cost_per_hr * max(1, spec.gpu_count))
+                    if cost_per_hr is not None
+                    else None
+                ),
+                self._last_duration_s,
+            )
+            logs.append(
+                f"pod {pod_id} ran {self._last_duration_s:.0f}s"
+                + (
+                    f" (~${self._last_cost_usd:.2f})"
+                    if self._last_cost_usd is not None
+                    else " (cost unknown)"
+                )
+            )
 
     # -- executor interface -----------------------------------------------
+
+    def job_cost(self, handle: JobHandle) -> tuple[float | None, float | None]:
+        """Measured pod lifetime and spend for a finished RunPod job."""
+        job = self._job(handle)
+        return (job.duration_s, job.cost_usd)
 
     def _job(self, handle: JobHandle) -> _RunPodJob:
         try:

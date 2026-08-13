@@ -153,6 +153,10 @@ success with an empty output directory.
     `train-remote` reports the job as failed, so CI can gate on content.
     (JSON lines that aren't objects, e.g. a bare array, are treated as
     plain prompt text.)
+- `--max-cost FLOAT`: Refuse to run if the pod could cost more than this
+  many dollars (its full `--timeout` at the provider's quoted hourly rate).
+  Checked before any work starts; an unpriceable pod is refused rather than
+  rented.
 - `--dry-run`: Print the training plan without training.
 
 #### Providers
@@ -894,6 +898,30 @@ stateset-agents gemma-4-31b
 - `--write-config TEXT`: Write the resolved Gemma starter config to JSON/YAML and exit.
 - `--dry-run / --no-dry-run`: Preview the resolved config instead of loading a model.
 - `--json, --json-output`: Output machine-readable JSON.
+
+### `stateset-agents costs`
+
+Show what remote runs have actually cost. Every `train-remote`, `chat-remote`,
+and `serve-remote` pod appends one line to a per-user cost ledger — what it
+ran, on what hardware, for how long, and the dollar amount — derived from the
+provider's quoted hourly rate and the measured pod lifetime.
+
+```bash
+stateset-agents costs
+stateset-agents costs --limit 25
+stateset-agents costs --json
+```
+
+#### Options
+
+- `--ledger PATH`: Read a specific ledger file (default: the shared per-user ledger).
+- `--limit INTEGER`: How many recent runs to list. Default `10`.
+- `--json` / `--json-output`: Emit machine-readable JSON (summary + recent runs).
+
+The ledger is advisory bookkeeping, not a bill: it counts each pod from
+creation (when billing starts) rather than from job start, so it rounds
+against you rather than in your favour. A run whose provider quoted no price
+is recorded with an unknown cost — never as free.
 
 ## Exit behavior
 

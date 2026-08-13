@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cost ledger and budget ceilings.** Every remote run now appends what it
+  cost — model, hardware, pod lifetime, dollars — to a per-user ledger, read
+  back with `stateset-agents costs`. `train-remote --max-cost` refuses to run
+  when a pod's worst case (its full `--timeout` at the provider's quoted rate)
+  would exceed the ceiling, checked before any work starts; a pod the provider
+  will not price is refused rather than rented. `RemoteJobResult` carries
+  `duration_s`/`cost_usd`, and unknown costs stay unknown rather than
+  rendering as free.
+
+  Building this immediately caught a real defect: the unit suite had been
+  writing zero-cost rows into the user's own ledger via the fake providers.
+  Tests now get an isolated ledger (autouse fixture).
+
+### Changed
+
+- **`--network-volume-id` is now live-verified.** A durable 25GB volume was
+  created, attached to a rented pod at `/workspace`, trained against, and the
+  adapter fetched back — then the volume was deleted and both pods and volumes
+  confirmed at zero. (It took four GPU types to find capacity in the volume's
+  datacenter; the executor reported each `500` honestly and moved on.)
+
+### Added
+
 - **Multi-GPU pods: shard a checkpoint bigger than one card.**
   `RemoteJobSpec.gpu_count` (CLI: `--gpu-count`, RunPod `gpuCount`) rents N
   GPUs of the requested type, and the SFT job now loads the base model with

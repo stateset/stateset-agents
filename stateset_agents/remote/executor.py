@@ -87,6 +87,21 @@ class RemoteExecutor(abc.ABC):
 
         logs = list(self.logs(handle))
         output_dir = self.fetch(handle) if status is JobStatus.SUCCEEDED else None
+        # Providers that meter their own pods expose the measured spend via
+        # `job_cost`; those that do not simply report None.
+        duration_s, cost_usd = self.job_cost(handle)
         return RemoteJobResult(
-            handle=handle, status=status, output_dir=output_dir, logs=logs
+            handle=handle,
+            status=status,
+            output_dir=output_dir,
+            logs=logs,
+            duration_s=duration_s,
+            cost_usd=cost_usd,
         )
+
+    def job_cost(self, handle: JobHandle) -> tuple[float | None, float | None]:
+        """Measured (duration_s, cost_usd) for a finished job.
+
+        Default: unknown. Providers that rent metered hardware override it.
+        """
+        return (None, None)

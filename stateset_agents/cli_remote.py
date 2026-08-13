@@ -382,6 +382,15 @@ def train_remote(
         "mid-job; the executor then provisions a fresh pod once and "
         "restarts training from scratch).",
     ),
+    max_cost_usd: float | None = typer.Option(
+        None,
+        "--max-cost",
+        help=(
+            "Refuse to run if the pod could cost more than this many dollars "
+            "(its full --timeout at the provider's quoted hourly rate). The "
+            "check happens before any work starts."
+        ),
+    ),
     network_volume_id: str | None = typer.Option(
         None,
         "--network-volume-id",
@@ -458,6 +467,7 @@ def train_remote(
             container_disk_gb=container_disk_gb,
             cloud_type=cloud_type,
             network_volume_id=network_volume_id,
+            max_cost_usd=max_cost_usd,
         )
     except ValueError as exc:
         _echo(f"Invalid job: {exc}", err=True)
@@ -483,5 +493,64 @@ def train_remote(
         _echo(f"Job {result.status.value}.", err=True)
         raise typer.Exit(code=1)
 
+    if result.cost_usd is not None:
+        _echo(f"Cost: ~${result.cost_usd:.2f} ({result.duration_s:.0f}s of pod time)")
     _echo(f"Done. Adapter written to {result.output_dir}")
     _echo("Use it with: stateset-agents serve --checkpoint " f"{result.output_dir}")
+
+
+@app.command("costs")
+def costs(
+    ledger: Path | None = typer.Option(
+        None,
+        "--ledger",
+        help="Ledger file to read (default: the shared per-user ledger).",
+    ),
+    limit: int = typer.Option(10, "--limit", help="How many recent runs to list."),
+    json_output: bool = typer.Option(
+        False, "--json", "--json-output", help="Emit machine-readable JSON."
+    ),
+) -> None:
+    """Show what remote runs have actually cost.
+
+    Every remote run appends a line to the cost ledger — what it trained, on
+    what hardware, for how long, and the dollar amount. This reads it back.
+    """
+    import json as _json
+
+    from stateset_agents.remote.ledger import read_entries, summarize
+
+    entries = read_entries(ledger)
+    summary = summarize(entries)
+
+    if json_output:
+        _echo(
+            _json.dumps(
+                {"summary": summary, "recent": entries[-limit:]},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if not entries:
+        _echo("No remote runs recorded yet.")
+        return
+
+    _echo(
+        f"{summary['runs']} run(s), ${summary['total_usd']:.2f} total "
+        f"({summary['runs_with_known_cost']} with a known price)"
+    )
+    _echo("")
+    for entry in entries[-limit:]:
+        cost = entry.get("cost_usd")
+        cost_text = f"${cost:.2f}" if isinstance(cost, (int, float)) else "  ? "
+        duration = entry.get("duration_s")
+        mins = f"{duration / 60:.0f}m" if isinstance(duration, (int, float)) else "?"
+        _echo(
+            f"  {cost_text:>7}  {mins:>4}  {entry.get('status', '?'):<9} "
+            f"{entry.get('gpu', '?')}  {entry.get('base_model', '?')}"
+        )
+    _echo("")
+    for model, total in sorted(summary["by_model"].items(), key=lambda kv: -kv[1])[:5]:
+        _echo(f"  ${total:>7.2f}  {model}")

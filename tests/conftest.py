@@ -207,6 +207,22 @@ def mock_transformers_logging():
 
 
 @pytest.fixture(autouse=True)
+def isolate_cost_ledger(tmp_path_factory, monkeypatch):
+    """Keep the suite out of the user's real cost ledger.
+
+    The remote executors append a spend record for every job they run, at a
+    per-user path outside the repo. Tests that exercise submit() with fake
+    providers were writing zero-cost rows straight into that file — the
+    user's own accounting — so every test gets its own ledger instead.
+    """
+    ledger = tmp_path_factory.mktemp("cost_ledger") / "cost_ledger.jsonl"
+    monkeypatch.setattr(
+        "stateset_agents.remote.ledger.DEFAULT_LEDGER_PATH", ledger, raising=False
+    )
+    yield ledger
+
+
+@pytest.fixture(autouse=True)
 def reset_torch_default_dtype():
     """Keep the suite isolated from tests that mutate PyTorch global dtype."""
     torch.set_default_dtype(torch.float32)
