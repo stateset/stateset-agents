@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`--gpu-count` is now hardware-proven.** A 63GB checkpoint
+  (`meta-models/Muse-Glimmer-30B`) trained across two 48GB L40S cards, which
+  it cannot fit on singly: `Model sharded across devices: 0=24 module(s),
+  1=36 module(s)`, adapter returned, $0.35, no pods left behind. The first
+  attempt looked like a pass but proved nothing — capacity forced a fallback
+  to cards large enough to hold the model whole, so nothing made
+  `device_map="auto"` actually split it. The retry used a model too large for
+  any single card available.
+- **Device placement is logged.** `log_device_map_summary` now reports the
+  per-device module split (and the single-device case) and returns the
+  counts, so a multi-GPU run leaves permanent evidence in its own logs
+  instead of depending on someone watching `nvidia-smi` at the right second.
+
 ### Added
 
 - **Adapter provenance and lineage.** Every training run now writes

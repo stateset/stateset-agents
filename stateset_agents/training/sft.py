@@ -283,18 +283,28 @@ def is_sharded_across_devices(model: Any) -> bool:
     return len(set(device_map.values())) > 1
 
 
-def log_device_map_summary(model: Any) -> None:
-    """Log how many modules landed on each device of a sharded model."""
+def log_device_map_summary(model: Any) -> dict[str, int]:
+    """Log how many modules landed on each device, and return the counts.
+
+    Without this a multi-GPU run is indistinguishable from a single-GPU one
+    in the logs — renting two cards is not evidence that both were used.
+    Verified live: a 63GB checkpoint on two 48GB cards logs
+    ``0=24 module(s), 1=36 module(s)``.
+    """
     device_map = getattr(model, "hf_device_map", None)
     if not device_map:
-        return
+        return {}
     counts: dict[str, int] = {}
     for device in device_map.values():
         counts[str(device)] = counts.get(str(device), 0) + 1
-    logger.info(
-        "Model sharded across devices: %s",
-        ", ".join(f"{dev}={n} module(s)" for dev, n in sorted(counts.items())),
-    )
+    if len(counts) > 1:
+        logger.info(
+            "Model sharded across devices: %s",
+            ", ".join(f"{dev}={n} module(s)" for dev, n in sorted(counts.items())),
+        )
+    else:
+        logger.info("Model loaded on a single device: %s", next(iter(counts)))
+    return counts
 
 
 def log_cuda_memory_per_device() -> None:
@@ -330,10 +340,12 @@ def load_base_model_for_sft(base_model: str):
 
     kwargs = model_load_kwargs()
     try:
-        return AutoModelForCausalLM.from_pretrained(  # nosec: B615
+        model = AutoModelForCausalLM.from_pretrained(  # nosec: B615
             base_model,
             **kwargs,
         )
+        log_device_map_summary(model)
+        return model
     except ValueError as causal_exc:
         try:
             from transformers import AutoModelForImageTextToText
@@ -345,10 +357,12 @@ def load_base_model_for_sft(base_model: str):
             base_model,
             causal_exc,
         )
-        return AutoModelForImageTextToText.from_pretrained(  # nosec: B615
+        model = AutoModelForImageTextToText.from_pretrained(  # nosec: B615
             base_model,
             **kwargs,
         )
+        log_device_map_summary(model)
+        return model
 
 
 def infer_lora_target_modules(model: Any) -> list[str]:

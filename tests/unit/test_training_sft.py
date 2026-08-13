@@ -1177,3 +1177,29 @@ class TestWriteEvalResultsExtras:
             "checks": checks,
             "judge_score": 0.9,
         }
+
+
+class TestDevicePlacementLogging:
+    """A multi-GPU run must be distinguishable from a single-GPU one in the
+    logs — renting two cards is not evidence that both were used."""
+
+    class _Model:
+        def __init__(self, device_map=None):
+            if device_map is not None:
+                self.hf_device_map = device_map
+
+    def test_reports_a_shard_across_devices(self, caplog):
+        model = self._Model({"layer.0": 0, "layer.1": 0, "layer.2": 1})
+        with caplog.at_level("INFO", logger="sft_from_curated"):
+            counts = sft.log_device_map_summary(model)
+        assert counts == {"0": 2, "1": 1}
+        assert "sharded across devices" in caplog.text
+
+    def test_reports_a_single_device_load(self, caplog):
+        with caplog.at_level("INFO", logger="sft_from_curated"):
+            counts = sft.log_device_map_summary(self._Model({"layer.0": 0}))
+        assert counts == {"0": 1}
+        assert "single device" in caplog.text
+
+    def test_model_without_a_device_map_is_not_an_error(self):
+        assert sft.log_device_map_summary(self._Model()) == {}
