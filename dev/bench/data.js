@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786609663147,
+  "lastUpdate": 1786619067748,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2144,6 +2144,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.37929006335874e-8",
             "extra": "mean: 427.5331625735403 nsec\nrounds: 57684"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "571c5f5fce190eab6cfef380b2b465bdbd388967",
+          "message": "feat(remote): survive pod death — retry on a fresh pod, COMMUNITY cloud, --resume\n\nA pod dying under a running job (observed live even on SECURE) previously\nlost the whole run. Now:\n\n- RunPodExecutor retries: on mid-job pod/ssh death (exception in the job\n  phase, or ssh's own exit 255 from keepalive-detected death) it terminates\n  the dead pod, provisions a fresh one (bounded by new ctor param\n  max_provision_attempts, default 2), re-uploads inputs, and reruns.\n  v1 restarts training FROM SCRATCH on the new pod — the dead pod's\n  checkpoints lived on its container disk; cross-pod checkpoint resume\n  needs a RunPod network volume (NOTE + follow-up left in code).\n  Training failures (the job's own non-zero exit) and never-reachable\n  pods are NOT retried. The pod still dies on every path.\n- RemoteJobSpec.cloud_type (\"SECURE\" default | \"COMMUNITY\" ~spot pricing,\n  interruptible — now usable because of the retry) -> create_pod cloudType;\n  CLI --cloud-type.\n- sft --resume / RemoteJobSpec.resume: trainer.train(resume_from_\n  checkpoint=True) when a checkpoint-* dir exists in output_dir, logged\n  fresh start otherwise (HF raises on an empty dir). Delivers value for\n  same-machine/local reruns today.\n\nVerified live on a COMMUNITY-cloud RTX A4000 pod (Qwen/Qwen3.5-0.8B,\n24-row smoke set, wheel install): SUCCEEDED, adapter + checkpoint fetched,\nzero pods left billing.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-13T04:01:25-07:00",
+          "tree_id": "8791c592ac5fe671dcca83fce1128c0d8712c67f",
+          "url": "https://github.com/stateset/stateset-agents/commit/571c5f5fce190eab6cfef380b2b465bdbd388967"
+        },
+        "date": 1786619067224,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6168.816889844823,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001644267424057998",
+            "extra": "mean: 162.10563838362773 usec\nrounds: 1485"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6639.066874949539,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001586797261978531",
+            "extra": "mean: 150.62357690252978 usec\nrounds: 1879"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5118.183130252845,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017136869234752695",
+            "extra": "mean: 195.38183268377867 usec\nrounds: 3592"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 734.018329347585,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00009717989574677123",
+            "extra": "mean: 1.3623637994010673 msec\nrounds: 668"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 185.29645175132123,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005148996092922338",
+            "extra": "mean: 5.396757415204361 msec\nrounds: 171"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2109423.3836964048,
+            "unit": "iter/sec",
+            "range": "stddev: 5.482937709977161e-8",
+            "extra": "mean: 474.06320027024185 nsec\nrounds: 106191"
           }
         ]
       }
