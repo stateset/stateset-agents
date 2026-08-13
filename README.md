@@ -87,7 +87,14 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.26.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.27.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Money is accounted for.** Every remote run appends what it cost — model, hardware, pod lifetime, dollars — to a per-user ledger, read back with `stateset-agents costs`. `train-remote --max-cost` refuses a run whose worst case would exceed your ceiling, *before* any work starts; a pod the provider won't price is refused rather than rented, because an unknown cost must never render as free.
+- **Curation stopped rewarding waffle.** The rule-based grader scored polite-but-useless replies 0.75 — above the curation threshold — which two live experiments measured as precision 0.818 and 0.833. A concreteness/resolution component plus optional persona-fidelity checks and a guarded LLM-judge take `make benchmark-loop` to **precision 1.000 / recall 1.000**, floors ratcheted to 0.95.
+- **Durable checkpoints, live-verified.** `--network-volume-id` attaches a RunPod network volume at `/workspace`, so checkpoints survive pod death and the retry path resumes instead of restarting. Proven end to end on rented hardware: volume created, trained against, adapter fetched, volume deleted, zero pods and volumes left behind.
+- **`--gpu-count`** for multi-GPU pods (`device_map="auto"` when torch sees more than one device). Code and unit tests are green; this one is **not yet hardware-proven** — treat it as experimental until it is.
+
+**v0.26.0:**
 
 - **The flywheel closes.** `chat-remote` saves every conversation as an ingest-ready transcript (chat → ingest → improve → train-remote); eval prompts gained pass/fail assertions (`expect`/`forbid`/judge scores) — a fine-tune that didn't take now fails the job while preserving artifacts.
 - **RL verified on real GPUs.** GSPO ran live on rented hardware for the first time (target-token probability 2.8e-05 → 0.125 in 40 steps); a weekly `rl-live-smoke` job keeps it true.
@@ -231,7 +238,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.26.0)
+pip install stateset-agents          # latest release (v0.27.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -927,7 +934,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.26.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.27.0`).
 
 Other entry points:
 

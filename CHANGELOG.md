@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-08-13 — cost accounting, a grader that rewards resolutions, durable checkpoints
+
 ### Added
 
 - **Cost ledger and budget ceilings.** Every remote run now appends what it
