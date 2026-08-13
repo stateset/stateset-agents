@@ -65,7 +65,10 @@ class FakePodApi:
 
     def create_pod(self, **kwargs):
         self.created.append(kwargs)
-        return {"id": "pod-abc", "desiredStatus": "RUNNING"}
+        # First pod keeps the historical id; retries get distinct ids so a
+        # test can tell WHICH pod was terminated.
+        pod_id = "pod-abc" if len(self.created) == 1 else f"pod-abc{len(self.created)}"
+        return {"id": pod_id, "desiredStatus": "RUNNING"}
 
     def get_pod(self, pod_id):
         self.polls += 1
@@ -85,9 +88,18 @@ class FakePodApi:
 class FakeSsh:
     """Moves real bytes between local paths, standing in for scp/ssh."""
 
-    def __init__(self, *, exit_code: int = 0, produces_adapter: bool = True):
+    def __init__(
+        self,
+        *,
+        exit_code: int = 0,
+        produces_adapter: bool = True,
+        run_failures: int = 0,
+    ):
         self.exit_code = exit_code
         self.produces_adapter = produces_adapter
+        #: Raise on the first N run() calls — models the pod dying under the
+        #: job (connection reset), the failure mode COMMUNITY pods hit.
+        self.run_failures_left = run_failures
         self.commands: list[str] = []
         self.uploaded: list[tuple[Path, str]] = []
         self.remote_files: dict[str, bytes] = {}
@@ -102,6 +114,9 @@ class FakeSsh:
 
     def run(self, command: str) -> tuple[int, str]:
         self.commands.append(command)
+        if self.run_failures_left > 0:
+            self.run_failures_left -= 1
+            raise OSError("connection reset by peer")
         if "training.sft" in command and self.produces_adapter:
             self.remote_files["/workspace/out/adapter_config.json"] = json.dumps(
                 {"base_model_name_or_path": "Qwen/Qwen3.5-0.8B", "r": 16}
@@ -231,7 +246,9 @@ class TestPodTermination:
         with pytest.raises(RemoteExecutionError):
             make_executor(api=api, ssh=ssh).submit(spec)
 
-        assert api.terminated == ["pod-abc"]
+        # A persistent transport failure is retried once on a fresh pod
+        # (default max_provision_attempts=2); BOTH pods must die.
+        assert api.terminated == ["pod-abc", "pod-abc2"]
 
     def test_pod_is_terminated_when_it_never_becomes_reachable(
         self, make_executor, spec
@@ -478,6 +495,146 @@ class TestContainerDiskSize:
         assert spec.container_disk_gb is None
         make_executor(api=api, container_disk_gb=120).submit(spec)
         assert api.created[0]["container_disk_gb"] == 120
+
+
+class TestCloudType:
+    """COMMUNITY (~spot) pods are far cheaper; the spec's choice must reach
+    the create-pod call — and an invalid value must fail before renting."""
+
+    def test_default_is_secure(self, make_executor, spec):
+        api = FakePodApi()
+        make_executor(api=api).submit(spec)
+        assert api.created[0]["cloud_type"] == "SECURE"
+
+    def test_community_reaches_create_pod(self, make_executor, spec):
+        api = FakePodApi()
+        spec.cloud_type = "COMMUNITY"
+        make_executor(api=api).submit(spec)
+        assert api.created[0]["cloud_type"] == "COMMUNITY"
+
+    def test_real_api_sends_cloudtype_in_the_payload(self, monkeypatch):
+        """The wrapper must map cloud_type onto RunPod's `cloudType` key."""
+        from stateset_agents.remote.runpod import RunPodApi
+
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"id": "p"}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            captured["json"] = json
+            return FakeResponse()
+
+        import requests
+
+        monkeypatch.setattr(requests, "post", fake_post)
+        RunPodApi("key").create_pod(
+            name="n",
+            image="img",
+            gpu_type_id="g",
+            ports=["22/tcp"],
+            env={},
+            cloud_type="COMMUNITY",
+        )
+        assert captured["json"]["cloudType"] == "COMMUNITY"
+
+
+class TestRetryOnPodDeath:
+    """A pod dying under a running job (the COMMUNITY failure mode, also
+    observed live on SECURE) must cost a retry, not the whole run."""
+
+    def test_provisions_a_second_pod_exactly_once_and_terminates_the_first(
+        self, make_executor, spec
+    ):
+        api = FakePodApi()
+        ssh = FakeSsh(run_failures=1)
+        executor = make_executor(api=api, ssh=ssh)
+
+        result = executor.wait(executor.submit(spec))
+
+        assert len(api.created) == 2
+        assert api.terminated == ["pod-abc", "pod-abc2"]
+        assert result.status is JobStatus.SUCCEEDED
+
+    def test_retry_is_reported_in_the_logs(self, make_executor, spec):
+        executor = make_executor(ssh=FakeSsh(run_failures=1))
+        result = executor.wait(executor.submit(spec))
+
+        assert any("restarting training from scratch" in line for line in result.logs)
+
+    def test_persistent_death_gives_up_after_max_attempts(self, make_executor, spec):
+        api = FakePodApi()
+        ssh = FakeSsh(run_failures=99)
+
+        with pytest.raises(RemoteExecutionError, match="giving up"):
+            make_executor(api=api, ssh=ssh, max_provision_attempts=3).submit(spec)
+
+        assert len(api.created) == 3
+        assert len(api.terminated) == 3
+
+    def test_ssh_exit_255_is_treated_as_pod_death_and_retried(
+        self, make_executor, spec
+    ):
+        """255 is ssh's own exit code — keepalive-detected death lands there,
+        not as an exception."""
+        api = FakePodApi()
+        ssh = FakeSsh()
+        real_run = ssh.run
+        calls = {"n": 0}
+
+        def run_255_once(command):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return 255, "client_loop: send disconnect: Broken pipe"
+            return real_run(command)
+
+        ssh.run = run_255_once
+        executor = make_executor(api=api, ssh=ssh)
+
+        result = executor.wait(executor.submit(spec))
+
+        assert len(api.created) == 2
+        assert result.status is JobStatus.SUCCEEDED
+
+    def test_a_training_failure_is_not_retried(self, make_executor, spec):
+        """The job's own non-zero exit is a code/data problem — rerunning it
+        on a fresh pod would just bill twice for the same failure."""
+        api = FakePodApi()
+        executor = make_executor(api=api, ssh=FakeSsh(exit_code=1))
+
+        result = executor.wait(executor.submit(spec))
+
+        assert result.status is JobStatus.FAILED
+        assert len(api.created) == 1
+
+    def test_never_reachable_is_not_retried(self, make_executor, spec):
+        api = FakePodApi(never_ready=True)
+
+        with pytest.raises(RemoteExecutionError, match="never became reachable"):
+            make_executor(api=api, ready_timeout_s=0).submit(spec)
+
+        assert len(api.created) == 1
+
+
+class TestResumeFlag:
+    def test_resume_travels_to_the_remote_command(self, make_executor, spec):
+        ssh = FakeSsh()
+        spec.resume = True
+        make_executor(ssh=ssh).submit(spec)
+
+        train = next(c for c in ssh.commands if "training.sft" in c)
+        assert "--resume" in train
+
+    def test_no_resume_flag_by_default(self, make_executor, spec):
+        ssh = FakeSsh()
+        make_executor(ssh=ssh).submit(spec)
+
+        train = next(c for c in ssh.commands if "training.sft" in c)
+        assert "--resume" not in train
 
 
 class TestEvalPrompts:

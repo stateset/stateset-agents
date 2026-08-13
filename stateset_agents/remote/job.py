@@ -23,8 +23,12 @@ __all__ = ["JobHandle", "JobStatus", "RemoteJobResult", "RemoteJobSpec"]
 #: Fields that configure the *provider*, not the training script. These are
 #: excluded from ``to_cli_args()``.
 _RESOURCE_FIELDS = frozenset(
-    {"gpu", "timeout_s", "package_version", "container_disk_gb"}
+    {"gpu", "timeout_s", "package_version", "container_disk_gb", "cloud_type"}
 )
+
+#: RunPod pod pools. SECURE is reserved capacity; COMMUNITY is spot-priced —
+#: markedly cheaper, but the pod can be reclaimed mid-job.
+_CLOUD_TYPES = frozenset({"SECURE", "COMMUNITY"})
 
 #: Positive-valued hyperparameters, validated uniformly in ``__post_init__``.
 _POSITIVE_FIELDS = (
@@ -93,6 +97,12 @@ class RemoteJobSpec:
     per_device_batch_size: int = 2
     gradient_accumulation_steps: int = 4
     dry_run: bool = False
+    #: Resume from the newest ``checkpoint-*`` directory already present in
+    #: ``output_dir``, when one exists (otherwise the job logs it and trains
+    #: fresh). Only useful when the worker can actually see prior checkpoints:
+    #: local reruns, or a manual rerun on a pod that kept its disk. A fresh
+    #: RunPod pod starts with an empty output dir, so this is a no-op there.
+    resume: bool = False
     #: Prompts to compare base-vs-tuned after training. When set, the job
     #: generates a completion per prompt with the base model before LoRA is
     #: applied and again with the trained adapter, and writes
@@ -119,6 +129,9 @@ class RemoteJobSpec:
     #: mid-download on the old fixed 40GB (verified live). ``None`` means
     #: "use the executor's own default".
     container_disk_gb: int | None = None
+    #: RunPod pod pool: "SECURE" (default, reserved capacity) or "COMMUNITY"
+    #: (spot-priced — noticeably cheaper, but interruptible). RunPod only.
+    cloud_type: str = "SECURE"
 
     def __post_init__(self) -> None:
         self.dataset = Path(self.dataset)
@@ -144,6 +157,13 @@ class RemoteJobSpec:
         if self.container_disk_gb is not None and self.container_disk_gb <= 0:
             raise ValueError(
                 f"container_disk_gb must be positive, got {self.container_disk_gb!r}"
+            )
+
+        self.cloud_type = str(self.cloud_type).upper()
+        if self.cloud_type not in _CLOUD_TYPES:
+            raise ValueError(
+                f"cloud_type must be one of {sorted(_CLOUD_TYPES)}, "
+                f"got {self.cloud_type!r}"
             )
 
     def to_cli_args(self) -> list[str]:
@@ -172,6 +192,8 @@ class RemoteJobSpec:
         ]
         if self.dry_run:
             args.append("--dry-run")
+        if self.resume:
+            args.append("--resume")
         if self.eval_prompts:
             args += ["--eval-prompts-json", json.dumps(self.eval_prompts)]
             args += ["--eval-max-new-tokens", str(self.eval_max_new_tokens)]

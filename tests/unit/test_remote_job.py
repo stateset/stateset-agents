@@ -93,6 +93,55 @@ class TestRemoteJobSpecValidation:
                 dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", container_disk_gb=0
             )
 
+    def test_rejects_unknown_cloud_type(self, dataset):
+        with pytest.raises(ValueError, match="cloud_type"):
+            RemoteJobSpec(
+                dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", cloud_type="SPOT"
+            )
+
+    def test_cloud_type_is_normalized_to_upper_case(self, dataset):
+        spec = RemoteJobSpec(
+            dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", cloud_type="community"
+        )
+        assert spec.cloud_type == "COMMUNITY"
+
+    def test_cloud_type_defaults_to_secure(self, dataset):
+        spec = RemoteJobSpec(dataset=dataset, base_model="Qwen/Qwen3.5-0.8B")
+        assert spec.cloud_type == "SECURE"
+        assert spec.resume is False
+
+
+class TestResumeAndCloudTypeCliArgs:
+    def test_resume_lands_in_cli_args(self, dataset):
+        spec = RemoteJobSpec(
+            dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", resume=True
+        )
+        assert "--resume" in spec.to_cli_args()
+
+    def test_no_resume_flag_by_default(self, dataset):
+        spec = RemoteJobSpec(dataset=dataset, base_model="Qwen/Qwen3.5-0.8B")
+        assert "--resume" not in spec.to_cli_args()
+
+    def test_cloud_type_is_a_provider_field_and_never_reaches_the_script(self, dataset):
+        spec = RemoteJobSpec(
+            dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", cloud_type="COMMUNITY"
+        )
+        # (Exact flag matches: tmp_path embeds the test name, which would
+        # trip a substring search.)
+        args = spec.to_cli_args()
+        assert "--cloud-type" not in args
+        assert "COMMUNITY" not in args
+
+    def test_round_trips_through_json(self, dataset):
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            cloud_type="COMMUNITY",
+            resume=True,
+        )
+        restored = RemoteJobSpec.from_dict(json.loads(json.dumps(spec.to_dict())))
+        assert restored == spec
+
 
 class TestRemoteJobSpecSerialization:
     def test_round_trips_through_json(self, dataset):

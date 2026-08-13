@@ -197,6 +197,9 @@ class TestOptionPassthrough:
                 "8",
                 "--num-epochs",
                 "7",
+                "--cloud-type",
+                "COMMUNITY",
+                "--resume",
                 "--dry-run",
             ],
         )
@@ -209,6 +212,53 @@ class TestOptionPassthrough:
         assert spec.container_disk_gb == 160
         assert spec.lora_r == 8
         assert spec.num_epochs == 7
+        assert spec.cloud_type == "COMMUNITY"
+        assert spec.resume is True
+
+    def test_cloud_type_and_resume_default_off(self, dataset, tmp_path, monkeypatch):
+        captured = capture_spec(monkeypatch)
+
+        result = runner.invoke(
+            app,
+            [
+                "train-remote",
+                "--provider",
+                "local",
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert captured["spec"].cloud_type == "SECURE"
+        assert captured["spec"].resume is False
+
+    def test_invalid_cloud_type_is_rejected_before_submitting(
+        self, dataset, tmp_path, monkeypatch
+    ):
+        captured = capture_spec(monkeypatch)
+
+        result = runner.invoke(
+            app,
+            [
+                "train-remote",
+                "--provider",
+                "local",
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--cloud-type",
+                "SPOT",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "cloud_type" in result.output
+        assert "spec" not in captured
 
     def test_invalid_hyperparameter_is_rejected_before_submitting(
         self, dataset, tmp_path, monkeypatch

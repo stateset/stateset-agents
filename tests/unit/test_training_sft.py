@@ -471,6 +471,103 @@ class TestWriteEvalResults:
         ]
 
 
+class TestResumeCheckpoint:
+    """`--resume` continues from HF Trainer's checkpoint-<N> dirs when they
+    exist — and MUST degrade to a fresh run when they don't, because
+    `trainer.train(resume_from_checkpoint=True)` raises on an empty dir."""
+
+    def test_off_by_default(self, tmp_path):
+        (tmp_path / "checkpoint-10").mkdir()
+        assert sft.resolve_resume_checkpoint(tmp_path, resume=False) is False
+
+    def test_resumes_when_a_checkpoint_directory_exists(self, tmp_path, caplog):
+        (tmp_path / "checkpoint-10").mkdir()
+        with caplog.at_level("INFO", logger="sft_from_curated"):
+            assert sft.resolve_resume_checkpoint(tmp_path, resume=True) is True
+        assert "checkpoint-10" in caplog.text
+
+    def test_trains_fresh_when_no_checkpoint_exists(self, tmp_path, caplog):
+        with caplog.at_level("INFO", logger="sft_from_curated"):
+            assert sft.resolve_resume_checkpoint(tmp_path, resume=True) is False
+        assert "training from scratch" in caplog.text
+
+    def test_a_checkpoint_named_file_does_not_count(self, tmp_path):
+        (tmp_path / "checkpoint-10").write_text("not a directory")
+        assert sft.resolve_resume_checkpoint(tmp_path, resume=True) is False
+
+    def test_missing_output_dir_trains_fresh(self, tmp_path):
+        assert sft.resolve_resume_checkpoint(tmp_path / "nope", resume=True) is False
+
+
+class TestResumeCli:
+    def test_resume_flag_reaches_the_job(self, dataset, monkeypatch):
+        captured = {}
+
+        def fake_run_sft_job(job):
+            captured.update(job)
+            return {"returncode": 0, "logs": [], "output_dir": "out"}
+
+        monkeypatch.setattr(sft, "run_sft_job", fake_run_sft_job)
+
+        code = sft.main(
+            [
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.5-0.8B",
+                "--dry-run",
+                "--resume",
+            ]
+        )
+
+        assert code == 0
+        assert captured["resume"] is True
+
+    def test_resume_defaults_off(self, dataset, monkeypatch):
+        captured = {}
+
+        def fake_run_sft_job(job):
+            captured.update(job)
+            return {"returncode": 0, "logs": [], "output_dir": "out"}
+
+        monkeypatch.setattr(sft, "run_sft_job", fake_run_sft_job)
+
+        code = sft.main(["--dataset", str(dataset), "--base-model", "m", "--dry-run"])
+
+        assert code == 0
+        assert captured["resume"] is False
+
+    def test_run_sft_job_forwards_resume_to_run_sft(
+        self, dataset, tmp_path, monkeypatch
+    ):
+        captured = {}
+
+        def fake_run_sft(**kwargs):
+            captured.update(kwargs)
+            return kwargs["output_dir"]
+
+        monkeypatch.setattr(sft, "gpu_available", lambda: True)
+        monkeypatch.setattr(sft, "run_sft", fake_run_sft)
+
+        job = {
+            "dataset": str(dataset),
+            "base_model": "m",
+            "output_dir": str(tmp_path / "out"),
+            "num_epochs": 1,
+            "lora_r": 8,
+            "lora_alpha": 16,
+            "learning_rate": 1e-5,
+            "max_length": 64,
+            "per_device_batch_size": 1,
+            "gradient_accumulation_steps": 1,
+            "resume": True,
+        }
+        outcome = sft.run_sft_job(job)
+
+        assert outcome["returncode"] == 0
+        assert captured["resume"] is True
+
+
 class TestEvalPromptsCli:
     def test_eval_prompts_json_reaches_the_job(self, dataset, monkeypatch):
         captured = {}

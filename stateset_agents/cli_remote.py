@@ -235,6 +235,23 @@ def train_remote(
         "download. Size it at roughly 2.5x the checkpoint (a 30B BF16 "
         "model is ~63GB). Defaults to the executor's own default.",
     ),
+    cloud_type: str = typer.Option(
+        "SECURE",
+        "--cloud-type",
+        help="RunPod only: SECURE (default, reserved capacity) or COMMUNITY "
+        "(~spot pricing — markedly cheaper, but the pod can be reclaimed "
+        "mid-job; the executor then provisions a fresh pod once and "
+        "restarts training from scratch).",
+    ),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        help="Resume from the newest checkpoint-* in --output-dir when one "
+        "exists (otherwise trains fresh). Useful for rerunning an "
+        "interrupted local job; a fresh RunPod pod starts with an empty "
+        "output dir, so cross-pod resume needs a network volume (not yet "
+        "supported).",
+    ),
     eval_prompts: Path | None = typer.Option(
         None,
         "--eval-prompts",
@@ -281,12 +298,14 @@ def train_remote(
             per_device_batch_size=per_device_batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
             dry_run=dry_run,
+            resume=resume,
             eval_prompts=prompts,
             eval_max_new_tokens=eval_max_new_tokens,
             gpu=gpu,
             timeout_s=timeout,
             package_version=package_version,
             container_disk_gb=container_disk_gb,
+            cloud_type=cloud_type,
         )
     except ValueError as exc:
         _echo(f"Invalid job: {exc}", err=True)

@@ -89,6 +89,23 @@ success with an empty output directory.
   GB. Size it at roughly 2.5x the model download (a 30B BF16 checkpoint is
   ~63GB and dies mid-download on the 40GB default). Defaults to the
   executor's default (40).
+- `--cloud-type [SECURE|COMMUNITY]`: RunPod only — which pod pool to rent
+  from. `SECURE` (default) is reserved capacity; `COMMUNITY` is spot-priced —
+  markedly cheaper, but the pod can be reclaimed mid-job. When a pod dies
+  under a running job (any cloud type — observed live even on SECURE), the
+  executor terminates the dead pod, provisions a fresh one, re-uploads the
+  inputs, and **restarts training from scratch** (bounded by the executor's
+  `max_provision_attempts`, default 2). It does *not* yet resume from the
+  dead pod's checkpoints: those lived on its container disk and died with it.
+  Cross-pod checkpoint resume needs a RunPod network volume, which is a
+  planned follow-up.
+- `--resume`: Resume from the newest `checkpoint-<N>` directory already in
+  `--output-dir` when one exists; with none, the job logs it and trains
+  fresh. This helps where prior checkpoints are actually visible to the
+  worker — rerunning an interrupted `--provider local` job, or a manual rerun
+  on a machine that kept its disk. A fresh RunPod pod starts with an empty
+  output dir, so `--resume` is a harmless no-op there (see `--cloud-type`
+  above for what happens on pod death).
 - `--eval-prompts PATH`: Local text file of eval entries, one per line (blank
   lines skipped). After training, each prompt is answered by both the base
   model and the tuned adapter (greedy decoding), and the side-by-side

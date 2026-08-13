@@ -86,6 +86,7 @@ class RunPodApi:
         ports: list[str],
         env: dict[str, str],
         container_disk_gb: int = 40,
+        cloud_type: str = "SECURE",
     ) -> dict[str, Any]:
         import requests
 
@@ -97,7 +98,7 @@ class RunPodApi:
                 "imageName": image,
                 "gpuTypeIds": [gpu_type_id],
                 "gpuCount": 1,
-                "cloudType": "SECURE",
+                "cloudType": cloud_type,
                 "containerDiskInGb": container_disk_gb,
                 "ports": ports,
                 "env": env,
@@ -259,6 +260,16 @@ class _RunPodJob:
     logs: list[str] = field(default_factory=list)
 
 
+class _PodDiedMidJob(RemoteExecutionError):
+    """The pod (or its SSH transport) failed *under a running job*.
+
+    Distinct from a training failure (the job's own non-zero exit) and from a
+    pod that never became reachable: this is the interruption case —
+    keepalive-detected death, connection reset, a COMMUNITY pod reclaimed —
+    where re-provisioning a fresh pod and rerunning is worthwhile.
+    """
+
+
 class RunPodExecutor(RemoteExecutor):
     """Executes the job on a RunPod GPU pod, over SSH."""
 
@@ -278,6 +289,7 @@ class RunPodExecutor(RemoteExecutor):
         container_disk_gb: int = 40,
         ready_timeout_s: int = 600,
         poll_interval_s: float = 10.0,
+        max_provision_attempts: int = 2,
     ) -> None:
         self._api = api
         self._ssh = ssh
@@ -295,6 +307,12 @@ class RunPodExecutor(RemoteExecutor):
         self.container_disk_gb = container_disk_gb
         self.ready_timeout_s = ready_timeout_s
         self.poll_interval_s = poll_interval_s
+        #: How many pods to try before giving up when one dies *under a
+        #: running job* (keepalive-detected death, connection reset — the
+        #: normal failure mode of COMMUNITY/spot pods). Each retry terminates
+        #: the dead pod, provisions a fresh one, re-uploads the inputs, and
+        #: reruns the job.
+        self.max_provision_attempts = max(1, max_provision_attempts)
         self._jobs: dict[str, _RunPodJob] = {}
 
     # -- lazily resolved collaborators ------------------------------------
@@ -379,6 +397,12 @@ class RunPodExecutor(RemoteExecutor):
         )
         if spec.dry_run:
             args += " --dry-run"
+        if spec.resume:
+            # Only meaningful when checkpoints already exist remotely — a
+            # fresh pod's output dir is empty, so the job logs it and trains
+            # from scratch. Harmless either way; passed through for parity
+            # with the local provider.
+            args += " --resume"
         if spec.eval_prompts:
             # The command travels through ssh + bash, so the JSON blob must
             # survive a real shell — hence shlex.quote, not manual quoting.
@@ -398,6 +422,50 @@ class RunPodExecutor(RemoteExecutor):
         handle = JobHandle(provider=self.name, job_id=job_id)
         logs: list[str] = []
 
+        for attempt in range(1, self.max_provision_attempts + 1):
+            try:
+                status = self._run_attempt(api, ssh, public_key, spec, job_id, logs)
+            except _PodDiedMidJob as exc:
+                logs.append(str(exc))
+                if attempt >= self.max_provision_attempts:
+                    raise RemoteExecutionError(
+                        f"pod died mid-job on every attempt "
+                        f"({self.max_provision_attempts}); giving up: {exc}",
+                        provider=self.name,
+                    ) from exc
+                # NOTE: the fresh pod restarts training FROM SCRATCH. The
+                # dead pod's checkpoint-* directories lived on its container
+                # disk and died with it, so cross-pod `--resume` cannot work
+                # yet. Follow-up: provision a RunPod network volume, mount it
+                # at /workspace/out, and pass --resume on retry — then an
+                # interruption costs at most one epoch, not the whole run.
+                logs.append(
+                    f"provisioning a fresh pod and restarting training from "
+                    f"scratch (attempt {attempt + 1}/"
+                    f"{self.max_provision_attempts})"
+                )
+                continue
+            self._jobs[job_id] = _RunPodJob(spec, status, logs)
+            return handle
+
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    def _run_attempt(
+        self,
+        api: Any,
+        ssh: Any,
+        public_key: str,
+        spec: RemoteJobSpec,
+        job_id: str,
+        logs: list[str],
+    ) -> JobStatus:
+        """One full provision → upload → run → download cycle on a new pod.
+
+        Raises :class:`_PodDiedMidJob` when the pod fails *under* the job —
+        the caller may then retry on a fresh pod. Every other outcome is
+        terminal: a returned :class:`JobStatus`, or a plain
+        :class:`RemoteExecutionError`. The pod is terminated on every path.
+        """
         pod = api.create_pod(
             name=f"stateset-sft-{job_id}",
             image=self.image,
@@ -405,9 +473,13 @@ class RunPodExecutor(RemoteExecutor):
             ports=["22/tcp"],
             env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
             container_disk_gb=spec.container_disk_gb or self.container_disk_gb,
+            cloud_type=spec.cloud_type,
         )
         pod_id = str(pod["id"])
-        logs.append(f"created pod {pod_id} ({spec.gpu or self.DEFAULT_GPU})")
+        logs.append(
+            f"created pod {pod_id} "
+            f"({spec.gpu or self.DEFAULT_GPU}, {spec.cloud_type})"
+        )
 
         # Everything from here must terminate the pod, whatever happens.
         try:
@@ -415,51 +487,67 @@ class RunPodExecutor(RemoteExecutor):
             logs.append(f"pod reachable at {host}:{port}")
             ssh.wait_until_reachable(host, port, self.ready_timeout_s)
 
-            dataset_remote = f"{_REMOTE_WORKDIR}/{spec.dataset.name}"
-            ssh.upload(spec.dataset, dataset_remote)
-            logs.append(f"uploaded {spec.dataset.name}")
+            # The job phase: any transport failure past this point means the
+            # pod (or its network) died under us — the retryable case.
+            try:
+                dataset_remote = f"{_REMOTE_WORKDIR}/{spec.dataset.name}"
+                ssh.upload(spec.dataset, dataset_remote)
+                logs.append(f"uploaded {spec.dataset.name}")
 
-            if self.wheel:
-                ssh.upload(self.wheel, f"{_REMOTE_WORKDIR}/{self.wheel.name}")
-                logs.append(f"uploaded {self.wheel.name}")
+                if self.wheel:
+                    ssh.upload(self.wheel, f"{_REMOTE_WORKDIR}/{self.wheel.name}")
+                    logs.append(f"uploaded {self.wheel.name}")
 
-            exit_code = 0
-            for command in self._remote_commands(spec, dataset_remote):
-                exit_code, output = ssh.run(command)
-                logs.extend(output.splitlines())
-                if exit_code != 0:
-                    break
+                exit_code = 0
+                for command in self._remote_commands(spec, dataset_remote):
+                    exit_code, output = ssh.run(command)
+                    logs.extend(output.splitlines())
+                    if exit_code != 0:
+                        break
+
+                if exit_code == 255:
+                    # 255 is ssh's OWN exit code (the client failed), not the
+                    # remote command's: keepalive-detected pod death lands
+                    # here. Observed live — RunPod restarted a pod under a
+                    # running job and its IP changed.
+                    raise _PodDiedMidJob(
+                        f"ssh transport to pod {pod_id} died mid-job " "(ssh exit 255)",
+                        provider=self.name,
+                    )
+            except _PodDiedMidJob:
+                raise
+            except Exception as exc:
+                raise _PodDiedMidJob(
+                    f"pod {pod_id} failed mid-job: {exc}", provider=self.name
+                ) from exc
 
             if exit_code != 0:
                 logs.append(f"remote job exited {exit_code}")
-                self._jobs[job_id] = _RunPodJob(spec, JobStatus.FAILED, logs)
-                return handle
+                return JobStatus.FAILED
 
             if spec.dry_run:
-                self._jobs[job_id] = _RunPodJob(spec, JobStatus.SUCCEEDED, logs)
-                return handle
+                return JobStatus.SUCCEEDED
 
             try:
                 downloaded = ssh.download_dir(_REMOTE_OUTPUT, spec.output_dir)
             except Exception as exc:
-                # Reported, not raised: by this point the job itself has
-                # already succeeded, and raising would discard every line of
-                # its output — leaving a stack trace and no evidence.
+                # Reported, not raised (and not retried — a rerun would burn
+                # a full training run to fix a copy): by this point the job
+                # itself has already succeeded, and raising would discard
+                # every line of its output — leaving a stack trace and no
+                # evidence.
                 logs.append(f"failed to download adapter: {exc}")
-                self._jobs[job_id] = _RunPodJob(spec, JobStatus.FAILED, logs)
-                return handle
+                return JobStatus.FAILED
 
             if not downloaded:
                 logs.append(
                     "job exited cleanly but produced no artifacts — "
                     f"nothing was written to {_REMOTE_OUTPUT}"
                 )
-                self._jobs[job_id] = _RunPodJob(spec, JobStatus.FAILED, logs)
-                return handle
+                return JobStatus.FAILED
 
             logs.append(f"downloaded {len(downloaded)} file(s) to {spec.output_dir}")
-            self._jobs[job_id] = _RunPodJob(spec, JobStatus.SUCCEEDED, logs)
-            return handle
+            return JobStatus.SUCCEEDED
 
         except RemoteExecutionError:
             raise

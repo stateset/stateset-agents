@@ -49,6 +49,7 @@ __all__ = [
     "load_chat_dataset",
     "normalize_eval_prompts",
     "print_training_plan",
+    "resolve_resume_checkpoint",
     "run_sft",
     "run_sft_job",
     "write_eval_results",
@@ -57,7 +58,7 @@ __all__ = [
 #: Keys of a ``RemoteJobSpec`` dict that configure the provider rather than the
 #: job. ``run_sft_job`` ignores them so a full spec can be passed straight in.
 _PROVIDER_ONLY_KEYS = frozenset(
-    {"gpu", "timeout_s", "package_version", "container_disk_gb"}
+    {"gpu", "timeout_s", "package_version", "container_disk_gb", "cloud_type"}
 )
 
 
@@ -501,6 +502,32 @@ def eval_gate_failures(
     return failures
 
 
+def resolve_resume_checkpoint(output_dir: Path, resume: bool) -> bool:
+    """Whether training should resume from a checkpoint in ``output_dir``.
+
+    HF Trainer writes ``checkpoint-<N>`` directories there (we run with
+    ``save_strategy="epoch"``), and ``trainer.train(resume_from_checkpoint=
+    True)`` raises when none exists — so ``--resume`` against a fresh output
+    dir must degrade to a logged fresh start, not a crash.
+    """
+    if not resume:
+        return False
+    checkpoints = sorted(p for p in Path(output_dir).glob("checkpoint-*") if p.is_dir())
+    if checkpoints:
+        logger.info(
+            "Resuming from the newest checkpoint in %s (found %s).",
+            output_dir,
+            checkpoints[-1].name,
+        )
+        return True
+    logger.info(
+        "--resume requested but no checkpoint-* directory exists in %s; "
+        "training from scratch.",
+        output_dir,
+    )
+    return False
+
+
 def run_sft(
     rows: list[dict[str, Any]],
     base_model: str,
@@ -514,8 +541,13 @@ def run_sft(
     gradient_accumulation_steps: int,
     eval_prompts: list[str | dict[str, Any]] | None = None,
     eval_max_new_tokens: int = 90,
+    resume: bool = False,
 ) -> Path:
     """Run the actual SFT training on GPU.
+
+    ``resume=True`` continues from the newest ``checkpoint-<N>`` directory
+    already in ``output_dir`` when one exists; with none, it logs the fact
+    and trains fresh (see ``resolve_resume_checkpoint``).
 
     When ``eval_prompts`` is given, a completion per prompt is generated with
     the base model *before* LoRA is applied and again through the trained
@@ -634,7 +666,10 @@ def run_sft(
     )
 
     logger.info("Starting SFT…")
-    trainer.train()
+    if resolve_resume_checkpoint(output_dir, resume):
+        trainer.train(resume_from_checkpoint=True)
+    else:
+        trainer.train()
     logger.info("Training complete. Saving adapter to %s", output_dir)
     model.save_pretrained(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
@@ -778,6 +813,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         gradient_accumulation_steps=job["gradient_accumulation_steps"],
                         eval_prompts=job.get("eval_prompts"),
                         eval_max_new_tokens=job.get("eval_max_new_tokens", 90),
+                        resume=bool(job.get("resume", False)),
                     )
                     returncode = _apply_eval_gate(job.get("eval_prompts"), output_dir)
     except Exception as exc:  # reported, never raised — see docstring
@@ -825,6 +861,12 @@ def build_parser() -> Any:
         action="store_true",
         help="Print the training plan without running it (forced "
         "automatically when no GPU is detected).",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from the newest checkpoint-* directory in --output-dir "
+        "when one exists; with none, log it and train from scratch.",
     )
     parser.add_argument(
         "--eval-prompts-json",
@@ -890,6 +932,7 @@ def main(argv: list[str] | None = None) -> int:
             "per_device_batch_size": args.per_device_batch_size,
             "gradient_accumulation_steps": args.gradient_accumulation_steps,
             "dry_run": args.dry_run,
+            "resume": args.resume,
             "eval_prompts": eval_prompts,
             "eval_max_new_tokens": args.eval_max_new_tokens,
         }
