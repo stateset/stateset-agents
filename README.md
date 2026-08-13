@@ -87,7 +87,15 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.25.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.26.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **The flywheel closes.** `chat-remote` saves every conversation as an ingest-ready transcript (chat → ingest → improve → train-remote); eval prompts gained pass/fail assertions (`expect`/`forbid`/judge scores) — a fine-tune that didn't take now fails the job while preserving artifacts.
+- **RL verified on real GPUs.** GSPO ran live on rented hardware for the first time (target-token probability 2.8e-05 → 0.125 in 40 steps); a weekly `rl-live-smoke` job keeps it true.
+- **Resilient, cheaper training.** Pod death auto-retries on a fresh pod; `--cloud-type COMMUNITY` (spot pricing) verified live; `--resume` for checkpoint restarts.
+- **`serve-remote`** (vLLM OpenAI endpoint with token auth, `--max-hours` self-destruct — verified to terminate even with the client force-killed — `--stop`/`--list`); endpoint bring-up pending a GPU-capacity retry.
+- **`make release`** — this release was cut with it.
+
+**v0.25.0:**
 
 - **Talk to your fine‑tuned model.** `stateset-agents chat-remote --base-model X --adapter DIR` rents a GPU pod, loads base + adapter, and holds a multi‑turn conversation (SSH‑piped, pod terminated on every exit path; `--prompt` for scripted mode). Live‑verified: a Muse‑Glimmer‑30B adapter resolved "I got double charged for it" to the order number from the previous turn.
 - **Dead pods fail fast.** SSH keepalives bound peer-loss detection to ~2 minutes (a pod restarting under a running job previously hung the executor indefinitely).
@@ -223,7 +231,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.23.0)
+pip install stateset-agents          # latest release (v0.26.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -919,7 +927,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.23.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.26.0`).
 
 Other entry points:
 
