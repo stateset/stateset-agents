@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Adapter provenance and lineage.** Every training run now writes
+  `stateset_manifest.json` beside its adapter — base model, dataset path and
+  **content hash**, hyperparameters, eval outcome, package version, and the
+  adapter it descends from (`--parent-adapter`). `stateset-agents adapters`
+  reads them back and reconstructs the family tree, resolving links by path
+  and then by directory name so a manifest written on a rented pod still
+  links up after the adapter is fetched elsewhere. Adapters trained before
+  manifests existed are listed as carrying no provenance rather than hidden.
+
 ## [0.27.0] - 2026-08-13 — cost accounting, a grader that rewards resolutions, durable checkpoints
 
 ### Added

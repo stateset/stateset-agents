@@ -35,7 +35,24 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.training.lineage import (
+    AdapterManifest,
+    hash_dataset,
+    write_manifest,
+)
+
 logger = logging.getLogger("sft_from_curated")
+
+
+def _package_version() -> str | None:
+    """Installed package version, for the manifest. None if unavailable."""
+    try:
+        from stateset_agents import __version__
+
+        return str(__version__)
+    except Exception:  # pragma: no cover - defensive
+        return None
+
 
 __all__ = [
     "build_eval_extras",
@@ -637,6 +654,8 @@ def run_sft(
     eval_prompts: list[str | dict[str, Any]] | None = None,
     eval_max_new_tokens: int = 90,
     resume: bool = False,
+    dataset_path: Path | None = None,
+    parent_adapter: str | None = None,
 ) -> Path:
     """Run the actual SFT training on GPU.
 
@@ -773,6 +792,32 @@ def run_sft(
     model.save_pretrained(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
 
+    # Provenance is written as soon as the adapter exists, so an adapter is
+    # never on disk without a record of what made it — even if the eval
+    # below fails or the process dies during it.
+    dataset_sha, dataset_rows = (
+        hash_dataset(dataset_path) if dataset_path is not None else (None, len(rows))
+    )
+    manifest = AdapterManifest(
+        base_model=base_model,
+        dataset_path=str(dataset_path) if dataset_path is not None else None,
+        dataset_sha256=dataset_sha,
+        dataset_rows=dataset_rows if dataset_rows is not None else len(rows),
+        hyperparameters={
+            "num_epochs": num_epochs,
+            "lora_r": lora_r,
+            "lora_alpha": lora_alpha,
+            "learning_rate": learning_rate,
+            "max_length": max_length,
+            "per_device_batch_size": per_device_batch_size,
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+            "resumed": bool(resume),
+        },
+        parent_adapter=parent_adapter,
+        package_version=_package_version(),
+    )
+    write_manifest(output_dir, manifest)
+
     if eval_prompt_texts:
         logger.info(
             "Generating fine-tuned completions for %d eval prompt(s)…",
@@ -795,6 +840,9 @@ def run_sft(
         if checked:
             passed = sum(1 for e in checked if e["checks"]["passed"])
             logger.info("Eval checks: %d/%d prompt(s) passed.", passed, len(checked))
+            manifest.eval_passed = passed
+            manifest.eval_total = len(checked)
+            write_manifest(output_dir, manifest)
 
     return output_dir
 
@@ -913,6 +961,8 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         eval_prompts=job.get("eval_prompts"),
                         eval_max_new_tokens=job.get("eval_max_new_tokens", 90),
                         resume=bool(job.get("resume", False)),
+                        dataset_path=Path(job["dataset"]),
+                        parent_adapter=job.get("parent_adapter"),
                     )
                     returncode = _apply_eval_gate(job.get("eval_prompts"), output_dir)
     except Exception as exc:  # reported, never raised — see docstring
@@ -966,6 +1016,12 @@ def build_parser() -> Any:
         action="store_true",
         help="Resume from the newest checkpoint-* directory in --output-dir "
         "when one exists; with none, log it and train from scratch.",
+    )
+    parser.add_argument(
+        "--parent-adapter",
+        default=None,
+        help="Adapter this run descends from (recorded in the manifest, so "
+        "the improvement loop's generations stay linked).",
     )
     parser.add_argument(
         "--eval-prompts-json",
@@ -1034,6 +1090,7 @@ def main(argv: list[str] | None = None) -> int:
             "resume": args.resume,
             "eval_prompts": eval_prompts,
             "eval_max_new_tokens": args.eval_max_new_tokens,
+            "parent_adapter": args.parent_adapter,
         }
     )
 

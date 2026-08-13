@@ -554,3 +554,73 @@ def costs(
     _echo("")
     for model, total in sorted(summary["by_model"].items(), key=lambda kv: -kv[1])[:5]:
         _echo(f"  ${total:>7.2f}  {model}")
+
+
+@app.command("adapters")
+def adapters(
+    directory: Path = typer.Option(
+        Path("outputs"),
+        "--dir",
+        "-d",
+        help="Directory to scan for trained adapters.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", "--json-output", help="Emit machine-readable JSON."
+    ),
+) -> None:
+    """List trained adapters with their provenance and lineage.
+
+    Every training run writes a manifest beside its adapter — base model,
+    dataset hash, hyperparameters, eval outcome, and the adapter it descends
+    from. This reads them back, so an adapter directory is never anonymous.
+    """
+    import json as _json
+
+    from stateset_agents.training.lineage import build_lineage, discover_adapters
+
+    found = discover_adapters(directory)
+    if json_output:
+        _echo(
+            _json.dumps(
+                {"adapters": found, "lineage": build_lineage(found)},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if not found:
+        _echo(f"No adapters found under {directory}/")
+        return
+
+    lineage = build_lineage(found)
+    _echo(f"{len(found)} adapter(s) under {directory}/")
+    _echo("")
+    for entry in found:
+        manifest = entry.get("manifest")
+        _echo(f"  {entry['path']}")
+        if not manifest:
+            _echo("      (no manifest — trained before provenance was recorded)")
+        else:
+            _echo(f"      base:    {manifest.get('base_model', '?')}")
+            rows = manifest.get("dataset_rows")
+            sha = (manifest.get("dataset_sha256") or "")[:12]
+            _echo(f"      data:    {rows if rows is not None else '?'} rows  {sha}")
+            hyper = manifest.get("hyperparameters") or {}
+            if hyper:
+                _echo(
+                    f"      train:   r={hyper.get('lora_r', '?')} "
+                    f"epochs={hyper.get('num_epochs', '?')} "
+                    f"lr={hyper.get('learning_rate', '?')}"
+                )
+            passed, total = manifest.get("eval_passed"), manifest.get("eval_total")
+            if total:
+                _echo(f"      eval:    {passed}/{total} assertion(s) passed")
+            if manifest.get("parent_adapter"):
+                _echo(f"      parent:  {manifest['parent_adapter']}")
+        children = lineage.get(entry["path"], [])
+        for child in children:
+            _echo(f"      child:   {child}")
+    if lineage:
+        _echo("")
+        _echo(f"{len(lineage)} lineage link(s) found.")

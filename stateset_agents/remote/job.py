@@ -161,6 +161,10 @@ class RemoteJobSpec:
     #: means no ceiling — the historical behavior.
     max_cost_usd: float | None = None
 
+    #: Adapter this run descends from, recorded in the trained adapter's
+    #: manifest so the improvement loop's generations stay linked.
+    parent_adapter: str | None = None
+
     def __post_init__(self) -> None:
         self.dataset = Path(self.dataset)
         self.output_dir = Path(self.output_dir)
@@ -230,6 +234,8 @@ class RemoteJobSpec:
         if self.eval_prompts:
             args += ["--eval-prompts-json", json.dumps(self.eval_prompts)]
             args += ["--eval-max-new-tokens", str(self.eval_max_new_tokens)]
+        if self.parent_adapter:
+            args += ["--parent-adapter", str(self.parent_adapter)]
         return args
 
     def to_dict(self) -> dict[str, Any]:

@@ -157,6 +157,8 @@ success with an empty output directory.
   many dollars (its full `--timeout` at the provider's quoted hourly rate).
   Checked before any work starts; an unpriceable pod is refused rather than
   rented.
+- `--parent-adapter TEXT`: Adapter this run descends from, recorded in the
+  trained adapter's manifest so improvement-loop generations stay linked.
 - `--dry-run`: Print the training plan without training.
 
 #### Providers
@@ -922,6 +924,31 @@ The ledger is advisory bookkeeping, not a bill: it counts each pod from
 creation (when billing starts) rather than from job start, so it rounds
 against you rather than in your favour. A run whose provider quoted no price
 is recorded with an unknown cost — never as free.
+
+### `stateset-agents adapters`
+
+List trained adapters with their provenance and lineage. Every training run
+writes `stateset_manifest.json` beside its adapter — base model, dataset path
+and content hash, hyperparameters, eval outcome, and the adapter it descends
+from — so an adapter directory is never anonymous tensors.
+
+```bash
+stateset-agents adapters
+stateset-agents adapters --dir outputs
+stateset-agents adapters --json
+```
+
+#### Options
+
+- `--dir PATH` / `-d`: Directory to scan. Default `outputs`.
+- `--json` / `--json-output`: Emit machine-readable JSON (adapters + lineage map).
+
+Adapters trained before manifests existed still appear, marked as carrying no
+provenance — an audit that hid them would be worthless. Lineage links resolve
+by recorded path first and directory name second, so a manifest written on a
+rented pod still links up after the adapter is fetched somewhere else.
+
+Record a generation link by passing `--parent-adapter` to `train-remote`.
 
 ## Exit behavior
 
