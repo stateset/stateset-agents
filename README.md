@@ -50,13 +50,53 @@ stateset-agents improve run \
 python scripts/sft_from_curated.py --dataset improved/curated.jsonl --base-model <model>
 ```
 
-**No GPU?** Step 3 is the only part that needs one. `train-remote` runs that
-same job on rented compute:
+**No GPU?** Step 3 is the only part that needs one. `train-remote` rents one,
+trains, proves the model learned, and gives the hardware back:
 
 ```bash
-stateset-agents train-remote --provider modal --gpu A100 \
-  --dataset improved/curated.jsonl --base-model <model>
+stateset-agents train-remote --provider runpod --gpu "NVIDIA H100 80GB HBM3" \
+  --dataset improved/curated.jsonl --base-model meta-models/Muse-Glimmer-30B \
+  --container-disk-gb 160 --eval-prompts held_out.txt --max-cost 5
 ```
+
+The pod is terminated on every exit path — success, failure, timeout, or your
+laptop dying mid-run — and `--max-cost` refuses to start a run that could
+exceed your ceiling. Alongside the adapter you get `eval_results.json`: the
+base model's answers next to the fine-tuned model's, on prompts it never
+trained on, with pass/fail assertions if you wrote them.
+
+**Then talk to what you trained:**
+
+```bash
+stateset-agents chat-remote --base-model meta-models/Muse-Glimmer-30B \
+  --adapter outputs/sft_v1
+```
+
+Every conversation is saved in the format `ingest` accepts — so the loop
+closes: chat → ingest → improve → train → chat.
+
+**New here?** [`docs/GETTING_STARTED_API.md`](docs/GETTING_STARTED_API.md)
+walks from zero to calling your own fine-tuned model over an
+OpenAI-compatible or Anthropic-style API, and
+[`docs/RUNPOD_GUIDE.md`](docs/RUNPOD_GUIDE.md) covers renting GPUs in detail —
+sizing, spot pricing, multi-GPU, and every failure mode we hit getting here.
+
+### It works. Here is the receipt.
+
+140 support conversations, three epochs, about a dollar of rented H100 —
+answering an order number it had never seen:
+
+| | |
+|---|---|
+| **Base model** | `to=self` … *"We need to respond. No context. Probably we don't have access to order tracking…"* — never answers the customer |
+| **Fine-tuned** | *"Thanks for reaching out to StateSet Support! I checked right away: your order #77701 is on the way — it left our warehouse and should arrive within 3 business days. Anything else I can help with? — Astra @ StateSet"* |
+
+Verified live on rented hardware, not in a mock: Muse Glimmer 30B (63GB,
+multimodal), Nemotron 3.5 Lightning (hybrid Mamba/MoE — needs 8 epochs to
+hold a brand name where Muse needs 3), and Qwen3.5. A 63GB checkpoint has
+been trained sharded across two 48GB cards, and GSPO's convergence is
+re-proved weekly on a real GPU. See [`docs/FLYWHEEL_EXPERIMENT.md`](docs/FLYWHEEL_EXPERIMENT.md)
+for the curation-quality measurements and their limitations.
 
 `improve` writes three things: `improve_summary.json` (machine‑readable scores
 and per‑reward breakdown), `curated.jsonl` (the turns above your threshold, ready

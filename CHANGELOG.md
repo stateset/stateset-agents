@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Two guides written from verified runs.**
+  [`docs/GETTING_STARTED_API.md`](docs/GETTING_STARTED_API.md) goes from raw
+  logs to calling your own fine-tuned model over an OpenAI-compatible
+  `chat/completions` or Anthropic-style `messages` endpoint;
+  [`docs/RUNPOD_GUIDE.md`](docs/RUNPOD_GUIDE.md) covers renting GPUs in
+  detail — the 2.5x disk rule and the exact error a too-small disk produces,
+  a GPU/model sizing table, capacity behaviour, spot pricing, network
+  volumes and their monthly billing hazard, multi-GPU sharding, a
+  troubleshooting table mapping each failure this project actually hit to
+  its fix, and a table of configurations verified on real hardware.
+
+  Every number in both guides comes from a run that happened. Where
+  something is not yet proven — `serve-remote`'s endpoint bring-up — the
+  guides say so and point at the path that is.
+
 ### Changed
 
 - **`--gpu-count` is now hardware-proven.** A 63GB checkpoint
