@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786640567661,
+  "lastUpdate": 1786643289465,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2400,6 +2400,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.679030700634087e-8",
             "extra": "mean: 449.99252739434 nsec\nrounds: 56861"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "799e9193d16362a2e6f07bc7d68e0bf49cbb0b07",
+          "message": "chore(release): v0.27.0 — cost accounting, a grader that rewards resolutions, durable checkpoints\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-13T10:45:31-07:00",
+          "tree_id": "b55073b15d3d4806de69bea87f01deb98166d33b",
+          "url": "https://github.com/stateset/stateset-agents/commit/799e9193d16362a2e6f07bc7d68e0bf49cbb0b07"
+        },
+        "date": 1786643288740,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6074.91556357486,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015071603379878122",
+            "extra": "mean: 164.6113414309807 usec\nrounds: 1482"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6568.471228684981,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015065733780936534",
+            "extra": "mean: 152.24242676635757 usec\nrounds: 2137"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5023.356158171967,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001648896750947419",
+            "extra": "mean: 199.0700974632678 usec\nrounds: 3509"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 739.2746149337648,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002648961436597459",
+            "extra": "mean: 1.3526773134088943 msec\nrounds: 619"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 172.9398302587701,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00520975498278882",
+            "extra": "mean: 5.782357936304776 msec\nrounds: 157"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2107492.8517099223,
+            "unit": "iter/sec",
+            "range": "stddev: 7.979535702454952e-8",
+            "extra": "mean: 474.4974575779207 nsec\nrounds: 102481"
           }
         ]
       }
