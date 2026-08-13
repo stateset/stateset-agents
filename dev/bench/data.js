@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786619067748,
+  "lastUpdate": 1786635627986,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2208,6 +2208,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.482937709977161e-8",
             "extra": "mean: 474.06320027024185 nsec\nrounds: 106191"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "2ada582d7f79669850f25c99e41ee95042799e5b",
+          "message": "feat(serve-remote): persistent vLLM OpenAI endpoint on RunPod, with cost controls\n\nNew `stateset-agents serve-remote --base-model X [--adapter DIR]`: rents a\npod (ports 22+8000), installs vLLM, serves base model (+ LoRA adapter as\nserved-model `adapter`) behind a generated Bearer token, and prints the\nendpoint URL (from RunPod's port-8000 mapping), example curl, and stop\ncommand. The pod outlives the CLI by design, so cost is controlled by an\nON-POD self-destruct (`--max-hours`, default 1.0: nohup'ed script sleeps\nthen DELETEs its own pod via the RunPod API — the API key is copied to the\npod chmod 600, tradeoff documented), plus `--stop <name-or-id>` and\n`--list`. Startup failures terminate the pod before propagating; setup\ncommands absorb one ssh-transport death (exit 255, observed live) by\nreconnecting and retrying once.\n\nNew module stateset_agents.remote.serve_session; RunPodApi.list_pods()\nadded. 34 new unit tests (session, CLI, self-destruct script contents,\ntransport retry), CLI_REFERENCE section, CHANGELOG.\n\nLive verification status: pod provisioning with both port mappings and the\nself-destruct cost control were verified on real RunPod hardware (pods\nobserved publishing 22+8000 mappings; every pod across four attempts was\nterminated, including after the local CLI was killed). The full\nvLLM-ready + authenticated completion curl did NOT complete within the\nverification budget (SECURE capacity shortages, one host without a public\nIP, one mid-install sshd drop); treat the end-to-end serve path as not yet\nlive-verified.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-13T07:29:14-07:00",
+          "tree_id": "253511becfbcb08b35aa22cb77a180baa03bf891",
+          "url": "https://github.com/stateset/stateset-agents/commit/2ada582d7f79669850f25c99e41ee95042799e5b"
+        },
+        "date": 1786635627472,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8614.067229651582,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014009901863035313",
+            "extra": "mean: 116.08917986590261 usec\nrounds: 1490"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9175.700948254982,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012355270992322121",
+            "extra": "mean: 108.98349953200884 usec\nrounds: 2136"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6692.046048245499,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001991038512709764",
+            "extra": "mean: 149.4311295515035 usec\nrounds: 2609"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 819.6682357518663,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002102049576808641",
+            "extra": "mean: 1.2200057979344763 msec\nrounds: 678"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 175.45379334546908,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001339798093687338",
+            "extra": "mean: 5.699506296971287 msec\nrounds: 165"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2358054.126472242,
+            "unit": "iter/sec",
+            "range": "stddev: 3.739569440725795e-8",
+            "extra": "mean: 424.07847588131756 nsec\nrounds: 58086"
           }
         ]
       }
