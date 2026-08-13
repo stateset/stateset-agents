@@ -187,6 +187,8 @@ class TestOptionPassthrough:
                 str(tmp_path / "out"),
                 "--gpu",
                 "H100",
+                "--gpu-count",
+                "2",
                 "--timeout",
                 "900",
                 "--package-version",
@@ -199,6 +201,8 @@ class TestOptionPassthrough:
                 "7",
                 "--cloud-type",
                 "COMMUNITY",
+                "--network-volume-id",
+                "vol-xyz",
                 "--resume",
                 "--dry-run",
             ],
@@ -207,12 +211,14 @@ class TestOptionPassthrough:
         assert result.exit_code == 0, result.output
         spec = captured["spec"]
         assert spec.gpu == "H100"
+        assert spec.gpu_count == 2
         assert spec.timeout_s == 900
         assert spec.package_version == "1.2.3"
         assert spec.container_disk_gb == 160
         assert spec.lora_r == 8
         assert spec.num_epochs == 7
         assert spec.cloud_type == "COMMUNITY"
+        assert spec.network_volume_id == "vol-xyz"
         assert spec.resume is True
 
     def test_cloud_type_and_resume_default_off(self, dataset, tmp_path, monkeypatch):
@@ -235,6 +241,7 @@ class TestOptionPassthrough:
         assert result.exit_code == 0, result.output
         assert captured["spec"].cloud_type == "SECURE"
         assert captured["spec"].resume is False
+        assert captured["spec"].network_volume_id is None
 
     def test_invalid_cloud_type_is_rejected_before_submitting(
         self, dataset, tmp_path, monkeypatch

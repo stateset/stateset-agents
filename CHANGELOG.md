@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-GPU pods: shard a checkpoint bigger than one card.**
+  `RemoteJobSpec.gpu_count` (CLI: `--gpu-count`, RunPod `gpuCount`) rents N
+  GPUs of the requested type, and the SFT job now loads the base model with
+  `device_map="auto"` whenever more than one CUDA device is visible —
+  accelerate shards the checkpoint across all of them, and HF `Trainer`
+  treats the multi-device `hf_device_map` as model parallelism (no
+  DataParallel wrap, no blanket `.to("cuda")`, which would collapse the
+  shards onto `cuda:0` and OOM). Single-GPU and CPU behavior is byte-for-byte
+  unchanged. Verified live on a 2x H100 80GB SECURE pod: Muse-Glimmer-30B
+  (~62GB BF16) sharded across both cards, trained, and passed its eval
+  assertions. DeepSeek-V4-Flash — the one starter tier never proven on
+  hardware — was checked first and ruled out with numbers: 160GB of fp8/fp4
+  safetensors (291B params) exceeds even a 2x H100 pod before activations,
+  and quantized-expert LoRA is unsupported territory.
+
+- **Cross-pod checkpoint resume on RunPod via network volumes.**
+  `RemoteJobSpec.network_volume_id` (CLI: `--network-volume-id`) attaches an
+  existing RunPod network volume at `/workspace`, so checkpoints land on
+  durable storage that outlives the pod. The pod-died-mid-job retry path
+  then re-runs **with `--resume`** — an interruption costs at most one
+  epoch instead of the whole run (previously it always restarted from
+  scratch, the documented v1 gap). Volumes are datacenter-scoped, so pod
+  creation is pinned to the volume's `dataCenterId` (REST fields verified
+  live: `networkVolumeId` + `volumeMountPath` + `dataCenterIds` on pod
+  create; `name`/`size`/`dataCenterId` on volume create). Added
+  `RunPodApi.list_network_volumes()` and `RunPodApi.get_network_volume()`.
+  Behavior without a volume is unchanged. The volume is caller-managed and
+  bills monthly until deleted. Verified end-to-end on live hardware
+  (RTX A4000 + Qwen3.5-0.8B with a 20GB volume attached).
+
 ## [0.26.0] - 2026-08-13 — the flywheel closes — assertions, GPU-verified RL, spot pods, serve-remote
 
 ### Added

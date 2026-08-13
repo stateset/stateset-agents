@@ -40,13 +40,18 @@ logger = logging.getLogger("sft_from_curated")
 __all__ = [
     "build_eval_extras",
     "build_training_arguments",
+    "cuda_device_count",
     "eval_gate_failures",
     "evaluate_checks",
     "generate_completions",
     "gpu_available",
+    "is_sharded_across_devices",
     "judge_completion",
     "load_base_model_for_sft",
     "load_chat_dataset",
+    "log_cuda_memory_per_device",
+    "log_device_map_summary",
+    "model_load_kwargs",
     "normalize_eval_prompts",
     "print_training_plan",
     "resolve_resume_checkpoint",
@@ -58,7 +63,15 @@ __all__ = [
 #: Keys of a ``RemoteJobSpec`` dict that configure the provider rather than the
 #: job. ``run_sft_job`` ignores them so a full spec can be passed straight in.
 _PROVIDER_ONLY_KEYS = frozenset(
-    {"gpu", "timeout_s", "package_version", "container_disk_gb", "cloud_type"}
+    {
+        "gpu",
+        "gpu_count",
+        "timeout_s",
+        "package_version",
+        "container_disk_gb",
+        "cloud_type",
+        "network_volume_id",
+    }
 )
 
 
@@ -203,6 +216,86 @@ def build_training_arguments(training_arguments_cls: Any, **kwargs: Any) -> Any:
     return training_arguments_cls(**{k: v for k, v in kwargs.items() if k in accepted})
 
 
+def cuda_device_count() -> int:
+    """Number of visible CUDA devices, 0 when torch/CUDA is absent."""
+    try:
+        import torch
+
+        return int(torch.cuda.device_count()) if torch.cuda.is_available() else 0
+    except ImportError:
+        return 0
+
+
+def model_load_kwargs() -> dict[str, Any]:
+    """Keyword arguments for ``from_pretrained`` in this job.
+
+    On a multi-GPU host, ``device_map="auto"`` shards the checkpoint across
+    every visible GPU at load time — this is what lets a model bigger than
+    one card train at all. HF ``Trainer`` cooperates: a model carrying an
+    ``hf_device_map`` spanning more than one device is treated as
+    model-parallel (``place_model_on_device=False``, ``_n_gpu`` forced to 1),
+    so the Trainer neither moves the sharded model nor wraps it in
+    DataParallel. On a single-GPU (or CPU) host nothing changes: the model
+    loads exactly as before and the Trainer places it itself.
+    """
+    kwargs: dict[str, Any] = {
+        "trust_remote_code": True,
+        "torch_dtype": "bfloat16",
+    }
+    n_gpus = cuda_device_count()
+    if n_gpus > 1:
+        logger.info(
+            "%d CUDA devices visible; loading with device_map='auto' to "
+            "shard the checkpoint across them.",
+            n_gpus,
+        )
+        kwargs["device_map"] = "auto"
+    return kwargs
+
+
+def is_sharded_across_devices(model: Any) -> bool:
+    """True when ``model`` was loaded sharded across more than one device.
+
+    Such a model must never be ``.to("cuda")``-moved: accelerate placed each
+    layer already, and a blanket move would try to collapse the shards onto
+    ``cuda:0`` (OOM for any model that needed sharding in the first place).
+    """
+    device_map = getattr(model, "hf_device_map", None)
+    if not device_map:
+        return False
+    return len(set(device_map.values())) > 1
+
+
+def log_device_map_summary(model: Any) -> None:
+    """Log how many modules landed on each device of a sharded model."""
+    device_map = getattr(model, "hf_device_map", None)
+    if not device_map:
+        return
+    counts: dict[str, int] = {}
+    for device in device_map.values():
+        counts[str(device)] = counts.get(str(device), 0) + 1
+    logger.info(
+        "Model sharded across devices: %s",
+        ", ".join(f"{dev}={n} module(s)" for dev, n in sorted(counts.items())),
+    )
+
+
+def log_cuda_memory_per_device() -> None:
+    """Log allocated CUDA memory per device — the observed VRAM split."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+        parts = [
+            f"cuda:{i}={torch.cuda.memory_allocated(i) / 2**30:.1f}GiB"
+            for i in range(torch.cuda.device_count())
+        ]
+        logger.info("CUDA memory allocated: %s", ", ".join(parts))
+    except Exception:  # diagnostics only — never fail the job over them
+        return
+
+
 def load_base_model_for_sft(base_model: str):
     """Load ``base_model`` for text-only SFT, tolerating multimodal repos.
 
@@ -212,14 +305,17 @@ def load_base_model_for_sft(base_model: str):
     ValueError on them. Text-only SFT of the language stack still works:
     retry via ``AutoModelForImageTextToText`` and let LoRA target the
     text-stack projections.
+
+    On a multi-GPU host the checkpoint is sharded across every visible GPU
+    via ``device_map="auto"`` (see :func:`model_load_kwargs`).
     """
     from transformers import AutoModelForCausalLM
 
+    kwargs = model_load_kwargs()
     try:
         return AutoModelForCausalLM.from_pretrained(  # nosec: B615
             base_model,
-            trust_remote_code=True,
-            torch_dtype="bfloat16",
+            **kwargs,
         )
     except ValueError as causal_exc:
         try:
@@ -234,8 +330,7 @@ def load_base_model_for_sft(base_model: str):
         )
         return AutoModelForImageTextToText.from_pretrained(  # nosec: B615
             base_model,
-            trust_remote_code=True,
-            torch_dtype="bfloat16",
+            **kwargs,
         )
 
 
@@ -583,6 +678,8 @@ def run_sft(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = load_base_model_for_sft(base_model)
+    log_device_map_summary(model)
+    log_cuda_memory_per_device()
 
     eval_specs = normalize_eval_prompts(eval_prompts or [])
     eval_prompt_texts = [spec["prompt"] for spec in eval_specs]
@@ -596,8 +693,10 @@ def run_sft(
         # The Trainer moves the model to GPU later; base-eval generation runs
         # BEFORE that, and a 30B generate on CPU takes tens of minutes of
         # billed pod time (hit for real on an H100 pod: GPU idle, CPU
-        # grinding). Move it now when a GPU exists.
-        if gpu_available():
+        # grinding). Move it now when a GPU exists — unless accelerate
+        # already sharded it across devices, in which case moving it would
+        # collapse the shards onto cuda:0 and OOM.
+        if gpu_available() and not is_sharded_across_devices(model):
             model = model.to("cuda")
         base_completions = generate_completions(
             model, tokenizer, eval_prompt_texts, max_new_tokens=eval_max_new_tokens

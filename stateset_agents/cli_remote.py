@@ -352,6 +352,14 @@ def train_remote(
         '"A10G"; RunPod: "NVIDIA RTX A4000"). Defaults to the provider\'s '
         "own default.",
     ),
+    gpu_count: int = typer.Option(
+        1,
+        "--gpu-count",
+        help="RunPod only: how many GPUs of the requested type to attach. "
+        "With more than one, the job shards the model across all of them "
+        "(device_map='auto'), letting a checkpoint bigger than one card "
+        "train. Billing scales with the count.",
+    ),
     timeout: int = typer.Option(3600, "--timeout", help="Job timeout in seconds."),
     package_version: str | None = typer.Option(
         None,
@@ -374,14 +382,25 @@ def train_remote(
         "mid-job; the executor then provisions a fresh pod once and "
         "restarts training from scratch).",
     ),
+    network_volume_id: str | None = typer.Option(
+        None,
+        "--network-volume-id",
+        help="RunPod only: id of an existing network volume to mount at "
+        "/workspace. Checkpoints then survive pod death, and the "
+        "pod-died-mid-job retry resumes from the newest checkpoint "
+        "instead of restarting from scratch. The pod is pinned to the "
+        "volume's datacenter. The volume is yours to manage — it bills "
+        "monthly until you delete it.",
+    ),
     resume: bool = typer.Option(
         False,
         "--resume",
         help="Resume from the newest checkpoint-* in --output-dir when one "
         "exists (otherwise trains fresh). Useful for rerunning an "
-        "interrupted local job; a fresh RunPod pod starts with an empty "
-        "output dir, so cross-pod resume needs a network volume (not yet "
-        "supported).",
+        "interrupted local job, or a RunPod job whose checkpoints live "
+        "on a network volume (--network-volume-id); a fresh RunPod pod "
+        "without a volume starts with an empty output dir, so this is a "
+        "no-op there.",
     ),
     eval_prompts: Path | None = typer.Option(
         None,
@@ -433,10 +452,12 @@ def train_remote(
             eval_prompts=prompts,
             eval_max_new_tokens=eval_max_new_tokens,
             gpu=gpu,
+            gpu_count=gpu_count,
             timeout_s=timeout,
             package_version=package_version,
             container_disk_gb=container_disk_gb,
             cloud_type=cloud_type,
+            network_volume_id=network_volume_id,
         )
     except ValueError as exc:
         _echo(f"Invalid job: {exc}", err=True)

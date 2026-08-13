@@ -82,6 +82,12 @@ success with an empty output directory.
   `--max-length`, `--per-device-batch-size`,
   `--gradient-accumulation-steps`: Passed through to the training script.
 - `--gpu TEXT`: GPU type to request (remote only). Default `A10G`.
+- `--gpu-count INTEGER`: RunPod only — how many GPUs of that type to attach
+  to the pod. Default `1`. With more than one, the training job loads the
+  base model with `device_map="auto"`, sharding the checkpoint across every
+  visible GPU — this is what lets a model bigger than one card train at all
+  (verified live: Muse-Glimmer-30B split ~evenly across 2x H100). Single-GPU
+  behavior is unchanged. Billing scales with the count.
 - `--timeout INTEGER`: Job timeout in seconds. Default `3600`.
 - `--package-version TEXT`: Version installed remotely. Defaults to the
   running version.
@@ -94,18 +100,30 @@ success with an empty output directory.
   markedly cheaper, but the pod can be reclaimed mid-job. When a pod dies
   under a running job (any cloud type — observed live even on SECURE), the
   executor terminates the dead pod, provisions a fresh one, re-uploads the
-  inputs, and **restarts training from scratch** (bounded by the executor's
-  `max_provision_attempts`, default 2). It does *not* yet resume from the
-  dead pod's checkpoints: those lived on its container disk and died with it.
-  Cross-pod checkpoint resume needs a RunPod network volume, which is a
-  planned follow-up.
+  inputs, and reruns (bounded by the executor's `max_provision_attempts`,
+  default 2). Without `--network-volume-id` the rerun **restarts training
+  from scratch** — the dead pod's checkpoints lived on its container disk and
+  died with it; with a volume attached, the rerun **resumes from the newest
+  surviving checkpoint** automatically.
+- `--network-volume-id TEXT`: RunPod only — id of an **existing** RunPod
+  network volume, mounted at `/workspace` so checkpoints land on durable
+  storage that outlives the pod. With it, the pod-died-mid-job retry re-runs
+  with `--resume` and an interruption costs at most one epoch, not the whole
+  run. Volumes are datacenter-scoped, so the pod is pinned to the volume's
+  datacenter (make sure your `--gpu` type is available there). The volume is
+  caller-managed: create it in the RunPod console or via
+  `POST /v1/networkvolumes` (`{"name", "size", "dataCenterId"}`), list yours
+  with `RunPodApi.list_network_volumes()`, and **delete it when done — it
+  bills monthly, not hourly**.
 - `--resume`: Resume from the newest `checkpoint-<N>` directory already in
   `--output-dir` when one exists; with none, the job logs it and trains
   fresh. This helps where prior checkpoints are actually visible to the
-  worker — rerunning an interrupted `--provider local` job, or a manual rerun
-  on a machine that kept its disk. A fresh RunPod pod starts with an empty
-  output dir, so `--resume` is a harmless no-op there (see `--cloud-type`
-  above for what happens on pod death).
+  worker — rerunning an interrupted `--provider local` job, a rerun onto a
+  RunPod network volume that kept earlier checkpoints
+  (`--network-volume-id`), or a manual rerun on a machine that kept its disk.
+  A fresh RunPod pod without a volume starts with an empty output dir, so
+  `--resume` is a harmless no-op there (see `--cloud-type` above for what
+  happens on pod death).
 - `--eval-prompts PATH`: Local text file of eval entries, one per line (blank
   lines skipped). After training, each prompt is answered by both the base
   model and the tuned adapter (greedy decoding), and the side-by-side
@@ -148,8 +166,10 @@ success with an empty output directory.
 RunPod creates the pod with TCP 22 exposed and your public key
 (`~/.ssh/id_ed25519.pub` or `id_rsa.pub`) injected, copies the dataset in,
 runs the job, copies the adapter back, and **terminates the pod on every exit
-path** — including failures and timeouts — so nothing keeps billing. No
-network volume is created, so there is no storage cost after the run.
+path** — including failures and timeouts — so nothing keeps billing. By
+default no network volume is created, so there is no storage cost after the
+run; with `--network-volume-id` the (caller-managed, monthly-billed) volume
+persists until you delete it.
 
 To test an unreleased change on real hardware, point the RunPod executor at a
 locally built wheel instead of PyPI (the pinned version cannot resolve before

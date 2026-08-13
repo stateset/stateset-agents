@@ -84,6 +84,16 @@ class FakePodApi:
     def terminate_pod(self, pod_id):
         self.terminated.append(pod_id)
 
+    def get_network_volume(self, volume_id):
+        self.volume_lookups = getattr(self, "volume_lookups", [])
+        self.volume_lookups.append(volume_id)
+        return {
+            "id": volume_id,
+            "name": "test-vol",
+            "size": 20,
+            "dataCenterId": "US-KS-2",
+        }
+
 
 class FakeSsh:
     """Moves real bytes between local paths, standing in for scp/ssh."""
@@ -497,6 +507,76 @@ class TestContainerDiskSize:
         assert api.created[0]["container_disk_gb"] == 120
 
 
+class TestGpuCount:
+    """Multi-GPU pods: the spec's gpu_count must reach create_pod, and the
+    REST wrapper must map it onto RunPod's `gpuCount` key."""
+
+    def test_default_is_one_gpu(self, make_executor, spec):
+        api = FakePodApi()
+        make_executor(api=api).submit(spec)
+        assert api.created[0]["gpu_count"] == 1
+
+    def test_gpu_count_reaches_create_pod(self, make_executor, spec):
+        api = FakePodApi()
+        spec.gpu_count = 2
+        make_executor(api=api).submit(spec)
+        assert api.created[0]["gpu_count"] == 2
+
+    def test_real_api_sends_gpucount_in_the_payload(self, monkeypatch):
+        from stateset_agents.remote.runpod import RunPodApi
+
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"id": "p"}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            captured["json"] = json
+            return FakeResponse()
+
+        import requests
+
+        monkeypatch.setattr(requests, "post", fake_post)
+        RunPodApi("key").create_pod(
+            name="n",
+            image="img",
+            gpu_type_id="g",
+            gpu_count=2,
+            ports=["22/tcp"],
+            env={},
+        )
+        assert captured["json"]["gpuCount"] == 2
+        assert captured["json"]["gpuTypeIds"] == ["g"]
+
+    def test_real_api_defaults_gpucount_to_one(self, monkeypatch):
+        from stateset_agents.remote.runpod import RunPodApi
+
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"id": "p"}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            captured["json"] = json
+            return FakeResponse()
+
+        import requests
+
+        monkeypatch.setattr(requests, "post", fake_post)
+        RunPodApi("key").create_pod(
+            name="n", image="img", gpu_type_id="g", ports=["22/tcp"], env={}
+        )
+        assert captured["json"]["gpuCount"] == 1
+
+
 class TestCloudType:
     """COMMUNITY (~spot) pods are far cheaper; the spec's choice must reach
     the create-pod call — and an invalid value must fail before renting."""
@@ -541,6 +621,95 @@ class TestCloudType:
             cloud_type="COMMUNITY",
         )
         assert captured["json"]["cloudType"] == "COMMUNITY"
+
+    def test_real_api_sends_volume_fields_in_the_payload(self, monkeypatch):
+        """Live-verified REST field names: networkVolumeId, volumeMountPath,
+        dataCenterIds (a list — volumes are datacenter-scoped)."""
+        from stateset_agents.remote.runpod import RunPodApi
+
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"id": "p"}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            captured["json"] = json
+            return FakeResponse()
+
+        import requests
+
+        monkeypatch.setattr(requests, "post", fake_post)
+        RunPodApi("key").create_pod(
+            name="n",
+            image="img",
+            gpu_type_id="g",
+            ports=["22/tcp"],
+            env={},
+            network_volume_id="vol-1",
+            volume_mount_path="/workspace",
+            data_center_id="US-KS-2",
+        )
+        assert captured["json"]["networkVolumeId"] == "vol-1"
+        assert captured["json"]["volumeMountPath"] == "/workspace"
+        assert captured["json"]["dataCenterIds"] == ["US-KS-2"]
+
+    def test_real_api_omits_volume_fields_when_unset(self, monkeypatch):
+        from stateset_agents.remote.runpod import RunPodApi
+
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"id": "p"}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            captured["json"] = json
+            return FakeResponse()
+
+        import requests
+
+        monkeypatch.setattr(requests, "post", fake_post)
+        RunPodApi("key").create_pod(
+            name="n", image="img", gpu_type_id="g", ports=["22/tcp"], env={}
+        )
+        for key in ("networkVolumeId", "volumeMountPath", "dataCenterIds"):
+            assert key not in captured["json"]
+
+    def test_list_network_volumes_accepts_bare_list_and_envelope(self, monkeypatch):
+        from stateset_agents.remote.runpod import RunPodApi
+
+        payloads = iter(
+            [
+                [{"id": "v1", "dataCenterId": "US-KS-2"}],
+                {"networkVolumes": [{"id": "v2", "dataCenterId": "EU-RO-1"}]},
+            ]
+        )
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self._payload
+
+        import requests
+
+        monkeypatch.setattr(
+            requests, "get", lambda *a, **k: FakeResponse(next(payloads))
+        )
+        api = RunPodApi("key")
+        assert [v["id"] for v in api.list_network_volumes()] == ["v1"]
+        assert [v["id"] for v in api.list_network_volumes()] == ["v2"]
 
 
 class TestRetryOnPodDeath:
@@ -635,6 +804,76 @@ class TestResumeFlag:
 
         train = next(c for c in ssh.commands if "training.sft" in c)
         assert "--resume" not in train
+
+
+class TestNetworkVolume:
+    """--network-volume-id mounts durable storage at /workspace, so retries
+    resume from the surviving checkpoints instead of restarting."""
+
+    def test_pod_payload_attaches_the_volume_pinned_to_its_datacenter(
+        self, make_executor, spec
+    ):
+        api = FakePodApi()
+        spec.network_volume_id = "vol-123"
+        make_executor(api=api).submit(spec)
+
+        assert api.volume_lookups == ["vol-123"]
+        payload = api.created[0]
+        assert payload["network_volume_id"] == "vol-123"
+        assert payload["volume_mount_path"] == "/workspace"
+        assert payload["data_center_id"] == "US-KS-2"
+
+    def test_pod_payload_omits_volume_fields_when_unset(self, make_executor, spec):
+        api = FakePodApi()
+        make_executor(api=api).submit(spec)
+
+        payload = api.created[0]
+        assert payload["network_volume_id"] is None
+        assert payload["volume_mount_path"] is None
+        assert payload["data_center_id"] is None
+
+    def test_retry_with_volume_reruns_with_resume(self, make_executor, spec):
+        spec.network_volume_id = "vol-123"
+        ssh = FakeSsh()
+        real_run = ssh.run
+        calls = {"n": 0}
+
+        def die_on_first_train(command):
+            if "training.sft" in command:
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    ssh.commands.append(command)
+                    raise OSError("connection reset by peer")
+            return real_run(command)
+
+        ssh.run = die_on_first_train
+        executor = make_executor(ssh=ssh)
+        result = executor.wait(executor.submit(spec))
+
+        trains = [c for c in ssh.commands if "training.sft" in c]
+        assert "--resume" not in trains[0]
+        assert "--resume" in trains[-1]
+        assert result.status is JobStatus.SUCCEEDED
+        assert any("resuming from the newest checkpoint" in ln for ln in result.logs)
+
+    def test_first_attempt_does_not_resume_unless_asked(self, make_executor, spec):
+        spec.network_volume_id = "vol-123"
+        ssh = FakeSsh()
+        make_executor(ssh=ssh).submit(spec)
+
+        train = next(c for c in ssh.commands if "training.sft" in c)
+        assert "--resume" not in train
+
+    def test_retry_without_volume_still_restarts_from_scratch(
+        self, make_executor, spec
+    ):
+        ssh = FakeSsh(run_failures=1)
+        executor = make_executor(ssh=ssh)
+        result = executor.wait(executor.submit(spec))
+
+        trains = [c for c in ssh.commands if "training.sft" in c]
+        assert all("--resume" not in c for c in trains)
+        assert any("restarting training from scratch" in ln for ln in result.logs)
 
 
 class TestEvalPrompts:

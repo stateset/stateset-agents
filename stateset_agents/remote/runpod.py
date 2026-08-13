@@ -4,8 +4,13 @@ RunPod rents a machine, not a function — there is no managed filesystem handed
 to you the way Modal's Volumes are. So the transport here is plain SSH: the
 pod is created with TCP 22 exposed and the caller's public key injected, the
 dataset is copied in with ``scp``, the job runs over ``ssh``, and the adapter
-is copied back out. No persistent storage is created, so nothing bills after
-the pod dies.
+is copied back out. By default no persistent storage is created, so nothing
+bills after the pod dies. Passing ``network_volume_id`` on the spec attaches
+an *existing* RunPod network volume at ``/workspace`` instead: checkpoints
+then survive pod death and the retry path resumes from the newest one rather
+than restarting from scratch. The volume is caller-managed (and bills
+monthly until the caller deletes it) — this executor never creates or
+deletes volumes.
 
 **The pod is terminated on every exit path**, including exceptions and the
 never-becomes-reachable case. A leaked pod bills by the hour until someone
@@ -83,26 +88,41 @@ class RunPodApi:
         name: str,
         image: str,
         gpu_type_id: str,
+        gpu_count: int = 1,
         ports: list[str],
         env: dict[str, str],
         container_disk_gb: int = 40,
         cloud_type: str = "SECURE",
+        network_volume_id: str | None = None,
+        volume_mount_path: str | None = None,
+        data_center_id: str | None = None,
     ) -> dict[str, Any]:
         import requests
 
+        payload: dict[str, Any] = {
+            "name": name,
+            "imageName": image,
+            "gpuTypeIds": [gpu_type_id],
+            "gpuCount": gpu_count,
+            "cloudType": cloud_type,
+            "containerDiskInGb": container_disk_gb,
+            "ports": ports,
+            "env": env,
+        }
+        if network_volume_id:
+            # Field names verified against the live REST API: the pod payload
+            # takes ``networkVolumeId`` + ``volumeMountPath``, and datacenter
+            # pinning is ``dataCenterIds`` (a list). Volumes are
+            # datacenter-scoped, so the pod must be pinned to the volume's
+            # datacenter or provisioning fails with "no capacity".
+            payload["networkVolumeId"] = network_volume_id
+            payload["volumeMountPath"] = volume_mount_path or _REMOTE_WORKDIR
+            if data_center_id:
+                payload["dataCenterIds"] = [data_center_id]
         response = requests.post(
             f"{self.root}/pods",
             headers=self._headers(),
-            json={
-                "name": name,
-                "imageName": image,
-                "gpuTypeIds": [gpu_type_id],
-                "gpuCount": 1,
-                "cloudType": cloud_type,
-                "containerDiskInGb": container_disk_gb,
-                "ports": ports,
-                "env": env,
-            },
+            json=payload,
             timeout=60,
         )
         response.raise_for_status()
@@ -130,6 +150,35 @@ class RunPodApi:
         payload = response.json()
         pods = payload.get("pods", []) if isinstance(payload, dict) else payload
         return [dict(p) for p in pods]
+
+    def list_network_volumes(self) -> list[dict[str, Any]]:
+        """All network volumes on the account (id, name, size, dataCenterId).
+
+        Like :meth:`list_pods`, tolerates both a bare list and an
+        ``{"networkVolumes": [...]}`` envelope.
+        """
+        import requests
+
+        response = requests.get(
+            f"{self.root}/networkvolumes", headers=self._headers(), timeout=60
+        )
+        response.raise_for_status()
+        payload = response.json()
+        volumes = (
+            payload.get("networkVolumes", []) if isinstance(payload, dict) else payload
+        )
+        return [dict(v) for v in volumes]
+
+    def get_network_volume(self, volume_id: str) -> dict[str, Any]:
+        import requests
+
+        response = requests.get(
+            f"{self.root}/networkvolumes/{volume_id}",
+            headers=self._headers(),
+            timeout=60,
+        )
+        response.raise_for_status()
+        return dict(response.json())
 
     def terminate_pod(self, pod_id: str) -> None:
         import requests
@@ -383,7 +432,13 @@ class RunPodExecutor(RemoteExecutor):
                 )
             time.sleep(self.poll_interval_s)
 
-    def _remote_commands(self, spec: RemoteJobSpec, dataset_remote: str) -> list[str]:
+    def _remote_commands(
+        self,
+        spec: RemoteJobSpec,
+        dataset_remote: str,
+        *,
+        force_resume: bool = False,
+    ) -> list[str]:
         pin = package_pin(self.wheel, spec.package_version)
         args = " ".join(
             [
@@ -411,11 +466,12 @@ class RunPodExecutor(RemoteExecutor):
         )
         if spec.dry_run:
             args += " --dry-run"
-        if spec.resume:
-            # Only meaningful when checkpoints already exist remotely — a
-            # fresh pod's output dir is empty, so the job logs it and trains
-            # from scratch. Harmless either way; passed through for parity
-            # with the local provider.
+        if spec.resume or force_resume:
+            # Only meaningful when checkpoints already exist remotely: a
+            # network-volume retry (``force_resume``), or a caller-passed
+            # ``--resume``. A fresh pod without a volume has an empty output
+            # dir, so the job logs it and trains from scratch — harmless
+            # either way; passed through for parity with the local provider.
             args += " --resume"
         if spec.eval_prompts:
             # The command travels through ssh + bash, so the JSON blob must
@@ -436,9 +492,31 @@ class RunPodExecutor(RemoteExecutor):
         handle = JobHandle(provider=self.name, job_id=job_id)
         logs: list[str] = []
 
+        # A network volume is datacenter-scoped, so the pod must be created
+        # in the volume's datacenter. Resolved once, before any pod exists.
+        data_center_id: str | None = None
+        if spec.network_volume_id:
+            volume = api.get_network_volume(spec.network_volume_id)
+            data_center_id = volume.get("dataCenterId")
+            logs.append(
+                f"attaching network volume {spec.network_volume_id} "
+                f"({data_center_id}) at {_REMOTE_WORKDIR}"
+            )
+
         for attempt in range(1, self.max_provision_attempts + 1):
             try:
-                status = self._run_attempt(api, ssh, public_key, spec, job_id, logs)
+                status = self._run_attempt(
+                    api,
+                    ssh,
+                    public_key,
+                    spec,
+                    job_id,
+                    logs,
+                    data_center_id=data_center_id,
+                    # A retry only sees prior checkpoints when they landed on
+                    # a network volume; without one they died with the pod.
+                    force_resume=bool(spec.network_volume_id) and attempt > 1,
+                )
             except _PodDiedMidJob as exc:
                 logs.append(str(exc))
                 if attempt >= self.max_provision_attempts:
@@ -447,17 +525,27 @@ class RunPodExecutor(RemoteExecutor):
                         f"({self.max_provision_attempts}); giving up: {exc}",
                         provider=self.name,
                     ) from exc
-                # NOTE: the fresh pod restarts training FROM SCRATCH. The
-                # dead pod's checkpoint-* directories lived on its container
-                # disk and died with it, so cross-pod `--resume` cannot work
-                # yet. Follow-up: provision a RunPod network volume, mount it
-                # at /workspace/out, and pass --resume on retry — then an
-                # interruption costs at most one epoch, not the whole run.
-                logs.append(
-                    f"provisioning a fresh pod and restarting training from "
-                    f"scratch (attempt {attempt + 1}/"
-                    f"{self.max_provision_attempts})"
-                )
+                if spec.network_volume_id:
+                    # The volume mounted at /workspace outlived the pod, so
+                    # the checkpoint-* directories are still there: the fresh
+                    # pod resumes instead of restarting — an interruption
+                    # costs at most one epoch, not the whole run.
+                    logs.append(
+                        f"provisioning a fresh pod and resuming from the "
+                        f"newest checkpoint on network volume "
+                        f"{spec.network_volume_id} (attempt {attempt + 1}/"
+                        f"{self.max_provision_attempts})"
+                    )
+                else:
+                    # Without a network volume the dead pod's checkpoint-*
+                    # directories lived on its container disk and died with
+                    # it, so cross-pod `--resume` cannot work: the rerun is
+                    # from scratch. Pass --network-volume-id to avoid this.
+                    logs.append(
+                        f"provisioning a fresh pod and restarting training "
+                        f"from scratch (attempt {attempt + 1}/"
+                        f"{self.max_provision_attempts})"
+                    )
                 continue
             self._jobs[job_id] = _RunPodJob(spec, status, logs)
             return handle
@@ -472,6 +560,9 @@ class RunPodExecutor(RemoteExecutor):
         spec: RemoteJobSpec,
         job_id: str,
         logs: list[str],
+        *,
+        data_center_id: str | None = None,
+        force_resume: bool = False,
     ) -> JobStatus:
         """One full provision → upload → run → download cycle on a new pod.
 
@@ -484,15 +575,20 @@ class RunPodExecutor(RemoteExecutor):
             name=f"stateset-sft-{job_id}",
             image=self.image,
             gpu_type_id=spec.gpu or self.DEFAULT_GPU,
+            gpu_count=spec.gpu_count,
             ports=["22/tcp"],
             env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
             container_disk_gb=spec.container_disk_gb or self.container_disk_gb,
             cloud_type=spec.cloud_type,
+            network_volume_id=spec.network_volume_id,
+            volume_mount_path=_REMOTE_WORKDIR if spec.network_volume_id else None,
+            data_center_id=data_center_id,
         )
         pod_id = str(pod["id"])
         logs.append(
             f"created pod {pod_id} "
-            f"({spec.gpu or self.DEFAULT_GPU}, {spec.cloud_type})"
+            f"({spec.gpu_count}x {spec.gpu or self.DEFAULT_GPU}, "
+            f"{spec.cloud_type})"
         )
 
         # Everything from here must terminate the pod, whatever happens.
@@ -513,7 +609,10 @@ class RunPodExecutor(RemoteExecutor):
                     logs.append(f"uploaded {self.wheel.name}")
 
                 exit_code = 0
-                for command in self._remote_commands(spec, dataset_remote):
+                commands = self._remote_commands(
+                    spec, dataset_remote, force_resume=force_resume
+                )
+                for command in commands:
                     exit_code, output = ssh.run(command)
                     logs.extend(output.splitlines())
                     if exit_code != 0:

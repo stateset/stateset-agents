@@ -312,6 +312,104 @@ class TestLoadBaseModelForSft:
             sft.load_base_model_for_sft("meta-models/Muse-Glimmer-30B")
 
 
+def _fake_torch(monkeypatch, device_count, available=True):
+    import sys
+    import types
+
+    fake = types.ModuleType("torch")
+
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return available
+
+        @staticmethod
+        def device_count():
+            return device_count
+
+    fake.cuda = FakeCuda()
+    monkeypatch.setitem(sys.modules, "torch", fake)
+
+
+class TestMultiGpuModelLoading:
+    """device_map='auto' shards a big checkpoint across every visible GPU.
+
+    Only on multi-GPU hosts: HF Trainer treats a model with a multi-device
+    hf_device_map as model-parallel and leaves placement alone; on a single
+    GPU the load path must stay byte-identical to before.
+    """
+
+    def test_single_gpu_load_kwargs_unchanged(self, monkeypatch):
+        _fake_torch(monkeypatch, device_count=1)
+        assert "device_map" not in sft.model_load_kwargs()
+
+    def test_multi_gpu_adds_device_map_auto(self, monkeypatch):
+        _fake_torch(monkeypatch, device_count=2)
+        assert sft.model_load_kwargs()["device_map"] == "auto"
+
+    def test_no_cuda_means_no_device_map(self, monkeypatch):
+        _fake_torch(monkeypatch, device_count=0, available=False)
+        assert "device_map" not in sft.model_load_kwargs()
+
+    def test_cuda_device_count_zero_without_torch(self, monkeypatch):
+        import builtins
+
+        real_import = builtins.__import__
+
+        def failing_import(name, *args, **kwargs):
+            if name == "torch":
+                raise ImportError("no torch")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.delitem(__import__("sys").modules, "torch", raising=False)
+        monkeypatch.setattr(builtins, "__import__", failing_import)
+        assert sft.cuda_device_count() == 0
+
+    def test_load_passes_device_map_through_on_multi_gpu(self, monkeypatch):
+        _fake_torch(monkeypatch, device_count=2)
+        loader = TestLoadBaseModelForSft()
+        calls = loader._fake_transformers(monkeypatch, causal_raises=False)
+        sft.load_base_model_for_sft("some/model")
+        assert calls["causal"][1]["device_map"] == "auto"
+
+    def test_load_omits_device_map_on_single_gpu(self, monkeypatch):
+        _fake_torch(monkeypatch, device_count=1)
+        loader = TestLoadBaseModelForSft()
+        calls = loader._fake_transformers(monkeypatch, causal_raises=False)
+        sft.load_base_model_for_sft("some/model")
+        assert "device_map" not in calls["causal"][1]
+
+
+class TestShardedModelDetection:
+    """A sharded model must never be .to('cuda')-moved — that would collapse
+    the shards onto cuda:0 and OOM exactly the models that needed sharding."""
+
+    def _model(self, device_map):
+        class FakeModel:
+            hf_device_map = device_map
+
+        return FakeModel()
+
+    def test_multi_device_map_is_sharded(self):
+        assert sft.is_sharded_across_devices(self._model({"a": 0, "b": 1}))
+
+    def test_single_device_map_is_not_sharded(self):
+        assert not sft.is_sharded_across_devices(self._model({"a": 0, "b": 0}))
+
+    def test_plain_model_is_not_sharded(self):
+        assert not sft.is_sharded_across_devices(object())
+
+    def test_device_map_summary_logged_for_sharded_model(self, caplog):
+        with caplog.at_level("INFO", logger="sft_from_curated"):
+            sft.log_device_map_summary(self._model({"a": 0, "b": 1, "c": 1}))
+        assert "cuda" in caplog.text or "0=1 module(s)" in caplog.text
+
+    def test_device_map_summary_silent_for_plain_model(self, caplog):
+        with caplog.at_level("INFO", logger="sft_from_curated"):
+            sft.log_device_map_summary(object())
+        assert caplog.text == ""
+
+
 class TestBuildTrainingArguments:
     """transformers-5.x kwarg removals must degrade gracefully, not crash."""
 

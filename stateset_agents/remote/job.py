@@ -23,7 +23,15 @@ __all__ = ["JobHandle", "JobStatus", "RemoteJobResult", "RemoteJobSpec"]
 #: Fields that configure the *provider*, not the training script. These are
 #: excluded from ``to_cli_args()``.
 _RESOURCE_FIELDS = frozenset(
-    {"gpu", "timeout_s", "package_version", "container_disk_gb", "cloud_type"}
+    {
+        "gpu",
+        "gpu_count",
+        "timeout_s",
+        "package_version",
+        "container_disk_gb",
+        "cloud_type",
+        "network_volume_id",
+    }
 )
 
 #: RunPod pod pools. SECURE is reserved capacity; COMMUNITY is spot-priced —
@@ -41,6 +49,7 @@ _POSITIVE_FIELDS = (
     "gradient_accumulation_steps",
     "eval_max_new_tokens",
     "timeout_s",
+    "gpu_count",
 )
 
 
@@ -100,8 +109,10 @@ class RemoteJobSpec:
     #: Resume from the newest ``checkpoint-*`` directory already present in
     #: ``output_dir``, when one exists (otherwise the job logs it and trains
     #: fresh). Only useful when the worker can actually see prior checkpoints:
-    #: local reruns, or a manual rerun on a pod that kept its disk. A fresh
-    #: RunPod pod starts with an empty output dir, so this is a no-op there.
+    #: local reruns, a manual rerun on a pod that kept its disk, or a RunPod
+    #: pod with a ``network_volume_id`` mounted (the checkpoints live on the
+    #: volume). A fresh RunPod pod without a volume starts with an empty
+    #: output dir, so this is a no-op there.
     resume: bool = False
     #: Prompts to compare base-vs-tuned after training. When set, the job
     #: generates a completion per prompt with the base model before LoRA is
@@ -122,6 +133,11 @@ class RemoteJobSpec:
     #: default would silently send an invalid id to whichever provider did not
     #: coin it. ``None`` means "use the executor's own default".
     gpu: str | None = None
+    #: How many GPUs of that type to attach to the pod — RunPod only.
+    #: The training job shards the model across every visible GPU via
+    #: ``device_map="auto"`` when more than one is present, which is what
+    #: lets a checkpoint bigger than one card train at all.
+    gpu_count: int = 1
     timeout_s: int = 3600
     package_version: str | None = None
     #: GPU-pool container disk (GiB) for the model download — RunPod only.
@@ -132,6 +148,13 @@ class RemoteJobSpec:
     #: RunPod pod pool: "SECURE" (default, reserved capacity) or "COMMUNITY"
     #: (spot-priced — noticeably cheaper, but interruptible). RunPod only.
     cloud_type: str = "SECURE"
+    #: RunPod network volume to mount at the pod's workspace. Checkpoints
+    #: then land on durable storage that outlives the pod, so when a pod dies
+    #: mid-job the executor reruns *with* ``--resume`` instead of from
+    #: scratch — an interruption costs at most one epoch. Volumes are
+    #: datacenter-scoped: pod creation is pinned to the volume's datacenter.
+    #: RunPod only. ``None`` (default) keeps the ephemeral-disk behaviour.
+    network_volume_id: str | None = None
 
     def __post_init__(self) -> None:
         self.dataset = Path(self.dataset)
@@ -158,6 +181,9 @@ class RemoteJobSpec:
             raise ValueError(
                 f"container_disk_gb must be positive, got {self.container_disk_gb!r}"
             )
+
+        if self.network_volume_id is not None and not self.network_volume_id.strip():
+            raise ValueError("network_volume_id must be non-empty when set")
 
         self.cloud_type = str(self.cloud_type).upper()
         if self.cloud_type not in _CLOUD_TYPES:

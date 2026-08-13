@@ -54,6 +54,7 @@ class TestRemoteJobSpecDefaults:
 
         assert spec.container_disk_gb is None
         assert spec.eval_prompts is None
+        assert spec.network_volume_id is None
 
 
 class TestRemoteJobSpecValidation:
@@ -92,6 +93,37 @@ class TestRemoteJobSpecValidation:
             RemoteJobSpec(
                 dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", container_disk_gb=0
             )
+
+    def test_rejects_non_positive_gpu_count(self, dataset):
+        """None is not allowed here — one GPU is the smallest sane request."""
+        with pytest.raises(ValueError, match="gpu_count"):
+            RemoteJobSpec(dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", gpu_count=0)
+
+    def test_gpu_count_defaults_to_one(self, dataset):
+        spec = RemoteJobSpec(dataset=dataset, base_model="Qwen/Qwen3.5-0.8B")
+        assert spec.gpu_count == 1
+
+    def test_gpu_count_never_reaches_the_training_script(self, dataset):
+        """It is a provider resource — the job discovers its GPUs itself."""
+        spec = RemoteJobSpec(
+            dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", gpu_count=2
+        )
+        assert "--gpu-count" not in spec.to_cli_args()
+
+    def test_rejects_blank_network_volume_id(self, dataset):
+        """None means "no volume"; a blank string is always a mistake."""
+        with pytest.raises(ValueError, match="network_volume_id"):
+            RemoteJobSpec(
+                dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", network_volume_id="  "
+            )
+
+    def test_network_volume_id_never_reaches_the_training_script(self, dataset):
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            network_volume_id="vol-123",
+        )
+        assert "vol-123" not in spec.to_cli_args()
 
     def test_rejects_unknown_cloud_type(self, dataset):
         with pytest.raises(ValueError, match="cloud_type"):
