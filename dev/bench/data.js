@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786643289465,
+  "lastUpdate": 1786644493565,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2464,6 +2464,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 7.979535702454952e-8",
             "extra": "mean: 474.4974575779207 nsec\nrounds: 102481"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "a9524057b8f18b40a1d33839c14548c072f7593f",
+          "message": "feat(training): adapter provenance manifests and lineage\n\nA LoRA adapter directory was anonymous tensors — no record of which base\nmodel it modifies, which data taught it, or which generation preceded it.\nEvery run now writes stateset_manifest.json beside the adapter (base model,\ndataset path AND content hash, hyperparameters, eval outcome, package\nversion, parent adapter), and 'stateset-agents adapters' reads them back\nwith the reconstructed family tree.\n\nDetails that matter:\n- the manifest is written as soon as the adapter is saved, so provenance\n  exists even if the eval that follows fails or the process dies\n- the dataset is hashed, not just named: two runs claiming the same file\n  are only comparable if the bytes match\n- lineage resolves by recorded path then by directory name, so a manifest\n  written on a rented pod links up after the adapter is fetched elsewhere\n- pre-manifest adapters are listed as carrying no provenance, not hidden\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-13T11:04:59-07:00",
+          "tree_id": "a425f25496cbf8eb5f3dad136d9ebb485e13c7c2",
+          "url": "https://github.com/stateset/stateset-agents/commit/a9524057b8f18b40a1d33839c14548c072f7593f"
+        },
+        "date": 1786644493039,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5989.6480055543025,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000019307367217759178",
+            "extra": "mean: 166.95471905405506 usec\nrounds: 1438"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6519.132396486518,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017062180594878184",
+            "extra": "mean: 153.39464505107296 usec\nrounds: 2051"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4945.85561270841,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000019640095612437965",
+            "extra": "mean: 202.18948515813787 usec\nrounds: 3032"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 721.283017703521,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00009770350823640185",
+            "extra": "mean: 1.3864183343507526 msec\nrounds: 655"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 157.7576764934185,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008866400275598804",
+            "extra": "mean: 6.33883575257727 msec\nrounds: 97"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2116371.8061009464,
+            "unit": "iter/sec",
+            "range": "stddev: 5.4054480195872004e-8",
+            "extra": "mean: 472.5067670610908 nsec\nrounds: 105186"
           }
         ]
       }
