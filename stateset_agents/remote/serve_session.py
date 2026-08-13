@@ -1,0 +1,445 @@
+"""A persistent vLLM OpenAI-compatible endpoint on a RunPod GPU pod.
+
+``stateset-agents serve-remote`` for people without a local GPU: rent a pod,
+install vLLM, load base model (+ optional LoRA adapter), and expose an
+OpenAI-compatible ``/v1`` API over the pod's public port mapping. Unlike
+:mod:`stateset_agents.remote.chat_session`, the pod deliberately OUTLIVES the
+CLI process — that is the whole point of serving — so the cost controls are
+different in kind:
+
+1. **A remote self-destruct.** A pod cannot terminate itself without
+   credentials, and a local watchdog dies with the laptop. So the RunPod API
+   key is copied to the pod (``chmod 600``, root-only container) and a
+   ``nohup``-ed script sleeps for ``max_hours`` then calls the RunPod DELETE
+   endpoint on its own pod id. **Tradeoff, stated plainly:** the API key
+   lives on the rented machine until the pod dies. Anyone with root on the
+   pod (you, or RunPod's SECURE-cloud operators) could read it. Use a
+   dedicated, revocable key if that matters to you.
+2. **Manual controls.** ``serve-remote --stop <name-or-id>`` terminates a
+   pod immediately; ``serve-remote --list`` shows every serve pod with its
+   age and $/hr so nothing leaks unnoticed.
+
+On any *startup* failure the pod is terminated before the exception
+propagates — a half-provisioned pod bills like a healthy one.
+
+The endpoint is authenticated: vLLM is launched with a generated
+``--api-key`` token, and every request must carry it as a Bearer token.
+
+VRAM note: vLLM loads the whole model into GPU memory. The default GPU
+(16 GB) fits models up to ~7B at fp16; for anything larger pick a bigger
+``--gpu`` (e.g. ``"NVIDIA H100 80GB HBM3"``) and raise
+``--container-disk-gb`` to ~2.5x the checkpoint size for the download.
+"""
+
+from __future__ import annotations
+
+import secrets
+import shlex
+import tarfile
+import tempfile
+import time
+import uuid
+from collections.abc import Callable
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from stateset_agents.remote.executor import RemoteExecutionError
+from stateset_agents.remote.runpod import (
+    _API_ROOT,
+    _DEFAULT_IMAGE,
+    _REMOTE_WORKDIR,
+    RunPodApi,
+    SshTransport,
+)
+
+__all__ = [
+    "RemoteServeSession",
+    "find_serve_pod",
+    "list_serve_pods",
+    "self_destruct_script",
+]
+
+_POD_PREFIX = "stateset-serve-"
+_REMOTE_ADAPTER_DIR = f"{_REMOTE_WORKDIR}/adapter"
+_REMOTE_ADAPTER_TAR = f"{_REMOTE_WORKDIR}/adapter.tar.gz"
+_REMOTE_KEY_FILE = f"{_REMOTE_WORKDIR}/.runpod_key"
+_REMOTE_DESTRUCT_SCRIPT = f"{_REMOTE_WORKDIR}/self_destruct.sh"
+_REMOTE_VLLM_LOG = f"{_REMOTE_WORKDIR}/vllm.log"
+_VLLM_PORT = 8000
+
+#: HTTP GET seam for the readiness poll. Injectable so tests never touch the
+#: network. Returns an HTTP status code, raising on connection failure.
+HttpGet = Callable[[str, dict[str, str]], int]
+
+
+def _default_http_get(url: str, headers: dict[str, str]) -> int:
+    import requests
+
+    return int(requests.get(url, headers=headers, timeout=10).status_code)
+
+
+def self_destruct_script(
+    pod_id: str, max_hours: float, api_root: str = _API_ROOT
+) -> str:
+    """The remote self-destruct: sleep ``max_hours``, then DELETE own pod.
+
+    Reads the API key from :data:`_REMOTE_KEY_FILE` at fire time rather than
+    embedding it, so the script itself is safe to log. The key file still
+    lives on the pod — see the module docstring for the tradeoff.
+    """
+    seconds = max(1, int(max_hours * 3600))
+    return (
+        "#!/bin/bash\n"
+        f"# stateset-agents serve-remote cost control: terminate this pod\n"
+        f"# after {max_hours} hour(s), whatever happens to the laptop that\n"
+        "# started it.\n"
+        f"sleep {seconds}\n"
+        f'curl -s -X DELETE "{api_root}/pods/{pod_id}" '
+        f'-H "Authorization: Bearer $(cat {_REMOTE_KEY_FILE})"\n'
+    )
+
+
+def _pod_age(pod: dict[str, Any], *, now: Callable[[], float] = time.time) -> str:
+    """Human age of a pod from whichever created-at field the API returned."""
+    raw = pod.get("createdAt") or pod.get("created_at")
+    if not raw:
+        return "?"
+    try:
+        created = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return "?"
+    seconds = max(0.0, now() - created.astimezone(timezone.utc).timestamp())
+    hours = seconds / 3600
+    return f"{hours:.1f}h"
+
+
+def list_serve_pods(api: Any) -> list[dict[str, Any]]:
+    """Every running serve pod, as rows ready to print.
+
+    Only pods this command created (``stateset-serve-*`` names) are shown —
+    training/chat pods manage their own lifecycles.
+    """
+    rows = []
+    for pod in api.list_pods():
+        name = str(pod.get("name") or "")
+        if not name.startswith(_POD_PREFIX):
+            continue
+        rows.append(
+            {
+                "id": str(pod.get("id")),
+                "name": name,
+                "status": str(pod.get("desiredStatus") or "?"),
+                "age": _pod_age(pod),
+                "cost_per_hr": pod.get("costPerHr"),
+            }
+        )
+    return rows
+
+
+def find_serve_pod(api: Any, name_or_id: str) -> dict[str, Any]:
+    """Resolve ``--stop``'s argument to one pod, by exact id or name."""
+    pods = list(api.list_pods())
+    for pod in pods:
+        if str(pod.get("id")) == name_or_id or str(pod.get("name")) == name_or_id:
+            return dict(pod)
+    known = ", ".join(
+        sorted(
+            str(p.get("name"))
+            for p in pods
+            if str(p.get("name") or "").startswith(_POD_PREFIX)
+        )
+    )
+    raise RemoteExecutionError(
+        f"no pod named or with id {name_or_id!r}"
+        + (f"; running serve pods: {known}" if known else "; no serve pods running"),
+        provider="runpod",
+    )
+
+
+class RemoteServeSession:
+    """Rent a pod, boot vLLM's OpenAI server on it, hand back URL + token."""
+
+    provider = "runpod"
+    #: 16 GB — fits ~7B fp16 models; pick a bigger GPU for anything larger.
+    DEFAULT_GPU = "NVIDIA RTX A4000"
+
+    def __init__(
+        self,
+        api: Any = None,
+        ssh: Any = None,
+        *,
+        public_key: str | None = None,
+        image: str = _DEFAULT_IMAGE,
+        container_disk_gb: int = 60,
+        ready_timeout_s: int = 1800,
+        poll_interval_s: float = 10.0,
+        http_get: HttpGet | None = None,
+        token: str | None = None,
+    ) -> None:
+        self._api = api
+        self._ssh = ssh
+        self._public_key = public_key
+        self.image = image
+        #: vLLM's pip install alone is ~10 GB of wheels on top of the model
+        #: download, hence a higher floor than the training default.
+        self.container_disk_gb = container_disk_gb
+        #: Covers pod provisioning + `pip install vllm` + model download +
+        #: weight loading. Generous on purpose: a 30-minute ceiling beats a
+        #: false negative that leaks a warming-up pod (start() terminates
+        #: the pod on timeout, but only because this bound exists).
+        self.ready_timeout_s = ready_timeout_s
+        self.poll_interval_s = poll_interval_s
+        self._http_get = http_get or _default_http_get
+        #: The Bearer token vLLM will require. Generated unless injected.
+        self.token = token or secrets.token_urlsafe(24)
+
+        self.pod_id: str | None = None
+        self.pod_name: str | None = None
+        self.endpoint_url: str | None = None
+        #: (host, ssh_port) once known — lets _run_checked reconnect after
+        #: a transport drop.
+        self._endpoint: tuple[str, int] | None = None
+
+    # -- lazily resolved collaborators (mirrors RemoteChatSession) ---------
+
+    def _require_api(self) -> Any:
+        if self._api is not None:
+            return self._api
+        import os
+
+        key = os.environ.get("RUNPOD_API_KEY", "").strip()
+        if not key:
+            raise RemoteExecutionError(
+                "RUNPOD_API_KEY is not set; create a key at "
+                "https://console.runpod.io/user/settings and export it",
+                provider=self.provider,
+            )
+        self._api = RunPodApi(key)
+        return self._api
+
+    def _require_public_key(self) -> str:
+        if self._public_key:
+            return self._public_key
+        for candidate in ("id_ed25519.pub", "id_rsa.pub"):
+            path = Path.home() / ".ssh" / candidate
+            if path.exists():
+                self._public_key = path.read_text().strip()
+                return self._public_key
+        raise RemoteExecutionError(
+            "no SSH public key found (~/.ssh/id_ed25519.pub or id_rsa.pub); "
+            "RunPod needs one to grant access to the pod",
+            provider=self.provider,
+        )
+
+    def _require_ssh(self) -> Any:
+        if self._ssh is None:
+            self._ssh = SshTransport()
+        return self._ssh
+
+    # -- lifecycle ---------------------------------------------------------
+
+    def _wait_for_endpoints(self, api: Any, pod_id: str) -> tuple[str, int, int]:
+        """Poll until the pod is RUNNING with both 22 and 8000 mapped.
+
+        RunPod publishes each requested ``ports`` entry as a proxy mapping
+        in ``portMappings`` (internal port -> public port on ``publicIp``);
+        the vLLM endpoint URL comes from the "8000" mapping.
+        """
+        deadline = time.monotonic() + self.ready_timeout_s
+        while True:
+            pod = api.get_pod(pod_id)
+            ip = pod.get("publicIp")
+            mappings = pod.get("portMappings") or {}
+            ssh_port = mappings.get("22")
+            vllm_port = mappings.get(str(_VLLM_PORT))
+            if pod.get("desiredStatus") == "RUNNING" and ip and ssh_port and vllm_port:
+                return str(ip), int(ssh_port), int(vllm_port)
+            if time.monotonic() >= deadline:
+                raise RemoteExecutionError(
+                    f"pod {pod_id} never published its SSH+HTTP ports within "
+                    f"{self.ready_timeout_s}s (last status "
+                    f"{pod.get('desiredStatus')!r}, mappings {mappings!r})",
+                    provider=self.provider,
+                )
+            time.sleep(self.poll_interval_s)
+
+    def _run_checked(self, ssh: Any, command: str) -> None:
+        """Run one setup command, absorbing a single ssh-transport death.
+
+        Exit 255 is ssh's OWN code (the client/transport failed), not the
+        remote command's — observed live: the pod's sshd dropped the
+        connection mid-`pip install vllm` ("Connection closed by remote
+        host") and the pod itself came back seconds later. Reconnect and
+        retry once; a second 255, or any real remote failure, still raises.
+        """
+        exit_code, output = ssh.run(command)
+        if exit_code == 255 and self._reconnect(ssh):
+            exit_code, output = ssh.run(command)
+        if exit_code != 0:
+            raise RemoteExecutionError(
+                f"remote command failed ({exit_code}): {command}\n{output}",
+                provider=self.provider,
+            )
+
+    def _reconnect(self, ssh: Any) -> bool:
+        """Wait for sshd to answer again after a transport drop."""
+        if self._endpoint is None:
+            return False
+        host, ssh_port = self._endpoint
+        try:
+            ssh.wait_until_reachable(host, ssh_port, self.ready_timeout_s)
+        except RemoteExecutionError:
+            return False
+        return True
+
+    def _upload_adapter(self, ssh: Any, adapter_dir: Path) -> None:
+        """Tar, upload, untar — ``SshTransport.upload`` moves single files."""
+        with tempfile.TemporaryDirectory() as staging:
+            tar_path = Path(staging) / "adapter.tar.gz"
+            with tarfile.open(tar_path, "w:gz") as tar:
+                tar.add(adapter_dir, arcname="adapter")
+            ssh.upload(tar_path, _REMOTE_ADAPTER_TAR)
+        self._run_checked(
+            ssh,
+            f"tar xzf {_REMOTE_ADAPTER_TAR} -C {_REMOTE_WORKDIR} "
+            f"&& rm -f {_REMOTE_ADAPTER_TAR}",
+        )
+
+    def _arm_self_destruct(self, ssh: Any, api: Any, max_hours: float) -> None:
+        """Install and start the remote self-destruct (see module docstring)."""
+        with tempfile.TemporaryDirectory() as staging:
+            key_file = Path(staging) / "runpod_key"
+            key_file.write_text(str(api.api_key))
+            ssh.upload(key_file, _REMOTE_KEY_FILE)
+            script_file = Path(staging) / "self_destruct.sh"
+            script_file.write_text(
+                self_destruct_script(str(self.pod_id), max_hours, api.root)
+            )
+            ssh.upload(script_file, _REMOTE_DESTRUCT_SCRIPT)
+        self._run_checked(
+            ssh,
+            f"chmod 600 {_REMOTE_KEY_FILE} && "
+            f"nohup bash {_REMOTE_DESTRUCT_SCRIPT} "
+            f"> {_REMOTE_WORKDIR}/self_destruct.log 2>&1 & echo armed",
+        )
+
+    def _vllm_command(self, base_model: str, with_adapter: bool) -> str:
+        """The launch line: vLLM's built-in OpenAI-compatible server.
+
+        ``vllm serve`` binds 0.0.0.0:8000 with ``/v1`` chat/completions
+        endpoints, requiring ``Authorization: Bearer <token>`` because of
+        ``--api-key``. With an adapter, ``--enable-lora`` registers it as
+        the served model named ``adapter``.
+        """
+        parts = [
+            "nohup",
+            "vllm",
+            "serve",
+            shlex.quote(base_model),
+            "--host 0.0.0.0",
+            f"--port {_VLLM_PORT}",
+            f"--api-key {shlex.quote(self.token)}",
+        ]
+        if with_adapter:
+            parts += [
+                "--enable-lora",
+                f"--lora-modules adapter={_REMOTE_ADAPTER_DIR}",
+            ]
+        parts += [f"> {_REMOTE_VLLM_LOG} 2>&1 & echo launched"]
+        return " ".join(parts)
+
+    def _await_server_ready(self, ssh: Any) -> None:
+        """Poll ``/v1/models`` (with the token) until vLLM answers 200."""
+        assert self.endpoint_url is not None
+        url = f"{self.endpoint_url}/v1/models"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        deadline = time.monotonic() + self.ready_timeout_s
+        while True:
+            try:
+                status = self._http_get(url, headers)
+            except Exception:
+                status = -1  # connection refused: server still booting
+            if status == 200:
+                return
+            if status == 401:
+                # Answering but rejecting OUR token — misconfiguration, and
+                # more polling will not fix it.
+                raise RemoteExecutionError(
+                    "vLLM is up but rejected the generated API token; "
+                    "refusing to serve unauthenticated",
+                    provider=self.provider,
+                )
+            if time.monotonic() >= deadline:
+                _, log_tail = ssh.run(f"tail -n 30 {_REMOTE_VLLM_LOG}")
+                raise RemoteExecutionError(
+                    f"vLLM did not become ready within {self.ready_timeout_s}s "
+                    f"(last HTTP status {status}). Tail of its log:\n{log_tail}",
+                    provider=self.provider,
+                )
+            time.sleep(self.poll_interval_s)
+
+    def start(
+        self,
+        base_model: str,
+        adapter_dir: Path | None = None,
+        gpu: str | None = None,
+        max_hours: float = 1.0,
+    ) -> None:
+        """Provision, arm the self-destruct, boot vLLM, block until ready.
+
+        On success the pod KEEPS RUNNING (that is the product); on any
+        failure it is terminated before the exception propagates.
+        """
+        if max_hours <= 0:
+            raise RemoteExecutionError(
+                "--max-hours must be positive; the self-destruct is the "
+                "backstop that keeps a forgotten pod from billing forever",
+                provider=self.provider,
+            )
+        api = self._require_api()
+        public_key = self._require_public_key()
+        ssh = self._require_ssh()
+
+        self.pod_name = f"{_POD_PREFIX}{uuid.uuid4().hex[:12]}"
+        pod = api.create_pod(
+            name=self.pod_name,
+            image=self.image,
+            gpu_type_id=gpu or self.DEFAULT_GPU,
+            ports=["22/tcp", f"{_VLLM_PORT}/tcp"],
+            env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
+            container_disk_gb=self.container_disk_gb,
+        )
+        self.pod_id = str(pod["id"])
+
+        try:
+            host, ssh_port, vllm_port = self._wait_for_endpoints(api, self.pod_id)
+            self.endpoint_url = f"http://{host}:{vllm_port}"
+            self._endpoint = (host, ssh_port)
+            ssh.wait_until_reachable(host, ssh_port, self.ready_timeout_s)
+
+            # Armed FIRST: from here even a botched vllm install cannot
+            # leak a forever-billing pod past max_hours.
+            self._arm_self_destruct(ssh, api, max_hours)
+
+            if adapter_dir is not None:
+                self._upload_adapter(ssh, Path(adapter_dir))
+
+            # The runpod/pytorch image ships torch but NOT vllm.
+            self._run_checked(ssh, "pip install --quiet vllm")
+            self._run_checked(
+                ssh, self._vllm_command(base_model, adapter_dir is not None)
+            )
+            self._await_server_ready(ssh)
+        except BaseException:
+            self.terminate()
+            raise
+
+    def terminate(self) -> None:
+        """Terminate the pod now. Safe to call twice; best-effort."""
+        pod_id, self.pod_id = self.pod_id, None
+        if pod_id is not None and self._api is not None:
+            try:
+                self._api.terminate_pod(pod_id)
+            except Exception:
+                pass  # never mask the original failure

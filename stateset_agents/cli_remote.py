@@ -169,6 +169,137 @@ def chat_remote(
     _echo("Session ended; pod terminated.")
 
 
+@app.command("serve-remote")
+def serve_remote(
+    base_model: str | None = typer.Option(
+        None,
+        "--base-model",
+        help="Hugging Face base model to serve (e.g. Qwen/Qwen3.5-0.8B). "
+        "Required unless --stop or --list is given.",
+    ),
+    adapter: Path | None = typer.Option(
+        None,
+        "--adapter",
+        help="Local LoRA adapter directory (e.g. outputs/sft_v1) to serve on "
+        "top of the base model, as served-model name 'adapter'.",
+    ),
+    gpu: str = typer.Option(
+        "NVIDIA RTX A4000",
+        "--gpu",
+        help="RunPod GPU type, in RunPod's own vocabulary. The default's "
+        "16 GB VRAM fits ~7B fp16 models; go bigger for bigger models.",
+    ),
+    container_disk_gb: int = typer.Option(
+        60,
+        "--container-disk-gb",
+        help="Container disk in GB — must fit the vLLM install (~10 GB) plus "
+        "roughly 2.5x the model checkpoint.",
+    ),
+    max_hours: float = typer.Option(
+        1.0,
+        "--max-hours",
+        help="Cost control: a self-destruct armed ON THE POD terminates it "
+        "after this many hours, even if this machine goes away. The RunPod "
+        "API key is copied to the pod (chmod 600) to make that possible.",
+    ),
+    stop: str | None = typer.Option(
+        None,
+        "--stop",
+        help="Terminate a running serve pod by name or id, then exit.",
+    ),
+    list_pods: bool = typer.Option(
+        False,
+        "--list",
+        help="List running serve pods (name, id, status, age, $/hr), then exit.",
+    ),
+) -> None:
+    """Serve a model as a persistent OpenAI-compatible endpoint on RunPod.
+
+    Rents a pod, installs vLLM, loads the base model (plus your adapter),
+    and prints the endpoint URL and a generated Bearer token. The pod KEEPS
+    RUNNING after this command exits — that is the point — so every run arms
+    an on-pod self-destruct at ``--max-hours``, and ``--stop``/``--list``
+    exist to manage what is running.
+    """
+    from stateset_agents.remote import serve_session
+
+    if list_pods:
+        try:
+            rows = serve_session.list_serve_pods(
+                serve_session.RemoteServeSession()._require_api()
+            )
+        except StateSetError as exc:
+            _echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        if not rows:
+            _echo("No serve pods running.")
+            return
+        for row in rows:
+            cost = row["cost_per_hr"]
+            cost_s = f"${cost}/hr" if cost is not None else "?/hr"
+            _echo(
+                f"{row['name']}  {row['id']}  {row['status']}  "
+                f"age {row['age']}  {cost_s}"
+            )
+        return
+
+    if stop is not None:
+        try:
+            api = serve_session.RemoteServeSession()._require_api()
+            pod = serve_session.find_serve_pod(api, stop)
+            api.terminate_pod(str(pod["id"]))
+        except StateSetError as exc:
+            _echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        _echo(f"Terminated pod {pod.get('name')} ({pod['id']}). Billing stopped.")
+        return
+
+    if base_model is None:
+        _echo("--base-model is required (or use --stop / --list).", err=True)
+        raise typer.Exit(code=2)
+    if adapter is not None and not adapter.exists():
+        _echo(f"Adapter directory does not exist: {adapter}", err=True)
+        raise typer.Exit(code=2)
+    if max_hours <= 0:
+        _echo("--max-hours must be positive.", err=True)
+        raise typer.Exit(code=2)
+
+    session = serve_session.RemoteServeSession(container_disk_gb=container_disk_gb)
+    _echo(f"Renting a {gpu} pod and serving {base_model} with vLLM…")
+    if adapter is not None:
+        _echo(f"With adapter: {adapter} (served-model name: adapter)")
+    _echo(f"Self-destruct armed on the pod at {max_hours}h.")
+    try:
+        session.start(
+            base_model=base_model,
+            adapter_dir=adapter,
+            gpu=gpu,
+            max_hours=max_hours,
+        )
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    model_name = "adapter" if adapter is not None else base_model
+    _echo("")
+    _echo(f"Endpoint ready (bills until stopped, max {max_hours}h):")
+    _echo(f"  URL:   {session.endpoint_url}/v1")
+    _echo(f"  Token: {session.token}")
+    _echo(f"  Pod:   {session.pod_name} ({session.pod_id})")
+    _echo("")
+    _echo("Example:")
+    _echo(f"  curl {session.endpoint_url}/v1/chat/completions \\")
+    _echo(f'    -H "Authorization: Bearer {session.token}" \\')
+    _echo('    -H "Content-Type: application/json" \\')
+    _echo(
+        f'    -d \'{{"model": "{model_name}", '
+        '"messages": [{"role": "user", "content": "Hello"}]}\''
+    )
+    _echo("")
+    _echo("Stop it (billing stops immediately):")
+    _echo(f"  stateset-agents serve-remote --stop {session.pod_name}")
+
+
 def _parse_eval_prompt_line(line: str) -> str | dict:
     """One line of the --eval-prompts file.
 

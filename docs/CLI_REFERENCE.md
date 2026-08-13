@@ -637,6 +637,73 @@ Disable with `--no-save`, or pick the destination with `--save-transcript`.
   successfully answered turns are recorded, and empty sessions write
   nothing.
 
+### `stateset-agents serve-remote`
+
+Serve a model as a **persistent** OpenAI-compatible endpoint on a rented
+RunPod GPU. Rents a pod, installs vLLM, loads the base model (plus your
+local LoRA adapter, served under the model name `adapter`), and prints the
+endpoint URL and a generated Bearer token. Unlike `chat-remote`, the pod
+**keeps running after the command exits** — that is the point — so cost is
+controlled three ways:
+
+1. **On-pod self-destruct** (`--max-hours`, default `1.0`): a `nohup`-ed
+   script on the pod sleeps for that long and then calls the RunPod DELETE
+   endpoint on its own pod id. It fires even if your laptop is gone.
+   **Tradeoff:** to make that possible, your `RUNPOD_API_KEY` is copied to
+   the pod (`chmod 600`, root-only). Use a dedicated, revocable key if that
+   matters to you.
+2. `--stop <name-or-id>`: terminate a serve pod immediately.
+3. `--list`: show running serve pods with status, age, and $/hr.
+
+On any *startup* failure the pod is terminated before the error is shown.
+
+```bash
+export RUNPOD_API_KEY=...
+
+# Serve a small model for an hour (the default cap)
+stateset-agents serve-remote --base-model Qwen/Qwen3.5-0.8B
+
+# Serve base + fine-tuned adapter for a demo afternoon
+stateset-agents serve-remote --base-model Qwen/Qwen3.5-0.8B \
+    --adapter outputs/sft_v1 --max-hours 4
+
+# Call it (the command prints this, filled in)
+curl http://<ip>:<port>/v1/chat/completions \
+    -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+    -d '{"model": "adapter", "messages": [{"role": "user", "content": "Hi"}]}'
+
+# Manage what's running
+stateset-agents serve-remote --list
+stateset-agents serve-remote --stop stateset-serve-<id>
+```
+
+The endpoint is vLLM's own OpenAI-compatible server (`/v1/chat/completions`,
+`/v1/completions`, `/v1/models`), launched with `--api-key` so every request
+must carry the printed Bearer token. The URL comes from RunPod's public port
+mapping for the pod's port 8000. Requirements match
+`train-remote --provider runpod`: `RUNPOD_API_KEY`, an SSH keypair, and
+`ssh`/`scp` on PATH.
+
+**VRAM note:** vLLM loads the whole model into GPU memory. The default GPU
+(`NVIDIA RTX A4000`, 16 GB) fits models up to ~7B at fp16; for bigger models
+pick a bigger `--gpu` (e.g. `"NVIDIA H100 80GB HBM3"`) and raise
+`--container-disk-gb` to ~2.5x the checkpoint for the download.
+
+#### Options
+
+- `--base-model TEXT`: Hugging Face base model to serve. Required unless
+  `--stop` or `--list` is given.
+- `--adapter PATH`: Local LoRA adapter directory to serve on top of the
+  base model, as served-model name `adapter`.
+- `--gpu TEXT`: RunPod GPU type. Default `NVIDIA RTX A4000` (16 GB).
+- `--container-disk-gb INTEGER`: Container disk in GB — must fit the vLLM
+  install (~10 GB) plus ~2.5x the model checkpoint. Default `60`.
+- `--max-hours FLOAT`: On-pod self-destruct deadline in hours. Default
+  `1.0`; must be positive.
+- `--stop TEXT`: Terminate a running serve pod by name or id, then exit.
+- `--list`: List running serve pods (name, id, status, age, $/hr), then
+  exit.
+
 ### `stateset-agents fine-tune`
 
 Fine-tune from a curated JSONL in one command.

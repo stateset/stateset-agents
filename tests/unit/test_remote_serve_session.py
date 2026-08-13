@@ -1,0 +1,343 @@
+"""Unit tests for :mod:`stateset_agents.remote.serve_session`.
+
+Everything is faked at the RunPodApi/SshTransport/http_get seams — no
+network, no ssh, no pods. What matters: the pod is provisioned with BOTH
+ports, the self-destruct is armed before anything fallible, the endpoint
+URL comes from the 8000 port mapping, readiness polls /v1/models with the
+Bearer token, startup failures terminate the pod, and success does NOT.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from stateset_agents.remote.executor import RemoteExecutionError
+from stateset_agents.remote.serve_session import (
+    RemoteServeSession,
+    find_serve_pod,
+    list_serve_pods,
+    self_destruct_script,
+)
+
+
+class FakeApi:
+    def __init__(self, pods=None):
+        self.api_key = "rp-test-key"
+        self.root = "https://rest.runpod.io/v1"
+        self.created: list[dict] = []
+        self.terminated: list[str] = []
+        self._pods = pods or []
+        self.pod_state = {
+            "id": "pod-1",
+            "desiredStatus": "RUNNING",
+            "publicIp": "1.2.3.4",
+            "portMappings": {"22": 2222, "8000": 18000},
+        }
+
+    def create_pod(self, **kwargs):
+        self.created.append(kwargs)
+        return {"id": "pod-1"}
+
+    def get_pod(self, pod_id):
+        return dict(self.pod_state)
+
+    def terminate_pod(self, pod_id):
+        self.terminated.append(pod_id)
+
+    def list_pods(self):
+        return list(self._pods)
+
+
+class FakeSsh:
+    def __init__(self):
+        self.commands: list[str] = []
+        self.uploads: list[tuple[str, str]] = []
+        self.fail_on: str | None = None
+
+    def wait_until_reachable(self, host, port, timeout_s):
+        self.reachable = (host, port)
+
+    def upload(self, local, remote):
+        self.uploads.append((str(local), remote))
+
+    def run(self, command):
+        self.commands.append(command)
+        if self.fail_on and self.fail_on in command:
+            return 1, "boom"
+        return 0, "ok"
+
+
+def make_session(api=None, ssh=None, http_statuses=(200,), **kwargs):
+    statuses = list(http_statuses)
+    calls: list[tuple[str, dict]] = []
+
+    def http_get(url, headers):
+        calls.append((url, dict(headers)))
+        return statuses.pop(0) if len(statuses) > 1 else statuses[0]
+
+    session = RemoteServeSession(
+        api or FakeApi(),
+        ssh or FakeSsh(),
+        public_key="ssh-ed25519 AAA test",
+        poll_interval_s=0.0,
+        http_get=http_get,
+        **kwargs,
+    )
+    session._http_calls = calls  # test-side telescope, not API
+    return session
+
+
+class TestStartHappyPath:
+    def test_pod_is_created_with_both_ports_and_prefixed_name(self):
+        api, ssh = FakeApi(), FakeSsh()
+        session = make_session(api, ssh)
+
+        session.start("Qwen/Qwen3.5-0.8B")
+
+        created = api.created[0]
+        assert created["ports"] == ["22/tcp", "8000/tcp"]
+        assert created["name"].startswith("stateset-serve-")
+        assert created["gpu_type_id"] == RemoteServeSession.DEFAULT_GPU
+
+    def test_endpoint_url_comes_from_the_8000_port_mapping(self):
+        session = make_session()
+
+        session.start("m")
+
+        assert session.endpoint_url == "http://1.2.3.4:18000"
+
+    def test_readiness_polls_v1_models_with_the_bearer_token(self):
+        session = make_session(token="tok-123")
+
+        session.start("m")
+
+        url, headers = session._http_calls[0]
+        assert url == "http://1.2.3.4:18000/v1/models"
+        assert headers["Authorization"] == "Bearer tok-123"
+
+    def test_success_does_not_terminate_the_pod(self):
+        api = FakeApi()
+        session = make_session(api)
+
+        session.start("m")
+
+        assert api.terminated == []
+        assert session.pod_id == "pod-1"
+
+    def test_vllm_is_installed_and_launched_with_the_token(self):
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh, token="tok-abc")
+
+        session.start("Qwen/Qwen3.5-0.8B")
+
+        assert any("pip install --quiet vllm" in c for c in ssh.commands)
+        launch = next(c for c in ssh.commands if "vllm serve" in c)
+        assert "nohup" in launch
+        assert "Qwen/Qwen3.5-0.8B" in launch
+        assert "--api-key tok-abc" in launch
+        assert "--enable-lora" not in launch
+
+    def test_connection_refusals_are_retried_until_ready(self):
+        statuses = iter([ConnectionError("boot"), ConnectionError("boot"), 200])
+
+        def http_get(url, headers):
+            value = next(statuses)
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        session = RemoteServeSession(
+            FakeApi(),
+            FakeSsh(),
+            public_key="k",
+            poll_interval_s=0.0,
+            http_get=http_get,
+        )
+
+        session.start("m")  # does not raise
+
+
+class TestAdapter:
+    def test_adapter_is_tarred_uploaded_and_lora_flags_added(self, tmp_path):
+        adapter = tmp_path / "adapter"
+        adapter.mkdir()
+        (adapter / "adapter_model.safetensors").write_bytes(b"x")
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh)
+
+        session.start("m", adapter_dir=adapter)
+
+        assert any(r == "/workspace/adapter.tar.gz" for _, r in ssh.uploads)
+        assert any("tar xzf /workspace/adapter.tar.gz" in c for c in ssh.commands)
+        launch = next(c for c in ssh.commands if "vllm serve" in c)
+        assert "--enable-lora" in launch
+        assert "--lora-modules adapter=/workspace/adapter" in launch
+
+
+class TestSelfDestruct:
+    def test_script_sleeps_then_deletes_its_own_pod_reading_the_key_file(self):
+        script = self_destruct_script("pod-9", 1.5, "https://rest.runpod.io/v1")
+
+        assert "sleep 5400" in script
+        assert "DELETE" in script
+        assert "https://rest.runpod.io/v1/pods/pod-9" in script
+        # The key is read at fire time, never embedded in the script.
+        assert "$(cat /workspace/.runpod_key)" in script
+        assert "rp-test-key" not in script
+
+    def test_start_uploads_key_and_script_and_arms_before_vllm_install(self):
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh)
+
+        session.start("m", max_hours=2.0)
+
+        remotes = [r for _, r in ssh.uploads]
+        assert "/workspace/.runpod_key" in remotes
+        assert "/workspace/self_destruct.sh" in remotes
+        arm = next(i for i, c in enumerate(ssh.commands) if "self_destruct.sh" in c)
+        install = next(i for i, c in enumerate(ssh.commands) if "pip install" in c)
+        assert arm < install, "self-destruct must be armed before fallible setup"
+        assert "chmod 600 /workspace/.runpod_key" in ssh.commands[arm]
+        assert "nohup bash /workspace/self_destruct.sh" in ssh.commands[arm]
+
+    def test_nonpositive_max_hours_is_rejected_before_renting(self):
+        api = FakeApi()
+        session = make_session(api)
+
+        with pytest.raises(RemoteExecutionError, match="max-hours"):
+            session.start("m", max_hours=0)
+
+        assert api.created == []
+
+
+class TestTransportRetry:
+    def test_ssh_255_reconnects_and_retries_the_command_once(self):
+        """Observed live: sshd dropped mid-`pip install vllm` (exit 255)."""
+        api = FakeApi()
+        ssh = FakeSsh()
+        flaky = {"tripped": False}
+        original_run = ssh.run
+
+        def run(command):
+            if "pip install" in command and not flaky["tripped"]:
+                flaky["tripped"] = True
+                return 255, "Connection closed by remote host"
+            return original_run(command)
+
+        ssh.run = run
+        reconnects = []
+        original_wait = ssh.wait_until_reachable
+        ssh.wait_until_reachable = lambda h, p, t: (
+            reconnects.append((h, p)),
+            original_wait(h, p, t),
+        )
+        session = make_session(api, ssh)
+
+        session.start("m")  # does not raise
+
+        assert api.terminated == []
+        assert sum(1 for c in ssh.commands if "pip install" in c) == 1
+        # initial wait + one reconnect
+        assert len(reconnects) == 2
+
+    def test_persistent_255_still_fails_and_terminates(self):
+        api = FakeApi()
+        ssh = FakeSsh()
+        ssh.run = lambda command: (255, "gone")
+        session = make_session(api, ssh)
+
+        with pytest.raises(RemoteExecutionError, match="255"):
+            session.start("m")
+
+        assert api.terminated == ["pod-1"]
+
+
+class TestStartFailures:
+    def test_remote_command_failure_terminates_the_pod(self):
+        api, ssh = FakeApi(), FakeSsh()
+        ssh.fail_on = "pip install"
+        session = make_session(api, ssh)
+
+        with pytest.raises(RemoteExecutionError, match="pip install"):
+            session.start("m")
+
+        assert api.terminated == ["pod-1"]
+
+    def test_readiness_timeout_terminates_the_pod_and_includes_the_log(self):
+        api = FakeApi()
+        ssh = FakeSsh()
+        session = make_session(api, ssh, http_statuses=(500,))
+        session.ready_timeout_s = 0
+
+        with pytest.raises(RemoteExecutionError, match="did not become ready"):
+            session.start("m")
+
+        assert api.terminated == ["pod-1"]
+        assert any("tail" in c and "vllm.log" in c for c in ssh.commands)
+
+    def test_401_from_vllm_fails_fast_instead_of_polling_forever(self):
+        api = FakeApi()
+        session = make_session(api, http_statuses=(401,))
+
+        with pytest.raises(RemoteExecutionError, match="rejected"):
+            session.start("m")
+
+        assert api.terminated == ["pod-1"]
+
+    def test_pod_never_publishing_ports_times_out_and_terminates(self):
+        api = FakeApi()
+        api.pod_state["portMappings"] = {"22": 2222}  # 8000 never mapped
+        session = make_session(api)
+        session.ready_timeout_s = 0
+
+        with pytest.raises(RemoteExecutionError, match="ports"):
+            session.start("m")
+
+        assert api.terminated == ["pod-1"]
+
+    def test_terminate_is_idempotent(self):
+        api = FakeApi()
+        session = make_session(api)
+        session.start("m")
+
+        session.terminate()
+        session.terminate()
+
+        assert api.terminated == ["pod-1"]
+
+
+class TestListAndFind:
+    PODS = [
+        {
+            "id": "a1",
+            "name": "stateset-serve-abc",
+            "desiredStatus": "RUNNING",
+            "costPerHr": 0.17,
+            "createdAt": "2026-08-13T00:00:00Z",
+        },
+        {"id": "b2", "name": "stateset-sft-xyz", "desiredStatus": "RUNNING"},
+        {"id": "c3", "name": "stateset-serve-def", "desiredStatus": "EXITED"},
+    ]
+
+    def test_list_shows_only_serve_pods_with_age_and_cost(self):
+        rows = list_serve_pods(FakeApi(pods=self.PODS))
+
+        assert [r["id"] for r in rows] == ["a1", "c3"]
+        assert rows[0]["cost_per_hr"] == 0.17
+        assert rows[0]["age"].endswith("h")
+        assert rows[1]["age"] == "?"  # no createdAt
+
+    def test_find_matches_by_id_or_name(self):
+        api = FakeApi(pods=self.PODS)
+
+        assert find_serve_pod(api, "a1")["name"] == "stateset-serve-abc"
+        assert find_serve_pod(api, "stateset-serve-def")["id"] == "c3"
+
+    def test_find_unknown_lists_running_serve_pods_in_the_error(self):
+        with pytest.raises(RemoteExecutionError, match="stateset-serve-abc"):
+            find_serve_pod(FakeApi(pods=self.PODS), "nope")
+
+    def test_generated_tokens_are_unique_and_urlsafe(self):
+        tokens = {RemoteServeSession(FakeApi(), FakeSsh()).token for _ in range(5)}
+        assert len(tokens) == 5
+        assert all(len(t) >= 24 for t in tokens)

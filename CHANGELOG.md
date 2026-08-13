@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`serve-remote`: a persistent vLLM OpenAI-compatible endpoint on a
+  RunPod pod, with cost controls.** `stateset-agents serve-remote
+  --base-model X [--adapter DIR]` rents a pod (ports 22 + 8000), installs
+  vLLM, loads the base model (+ LoRA adapter as served-model `adapter`),
+  and prints the endpoint URL (from RunPod's port-8000 mapping), a
+  generated Bearer token (vLLM `--api-key`), an example `curl`, and the
+  stop command. The pod deliberately outlives the CLI, so every run arms
+  an **on-pod self-destruct**: a `nohup`-ed script sleeps `--max-hours`
+  (default 1.0) then calls the RunPod DELETE endpoint on its own pod id —
+  it fires even if the launching machine is gone, at the documented cost
+  of copying the API key to the pod (`chmod 600`). `--stop <name-or-id>`
+  terminates immediately and `--list` shows serve pods with age and $/hr.
+  Startup failures terminate the pod before the error propagates. New
+  module `stateset_agents.remote.serve_session`; `RunPodApi.list_pods()`
+  added.
+
 - **Eval prompts can now assert, turning the post-train comparison into a
   pass/fail gate.** `--eval-prompts` file lines (and `RemoteJobSpec.
   eval_prompts` entries) may be JSON objects `{"prompt", "expect",

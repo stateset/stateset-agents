@@ -117,6 +117,20 @@ class RunPodApi:
         response.raise_for_status()
         return dict(response.json())
 
+    def list_pods(self) -> list[dict[str, Any]]:
+        """All pods on the account. The REST API returns either a bare list
+        or a ``{"pods": [...]}`` envelope depending on version; accept both.
+        """
+        import requests
+
+        response = requests.get(
+            f"{self.root}/pods", headers=self._headers(), timeout=60
+        )
+        response.raise_for_status()
+        payload = response.json()
+        pods = payload.get("pods", []) if isinstance(payload, dict) else payload
+        return [dict(p) for p in pods]
+
     def terminate_pod(self, pod_id: str) -> None:
         import requests
 
