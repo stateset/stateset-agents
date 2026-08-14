@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from stateset_agents.training.lineage import (
     MANIFEST_NAME,
@@ -108,7 +109,8 @@ class TestLineage:
             AdapterManifest(base_model="m", parent_adapter=str(parent)),
         )
         lineage = build_lineage(discover_adapters(tmp_path))
-        assert [p.split("/")[-1] for p in lineage[str(parent)]] == ["gen2"]
+        # Path separators differ by OS; compare on the directory name.
+        assert [Path(p).name for p in lineage[str(parent)]] == ["gen2"]
 
     def test_links_by_name_when_the_path_moved(self, tmp_path):
         """A manifest written on a pod records that pod's absolute path;

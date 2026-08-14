@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Coverage floor 56 → 57: the ratchet fired again, this time on the work
+  added since v0.27.0.
+
+### Fixed
+
+- Two new tests assumed POSIX path separators and failed on the Windows
+  matrix (a printed `ingest` command and a lineage directory name). Both now
+  compare on path components rather than on `/`.
+
 ### Fixed
 
 - **v0.28.0 shipped with a red CI; this is the fix and the guard.** Two

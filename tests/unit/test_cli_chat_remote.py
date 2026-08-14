@@ -195,10 +195,10 @@ class TestTranscriptSaving:
             {"role": "assistant", "content": "echo:hi"},
         ]
         assert "Transcript saved to" in result.output
-        assert (
-            f"ingest --format openai --input chat_transcripts/{files[0].name}"
-            in result.output
-        )
+        # The printed command embeds an OS-native path (backslashes on
+        # Windows), so assert on the pieces rather than a POSIX separator.
+        assert "ingest --format openai --input" in result.output
+        assert files[0].name in result.output
 
     def test_save_transcript_flag_picks_the_path(self, tmp_path):
         target = tmp_path / "logs" / "session.jsonl"
