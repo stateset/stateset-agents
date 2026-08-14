@@ -219,6 +219,7 @@ a 63GB checkpoint across two 48GB cards.
 | `NET_003 … never became reachable` | Pod provisioned but never got networking | Retry; if a whole pool does this repeatedly, switch pools |
 | `File reconstruction error` mid-download | Container disk too small | `--container-disk-gb` ≈ 2.5× the checkpoint |
 | Job dies right after "Loading tokenizer and model" | Out of VRAM for the weights | Bigger card, or `--gpu-count 2` |
+| `serve-remote` pod RUNNING with no IP/ports | That host will never publish networking | Fixed: networking now fails after 5 min (not 30) and a fresh pod is tried |
 | Run hangs with the pod alive but idle | Was: dead SSH peer. Fixed — keepalives now detect a lost pod in ~2 minutes | Update to ≥ 0.25.0 |
 | `TrainingArguments … unexpected keyword` | transformers drift on the pod | Fixed in ≥ 0.24.0 (arguments are filtered against the installed signature) |
 | Eval output is all reasoning, no answer | Reasoning model, budget too small | `--eval-max-new-tokens 300` |

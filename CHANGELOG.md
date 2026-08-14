@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`serve-remote` stops paying to wait for networking that is not coming.**
+  A pod can reach RUNNING and never publish an IP or port mappings — observed
+  four times against real RunPod hosts. That wait shared the (necessarily
+  long) vLLM-load timeout, so such a pod billed for 30 minutes before anyone
+  found out. Networking now has its own short deadline, and a pod that misses
+  it is terminated and replaced with a different host, bounded by
+  `max_provision_attempts`. Both pods are always terminated: a retry never
+  doubles the bill.
+
 ### Added
 
 - **Two guides written from verified runs.**

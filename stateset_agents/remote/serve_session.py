@@ -157,6 +157,14 @@ def find_serve_pod(api: Any, name_or_id: str) -> dict[str, Any]:
     )
 
 
+class _PodNeverNetworked(RemoteExecutionError):
+    """The pod reached RUNNING but never published an IP and port mappings.
+
+    Distinct from a slow vLLM boot: this pod cannot serve anything, and the
+    fix is a different pod rather than more patience.
+    """
+
+
 class RemoteServeSession:
     """Rent a pod, boot vLLM's OpenAI server on it, hand back URL + token."""
 
@@ -173,6 +181,8 @@ class RemoteServeSession:
         image: str = _DEFAULT_IMAGE,
         container_disk_gb: int = 60,
         ready_timeout_s: int = 1800,
+        network_timeout_s: int = 300,
+        max_provision_attempts: int = 2,
         poll_interval_s: float = 10.0,
         http_get: HttpGet | None = None,
         token: str | None = None,
@@ -189,6 +199,15 @@ class RemoteServeSession:
         #: false negative that leaks a warming-up pod (start() terminates
         #: the pod on timeout, but only because this bound exists).
         self.ready_timeout_s = ready_timeout_s
+        #: Networking either appears within a couple of minutes or never —
+        #: observed four times: a pod reaches RUNNING and never publishes an
+        #: IP or port mapping. Sharing the (necessarily long) vLLM-load
+        #: timeout with this meant burning 30 minutes of billing on a pod
+        #: that was never going to serve anything.
+        self.network_timeout_s = network_timeout_s
+        #: A pod that never gets networking is worth abandoning for a fresh
+        #: one; the failure is per-host, not per-account.
+        self.max_provision_attempts = max_provision_attempts
         self.poll_interval_s = poll_interval_s
         self._http_get = http_get or _default_http_get
         #: The Bearer token vLLM will require. Generated unless injected.
@@ -246,7 +265,7 @@ class RemoteServeSession:
         in ``portMappings`` (internal port -> public port on ``publicIp``);
         the vLLM endpoint URL comes from the "8000" mapping.
         """
-        deadline = time.monotonic() + self.ready_timeout_s
+        deadline = time.monotonic() + self.network_timeout_s
         while True:
             pod = api.get_pod(pod_id)
             ip = pod.get("publicIp")
@@ -256,9 +275,9 @@ class RemoteServeSession:
             if pod.get("desiredStatus") == "RUNNING" and ip and ssh_port and vllm_port:
                 return str(ip), int(ssh_port), int(vllm_port)
             if time.monotonic() >= deadline:
-                raise RemoteExecutionError(
+                raise _PodNeverNetworked(
                     f"pod {pod_id} never published its SSH+HTTP ports within "
-                    f"{self.ready_timeout_s}s (last status "
+                    f"{self.network_timeout_s}s (last status "
                     f"{pod.get('desiredStatus')!r}, mappings {mappings!r})",
                     provider=self.provider,
                 )
@@ -401,19 +420,31 @@ class RemoteServeSession:
         public_key = self._require_public_key()
         ssh = self._require_ssh()
 
-        self.pod_name = f"{_POD_PREFIX}{uuid.uuid4().hex[:12]}"
-        pod = api.create_pod(
-            name=self.pod_name,
-            image=self.image,
-            gpu_type_id=gpu or self.DEFAULT_GPU,
-            ports=["22/tcp", f"{_VLLM_PORT}/tcp"],
-            env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
-            container_disk_gb=self.container_disk_gb,
-        )
-        self.pod_id = str(pod["id"])
+        for attempt in range(1, self.max_provision_attempts + 1):
+            self.pod_name = f"{_POD_PREFIX}{uuid.uuid4().hex[:12]}"
+            pod = api.create_pod(
+                name=self.pod_name,
+                image=self.image,
+                gpu_type_id=gpu or self.DEFAULT_GPU,
+                ports=["22/tcp", f"{_VLLM_PORT}/tcp"],
+                env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
+                container_disk_gb=self.container_disk_gb,
+            )
+            self.pod_id = str(pod["id"])
+            try:
+                endpoints = self._wait_for_endpoints(api, self.pod_id)
+                break
+            except _PodNeverNetworked:
+                # This host will not serve; take a different one. The dead
+                # pod goes first so a retry never doubles the bill.
+                self.terminate()
+                if attempt >= self.max_provision_attempts:
+                    raise
+        else:  # pragma: no cover - loop always breaks or raises
+            raise AssertionError("unreachable")
 
         try:
-            host, ssh_port, vllm_port = self._wait_for_endpoints(api, self.pod_id)
+            host, ssh_port, vllm_port = endpoints
             self.endpoint_url = f"http://{host}:{vllm_port}"
             self._endpoint = (host, ssh_port)
             ssh.wait_until_reachable(host, ssh_port, self.ready_timeout_s)

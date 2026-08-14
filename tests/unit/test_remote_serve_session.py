@@ -284,15 +284,46 @@ class TestStartFailures:
 
         assert api.terminated == ["pod-1"]
 
-    def test_pod_never_publishing_ports_times_out_and_terminates(self):
+    def test_pod_never_publishing_ports_retries_on_a_fresh_pod(self):
+        """A pod that reaches RUNNING without networking will never serve —
+        observed four times against real RunPod hosts. Waiting out the long
+        vLLM-load timeout on it burned 30 minutes of billing, so networking
+        now fails fast and a *different* host is tried."""
         api = FakeApi()
         api.pod_state["portMappings"] = {"22": 2222}  # 8000 never mapped
         session = make_session(api)
-        session.ready_timeout_s = 0
+        session.network_timeout_s = 0
 
         with pytest.raises(RemoteExecutionError, match="ports"):
             session.start("m")
 
+        # Both attempts' pods terminated: a retry must never double the bill.
+        assert len(api.terminated) == session.max_provision_attempts
+        assert len(api.created) == session.max_provision_attempts
+
+    def test_networking_failure_is_not_bounded_by_the_vllm_load_timeout(self):
+        """The two waits are different problems: vLLM legitimately takes many
+        minutes, networking either appears in ~2 or never."""
+        api = FakeApi()
+        api.pod_state["portMappings"] = {"22": 2222}
+        session = make_session(api)
+        session.network_timeout_s = 0
+        session.ready_timeout_s = 10_000  # would hang if it governed this wait
+
+        with pytest.raises(RemoteExecutionError, match="ports"):
+            session.start("m")
+
+    def test_a_single_attempt_does_not_retry(self):
+        api = FakeApi()
+        api.pod_state["portMappings"] = {"22": 2222}
+        session = make_session(api)
+        session.network_timeout_s = 0
+        session.max_provision_attempts = 1
+
+        with pytest.raises(RemoteExecutionError, match="ports"):
+            session.start("m")
+
+        assert len(api.created) == 1
         assert api.terminated == ["pod-1"]
 
     def test_terminate_is_idempotent(self):
