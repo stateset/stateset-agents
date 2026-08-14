@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786682754588,
+  "lastUpdate": 1786695795681,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1054,6 +1054,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.5375069652360354e-8",
             "extra": "mean: 337.3408459280439 nsec\nrounds: 141844"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "2bbc4cf8f390ca2d8b5f9025db8678d128c5eabc",
+          "message": "fix(serve-remote): fail fast on dead pod networking, retry on a fresh host\n\nFour verification attempts died the same way: a pod reaches RUNNING and\nnever publishes an IP or port mappings. That wait shared ready_timeout_s\nwith the vLLM load — necessarily long, since loading a 30B model takes\nmany minutes — so a pod that could never serve anything billed for 30\nminutes before failing.\n\nNetworking is now its own problem with its own short deadline (300s: it\nappears in about two minutes or never), and a pod that misses it is\nterminated and replaced, bounded by max_provision_attempts. Both pods are\nterminated on the way out, so a retry cannot double the bill.\n\nThe existing timeout test encoded the old single-deadline behavior; it now\nasserts the new contract, alongside tests that the vLLM timeout does not\ngovern the networking wait and that a single-attempt session does not retry.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-14T04:43:10Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/2bbc4cf8f390ca2d8b5f9025db8678d128c5eabc"
+        },
+        "date": 1786695795138,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8415.096271974244,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013365160634972438",
+            "extra": "mean: 118.83405342971704 usec\nrounds: 1385"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 8958.105992689547,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004193253078108061",
+            "extra": "mean: 111.63073989257006 usec\nrounds: 2053"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6604.574308669752,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016141383325716424",
+            "extra": "mean: 151.41021256847864 usec\nrounds: 3453"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 817.4561929727877,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000020531008225271152",
+            "extra": "mean: 1.2233071430572537 msec\nrounds: 713"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 174.26222054386596,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003930004025189766",
+            "extra": "mean: 5.7384784658375 msec\nrounds: 161"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2259984.344823118,
+            "unit": "iter/sec",
+            "range": "stddev: 1.1383598785313142e-7",
+            "extra": "mean: 442.4809412023901 nsec\nrounds: 110327"
           }
         ]
       }
