@@ -91,12 +91,22 @@ answering an order number it had never seen:
 | **Base model** | `to=self` … *"We need to respond. No context. Probably we don't have access to order tracking…"* — never answers the customer |
 | **Fine-tuned** | *"Thanks for reaching out to StateSet Support! I checked right away: your order #77701 is on the way — it left our warehouse and should arrive within 3 business days. Anything else I can help with? — Astra @ StateSet"* |
 
-Verified live on rented hardware, not in a mock: Muse Glimmer 30B (63GB,
-multimodal), Nemotron 3.5 Lightning (hybrid Mamba/MoE — needs 8 epochs to
-hold a brand name where Muse needs 3), and Qwen3.5. A 63GB checkpoint has
-been trained sharded across two 48GB cards, and GSPO's convergence is
-re-proved weekly on a real GPU. See [`docs/FLYWHEEL_EXPERIMENT.md`](docs/FLYWHEEL_EXPERIMENT.md)
-for the curation-quality measurements and their limitations.
+Every row below is a run that actually happened, on rented hardware, with
+the artifact returned — not a mock and not a plan:
+
+| Proven | Evidence |
+|---|---|
+| Muse Glimmer 30B (63GB, multimodal) | 258MB adapter; persona learned from 140 examples; base model could not answer at all |
+| Nemotron 3.5 Lightning (hybrid Mamba/MoE) | Learns the same task, but needs 8 epochs to hold a brand name where Muse needs 3 |
+| Qwen3.8-27B (hybrid, multimodal) | Fine-tuned the week it shipped: 2/2 held-out assertions, $0.96 |
+| A model too big for one card | 63GB checkpoint sharded across two 48GB cards (`0=24 module(s), 1=36 module(s)`) |
+| The RL core, not just SFT | GSPO on a real GPU: target-token probability 2.8e‑05 → 0.125 in 40 steps, re-proved weekly |
+| Multi-turn memory | `chat-remote` resolved *"I got double charged for it"* to the order number from the previous turn |
+| The loop itself | Machine-curated data trains a second generation with no manual data work ([`FLYWHEEL_EXPERIMENT.md`](docs/FLYWHEEL_EXPERIMENT.md), limitations included) |
+
+What is **not** yet proven is labelled as such throughout — `serve-remote`'s
+endpoint bring-up is the current gap, and the starter table's ✅ column marks
+which models have actually been trained rather than merely wired up.
 
 `improve` writes three things: `improve_summary.json` (machine‑readable scores
 and per‑reward breakdown), `curated.jsonl` (the turns above your threshold, ready
@@ -371,7 +381,7 @@ uses 4‑bit quantization and smaller context/group sizes), `--use-lora/--no-lor
 `--use-4bit/--use-8bit`, `--use-vllm`, `--wandb`, `--export-merged`,
 `--write-config PATH`.
 
-Eleven models ship a dedicated starter with tuned defaults; the ✅ column marks
+Twelve models ship a dedicated starter with tuned defaults; the ✅ column marks
 what has actually been fine-tuned on rented hardware, not merely wired up:
 
 | Model | Dedicated entry point | Live-verified | Notes |
