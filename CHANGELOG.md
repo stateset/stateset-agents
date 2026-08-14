@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-08-14 — adapter lineage, verified multi-GPU, and serve-remote's real bugs
+
 ### Fixed
 
 - **`serve-remote`: the five-attempt mystery, solved.** Verification kept

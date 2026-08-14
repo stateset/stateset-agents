@@ -127,7 +127,15 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.27.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.28.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Every adapter now knows where it came from.** Training writes `stateset_manifest.json` beside the adapter — base model, dataset path *and content hash*, hyperparameters, eval outcome, parent adapter — and `stateset-agents adapters` reads them back as a family tree. Dataset bytes are hashed, not just named: two runs claiming the same file are only comparable if the bytes match.
+- **`--gpu-count` is hardware-proven.** A 63GB checkpoint trained sharded across two 48GB cards (`Model sharded across devices: 0=24 module(s), 1=36 module(s)`). The first attempt passed and proved nothing — capacity had swapped in cards big enough to hold the model whole — so device placement is now logged on every run and the retry used a model too large for any single card available.
+- **`serve-remote`: two real bugs found and fixed.** Five verification attempts failed identically because we requested the model port as `8000/tcp` and waited for a TCP mapping that RunPod was never going to publish — http ports are served through its proxy. Now requested as `8000/http`, addressed at the proxy URL, with `supportPublicIp` set so a community pod cannot silently start without an IP. Long installs then run detached with their exit code polled, so a dropped ssh link costs a poll instead of the run.
+- **Costs are complete.** `chat-remote` and `serve-remote` pods now reach the cost ledger too — the docs had claimed it, only training did it, and serve pods (the ones that outlive their command) were the most expensive omission.
+- **Two guides written entirely from runs that happened**: [`RUNPOD_GUIDE.md`](docs/RUNPOD_GUIDE.md) (disk sizing with the exact error a too-small disk produces, GPU/model table, spot pricing, network volumes, multi-GPU, and every failure mode we hit) and [`GETTING_STARTED_API.md`](docs/GETTING_STARTED_API.md) (raw logs to an OpenAI-compatible or Anthropic-style API call).
+
+**v0.27.0:**
 
 - **Money is accounted for.** Every remote run appends what it cost — model, hardware, pod lifetime, dollars — to a per-user ledger, read back with `stateset-agents costs`. `train-remote --max-cost` refuses a run whose worst case would exceed your ceiling, *before* any work starts; a pod the provider won't price is refused rather than rented, because an unknown cost must never render as free.
 - **Curation stopped rewarding waffle.** The rule-based grader scored polite-but-useless replies 0.75 — above the curation threshold — which two live experiments measured as precision 0.818 and 0.833. A concreteness/resolution component plus optional persona-fidelity checks and a guarded LLM-judge take `make benchmark-loop` to **precision 1.000 / recall 1.000**, floors ratcheted to 0.95.
@@ -278,7 +286,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.27.0)
+pip install stateset-agents          # latest release (v0.28.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -974,7 +982,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.27.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.28.0`).
 
 Other entry points:
 
