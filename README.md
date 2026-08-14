@@ -140,7 +140,7 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 - **Money is accounted for.** Every remote run appends what it cost — model, hardware, pod lifetime, dollars — to a per-user ledger, read back with `stateset-agents costs`. `train-remote --max-cost` refuses a run whose worst case would exceed your ceiling, *before* any work starts; a pod the provider won't price is refused rather than rented, because an unknown cost must never render as free.
 - **Curation stopped rewarding waffle.** The rule-based grader scored polite-but-useless replies 0.75 — above the curation threshold — which two live experiments measured as precision 0.818 and 0.833. A concreteness/resolution component plus optional persona-fidelity checks and a guarded LLM-judge take `make benchmark-loop` to **precision 1.000 / recall 1.000**, floors ratcheted to 0.95.
 - **Durable checkpoints, live-verified.** `--network-volume-id` attaches a RunPod network volume at `/workspace`, so checkpoints survive pod death and the retry path resumes instead of restarting. Proven end to end on rented hardware: volume created, trained against, adapter fetched, volume deleted, zero pods and volumes left behind.
-- **`--gpu-count`** for multi-GPU pods (`device_map="auto"` when torch sees more than one device). Code and unit tests are green; this one is **not yet hardware-proven** — treat it as experimental until it is.
+- **`--gpu-count`** for multi-GPU pods (`device_map="auto"` when torch sees more than one device). Shipped unproven and labelled as such; hardware-proven in v0.28.0 above.
 
 **v0.26.0:**
 
@@ -207,6 +207,34 @@ Earlier highlights: v0.15.3 shipped Rust accelerator wheels (abi3‑py310) and m
 Full breakdown in [CHANGELOG.md](CHANGELOG.md).
 
 ---
+
+## Renting GPUs, and knowing what it cost
+
+Four commands cover the whole rented-hardware lifecycle. Every pod is
+terminated on every exit path — success, failure, timeout, or your laptop
+dying mid-run — and every pod records what it cost.
+
+| Command | What it does |
+|---|---|
+| `train-remote` | Rents a GPU, fine-tunes, returns the adapter plus `eval_results.json`, gives the hardware back |
+| `chat-remote` | Multi-turn conversation with a tuned model; saves every transcript in the format `ingest` accepts |
+| `serve-remote` | Persistent vLLM endpoint with a bearer token, `--max-hours` self-destruct, `--list` / `--stop` |
+| `costs` | What every remote run actually cost — model, hardware, duration, dollars |
+
+Cost control is built in rather than bolted on: `--max-cost N` refuses to
+start a run whose worst case would exceed N dollars, and a pod the provider
+will not price is refused rather than rented. `--cloud-type COMMUNITY` uses
+spot pricing, `--network-volume-id` keeps checkpoints alive across pod death,
+and `--gpu-count 2` shards a checkpoint too large for one card (verified: 63GB
+across two 48GB cards).
+
+Adapters are not anonymous either — each carries a manifest with its base
+model, dataset **content hash**, hyperparameters, eval outcome, and parent
+adapter, which `stateset-agents adapters` reads back as a family tree.
+
+See [`docs/RUNPOD_GUIDE.md`](docs/RUNPOD_GUIDE.md) for sizing, capacity
+behaviour, and a troubleshooting table covering every failure mode this
+project actually hit.
 
 ## Why group‑based optimization?
 
@@ -338,17 +366,22 @@ uses 4‑bit quantization and smaller context/group sizes), `--use-lora/--no-lor
 `--use-4bit/--use-8bit`, `--use-vllm`, `--wandb`, `--export-merged`,
 `--write-config PATH`.
 
-Seven models also ship a dedicated starter with tuned defaults and a hosting plan:
+Eleven models ship a dedicated starter with tuned defaults; the ✅ column marks
+what has actually been fine-tuned on rented hardware, not merely wired up:
 
-| Model | Dedicated entry point | Notes |
-|---|---|---|
-| `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | Cheapest path to a first run — see `docs/QWEN3_FINETUNING_GUIDE.md` |
-| `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` | Use `--starter-profile memory` on tighter GPU budgets |
-| `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | |
-| `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` | **Provisional** — HF weights unpublished as of 2026‑07‑16; presets mirror Kimi‑K2.6 |
-| `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | Meta's open agentic model (Aug 2026); dense 30B, 131K ctx, Apache‑2.0 |
-| `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | 754B MoE, QLoRA‑only + vLLM; `docs/GLM5_1_HOSTING_PLAN.md` |
-| `zai-org/GLM-5.2` | `python examples/finetune_glm5_2_gspo.py` | 754B MoE, QLoRA‑only + vLLM; `docs/GLM5_2_HOSTING_PLAN.md` |
+| Model | Dedicated entry point | Live-verified | Notes |
+|---|---|---|---|
+| `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
+| `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
+| `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
+| `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents qwen3-coder` | | 128 experts / 8 active, 256K ctx, Apache‑2.0 |
+| `openai/gpt-oss-20b` | `stateset-agents gpt-oss` | | 32 experts / 4 active, 128K ctx, Apache‑2.0 |
+| `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents deepseek-v4` | | MLA attention, 256 experts, 1M ctx, MIT — QLoRA + vLLM |
+| `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` | | Use `--starter-profile memory` on tighter GPU budgets |
+| `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | | |
+| `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` | | **Provisional** — HF weights unpublished as of 2026‑07‑16 |
+| `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
+| `zai-org/GLM-5.2` | `python examples/finetune_glm5_2_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
 
 Every CLI starter accepts the same flags: `--json-output`, `--list-profiles`,
 `--starter-profile NAME`, `--write-config PATH`, `--config PATH --no-dry-run`.
@@ -357,7 +390,7 @@ import get_glm5_2_config, run_glm5_2_config`), as are the others.
 
 ### Supported models
 
-First-class starters ship for **Qwen 3.5 0.8B**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **Muse Glimmer 30B**, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
+First-class starters ship for **Qwen 3.5 0.8B**, **Muse Glimmer 30B**, **Nemotron 3.5 Lightning**, **Qwen3-Coder 30B**, **gpt-oss 20B**, **DeepSeek V4 Flash**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
 
 See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
 
