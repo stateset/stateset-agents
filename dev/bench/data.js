@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786695795681,
+  "lastUpdate": 1786706737715,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2718,6 +2718,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.44060202214958e-8",
             "extra": "mean: 437.04250017795727 nsec\nrounds: 56348"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "42d8b25bcdd4e2d7f5af33a0eec66292f8c1dd00",
+          "message": "fix(remote): record chat and serve pod costs, as the docs already claimed\n\nCLI_REFERENCE said every train-remote, chat-remote and serve-remote pod\nappends a line to the cost ledger. Only training did. That made\n'stateset-agents costs' under-report actual spend, and the omission was\nworst for serve pods — the ones that deliberately outlive the command that\nstarted them.\n\nBoth sessions now record on teardown, with the same never-raise discipline\nas the training path: bookkeeping cannot break a teardown.\n\nHonest limit, now documented: a serve pod reaped by its own --max-hours\nself-destruct records nothing, because this machine never observes it end.\nserve-remote --list is the live view for that case.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-14T04:22:56-07:00",
+          "tree_id": "6b0f98d49aecf49e82f29ee51bb1f55c0adb6285",
+          "url": "https://github.com/stateset/stateset-agents/commit/42d8b25bcdd4e2d7f5af33a0eec66292f8c1dd00"
+        },
+        "date": 1786706736853,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 14124.201162953435,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000007655219428379608",
+            "extra": "mean: 70.80046428557772 usec\nrounds: 1764"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 14857.762244709897,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00000745209400462859",
+            "extra": "mean: 67.30488639741492 usec\nrounds: 2676"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 11092.45223563636,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008467653593193785",
+            "extra": "mean: 90.15139112227435 usec\nrounds: 4303"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1329.687740025194,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001203246665201203",
+            "extra": "mean: 752.0562684747719 usec\nrounds: 1069"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 315.47544785177905,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003389391311453362",
+            "extra": "mean: 3.169818782442409 msec\nrounds: 262"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 3642788.6714313785,
+            "unit": "iter/sec",
+            "range": "stddev: 2.858142199639651e-8",
+            "extra": "mean: 274.5149637261459 nsec\nrounds: 162787"
           }
         ]
       }
