@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **River AI provider (`train-remote --provider river`) — NOT LIVE-VERIFIED.**
+  River is a remote autograd/optimizer service rather than a machine you rent:
+  the training loop stays on your side and River supplies the gradients
+  (`create_model` → N × `forward_backward`/`optim_step` → `save_weights`).
+  `stateset_agents/remote/river_batches.py` holds the SDK-free, pure batch
+  construction — prompt tokens weighted `0.0`, assistant tokens `1.0`, so loss
+  is computed only on what the model should say — plus LoRA-rank (1–32) and
+  base-model validation. `stateset_agents/remote/river.py` adds `RiverExecutor`
+  implementing the standard provider contract, with the client and tokenizer as
+  injectable seams.
+
+  Stated plainly: **this was written from River's public documentation and has
+  never been run against the live service.** No River API key was available and
+  `river-client` is not installable from PyPI here, so every call name, keyword
+  and response shape is an informed guess, exercised only against fakes. The
+  most consequential guess is that the *caller* performs the next-token target
+  shift; if River shifts internally, loss will be flat and the fix is one line.
+  See `docs/RIVER_PROVIDER.md` for the full assumption list and what to check
+  on the first real run.
+
+  Because River hosts the weights, `fetch()` writes a `river_checkpoint.json`
+  pointer and a lineage manifest rather than pretending to download
+  safetensors, and the cost ledger records `cost_usd: null` (River bills per
+  token and quotes no price) rather than a misleading `0`. Machine-shaped spec
+  fields (`gpu`, `gpu_count`, `container_disk_gb`, `cloud_type`,
+  `network_volume_id`) are ignored with a log line, not an error.
+
 ## [0.29.0] - 2026-08-14 — Qwen3.8-27B, fine-tuned the week it shipped
 
 ### Added

@@ -72,11 +72,41 @@ A remote run succeeds only if it actually produces an adapter: a container
 that exits cleanly having written nothing is reported as a failure, not a
 success with an empty output directory.
 
+##### `--provider river`
+
+River AI is a remote *autograd* service rather than a machine you rent, so
+this provider behaves differently from `modal`/`runpod` in three ways worth
+knowing before you use it:
+
+```bash
+export RIVER_API_KEY=rv_...
+stateset-agents train-remote --provider river \
+    --dataset improved/curated.jsonl --base-model Qwen/Qwen3.5-9B --lora-r 16
+```
+
+- The trained LoRA stays on River. `--output-dir` receives a
+  `river_checkpoint.json` pointer (the `river://` URI, base model, LoRA config,
+  step/loss summary) and a `stateset_manifest.json`, **not** adapter weights —
+  so `stateset-agents serve --checkpoint` cannot load the result.
+- Hardware options (`--gpu`, `--gpu-count`, `--container-disk-gb`,
+  `--cloud-type`, `--network-volume-id`) have no River equivalent and are
+  ignored with a log line rather than raising.
+- River bills per token and quotes no price to the SDK, so the cost ledger
+  records the run with `cost_usd: null` — unknown, never zero. `--max-cost`
+  therefore cannot be checked against a River run.
+- LoRA rank is capped at 32 by River and is validated locally.
+
+**This provider has not been verified against the live service** — no API key
+was available and `river-client` is not installable from PyPI, so it is
+exercised only against fakes. Read `docs/RIVER_PROVIDER.md` for the specific
+assumptions (notably the next-token target shift) before relying on it.
+
 #### Options
 
 - `--dataset PATH`: Chat-format JSONL to train on (required).
 - `--base-model TEXT`: Hugging Face base model (required).
-- `--provider [local|modal|runpod]`: Where to run. Default `local`.
+- `--provider [local|modal|river|runpod]`: Where to run. Default `local`.
+  `river` is different in kind from the others — see the note below.
 - `--output-dir PATH`: Adapter output directory. Default `outputs/sft_v1`.
 - `--num-epochs`, `--lora-r`, `--lora-alpha`, `--learning-rate`,
   `--max-length`, `--per-device-batch-size`,

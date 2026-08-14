@@ -33,9 +33,16 @@ def _load_runpod() -> RemoteExecutor:
     return RunPodExecutor()
 
 
+def _load_river() -> RemoteExecutor:
+    from stateset_agents.remote.river import RiverExecutor
+
+    return RiverExecutor()
+
+
 _PROVIDERS: dict[str, Callable[[], RemoteExecutor]] = {
     "local": _load_local,
     "modal": _load_modal,
+    "river": _load_river,
     "runpod": _load_runpod,
 }
 

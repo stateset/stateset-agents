@@ -331,7 +331,14 @@ def train_remote(
     provider: str = typer.Option(
         "local",
         "--provider",
-        help=f"Where to run: {', '.join(available_providers())}.",
+        help=(
+            f"Where to run: {', '.join(available_providers())}. "
+            "'river' is River AI's remote autograd service: it trains without "
+            "renting a machine, so the GPU/disk/cloud-type options are "
+            "ignored, and the result is a river:// checkpoint pointer rather "
+            "than local adapter weights (NOT live-verified — see "
+            "docs/RIVER_PROVIDER.md)."
+        ),
     ),
     output_dir: Path = typer.Option(
         Path("outputs/sft_v1"),
@@ -479,7 +486,7 @@ def train_remote(
         _echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
-    _echo(f"Submitting SFT job to '{provider}' ({spec.gpu})…")
+    _echo(f"Submitting SFT job to '{provider}' ({spec.gpu or 'provider default'})…")
     try:
         result = executor.wait(executor.submit(spec))
     except StateSetError as exc:
@@ -495,6 +502,15 @@ def train_remote(
 
     if result.cost_usd is not None:
         _echo(f"Cost: ~${result.cost_usd:.2f} ({result.duration_s:.0f}s of pod time)")
+    if provider.strip().lower() == "river":
+        # River keeps the weights; what landed locally is a pointer, so the
+        # usual `serve --checkpoint` hint would be a lie.
+        _echo(f"Done. River checkpoint pointer written to {result.output_dir}")
+        _echo(
+            "The trained LoRA lives on River — sample it through the River "
+            f"API using the checkpoint in {result.output_dir}/river_checkpoint.json"
+        )
+        return
     _echo(f"Done. Adapter written to {result.output_dir}")
     _echo("Use it with: stateset-agents serve --checkpoint " f"{result.output_dir}")
 
