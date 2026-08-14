@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786736356341,
+  "lastUpdate": 1786739227318,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3102,6 +3102,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 9.477527099514406e-8",
             "extra": "mean: 477.6559411360298 nsec\nrounds: 103221"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "df0ae2582a0fcbbc827bfa076b74693e9e20faaf",
+          "message": "feat(remote): River AI provider — tokenization layer behind an injectable client\n\nRiver is a remote autograd service (you drive forward_backward/optim_step),\nso the valuable half of this integration is the pure tokenization layer:\nremote/river_batches.py turns our chat rows into their\n{input_ids, target_tokens, weights} with prompt tokens weighted 0.0 so loss\nlands only on what the model should say, plus the RL batch shape their\nppo/cispo losses take — which is exactly where our trainers' advantages\nwould plug in.\n\nNOT LIVE-VERIFIED, and labelled so everywhere: river-client is not\ninstallable from PyPI and the account has no credits. The client is\ninjectable (92 tests drive it with fakes) and every assumption is isolated\nand documented — notably whether target_tokens carries the causal shift,\nwhich is one function to flip if wrong.\n\nProbing the live API did establish what the docs omit: there is a REST\nsurface, it takes Bearer auth (401 without), and an unfunded account answers\n402 with 'Billing: insufficient_funds'. Both account states now raise named,\nactionable errors instead of a generic training failure, because no amount\nof retrying fixes either.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-14T13:24:26-07:00",
+          "tree_id": "dc1f7e5cd5e9223231fba210abe6a0f03917da04",
+          "url": "https://github.com/stateset/stateset-agents/commit/df0ae2582a0fcbbc827bfa076b74693e9e20faaf"
+        },
+        "date": 1786739226597,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8468.413492250616,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014497907353581335",
+            "extra": "mean: 118.08587298141414 usec\nrounds: 1362"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9052.312871512146,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001532231639191868",
+            "extra": "mean: 110.46900545682915 usec\nrounds: 2016"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6615.859990748217,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001777679709573001",
+            "extra": "mean: 151.15192906113867 usec\nrounds: 2481"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 822.5618292936164,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000028298499409610782",
+            "extra": "mean: 1.2157140829872455 msec\nrounds: 723"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 164.9241986024129,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005974764328187943",
+            "extra": "mean: 6.063391597316331 msec\nrounds: 149"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2261910.2591348453,
+            "unit": "iter/sec",
+            "range": "stddev: 4.58386384585752e-8",
+            "extra": "mean: 442.10418868805544 nsec\nrounds: 106907"
           }
         ]
       }
