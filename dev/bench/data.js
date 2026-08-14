@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786715701031,
+  "lastUpdate": 1786728809942,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2974,6 +2974,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.556509391782949e-8",
             "extra": "mean: 438.83655901706726 nsec\nrounds: 56510"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "d70d0831e903500de3a330f430ca6e1f4130f3c6",
+          "message": "feat(qwen3.8): first-class Qwen3.8-27B starter + hybrid linear-attention LoRA targets\n\nTwo related changes.\n\n1. LoRA inference silently under-adapted hybrid linear-attention models.\n   `_LORA_TARGET_CANDIDATES` in training/sft.py listed only llama/GPT-style\n   projection names. On Qwen/Qwen3.8-27B, whose weight map has 432\n   Mamba-style `linear_attn` tensors against just 96 standard `self_attn`\n   ones, that adapted the minority attention layers and skipped the majority\n   entirely — no error, just a badly under-adapted model. Added\n   `in_proj_qkv`, `in_proj_a`, `in_proj_b`, `in_proj_z`, `out_proj`.\n\n   The existing two-pass vision exclusion needed no change and is pinned by\n   a new test: `out_proj` exists in BOTH the text stack (linear_attn) and\n   the `model.visual.*` tower, so it is kept, while vision-only names are\n   dropped.\n\n2. Added the Qwen3.8 27B first-class starter (`Qwen/Qwen3.8-27B`, released\n   2026-08-05, Apache-2.0, 27.8B params, multimodal, 64 text layers, 256K\n   context) following the thin starter_common pattern: CLI command\n   `qwen3-8-27b`, `init --preset qwen3.8-27b`, driver preset `qwen3.8-27b`,\n   balanced/memory/quality profiles, docs page, and the full doc/README/\n   whitepaper wiring. `Qwen/Qwen3.8-27B-FP8` is a supported variant with a\n   validation warning that it is inference-oriented.\n\n   LoRA targets cover all three groups the weight map shows — standard\n   attention, Mamba-style linear attention, and the per-layer MLP. `conv1d`\n   is excluded (LoRA targets nn.Linear); the vision tower is excluded\n   because text-only SFT sends it no gradient.\n\nNot yet trained on hardware — the README's Live-verified cell is left empty.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-14T10:30:10-07:00",
+          "tree_id": "d3ab10d537de15a88b5f4dac15ae0acd6dfde543",
+          "url": "https://github.com/stateset/stateset-agents/commit/d70d0831e903500de3a330f430ca6e1f4130f3c6"
+        },
+        "date": 1786728809364,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8369.44300470457,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001524881279061097",
+            "extra": "mean: 119.4822641647583 usec\nrounds: 1306"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9091.218192322938,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014058175360030779",
+            "extra": "mean: 109.99626000005676 usec\nrounds: 2100"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6682.685213521288,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015178594600260226",
+            "extra": "mean: 149.6404466241607 usec\nrounds: 3466"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 833.9093534625512,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001906609164189215",
+            "extra": "mean: 1.1991711039668864 msec\nrounds: 731"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 157.58467773261918,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00783069482449612",
+            "extra": "mean: 6.3457946190475685 msec\nrounds: 147"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2179442.103498878,
+            "unit": "iter/sec",
+            "range": "stddev: 4.149574917137463e-8",
+            "extra": "mean: 458.8330189614119 nsec\nrounds: 55534"
           }
         ]
       }
