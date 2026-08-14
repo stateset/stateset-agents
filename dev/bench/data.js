@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786712030735,
+  "lastUpdate": 1786714076968,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2846,6 +2846,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.0464996174479484e-8",
             "extra": "mean: 455.6801826969982 nsec\nrounds: 53915"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "901113e4f747e3f898e3622986a53ece4111bd0f",
+          "message": "chore(release): v0.28.0 — adapter lineage, verified multi-GPU, and serve-remote's real bugs\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-14T06:25:22-07:00",
+          "tree_id": "8fb449bc284ec1dddfed2d757fb38afdcca14d6a",
+          "url": "https://github.com/stateset/stateset-agents/commit/901113e4f747e3f898e3622986a53ece4111bd0f"
+        },
+        "date": 1786714076213,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6102.096422099561,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014934298482449211",
+            "extra": "mean: 163.87810529810145 usec\nrounds: 1510"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6549.84353494936,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001852809792092035",
+            "extra": "mean: 152.67540280376048 usec\nrounds: 2140"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5051.901667659179,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017415003210456923",
+            "extra": "mean: 197.94526215775582 usec\nrounds: 3578"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 744.2891093553882,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000026856707313022888",
+            "extra": "mean: 1.3435639288959598 msec\nrounds: 661"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 172.10727903731572,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0052089276732224426",
+            "extra": "mean: 5.81032949677383 msec\nrounds: 155"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2110509.171855096,
+            "unit": "iter/sec",
+            "range": "stddev: 5.0271773181371326e-8",
+            "extra": "mean: 473.81931020987696 nsec\nrounds: 103756"
           }
         ]
       }
