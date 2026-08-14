@@ -63,6 +63,7 @@ logger = logging.getLogger(__name__)
 STARTER_FN_SUFFIX: dict[str, str] = {
     "muse_glimmer_starter": "muse_glimmer",
     "nemotron_3_5_starter": "nemotron_3_5",
+    "qwen3_8_starter": "qwen3_8",
     "qwen3_coder_starter": "qwen3_coder",
     "gpt_oss_starter": "gpt_oss",
     "deepseek_v4_starter": "deepseek_v4",

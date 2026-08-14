@@ -374,6 +374,7 @@ what has actually been fine-tuned on rented hardware, not merely wired up:
 | `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
 | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
 | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
+| `Qwen/Qwen3.8-27B` | `stateset-agents qwen3-8-27b` | | Hybrid linear/standard attention, multimodal, 256K ctx, Apache‑2.0 — ~56GB BF16 |
 | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents qwen3-coder` | | 128 experts / 8 active, 256K ctx, Apache‑2.0 |
 | `openai/gpt-oss-20b` | `stateset-agents gpt-oss` | | 32 experts / 4 active, 128K ctx, Apache‑2.0 |
 | `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents deepseek-v4` | | MLA attention, 256 experts, 1M ctx, MIT — QLoRA + vLLM |
@@ -390,7 +391,7 @@ import get_glm5_2_config, run_glm5_2_config`), as are the others.
 
 ### Supported models
 
-First-class starters ship for **Qwen 3.5 0.8B**, **Muse Glimmer 30B**, **Nemotron 3.5 Lightning**, **Qwen3-Coder 30B**, **gpt-oss 20B**, **DeepSeek V4 Flash**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
+First-class starters ship for **Qwen 3.5 0.8B**, **Muse Glimmer 30B**, **Nemotron 3.5 Lightning**, **Qwen3.8 27B**, **Qwen3-Coder 30B**, **gpt-oss 20B**, **DeepSeek V4 Flash**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
 
 See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
 

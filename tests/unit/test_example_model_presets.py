@@ -36,6 +36,7 @@ def test_presets_registry_has_expected_models():
     expected = {
         "muse-glimmer",
         "nemotron-3-5",
+        "qwen3.8-27b",
         "qwen3-coder",
         "gpt-oss",
         "deepseek-v4",
@@ -131,6 +132,7 @@ def test_starter_module_field_set_for_packaged_starters():
         "glm5.2": "glm5_2_starter",
         "gemma4-31b": "gemma4_starter",
         "qwen3.5-0.8b": "qwen3_5_starter",
+        "qwen3.8-27b": "qwen3_8_starter",
         "qwen3-coder": "qwen3_coder_starter",
         "gpt-oss": "gpt_oss_starter",
         "deepseek-v4": "deepseek_v4_starter",

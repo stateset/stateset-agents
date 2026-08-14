@@ -819,6 +819,65 @@ class TestVisionTowerExclusion:
         )
         assert sft.infer_lora_target_modules(model) == ["q_proj"]
 
+    def test_hybrid_linear_attention_model_yields_both_attention_families(self):
+        """Qwen/Qwen3.8-27B interleaves standard `self_attn` layers with a
+        majority of Mamba-style `linear_attn` layers; LoRA must adapt both,
+        not silently only the minority standard-attention ones."""
+        model = self._model(
+            [
+                # minority: standard attention layers
+                "model.language_model.layers.3.self_attn.q_proj",
+                "model.language_model.layers.3.self_attn.k_proj",
+                "model.language_model.layers.3.self_attn.v_proj",
+                "model.language_model.layers.3.self_attn.o_proj",
+                # majority: Mamba-style linear-attention layers
+                "model.language_model.layers.0.linear_attn.in_proj_qkv",
+                "model.language_model.layers.0.linear_attn.in_proj_a",
+                "model.language_model.layers.0.linear_attn.in_proj_b",
+                "model.language_model.layers.0.linear_attn.in_proj_z",
+                "model.language_model.layers.0.linear_attn.out_proj",
+                # every layer has an MLP
+                "model.language_model.layers.0.mlp.gate_proj",
+                "model.language_model.layers.0.mlp.up_proj",
+                "model.language_model.layers.0.mlp.down_proj",
+            ]
+        )
+        targets = sft.infer_lora_target_modules(model)
+        assert "q_proj" in targets
+        assert "in_proj_qkv" in targets
+        assert set(targets) == {
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "in_proj_qkv",
+            "in_proj_a",
+            "in_proj_b",
+            "in_proj_z",
+            "out_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        }
+
+    def test_out_proj_kept_when_shared_with_vision_tower(self):
+        """On Qwen/Qwen3.8-27B ``out_proj`` exists in BOTH the text stack
+        (linear_attn) and the ``model.visual.*`` tower, while ``proj`` is
+        vision-only. Shared names must be KEPT (peft matches by leaf name and
+        the text copies need adapting); vision-only names must be dropped."""
+        model = self._model(
+            [
+                "model.language_model.layers.0.linear_attn.in_proj_qkv",
+                "model.language_model.layers.0.linear_attn.out_proj",
+                "model.visual.blocks.0.attn.out_proj",
+                "model.visual.blocks.0.attn.proj",
+                "model.visual.merger.fc1",
+            ]
+        )
+        targets = sft.infer_lora_target_modules(model)
+        assert targets == ["in_proj_qkv", "out_proj"]
+        assert "fc1" not in targets
+
     def test_base_eval_moves_model_to_gpu_first(self, monkeypatch):
         """Base-eval generation must not run a 30B generate on CPU: when a
         GPU exists, the model moves to cuda BEFORE the pre-train

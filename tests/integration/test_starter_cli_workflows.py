@@ -45,6 +45,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
             "memory",
         ),
         (
+            "qwen3.8-27b",
+            "qwen3-8-27b",
+            "Qwen/Qwen3.8-27B",
+            "technical_support",
+            "memory",
+        ),
+        (
             "qwen3-coder",
             "qwen3-coder",
             "Qwen/Qwen3-Coder-30B-A3B-Instruct",

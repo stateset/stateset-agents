@@ -97,6 +97,34 @@ PRESETS: dict[str, ModelPreset] = {
         ),
         starter_module="nemotron_3_5_starter",
     ),
+    "qwen3.8-27b": ModelPreset(
+        model_id="Qwen/Qwen3.8-27B",
+        tokenizer_id="Qwen/Qwen3.8-27B",
+        lora_target_modules=(
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "in_proj_qkv",
+            "out_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ),
+        max_prompt_length=4096,
+        max_completion_length=1024,
+        learning_rate=3e-6,
+        num_generations=4,
+        bf16=True,
+        use_4bit=False,
+        use_8bit=False,
+        notes=(
+            "Values copied from stateset_agents.training.qwen3_8_starter "
+            "(QWEN38_27B_*). examples/finetune_qwen3_8_27b_gspo.py delegates "
+            "to the packaged starter rather than duplicating hyperparameters."
+        ),
+        starter_module="qwen3_8_starter",
+    ),
     "qwen3-coder": ModelPreset(
         model_id="Qwen/Qwen3-Coder-30B-A3B-Instruct",
         tokenizer_id="Qwen/Qwen3-Coder-30B-A3B-Instruct",

@@ -1,0 +1,323 @@
+"""Unit tests for the Qwen3.8 27B starter configuration."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+from unittest.mock import patch
+
+from stateset_agents.training.config import get_config_for_task
+from stateset_agents.training.qwen3_8_starter import (
+    QWEN38_27B_BASE_MODEL,
+    QWEN38_27B_LORA_TARGET_MODULES,
+    QWEN38_27B_STARTER_PROFILE_CHOICES,
+    QWEN38_27B_STARTER_PROFILE_DESCRIPTIONS,
+    Qwen38Config,
+    create_qwen3_8_agent_config,
+    create_qwen3_8_preview,
+    describe_qwen3_8_starter_profiles,
+    get_qwen3_8_config,
+    get_qwen3_8_gspo_config,
+    get_qwen3_8_profile_description,
+    get_qwen3_8_profile_overrides,
+    load_qwen3_8_config_file,
+    summarize_qwen3_8_config,
+    validate_qwen3_8_config,
+    write_qwen3_8_config_file,
+)
+
+
+class TestQwen38Config:
+    """Test suite for the Qwen3.8 27B helper config."""
+
+    def test_default_config_creation(self):
+        config = Qwen38Config()
+
+        assert config.model_name == QWEN38_27B_BASE_MODEL
+        assert config.starter_profile == "balanced"
+        assert config.use_lora is True
+        assert config.use_wandb is False
+        assert config.report_to == "none"
+        assert config.trust_remote_code is True
+        assert config.attn_implementation == "sdpa"
+
+    def test_balanced_profile_defaults(self):
+        config = get_qwen3_8_config()
+
+        assert config.starter_profile == "balanced"
+        assert config.use_4bit is True
+        assert config.per_device_train_batch_size == 1
+        assert config.gradient_accumulation_steps == 16
+
+    def test_memory_profile_defaults(self):
+        config = get_qwen3_8_config(starter_profile="memory")
+
+        assert config.starter_profile == "memory"
+        assert config.use_4bit is True
+        assert config.num_generations == 2
+        assert config.max_prompt_length == 2048
+
+    def test_quality_profile_defaults(self):
+        config = get_qwen3_8_config(starter_profile="quality")
+        profile = get_qwen3_8_profile_overrides("quality")
+
+        assert config.starter_profile == "quality"
+        assert config.max_prompt_length == profile["max_prompt_length"]
+        assert config.max_completion_length == profile["max_completion_length"]
+        assert config.num_outer_iterations == profile["num_outer_iterations"]
+        assert config.num_generations == profile["num_generations"]
+
+    def test_profile_description_lookup(self):
+        description = get_qwen3_8_profile_description("memory")
+
+        assert description == QWEN38_27B_STARTER_PROFILE_DESCRIPTIONS["memory"]
+        assert "Lower-memory" in description
+
+    def test_profile_catalog_lists_all_profiles(self):
+        payload = describe_qwen3_8_starter_profiles(task="sales")
+
+        assert payload["task"] == "sales"
+        assert payload["default_profile"] == "balanced"
+        assert set(payload["profiles"]) == set(QWEN38_27B_STARTER_PROFILE_CHOICES)
+        assert payload["profiles"]["memory"]["summary"]["quantization_mode"] == "4bit"
+
+    def test_explicit_overrides_beat_profile_defaults(self):
+        config = get_qwen3_8_config(
+            starter_profile="memory",
+            use_4bit=False,
+            per_device_train_batch_size=2,
+            num_outer_iterations=9,
+        )
+
+        assert config.starter_profile == "memory"
+        assert config.use_4bit is False
+        assert config.per_device_train_batch_size == 2
+        assert config.num_outer_iterations == 9
+
+    def test_config_with_custom_task(self):
+        config = get_qwen3_8_config(task="technical_support", num_outer_iterations=20)
+
+        assert config.task == "technical_support"
+        assert config.num_outer_iterations == 20
+        assert "technical support" in config.system_prompt.lower()
+
+    def test_config_with_lora_disabled(self):
+        config = get_qwen3_8_config(use_lora=False)
+
+        assert config.use_lora is False
+        assert config.lora_r is None
+        assert config.lora_alpha is None
+
+    def test_quantization_flags(self):
+        config = get_qwen3_8_config(use_4bit=True, use_8bit=True)
+
+        assert config.use_4bit is True
+        assert config.use_8bit is False
+
+    def test_agent_config_creation(self):
+        config = get_qwen3_8_config()
+        agent_config = create_qwen3_8_agent_config(config)
+
+        assert agent_config.model_name == QWEN38_27B_BASE_MODEL
+        assert agent_config.trust_remote_code is True
+        assert agent_config.attn_implementation == "sdpa"
+        assert agent_config.max_new_tokens == 1024
+
+    def test_config_summary(self):
+        config = get_qwen3_8_config(starter_profile="memory")
+        summary = summarize_qwen3_8_config(config)
+
+        assert summary["starter_profile"] == "memory"
+        assert summary["quantization_mode"] == "4bit"
+        assert summary["effective_batch_size"] == 24
+        assert summary["uses_quantization"] is True
+
+    def test_gspo_config_generation(self):
+        base_config = get_config_for_task(
+            "customer_service", model_name=QWEN38_27B_BASE_MODEL
+        )
+        config = get_qwen3_8_config(task="customer_service")
+
+        with patch(
+            "stateset_agents.training.qwen3_8_starter.get_config_for_task",
+            return_value=base_config,
+        ):
+            gspo_config = get_qwen3_8_gspo_config(config)
+
+        assert gspo_config.model_name == QWEN38_27B_BASE_MODEL
+        assert gspo_config.use_lora is True
+        assert gspo_config.num_generations == 4
+        assert gspo_config.max_prompt_length == 4096
+        assert gspo_config.max_completion_length == 1024
+        assert gspo_config.lora_target_modules == QWEN38_27B_LORA_TARGET_MODULES
+
+    def test_validation_warnings(self):
+        config = get_qwen3_8_config(
+            use_lora=False,
+            learning_rate=2e-5,
+            per_device_train_batch_size=4,
+        )
+        warnings = validate_qwen3_8_config(config)
+
+        assert any("learning rate" in warning.lower() for warning in warnings)
+        assert any("oom" in warning.lower() for warning in warnings)
+        assert any("lora" in warning.lower() for warning in warnings)
+
+    def test_validation_warns_on_unknown_starter_profile(self):
+        config = Qwen38Config(starter_profile="custom-profile")
+        warnings = validate_qwen3_8_config(config)
+
+        assert any("starter_profile" in warning for warning in warnings)
+
+    def test_validation_warns_on_non_qwen_model(self):
+        config = Qwen38Config(model_name="meta-models/Muse-Glimmer-30B")
+        warnings = validate_qwen3_8_config(config)
+
+        assert any("qwen checkpoint" in warning.lower() for warning in warnings)
+
+    def test_validation_warns_on_fp8_variant(self):
+        """FP8 is a supported variant but inference-oriented, so it must warn
+        rather than silently be accepted as a post-training target."""
+        config = Qwen38Config(model_name="Qwen/Qwen3.8-27B-FP8")
+        warnings = validate_qwen3_8_config(config)
+
+        assert any("fp8" in warning.lower() for warning in warnings)
+        assert not any("does not look like" in warning for warning in warnings)
+
+    def test_lora_targets_cover_the_hybrid_attention_stack(self):
+        """Qwen3.8-27B interleaves standard `self_attn` layers with a majority
+        of Mamba-style `linear_attn` layers; both plus the per-layer MLP must
+        be adapted, or LoRA silently under-adapts the model."""
+        assert QWEN38_27B_LORA_TARGET_MODULES == [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "in_proj_qkv",
+            "out_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ]
+
+    def test_json_config_file_roundtrip(self, tmp_path):
+        config = get_qwen3_8_config(
+            task="technical_support",
+            use_lora=False,
+            learning_rate=1e-5,
+            output_dir="./outputs/qwen3_8_roundtrip",
+        )
+        config_path = write_qwen3_8_config_file(config, tmp_path / "qwen3_8.json")
+        loaded = load_qwen3_8_config_file(config_path)
+
+        assert loaded.task == "technical_support"
+        assert loaded.use_lora is False
+        assert loaded.learning_rate == 1e-5
+        assert loaded.output_dir == "./outputs/qwen3_8_roundtrip"
+
+    def test_preview_payload_can_be_loaded_as_config(self, tmp_path):
+        config = get_qwen3_8_config(
+            task="sales", output_dir="./outputs/qwen3_8_preview"
+        )
+        preview_path = write_qwen3_8_config_file(
+            config,
+            tmp_path / "qwen3_8_preview.json",
+            include_preview=True,
+        )
+        loaded = load_qwen3_8_config_file(preview_path)
+        preview = create_qwen3_8_preview(loaded)
+
+        assert loaded.task == "sales"
+        assert preview["config"]["output_dir"] == "./outputs/qwen3_8_preview"
+
+
+class TestQwen38StarterScript:
+    """Test the dedicated starter script surface."""
+
+    def test_script_is_a_forwarder(self):
+        """finetune_qwen3_8_27b_gspo.py is a thin forwarder onto
+        examples/finetune_gspo.py --model qwen3.8-27b. It prints a notice
+        to stderr and exits 0 under --dry-run."""
+        repo_root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            [sys.executable, "examples/finetune_qwen3_8_27b_gspo.py", "--dry-run"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        assert result.returncode == 0, result.stderr
+        assert "forwarder" in result.stderr.lower()
+        assert "qwen3.8-27b" in result.stderr
+
+    def test_dry_run_preview_via_starter_profile(self):
+        """The starter's own config resolution is reachable through the
+        unified driver's --starter-profile flag."""
+        from examples import finetune_gspo
+
+        exit_code = finetune_gspo.main(
+            ["--model", "qwen3.8-27b", "--starter-profile", "balanced", "--dry-run"]
+        )
+        assert exit_code == 0
+
+    def test_cli_dry_run_subprocess(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        output = subprocess.check_output(
+            [
+                sys.executable,
+                "examples/finetune_qwen3_8_27b_gspo.py",
+                "--starter-profile",
+                "balanced",
+                "--dry-run",
+            ],
+            cwd=repo_root,
+            text=True,
+        )
+        payload = json.loads(output)
+
+        assert payload["config"]["model_name"] == QWEN38_27B_BASE_MODEL
+        assert payload["config"]["starter_profile"] == "balanced"
+        assert payload["agent_config"]["attn_implementation"] == "sdpa"
+        assert payload["gspo_overrides"]["use_lora"] is True
+
+    def test_cli_memory_profile_subprocess(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        output = subprocess.check_output(
+            [
+                sys.executable,
+                "examples/finetune_qwen3_8_27b_gspo.py",
+                "--starter-profile",
+                "memory",
+                "--dry-run",
+            ],
+            cwd=repo_root,
+            text=True,
+        )
+        payload = json.loads(output)
+
+        assert payload["config"]["starter_profile"] == "memory"
+        assert payload["summary"]["quantization_mode"] == "4bit"
+        assert payload["gspo_overrides"]["use_4bit"] is True
+        assert payload["gspo_overrides"]["num_generations"] == 2
+
+    def test_cli_list_profiles_subprocess(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        output = subprocess.check_output(
+            [
+                sys.executable,
+                "examples/finetune_qwen3_8_27b_gspo.py",
+                "--task",
+                "sales",
+                "--list-profiles",
+            ],
+            cwd=repo_root,
+            text=True,
+        )
+        payload = json.loads(output)
+
+        assert payload["task"] == "sales"
+        assert payload["profiles"]["quality"]["summary"]["num_generations"] == 6
+        assert "memory" in payload["profiles"]

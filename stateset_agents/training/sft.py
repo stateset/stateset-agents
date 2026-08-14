@@ -179,6 +179,17 @@ _LORA_TARGET_CANDIDATES = (
     "dense",
     "fc1",
     "fc2",
+    # Mamba-style linear-attention projections. Hybrid models interleave a
+    # minority of standard `self_attn` layers with a majority of `linear_attn`
+    # layers (verified against the Qwen/Qwen3.8-27B weight map: 432 linear_attn
+    # tensors vs 96 self_attn tensors). Without these names LoRA silently
+    # adapts only the minority attention layers — no error, just a badly
+    # under-adapted model.
+    "in_proj_qkv",
+    "in_proj_a",
+    "in_proj_b",
+    "in_proj_z",
+    "out_proj",
 )
 
 #: Module-path components that mark the non-text stack of a multimodal

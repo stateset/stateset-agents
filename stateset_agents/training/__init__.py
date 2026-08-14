@@ -590,6 +590,100 @@ _OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{__name__}.nemotron_3_5_starter",
         "write_nemotron_3_5_config_file",
     ),
+    # Qwen3.8 27B starter path
+    "QWEN38_27B_BASE_MODEL": (
+        f"{__name__}.qwen3_8_starter",
+        "QWEN38_27B_BASE_MODEL",
+    ),
+    "QWEN38_27B_CONFIG_SUFFIXES": (
+        f"{__name__}.qwen3_8_starter",
+        "QWEN38_27B_CONFIG_SUFFIXES",
+    ),
+    "QWEN38_27B_DEFAULT_OUTPUT_DIR": (
+        f"{__name__}.qwen3_8_starter",
+        "QWEN38_27B_DEFAULT_OUTPUT_DIR",
+    ),
+    "QWEN38_27B_LORA_TARGET_MODULES": (
+        f"{__name__}.qwen3_8_starter",
+        "QWEN38_27B_LORA_TARGET_MODULES",
+    ),
+    "QWEN38_27B_STARTER_PROFILE_CHOICES": (
+        f"{__name__}.qwen3_8_starter",
+        "QWEN38_27B_STARTER_PROFILE_CHOICES",
+    ),
+    "QWEN38_27B_STARTER_PROFILE_DESCRIPTIONS": (
+        f"{__name__}.qwen3_8_starter",
+        "QWEN38_27B_STARTER_PROFILE_DESCRIPTIONS",
+    ),
+    "QWEN38_27B_SUPPORTED_VARIANTS": (
+        f"{__name__}.qwen3_8_starter",
+        "QWEN38_27B_SUPPORTED_VARIANTS",
+    ),
+    "QWEN38_27B_TASK_CHOICES": (
+        f"{__name__}.qwen3_8_starter",
+        "QWEN38_27B_TASK_CHOICES",
+    ),
+    "Qwen38Config": (f"{__name__}.qwen3_8_starter", "Qwen38Config"),
+    "create_qwen3_8_agent_config": (
+        f"{__name__}.qwen3_8_starter",
+        "create_qwen3_8_agent_config",
+    ),
+    "create_qwen3_8_preview": (
+        f"{__name__}.qwen3_8_starter",
+        "create_qwen3_8_preview",
+    ),
+    "describe_qwen3_8_starter_profiles": (
+        f"{__name__}.qwen3_8_starter",
+        "describe_qwen3_8_starter_profiles",
+    ),
+    "finetune_qwen3_8": (
+        f"{__name__}.qwen3_8_starter",
+        "finetune_qwen3_8",
+    ),
+    "get_qwen3_8_config": (
+        f"{__name__}.qwen3_8_starter",
+        "get_qwen3_8_config",
+    ),
+    "get_qwen3_8_gspo_config": (
+        f"{__name__}.qwen3_8_starter",
+        "get_qwen3_8_gspo_config",
+    ),
+    "get_qwen3_8_gspo_overrides": (
+        f"{__name__}.qwen3_8_starter",
+        "get_qwen3_8_gspo_overrides",
+    ),
+    "get_qwen3_8_profile_description": (
+        f"{__name__}.qwen3_8_starter",
+        "get_qwen3_8_profile_description",
+    ),
+    "get_qwen3_8_profile_overrides": (
+        f"{__name__}.qwen3_8_starter",
+        "get_qwen3_8_profile_overrides",
+    ),
+    "get_qwen3_8_system_prompt": (
+        f"{__name__}.qwen3_8_starter",
+        "get_qwen3_8_system_prompt",
+    ),
+    "load_qwen3_8_config_file": (
+        f"{__name__}.qwen3_8_starter",
+        "load_qwen3_8_config_file",
+    ),
+    "run_qwen3_8_config": (
+        f"{__name__}.qwen3_8_starter",
+        "run_qwen3_8_config",
+    ),
+    "summarize_qwen3_8_config": (
+        f"{__name__}.qwen3_8_starter",
+        "summarize_qwen3_8_config",
+    ),
+    "validate_qwen3_8_config": (
+        f"{__name__}.qwen3_8_starter",
+        "validate_qwen3_8_config",
+    ),
+    "write_qwen3_8_config_file": (
+        f"{__name__}.qwen3_8_starter",
+        "write_qwen3_8_config_file",
+    ),
     # Qwen3 Coder starter path
     "QWEN3_CODER_BASE_MODEL": (
         f"{__name__}.qwen3_coder_starter",
@@ -1354,6 +1448,30 @@ __all__ = [
     "summarize_nemotron_3_5_config",
     "validate_nemotron_3_5_config",
     "write_nemotron_3_5_config_file",
+    "QWEN38_27B_BASE_MODEL",
+    "QWEN38_27B_CONFIG_SUFFIXES",
+    "QWEN38_27B_DEFAULT_OUTPUT_DIR",
+    "QWEN38_27B_LORA_TARGET_MODULES",
+    "QWEN38_27B_STARTER_PROFILE_CHOICES",
+    "QWEN38_27B_STARTER_PROFILE_DESCRIPTIONS",
+    "QWEN38_27B_SUPPORTED_VARIANTS",
+    "QWEN38_27B_TASK_CHOICES",
+    "Qwen38Config",
+    "create_qwen3_8_agent_config",
+    "create_qwen3_8_preview",
+    "describe_qwen3_8_starter_profiles",
+    "finetune_qwen3_8",
+    "get_qwen3_8_config",
+    "get_qwen3_8_gspo_config",
+    "get_qwen3_8_gspo_overrides",
+    "get_qwen3_8_profile_description",
+    "get_qwen3_8_profile_overrides",
+    "get_qwen3_8_system_prompt",
+    "load_qwen3_8_config_file",
+    "run_qwen3_8_config",
+    "summarize_qwen3_8_config",
+    "validate_qwen3_8_config",
+    "write_qwen3_8_config_file",
     "QWEN3_CODER_BASE_MODEL",
     "QWEN3_CODER_CONFIG_SUFFIXES",
     "QWEN3_CODER_DEFAULT_OUTPUT_DIR",

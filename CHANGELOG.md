@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Qwen3.8 27B first-class starter.** `stateset-agents qwen3-8-27b` targets
+  `Qwen/Qwen3.8-27B` — Alibaba's multimodal hybrid-attention model (released
+  2026-08-05, Apache-2.0; 27.8B params, 64 text layers, 256K context) — with
+  the standard balanced/memory/quality QLoRA profiles, `init --preset
+  qwen3.8-27b`, a `qwen3.8-27b` preset in the unified finetune driver, and
+  `docs/qwen3_8_starter.rst`. `Qwen/Qwen3.8-27B-FP8` is listed as a supported
+  variant with a validation warning that it is inference-oriented. At ~56GB
+  BF16 the checkpoint wants ~160GB of disk and an 80GB card (or
+  `--gpu-count 2`). Not yet trained on hardware.
+
+### Fixed
+
+- **LoRA silently under-adapted hybrid linear-attention models.**
+  `infer_lora_target_modules` only recognised llama/GPT-style projection
+  names, so on a model like Qwen3.8-27B — whose weight map shows 432
+  Mamba-style `linear_attn` tensors against just 96 standard `self_attn`
+  ones — it adapted the minority attention layers and skipped the majority
+  entirely, with no error to show for it. The candidate list now includes
+  `in_proj_qkv`, `in_proj_a`, `in_proj_b`, `in_proj_z`, and `out_proj`. The
+  existing two-pass vision exclusion is unchanged and still correct here:
+  `out_proj` exists in both the text stack and the vision tower and is kept,
+  while vision-only names are dropped.
+
 ### Changed
 
 - Coverage floor 56 → 57: the ratchet fired again, this time on the work
