@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786706737715,
+  "lastUpdate": 1786712030735,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2782,6 +2782,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.858142199639651e-8",
             "extra": "mean: 274.5149637261459 nsec\nrounds: 162787"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "11c2891b63779f20558b1ae85925d42ff8fc953b",
+          "message": "fix(serve-remote): request an http port and survive dropped links\n\nFive verification attempts failed identically — pod RUNNING, no networking\n— and the cause was our assumption, not RunPod's infrastructure. We asked\nfor the model port as 8000/tcp and then waited for a TCP mapping on a\npublic IP. RunPod serves http ports through its proxy instead\n(https://<pod-id>-8000.proxy.runpod.net): no public IP, no mapping, ever.\nThe tell was that the proxy URL answered with a routing 404 while publicIp\nstayed empty.\n\n- request 8000/http; endpoint URL is the proxy URL\n- wait only on the ssh endpoint, which genuinely needs a TCP mapping\n- send supportPublicIp: RunPod's docs say a COMMUNITY pod 'might not have a\n  public IP address' without it — another silent hang closed\n\nWith that fixed the next attempt got networking on the first host and\nreached 'pip install vllm', where the ssh transport dropped and took the\nrun with it. Long steps now run detached with their exit code polled from a\nmarker file (the pattern already used for the server and the self-destruct),\nso a dropped link costs one poll instead of the whole install.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-14T05:51:15-07:00",
+          "tree_id": "7347f0858bf5a133c953dfdc2841dd4956b738a6",
+          "url": "https://github.com/stateset/stateset-agents/commit/11c2891b63779f20558b1ae85925d42ff8fc953b"
+        },
+        "date": 1786712030106,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8575.544566488306,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015610200717325527",
+            "extra": "mean: 116.61067029000363 usec\nrounds: 1380"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9197.714779121827,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014929082031047195",
+            "extra": "mean: 108.72265818352298 usec\nrounds: 2004"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6663.885364890692,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018302258797684182",
+            "extra": "mean: 150.06260540863957 usec\nrounds: 3254"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 829.3815493207654,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000027766191169446113",
+            "extra": "mean: 1.2057176830361915 msec\nrounds: 672"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 158.26020630358707,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008068453889352149",
+            "extra": "mean: 6.318707799999464 msec\nrounds: 145"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2194521.5920547154,
+            "unit": "iter/sec",
+            "range": "stddev: 5.0464996174479484e-8",
+            "extra": "mean: 455.6801826969982 nsec\nrounds: 53915"
           }
         ]
       }
