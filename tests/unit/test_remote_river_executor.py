@@ -397,3 +397,42 @@ class TestFailures:
     def test_unknown_handle_is_reported_clearly(self, executor):
         with pytest.raises(RemoteExecutionError, match="unknown job"):
             executor.status(JobHandle(provider="river", job_id="ghost"))
+
+
+class TestAccountStateErrors:
+    """River answers account problems in an OpenAI-shaped envelope; those are
+    states the user must act on, not generic training failures.
+
+    Observed live against api.river.ai: an unfunded account answers 402 with
+    "Billing: insufficient_funds"; a missing key answers 401.
+    """
+
+    def _failing_executor(self, message, tmp_path):
+        class Boom(FakeRiverClient):
+            def create_session(self):
+                raise RuntimeError(message)
+
+        return RiverExecutor(
+            client=Boom(),
+            tokenizer=FakeTokenizer(),
+            ledger_path=tmp_path / "ledger.jsonl",
+        )
+
+    def test_insufficient_funds_names_the_fix(self, spec, tmp_path):
+        ex = self._failing_executor(
+            '{"error":{"message":"Billing: insufficient_funds",'
+            '"type":"invalid_request_error"}}',
+            tmp_path,
+        )
+        with pytest.raises(RemoteExecutionError, match="no credits"):
+            ex.submit(spec)
+
+    def test_rejected_key_points_at_the_env_var(self, spec, tmp_path):
+        ex = self._failing_executor("401 unauthorized", tmp_path)
+        with pytest.raises(RemoteExecutionError, match="RIVER_API_KEY"):
+            ex.submit(spec)
+
+    def test_ordinary_training_failure_is_not_mislabelled(self, spec, tmp_path):
+        ex = self._failing_executor("CUDA kernel exploded", tmp_path)
+        with pytest.raises(RemoteExecutionError, match="River training run failed"):
+            ex.submit(spec)

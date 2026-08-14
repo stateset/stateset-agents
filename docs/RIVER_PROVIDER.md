@@ -195,3 +195,22 @@ module touches the network. That is how the entire test suite runs.
    is the real end-to-end proof, and no unit test here can substitute for it.
 5. Does the response expose token counts? If so, the ledger's `tokens` field
    starts populating and per-token cost becomes reconstructible.
+
+## What we confirmed against the live API
+
+We have a River API key but no credits, so no training call has run. Probing
+`api.river.ai` directly did establish three things the SDK docs do not:
+
+- There **is** a plain REST surface (`GET /v1/models` answers), despite the
+  documentation presenting an SDK-only interface.
+- It authenticates with `Authorization: Bearer rv_...` — unauthenticated
+  requests answer `401`.
+- Errors come back in an OpenAI-shaped envelope. An unfunded account answers
+  `402` with `{"error":{"message":"Billing: insufficient_funds",...}}`.
+
+The executor translates those two account states into named, actionable
+errors rather than a generic training failure, because they are the first
+thing a new user hits and no amount of retrying fixes either one.
+
+Everything else here remains **unverified**: no fine-tune has run, and the
+batch-shape assumptions above stand until a funded account confirms them.

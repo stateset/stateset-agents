@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **River AI provider (`train-remote --provider river`), not live-verified.**
+  River is a remote autograd service: you drive `forward_backward` /
+  `optim_step` yourself. The valuable half of this integration is the pure
+  tokenization layer (`remote/river_batches.py`) that turns our chat rows
+  into River's `{input_ids, target_tokens, weights}` with prompt tokens
+  weighted 0.0, plus the RL batch shape their `ppo`/`cispo` losses take —
+  which is where our trainers' advantages would plug in. The SDK is not
+  installable from PyPI and our account has no credits, so nothing has been
+  trained; the client is injectable and every assumption (notably the causal
+  target shift) is documented in one place. Probing the live API did confirm
+  Bearer auth, a REST surface the docs do not mention, and the exact
+  `Billing: insufficient_funds` envelope — which the executor now surfaces
+  as a named, actionable error instead of a generic failure.
+
+### Added
+
 - **River AI provider (`train-remote --provider river`) — NOT LIVE-VERIFIED.**
   River is a remote autograd/optimizer service rather than a machine you rent:
   the training loop stays on your side and River supplies the gradients

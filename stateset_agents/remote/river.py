@@ -161,7 +161,10 @@ class RiverExecutor(RemoteExecutor):
                 provider=self.name,
             ) from exc
         try:
-            self._tokenizer = AutoTokenizer.from_pretrained(base_model)
+            # base_model is the caller's own model id, not attacker input;
+            # pinning a revision would break arbitrary user-chosen models
+            # (same rationale as training/sft.py).
+            self._tokenizer = AutoTokenizer.from_pretrained(base_model)  # nosec: B615
         except Exception as exc:  # noqa: BLE001 - hub/network/auth all land here
             raise RemoteExecutionError.wrap(
                 exc,
@@ -171,6 +174,47 @@ class RiverExecutor(RemoteExecutor):
         return self._tokenizer
 
     # -- submit ------------------------------------------------------------
+
+    #: River reports account state in an OpenAI-shaped error envelope
+    #: (``{"error": {"message": ..., "type": ...}}``). Observed live against
+    #: api.river.ai: an unfunded account answers 402 with
+    #: "Billing: insufficient_funds", and a missing key answers 401. Both are
+    #: states the user must act on, so they are named rather than wrapped in
+    #: a generic training failure.
+    _ACCOUNT_HINTS: tuple[tuple[str, str], ...] = (
+        (
+            "insufficient_funds",
+            "River reports the account has no credits "
+            "(HTTP 402, 'Billing: insufficient_funds'). Add funds at "
+            "https://river.ai before running a job — no training call will "
+            "succeed until then.",
+        ),
+        (
+            "billing",
+            "River rejected the request for a billing reason. Check the "
+            "account's credits and plan at https://river.ai.",
+        ),
+        (
+            "unauthorized",
+            "River rejected the API key (HTTP 401). Check RIVER_API_KEY.",
+        ),
+        (
+            "invalid_api_key",
+            "River rejected the API key. Check RIVER_API_KEY.",
+        ),
+    )
+
+    def _account_error(self, exc: Exception) -> RemoteExecutionError | None:
+        """Translate an account-state failure into an actionable error.
+
+        Returns None when the failure is not one of these, so genuine
+        training errors keep their own reporting.
+        """
+        text = str(exc).lower()
+        for needle, guidance in self._ACCOUNT_HINTS:
+            if needle in text:
+                return RemoteExecutionError(guidance, provider=self.name)
+        return None
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
         self._counter += 1
@@ -227,6 +271,10 @@ class RiverExecutor(RemoteExecutor):
             job.duration_s = time.monotonic() - started
             logs.append(f"River training failed: {exc}")
             self._record_cost(job_id, job)
+            account = self._account_error(exc)
+            if account is not None:
+                logs.append(str(account))
+                raise account from exc
             raise RemoteExecutionError.wrap(
                 exc, "River training run failed", provider=self.name
             ) from exc
