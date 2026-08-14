@@ -339,18 +339,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"would push: {args.push}; would publish: {args.publish}")
         return 0
 
-    for rel, content in plan.changes.items():
-        (REPO_ROOT / rel).write_text(content, encoding="utf-8")
-        print(f"rewrote {rel}")
-
-    run([sys.executable, "-m", "pytest", *GUARD_TESTS, "-q"])
-
+    # Gates BEFORE edits. A gate that fails after the version bump leaves a
+    # half-released tree behind — observed: check_types failed on v0.29.0 and
+    # the next attempt aborted on the dirty tree its predecessor created.
+    #
     # v0.28.0 shipped with a red CI: a missing executable bit and two
-    # full-repo typing errors, neither of which the guard tests or the
+    # full-repo typing errors, neither of which the guard tests nor the
     # allowlisted mypy gate can see. A release must not be able to outrun
     # the checks CI will run on it.
     run(["pre-commit", "run", "--all-files"])
     run([sys.executable, "scripts/check_types.py", "--all"])
+
+    for rel, content in plan.changes.items():
+        (REPO_ROOT / rel).write_text(content, encoding="utf-8")
+        print(f"rewrote {rel}")
+
+    # These guards read the files the plan just rewrote, so they run after.
+    run([sys.executable, "-m", "pytest", *GUARD_TESTS, "-q"])
 
     message = (
         f"chore(release): v{plan.new_version} — {plan.title}\n\n"
