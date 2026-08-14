@@ -331,6 +331,8 @@ def main(argv: list[str] | None = None) -> int:
         for rel in plan.changes:
             print(f"would rewrite: {rel}")
         print("would run guard tests:", " ".join(GUARD_TESTS))
+        print("would run: pre-commit run --all-files")
+        print("would run: python scripts/check_types.py --all")
         print(
             f"would commit 'chore(release): v{plan.new_version} — {plan.title}' and tag v{plan.new_version}"
         )
@@ -342,6 +344,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"rewrote {rel}")
 
     run([sys.executable, "-m", "pytest", *GUARD_TESTS, "-q"])
+
+    # v0.28.0 shipped with a red CI: a missing executable bit and two
+    # full-repo typing errors, neither of which the guard tests or the
+    # allowlisted mypy gate can see. A release must not be able to outrun
+    # the checks CI will run on it.
+    run(["pre-commit", "run", "--all-files"])
+    run([sys.executable, "scripts/check_types.py", "--all"])
 
     message = (
         f"chore(release): v{plan.new_version} — {plan.title}\n\n"

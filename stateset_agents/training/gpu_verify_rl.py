@@ -107,13 +107,18 @@ def run_verification(num_steps: int = 40) -> dict[str, Any]:
         learning_rate=1e-2,
         beta=0.0,  # no KL penalty needed against a reference model
     )
+    # This harness drives the loss path directly: it supplies its own
+    # responses instead of rolling out an agent in an environment, so the
+    # agent/environment collaborators are deliberately absent and the reward
+    # is a one-rule stand-in. The annotations describe the normal training
+    # path, not this probe.
     trainer = GSPOTrainer(
         config=config,
         model=model,
         tokenizer=tokenizer,
-        agent=None,
-        environment=None,
-        reward_model=_ContainsTokenRewardModel(),
+        agent=None,  # type: ignore[arg-type]
+        environment=None,  # type: ignore[arg-type]
+        reward_model=_ContainsTokenRewardModel(),  # type: ignore[arg-type]
         ref_model=None,
     )
 
@@ -130,7 +135,9 @@ def run_verification(num_steps: int = 40) -> dict[str, Any]:
             )
         return list(zip(responses, old_log_probs.tolist(), strict=True))
 
-    trainer.generator.generate_group_responses = fake_generate_group_responses
+    # Swapped deliberately: the probe supplies fixed responses so the check
+    # measures the loss path, not sampling.
+    trainer.generator.generate_group_responses = fake_generate_group_responses  # type: ignore[method-assign,assignment]  # noqa: E501
 
     avg_rewards: list[float] = []
 

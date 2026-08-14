@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **v0.28.0 shipped with a red CI; this is the fix and the guard.** Two
+  typing errors in recovered agent work (`customer_support_bench.py`,
+  `gpu_verify_rl.py`) and a missing executable bit on `scripts/release.py`
+  failed the full-repo type gate and every test-matrix entry — none of it
+  visible to the allowlisted mypy gate or the release's guard tests. Both
+  defects are fixed, and `make release` now runs `pre-commit --all-files`
+  and the full-repo type check before it will tag anything: a release must
+  not be able to outrun the checks CI runs on it.
+
 ## [0.28.0] - 2026-08-14 — adapter lineage, verified multi-GPU, and serve-remote's real bugs
 
 ### Fixed

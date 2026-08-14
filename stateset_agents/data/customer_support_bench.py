@@ -423,8 +423,10 @@ def _persona_score(
     equal share of the score; an empty persona scores 1.0 (nothing required).
     """
     assistant_turns = [t for t in turns if t.role == "assistant" and t.content]
-    first = assistant_turns[0].content.lower() if assistant_turns else ""
-    last = assistant_turns[-1].content.lower() if assistant_turns else ""
+    # `or ""` rather than a bare .lower(): the comprehension above filters on
+    # truthy content, but that does not narrow Optional[str] for the checker.
+    first = (assistant_turns[0].content or "").lower() if assistant_turns else ""
+    last = (assistant_turns[-1].content or "").lower() if assistant_turns else ""
 
     checks: list[float] = []
     breakdown: dict[str, float] = {}
