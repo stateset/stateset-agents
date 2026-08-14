@@ -823,9 +823,13 @@ class AdvancedRLOrchestrator:
 
         for step in range(num_steps):
             # Sample batch of preference pairs
-            batch = np.random.choice(
-                preference_pairs,
-                size=min(len(preference_pairs), trainer.config.batch_size),
+            # np.random.choice returns an ndarray of objects; train_step wants
+            # the list of preference dicts it was given.
+            batch = list(
+                np.random.choice(
+                    preference_pairs,
+                    size=min(len(preference_pairs), trainer.config.batch_size),
+                )
             )
 
             # Train step

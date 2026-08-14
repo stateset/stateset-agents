@@ -122,7 +122,7 @@ def compute_gae(
 
     # Pure Python fallback
     n = len(rewards)
-    advantages = np.zeros(n)
+    advantages: np.ndarray = np.zeros(n)
     gae = 0.0
 
     for t in reversed(range(n)):

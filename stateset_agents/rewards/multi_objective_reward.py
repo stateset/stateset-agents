@@ -147,7 +147,9 @@ class MultiObjectiveRewardFunction(RewardFunction):
         elif self.normalization_method == "geometric_mean":
             # Geometric mean of weighted scores
             if all(s > 0 for s in weighted_scores):
-                final_score = np.prod(weighted_scores) ** (1.0 / len(weighted_scores))
+                final_score = float(
+                    np.prod(weighted_scores) ** (1.0 / len(weighted_scores))
+                )
             else:
                 final_score = 0.0
         else:
