@@ -53,6 +53,8 @@ class FakeSsh:
         self.commands: list[str] = []
         self.uploads: list[tuple[str, str]] = []
         self.fail_on: str | None = None
+        #: Arm a detached step (by label) to report a non-zero exit code.
+        self.fail_detached: str | None = None
 
     def wait_until_reachable(self, host, port, timeout_s):
         self.reachable = (host, port)
@@ -64,6 +66,15 @@ class FakeSsh:
         self.commands.append(command)
         if self.fail_on and self.fail_on in command:
             return 1, "boom"
+        # Detached work writes its exit code to a marker file which the
+        # session then polls; a fake that never answers the poll would spin
+        # until the deadline. Report success unless a failure was armed.
+        if command.startswith("cat /workspace/."):
+            marker = command.split()[1]
+            label = marker.rsplit("/", 1)[-1].lstrip(".").rsplit(".rc", 1)[0]
+            if self.fail_detached and self.fail_detached in label:
+                return 0, "1"
+            return 0, "0"
         return 0, "ok"
 
 
@@ -95,16 +106,21 @@ class TestStartHappyPath:
         session.start("Qwen/Qwen3.5-0.8B")
 
         created = api.created[0]
-        assert created["ports"] == ["22/tcp", "8000/tcp"]
+        # 22 needs a real TCP mapping for ssh; the model port is http so
+        # RunPod serves it through its proxy, which needs no public IP.
+        assert created["ports"] == ["22/tcp", "8000/http"]
         assert created["name"].startswith("stateset-serve-")
         assert created["gpu_type_id"] == RemoteServeSession.DEFAULT_GPU
 
-    def test_endpoint_url_comes_from_the_8000_port_mapping(self):
+    def test_endpoint_url_is_the_runpod_http_proxy(self):
+        """Five verification attempts hung waiting for a TCP mapping on the
+        model port that RunPod was never going to publish: http ports are
+        reached through the proxy instead."""
         session = make_session()
 
         session.start("m")
 
-        assert session.endpoint_url == "http://1.2.3.4:18000"
+        assert session.endpoint_url == "https://pod-1-8000.proxy.runpod.net"
 
     def test_readiness_polls_v1_models_with_the_bearer_token(self):
         session = make_session(token="tok-123")
@@ -112,7 +128,7 @@ class TestStartHappyPath:
         session.start("m")
 
         url, headers = session._http_calls[0]
-        assert url == "http://1.2.3.4:18000/v1/models"
+        assert url == "https://pod-1-8000.proxy.runpod.net/v1/models"
         assert headers["Authorization"] == "Bearer tok-123"
 
     def test_success_does_not_terminate_the_pod(self):
@@ -290,11 +306,11 @@ class TestStartFailures:
         vLLM-load timeout on it burned 30 minutes of billing, so networking
         now fails fast and a *different* host is tried."""
         api = FakeApi()
-        api.pod_state["portMappings"] = {"22": 2222}  # 8000 never mapped
+        api.pod_state["publicIp"] = ""  # host never publishes an IP
         session = make_session(api)
         session.network_timeout_s = 0
 
-        with pytest.raises(RemoteExecutionError, match="ports"):
+        with pytest.raises(RemoteExecutionError, match="ssh endpoint"):
             session.start("m")
 
         # Both attempts' pods terminated: a retry must never double the bill.
@@ -305,22 +321,22 @@ class TestStartFailures:
         """The two waits are different problems: vLLM legitimately takes many
         minutes, networking either appears in ~2 or never."""
         api = FakeApi()
-        api.pod_state["portMappings"] = {"22": 2222}
+        api.pod_state["publicIp"] = ""
         session = make_session(api)
         session.network_timeout_s = 0
         session.ready_timeout_s = 10_000  # would hang if it governed this wait
 
-        with pytest.raises(RemoteExecutionError, match="ports"):
+        with pytest.raises(RemoteExecutionError, match="ssh endpoint"):
             session.start("m")
 
     def test_a_single_attempt_does_not_retry(self):
         api = FakeApi()
-        api.pod_state["portMappings"] = {"22": 2222}
+        api.pod_state["publicIp"] = ""
         session = make_session(api)
         session.network_timeout_s = 0
         session.max_provision_attempts = 1
 
-        with pytest.raises(RemoteExecutionError, match="ports"):
+        with pytest.raises(RemoteExecutionError, match="ssh endpoint"):
             session.start("m")
 
         assert len(api.created) == 1
@@ -372,3 +388,40 @@ class TestListAndFind:
         tokens = {RemoteServeSession(FakeApi(), FakeSsh()).token for _ in range(5)}
         assert len(tokens) == 5
         assert all(len(t) >= 24 for t in tokens)
+
+
+class TestDetachedSteps:
+    """Long installs must survive a dropped ssh link.
+
+    Observed live: the transport died partway through `pip install vllm`
+    and took the whole run with it. The install now runs detached and its
+    exit code is polled, so a dropped link costs a poll, not the install.
+    """
+
+    def test_install_is_launched_detached_not_held_open(self):
+        api, ssh = FakeApi(), FakeSsh()
+        make_session(api, ssh).start("m")
+
+        launch = next(c for c in ssh.commands if "pip install --quiet vllm" in c)
+        assert "nohup" in launch and launch.rstrip().endswith("&")
+        assert any(
+            c.startswith("cat /workspace/.vllm-install.rc") for c in ssh.commands
+        )
+
+    def test_a_failing_install_reports_its_log(self):
+        api, ssh = FakeApi(), FakeSsh()
+        ssh.fail_detached = "vllm-install"
+        session = make_session(api, ssh)
+
+        with pytest.raises(RemoteExecutionError, match="vllm-install failed"):
+            session.start("m")
+
+        assert api.terminated == ["pod-1"]
+
+    def test_a_launch_that_cannot_start_is_a_failure(self):
+        api, ssh = FakeApi(), FakeSsh()
+        ssh.fail_on = "pip install"
+        session = make_session(api, ssh)
+
+        with pytest.raises(RemoteExecutionError, match="could not start"):
+            session.start("m")

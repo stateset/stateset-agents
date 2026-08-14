@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`serve-remote`: the five-attempt mystery, solved.** Verification kept
+  failing with pods that reached RUNNING and never published networking. The
+  cause was ours, not RunPod's: we requested the model port as `8000/tcp` and
+  waited for a TCP mapping on a public IP, but RunPod serves **http** ports
+  through its proxy at `https://<pod-id>-8000.proxy.runpod.net` — no public
+  IP, no mapping, ever. The port is now requested as `8000/http` and the
+  endpoint URL is the proxy URL; the wait blocks only on ssh, which genuinely
+  needs a TCP mapping. `create_pod` also sends `supportPublicIp`, since a
+  community-cloud pod "might not have a public IP address" without it.
+- **Long installs survive a dropped link.** With networking fixed, the next
+  attempt reached `pip install vllm` and died when the ssh transport dropped
+  mid-install. Long steps now run detached with their exit code polled from
+  a marker file — the pattern already used for the vLLM server and the
+  self-destruct — so a lost connection costs a poll rather than the run. A
+  launch that cannot start, and a step that exits non-zero, both fail loudly
+  with the remote log attached.
+
+### Fixed
+
 - **`chat-remote` and `serve-remote` pods now reach the cost ledger too.**
   The documentation claimed every remote pod recorded its spend; only
   training did, so `stateset-agents costs` under-reported — and serve pods,

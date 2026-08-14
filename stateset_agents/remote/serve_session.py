@@ -265,9 +265,18 @@ class RemoteServeSession:
     def _wait_for_endpoints(self, api: Any, pod_id: str) -> tuple[str, int, int]:
         """Poll until the pod is RUNNING with both 22 and 8000 mapped.
 
-        RunPod publishes each requested ``ports`` entry as a proxy mapping
-        in ``portMappings`` (internal port -> public port on ``publicIp``);
-        the vLLM endpoint URL comes from the "8000" mapping.
+        Two different mechanisms, learned the expensive way:
+
+        * ``22/tcp`` needs a real TCP mapping — ``publicIp`` plus
+          ``portMappings["22"]`` — because ssh cannot go through an HTTP
+          proxy.
+        * The vLLM port is requested as ``8000/http`` and is reached at
+          ``https://<pod-id>-8000.proxy.runpod.net``, RunPod's HTTP proxy,
+          which needs no public IP and publishes no mapping.
+
+        Waiting for a TCP mapping on the HTTP port is what made five
+        verification attempts hang until timeout: the mapping was never
+        going to appear.
         """
         deadline = time.monotonic() + self.network_timeout_s
         while True:
@@ -275,17 +284,21 @@ class RemoteServeSession:
             ip = pod.get("publicIp")
             mappings = pod.get("portMappings") or {}
             ssh_port = mappings.get("22")
-            vllm_port = mappings.get(str(_VLLM_PORT))
-            if pod.get("desiredStatus") == "RUNNING" and ip and ssh_port and vllm_port:
-                return str(ip), int(ssh_port), int(vllm_port)
+            if pod.get("desiredStatus") == "RUNNING" and ip and ssh_port:
+                return str(ip), int(ssh_port), _VLLM_PORT
             if time.monotonic() >= deadline:
                 raise _PodNeverNetworked(
-                    f"pod {pod_id} never published its SSH+HTTP ports within "
+                    f"pod {pod_id} never published an ssh endpoint within "
                     f"{self.network_timeout_s}s (last status "
-                    f"{pod.get('desiredStatus')!r}, mappings {mappings!r})",
+                    f"{pod.get('desiredStatus')!r}, publicIp {ip!r}, "
+                    f"mappings {mappings!r})",
                     provider=self.provider,
                 )
             time.sleep(self.poll_interval_s)
+
+    def _proxy_endpoint_url(self, pod_id: str) -> str:
+        """Public URL of the vLLM server, via RunPod's HTTP proxy."""
+        return f"https://{pod_id}-{_VLLM_PORT}.proxy.runpod.net"
 
     def _run_checked(self, ssh: Any, command: str) -> None:
         """Run one setup command, absorbing a single ssh-transport death.
@@ -304,6 +317,67 @@ class RemoteServeSession:
                 f"remote command failed ({exit_code}): {command}\n{output}",
                 provider=self.provider,
             )
+
+    def _run_detached(
+        self,
+        ssh: Any,
+        command: str,
+        *,
+        label: str,
+        timeout_s: int,
+        poll_s: float | None = None,
+    ) -> None:
+        """Run a long command detached, polling a marker for its exit code.
+
+        Holding one ssh session open for the length of a multi-minute
+        install is fragile — observed live: the transport died partway
+        through ``pip install vllm`` and took the whole run with it. Each
+        poll is instead its own short connection, so a dropped link costs a
+        retry of the poll rather than the install.
+        """
+        marker = f"/workspace/.{label}.rc"
+        log = f"/workspace/.{label}.log"
+        launch_code, launch_output = ssh.run(
+            f"rm -f {shlex.quote(marker)}; "
+            f"nohup bash -c {shlex.quote(f'{command} > {log} 2>&1; echo $? > {marker}')} "
+            f"> /dev/null 2>&1 &"
+        )
+        if launch_code == 255 and self._reconnect(ssh):
+            launch_code, launch_output = ssh.run(
+                f"rm -f {shlex.quote(marker)}; "
+                f"nohup bash -c "
+                f"{shlex.quote(f'{command} > {log} 2>&1; echo $? > {marker}')} "
+                f"> /dev/null 2>&1 &"
+            )
+        if launch_code != 0:
+            raise RemoteExecutionError(
+                f"could not start {label} ({command}) on the pod "
+                f"({launch_code}): {launch_output}",
+                provider=self.provider,
+            )
+        interval = poll_s if poll_s is not None else self.poll_interval_s
+        deadline = time.monotonic() + timeout_s
+        while True:
+            exit_code, output = ssh.run(
+                f"cat {shlex.quote(marker)} 2>/dev/null || echo PENDING"
+            )
+            text = (output or "").strip().splitlines()
+            state = text[-1] if text else ""
+            if exit_code == 0 and state.isdigit():
+                if state == "0":
+                    return
+                _, tail = ssh.run(f"tail -40 {shlex.quote(log)}")
+                raise RemoteExecutionError(
+                    f"{label} failed on the pod (exit {state}):\n{tail}",
+                    provider=self.provider,
+                )
+            if time.monotonic() >= deadline:
+                _, tail = ssh.run(f"tail -40 {shlex.quote(log)}")
+                raise RemoteExecutionError(
+                    f"{label} did not finish within {timeout_s}s:\n{tail}",
+                    provider=self.provider,
+                )
+            time.sleep(interval)
 
     def _reconnect(self, ssh: Any) -> bool:
         """Wait for sshd to answer again after a transport drop."""
@@ -430,7 +504,7 @@ class RemoteServeSession:
                 name=self.pod_name,
                 image=self.image,
                 gpu_type_id=gpu or self.DEFAULT_GPU,
-                ports=["22/tcp", f"{_VLLM_PORT}/tcp"],
+                ports=["22/tcp", f"{_VLLM_PORT}/http"],
                 env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
                 container_disk_gb=self.container_disk_gb,
             )
@@ -459,7 +533,7 @@ class RemoteServeSession:
 
         try:
             host, ssh_port, vllm_port = endpoints
-            self.endpoint_url = f"http://{host}:{vllm_port}"
+            self.endpoint_url = self._proxy_endpoint_url(self.pod_id)
             self._endpoint = (host, ssh_port)
             ssh.wait_until_reachable(host, ssh_port, self.ready_timeout_s)
 
@@ -471,7 +545,12 @@ class RemoteServeSession:
                 self._upload_adapter(ssh, Path(adapter_dir))
 
             # The runpod/pytorch image ships torch but NOT vllm.
-            self._run_checked(ssh, "pip install --quiet vllm")
+            self._run_detached(
+                ssh,
+                "pip install --quiet vllm",
+                label="vllm-install",
+                timeout_s=self.ready_timeout_s,
+            )
             self._run_checked(
                 ssh, self._vllm_command(base_model, adapter_dir is not None)
             )

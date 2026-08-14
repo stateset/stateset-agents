@@ -100,6 +100,7 @@ class RunPodApi:
         env: dict[str, str],
         container_disk_gb: int = 40,
         cloud_type: str = "SECURE",
+        support_public_ip: bool = True,
         network_volume_id: str | None = None,
         volume_mount_path: str | None = None,
         data_center_id: str | None = None,
@@ -112,6 +113,10 @@ class RunPodApi:
             "gpuTypeIds": [gpu_type_id],
             "gpuCount": gpu_count,
             "cloudType": cloud_type,
+            # Without this, a COMMUNITY pod "might not have a public IP
+            # address" (RunPod's words) — it starts, reports RUNNING, and
+            # never publishes one, which is indistinguishable from a hang.
+            "supportPublicIp": support_public_ip,
             "containerDiskInGb": container_disk_gb,
             "ports": ports,
             "env": env,
