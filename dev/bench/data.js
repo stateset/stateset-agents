@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786714076968,
+  "lastUpdate": 1786715701031,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -2910,6 +2910,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.0271773181371326e-8",
             "extra": "mean: 473.81931020987696 nsec\nrounds: 103756"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "9eef1463f131cbae7ac612e5a72365bf41337c83",
+          "message": "fix: repair the red CI v0.28.0 shipped with, and close the hole\n\nThree defects, none visible to the checks the release actually ran:\n- customer_support_bench.py: .lower() on Optional[str] the comprehension\n  filtered but did not narrow\n- gpu_verify_rl.py: deliberate None/stub collaborators and a method swap,\n  now annotated as deliberate rather than left as errors\n- scripts/release.py: shebang without the executable bit\n\nThe gap: the release gate ran guard tests and the allowlisted mypy surface,\nwhile CI runs pre-commit over everything and check_types.py --all. make\nrelease now runs both before tagging, so a release cannot outrun the checks\nits own CI will apply.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-14T06:52:33-07:00",
+          "tree_id": "3903757be5a26e05310fc6486f317f1fb0d894d8",
+          "url": "https://github.com/stateset/stateset-agents/commit/9eef1463f131cbae7ac612e5a72365bf41337c83"
+        },
+        "date": 1786715700447,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8542.40482472254,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001648796633531805",
+            "extra": "mean: 117.06305431766755 usec\nrounds: 1436"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9089.665494910256,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018901175802603555",
+            "extra": "mean: 110.0150495703003 usec\nrounds: 1513"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6686.851618301984,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015124088151502785",
+            "extra": "mean: 149.54720952129242 usec\nrounds: 3508"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 831.2681956671232,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000021703328766361498",
+            "extra": "mean: 1.202981186111016 msec\nrounds: 720"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 161.76968798370936,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006145765528939201",
+            "extra": "mean: 6.181627797296009 msec\nrounds: 148"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2278752.7143131844,
+            "unit": "iter/sec",
+            "range": "stddev: 3.556509391782949e-8",
+            "extra": "mean: 438.83655901706726 nsec\nrounds: 56510"
           }
         ]
       }
