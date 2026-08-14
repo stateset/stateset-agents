@@ -96,6 +96,10 @@ class RemoteChatSession:
         self._popen_factory = popen_factory or _default_popen
 
         self._pod_id: str | None = None
+        self._pod_started_at: float | None = None
+        self._pod_cost_per_hr: float | None = None
+        self._base_model: str | None = None
+        self._gpu: str | None = None
         self._process: Any = None
         self._closed = False
         # Client-side mirror of the conversation. The pod keeps the
@@ -190,7 +194,16 @@ class RemoteChatSession:
             env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
             container_disk_gb=self.container_disk_gb,
         )
+        self._base_model = base_model
+        self._gpu = gpu or self.DEFAULT_GPU
         self._pod_id = str(pod["id"])
+        # Billing starts at creation; the ledger needs both ends.
+        self._pod_started_at = time.time()
+        try:
+            raw_price = pod.get("costPerHr")
+            self._pod_cost_per_hr = float(raw_price) if raw_price is not None else None
+        except (TypeError, ValueError):
+            self._pod_cost_per_hr = None
         # From here on the pod exists and bills; the backstop must be armed
         # before anything that can raise.
         atexit.register(self.close)
@@ -371,6 +384,40 @@ class RemoteChatSession:
 
     # -- teardown ----------------------------------------------------------
 
+    def _record_cost(self, pod_id: str) -> None:
+        """Append this session's pod cost to the ledger.
+
+        A chat pod costs money exactly like a training pod; leaving it out
+        made ``stateset-agents costs`` under-report real spend. Never raises:
+        bookkeeping must not break teardown.
+        """
+        from stateset_agents.remote.ledger import (
+            CostEntry,
+            estimate_cost_usd,
+            record_entry,
+        )
+
+        try:
+            duration = (
+                time.time() - self._pod_started_at
+                if self._pod_started_at is not None
+                else None
+            )
+            record_entry(
+                CostEntry(
+                    provider=self.provider,
+                    job_id=pod_id,
+                    base_model=self._base_model or "?",
+                    gpu=self._gpu or "?",
+                    cost_per_hr=self._pod_cost_per_hr,
+                    duration_s=round(duration, 1) if duration is not None else None,
+                    cost_usd=estimate_cost_usd(self._pod_cost_per_hr, duration),
+                    status="chat",
+                )
+            )
+        except Exception:  # pragma: no cover - defensive
+            pass
+
     def close(self) -> None:
         """End the ssh channel and terminate the pod. Safe to call twice."""
         if self._closed:
@@ -391,6 +438,8 @@ class RemoteChatSession:
                     pass
 
         pod_id, self._pod_id = self._pod_id, None
+        if pod_id is not None:
+            self._record_cost(pod_id)
         if pod_id is not None and self._api is not None:
             # Unconditional and last: an orphaned pod bills by the hour.
             try:

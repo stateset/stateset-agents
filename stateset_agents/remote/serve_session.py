@@ -209,6 +209,10 @@ class RemoteServeSession:
         #: one; the failure is per-host, not per-account.
         self.max_provision_attempts = max_provision_attempts
         self.poll_interval_s = poll_interval_s
+        self._pod_started_at: float | None = None
+        self._pod_cost_per_hr: float | None = None
+        self._base_model: str | None = None
+        self._gpu: str | None = None
         self._http_get = http_get or _default_http_get
         #: The Bearer token vLLM will require. Generated unless injected.
         self.token = token or secrets.token_urlsafe(24)
@@ -431,6 +435,16 @@ class RemoteServeSession:
                 container_disk_gb=self.container_disk_gb,
             )
             self.pod_id = str(pod["id"])
+            self._pod_started_at = time.time()
+            self._base_model = base_model
+            self._gpu = gpu or self.DEFAULT_GPU
+            try:
+                raw_price = pod.get("costPerHr")
+                self._pod_cost_per_hr = (
+                    float(raw_price) if raw_price is not None else None
+                )
+            except (TypeError, ValueError):
+                self._pod_cost_per_hr = None
             try:
                 endpoints = self._wait_for_endpoints(api, self.pod_id)
                 break
@@ -466,9 +480,46 @@ class RemoteServeSession:
             self.terminate()
             raise
 
+    def _record_cost(self, pod_id: str) -> None:
+        """Append this pod's cost to the ledger; never raises."""
+        from stateset_agents.remote.ledger import (
+            CostEntry,
+            estimate_cost_usd,
+            record_entry,
+        )
+
+        try:
+            duration = (
+                time.time() - self._pod_started_at
+                if self._pod_started_at is not None
+                else None
+            )
+            record_entry(
+                CostEntry(
+                    provider=self.provider,
+                    job_id=pod_id,
+                    base_model=self._base_model or "?",
+                    gpu=self._gpu or "?",
+                    cost_per_hr=self._pod_cost_per_hr,
+                    duration_s=round(duration, 1) if duration is not None else None,
+                    cost_usd=estimate_cost_usd(self._pod_cost_per_hr, duration),
+                    status="serve",
+                )
+            )
+        except Exception:  # pragma: no cover - defensive
+            pass
+
     def terminate(self) -> None:
-        """Terminate the pod now. Safe to call twice; best-effort."""
+        """Terminate the pod now. Safe to call twice; best-effort.
+
+        Records the pod's cost on the way out. A serve pod outlives the
+        process that started it, so a pod reaped by its own ``--max-hours``
+        self-destruct records nothing — the ledger reflects what this machine
+        observed, and `serve-remote --list` is the live view.
+        """
         pod_id, self.pod_id = self.pod_id, None
+        if pod_id is not None:
+            self._record_cost(pod_id)
         if pod_id is not None and self._api is not None:
             try:
                 self._api.terminate_pod(pod_id)

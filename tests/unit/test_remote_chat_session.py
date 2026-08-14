@@ -418,3 +418,37 @@ class TestClose:
 
         with pytest.raises(RemoteExecutionError, match="not open"):
             session.ask("hi")
+
+
+class TestCostRecording:
+    """A chat pod costs money exactly like a training pod; leaving it out of
+    the ledger made `stateset-agents costs` under-report real spend."""
+
+    def test_closing_records_the_pod_cost(self, make_session, tmp_path, monkeypatch):
+        from stateset_agents.remote import ledger
+
+        path = tmp_path / "ledger.jsonl"
+        monkeypatch.setattr(ledger, "DEFAULT_LEDGER_PATH", path)
+
+        session = make_session()
+        session.start("some/model", gpu="NVIDIA RTX A4000")
+        session.close()
+
+        entries = ledger.read_entries(path)
+        assert len(entries) == 1
+        assert entries[0]["base_model"] == "some/model"
+        assert entries[0]["gpu"] == "NVIDIA RTX A4000"
+        assert entries[0]["status"] == "chat"
+
+    def test_double_close_records_once(self, make_session, tmp_path, monkeypatch):
+        from stateset_agents.remote import ledger
+
+        path = tmp_path / "ledger.jsonl"
+        monkeypatch.setattr(ledger, "DEFAULT_LEDGER_PATH", path)
+
+        session = make_session()
+        session.start("some/model")
+        session.close()
+        session.close()
+
+        assert len(ledger.read_entries(path)) == 1

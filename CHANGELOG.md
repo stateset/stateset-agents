@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`chat-remote` and `serve-remote` pods now reach the cost ledger too.**
+  The documentation claimed every remote pod recorded its spend; only
+  training did, so `stateset-agents costs` under-reported — and serve pods,
+  the ones that stay alive, were the most expensive omission. Both sessions
+  now record on teardown. A serve pod reaped by its own `--max-hours`
+  self-destruct records nothing (this machine never sees it end); that limit
+  is documented, and `serve-remote --list` remains the live view.
+
+### Fixed
+
 - **`serve-remote` stops paying to wait for networking that is not coming.**
   A pod can reach RUNNING and never publish an IP or port mappings — observed
   four times against real RunPod hosts. That wait shared the (necessarily
