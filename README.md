@@ -127,7 +127,12 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.28.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.29.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Qwen3.8-27B, fine-tuned on rented hardware the week it shipped.** `stateset-agents qwen3-8-27b` targets `Qwen/Qwen3.8-27B` (27.8B, multimodal, 256K ctx, Apache‑2.0). Verified live on an H100: 140 support conversations, 3 epochs, **2/2 held-out assertions passed**, 467MB adapter returned, **$0.96**, pod terminated.
+- **LoRA inference learned about hybrid attention — and it mattered.** Qwen3.8 puts Mamba-style `linear_attn` (`in_proj_qkv`, `out_proj`, …) in most of its 64 text layers and standard `self_attn` in a minority. Our candidate list only knew llama-style names, so `train-remote` would have adapted the minority and silently skipped the rest. Both families are now targeted, proven on real weights, and the two-pass vision exclusion correctly keeps `out_proj` (it exists in the text stack) while dropping vision-only names. The same fix also improves Qwen3.5, which turns out to be hybrid too.
+
+**v0.28.0:**
 
 - **Every adapter now knows where it came from.** Training writes `stateset_manifest.json` beside the adapter — base model, dataset path *and content hash*, hyperparameters, eval outcome, parent adapter — and `stateset-agents adapters` reads them back as a family tree. Dataset bytes are hashed, not just named: two runs claiming the same file are only comparable if the bytes match.
 - **`--gpu-count` is hardware-proven.** A 63GB checkpoint trained sharded across two 48GB cards (`Model sharded across devices: 0=24 module(s), 1=36 module(s)`). The first attempt passed and proved nothing — capacity had swapped in cards big enough to hold the model whole — so device placement is now logged on every run and the retry used a model too large for any single card available.
@@ -314,7 +319,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.28.0)
+pip install stateset-agents          # latest release (v0.29.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1016,7 +1021,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.28.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.29.0`).
 
 Other entry points:
 

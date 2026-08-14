@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-08-14 — Qwen3.8-27B, fine-tuned the week it shipped
+
 ### Added
 
 - **Qwen3.8 27B first-class starter.** `stateset-agents qwen3-8-27b` targets
