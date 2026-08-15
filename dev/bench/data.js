@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786739227318,
+  "lastUpdate": 1786779470713,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1116,6 +1116,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.1383598785313142e-7",
             "extra": "mean: 442.4809412023901 nsec\nrounds: 110327"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "df0ae2582a0fcbbc827bfa076b74693e9e20faaf",
+          "message": "feat(remote): River AI provider — tokenization layer behind an injectable client\n\nRiver is a remote autograd service (you drive forward_backward/optim_step),\nso the valuable half of this integration is the pure tokenization layer:\nremote/river_batches.py turns our chat rows into their\n{input_ids, target_tokens, weights} with prompt tokens weighted 0.0 so loss\nlands only on what the model should say, plus the RL batch shape their\nppo/cispo losses take — which is exactly where our trainers' advantages\nwould plug in.\n\nNOT LIVE-VERIFIED, and labelled so everywhere: river-client is not\ninstallable from PyPI and the account has no credits. The client is\ninjectable (92 tests drive it with fakes) and every assumption is isolated\nand documented — notably whether target_tokens carries the causal shift,\nwhich is one function to flip if wrong.\n\nProbing the live API did establish what the docs omit: there is a REST\nsurface, it takes Bearer auth (401 without), and an unfunded account answers\n402 with 'Billing: insufficient_funds'. Both account states now raise named,\nactionable errors instead of a generic training failure, because no amount\nof retrying fixes either.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-14T20:24:26Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/df0ae2582a0fcbbc827bfa076b74693e9e20faaf"
+        },
+        "date": 1786779470201,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5827.797621321807,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001998043532471466",
+            "extra": "mean: 171.59140810610188 usec\nrounds: 1431"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6308.63871577137,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001995821041566325",
+            "extra": "mean: 158.51280205665225 usec\nrounds: 1945"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4847.427522002755,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000021671871274928184",
+            "extra": "mean: 206.29498748788754 usec\nrounds: 3117"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 731.2384746758227,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003293170086383706",
+            "extra": "mean: 1.3675429215391415 msec\nrounds: 650"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 169.9110368208536,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006090957012732219",
+            "extra": "mean: 5.88543286363648 msec\nrounds: 154"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2129182.6145242876,
+            "unit": "iter/sec",
+            "range": "stddev: 6.083946372408869e-8",
+            "extra": "mean: 469.66380111243996 nsec\nrounds: 102691"
           }
         ]
       }
