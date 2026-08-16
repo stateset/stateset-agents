@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786865932925,
+  "lastUpdate": 1786895365113,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3290,6 +3290,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.58386384585752e-8",
             "extra": "mean: 442.10418868805544 nsec\nrounds: 106907"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "183530e64a3636dc6a6b50e0dbf551fd5efa0286",
+          "message": "chore(release): v0.30.0 — River AI provider (code complete, not live-verified)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-16T08:46:37-07:00",
+          "tree_id": "38c1ce65142ab4c9b6e297130c68651005be772e",
+          "url": "https://github.com/stateset/stateset-agents/commit/183530e64a3636dc6a6b50e0dbf551fd5efa0286"
+        },
+        "date": 1786895364127,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6121.355630528268,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015047524332124578",
+            "extra": "mean: 163.36250666646873 usec\nrounds: 1500"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6627.380582052421,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014852120937455115",
+            "extra": "mean: 150.88917674474519 usec\nrounds: 2150"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5077.711575507052,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001697837401072863",
+            "extra": "mean: 196.93911029204955 usec\nrounds: 3663"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 731.4787343109849,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003336612505793633",
+            "extra": "mean: 1.3670937418870397 msec\nrounds: 678"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 173.55921158356182,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005587232749437745",
+            "extra": "mean: 5.761722416666661 msec\nrounds: 156"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2133188.0819022707,
+            "unit": "iter/sec",
+            "range": "stddev: 5.0265894072697365e-8",
+            "extra": "mean: 468.7819177708184 nsec\nrounds: 104080"
           }
         ]
       }
