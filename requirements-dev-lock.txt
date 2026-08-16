@@ -226,7 +226,7 @@ marshmallow==4.3.0
     # via safety
 mccabe==0.7.0
     # via flake8
-mcp==1.23.3
+mcp==1.29.0
     # via semgrep
 mdurl==0.1.2
     # via markdown-it-py
@@ -520,7 +520,7 @@ scipy==1.17.1
     # via scikit-learn
 semantic-version==2.10.0
     # via semgrep
-semgrep==1.171.0
+semgrep==1.173.0
     # via stateset-agents (pyproject.toml)
 sentry-sdk==2.66.1
     # via wandb

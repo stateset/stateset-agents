@@ -81,7 +81,13 @@ dev = [
     "ruff>=0.1.0",
     "bandit>=1.7.0",
     "safety>=2.0.0",
-    "semgrep>=1.0.0",
+    # Floor raised deliberately: semgrep pulls the MCP SDK transitively, and
+    # every release before 1.173.0 resolves it to mcp 1.23.3, which carries
+    # SFTY-20260716-62811 (improper access control from insufficient session
+    # validation). 1.173.0 requires mcp==1.29.0. This is a dev-only tool and
+    # never ships in the wheel, but a vulnerable pin in our own lock file is
+    # not something to wave through.
+    "semgrep>=1.173.0",
     "pip-tools>=7.0.0",
     "torch>=2.0.0",
     "transformers>=4.57.1",

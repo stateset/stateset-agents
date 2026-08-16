@@ -216,7 +216,11 @@ class ContinuousActionMapper(ActionMapper):
         """
         if not agent_response or not isinstance(agent_response, str):
             logger.warning("Invalid agent response. Using default action.")
-            return self.default_action.copy()
+            # Annotated local rather than a cast: numpy stub versions
+            # disagree about whether .copy() is already ndarray-typed, and a
+            # cast that one version needs the other calls redundant.
+            default: np.ndarray = self.default_action.copy()
+            return default
 
         response = agent_response.strip()
 
@@ -259,7 +263,8 @@ class ContinuousActionMapper(ActionMapper):
         logger.warning(
             f"Could not parse continuous action from: '{response[:50]}...'. Using default."
         )
-        return self.default_action.copy()
+        fallback: np.ndarray = self.default_action.copy()
+        return fallback
 
     def _clip_action(self, action: np.ndarray) -> np.ndarray:
         """Clip action to valid range."""

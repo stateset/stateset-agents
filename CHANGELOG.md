@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A vulnerable `mcp` pin lived in our dev lock file.** `semgrep` pulls the
+  MCP SDK transitively, and every release before 1.173.0 resolves it to
+  `mcp 1.23.3` — SFTY-20260716-62811, improper access control from
+  insufficient session validation. It never shipped in the wheel (the `[mcp]`
+  extra users install is correctly pinned `>=1.25.0`), so an ignore rule
+  would have been defensible; the semgrep floor was raised to 1.173.0
+  instead, which requires `mcp==1.29.0` and removes the package rather than
+  annotating it. Caught by CI's `safety` hook, which installs from the lock —
+  local runs passed because the developer machine had 1.29.0 already.
+
+### Fixed
+
+- `gym/mappers.py` returned `Any` under CI's numpy stubs after an earlier fix
+  removed a cast that *this* machine's numpy called redundant. Rewritten as
+  an annotated local, which satisfies both.
+
 ## [0.30.0] - 2026-08-16 — River AI provider (code complete, not live-verified)
 
 ### Added
