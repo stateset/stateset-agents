@@ -137,7 +137,13 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.29.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.30.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **River AI provider (`train-remote --provider river`) — code complete, *not* live-verified.** River is a remote autograd service: you drive `forward_backward` / `optim_step` yourself. The substantive half of this integration is a pure tokenization layer (`remote/river_batches.py`) turning our chat rows into River's `{input_ids, target_tokens, weights}` with prompt tokens weighted 0.0, plus the `{input_ids, old_logprobs, advantages, attention_mask}` shape their `ppo`/`cispo` losses take — which is where our trainers' advantages would plug in. 92 tests drive it through an injectable client.
+- **Why it is unverified, plainly:** `river-client` is not installable from PyPI and our account answers `402 Billing: insufficient_funds`, so no token has been trained. Every assumption is isolated and documented — notably whether `target_tokens` carries the causal shift, which is one function to flip.
+- **What probing the live API did establish**, none of which the docs mention: there is a REST surface, it authenticates with `Authorization: Bearer rv_...` (401 without), and an unfunded account returns an OpenAI-shaped `insufficient_funds` envelope. Both account states now raise named, actionable errors rather than a generic training failure.
+
+**v0.29.0:**
 
 - **Qwen3.8-27B, fine-tuned on rented hardware the week it shipped.** `stateset-agents qwen3-8-27b` targets `Qwen/Qwen3.8-27B` (27.8B, multimodal, 256K ctx, Apache‑2.0). Verified live on an H100: 140 support conversations, 3 epochs, **2/2 held-out assertions passed**, 467MB adapter returned, **$0.96**, pod terminated.
 - **LoRA inference learned about hybrid attention — and it mattered.** Qwen3.8 puts Mamba-style `linear_attn` (`in_proj_qkv`, `out_proj`, …) in most of its 64 text layers and standard `self_attn` in a minority. Our candidate list only knew llama-style names, so `train-remote` would have adapted the minority and silently skipped the rest. Both families are now targeted, proven on real weights, and the two-pass vision exclusion correctly keeps `out_proj` (it exists in the text stack) while dropping vision-only names. The same fix also improves Qwen3.5, which turns out to be hybrid too.
@@ -329,7 +335,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.29.0)
+pip install stateset-agents          # latest release (v0.30.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1031,7 +1037,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.29.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.30.0`).
 
 Other entry points:
 

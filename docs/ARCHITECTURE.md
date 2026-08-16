@@ -1,13 +1,13 @@
 # StateSet Agents - Technical Architecture
 
-**Source version:** 0.29.0
+**Source version:** 0.30.0
 **Last updated:** May 2026
 
 > **Versioning note.** Like the whitepaper, this document is pinned to the
 > source tree at the version above. The PyPI release may lag the source by
 > one or two patch versions; check `stateset_agents.__version__` for the
 > installed version. Section-level claims about file paths and line counts
-> are valid as of 0.29.0 — open an issue if they drift.
+> are valid as of 0.30.0 — open an issue if they drift.
 
 ---
 
@@ -39,7 +39,7 @@ Transformer), RLAIF, and an OpenAI/Anthropic-compatible serving layer in front
 of a vLLM backend. The framework is built with a modular, async-first
 architecture designed for scale and extensibility.
 
-### Key Statistics (0.29.0)
+### Key Statistics (0.30.0)
 
 - **~104,000 lines** of production Python in `stateset_agents/` (243 modules)
 - **~43,000 lines** of tests across `tests/` (162 files; 70% coverage gate
@@ -1196,6 +1196,6 @@ modifies `pyproject.toml` without regenerating the locks.
 
 ---
 
-**Source version**: 0.29.0
+**Source version**: 0.30.0
 **Last updated**: May 2026
 **Status**: Production-ready (BUSL-1.1)
