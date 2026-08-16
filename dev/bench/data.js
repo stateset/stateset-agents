@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786895365113,
+  "lastUpdate": 1786897224628,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3354,6 +3354,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.0265894072697365e-8",
             "extra": "mean: 468.7819177708184 nsec\nrounds: 104080"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "ac64d5129f290f29a9e36ffdf013cd7d92f1c739",
+          "message": "security: remove a vulnerable mcp pin from the dev lock; fix numpy-stub-sensitive returns\n\nsemgrep pulls the MCP SDK transitively and every release before 1.173.0\nresolves it to mcp 1.23.3, which carries SFTY-20260716-62811 (improper\naccess control, insufficient session validation). It never shipped in the\nwheel — the [mcp] extra users install is correctly pinned >=1.25.0 — so a\nsafety ignore with that justification would have been defensible. Raised the\nsemgrep floor to 1.173.0 instead, which requires mcp==1.29.0: the fix\nremoves the package rather than annotating it, which is the standard this\nrepo already applies to its scanners.\n\nAlso: mappers.py returned Any under CI's numpy stubs after an earlier fix\nremoved a cast that this machine's numpy called redundant. An annotated\nlocal satisfies both stub versions.\n\nBoth failures shared a cause worth naming: local greens are evidence, not\nproof, when dependency versions differ from CI's.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-16T09:17:54-07:00",
+          "tree_id": "8653ddb0efe56a12d880a1fdb0de595c8343a9d7",
+          "url": "https://github.com/stateset/stateset-agents/commit/ac64d5129f290f29a9e36ffdf013cd7d92f1c739"
+        },
+        "date": 1786897224034,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8449.122406172666,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013363195452521271",
+            "extra": "mean: 118.3554873426181 usec\nrounds: 1422"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9087.350072280558,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014005453324764744",
+            "extra": "mean: 110.04308099127078 usec\nrounds: 1815"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6625.71481316343,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000170945476048131",
+            "extra": "mean: 150.92711174548012 usec\nrounds: 3499"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 829.8162393083127,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000025668935464005092",
+            "extra": "mean: 1.2050860812672728 msec\nrounds: 726"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 161.95466199727667,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005396902695078646",
+            "extra": "mean: 6.174567546668186 msec\nrounds: 150"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2264287.718649928,
+            "unit": "iter/sec",
+            "range": "stddev: 4.791213550991658e-8",
+            "extra": "mean: 441.63998760557064 nsec\nrounds: 109854"
           }
         ]
       }
