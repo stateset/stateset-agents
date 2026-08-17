@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787005819186,
+  "lastUpdate": 1787007898950,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4248,6 +4248,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.7737218584019777e-8",
             "extra": "mean: 469.94105167615396 nsec\nrounds: 102902"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "f44085e981e6baa2d5d52e124ad0bce89977d65d",
+          "message": "fix(flywheel,remote): salvage failed-job artifacts for real; read the real eval format\n\nThree live-only bugs from the flywheel's first spins, each with the\nfailure it caused:\n\n1. RunPod's _run_attempt returned FAILED before its download step, so an\n   eval-gated job's artifacts (saved BEFORE the gate exits non-zero)\n   died with the pod — wait()'s fetch-on-failure was then defeated by\n   fetch()'s own success-only guard. A trained gen-2 adapter was lost.\n   Failed jobs now salvage artifacts best-effort before the pod dies,\n   and both executors' fetch() accepts any terminal status.\n2. flywheel._eval_score read an imagined {\"results\": [...]} envelope;\n   the real eval_results.json is a bare list with checks.passed nested.\n   Every real score parsed as None. The test fake now writes the real\n   on-disk shape.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T16:02:06-07:00",
+          "tree_id": "add9251bdcbc6a1b4008050fd0b74814056050fd",
+          "url": "https://github.com/stateset/stateset-agents/commit/f44085e981e6baa2d5d52e124ad0bce89977d65d"
+        },
+        "date": 1787007898043,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 11664.583211264448,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008231579950039848",
+            "extra": "mean: 85.72959546761203 usec\nrounds: 1765"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 12234.596581595366,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000007293427080277383",
+            "extra": "mean: 81.73542898049541 usec\nrounds: 2443"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 9180.265590369236,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008248703092900852",
+            "extra": "mean: 108.92931039479649 usec\nrounds: 4156"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1095.4707813773903,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012965050353222833",
+            "extra": "mean: 912.8495410371876 usec\nrounds: 926"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 276.81192013546263,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002767282434462987",
+            "extra": "mean: 3.612561191406183 msec\nrounds: 256"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2929124.0637407764,
+            "unit": "iter/sec",
+            "range": "stddev: 2.5963641334243534e-8",
+            "extra": "mean: 341.398991042702 nsec\nrounds: 138658"
           }
         ]
       }
