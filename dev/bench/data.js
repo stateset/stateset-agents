@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786997061655,
+  "lastUpdate": 1786997356796,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3928,6 +3928,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.7840635791613836e-8",
             "extra": "mean: 468.19691503420324 nsec\nrounds: 103972"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "13418c83d4b074e8b875312761d22c7f003b5d3f",
+          "message": "feat(serve): multiple adapters on one endpoint, and the deploy command\n\n--adapter is now repeatable as '[name=]path': each adapter is tarred to\n/workspace/<name> and served under its own model name via vLLM's\n--lora-modules, so a champion and challenger can be A/B'd through one\nURL by switching the request's model field. Bare paths keep serving as\n'adapter' — the single-adapter shape is unchanged.\n\nstateset-agents deploy = train-remote then serve-remote, glued: rent,\ntrain, release the hardware, serve the fresh adapter, print URL+token.\nA failed training job refuses to serve.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T13:06:32-07:00",
+          "tree_id": "dce84e4adc1d2b176fbbb28b60b139eb948bf510",
+          "url": "https://github.com/stateset/stateset-agents/commit/13418c83d4b074e8b875312761d22c7f003b5d3f"
+        },
+        "date": 1786997355733,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8460.3840898699,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014952161673605845",
+            "extra": "mean: 118.1979434240293 usec\nrounds: 1361"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9128.16907658998,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013535643897511041",
+            "extra": "mean: 109.55099446663307 usec\nrounds: 1988"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6627.5246890509325,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014604866724208394",
+            "extra": "mean: 150.88589585370536 usec\nrounds: 3063"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 814.0859153641078,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006691249720034184",
+            "extra": "mean: 1.2283715774062256 msec\nrounds: 717"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 173.30425375311594,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00041822573580388217",
+            "extra": "mean: 5.770198817073297 msec\nrounds: 164"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2286811.46498963,
+            "unit": "iter/sec",
+            "range": "stddev: 4.8146489192200637e-8",
+            "extra": "mean: 437.290093787655 nsec\nrounds: 108649"
           }
         ]
       }
