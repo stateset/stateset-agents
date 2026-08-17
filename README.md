@@ -142,7 +142,26 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 **v0.31.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
 
-- TODO: describe this release.
+- **The serve claim is now a receipt.** After nine failed attempts across five
+  distinct failure modes, `serve-remote` answered an authenticated
+  `POST /v1/chat/completions` over RunPod's proxy — first from a hand-driven
+  verification run, then through the shipped CLI serving a real fine-tuned
+  adapter (`--adapter`), whose answers visibly differ from the base model's.
+  Two live-only bugs fell out and are fixed with tests: a flashinfer
+  annotation that crashes vLLM's engine on Python 3.11 (now patched in place
+  post-install) and a shell-precedence bug that made the self-destruct arm
+  hold the ssh channel for the pod's whole lifetime.
+- **The flywheel raises a ceiling: 0/12 → 2/12 → 10/12.** On compound
+  requests provably outside gen-1's training distribution, best-of-8
+  rejection sampling harvested gen-1's rare successes and training gen-2 on
+  only those took the eval from 2/12 to 10/12, reproduced across two
+  independent trainings for $3.32 ([`FLYWHEEL_HEADROOM.md`](docs/FLYWHEEL_HEADROOM.md)).
+- **A failed eval gate no longer destroys the adapter it just judged** —
+  `wait()` fetches artifacts best-effort on failure too (observed live: a
+  10/12 run's adapter had to be retrained because fetch was success-only).
+- **River executor aligned to the published docs** while their SDK remains
+  uninstallable: canonical `client.session(project=...)` support and a
+  one-argument flip (`shift_targets`) for the causal-shift assumption.
 
 **v0.30.0:**
 
