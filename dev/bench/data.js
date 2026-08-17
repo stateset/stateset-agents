@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786897224628,
+  "lastUpdate": 1786953475043,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1240,6 +1240,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.40098968667713e-8",
             "extra": "mean: 437.90155195779374 nsec\nrounds: 55720"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "ac64d5129f290f29a9e36ffdf013cd7d92f1c739",
+          "message": "security: remove a vulnerable mcp pin from the dev lock; fix numpy-stub-sensitive returns\n\nsemgrep pulls the MCP SDK transitively and every release before 1.173.0\nresolves it to mcp 1.23.3, which carries SFTY-20260716-62811 (improper\naccess control, insufficient session validation). It never shipped in the\nwheel — the [mcp] extra users install is correctly pinned >=1.25.0 — so a\nsafety ignore with that justification would have been defensible. Raised the\nsemgrep floor to 1.173.0 instead, which requires mcp==1.29.0: the fix\nremoves the package rather than annotating it, which is the standard this\nrepo already applies to its scanners.\n\nAlso: mappers.py returned Any under CI's numpy stubs after an earlier fix\nremoved a cast that this machine's numpy called redundant. An annotated\nlocal satisfies both stub versions.\n\nBoth failures shared a cause worth naming: local greens are evidence, not\nproof, when dependency versions differ from CI's.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-16T16:17:54Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/ac64d5129f290f29a9e36ffdf013cd7d92f1c739"
+        },
+        "date": 1786953474659,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8424.331500462526,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001571506547684156",
+            "extra": "mean: 118.7037808216707 usec\nrounds: 1387"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9141.342136945017,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013827913733549303",
+            "extra": "mean: 109.39312685371102 usec\nrounds: 1821"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6605.729155451634,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016622319537841016",
+            "extra": "mean: 151.3837422738883 usec\nrounds: 3527"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 826.8798039057873,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003427056881150094",
+            "extra": "mean: 1.2093656118778995 msec\nrounds: 724"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 176.52948205774615,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004435439931403964",
+            "extra": "mean: 5.664776151514912 msec\nrounds: 165"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2274285.006342453,
+            "unit": "iter/sec",
+            "range": "stddev: 3.575825948845819e-8",
+            "extra": "mean: 439.69862933239773 nsec\nrounds: 55411"
           }
         ]
       }
