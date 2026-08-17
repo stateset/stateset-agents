@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787000802421,
+  "lastUpdate": 1787002131790,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4120,6 +4120,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.1043922471090262e-7",
             "extra": "mean: 475.0308127979863 nsec\nrounds: 106644"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "d89ff23189b3c75d09922cf891cd210715669f0a",
+          "message": "fix(remote): STATESET_AGENTS_WHEEL env seam — unreleased code on rented GPUs\n\nThe flywheel's first live spin died on the pod with 'No module named\nstateset_agents.training.harvest': the pod installs the PyPI release,\nwhich predated the module. The executor always supported shipping a\nlocal wheel, but only via its constructor — unreachable from the CLI.\nSTATESET_AGENTS_WHEEL now supplies it (explicit argument still wins).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T14:26:10-07:00",
+          "tree_id": "6556289058e2c9b72f5158d7ce7ff00dbc6f69db",
+          "url": "https://github.com/stateset/stateset-agents/commit/d89ff23189b3c75d09922cf891cd210715669f0a"
+        },
+        "date": 1787002130932,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6017.496793135149,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001494873235213562",
+            "extra": "mean: 166.18205781859578 usec\nrounds: 1522"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6465.649947990114,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001539800194025258",
+            "extra": "mean: 154.66349215377116 usec\nrounds: 2103"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5006.6569840267075,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016239733184655514",
+            "extra": "mean: 199.7340746910385 usec\nrounds: 3481"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 726.9281910295269,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00007701009788205177",
+            "extra": "mean: 1.3756516975682695 msec\nrounds: 658"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 179.93336213715088,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006319718900827374",
+            "extra": "mean: 5.557613041420126 msec\nrounds: 169"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2106187.175607499,
+            "unit": "iter/sec",
+            "range": "stddev: 5.158676403372845e-8",
+            "extra": "mean: 474.79160996769656 nsec\nrounds: 102586"
           }
         ]
       }
