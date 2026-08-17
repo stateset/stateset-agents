@@ -70,11 +70,18 @@ class ScriptedExecutor(RemoteExecutor):
         else:
             step = self.script.pop(0)
             if step.get("passed") is not None:
-                results = [
-                    {"prompt": f"e{i}", "passed": i < step["passed"]}
+                # The REAL on-disk shape (write_eval_results): a bare list
+                # of rows with the assertion outcome nested under "checks".
+                rows = [
+                    {
+                        "prompt": f"e{i}",
+                        "base": "b",
+                        "finetuned": "f",
+                        "checks": {"passed": i < step["passed"]},
+                    }
                     for i in range(step.get("total", self.eval_total))
                 ]
-                (out / "eval_results.json").write_text(json.dumps({"results": results}))
+                (out / "eval_results.json").write_text(json.dumps(rows))
             status = step.get("train_status", JobStatus.SUCCEEDED)
         self._results[job_id] = RemoteJobResult(
             handle=JobHandle(provider=self.name, job_id=job_id),

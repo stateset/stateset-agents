@@ -765,6 +765,22 @@ class RunPodExecutor(RemoteExecutor):
 
             if exit_code != 0:
                 logs.append(f"remote job exited {exit_code}")
+                # The eval gate fails a job AFTER saving its artifacts, so a
+                # failed run may still hold the adapter + eval_results.json —
+                # and the pod is terminated on the way out, so this is the
+                # last chance to save them. Observed live: wait()'s
+                # fetch-on-failure was defeated by fetch()'s own
+                # success-only guard, and a trained gen-2 adapter died with
+                # its pod. Download best-effort; the failure stands.
+                try:
+                    salvaged = ssh.download_dir(_REMOTE_OUTPUT, spec.output_dir)
+                    if salvaged:
+                        logs.append(
+                            f"salvaged {len(salvaged)} artifact file(s) "
+                            f"from the failed job to {spec.output_dir}"
+                        )
+                except Exception as exc:  # noqa: BLE001 - salvage must not mask
+                    logs.append(f"could not salvage artifacts: {exc}")
                 return JobStatus.FAILED
 
             if spec.dry_run:
@@ -846,11 +862,13 @@ class RunPodExecutor(RemoteExecutor):
 
     def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
         job = self._job(handle)
-        if job.status is not JobStatus.SUCCEEDED:
+        if not job.status.is_terminal:
             raise RemoteExecutionError(
-                f"job {handle.job_id} is not finished successfully; nothing to fetch",
+                f"job {handle.job_id} is not finished; nothing to fetch",
                 provider=self.name,
             )
+        # A FAILED job may still have salvaged artifacts (the eval gate
+        # fails AFTER saving them); point at the output dir either way.
         return dest or job.spec.output_dir
 
     def cancel(self, handle: JobHandle) -> None:

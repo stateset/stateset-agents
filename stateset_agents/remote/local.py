@@ -112,11 +112,13 @@ class LocalExecutor(RemoteExecutor):
 
     def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
         job = self._jobs.get(handle.job_id)
-        if job is None or job.status is not JobStatus.SUCCEEDED:
+        if job is None or not job.status.is_terminal:
             raise RemoteExecutionError(
                 f"job {handle.job_id} is not finished successfully; nothing to fetch",
                 provider=self.name,
             )
+        # A FAILED job's artifacts (if any) are already at output_dir; the
+        # eval gate in particular fails jobs AFTER saving them.
         # The subprocess wrote straight to the requested output_dir — there is
         # no transfer step for a local run.
         return job.spec.output_dir

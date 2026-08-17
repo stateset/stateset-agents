@@ -112,19 +112,35 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 
 
 def _eval_score(output_dir: Path | None) -> tuple[int | None, int | None]:
-    """(passed, total) from a training job's ``eval_results.json``."""
+    """(passed, total) from a training job's ``eval_results.json``.
+
+    The file is what :func:`stateset_agents.training.sft.write_eval_results`
+    writes: a bare LIST of rows, each carrying its assertion outcome nested
+    as ``checks.passed`` (rows for plain prompts have no ``checks`` and are
+    not counted). The first live run shipped a reader for an imagined
+    ``{"results": [...]}`` envelope and scored every real file as None.
+    """
     if output_dir is None:
         return None, None
-    data = _read_json(Path(output_dir) / "eval_results.json")
-    if not isinstance(data, dict):
+    try:
+        data = json.loads((Path(output_dir) / "eval_results.json").read_text())
+    except (OSError, ValueError):
         return None, None
-    results = data.get("results")
-    if not isinstance(results, list):
+    rows = data.get("results") if isinstance(data, dict) else data
+    if not isinstance(rows, list):
         return None, None
-    checked = [r for r in results if isinstance(r, dict) and "passed" in r]
-    if not checked:
+    outcomes = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        checks = row.get("checks")
+        if isinstance(checks, dict) and "passed" in checks:
+            outcomes.append(bool(checks["passed"]))
+        elif "passed" in row:
+            outcomes.append(bool(row["passed"]))
+    if not outcomes:
         return None, None
-    return sum(1 for r in checked if r["passed"]), len(checked)
+    return sum(outcomes), len(outcomes)
 
 
 def _spend(results: list[float | None]) -> float:
