@@ -434,14 +434,20 @@ class RemoteServeSession:
             ssh.upload(script_file, _REMOTE_DESTRUCT_SCRIPT)
         self._run_checked(
             ssh,
-            # < /dev/null matters: without it the hour-long script inherits
-            # the ssh session's stdin, sshd keeps the channel open until the
-            # self-destruct fires, and the client blocks on the arm command
-            # for the pod's whole lifetime. Observed live (2026-08-17): the
-            # CLI hung 28 minutes on `echo armed` while the pod sat idle.
+            # The parenthesised subshell is load-bearing. In
+            # `chmod && nohup script > log & echo`, the `&` backgrounds the
+            # WHOLE `chmod && nohup` chain, whose subshell then runs the
+            # hour-long script in its foreground while holding the ssh
+            # session's stdout/stderr — so sshd keeps the channel open until
+            # the self-destruct fires and the client blocks on the arm
+            # command for the pod's whole lifetime. Observed live
+            # (2026-08-17): the CLI hung 28 minutes on `echo armed` while
+            # the pod sat idle. The subshell scopes the `&` to nohup alone;
+            # < /dev/null keeps the script off the session's stdin.
             f"chmod 600 {_REMOTE_KEY_FILE} && "
-            f"nohup bash {_REMOTE_DESTRUCT_SCRIPT} "
-            f"> {_REMOTE_WORKDIR}/self_destruct.log 2>&1 < /dev/null & echo armed",
+            f"(nohup bash {_REMOTE_DESTRUCT_SCRIPT} "
+            f"> {_REMOTE_WORKDIR}/self_destruct.log 2>&1 < /dev/null &) "
+            f"&& echo armed",
         )
 
     def _vllm_command(self, base_model: str, with_adapter: bool) -> str:

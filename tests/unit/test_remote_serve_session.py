@@ -235,6 +235,22 @@ class TestSelfDestruct:
         assert "chmod 600 /workspace/.runpod_key" in ssh.commands[arm]
         assert "nohup bash /workspace/self_destruct.sh" in ssh.commands[arm]
 
+    def test_the_arm_backgrounds_only_the_script_not_the_whole_chain(self):
+        """In `chmod && nohup script > log & echo`, the `&` backgrounds the
+        WHOLE `chmod && nohup` chain, whose subshell runs the hour-long
+        script in its foreground holding the ssh session's stdout/stderr —
+        so the client blocks on the arm command until the self-destruct
+        fires. Observed live: 28 minutes hung on `echo armed`. The subshell
+        `(nohup ... &)` scopes the `&` to the script launch alone."""
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh)
+
+        session.start("m", max_hours=2.0)
+
+        arm = next(c for c in ssh.commands if "self_destruct.sh" in c)
+        assert "(nohup bash /workspace/self_destruct.sh" in arm
+        assert "< /dev/null &)" in arm
+
     def test_every_detached_launch_redirects_stdin(self):
         """Without < /dev/null the hour-long nohup'd script inherits the ssh
         session's stdin, sshd keeps the channel open until the self-destruct
