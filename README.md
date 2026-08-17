@@ -106,6 +106,10 @@ the artifact returned — not a mock and not a plan:
 | **Serve it over HTTPS** | `serve-remote`'s endpoint answered live: an authenticated `POST /v1/chat/completions` against `https://<pod-id>-8000.proxy.runpod.net` returned a completion from a vLLM server the platform brought up on a rented H100 |
 | The loop holds under contamination | Machine-curated data trains a second generation with no manual data work ([`FLYWHEEL_EXPERIMENT.md`](docs/FLYWHEEL_EXPERIMENT.md), limitations included) |
 
+**Every claim above is tracked in [`docs/PROOFS.md`](docs/PROOFS.md)** —
+what kind of proof backs it (scheduled re-verification, a retained live run,
+or a pinned test) and which rows are still automation-pending.
+
 What is **not** yet proven is labelled as such throughout — the starter
 table's ✅ column marks which models have actually been trained rather than
 merely wired up, and the River provider remains code-complete but unverified

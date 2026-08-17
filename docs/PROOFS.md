@@ -1,0 +1,47 @@
+# The proof dashboard
+
+Every headline claim this project makes, mapped to the evidence behind it —
+what kind of proof it is, where it lives, and how (or whether) it is kept
+true over time. The categories are strict:
+
+- **Re-proved automatically** — a scheduled CI job runs the claim again and
+  goes red if it stops being true.
+- **Live-verified** — it happened on rented hardware at least once, with the
+  artifact or log retained. True as of the date shown; not automatically
+  re-run.
+- **Unit-pinned** — the behaviour is enforced by tests on every commit, but
+  has never needed (or cannot have) a GPU.
+- **Unverified** — labelled as such wherever it is mentioned. We say so
+  rather than imply otherwise.
+
+| Claim | Category | Evidence |
+|---|---|---|
+| The loop raises a ceiling: base 0/12 → gen‑1 2/12 → gen‑2 10/12 | Live-verified (2026‑08‑17, reproduced twice) | [`FLYWHEEL_HEADROOM.md`](FLYWHEEL_HEADROOM.md) — pods, costs, and both trainings' identical 10/12 |
+| Fine-tuning works end to end on rented GPUs | Live-verified, many runs | [`RUNPOD_GUIDE.md`](RUNPOD_GUIDE.md); adapters + `stateset_manifest.json` under `outputs/` |
+| `serve-remote` answers authenticated HTTPS requests | Live-verified (2026‑08‑17, twice: hand-driven + shipped CLI with adapter) | CHANGELOG v0.31.0; flashinfer patch + arm-precedence fix pinned by tests |
+| The RL core learns on real hardware (GSPO 2.8e‑05 → 0.125) | Re-proved weekly* | [`gpu-verify.yml`](../.github/workflows/gpu-verify.yml) `rl-live-smoke` |
+| Multi-GPU sharding (`--gpu-count`) | Live-verified (63GB across 2×48GB) | CHANGELOG v0.28.0 — device-map log `0=24 module(s), 1=36 module(s)` |
+| Curation precision/recall 1.000/1.000 | Re-proved on every CI run | `make benchmark-loop`, floors ratcheted at 0.95 |
+| A failed eval gate preserves its adapter | Unit-pinned (from a live incident) | `test_failed_job_still_attempts_fetch` — docstring cites the lost 10/12 adapter |
+| Unknown cost is refused, never treated as $0 | Unit-pinned | `tests/unit/test_remote_ledger.py` budget tests |
+| Pods terminate on every exit path, incl. client death | Live-verified + unit-pinned | self-destruct fired with the client force-killed (v0.26.0); armed-first ordering tested |
+| Multi-adapter A/B serving; `deploy` one-shot | Unit-pinned; **first live run pending** | `test_multiple_adapters_ride_one_endpoint_under_their_own_names`; `TestDeploy` |
+| Streaming over the RunPod proxy | **Unverified** | vLLM streams natively; proxy passthrough queued for the next live serve run |
+| River AI provider | **Unverified** (blocked on River) | [`RIVER_PROVIDER.md`](RIVER_PROVIDER.md) — their SDK is not installable and their upstream inference errors |
+| `stateset-agents flywheel` (the loop as one command) | Unit-pinned; methodology live-verified | `tests/unit/test_flywheel.py` stopping discipline; headroom report for the method |
+
+\* **Honesty note on "weekly":** the scheduled GPU jobs need the
+`RUNPOD_API_KEY` repository secret, which has not yet been configured — so
+`gpu-verify.yml` exists but **has never run on schedule**. Until that secret
+is set, treat its rows as "live-verified once, automation pending." The
+same applies to `publish.yml`: PyPI trusted publishing rejects the current
+configuration (`invalid-publisher`), so every release on PyPI so far was a
+manual token upload. Both fixes are five-minute owner-side actions:
+
+1. GitHub → repo Settings → Secrets → add `RUNPOD_API_KEY`.
+2. PyPI → project settings → trusted publisher: owner `stateset`, repo
+   `stateset-agents`, workflow `publish.yml`, environment `pypi`.
+
+When they land, this page's "pending" rows convert to green automation —
+which is the point of the page: every claim either re-proves itself, or
+says plainly that it doesn't yet.
