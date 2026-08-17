@@ -235,6 +235,22 @@ class TestSelfDestruct:
         assert "chmod 600 /workspace/.runpod_key" in ssh.commands[arm]
         assert "nohup bash /workspace/self_destruct.sh" in ssh.commands[arm]
 
+    def test_every_detached_launch_redirects_stdin(self):
+        """Without < /dev/null the hour-long nohup'd script inherits the ssh
+        session's stdin, sshd keeps the channel open until the self-destruct
+        fires, and the client blocks on the arm command for the pod's whole
+        lifetime. Observed live: the CLI hung 28 minutes on `echo armed`
+        while the pod sat idle. Applies to every backgrounded launch."""
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh)
+
+        session.start("m", max_hours=2.0)
+
+        backgrounded = [c for c in ssh.commands if "nohup" in c]
+        assert backgrounded, "expected nohup'd launches"
+        for command in backgrounded:
+            assert "< /dev/null" in command, command
+
     def test_nonpositive_max_hours_is_rejected_before_renting(self):
         api = FakeApi()
         session = make_session(api)

@@ -358,14 +358,14 @@ class RemoteServeSession:
         launch_code, launch_output = ssh.run(
             f"rm -f {shlex.quote(marker)}; "
             f"nohup bash -c {shlex.quote(f'{command} > {log} 2>&1; echo $? > {marker}')} "
-            f"> /dev/null 2>&1 &"
+            f"> /dev/null 2>&1 < /dev/null &"
         )
         if launch_code == 255 and self._reconnect(ssh):
             launch_code, launch_output = ssh.run(
                 f"rm -f {shlex.quote(marker)}; "
                 f"nohup bash -c "
                 f"{shlex.quote(f'{command} > {log} 2>&1; echo $? > {marker}')} "
-                f"> /dev/null 2>&1 &"
+                f"> /dev/null 2>&1 < /dev/null &"
             )
         if launch_code != 0:
             raise RemoteExecutionError(
@@ -434,9 +434,14 @@ class RemoteServeSession:
             ssh.upload(script_file, _REMOTE_DESTRUCT_SCRIPT)
         self._run_checked(
             ssh,
+            # < /dev/null matters: without it the hour-long script inherits
+            # the ssh session's stdin, sshd keeps the channel open until the
+            # self-destruct fires, and the client blocks on the arm command
+            # for the pod's whole lifetime. Observed live (2026-08-17): the
+            # CLI hung 28 minutes on `echo armed` while the pod sat idle.
             f"chmod 600 {_REMOTE_KEY_FILE} && "
             f"nohup bash {_REMOTE_DESTRUCT_SCRIPT} "
-            f"> {_REMOTE_WORKDIR}/self_destruct.log 2>&1 & echo armed",
+            f"> {_REMOTE_WORKDIR}/self_destruct.log 2>&1 < /dev/null & echo armed",
         )
 
     def _vllm_command(self, base_model: str, with_adapter: bool) -> str:
@@ -461,7 +466,7 @@ class RemoteServeSession:
                 "--enable-lora",
                 f"--lora-modules adapter={_REMOTE_ADAPTER_DIR}",
             ]
-        parts += [f"> {_REMOTE_VLLM_LOG} 2>&1 & echo launched"]
+        parts += [f"> {_REMOTE_VLLM_LOG} 2>&1 < /dev/null & echo launched"]
         return " ".join(parts)
 
     def _await_server_ready(self, ssh: Any) -> None:
