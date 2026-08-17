@@ -379,6 +379,13 @@ class RunPodExecutor(RemoteExecutor):
         #: Install this locally built wheel instead of pulling the pinned
         #: version from PyPI. This is how an *unreleased* change gets verified
         #: on real hardware — the PyPI pin cannot resolve before publish.
+        #: Settable via STATESET_AGENTS_WHEEL for CLI runs (the constructor
+        #: argument wins) — discovered live: the flywheel's first spin died
+        #: with "No module named stateset_agents.training.harvest" because
+        #: the pod installed the release, which predated the module.
+        if wheel is None:
+            env_wheel = os.environ.get("STATESET_AGENTS_WHEEL", "").strip()
+            wheel = Path(env_wheel) if env_wheel else None
         self.wheel = Path(wheel) if wheel else None
         self.image = image
         #: Container disk for the pod. The default fits small models; a 30B

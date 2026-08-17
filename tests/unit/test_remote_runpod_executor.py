@@ -934,3 +934,32 @@ class TestEvalPrompts:
         make_executor(ssh=ssh).submit(spec)
 
         assert "--eval-max-new-tokens" not in self._train_command(ssh)
+
+
+class TestWheelEnvSeam:
+    def test_env_var_supplies_the_wheel_for_cli_runs(self, monkeypatch, tmp_path):
+        """Discovered live: the flywheel's first spin died with 'No module
+        named stateset_agents.training.harvest' because the pod installed
+        the PyPI release, which predated the module. STATESET_AGENTS_WHEEL
+        lets CLI-constructed executors ship the local build instead."""
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        wheel = tmp_path / "stateset_agents-9.9.9-py3-none-any.whl"
+        wheel.write_bytes(b"x")
+        monkeypatch.setenv("STATESET_AGENTS_WHEEL", str(wheel))
+
+        executor = RunPodExecutor(api=object(), ssh=object(), public_key="k")
+
+        assert executor.wheel == wheel
+
+    def test_explicit_wheel_argument_wins_over_the_env(self, monkeypatch, tmp_path):
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        monkeypatch.setenv("STATESET_AGENTS_WHEEL", str(tmp_path / "env.whl"))
+        explicit = tmp_path / "explicit.whl"
+
+        executor = RunPodExecutor(
+            api=object(), ssh=object(), public_key="k", wheel=explicit
+        )
+
+        assert executor.wheel == explicit
