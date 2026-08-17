@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786988816407,
+  "lastUpdate": 1786989876181,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3736,6 +3736,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.714829987385241e-8",
             "extra": "mean: 339.3666539614134 nsec\nrounds: 139063"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "70c52a9d92eaca66c57531f1a472b62e8a3fdc42",
+          "message": "fix(serve): the arm hang was shell precedence, not stdin\n\nIn `chmod && nohup script > log & echo armed` the & backgrounds the\nWHOLE `chmod && nohup` chain; the backgrounded subshell then runs the\nhour-long self-destruct script in its FOREGROUND while holding the ssh\nsession's stdout/stderr, so sshd keeps the channel open until the script\nexits and the client blocks on the arm command for the pod's whole\nlifetime. The previous stdin-redirect fix was necessary but not\nsufficient — reproduced live on a fresh pod, where the hand-run command\nwithout the chmod prefix returned instantly and the full chain hung.\n`(nohup ... &)` scopes the & to the script launch alone; verified live\nat 2.9s round-trip. Test pins the subshell grouping.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T11:00:51-07:00",
+          "tree_id": "a8e240de803304f2f4d0d10f918fc30b63977e47",
+          "url": "https://github.com/stateset/stateset-agents/commit/70c52a9d92eaca66c57531f1a472b62e8a3fdc42"
+        },
+        "date": 1786989874418,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 11127.43046737924,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013225528769000119",
+            "extra": "mean: 89.8680070777852 usec\nrounds: 1413"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11907.955625081708,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009741415337600776",
+            "extra": "mean: 83.97747115329365 usec\nrounds: 1976"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8928.670205725308,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009538140719287286",
+            "extra": "mean: 111.99876095308936 usec\nrounds: 2602"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1071.4736757057974,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000402485909439523",
+            "extra": "mean: 933.2940441502527 usec\nrounds: 906"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 263.59146265229094,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00013283320600104994",
+            "extra": "mean: 3.79374957723544 msec\nrounds: 246"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2812554.3119969596,
+            "unit": "iter/sec",
+            "range": "stddev: 3.599963750550388e-8",
+            "extra": "mean: 355.5486895788987 nsec\nrounds: 136445"
           }
         ]
       }
