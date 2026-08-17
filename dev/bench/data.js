@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786970662371,
+  "lastUpdate": 1786986511820,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3544,6 +3544,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.0504950891259534e-8",
             "extra": "mean: 479.5265132647994 nsec\nrounds: 104625"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "b389486ac4f7b93e853843cce415ec2b0cdfddc5",
+          "message": "feat(serve): the endpoint answered — serve-remote live-verified\n\nAn authenticated POST /v1/chat/completions to the RunPod proxy URL\nreturned a completion from Qwen3.5-0.8B under vLLM on a rented H100.\nTenth attempt; the blocker was flashinfer's `array.array[int]`\nannotation, a TypeError at import on Python 3.11 that killed the\nengine pre-listen. serve-remote now strips it post-install (no-op once\nflashinfer fixes it), with a sequence test pinning install < patch <\nlaunch. README's honesty note becomes a receipt.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T10:05:23-07:00",
+          "tree_id": "e689fb9c36c4e077ce432fed70735426db1a7019",
+          "url": "https://github.com/stateset/stateset-agents/commit/b389486ac4f7b93e853843cce415ec2b0cdfddc5"
+        },
+        "date": 1786986510572,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5936.523611663022,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001775950720069565",
+            "extra": "mean: 168.44875307753827 usec\nrounds: 1462"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6386.973364044816,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018251803815901076",
+            "extra": "mean: 156.56868175299678 usec\nrounds: 2099"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4906.573971309088,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001880131652885352",
+            "extra": "mean: 203.80819811286716 usec\nrounds: 2438"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 726.3460118374926,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002966945695269783",
+            "extra": "mean: 1.376754306766584 msec\nrounds: 665"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 181.88174044095567,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005843776706523972",
+            "extra": "mean: 5.498078023531066 msec\nrounds: 170"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 1972400.9879263674,
+            "unit": "iter/sec",
+            "range": "stddev: 5.162180879992864e-8",
+            "extra": "mean: 506.9962984815395 nsec\nrounds: 105065"
           }
         ]
       }
