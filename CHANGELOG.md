@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The flywheel raises a ceiling: 2/12 → 10/12**
+  ([`docs/FLYWHEEL_HEADROOM.md`](docs/FLYWHEEL_HEADROOM.md)). On compound
+  requests provably outside gen-1's training distribution (two issues per
+  message; every training reply resolved exactly one), gen-1 passes 2/12 —
+  it answers one issue and silently drops the other. Best-of-8 rejection
+  sampling harvested gen-1's occasional successes (58/240 samples), and
+  training gen-2 on only those took the same eval to **10/12, reproduced
+  across two independent trainings with the same two failures** (both
+  near-misses of the token whitelist, so 10/12 is a lower bound). Untuned
+  base: 0/12. Cost: $3.32. Limitations are in the report — this is
+  self-distillation of a latent capability, not acquisition of a new one.
+
+### Fixed
+
+- **A failed eval gate no longer destroys the adapter it just judged.** The
+  gate deliberately fails a job *after* saving the adapter and
+  `eval_results.json`, but the executor fetched artifacts only on success —
+  so a failed-assertion adapter died with the pod (observed live: the 10/12
+  run had to be retrained). `wait()` now attempts a best-effort fetch on
+  failure too.
+
 ### Security
 
 - **A vulnerable `mcp` pin lived in our dev lock file.** `semgrep` pulls the

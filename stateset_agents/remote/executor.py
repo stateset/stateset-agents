@@ -86,7 +86,19 @@ class RemoteExecutor(abc.ABC):
             time.sleep(poll_interval_s)
 
         logs = list(self.logs(handle))
-        output_dir = self.fetch(handle) if status is JobStatus.SUCCEEDED else None
+        # Fetch on failure too, best-effort. The eval gate deliberately fails
+        # a job AFTER saving the adapter and eval_results.json (a failed
+        # assertion must not destroy what was paid for) — but fetching only
+        # on success discarded exactly those artifacts with the pod. Observed
+        # live: a 10/12 assertion run's adapter was lost and had to be
+        # retrained. A failed job with nothing to fetch still returns None.
+        if status is JobStatus.SUCCEEDED:
+            output_dir = self.fetch(handle)
+        else:
+            try:
+                output_dir = self.fetch(handle)
+            except Exception:  # noqa: BLE001 - nothing to fetch is fine
+                output_dir = None
         # Providers that meter their own pods expose the measured spend via
         # `job_cost`; those that do not simply report None.
         duration_s, cost_usd = self.job_cost(handle)
