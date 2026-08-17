@@ -202,6 +202,8 @@ def build_sft_batch(
     rows: Sequence[dict[str, Any]],
     tokenizer: Any,
     max_length: int = 2048,
+    *,
+    shift_targets: bool = True,
 ) -> list[dict[str, Any]]:
     """Turn chat rows into River SFT data — one datum per usable row.
 
@@ -219,6 +221,14 @@ def build_sft_batch(
     Truncation keeps the first ``max_length`` tokens; a row left with no
     weighted token after truncation is dropped, since it would contribute
     nothing but compute.
+
+    ``shift_targets`` is the flip for the UNVERIFIED assumption documented at
+    the top of this module. ``True`` (default): the caller performs the causal
+    shift and each datum carries ``input_ids``/``target_tokens``/``weights``.
+    ``False``: River shifts server-side — as its docs' loss table
+    (``cross_entropy``: ``input_ids``, ``weights``) hints — and each datum
+    carries only ``input_ids``/``weights``, unshifted. One argument, because
+    getting this wrong off-by-ones every label in the batch.
     """
     if max_length <= 1:
         raise ValueError(f"max_length must be > 1, got {max_length}")
@@ -230,7 +240,9 @@ def build_sft_batch(
             logger.warning("river: skipping row %d — no usable messages", index)
             continue
         try:
-            datum = _build_sft_datum(messages, tokenizer, max_length)
+            datum = _build_sft_datum(
+                messages, tokenizer, max_length, shift_targets=shift_targets
+            )
         except Exception as exc:  # noqa: BLE001 - one bad row must not fail the job
             logger.warning("river: skipping row %d — %s", index, exc)
             continue
@@ -243,6 +255,8 @@ def _build_sft_datum(
     messages: list[dict[str, Any]],
     tokenizer: Any,
     max_length: int,
+    *,
+    shift_targets: bool = True,
 ) -> dict[str, Any] | None:
     """One row -> one River SFT datum, or None when nothing is trainable."""
     ids: list[int] = []
@@ -280,6 +294,13 @@ def _build_sft_datum(
     # deliberately dropped: they carry no loss and only consume context.
     ids = ids[:max_length]
     weights = weights[:max_length]
+
+    if not shift_targets:
+        # River shifts server-side: send the sequence unshifted, labels
+        # implied. Weight layout matches the docs' cross_entropy fields.
+        if len(ids) < 2 or not any(w > 0.0 for w in weights):
+            return None
+        return {"input_ids": ids, "weights": weights}
 
     input_ids, target_tokens, target_weights = _shift_for_causal_lm(ids, weights)
     if not input_ids or not any(w > 0.0 for w in target_weights):

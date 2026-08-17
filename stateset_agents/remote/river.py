@@ -35,6 +35,7 @@ any provider.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import time
@@ -300,41 +301,45 @@ class RiverExecutor(RemoteExecutor):
             train_mlp=True,
             train_unembed=False,
         )
-        session = (
-            client.create_session() if hasattr(client, "create_session") else client
-        )
-        model = session.create_model(base_model=spec.base_model, lora=lora)
-        logs.append(
-            f"created River model on {spec.base_model} "
-            f"(LoRA rank {spec.lora_r}, attn+mlp)"
-        )
-
-        size = max(1, spec.per_device_batch_size)
-        tokens = 0
-        for epoch in range(spec.num_epochs):
-            for start in range(0, len(data), size):
-                chunk = data[start : start + size]
-                result = model.forward_backward(chunk, loss_fn=self.SFT_LOSS_FN)
-                model.optim_step(lr=spec.learning_rate)
-                job.steps += 1
-                loss = _extract(result, "loss")
-                if loss is not None:
-                    job.final_loss = float(loss)
-                counted = _extract(result, "num_tokens", "tokens", "total_tokens")
-                if counted is not None:
-                    tokens += int(counted)
+        with _open_session(
+            client, project=Path(spec.output_dir).name or None
+        ) as session:
+            model = session.create_model(base_model=spec.base_model, lora=lora)
             logs.append(
-                f"epoch {epoch + 1}/{spec.num_epochs} complete "
-                f"({job.steps} steps"
-                + (f", loss {job.final_loss:.4f}" if job.final_loss is not None else "")
-                + ")"
+                f"created River model on {spec.base_model} "
+                f"(LoRA rank {spec.lora_r}, attn+mlp)"
             )
-        job.tokens = tokens or None
 
-        name = Path(spec.output_dir).name or "adapter"
-        uri = model.save_weights(name, mode="inference")
-        job.checkpoint_uri = _as_uri(uri)
-        logs.append(f"saved River checkpoint: {job.checkpoint_uri}")
+            size = max(1, spec.per_device_batch_size)
+            tokens = 0
+            for epoch in range(spec.num_epochs):
+                for start in range(0, len(data), size):
+                    chunk = data[start : start + size]
+                    result = model.forward_backward(chunk, loss_fn=self.SFT_LOSS_FN)
+                    model.optim_step(lr=spec.learning_rate)
+                    job.steps += 1
+                    loss = _extract(result, "loss")
+                    if loss is not None:
+                        job.final_loss = float(loss)
+                    counted = _extract(result, "num_tokens", "tokens", "total_tokens")
+                    if counted is not None:
+                        tokens += int(counted)
+                logs.append(
+                    f"epoch {epoch + 1}/{spec.num_epochs} complete "
+                    f"({job.steps} steps"
+                    + (
+                        f", loss {job.final_loss:.4f}"
+                        if job.final_loss is not None
+                        else ""
+                    )
+                    + ")"
+                )
+            job.tokens = tokens or None
+
+            name = Path(spec.output_dir).name or "adapter"
+            uri = model.save_weights(name, mode="inference")
+            job.checkpoint_uri = _as_uri(uri)
+            logs.append(f"saved River checkpoint: {job.checkpoint_uri}")
 
     def _record_cost(self, job_id: str, job: _RiverJob) -> None:
         """Append a ledger line.
@@ -480,6 +485,33 @@ def _is_set(spec: RemoteJobSpec, field_name: str) -> bool:
     if field_name == "cloud_type":
         return str(value).upper() not in ("", "SECURE")
     return value is not None
+
+
+@contextlib.contextmanager
+def _open_session(client: Any, project: str | None = None) -> Iterator[Any]:
+    """Yield a River training session, whatever the client's vintage.
+
+    The docs' canonical form is ``with client.session(project=...) as s`` —
+    tried first, degrading to a plain ``client.session(...)`` return value if
+    it is not a context manager, then to the older ``create_session()``, then
+    to the client itself (the seam fakes use). Cleanup runs only when the
+    session was actually opened as a context manager.
+    """
+    if hasattr(client, "session"):
+        try:
+            opened = client.session(project=project) if project else client.session()
+        except TypeError:
+            opened = client.session()
+        if hasattr(opened, "__enter__"):
+            with opened as session:
+                yield session
+            return
+        yield opened
+        return
+    if hasattr(client, "create_session"):
+        yield client.create_session()
+        return
+    yield client
 
 
 def _river_module(client: Any) -> Any:

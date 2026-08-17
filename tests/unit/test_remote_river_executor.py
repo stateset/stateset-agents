@@ -364,6 +364,85 @@ class TestWaitAndCost:
         assert entries[0]["status"] == "succeeded"
 
 
+class TestSessionResolution:
+    """The docs' canonical form is ``with client.session(project=...) as s``;
+    older shapes (``create_session()``, or the client doubling as the
+    session) must keep working, and a context-managed session must be
+    closed."""
+
+    def test_docs_canonical_context_manager_session_is_used_and_closed(
+        self, spec, tmp_path
+    ):
+        events: list[str] = []
+
+        class CmSession(FakeSession):
+            def __enter__(self):
+                events.append("enter")
+                return self
+
+            def __exit__(self, *exc):
+                events.append("exit")
+                return False
+
+        class ModernClient(FakeRiverClient):
+            def __init__(self):
+                super().__init__()
+                self.projects: list[str | None] = []
+
+            create_session = None  # the modern SDK shape has session() only
+
+            def session(self, project=None):
+                self.projects.append(project)
+                cm = CmSession()
+                self.sessions.append(cm)
+                return cm
+
+        client = ModernClient()
+        executor = RiverExecutor(
+            client=client, tokenizer=FakeTokenizer(), ledger_path=tmp_path / "l.jsonl"
+        )
+        handle = executor.submit(spec)
+
+        assert executor.status(handle) is JobStatus.SUCCEEDED
+        assert events == ["enter", "exit"]
+        assert client.projects == [spec.output_dir.name]
+        assert client.model.saved  # trained through the cm session
+
+    def test_plain_session_method_without_cm_protocol_still_works(self, spec, tmp_path):
+        class PlainClient(FakeRiverClient):
+            create_session = None
+
+            def session(self, project=None):
+                s = FakeSession()
+                self.sessions.append(s)
+                return s
+
+        executor = RiverExecutor(
+            client=PlainClient(),
+            tokenizer=FakeTokenizer(),
+            ledger_path=tmp_path / "l.jsonl",
+        )
+        assert executor.status(executor.submit(spec)) is JobStatus.SUCCEEDED
+
+    def test_session_not_accepting_project_kwarg_degrades_gracefully(
+        self, spec, tmp_path
+    ):
+        class OldSignature(FakeRiverClient):
+            create_session = None
+
+            def session(self):  # no project kwarg at all
+                s = FakeSession()
+                self.sessions.append(s)
+                return s
+
+        executor = RiverExecutor(
+            client=OldSignature(),
+            tokenizer=FakeTokenizer(),
+            ledger_path=tmp_path / "l.jsonl",
+        )
+        assert executor.status(executor.submit(spec)) is JobStatus.SUCCEEDED
+
+
 class TestFailures:
     def test_sdk_exceptions_become_remote_execution_errors(self, spec, tmp_path):
         class Boom(FakeRiverClient):

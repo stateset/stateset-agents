@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kills the vLLM engine before it listens. `serve-remote` now strips that
   annotation after the vLLM install (a no-op once flashinfer fixes it).
 
+- **River executor aligned to the published docs while the SDK stays
+  uninstallable.** `_open_session` now prefers the docs' canonical
+  `with client.session(project=...)` context manager (closing it), degrading
+  through a plain `session()` return, `create_session()`, and the
+  client-as-session seam. `build_sft_batch(shift_targets=False)` emits the
+  docs' `cross_entropy` field shape (`input_ids` + `weights`, unshifted) so
+  the one unverified assumption — who performs the causal shift — is now a
+  single argument rather than an edit.
+
 - **The flywheel raises a ceiling: 2/12 → 10/12**
   ([`docs/FLYWHEEL_HEADROOM.md`](docs/FLYWHEEL_HEADROOM.md)). On compound
   requests provably outside gen-1's training distribution (two issues per

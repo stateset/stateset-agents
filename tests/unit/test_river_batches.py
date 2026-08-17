@@ -127,6 +127,43 @@ class TestSftBatchShape:
         assert "capital" not in decoded
 
 
+class TestUnshiftedBatches:
+    """``shift_targets=False`` — River shifts server-side, per its docs' loss
+    table (``cross_entropy``: ``input_ids``, ``weights``). One argument flips
+    the module's single unverified assumption."""
+
+    def test_emits_the_two_documented_keys_unshifted(self, tokenizer):
+        (datum,) = build_sft_batch(
+            [_row(("user", "hi"), ("assistant", "hello"))],
+            tokenizer,
+            shift_targets=False,
+        )
+        assert set(datum) == {"input_ids", "weights"}
+        assert len(datum["input_ids"]) == len(datum["weights"])
+
+    def test_unshifted_is_the_shifted_sequence_reconstructed(self, tokenizer):
+        row = _row(("user", "hi"), ("assistant", "hello"))
+        (shifted,) = build_sft_batch([row], tokenizer)
+        (unshifted,) = build_sft_batch([row], tokenizer, shift_targets=False)
+        assert unshifted["input_ids"] == shifted["input_ids"] + [
+            shifted["target_tokens"][-1]
+        ]
+
+    def test_weights_still_mask_the_prompt(self, tokenizer):
+        (datum,) = build_sft_batch(
+            [_row(("user", "hi"), ("assistant", "hello"))],
+            tokenizer,
+            shift_targets=False,
+        )
+        zero = [
+            t
+            for t, w in zip(datum["input_ids"], datum["weights"], strict=True)
+            if w == 0.0
+        ]
+        assert "hi" in tokenizer.decode(zero)
+        assert "hello" not in tokenizer.decode(zero)
+
+
 class TestMultiTurn:
     def test_every_assistant_turn_is_weighted(self, tokenizer):
         (datum,) = build_sft_batch(
