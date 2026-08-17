@@ -102,7 +102,8 @@ the artifact returned — not a mock and not a plan:
 | A model too big for one card | 63GB checkpoint sharded across two 48GB cards (`0=24 module(s), 1=36 module(s)`) |
 | The RL core, not just SFT | GSPO on a real GPU: target-token probability 2.8e‑05 → 0.125 in 40 steps, re-proved weekly |
 | Multi-turn memory | `chat-remote` resolved *"I got double charged for it"* to the order number from the previous turn |
-| The loop itself | Machine-curated data trains a second generation with no manual data work ([`FLYWHEEL_EXPERIMENT.md`](docs/FLYWHEEL_EXPERIMENT.md), limitations included) |
+| **The loop raises a ceiling** | On compound requests gen‑1 was never trained on: base 0/12, gen‑1 **2/12**, gen‑2 — trained only on gen‑1's machine-curated sampled successes — **10/12**, reproduced twice ([`FLYWHEEL_HEADROOM.md`](docs/FLYWHEEL_HEADROOM.md)) |
+| The loop holds under contamination | Machine-curated data trains a second generation with no manual data work ([`FLYWHEEL_EXPERIMENT.md`](docs/FLYWHEEL_EXPERIMENT.md), limitations included) |
 
 What is **not** yet proven is labelled as such throughout — `serve-remote`'s
 endpoint bring-up is the current gap, and the starter table's ✅ column marks
