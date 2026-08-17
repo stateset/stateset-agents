@@ -105,9 +105,10 @@ class GenerationOutcome:
 
 def _read_json(path: Path) -> dict[str, Any] | None:
     try:
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
     except (OSError, ValueError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def _eval_score(output_dir: Path | None) -> tuple[int | None, int | None]:

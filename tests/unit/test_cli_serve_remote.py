@@ -264,11 +264,7 @@ class TestDeploy:
     def test_trains_then_serves_the_fresh_adapter(self, tmp_path, monkeypatch):
         """The zero-to-API story as one invocation: a successful training
         job's output_dir becomes the served adapter."""
-        from stateset_agents.remote.job import (
-            JobHandle,
-            JobStatus,
-            RemoteJobResult,
-        )
+        from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobResult
 
         dataset = tmp_path / "d.jsonl"
         dataset.write_text('{"messages": []}\n')
@@ -310,11 +306,7 @@ class TestDeploy:
         assert "$1.50" in result.output
 
     def test_failed_training_does_not_serve(self, tmp_path, monkeypatch):
-        from stateset_agents.remote.job import (
-            JobHandle,
-            JobStatus,
-            RemoteJobResult,
-        )
+        from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobResult
 
         dataset = tmp_path / "d.jsonl"
         dataset.write_text('{"messages": []}\n')
