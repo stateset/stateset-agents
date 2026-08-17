@@ -190,6 +190,14 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("adapter_dir"):
         model = _load_adapter(model, payload["adapter_dir"])
         logger.info("loaded adapter %s", payload["adapter_dir"])
+    # Single-GPU loads land on CPU (device_map is multi-GPU-only), and
+    # nothing downstream moves the model — generate() then grinds on CPU
+    # with the GPU idle. Hit for real on this module's first live run: an
+    # H100 at 0% for an hour. Same fix and same guard as sft's eval path.
+    from stateset_agents.training.sft import is_sharded_across_devices
+
+    if gpu_available() and not is_sharded_across_devices(model):
+        model = model.to("cuda")
     model.eval()
 
     # -- "before" eval of the current generation, greedy ------------------
