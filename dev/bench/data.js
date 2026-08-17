@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786997356796,
+  "lastUpdate": 1786999003981,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3992,6 +3992,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.8146489192200637e-8",
             "extra": "mean: 437.290093787655 nsec\nrounds: 108649"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "5fe7958515859c29e4414234bb7cb2c00806d7ef",
+          "message": "fix(ci): document deploy+flywheel in the CLI reference; lint; Windows paths\n\nThe repo's own meta-test caught the undocumented commands. The flywheel\ntests compared paths with endswith('gen1/adapter'), which is false under\nWindows separators — compare Path.parts instead (the same lesson as last\ntime, relearned). Three ruff errors (unused loop var, zip without\nstrict, dict() literal) fixed.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T13:33:44-07:00",
+          "tree_id": "2f4e70ebba8e1ac3cc30b525e4d4b1a142641590",
+          "url": "https://github.com/stateset/stateset-agents/commit/5fe7958515859c29e4414234bb7cb2c00806d7ef"
+        },
+        "date": 1786999003062,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8404.605814444934,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014876547552001605",
+            "extra": "mean: 118.9823796710736 usec\nrounds: 1338"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9064.228363932703,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013850248020442008",
+            "extra": "mean: 110.32378707260739 usec\nrounds: 2104"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6652.961455073356,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001555465515621233",
+            "extra": "mean: 150.30900250255155 usec\nrounds: 3197"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 821.9172658058898,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00007950206648111864",
+            "extra": "mean: 1.2166674695895336 msec\nrounds: 707"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 177.63169119215317,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003970727388218807",
+            "extra": "mean: 5.629626072288247 msec\nrounds: 166"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2249808.07761702,
+            "unit": "iter/sec",
+            "range": "stddev: 6.11765174735558e-8",
+            "extra": "mean: 444.4823582726188 nsec\nrounds: 184912"
           }
         ]
       }
