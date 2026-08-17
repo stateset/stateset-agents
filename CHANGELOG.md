@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `array.array[int]`, a TypeError at import on the image's Python 3.11 that
   kills the vLLM engine before it listens. `serve-remote` now strips that
   annotation after the vLLM install (a no-op once flashinfer fixes it).
+  The shipped CLI path is verified too — `serve-remote --adapter` brought up
+  base + LoRA and both the fine-tuned adapter and the base model answered
+  authenticated chat completions over the proxy URL, with the pod stopped by
+  `serve-remote --stop` afterwards. Running it for real surfaced one more
+  live-only bug: the self-destruct arm command's `&` backgrounded the whole
+  `chmod && nohup` chain, whose subshell then held the ssh session open for
+  the script's full hour — the client hung 28 minutes on `echo armed` before
+  diagnosis. `(nohup ... &)` scopes the background correctly (verified at
+  2.9s round-trip), stdin is redirected on every detached launch, and a test
+  pins both.
 
 - **River executor aligned to the published docs while the SDK stays
   uninstallable.** `_open_session` now prefers the docs' canonical
