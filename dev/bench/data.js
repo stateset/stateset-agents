@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787002131790,
+  "lastUpdate": 1787005819186,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4184,6 +4184,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.158676403372845e-8",
             "extra": "mean: 474.79160996769656 nsec\nrounds: 102586"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "eb2f87fe433b49e572c311e7d76d0fc53365c596",
+          "message": "fix(harvest): move the model to the GPU before sampling\n\nSingle-GPU loads land on CPU (device_map is multi-GPU-only) and nothing\ndownstream moves the model, so generate() ground on CPU with an H100 at\n0% for an hour — the harvest module's first live run. Same fix and\nsharded-model guard as sft's eval path.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T15:27:44-07:00",
+          "tree_id": "233f79bfaf5bf57858b62059e5b6c59c3dda5688",
+          "url": "https://github.com/stateset/stateset-agents/commit/eb2f87fe433b49e572c311e7d76d0fc53365c596"
+        },
+        "date": 1787005818183,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6031.5574181362945,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002268544124230743",
+            "extra": "mean: 165.79465810821915 usec\nrounds: 1480"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6573.035426782731,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014478924971384587",
+            "extra": "mean: 152.1367123513991 usec\nrounds: 1846"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4991.396526523749,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016538300020976175",
+            "extra": "mean: 200.34473211777637 usec\nrounds: 2852"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 723.8105765340687,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000025211335109855724",
+            "extra": "mean: 1.381576937972433 msec\nrounds: 661"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 182.97129689142133,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00038846818405887794",
+            "extra": "mean: 5.465338099414681 msec\nrounds: 171"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2127926.463187814,
+            "unit": "iter/sec",
+            "range": "stddev: 4.7737218584019777e-8",
+            "extra": "mean: 469.94105167615396 nsec\nrounds: 102902"
           }
         ]
       }
