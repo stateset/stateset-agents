@@ -282,7 +282,7 @@ def serve_remote(
         _echo("--base-model is required (or use --stop / --list).", err=True)
         raise typer.Exit(code=2)
     adapters = _parse_adapters(adapter)
-    for name, directory in adapters.items():
+    for directory in adapters.values():
         if not directory.exists():
             _echo(f"Adapter directory does not exist: {directory}", err=True)
             raise typer.Exit(code=2)

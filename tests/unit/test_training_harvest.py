@@ -96,13 +96,13 @@ class TestSpecHarvestArgs:
     def _spec(self, tmp_path, **overrides):
         prompts = tmp_path / "prompts.json"
         prompts.write_text("[]")
-        defaults = dict(
-            dataset=prompts,
-            base_model="base/model",
-            output_dir=tmp_path / "out",
-            job_kind="harvest",
-            harvest={"adapter_dir": "outputs/gen1", "best_of": 4},
-        )
+        defaults = {
+            "dataset": prompts,
+            "base_model": "base/model",
+            "output_dir": tmp_path / "out",
+            "job_kind": "harvest",
+            "harvest": {"adapter_dir": "outputs/gen1", "best_of": 4},
+        }
         defaults.update(overrides)
         return RemoteJobSpec(**defaults)
 

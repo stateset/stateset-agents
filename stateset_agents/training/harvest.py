@@ -201,7 +201,7 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
             max_new_tokens=payload.get("eval_max_new_tokens", 300),
         )
         results = []
-        for spec, completion in zip(eval_specs, completions):
+        for spec, completion in zip(eval_specs, completions, strict=True):
             checked = evaluate_checks(
                 completion, spec.get("expect", []), spec.get("forbid", [])
             )

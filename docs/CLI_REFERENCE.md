@@ -796,6 +796,70 @@ pick a bigger `--gpu` (e.g. `"NVIDIA H100 80GB HBM3"`) and raise
 - `--list`: List running serve pods (name, id, status, age, $/hr), then
   exit.
 
+### `stateset-agents deploy`
+
+Fine-tune on a rented GPU, then serve the result — one command.
+`train-remote` then `serve-remote`, glued: rent, train, give the hardware
+back, rent again, serve the fresh adapter as an authenticated
+OpenAI-compatible endpoint, and print the URL and Bearer token. A failed
+training job refuses to serve. This is the zero-to-API story of
+`docs/GETTING_STARTED_API.md` as a single invocation.
+
+```bash
+stateset-agents deploy --dataset improved/curated.jsonl \
+  --base-model Qwen/Qwen3.5-0.8B --max-cost 5
+```
+
+- `--dataset PATH` (required): Chat-format JSONL to train on.
+- `--base-model TEXT` (required): Hugging Face base model.
+- `--output-dir PATH`: Where the trained adapter is written locally
+  (default `outputs/deploy_v1`).
+- `--gpu TEXT`: RunPod GPU used for BOTH the training job and the endpoint
+  (default `NVIDIA H100 80GB HBM3`).
+- `--container-disk-gb INTEGER`: ~2.5x the checkpoint size.
+- `--num-epochs INTEGER`: Training epochs (default 3).
+- `--max-cost FLOAT`: Ceiling for the TRAINING job.
+- `--max-hours FLOAT`: Endpoint self-destruct, armed on the serving pod
+  (default 1.0).
+
+### `stateset-agents flywheel`
+
+The improvement loop, unattended: harvest the current generation's rare
+successes (best-of-N rejection sampling against objective `expect`/`forbid`
+checks), train the next generation on nothing but those, measure it, and
+repeat — stopping on plateau, a dry harvest (no signal to train on), a
+perfect score, or when the next rental's worst case would break
+`--max-cost`. Every generation leaves its harvest set, its adapter with a
+lineage manifest, and `flywheel_report.json` with pass rates and dollars.
+The methodology is `docs/FLYWHEEL_HEADROOM.md` (2/12 → 10/12 for $3.32).
+
+```bash
+stateset-agents flywheel --base-model meta-models/Muse-Glimmer-30B \
+  --harvest-prompts harvest.json --eval-prompts eval.json \
+  --gpu "NVIDIA H100 80GB HBM3" --container-disk-gb 170 --max-cost 20
+```
+
+- `--base-model TEXT` (required): Base model every generation is LoRA-tuned
+  from.
+- `--harvest-prompts PATH` (required): JSON list of
+  `{prompt, expect, forbid}` specs sampled during harvest. The checks
+  define success; they are mandatory.
+- `--eval-prompts PATH` (required): JSON list of specs that score each
+  generation. Keep disjoint from the harvest prompts.
+- `--output-root PATH`: Where generations and the report land (default
+  `outputs/flywheel`).
+- `--initial-adapter PATH`: Existing adapter to start from (defaults to the
+  bare base model).
+- `--generations INTEGER`: Maximum NEW generations to train (default 3).
+- `--best-of INTEGER`: Samples per harvest prompt (default 8).
+- `--temperature FLOAT`: Harvest sampling temperature (default 0.9).
+- `--max-cost FLOAT`: Hard dollar ceiling for the WHOLE run.
+- `--provider TEXT`: Executor to run on (default `runpod`).
+- `--gpu TEXT`: GPU type, in the provider's own vocabulary.
+- `--container-disk-gb INTEGER`: Container disk per pod.
+- `--num-epochs INTEGER`: Training epochs per generation (default 3).
+- `--dry-run`: Print each job's plan without renting anything.
+
 ### `stateset-agents fine-tune`
 
 Fine-tune from a curated JSONL in one command.

@@ -133,7 +133,7 @@ class TestStops:
         assert "plateau" in report["stop_reason"]
         assert report["best_eval_passed"] == 8
         # gen-2 did not beat gen-1, so gen-1's adapter stays final.
-        assert report["final_adapter"].endswith("gen1/adapter")
+        assert Path(report["final_adapter"]).parts[-2:] == ("gen1", "adapter")
 
     def test_perfect_score_stops_early(self, config):
         executor = ScriptedExecutor(
@@ -239,9 +239,12 @@ class TestSpecWiring:
         # gen-2's harvest samples FROM gen-1's adapter; gen-2's training
         # records gen-1 as parent.
         gen2_harvest = executor.specs[2]
-        assert gen2_harvest.harvest["adapter_dir"].endswith("gen1/adapter")
+        assert Path(gen2_harvest.harvest["adapter_dir"]).parts[-2:] == (
+            "gen1",
+            "adapter",
+        )
         gen2_train = executor.specs[3]
-        assert gen2_train.parent_adapter.endswith("gen1/adapter")
+        assert Path(gen2_train.parent_adapter).parts[-2:] == ("gen1", "adapter")
 
     def test_remaining_budget_shrinks_per_job(self, config):
         config.max_cost_usd = 10.0
