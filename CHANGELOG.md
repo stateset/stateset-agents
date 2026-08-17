@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a FAILED training job WITH eval artifacts is read as a score (10/12
   fails an all-assertions gate while being the whole point), not an error.
 
+- **`serve-remote` grows up: multiple adapters on one endpoint, and
+  `deploy`.** `--adapter` is now repeatable as `[name=]path` — each adapter
+  is served under its own model name beside the base, so a champion and a
+  challenger can be A/B'd through one URL by switching the `model` field.
+  `stateset-agents deploy --dataset ... --base-model ...` is the
+  zero-to-API story as one command: rent, train, release the hardware,
+  serve the fresh adapter, print the URL and token. (Streaming rides
+  vLLM's native `"stream": true`; live verification over the RunPod proxy
+  is queued for the next serve run.)
+
 ## [0.31.0] - 2026-08-17 — The serve claim becomes a receipt: endpoint verified, flywheel raises a ceiling
 
 ### Added

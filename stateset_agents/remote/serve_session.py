@@ -408,17 +408,23 @@ class RemoteServeSession:
             return False
         return True
 
-    def _upload_adapter(self, ssh: Any, adapter_dir: Path) -> None:
-        """Tar, upload, untar — ``SshTransport.upload`` moves single files."""
+    def _upload_adapter(
+        self, ssh: Any, adapter_dir: Path, name: str = "adapter"
+    ) -> None:
+        """Tar, upload, untar — ``SshTransport.upload`` moves single files.
+
+        Each adapter lands at ``/workspace/<name>`` and is served under
+        ``name``, so several can ride one endpoint for A/B comparison.
+        """
+        tar_remote = f"{_REMOTE_WORKDIR}/{name}.tar.gz"
         with tempfile.TemporaryDirectory() as staging:
-            tar_path = Path(staging) / "adapter.tar.gz"
+            tar_path = Path(staging) / f"{name}.tar.gz"
             with tarfile.open(tar_path, "w:gz") as tar:
-                tar.add(adapter_dir, arcname="adapter")
-            ssh.upload(tar_path, _REMOTE_ADAPTER_TAR)
+                tar.add(adapter_dir, arcname=name)
+            ssh.upload(tar_path, tar_remote)
         self._run_checked(
             ssh,
-            f"tar xzf {_REMOTE_ADAPTER_TAR} -C {_REMOTE_WORKDIR} "
-            f"&& rm -f {_REMOTE_ADAPTER_TAR}",
+            f"tar xzf {tar_remote} -C {_REMOTE_WORKDIR} " f"&& rm -f {tar_remote}",
         )
 
     def _arm_self_destruct(self, ssh: Any, api: Any, max_hours: float) -> None:
@@ -450,13 +456,14 @@ class RemoteServeSession:
             f"&& echo armed",
         )
 
-    def _vllm_command(self, base_model: str, with_adapter: bool) -> str:
+    def _vllm_command(self, base_model: str, adapter_names: list[str]) -> str:
         """The launch line: vLLM's built-in OpenAI-compatible server.
 
         ``vllm serve`` binds 0.0.0.0:8000 with ``/v1`` chat/completions
         endpoints, requiring ``Authorization: Bearer <token>`` because of
-        ``--api-key``. With an adapter, ``--enable-lora`` registers it as
-        the served model named ``adapter``.
+        ``--api-key``. With adapters, ``--enable-lora`` registers each as a
+        served model under its own name — request any of them (or the base)
+        via the ``model`` field, which is how A/B comparison works.
         """
         parts = [
             "nohup",
@@ -467,11 +474,12 @@ class RemoteServeSession:
             f"--port {_VLLM_PORT}",
             f"--api-key {shlex.quote(self.token)}",
         ]
-        if with_adapter:
-            parts += [
-                "--enable-lora",
-                f"--lora-modules adapter={_REMOTE_ADAPTER_DIR}",
-            ]
+        if adapter_names:
+            modules = " ".join(
+                f"{shlex.quote(n)}={_REMOTE_WORKDIR}/{shlex.quote(n)}"
+                for n in adapter_names
+            )
+            parts += ["--enable-lora", f"--lora-modules {modules}"]
         parts += [f"> {_REMOTE_VLLM_LOG} 2>&1 < /dev/null & echo launched"]
         return " ".join(parts)
 
@@ -511,6 +519,7 @@ class RemoteServeSession:
         adapter_dir: Path | None = None,
         gpu: str | None = None,
         max_hours: float = 1.0,
+        adapters: dict[str, Path] | None = None,
     ) -> None:
         """Provision, arm the self-destruct, boot vLLM, block until ready.
 
@@ -523,6 +532,11 @@ class RemoteServeSession:
                 "backstop that keeps a forgotten pod from billing forever",
                 provider=self.provider,
             )
+        # One spelling internally: ``adapter_dir`` is sugar for a single
+        # adapter served under the name "adapter".
+        all_adapters: dict[str, Path] = dict(adapters or {})
+        if adapter_dir is not None:
+            all_adapters.setdefault("adapter", Path(adapter_dir))
         api = self._require_api()
         public_key = self._require_public_key()
         ssh = self._require_ssh()
@@ -570,8 +584,8 @@ class RemoteServeSession:
             # leak a forever-billing pod past max_hours.
             self._arm_self_destruct(ssh, api, max_hours)
 
-            if adapter_dir is not None:
-                self._upload_adapter(ssh, Path(adapter_dir))
+            for name, directory in all_adapters.items():
+                self._upload_adapter(ssh, Path(directory), name)
 
             # The runpod/pytorch image ships torch but NOT vllm.
             self._run_detached(
@@ -586,9 +600,7 @@ class RemoteServeSession:
             # subscript in place; it is annotation-only. Observed live on the
             # first verified endpoint run (2026-08-17).
             self._run_checked(ssh, _FLASHINFER_PATCH_COMMAND)
-            self._run_checked(
-                ssh, self._vllm_command(base_model, adapter_dir is not None)
-            )
+            self._run_checked(ssh, self._vllm_command(base_model, list(all_adapters)))
             self._await_server_ready(ssh)
         except BaseException:
             self.terminate()

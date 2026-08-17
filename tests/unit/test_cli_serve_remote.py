@@ -31,12 +31,20 @@ class FakeSession:
         self.pod_name = None
         FakeSession.instances.append(self)
 
-    def start(self, base_model, adapter_dir=None, gpu=None, max_hours=1.0):
+    def start(
+        self,
+        base_model,
+        adapter_dir=None,
+        gpu=None,
+        max_hours=1.0,
+        adapters=None,
+    ):
         if FakeSession.start_raises is not None:
             raise FakeSession.start_raises
         self.started_with = {
             "base_model": base_model,
             "adapter_dir": adapter_dir,
+            "adapters": adapters,
             "gpu": gpu,
             "max_hours": max_hours,
         }
@@ -112,7 +120,8 @@ class TestServe:
         assert session.kwargs["container_disk_gb"] == 120
         assert session.started_with == {
             "base_model": "m",
-            "adapter_dir": adapter,
+            "adapter_dir": None,
+            "adapters": {"adapter": adapter},
             "gpu": "NVIDIA H100 80GB HBM3",
             "max_hours": 2.5,
         }
@@ -200,3 +209,137 @@ class TestRegistration:
             for command in app.registered_commands
         }
         assert "serve-remote" in names
+
+
+class TestMultiAdapter:
+    def test_named_adapters_reach_start_under_their_names(self, tmp_path):
+        a, b = tmp_path / "gen1", tmp_path / "gen2"
+        for d in (a, b):
+            d.mkdir()
+
+        result = invoke(
+            "--base-model",
+            "m",
+            "--adapter",
+            f"champion={a}",
+            "--adapter",
+            f"challenger={b}",
+        )
+
+        assert result.exit_code == 0, result.output
+        started = FakeSession.instances[0].started_with
+        assert started["adapters"] == {"champion": a, "challenger": b}
+        assert "served-model name: champion" in result.output
+        assert "served-model name: challenger" in result.output
+
+    def test_duplicate_adapter_names_are_refused(self, tmp_path):
+        a = tmp_path / "a"
+        a.mkdir()
+
+        result = invoke(
+            "--base-model", "m", "--adapter", f"x={a}", "--adapter", f"x={a}"
+        )
+
+        assert result.exit_code != 0
+        assert "duplicate" in result.output
+
+    def test_bare_path_serves_under_the_default_name(self, tmp_path):
+        a = tmp_path / "a"
+        a.mkdir()
+
+        result = invoke("--base-model", "m", "--adapter", str(a))
+
+        assert result.exit_code == 0, result.output
+        assert FakeSession.instances[0].started_with["adapters"] == {"adapter": a}
+
+
+class TestDeploy:
+    def test_deploy_is_registered(self):
+        names = {
+            command.name or command.callback.__name__
+            for command in app.registered_commands
+        }
+        assert "deploy" in names
+
+    def test_trains_then_serves_the_fresh_adapter(self, tmp_path, monkeypatch):
+        """The zero-to-API story as one invocation: a successful training
+        job's output_dir becomes the served adapter."""
+        from stateset_agents.remote.job import (
+            JobHandle,
+            JobStatus,
+            RemoteJobResult,
+        )
+
+        dataset = tmp_path / "d.jsonl"
+        dataset.write_text('{"messages": []}\n')
+        out = tmp_path / "adapter"
+        out.mkdir()
+
+        class FakeExecutor:
+            def submit(self, spec):
+                FakeExecutor.spec = spec
+                return JobHandle(provider="runpod", job_id="1")
+
+            def wait(self, handle):
+                return RemoteJobResult(
+                    handle=handle,
+                    status=JobStatus.SUCCEEDED,
+                    output_dir=out,
+                    cost_usd=1.5,
+                )
+
+        monkeypatch.setattr(
+            "stateset_agents.cli_remote.get_executor", lambda name: FakeExecutor()
+        )
+        result = runner.invoke(
+            app,
+            [
+                "deploy",
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "m",
+                "--output-dir",
+                str(tmp_path / "adapter"),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert FakeSession.instances[0].started_with["adapters"] == {"adapter": out}
+        assert "Endpoint ready" in result.output
+        assert "$1.50" in result.output
+
+    def test_failed_training_does_not_serve(self, tmp_path, monkeypatch):
+        from stateset_agents.remote.job import (
+            JobHandle,
+            JobStatus,
+            RemoteJobResult,
+        )
+
+        dataset = tmp_path / "d.jsonl"
+        dataset.write_text('{"messages": []}\n')
+
+        class FailingExecutor:
+            def submit(self, spec):
+                return JobHandle(provider="runpod", job_id="1")
+
+            def wait(self, handle):
+                return RemoteJobResult(
+                    handle=handle,
+                    status=JobStatus.FAILED,
+                    output_dir=None,
+                    logs=["boom"],
+                )
+
+        monkeypatch.setattr(
+            "stateset_agents.cli_remote.get_executor",
+            lambda name: FailingExecutor(),
+        )
+        result = runner.invoke(
+            app,
+            ["deploy", "--dataset", str(dataset), "--base-model", "m"],
+        )
+
+        assert result.exit_code == 1
+        assert FakeSession.instances == []
+        assert "not serving" in result.output

@@ -208,6 +208,39 @@ class TestAdapter:
         assert "--enable-lora" in launch
         assert "--lora-modules adapter=/workspace/adapter" in launch
 
+    def test_multiple_adapters_ride_one_endpoint_under_their_own_names(self, tmp_path):
+        """A/B comparison: each adapter is served under its own model name;
+        request either (or the base) via the ``model`` field."""
+        a, b = tmp_path / "gen1", tmp_path / "gen2"
+        for d in (a, b):
+            d.mkdir()
+            (d / "adapter_model.safetensors").write_bytes(b"x")
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh)
+
+        session.start("m", adapters={"gen1": a, "gen2": b})
+
+        uploads = [r for _, r in ssh.uploads]
+        assert "/workspace/gen1.tar.gz" in uploads
+        assert "/workspace/gen2.tar.gz" in uploads
+        launch = next(c for c in ssh.commands if "vllm serve" in c)
+        assert "gen1=/workspace/gen1" in launch
+        assert "gen2=/workspace/gen2" in launch
+
+    def test_adapter_dir_and_adapters_compose(self, tmp_path):
+        """The single-adapter sugar keeps working alongside named ones."""
+        sugar, named = tmp_path / "s", tmp_path / "n"
+        for d in (sugar, named):
+            d.mkdir()
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh)
+
+        session.start("m", adapter_dir=sugar, adapters={"candidate": named})
+
+        launch = next(c for c in ssh.commands if "vllm serve" in c)
+        assert "adapter=/workspace/adapter" in launch
+        assert "candidate=/workspace/candidate" in launch
+
 
 class TestSelfDestruct:
     def test_script_sleeps_then_deletes_its_own_pod_reading_the_key_file(self):

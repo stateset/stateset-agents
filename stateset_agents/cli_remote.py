@@ -169,6 +169,28 @@ def chat_remote(
     _echo("Session ended; pod terminated.")
 
 
+def _parse_adapters(entries: list[str]) -> dict[str, Path]:
+    """``[name=]path`` entries -> ``{name: Path}``; bare path -> 'adapter'.
+
+    Duplicate names are refused loudly — vLLM would otherwise register one
+    adapter and silently shadow the other.
+    """
+    adapters: dict[str, Path] = {}
+    for entry in entries:
+        name, sep, raw = entry.partition("=")
+        if not sep:
+            name, raw = "adapter", entry
+        name = name.strip()
+        if not name or "/" in name:
+            raise typer.BadParameter(
+                f"adapter name {name!r} must be a plain identifier"
+            )
+        if name in adapters:
+            raise typer.BadParameter(f"duplicate adapter name {name!r}")
+        adapters[name] = Path(raw.strip())
+    return adapters
+
+
 @app.command("serve-remote")
 def serve_remote(
     base_model: str | None = typer.Option(
@@ -177,11 +199,13 @@ def serve_remote(
         help="Hugging Face base model to serve (e.g. Qwen/Qwen3.5-0.8B). "
         "Required unless --stop or --list is given.",
     ),
-    adapter: Path | None = typer.Option(
-        None,
+    adapter: list[str] = typer.Option(
+        [],
         "--adapter",
-        help="Local LoRA adapter directory (e.g. outputs/sft_v1) to serve on "
-        "top of the base model, as served-model name 'adapter'.",
+        help="Local LoRA adapter directory to serve on top of the base "
+        "model, as '[name=]path' — repeatable, so several fine-tunes can "
+        "ride one endpoint for A/B comparison. A bare path serves under "
+        "the name 'adapter'.",
     ),
     gpu: str = typer.Option(
         "NVIDIA RTX A4000",
@@ -257,22 +281,24 @@ def serve_remote(
     if base_model is None:
         _echo("--base-model is required (or use --stop / --list).", err=True)
         raise typer.Exit(code=2)
-    if adapter is not None and not adapter.exists():
-        _echo(f"Adapter directory does not exist: {adapter}", err=True)
-        raise typer.Exit(code=2)
+    adapters = _parse_adapters(adapter)
+    for name, directory in adapters.items():
+        if not directory.exists():
+            _echo(f"Adapter directory does not exist: {directory}", err=True)
+            raise typer.Exit(code=2)
     if max_hours <= 0:
         _echo("--max-hours must be positive.", err=True)
         raise typer.Exit(code=2)
 
     session = serve_session.RemoteServeSession(container_disk_gb=container_disk_gb)
     _echo(f"Renting a {gpu} pod and serving {base_model} with vLLM…")
-    if adapter is not None:
-        _echo(f"With adapter: {adapter} (served-model name: adapter)")
+    for name, directory in adapters.items():
+        _echo(f"With adapter: {directory} (served-model name: {name})")
     _echo(f"Self-destruct armed on the pod at {max_hours}h.")
     try:
         session.start(
             base_model=base_model,
-            adapter_dir=adapter,
+            adapters=adapters,
             gpu=gpu,
             max_hours=max_hours,
         )
@@ -316,6 +342,104 @@ def _parse_eval_prompt_line(line: str) -> str | dict:
     except json.JSONDecodeError:
         return line
     return parsed if isinstance(parsed, dict) else line
+
+
+@app.command("deploy")
+def deploy(
+    dataset: Path = typer.Option(
+        ..., "--dataset", help="Chat-format JSONL to train on."
+    ),
+    base_model: str = typer.Option(
+        ..., "--base-model", help="Hugging Face base model."
+    ),
+    output_dir: Path = typer.Option(
+        Path("outputs/deploy_v1"),
+        "--output-dir",
+        help="Where the trained adapter is written locally.",
+    ),
+    gpu: str = typer.Option(
+        "NVIDIA H100 80GB HBM3",
+        "--gpu",
+        help="RunPod GPU used for BOTH the training job and the endpoint.",
+    ),
+    container_disk_gb: int | None = typer.Option(
+        None, "--container-disk-gb", help="~2.5x the checkpoint size."
+    ),
+    num_epochs: int = typer.Option(3, "--num-epochs"),
+    max_cost_usd: float | None = typer.Option(
+        None, "--max-cost", help="Ceiling for the TRAINING job."
+    ),
+    max_hours: float = typer.Option(
+        1.0,
+        "--max-hours",
+        help="Endpoint self-destruct, armed on the serving pod.",
+    ),
+) -> None:
+    """Fine-tune on a rented GPU, then serve the result — one command.
+
+    ``train-remote`` then ``serve-remote``, glued: rent, train, give the
+    hardware back, rent again, serve the fresh adapter as an authenticated
+    OpenAI-compatible endpoint, print the URL and token. The zero-to-API
+    story of docs/GETTING_STARTED_API.md as a single invocation.
+    """
+    from stateset_agents.remote import serve_session
+
+    spec = RemoteJobSpec(
+        dataset=dataset,
+        base_model=base_model,
+        output_dir=output_dir,
+        num_epochs=num_epochs,
+        gpu=gpu,
+        container_disk_gb=container_disk_gb,
+        max_cost_usd=max_cost_usd,
+    )
+    try:
+        executor = get_executor("runpod")
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo(f"[1/2] Training {base_model} on {dataset} ({gpu})…")
+    try:
+        result = executor.wait(executor.submit(spec))
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if not result.succeeded or result.output_dir is None:
+        for line in result.logs[-20:]:
+            _echo(line)
+        _echo(f"Training {result.status.value}; not serving.", err=True)
+        raise typer.Exit(code=1)
+    if result.cost_usd is not None:
+        _echo(f"Trained. Cost: ~${result.cost_usd:.2f}")
+
+    _echo(f"[2/2] Serving {base_model} + fresh adapter…")
+    session = serve_session.RemoteServeSession(
+        container_disk_gb=container_disk_gb or 60
+    )
+    _echo(f"Self-destruct armed on the pod at {max_hours}h.")
+    try:
+        session.start(
+            base_model=base_model,
+            adapters={"adapter": Path(result.output_dir)},
+            gpu=gpu,
+            max_hours=max_hours,
+        )
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo("")
+    _echo(f"Endpoint ready (bills until stopped, max {max_hours}h):")
+    _echo(f"URL:   {session.endpoint_url}/v1")
+    _echo(f"Token: {session.token}")
+    _echo(
+        "Ask the fine-tune:  curl "
+        f"{session.endpoint_url}/v1/chat/completions "
+        f'-H "Authorization: Bearer {session.token}" '
+        '-H "Content-Type: application/json" '
+        '-d \'{"model":"adapter","messages":[{"role":"user",'
+        '"content":"hello"}]}\''
+    )
+    _echo(f"Stop it:  stateset-agents serve-remote --stop {session.pod_name}")
 
 
 @app.command("train-remote")
