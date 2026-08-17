@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786987714758,
+  "lastUpdate": 1786988816407,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3672,6 +3672,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.0783811544656614e-8",
             "extra": "mean: 471.24601088929575 nsec\nrounds: 100624"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "39c2553971fd3ccf86643069f9d45bd1ed8abae9",
+          "message": "fix(serve): backgrounded remote launches must not inherit ssh stdin\n\nWithout < /dev/null a nohup'd remote process holds the ssh session's\nstdin, sshd keeps the channel open until that process exits, and the\nclient blocks on the launch command. Observed live: the CLI hung 28\nminutes on 'echo armed' because the hour-long self-destruct script kept\nthe arm command's channel open, and the pod never got past provisioning.\nAll three backgrounded launches (self-destruct arm, detached installs,\nvllm serve) now redirect stdin; a test asserts it for every nohup'd\ncommand the session issues.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T10:43:52-07:00",
+          "tree_id": "b69a82be5984632a4b7ed14f344335dce3e79570",
+          "url": "https://github.com/stateset/stateset-agents/commit/39c2553971fd3ccf86643069f9d45bd1ed8abae9"
+        },
+        "date": 1786988815135,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 11100.582935608796,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011724929914956005",
+            "extra": "mean: 90.0853591023737 usec\nrounds: 1604"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11908.711931884156,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001307984520750624",
+            "extra": "mean: 83.97213785334914 usec\nrounds: 2655"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8551.984494346678,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018596622803817602",
+            "extra": "mean: 116.93192388983562 usec\nrounds: 4257"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1080.6284201448925,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002062961181772495",
+            "extra": "mean: 925.3874702517247 usec\nrounds: 874"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 226.33672253695607,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00007527062531685891",
+            "extra": "mean: 4.418195990430677 msec\nrounds: 209"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2946665.467355263,
+            "unit": "iter/sec",
+            "range": "stddev: 3.714829987385241e-8",
+            "extra": "mean: 339.3666539614134 nsec\nrounds: 139063"
           }
         ]
       }
