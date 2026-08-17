@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-08-17 — The serve claim becomes a receipt: endpoint verified, flywheel raises a ceiling
+
 ### Added
 
 - **`serve-remote`'s endpoint is live-verified — the platform's last unproven

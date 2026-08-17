@@ -140,7 +140,11 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.30.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.31.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- TODO: describe this release.
+
+**v0.30.0:**
 
 - **River AI provider (`train-remote --provider river`) — code complete, *not* live-verified.** River is a remote autograd service: you drive `forward_backward` / `optim_step` yourself. The substantive half of this integration is a pure tokenization layer (`remote/river_batches.py`) turning our chat rows into River's `{input_ids, target_tokens, weights}` with prompt tokens weighted 0.0, plus the `{input_ids, old_logprobs, advantages, attention_mask}` shape their `ppo`/`cispo` losses take — which is where our trainers' advantages would plug in. 92 tests drive it through an injectable client.
 - **Why it is unverified, plainly:** `river-client` is not installable from PyPI and our account answers `402 Billing: insufficient_funds`, so no token has been trained. Every assumption is isolated and documented — notably whether `target_tokens` carries the causal shift, which is one function to flip.
@@ -338,7 +342,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.30.0)
+pip install stateset-agents          # latest release (v0.31.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1040,7 +1044,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.30.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.31.0`).
 
 Other entry points:
 
