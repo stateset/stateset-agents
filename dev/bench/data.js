@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786989876181,
+  "lastUpdate": 1786992109016,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3800,6 +3800,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.599963750550388e-8",
             "extra": "mean: 355.5486895788987 nsec\nrounds: 136445"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "a598ec0c7d5d7b43b5ce8a256444bea0dde1ce18",
+          "message": "chore(release): v0.31.0 — The serve claim becomes a receipt: endpoint verified, flywheel raises a ceiling\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T11:39:05-07:00",
+          "tree_id": "08a9698ce662e102e297e33846cc094c2816ccb2",
+          "url": "https://github.com/stateset/stateset-agents/commit/a598ec0c7d5d7b43b5ce8a256444bea0dde1ce18"
+        },
+        "date": 1786992107209,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5933.977728938987,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018207313692131583",
+            "extra": "mean: 168.52102344826343 usec\nrounds: 1450"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6354.988582164059,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018188775644286107",
+            "extra": "mean: 157.35669499180605 usec\nrounds: 1777"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4929.02676152679,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018961480434615983",
+            "extra": "mean: 202.87980739026156 usec\nrounds: 3437"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 724.6704326822532,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000384882450996928",
+            "extra": "mean: 1.3799376308188231 msec\nrounds: 623"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 179.98547504367332,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000057007409274610904",
+            "extra": "mean: 5.55600389285497 msec\nrounds: 168"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2133288.559746687,
+            "unit": "iter/sec",
+            "range": "stddev: 5.169776577153111e-8",
+            "extra": "mean: 468.75983815276396 nsec\nrounds: 104298"
           }
         ]
       }
