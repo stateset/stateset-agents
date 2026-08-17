@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786953475043,
+  "lastUpdate": 1786970662371,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3480,6 +3480,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.791213550991658e-8",
             "extra": "mean: 441.63998760557064 nsec\nrounds: 109854"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "491056ce8a4626c5ddce160bb6babc658c8b2f31",
+          "message": "feat: the flywheel raises a ceiling — 2/12 -> 10/12 on out-of-distribution compounds\n\nThe experiment the whole week built toward. Gen-1 (trained on one-issue,\ntwo-turn conversations only) passes 2/12 compound requests — it resolves\none issue and silently drops the other. Best-of-8 rejection sampling\nharvested its occasional successes (58/240), and gen-2 trained on only\nthose hits 10/12 on the identical eval, reproduced across two independent\ntrainings with the same two near-miss failures. Untuned base: 0/12.\n$3.32, zero pods left. Full protocol, side-by-side, and limitations in\ndocs/FLYWHEEL_HEADROOM.md.\n\nAlso fixes the product bug the experiment exposed: the eval gate fails a\njob AFTER saving its artifacts, but wait() fetched only on success, so a\nfailed-assertion adapter died with the pod and had to be retrained. Fetch\nis now attempted best-effort on failure; the test that encoded the old\ncontract now encodes the new one.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T05:41:17-07:00",
+          "tree_id": "d151fad6f74ac2e8df1c141c32b0fae9975ddfd9",
+          "url": "https://github.com/stateset/stateset-agents/commit/491056ce8a4626c5ddce160bb6babc658c8b2f31"
+        },
+        "date": 1786970661191,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6059.0984889079955,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018590145166004322",
+            "extra": "mean: 165.0410538515979 usec\nrounds: 1467"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6574.1731002277975,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016216240925068834",
+            "extra": "mean: 152.11038479734424 usec\nrounds: 2118"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5060.707092513996,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018216480380272968",
+            "extra": "mean: 197.60084543901795 usec\nrounds: 3442"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 737.0022572400779,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000340610259988547",
+            "extra": "mean: 1.356847947446992 msec\nrounds: 666"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 187.90949354276754,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001507059467144017",
+            "extra": "mean: 5.321710899999864 msec\nrounds: 170"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2085390.4264680143,
+            "unit": "iter/sec",
+            "range": "stddev: 5.0504950891259534e-8",
+            "extra": "mean: 479.5265132647994 nsec\nrounds: 104625"
           }
         ]
       }
