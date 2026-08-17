@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786986511820,
+  "lastUpdate": 1786987714758,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3608,6 +3608,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.162180879992864e-8",
             "extra": "mean: 506.9962984815395 nsec\nrounds: 105065"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "b62758845bbfa330ad3411d3e9814f95e48e97d6",
+          "message": "feat(river): align executor and batches to docs.river.ai while the SDK is uninstallable\n\n_open_session prefers the docs' canonical `with client.session(project=...)`\ncontext manager (and closes it), degrading through plain session(),\ncreate_session(), and the client-as-session test seam.\nbuild_sft_batch(shift_targets=False) emits the docs' cross_entropy field\nshape (input_ids + weights, unshifted), so the one unverified assumption —\nwho performs the causal shift — is a single argument to flip on first\ncontact with the real SDK.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T10:25:55-07:00",
+          "tree_id": "010078e22c8e0e2f34bf6677b1449e96db5bbf39",
+          "url": "https://github.com/stateset/stateset-agents/commit/b62758845bbfa330ad3411d3e9814f95e48e97d6"
+        },
+        "date": 1786987714082,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5931.350955008809,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001702056000304987",
+            "extra": "mean: 168.59565511892978 usec\nrounds: 1299"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6393.524894224395,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015208564938387555",
+            "extra": "mean: 156.40824373787177 usec\nrounds: 2076"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4953.728912005747,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001709815524938746",
+            "extra": "mean: 201.86813161625022 usec\nrounds: 3533"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 733.5640368066697,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002883454711820784",
+            "extra": "mean: 1.363207504491594 msec\nrounds: 668"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 183.15146724664265,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000043726819432438626",
+            "extra": "mean: 5.45996171929838 msec\nrounds: 171"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2122033.8780436236,
+            "unit": "iter/sec",
+            "range": "stddev: 5.0783811544656614e-8",
+            "extra": "mean: 471.24601088929575 nsec\nrounds: 100624"
           }
         ]
       }
