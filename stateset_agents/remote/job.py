@@ -124,6 +124,18 @@ class RemoteJobSpec:
     #: assertions gate the job's exit code (checked against the finetuned
     #: completion, case-insensitively, after the adapter is saved).
     eval_prompts: list[str | dict[str, Any]] | None = None
+    #: Which packaged module the worker runs. ``"sft"`` (the default) trains
+    #: on ``dataset``; ``"harvest"`` runs best-of-N rejection sampling
+    #: (:mod:`stateset_agents.training.harvest`) where ``dataset`` is a JSON
+    #: file of ``{prompt, expect, forbid}`` specs and ``harvest`` carries the
+    #: sampling knobs. One spec shape for both, because they rent the same
+    #: hardware the same way.
+    job_kind: str = "sft"
+    #: Harvest-only knobs: ``{"adapter_dir": str | None, "best_of": int,
+    #: "temperature": float, "top_p": float, "max_new_tokens": int}``.
+    #: ``adapter_dir`` is a LOCAL adapter directory (the current generation)
+    #: that the executor ships to the worker.
+    harvest: dict[str, Any] | None = None
     #: Token budget per eval completion. 90 suits direct-answer models;
     #: reasoning models (thinking preamble before the answer) need more.
     eval_max_new_tokens: int = 90
@@ -203,8 +215,44 @@ class RemoteJobSpec:
                 f"got {self.cloud_type!r}"
             )
 
+    def harvest_cli_args(self, *, adapter_dir: str | None = None) -> list[str]:
+        """Render as ``stateset_agents.training.harvest`` arguments.
+
+        ``adapter_dir`` overrides the harvest dict's local path — executors
+        pass the REMOTE directory they shipped the adapter to.
+        """
+        knobs = self.harvest or {}
+        args = [
+            "--base-model",
+            self.base_model,
+            "--prompts-file",
+            str(self.dataset),
+            "--output-dir",
+            str(self.output_dir),
+            "--best-of",
+            str(knobs.get("best_of", 8)),
+            "--temperature",
+            str(knobs.get("temperature", 0.9)),
+            "--top-p",
+            str(knobs.get("top_p", 0.95)),
+            "--max-new-tokens",
+            str(knobs.get("max_new_tokens", 300)),
+            "--eval-max-new-tokens",
+            str(self.eval_max_new_tokens),
+        ]
+        adapter = adapter_dir or knobs.get("adapter_dir")
+        if adapter:
+            args += ["--adapter", str(adapter)]
+        if self.eval_prompts:
+            args += ["--eval-prompts-json", json.dumps(self.eval_prompts)]
+        if self.dry_run:
+            args.append("--dry-run")
+        return args
+
     def to_cli_args(self) -> list[str]:
-        """Render as ``sft_from_curated.py`` command-line arguments."""
+        """Render as command-line arguments for the job's module."""
+        if self.job_kind == "harvest":
+            return self.harvest_cli_args()
         args = [
             "--dataset",
             str(self.dataset),

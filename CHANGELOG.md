@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`stateset-agents flywheel` — the improvement loop as one unattended
+  command.** Harvest the current generation's rare successes (best-of-N
+  rejection sampling against objective `expect`/`forbid` checks), train the
+  next generation on nothing but those, measure it, repeat — stopping on
+  plateau, a dry harvest (no signal to train on), a perfect score, or when
+  the next rental's worst case would break `--max-cost`. Every generation
+  leaves its harvest set, summary, adapter with lineage manifest, and a
+  `flywheel_report.json` with pass rates and dollars. This is
+  `docs/FLYWHEEL_HEADROOM.md` (2/12 → 10/12 for $3.32) as a product. Under
+  the hood: a new `job_kind="harvest"` on `RemoteJobSpec` runs
+  `stateset_agents.training.harvest` through the same executors as training
+  (prompts ride the dataset upload; the current adapter ships as a tarball),
+  and a FAILED training job WITH eval artifacts is read as a score (10/12
+  fails an all-assertions gate while being the whole point), not an error.
+
 ## [0.31.0] - 2026-08-17 — The serve claim becomes a receipt: endpoint verified, flywheel raises a ceiling
 
 ### Added

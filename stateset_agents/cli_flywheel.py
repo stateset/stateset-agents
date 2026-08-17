@@ -1,0 +1,153 @@
+"""``stateset-agents flywheel`` — the improvement loop, unattended.
+
+Harvest the current generation's rare successes (best-of-N against
+objective checks), train the next generation on nothing but those, measure
+it, and repeat — until the score plateaus, the budget would be exceeded, or
+a harvest comes back dry. The methodology is ``docs/FLYWHEEL_HEADROOM.md``
+(2/12 → 10/12 for $3.32); this command is that experiment as a product.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import typer
+
+from stateset_agents import cli as _cli
+from stateset_agents.cli import app
+from stateset_agents.core.errors import StateSetError
+from stateset_agents.remote.registry import available_providers, get_executor
+
+_echo = _cli._echo
+
+
+def _load_specs(path: Path, label: str) -> list[dict]:
+    try:
+        data = json.loads(path.read_text())
+    except OSError as exc:
+        raise typer.BadParameter(f"cannot read {label} file: {exc}") from exc
+    except ValueError as exc:
+        raise typer.BadParameter(f"{label} file is not valid JSON: {exc}") from exc
+    if not isinstance(data, list) or not data:
+        raise typer.BadParameter(f"{label} file must be a non-empty JSON list")
+    return data
+
+
+@app.command()
+def flywheel(
+    base_model: str = typer.Option(
+        ..., help="Hugging Face base model every generation is LoRA-tuned from."
+    ),
+    harvest_prompts: Path = typer.Option(
+        ...,
+        help=(
+            "JSON file: list of {prompt, expect, forbid} specs sampled "
+            "during harvest. The checks define success; they are mandatory."
+        ),
+    ),
+    eval_prompts: Path = typer.Option(
+        ...,
+        help=(
+            "JSON file: list of {prompt, expect, forbid} specs that score "
+            "each generation. Keep disjoint from the harvest prompts."
+        ),
+    ),
+    output_root: Path = typer.Option(
+        Path("outputs/flywheel"), help="Where generations and the report land."
+    ),
+    initial_adapter: Path | None = typer.Option(
+        None, help="Existing adapter to start from (defaults to the bare base)."
+    ),
+    generations: int = typer.Option(3, help="Maximum NEW generations to train."),
+    best_of: int = typer.Option(8, help="Samples per harvest prompt."),
+    temperature: float = typer.Option(0.9, help="Harvest sampling temperature."),
+    max_cost: float | None = typer.Option(
+        None,
+        help=(
+            "Hard dollar ceiling for the WHOLE run; each rental is refused "
+            "if its worst case would break what remains."
+        ),
+    ),
+    provider: str = typer.Option(
+        "runpod", help=f"One of: {', '.join(available_providers())}."
+    ),
+    gpu: str | None = typer.Option(
+        None, help="GPU type, in the provider's own vocabulary."
+    ),
+    container_disk_gb: int | None = typer.Option(
+        None, help="Container disk per pod (~2.5x the checkpoint size)."
+    ),
+    num_epochs: int = typer.Option(3, help="Training epochs per generation."),
+    dry_run: bool = typer.Option(
+        False, help="Print each job's plan without renting anything."
+    ),
+) -> None:
+    """Run the self-improvement loop until it stops earning its cost."""
+    from stateset_agents.flywheel import FlywheelConfig, run_flywheel
+
+    config = FlywheelConfig(
+        base_model=base_model,
+        harvest_prompts=_load_specs(harvest_prompts, "--harvest-prompts"),
+        eval_prompts=_load_specs(eval_prompts, "--eval-prompts"),
+        output_root=output_root,
+        initial_adapter=initial_adapter,
+        generations=generations,
+        best_of=best_of,
+        temperature=temperature,
+        max_cost_usd=max_cost,
+        gpu=gpu,
+        container_disk_gb=container_disk_gb,
+        num_epochs=num_epochs,
+        dry_run=dry_run,
+    )
+    try:
+        executor = get_executor(provider)
+    except StateSetError as exc:
+        _echo(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    _echo(
+        f"Flywheel: {base_model} on {provider}, up to {generations} "
+        f"generation(s)"
+        + (f", ceiling ${max_cost:.2f}" if max_cost is not None else "")
+        + ("  [dry run]" if dry_run else "")
+    )
+    try:
+        report = run_flywheel(config, executor)
+    except StateSetError as exc:
+        _echo(str(exc))
+        raise typer.Exit(code=1) from exc
+    except RuntimeError as exc:
+        _echo(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    _echo("")
+    _echo(f"Stopped: {report['stop_reason']}")
+    for row in report["generations"]:
+        score = (
+            f"{row['eval_passed']}/{row['eval_total']}"
+            if row["eval_passed"] is not None
+            else "—"
+        )
+        cost = f"${row['cost_usd']:.2f}" if row["cost_usd"] is not None else "$?"
+        _echo(
+            f"  gen {row['generation']}: harvested "
+            f"{row['harvest_kept']}/{row['harvest_samples']}, eval {score}, "
+            f"{cost}" + (f"  [{row['stopped']}]" if row["stopped"] else "")
+        )
+    _echo(
+        f"Total: ${report['total_cost_usd']:.2f}"
+        + (
+            f" (+{report['unpriced_jobs']} unpriced job(s))"
+            if report["unpriced_jobs"]
+            else ""
+        )
+    )
+    if report["final_adapter"]:
+        _echo(f"Final adapter: {report['final_adapter']}")
+        _echo(
+            "Serve it:  stateset-agents serve-remote "
+            f"--base-model {base_model} --adapter {report['final_adapter']}"
+        )
+    _echo(f"Report: {output_root / 'flywheel_report.json'}")

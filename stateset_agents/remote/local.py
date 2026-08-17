@@ -28,6 +28,7 @@ __all__ = ["LocalExecutor"]
 #: worker cannot run it. Using the module here means the local and remote
 #: providers execute byte-identical code.
 _SFT_MODULE = "stateset_agents.training.sft"
+_HARVEST_MODULE = "stateset_agents.training.harvest"
 
 
 @dataclass
@@ -48,12 +49,12 @@ class LocalExecutor(RemoteExecutor):
         self._jobs: dict[str, _LocalJob] = {}
         self._counter = 0
 
-    def _entrypoint_args(self) -> list[str]:
-        """The interpreter arguments that invoke the training script.
+    def _entrypoint_args(self, job_kind: str = "sft") -> list[str]:
+        """The interpreter arguments that invoke the job's module.
 
         Isolated so tests can substitute a stand-in process.
         """
-        return ["-m", _SFT_MODULE]
+        return ["-m", _HARVEST_MODULE if job_kind == "harvest" else _SFT_MODULE]
 
     def _job(self, handle: JobHandle) -> _LocalJob:
         try:
@@ -68,7 +69,11 @@ class LocalExecutor(RemoteExecutor):
         job_id = str(self._counter)
         handle = JobHandle(provider=self.name, job_id=job_id)
 
-        cmd = [sys.executable, *self._entrypoint_args(), *spec.to_cli_args()]
+        cmd = [
+            sys.executable,
+            *self._entrypoint_args(spec.job_kind),
+            *spec.to_cli_args(),
+        ]
         try:
             completed = subprocess.run(
                 cmd,

@@ -145,7 +145,7 @@ class TestLocalExecutorRun:
         monkeypatch.setattr(
             LocalExecutor,
             "_entrypoint_args",
-            lambda self: ["-c", "import time;time.sleep(30)"],
+            lambda self, job_kind="sft": ["-c", "import time;time.sleep(30)"],
         )
 
         result = executor.wait(executor.submit(spec))

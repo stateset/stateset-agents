@@ -59,6 +59,8 @@ _API_ROOT = "https://rest.runpod.io/v1"
 _DEFAULT_IMAGE = "runpod/pytorch:1.1.0-rc.154-cu1290-torch280-ubuntu2204"
 _REMOTE_WORKDIR = "/workspace"
 _REMOTE_OUTPUT = "/workspace/out"
+#: Where a harvest job's current-generation adapter lands on the pod.
+_REMOTE_ADAPTER = "/workspace/current_adapter"
 
 
 def package_pin(wheel: Path | None, package_version: str | None) -> str:
@@ -453,6 +455,26 @@ class RunPodExecutor(RemoteExecutor):
                 )
             time.sleep(self.poll_interval_s)
 
+    def _upload_adapter(self, ssh: Any, adapter_dir: Path) -> None:
+        """Tar, upload, untar — ``SshTransport.upload`` moves single files."""
+        import tarfile
+        import tempfile
+
+        tar_remote = f"{_REMOTE_WORKDIR}/current_adapter.tar.gz"
+        with tempfile.TemporaryDirectory() as staging:
+            tar_path = Path(staging) / "current_adapter.tar.gz"
+            with tarfile.open(tar_path, "w:gz") as tar:
+                tar.add(adapter_dir, arcname="current_adapter")
+            ssh.upload(tar_path, tar_remote)
+        exit_code, output = ssh.run(
+            f"tar xzf {tar_remote} -C {_REMOTE_WORKDIR} && rm -f {tar_remote}"
+        )
+        if exit_code != 0:
+            raise RemoteExecutionError(
+                f"could not unpack adapter on the pod ({exit_code}): {output}",
+                provider=self.name,
+            )
+
     def _remote_commands(
         self,
         spec: RemoteJobSpec,
@@ -461,6 +483,26 @@ class RunPodExecutor(RemoteExecutor):
         force_resume: bool = False,
     ) -> list[str]:
         pin = package_pin(self.wheel, spec.package_version)
+        if spec.job_kind == "harvest":
+            # The harvest job: same install, different module. The prompts
+            # file rode the dataset upload; the adapter (if any) was shipped
+            # as a tarball beforehand and lives at _REMOTE_ADAPTER.
+            adapter_remote = (
+                _REMOTE_ADAPTER if (spec.harvest or {}).get("adapter_dir") else None
+            )
+            harvest_args = " ".join(
+                shlex.quote(a)
+                for a in spec.harvest_cli_args(adapter_dir=adapter_remote)
+            )
+            # The spec's local paths are meaningless on the pod: re-point the
+            # prompts file and output dir at the uploaded/remote locations.
+            harvest_args = harvest_args.replace(
+                shlex.quote(str(spec.dataset)), shlex.quote(dataset_remote), 1
+            ).replace(shlex.quote(str(spec.output_dir)), _REMOTE_OUTPUT, 1)
+            return [
+                f"pip install --quiet '{pin}'",
+                f"python -m stateset_agents.training.harvest {harvest_args}",
+            ]
         args = " ".join(
             [
                 "--dataset",
@@ -678,6 +720,11 @@ class RunPodExecutor(RemoteExecutor):
                 dataset_remote = f"{_REMOTE_WORKDIR}/{spec.dataset.name}"
                 ssh.upload(spec.dataset, dataset_remote)
                 logs.append(f"uploaded {spec.dataset.name}")
+
+                adapter_dir = (spec.harvest or {}).get("adapter_dir")
+                if spec.job_kind == "harvest" and adapter_dir:
+                    self._upload_adapter(ssh, Path(adapter_dir))
+                    logs.append(f"uploaded adapter {adapter_dir} -> {_REMOTE_ADAPTER}")
 
                 if self.wheel:
                     ssh.upload(self.wheel, f"{_REMOTE_WORKDIR}/{self.wheel.name}")
