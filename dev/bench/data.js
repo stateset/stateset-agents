@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786992109016,
+  "lastUpdate": 1786997061655,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -3864,6 +3864,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.169776577153111e-8",
             "extra": "mean: 468.75983815276396 nsec\nrounds: 104298"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "d0f33f54c6836b375d10b1ea5b013de39849380c",
+          "message": "feat(flywheel): the improvement loop as one unattended command\n\nstateset-agents flywheel: harvest the current generation's rare\nsuccesses (best-of-N rejection sampling against expect/forbid checks),\ntrain the next generation on nothing but those, measure, repeat — with\nfour stopping rules: plateau, dry harvest, perfect score, and a hard\n--max-cost ceiling checked before each rental. Every generation leaves\nits harvest set, adapter with lineage, and flywheel_report.json.\n\nUnder the hood, RemoteJobSpec gains job_kind=\"harvest\": the executors\nrun stateset_agents.training.harvest exactly as they run sft (prompts\nride the dataset upload; the current adapter ships as a tarball to\n/workspace/current_adapter). The loop reads eval_results.json from a\nFAILED training job's fetched artifacts — 10/12 fails an all-assertions\ngate while being the point, so a gate failure is a score, not an error.\n\n21 new tests: stopping discipline, spec wiring/lineage chaining, budget\ndecay, harvest filtering, executor command shapes for both providers.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T13:01:48-07:00",
+          "tree_id": "4a0f2f13ad4a746205bbf3dc89341b7b9373434e",
+          "url": "https://github.com/stateset/stateset-agents/commit/d0f33f54c6836b375d10b1ea5b013de39849380c"
+        },
+        "date": 1786997061097,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6113.747490754766,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014321095691086098",
+            "extra": "mean: 163.56580011068567 usec\nrounds: 1806"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6619.695797143543,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013916404224315355",
+            "extra": "mean: 151.06434353547013 usec\nrounds: 1895"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4894.83005128688,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004536913258726333",
+            "extra": "mean: 204.29718489145378 usec\nrounds: 3786"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 735.9798246928875,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000024716402933096047",
+            "extra": "mean: 1.3587328978987758 msec\nrounds: 666"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 177.3486219751028,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000554049850681251",
+            "extra": "mean: 5.638611616279634 msec\nrounds: 172"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2135853.45799843,
+            "unit": "iter/sec",
+            "range": "stddev: 4.7840635791613836e-8",
+            "extra": "mean: 468.19691503420324 nsec\nrounds: 103972"
           }
         ]
       }
