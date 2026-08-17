@@ -103,11 +103,13 @@ the artifact returned — not a mock and not a plan:
 | The RL core, not just SFT | GSPO on a real GPU: target-token probability 2.8e‑05 → 0.125 in 40 steps, re-proved weekly |
 | Multi-turn memory | `chat-remote` resolved *"I got double charged for it"* to the order number from the previous turn |
 | **The loop raises a ceiling** | On compound requests gen‑1 was never trained on: base 0/12, gen‑1 **2/12**, gen‑2 — trained only on gen‑1's machine-curated sampled successes — **10/12**, reproduced twice ([`FLYWHEEL_HEADROOM.md`](docs/FLYWHEEL_HEADROOM.md)) |
+| **Serve it over HTTPS** | `serve-remote`'s endpoint answered live: an authenticated `POST /v1/chat/completions` against `https://<pod-id>-8000.proxy.runpod.net` returned a completion from a vLLM server the platform brought up on a rented H100 |
 | The loop holds under contamination | Machine-curated data trains a second generation with no manual data work ([`FLYWHEEL_EXPERIMENT.md`](docs/FLYWHEEL_EXPERIMENT.md), limitations included) |
 
-What is **not** yet proven is labelled as such throughout — `serve-remote`'s
-endpoint bring-up is the current gap, and the starter table's ✅ column marks
-which models have actually been trained rather than merely wired up.
+What is **not** yet proven is labelled as such throughout — the starter
+table's ✅ column marks which models have actually been trained rather than
+merely wired up, and the River provider remains code-complete but unverified
+(blocked on their side).
 
 `improve` writes three things: `improve_summary.json` (machine‑readable scores
 and per‑reward breakdown), `curated.jsonl` (the turns above your threshold, ready
@@ -169,7 +171,7 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 - **The flywheel closes.** `chat-remote` saves every conversation as an ingest-ready transcript (chat → ingest → improve → train-remote); eval prompts gained pass/fail assertions (`expect`/`forbid`/judge scores) — a fine-tune that didn't take now fails the job while preserving artifacts.
 - **RL verified on real GPUs.** GSPO ran live on rented hardware for the first time (target-token probability 2.8e-05 → 0.125 in 40 steps); a weekly `rl-live-smoke` job keeps it true.
 - **Resilient, cheaper training.** Pod death auto-retries on a fresh pod; `--cloud-type COMMUNITY` (spot pricing) verified live; `--resume` for checkpoint restarts.
-- **`serve-remote`** (vLLM OpenAI endpoint with token auth, `--max-hours` self-destruct — verified to terminate even with the client force-killed — `--stop`/`--list`); endpoint bring-up pending a GPU-capacity retry.
+- **`serve-remote`** (vLLM OpenAI endpoint with token auth, `--max-hours` self-destruct — verified to terminate even with the client force-killed — `--stop`/`--list`); endpoint bring-up was verified live in v0.31.0.
 - **`make release`** — this release was cut with it.
 
 **v0.25.0:**

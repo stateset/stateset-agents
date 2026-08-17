@@ -68,6 +68,24 @@ _REMOTE_DESTRUCT_SCRIPT = f"{_REMOTE_WORKDIR}/self_destruct.sh"
 _REMOTE_VLLM_LOG = f"{_REMOTE_WORKDIR}/vllm.log"
 _VLLM_PORT = 8000
 
+#: flashinfer (pulled in by vllm) annotates with ``array.array[int]``, which
+#: raises TypeError at import time on the image's Python 3.11 and takes the
+#: whole vLLM engine down before it ever listens. The subscript is
+#: annotation-only, so stripping it in place is safe. Observed live on the
+#: first verified endpoint run (2026-08-17); a no-op once flashinfer fixes it.
+_FLASHINFER_PATCH_COMMAND = (
+    # find_spec on the submodule would import flashinfer.comm and hit the
+    # very crash being patched, so resolve the file from the package root.
+    'python -c "'
+    "import importlib.util, os; "
+    "spec = importlib.util.find_spec('flashinfer'); "
+    "root = os.path.dirname(spec.origin) if spec and spec.origin else None; "
+    "path = os.path.join(root, 'comm', 'fd_exchange.py') if root else None; "
+    "src = open(path).read() if path and os.path.exists(path) else ''; "
+    "patched = src.replace('array.array[int]', 'array.array'); "
+    "src != patched and (open(path, 'w').write(patched), print('patched flashinfer fd_exchange'))\""
+)
+
 #: HTTP GET seam for the readiness poll. Injectable so tests never touch the
 #: network. Returns an HTTP status code, raising on connection failure.
 HttpGet = Callable[[str, dict[str, str]], int]
@@ -551,6 +569,12 @@ class RemoteServeSession:
                 label="vllm-install",
                 timeout_s=self.ready_timeout_s,
             )
+            # flashinfer (pulled in by vllm) annotates with
+            # ``array.array[int]``, which raises TypeError at import on the
+            # image's Python 3.11 and takes the whole engine down. Strip the
+            # subscript in place; it is annotation-only. Observed live on the
+            # first verified endpoint run (2026-08-17).
+            self._run_checked(ssh, _FLASHINFER_PATCH_COMMAND)
             self._run_checked(
                 ssh, self._vllm_command(base_model, adapter_dir is not None)
             )

@@ -153,6 +153,25 @@ class TestStartHappyPath:
         assert "--api-key tok-abc" in launch
         assert "--enable-lora" not in launch
 
+    def test_flashinfer_annotation_patch_runs_between_install_and_launch(self):
+        """flashinfer's `array.array[int]` annotation is a TypeError at import
+        on the image's Python 3.11 and kills the vLLM engine before it ever
+        listens — observed on the first live-verified endpoint run. The patch
+        must run after the install (so the file exists) and before the launch
+        (so the engine survives)."""
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh)
+
+        session.start("Qwen/Qwen3.5-0.8B")
+
+        install = next(
+            i for i, c in enumerate(ssh.commands) if "pip install --quiet vllm" in c
+        )
+        patch = next(i for i, c in enumerate(ssh.commands) if "fd_exchange" in c)
+        launch = next(i for i, c in enumerate(ssh.commands) if "vllm serve" in c)
+        assert install < patch < launch
+        assert "array.array[int]" in ssh.commands[patch]
+
     def test_connection_refusals_are_retried_until_ready(self):
         statuses = iter([ConnectionError("boot"), ConnectionError("boot"), 200])
 

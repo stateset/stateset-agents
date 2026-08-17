@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`serve-remote`'s endpoint is live-verified — the platform's last unproven
+  headline claim is now a receipt.** After nine failed attempts across five
+  distinct failure modes, an authenticated `POST /v1/chat/completions` to
+  `https://<pod-id>-8000.proxy.runpod.net` returned a real completion from
+  Qwen3.5-0.8B under vLLM on a rented H100 (secure cloud), with the pod
+  terminated cleanly on exit and the cost recorded. The blocking bug was in
+  neither our code nor RunPod's: current flashinfer annotates with
+  `array.array[int]`, a TypeError at import on the image's Python 3.11 that
+  kills the vLLM engine before it listens. `serve-remote` now strips that
+  annotation after the vLLM install (a no-op once flashinfer fixes it).
+
 - **The flywheel raises a ceiling: 2/12 → 10/12**
   ([`docs/FLYWHEEL_HEADROOM.md`](docs/FLYWHEEL_HEADROOM.md)). On compound
   requests provably outside gen-1's training distribution (two issues per
