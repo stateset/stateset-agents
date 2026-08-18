@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787053128417,
+  "lastUpdate": 1787062695935,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5526,6 +5526,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.931728193421038e-8",
             "extra": "mean: 343.93421095842507 nsec\nrounds: 140037"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "61937e371c0265f89965e9aaada4256df548ad15",
+          "message": "chore(release): v0.33.1 — First perfect score: the 35B MoE maxes the eval in one wheel-turn\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T07:14:44-07:00",
+          "tree_id": "5980bfea9e5b1adf9a30662831768d2b142f56f1",
+          "url": "https://github.com/stateset/stateset-agents/commit/61937e371c0265f89965e9aaada4256df548ad15"
+        },
+        "date": 1787062694071,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 13872.59976226194,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000026373717726244715",
+            "extra": "mean: 72.0845419847209 usec\nrounds: 1703"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 15069.069487256225,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000007852201756008127",
+            "extra": "mean: 66.36109819824581 usec\nrounds: 2719"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 11213.387742883948,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008231346801387891",
+            "extra": "mean: 89.17911544034526 usec\nrounds: 4825"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1326.264327133514,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012313552657028567",
+            "extra": "mean: 753.9975098035874 usec\nrounds: 1122"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 344.4167933036497,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000028354875538128512",
+            "extra": "mean: 2.903458888888631 msec\nrounds: 306"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 3629483.5524701076,
+            "unit": "iter/sec",
+            "range": "stddev: 2.827465003763548e-8",
+            "extra": "mean: 275.5212926421537 nsec\nrounds: 172414"
           }
         ]
       }
