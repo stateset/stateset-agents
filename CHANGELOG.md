@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A reward hack, caught and fixed live — the objective/eval separation
+  doing its job.** On a fresh ladder-generated domain (GreenGrid Energy,
+  Qwen3.5-9B — gen-1 3/3 on held-out accounts), the RL flywheel's v1
+  graded reward Goodharted: mean reward climbed 0.67 → 0.84 while the
+  all-or-nothing greedy eval FELL 6/12 → 4/12, the failure anatomy
+  showing the exploit exactly — resolve one issue confidently, drop the
+  rest, because partial credit out-earned rare full passes. A +1.0
+  completeness bonus (full pass strictly dominant) fixed the collapse on
+  an immediate A/B rerun from the same checkpoint: 6/12 → 7/12 by round
+  4, mean reward 1.48/2.0, no degenerate policy. Both trajectories are
+  retained in the `rl_report.json` files; the incident lives in the
+  reward function's docstring.
+
 ## [0.34.1] - 2026-08-18 — RL verified, honestly: parity with SFT on the refusal ladder, zero infrastructure
 
 ### Added
