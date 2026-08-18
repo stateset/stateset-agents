@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import time
 from collections.abc import Iterator
@@ -57,6 +58,8 @@ __all__ = ["CHECKPOINT_POINTER_NAME", "RiverExecutor"]
 
 #: Environment variable holding the River API key (``rv_...``).
 RIVER_API_KEY_ENV = "RIVER_API_KEY"
+
+logger = logging.getLogger(__name__)
 
 #: Written by ``fetch()`` in place of adapter weights.
 CHECKPOINT_POINTER_NAME = "river_checkpoint.json"
@@ -351,6 +354,7 @@ class RiverExecutor(RemoteExecutor):
                 if eval_specs:
                     greedy = _sample_texts(
                         model,
+                        spec.base_model,
                         [s["prompt"] for s in eval_specs],
                         num_samples=1,
                         temperature=0.0,
@@ -379,6 +383,7 @@ class RiverExecutor(RemoteExecutor):
                     }
                 sampled = _sample_texts(
                     model,
+                    spec.base_model,
                     [s["prompt"] for s in harvest_specs],
                     num_samples=int(knobs.get("best_of", 8)),
                     temperature=float(knobs.get("temperature", 0.9)),
@@ -552,6 +557,7 @@ class RiverExecutor(RemoteExecutor):
                 specs_ = normalize_eval_prompts(list(spec.eval_prompts))
                 greedy = _sample_texts(
                     model,
+                    spec.base_model,
                     [e["prompt"] for e in specs_],
                     num_samples=1,
                     temperature=0.0,
@@ -801,8 +807,35 @@ def _checkpoint_from_pointer(adapter_dir: str | None) -> str | None:
     return checkpoint
 
 
+def _rendered_prompts(
+    base_model: str, prompts: list[str]
+) -> tuple[list[str], list[str] | None]:
+    """Chat-template ``prompts`` with the SDK's renderer, thinking off.
+
+    River's ``model.sample`` takes raw text — the caller renders the chat
+    template. The SDK ships per-family renderers for exactly this; thinking
+    is disabled so the token budget goes to the answer (the Nemotron
+    lesson). Returns (rendered prompts, stop strings). Falls back to the
+    raw text when no renderer knows the model.
+    """
+    try:
+        from river_client.renderers import get_renderer
+
+        renderer = get_renderer(base_model, thinking=False)
+        rendered = [
+            renderer.build_sample_prompt([{"role": "user", "content": p}]).prompt
+            for p in prompts
+        ]
+        stops = list(renderer.get_stop_strings())
+        return rendered, stops or None
+    except Exception as exc:  # noqa: BLE001 - renderer coverage varies by model
+        logger.warning("no River renderer for %s (%s); sampling raw", base_model, exc)
+        return list(prompts), None
+
+
 def _sample_texts(
     model: Any,
+    base_model: str,
     prompts: list[str],
     *,
     num_samples: int,
@@ -812,16 +845,19 @@ def _sample_texts(
 ) -> list[list[str]]:
     """``model.sample`` for chat prompts -> texts, one list per prompt.
 
-    ``model_input`` carries message lists so River renders the model's own
-    chat template server-side; the return shape is ``list[list[Sample]]``
-    (per prompt, then per sample) whose entries expose ``.text``.
+    Prompts are chat-templated client-side via the SDK's renderers (raw
+    ``model_input`` message dicts are a multimodal parts format, not chat —
+    observed live: "must be a dict with a 'type' field"). The return shape
+    is ``list[list[Sample]]`` whose entries expose ``.text``.
     """
+    rendered, stops = _rendered_prompts(base_model, prompts)
     groups = model.sample(
-        model_input=[[{"role": "user", "content": p}] for p in prompts],
+        rendered,
         num_samples=num_samples,
         temperature=temperature,
         top_p=top_p,
         max_tokens=max_tokens,
+        stop=stops,
     )
     return [[str(getattr(s, "text", s)) for s in group] for group in groups]
 

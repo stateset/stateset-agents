@@ -612,7 +612,7 @@ class SamplingModel(FakeModel):
     canned: dict[str, list[str]] = {}
     sample_calls: list[dict] = []
 
-    def sample(self, model_input=None, num_samples=1, temperature=1.0, **kw):
+    def sample(self, prompts=None, *, num_samples=1, temperature=1.0, **kw):
         type(self).sample_calls.append({"n": num_samples, "temperature": temperature})
 
         class _S:
@@ -620,8 +620,7 @@ class SamplingModel(FakeModel):
                 self.text = text
 
         groups = []
-        for messages in model_input:
-            prompt = messages[0]["content"]
+        for prompt in prompts:
             texts = type(self).canned.get(prompt, ["nothing"] * num_samples)
             groups.append([_S(t) for t in texts[:num_samples]])
         return groups
