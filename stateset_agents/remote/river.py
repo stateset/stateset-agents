@@ -60,6 +60,12 @@ __all__ = ["CHECKPOINT_POINTER_NAME", "RiverExecutor"]
 #: Environment variable holding the River API key (``rv_...``).
 RIVER_API_KEY_ENV = "RIVER_API_KEY"
 
+#: When set (any non-empty value), executor progress lines are ALSO printed
+#: to stderr as they happen. The job log is only rendered after the job
+#: resolves, which twice turned a slow River pool into a 45-minute mystery —
+#: this is the flashlight.
+RIVER_VERBOSE_ENV = "STATESET_RIVER_VERBOSE"
+
 logger = logging.getLogger(__name__)
 
 #: Written by ``fetch()`` in place of adapter weights.
@@ -76,13 +82,28 @@ _IGNORED_SPEC_FIELDS = (
 )
 
 
+def _verbose_log(message: str) -> None:
+    import sys
+
+    if os.environ.get(RIVER_VERBOSE_ENV, "").strip():
+        print(f"[river] {message}", file=sys.stderr, flush=True)
+
+
+class _ProgressLogs(list):
+    """A log list that optionally echoes appends live (see RIVER_VERBOSE_ENV)."""
+
+    def append(self, item: Any) -> None:  # type: ignore[override]
+        _verbose_log(str(item))
+        super().append(item)
+
+
 @dataclass
 class _RiverJob:
     """Bookkeeping for one River training run."""
 
     spec: RemoteJobSpec
     status: JobStatus
-    logs: list[str] = field(default_factory=list)
+    logs: list[str] = field(default_factory=_ProgressLogs)
     checkpoint_uri: str | None = None
     steps: int = 0
     final_loss: float | None = None
@@ -1123,6 +1144,15 @@ class RiverExecutor(RemoteExecutor):
                     loss = _extract(result, "loss_mean", "loss")
                     if loss is not None:
                         job.final_loss = float(loss)
+                    if job.steps % 10 == 0:
+                        _verbose_log(
+                            f"step {job.steps}"
+                            + (
+                                f" loss {job.final_loss:.4f}"
+                                if job.final_loss is not None
+                                else ""
+                            )
+                        )
                     counted = _extract(result, "num_tokens", "tokens", "total_tokens")
                     if counted is not None:
                         tokens += int(counted)
