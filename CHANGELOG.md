@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`serve-remote --merge` live-verified: hybrid fine-tunes actually
+  serve now.** The merged Qwen3.5-0.8B + TechNest adapter answered greedy
+  training-format tickets in full persona over the RunPod proxy — the
+  capability the DISPROVEN row documented is restored through merging.
+  Six live attempts found five real defects, each now fixed with tests:
+  the release wheel predating the merge module, vLLM's deps clobbered by
+  the training-stack install (merge now runs in an isolated venv),
+  missing processor artifacts for composite checkpoints, the composite
+  loaded as its text extraction (config `architectures: None` — vLLM
+  guessed and died), and text-trained adapter keys silently no-opping on
+  the composite (probe delta exactly 0.0; keys are remapped, measured
+  372/372 with real deltas). RunPod REST 5xx flakes now retry instead of
+  killing runs, and readiness-failure evidence tails the engine's ERROR
+  block instead of decapitating it.
+
+### Added
+
 - **The zero-infrastructure flywheel: `flywheel --provider river`.** The
   harvest step now runs entirely through River's sampling API — create a
   model from the previous generation's `river://` checkpoint, sample
