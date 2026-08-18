@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787031380301,
+  "lastUpdate": 1787031470274,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5272,6 +5272,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.786183670080232e-8",
             "extra": "mean: 459.5795197572197 nsec\nrounds: 73282"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "f29f3e2d18c9fe77425ead3e49c78a0a9ee64821",
+          "message": "fix(runpod): retry transient 5xx from RunPod's REST API\n\nTheir /v1/pods intermittently answers 500 (observed repeatedly live;\none killed a whole serve attempt mid-provisioning). A 5xx is their\ninfrastructure hiccuping, not our request being wrong — pod create/get/\nlist now retry briefly with backoff; 4xx still raises immediately.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T22:34:37-07:00",
+          "tree_id": "63be7dd705bf84761202590abac78138351be587",
+          "url": "https://github.com/stateset/stateset-agents/commit/f29f3e2d18c9fe77425ead3e49c78a0a9ee64821"
+        },
+        "date": 1787031469030,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6048.596865729901,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001524333375766633",
+            "extra": "mean: 165.32759947448196 usec\nrounds: 1523"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6559.093083929404,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014624368589301614",
+            "extra": "mean: 152.4601019080099 usec\nrounds: 2149"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5046.72176663269,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015402870185896734",
+            "extra": "mean: 198.14843104917736 usec\nrounds: 3343"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 738.2586967743641,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005652731324814861",
+            "extra": "mean: 1.3545387333318912 msec\nrounds: 675"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 182.6313205246346,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006058608471430116",
+            "extra": "mean: 5.475512070587657 msec\nrounds: 170"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2179847.822290413,
+            "unit": "iter/sec",
+            "range": "stddev: 5.151239366697733e-8",
+            "extra": "mean: 458.7476197991098 nsec\nrounds: 104844"
           }
         ]
       }
