@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787023360140,
+  "lastUpdate": 1787023636194,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4504,6 +4504,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.534720547902019e-8",
             "extra": "mean: 344.28342514870764 nsec\nrounds: 89310"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "3ce849fc98a69fd0c62cd982f364bafd783146f8",
+          "message": "feat(serve): --merge — hybrid fine-tunes now actually serve\n\nFolds the (single) adapter into full base weights on the pod with peft\nmerge_and_unload and serves the merged checkpoint — sidestepping vLLM's\nLoRA mapping, which loads hybrid-Qwen3.5 adapters without error and\nsilently serves base weights (the DISPROVEN row in docs/PROOFS.md).\nSame API name 'adapter' with and without --merge. Merge runs detached\n(a 30B merge is a download plus a full-weight save), deps install\nfirst, and multiple adapters with --merge are refused before renting.\nAlso refreshes the CLI reference's stale River unverified note.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:24:09-07:00",
+          "tree_id": "0d2b72774b1f2c64e7223b1cd10c1ba54f8e86e2",
+          "url": "https://github.com/stateset/stateset-agents/commit/3ce849fc98a69fd0c62cd982f364bafd783146f8"
+        },
+        "date": 1787023635277,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8492.598963718106,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013973075858565584",
+            "extra": "mean: 117.7495845820788 usec\nrounds: 1401"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9174.853593455982,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014347593913810657",
+            "extra": "mean: 108.9935648360924 usec\nrounds: 2167"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6718.629681640045,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015325993601981653",
+            "extra": "mean: 148.83987470431558 usec\nrounds: 2538"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 829.3756716592959,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000022831371930609997",
+            "extra": "mean: 1.205726227777267 msec\nrounds: 720"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 174.46906562069233,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006147231782506891",
+            "extra": "mean: 5.731675104938478 msec\nrounds: 162"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2307945.1872079386,
+            "unit": "iter/sec",
+            "range": "stddev: 3.33165122122933e-8",
+            "extra": "mean: 433.28585338274894 nsec\nrounds: 57026"
           }
         ]
       }
