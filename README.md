@@ -146,7 +146,38 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.32.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.33.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **The zero-infrastructure flywheel** (`flywheel --provider river`):
+  harvest via River's sampling API, train via their remote autograd, no
+  machines rented. Live-verified: the TechNest 9B checkpoint went 7/12 →
+  **11/12** on compound tickets (harvest rate 67% → 88%) with a correct
+  plateau-stop — the ceiling-raise's third substrate
+  ([`FLYWHEEL_DOMAIN2.md`](docs/FLYWHEEL_DOMAIN2.md)).
+- **`serve-remote --merge` live-verified: hybrid fine-tunes actually
+  serve.** The merged model answered greedy training-format tickets in
+  full persona over the proxy. Six attempts surfaced five real defects —
+  composite checkpoints loaded as themselves, text-trained adapter keys
+  remapped (probe delta 0.0 before, real deltas after), processor
+  artifacts saved, merge isolated from vLLM's deps, and the release-wheel
+  gap — each fixed with tests.
+- **Serving is self-verifying**: every adapter serve greedy-probes its own
+  effect through the live endpoint (warn, or fail with `--strict`);
+  `--merge` refuses on-pod to serve a merge with no observable effect.
+  The silent no-op documented in [`docs/PROOFS.md`](docs/PROOFS.md) is now
+  structurally impossible to ship.
+- **Judge-gated harvests** (`judge` + `min_judge_score` in specs) — the
+  step toward real-data flywheels; an unavailable judge rejects rather
+  than waving samples through.
+- **`flywheel --repeats N`** — score distributions (min/mean/max) under
+  one shared budget; motivated by the live 7/12-vs-11/12 seed spread.
+- **Weekly flywheel smoke** workflow: one real turn of the wheel every
+  Monday, armed the moment the `RUNPOD_API_KEY` secret exists.
+- Hardening from live runs: RunPod REST 5xx retries, River transient
+  recovery per their SDK's taxonomy with `train_step` preferred,
+  readiness-failure evidence that keeps the engine's root cause.
+
+**v0.32.1:**
 
 - **River: training effect verified, not just mechanics.** `train-remote --provider river` trained the 140-row TechNest persona on Qwen3.5-9B (3 epochs, 210 steps through the executor's loop), and sampling the resulting `river://` checkpoint answered **3/3 held-out tickets** with the exact canonical resolutions, the persona signature, and the ticket numbers echoed — the same objective standard the RunPod training path cleared. A scale note for the record: 9B anchored canonical wording at 3 epochs where 0.8B needed 8.
 
@@ -409,7 +440,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.32.1)
+pip install stateset-agents          # latest release (v0.33.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1111,7 +1142,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.32.1`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.33.0`).
 
 Other entry points:
 
