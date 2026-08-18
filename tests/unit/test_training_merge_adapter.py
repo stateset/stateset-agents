@@ -69,8 +69,9 @@ class TestMergeFunction:
         monkeypatch.setitem(sys.modules, "peft", FakePeft)
         monkeypatch.setitem(sys.modules, "transformers", FakeTransformers)
         monkeypatch.setattr(
-            ma, "load_base_model_for_sft", lambda name: calls.append(("base", name))
+            ma, "_load_full_checkpoint", lambda name: calls.append(("base", name))
         )
+        monkeypatch.setattr(ma, "_adapter_for_model", lambda m, d: d)
         monkeypatch.setattr(ma, "gpu_available", lambda: False)
         probe = iter(["base completion", "merged completion"])
         monkeypatch.setattr(
@@ -122,7 +123,8 @@ class TestMergeProbe:
 
         monkeypatch.setitem(sys.modules, "peft", FakePeft)
         monkeypatch.setitem(sys.modules, "transformers", FakeTransformers)
-        monkeypatch.setattr(ma, "load_base_model_for_sft", lambda name: object())
+        monkeypatch.setattr(ma, "_load_full_checkpoint", lambda name: object())
+        monkeypatch.setattr(ma, "_adapter_for_model", lambda m, d: d)
         monkeypatch.setattr(ma, "gpu_available", lambda: False)
         monkeypatch.setattr(
             ma,
@@ -148,3 +150,39 @@ class TestMergeProbe:
         # The evidence is still on disk for diagnosis.
         probe = json.loads((tmp_path / "merged" / "merge_probe.json").read_text())
         assert probe["identical"] is True
+
+
+class TestRemapAdapterKeys:
+    """Adapters trained through the text extraction silently no-op on the
+    composite (measured: probe delta exactly 0.0 with peft's missing-key
+    warning). The remap restores the match — measured 372/372 keys with
+    real deltas on Qwen3.5-0.8B."""
+
+    def test_remaps_when_the_composite_spelling_exists(self):
+        from stateset_agents.training.merge_adapter import remap_adapter_keys
+
+        weights = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": 1,
+        }
+        params = {"model.language_model.layers.0.self_attn.q_proj.weight"}
+
+        remapped, changed = remap_adapter_keys(weights, params)
+
+        assert changed == 1
+        assert (
+            "base_model.model.model.language_model.layers.0.self_attn."
+            "q_proj.lora_A.weight" in remapped
+        )
+
+    def test_text_only_models_pass_through_untouched(self):
+        from stateset_agents.training.merge_adapter import remap_adapter_keys
+
+        weights = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": 1,
+        }
+        params = {"model.layers.0.self_attn.q_proj.weight"}  # no composite
+
+        remapped, changed = remap_adapter_keys(weights, params)
+
+        assert changed == 0
+        assert remapped == weights
