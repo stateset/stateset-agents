@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The ladder is a curriculum — proven by climbing it.** The
+  rung-3-trained adapter transferred UPWARD: 11/12 at rung 4 (four
+  turns, 50% refusals, final-turn summary of three prior actions) —
+  above the untrained model's score at the easier rung 3 — and one more
+  wheel-turn reached 12/12. Two rungs, two perfect scores, one
+  transferable skill: train → transfer → top off → repeat, zero machines
+  rented throughout.
+
 ## [0.35.1] - 2026-08-18 — The founding promise, closed: multi-turn memory trained by the flywheel, 8/12 to 12/12
 
 ### Added
