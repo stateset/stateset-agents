@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787031470274,
+  "lastUpdate": 1787035117992,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5336,6 +5336,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.151239366697733e-8",
             "extra": "mean: 458.7476197991098 nsec\nrounds: 104844"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "ef2034ec3cc127754ff519e0f6a3a8c67f1cf1d5",
+          "message": "fix(types): Any returns in merge loader; narrow the retry re-raise\n\nCaught by CI's mypy --all pass (the targeted local run misses these\nmodules) — the lesson, again: gate with the same strictness CI uses.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T23:35:28-07:00",
+          "tree_id": "11a2ccae29884cea06907e2838439bec6a599f44",
+          "url": "https://github.com/stateset/stateset-agents/commit/ef2034ec3cc127754ff519e0f6a3a8c67f1cf1d5"
+        },
+        "date": 1787035116642,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5978.431816370174,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003729669928993789",
+            "extra": "mean: 167.2679442896371 usec\nrounds: 1436"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6539.651731731284,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001591467863855659",
+            "extra": "mean: 152.91334172244422 usec\nrounds: 2066"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5025.325792272796,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001655008251013919",
+            "extra": "mean: 198.99207361593398 usec\nrounds: 3070"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 737.8986561631651,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000023903008966618007",
+            "extra": "mean: 1.355199649230529 msec\nrounds: 650"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 182.0230252745895,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005831514655238339",
+            "extra": "mean: 5.493810458822215 msec\nrounds: 170"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2086830.9180183713,
+            "unit": "iter/sec",
+            "range": "stddev: 5.122806895400291e-8",
+            "extra": "mean: 479.1955071039428 nsec\nrounds: 103864"
           }
         ]
       }
