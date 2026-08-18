@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-08-17 — River training effect verified: 3/3 held-out tickets from a river:// checkpoint
+
 ### Added
 
 - **River: training effect verified, not just mechanics.** A second run

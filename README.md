@@ -146,7 +146,11 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.32.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.32.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **River: training effect verified, not just mechanics.** `train-remote --provider river` trained the 140-row TechNest persona on Qwen3.5-9B (3 epochs, 210 steps through the executor's loop), and sampling the resulting `river://` checkpoint answered **3/3 held-out tickets** with the exact canonical resolutions, the persona signature, and the ticket numbers echoed — the same objective standard the RunPod training path cleared. A scale note for the record: 9B anchored canonical wording at 3 epochs where 0.8B needed 8.
+
+**v0.32.0:**
 
 - **`stateset-agents flywheel` — the improvement loop as one unattended
   command, live-verified and replicated.** Harvest the current generation's
@@ -405,7 +409,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.32.0)
+pip install stateset-agents          # latest release (v0.32.1)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1107,7 +1111,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.32.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.32.1`).
 
 Other entry points:
 
