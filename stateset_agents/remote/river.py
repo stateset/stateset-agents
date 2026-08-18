@@ -294,6 +294,197 @@ class RiverExecutor(RemoteExecutor):
         self._record_cost(job_id, job)
         return handle
 
+    def _submit_episode_rl(
+        self,
+        handle: JobHandle,
+        job: _RiverJob,
+        spec: RemoteJobSpec,
+        scripts: list[dict[str, Any]],
+    ) -> JobHandle:
+        """Multi-turn RL: whole conversations, episode-level advantages.
+
+        Built for the wall imitation hit at rung 5: when most sampled
+        episodes pass, passing examples carry little signal — but graded
+        rewards still separate near-misses, violations, and clean passes.
+        Rounds of: branch-rollout every script (capturing per-turn ids and
+        sampler logprobs), grade each episode (token fraction +
+        completeness bonus − violation), compute group-relative advantages
+        per script, broadcast each episode's advantage across all its
+        turns' datums, ``train_step`` with the clipped-IS loss. Greedy
+        episode eval brackets every round.
+        """
+        import time as _time
+
+        logs = job.logs
+        knobs = spec.harvest or {}
+        rounds = int(knobs.get("rounds", 4))
+        branches = int(knobs.get("best_of", 8))
+        loss_fn = str(knobs.get("loss_fn", "cispo"))
+        checkpoint = _checkpoint_from_pointer(knobs.get("adapter_dir"))
+        eval_scripts = [
+            e for e in (spec.eval_prompts or []) if isinstance(e, dict) and "turns" in e
+        ]
+        output_dir = Path(spec.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if spec.dry_run:
+            (output_dir / "rl_report.json").write_text(
+                json.dumps(
+                    {"rounds": rounds, "episodes": len(scripts), "dry_run": True}
+                )
+            )
+            job.status = JobStatus.SUCCEEDED
+            return handle
+
+        client = self._get_client()
+        started = _time.monotonic()
+        job.status = JobStatus.RUNNING
+        round_evals: list[dict[str, Any]] = []
+        try:
+            with _open_session(
+                client, project=Path(spec.output_dir).name or None
+            ) as session:
+                model = session.create_model(
+                    base_model=spec.base_model,
+                    lora=_river_module(client).LoraConfig(rank=spec.lora_r),
+                    checkpoint=_inference_checkpoint(client, checkpoint),
+                )
+
+                def greedy_eval() -> dict[str, Any] | None:
+                    if not eval_scripts:
+                        return None
+                    outs = _rollout_episodes(
+                        model,
+                        spec.base_model,
+                        eval_scripts,
+                        branches=1,
+                        temperature=0.0,
+                        top_p=1.0,
+                        max_tokens=spec.eval_max_new_tokens,
+                    )
+                    results = []
+                    for script, bouts in zip(eval_scripts, outs, strict=True):
+                        passed_ep, detail = _score_episode(script, bouts[0])
+                        results.append(
+                            {
+                                "prompt": " / ".join(script["turns"]),
+                                "finetuned": " ||| ".join(bouts[0]),
+                                "passed": passed_ep,
+                                "detail": detail,
+                            }
+                        )
+                    return {
+                        "passed": sum(1 for r in results if r["passed"]),
+                        "total": len(results),
+                        "results": results,
+                    }
+
+                before = greedy_eval()
+                if before:
+                    round_evals.append(
+                        {
+                            "round": 0,
+                            "passed": before["passed"],
+                            "total": before["total"],
+                        }
+                    )
+                    logs.append(
+                        f"round 0 (before): {before['passed']}/{before['total']}"
+                    )
+
+                for rnd in range(1, rounds + 1):
+                    episodes = _rollout_episodes(
+                        model,
+                        spec.base_model,
+                        scripts,
+                        branches=branches,
+                        temperature=float(knobs.get("temperature", 0.9)),
+                        top_p=float(knobs.get("top_p", 0.95)),
+                        max_tokens=int(knobs.get("max_new_tokens", 300)),
+                        capture=True,
+                    )
+                    data: list[dict[str, Any]] = []
+                    mean_rewards: list[float] = []
+                    for script, branch_records in zip(scripts, episodes, strict=True):
+                        rewards = [
+                            _graded_episode_reward(script, [t["text"] for t in records])
+                            for records in branch_records
+                        ]
+                        mean_rewards.append(sum(rewards) / len(rewards))
+                        if all(r == rewards[0] for r in rewards):
+                            continue
+                        mean = sum(rewards) / len(rewards)
+                        for records, reward in zip(
+                            branch_records, rewards, strict=True
+                        ):
+                            data.extend(_episode_rl_datums(records, reward - mean))
+                    if not data:
+                        logs.append(
+                            f"round {rnd}: every episode group zero-variance "
+                            "— nothing to train on this round"
+                        )
+                        continue
+                    fb, _opt = model.train_step(
+                        data, lr=spec.learning_rate, loss_fn=loss_fn
+                    )
+                    job.steps += 1
+                    loss = _extract(fb, "loss_mean", "loss")
+                    if loss is not None:
+                        job.final_loss = float(loss)
+                    after = greedy_eval()
+                    entry: dict[str, Any] = {
+                        "round": rnd,
+                        "datums": len(data),
+                        "mean_reward": round(sum(mean_rewards) / len(mean_rewards), 4),
+                    }
+                    if after:
+                        entry["passed"] = after["passed"]
+                        entry["total"] = after["total"]
+                    round_evals.append(entry)
+                    logs.append(
+                        f"round {rnd}: {len(data)} datums, mean reward "
+                        f"{entry['mean_reward']}"
+                        + (
+                            f", eval {entry['passed']}/{entry['total']}"
+                            if "passed" in entry
+                            else ""
+                        )
+                    )
+
+                name = Path(spec.output_dir).name or "rl_adapter"
+                uri = model.save_weights(name, mode="inference")
+                job.checkpoint_uri = _as_uri(uri)
+                logs.append(f"saved River checkpoint: {job.checkpoint_uri}")
+                final = greedy_eval()
+                if final:
+                    (output_dir / "eval_results.json").write_text(
+                        json.dumps(final["results"], indent=2)
+                    )
+        except RemoteExecutionError:
+            job.status = JobStatus.FAILED
+            job.duration_s = _time.monotonic() - started
+            self._record_cost(handle.job_id, job)
+            raise
+        except Exception as exc:  # noqa: BLE001 - unknown SDK exception surface
+            job.status = JobStatus.FAILED
+            job.duration_s = _time.monotonic() - started
+            logs.append(f"River episode RL failed: {exc}")
+            self._record_cost(handle.job_id, job)
+            account = self._account_error(exc)
+            if account is not None:
+                raise account from exc
+            raise RemoteExecutionError.wrap(
+                exc, "River episode RL failed", provider=self.name
+            ) from exc
+
+        (output_dir / "rl_report.json").write_text(
+            json.dumps({"rounds": round_evals, "loss_fn": loss_fn}, indent=2)
+        )
+        job.duration_s = _time.monotonic() - started
+        job.status = JobStatus.SUCCEEDED
+        self._record_cost(handle.job_id, job)
+        return handle
+
     def _submit_rl(
         self, handle: JobHandle, job: _RiverJob, spec: RemoteJobSpec
     ) -> JobHandle:
@@ -316,7 +507,14 @@ class RiverExecutor(RemoteExecutor):
         )
 
         logs = job.logs
-        prompts = normalize_eval_prompts(json.loads(Path(spec.dataset).read_text()))
+        raw_prompts = json.loads(Path(spec.dataset).read_text())
+        if (
+            raw_prompts
+            and isinstance(raw_prompts[0], dict)
+            and "turns" in raw_prompts[0]
+        ):
+            return self._submit_episode_rl(handle, job, spec, raw_prompts)
+        prompts = normalize_eval_prompts(raw_prompts)
         eval_specs = normalize_eval_prompts(list(spec.eval_prompts or []))
         knobs = spec.harvest or {}
         rounds = int(knobs.get("rounds", 4))
@@ -1420,6 +1618,58 @@ def _extract(result: Any, *names: str) -> Any:
     return None
 
 
+def _graded_episode_reward(script: dict[str, Any], replies: list[str]) -> float:
+    """Shaped episode reward: token fraction + completeness bonus − violation.
+
+    Mirrors the single-turn shaping (which Goodharted without the bonus):
+    fraction of ALL turn_expect tokens satisfied in their own turns, +1.0
+    when the whole episode passes, −1.0 when any forbid appears anywhere.
+    """
+    from stateset_agents.training.sft import evaluate_checks
+
+    total = 0
+    hit = 0
+    for expects, reply in zip(script.get("turn_expect", []), replies, strict=True):
+        checked = evaluate_checks(reply, list(expects), [])
+        total += len(expects)
+        hit += len(checked["expect_hits"])
+    frac = hit / total if total else 1.0
+    passed, detail = _score_episode(script, replies)
+    bonus = 1.0 if passed else 0.0
+    penalty = 1.0 if detail["forbid_hits"] else 0.0
+    return frac + bonus - penalty
+
+
+def _episode_rl_datums(
+    branch_turns: list[dict[str, Any]], advantage: float
+) -> list[dict[str, Any]]:
+    """One branch's captured turns -> RL datums with a shared advantage.
+
+    Multi-turn credit assignment, v1: the episode-level group-relative
+    advantage is broadcast to every assistant turn's response positions —
+    every action in a winning conversation is reinforced, every action in
+    a losing one pushed away. Layout per datum is River's pre-shifted RL
+    contract (see ``build_group_rl_datums``).
+    """
+    datums: list[dict[str, Any]] = []
+    for turn in branch_turns:
+        prompt_ids = turn.get("prompt_ids") or []
+        tokens = turn.get("tokens") or []
+        logprobs = turn.get("logprobs") or []
+        if not prompt_ids or not tokens or len(tokens) != len(logprobs):
+            continue
+        pad = [0.0] * (len(prompt_ids) - 1)
+        datums.append(
+            {
+                "input_ids": list(prompt_ids) + list(tokens),
+                "old_logprobs": pad + list(logprobs) + [0.0],
+                "advantages": pad + [advantage] * len(tokens) + [0.0],
+                "attention_mask": [1] * (len(prompt_ids) + len(tokens)),
+            }
+        )
+    return datums
+
+
 def _score_episode(
     script: dict[str, Any], assistant_turns: list[str]
 ) -> tuple[bool, dict[str, Any]]:
@@ -1460,11 +1710,17 @@ def _rollout_episodes(
     temperature: float,
     top_p: float,
     max_tokens: int,
-) -> list[list[list[str]]]:
+    capture: bool = False,
+) -> list[list[list[Any]]]:
     """Roll ``branches`` independent episodes per script, batched per turn.
 
-    Returns ``episodes[script][branch] = [assistant_turn_1, ...]``. Each
-    branch keeps its own conversation history; at every turn all live
+    Returns ``episodes[script][branch] = [assistant_turn_1, ...]`` — plain
+    reply strings by default. With ``capture=True`` each turn is instead a
+    dict ``{"text", "prompt_ids", "tokens", "logprobs"}`` — everything
+    multi-turn RL needs, with prompt ids tokenized client-side and PASSED
+    to the sampler so generation used exactly the ids the datums carry.
+
+    Each branch keeps its own conversation history; at every turn all live
     branches across all scripts are sampled in ONE ``model.sample`` call
     (one prompt each), so a T-turn rollout costs T calls, not S*N*T.
     """
@@ -1472,12 +1728,13 @@ def _rollout_episodes(
 
     renderer = get_renderer(base_model, thinking=False)
     stops = list(renderer.get_stop_strings()) or None
+    tokenizer = getattr(renderer, "tokenizer", None)
     max_turns = max(len(s["turns"]) for s in scripts)
     # histories[script][branch] = message list
     histories: list[list[list[dict[str, str]]]] = [
         [[] for _ in range(branches)] for _ in scripts
     ]
-    replies: list[list[list[str]]] = [[[] for _ in range(branches)] for _ in scripts]
+    replies: list[list[list[Any]]] = [[[] for _ in range(branches)] for _ in scripts]
     for turn in range(max_turns):
         flat: list[tuple[int, int]] = []
         prompts: list[str] = []
@@ -1492,16 +1749,43 @@ def _rollout_episodes(
                 flat.append((si, bi))
         if not prompts:
             break
-        groups = model.sample(
-            prompts,
-            num_samples=1,
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=max_tokens,
-            stop=stops,
-        )
-        for (si, bi), group in zip(flat, groups, strict=True):
-            text = str(getattr(group[0], "text", "")).strip()
+        if capture and tokenizer is not None:
+            prompt_ids = [[int(t) for t in tokenizer.encode(text)] for text in prompts]
+            groups = model.sample(
+                prompt_token_ids=prompt_ids,
+                num_samples=1,
+                temperature=temperature,
+                top_p=top_p,
+                max_tokens=max_tokens,
+                stop=stops,
+            )
+        else:
+            prompt_ids = [[] for _ in prompts]
+            groups = model.sample(
+                prompts,
+                num_samples=1,
+                temperature=temperature,
+                top_p=top_p,
+                max_tokens=max_tokens,
+                stop=stops,
+            )
+        for (si, bi), group, ids in zip(flat, groups, prompt_ids, strict=True):
+            sample = group[0]
+            text = str(getattr(sample, "text", "")).strip()
             histories[si][bi].append({"role": "assistant", "content": text})
-            replies[si][bi].append(text)
+            if capture:
+                replies[si][bi].append(
+                    {
+                        "text": text,
+                        "prompt_ids": ids
+                        or [
+                            int(t)
+                            for t in (getattr(sample, "prompt_token_ids", None) or [])
+                        ],
+                        "tokens": [int(t) for t in getattr(sample, "tokens", [])],
+                        "logprobs": [float(x) for x in getattr(sample, "logprobs", [])],
+                    }
+                )
+            else:
+                replies[si][bi].append(text)
     return replies

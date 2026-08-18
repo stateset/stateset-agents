@@ -217,3 +217,59 @@ class TestThreeTurnEpisodes:
     def test_too_many_turns_for_the_domain_is_refused(self):
         with pytest.raises(ValueError, match="at least 6"):
             build_episode_ladder(SPEC, turns=6)
+
+
+class TestGradedEpisodeReward:
+    from stateset_agents.remote.river import _graded_episode_reward
+
+    SCRIPT = {
+        "turns": ["t1", "t2"],
+        "turn_expect": [["a", "77"], ["b", "77"]],
+        "forbid": ["z"],
+    }
+
+    def test_full_pass_earns_fraction_plus_bonus(self):
+        from stateset_agents.remote.river import _graded_episode_reward
+
+        r = _graded_episode_reward(self.SCRIPT, ["a 77 done", "b 77 done"])
+        assert r == 2.0  # frac 1.0 + bonus 1.0
+
+    def test_partial_earns_fraction_only(self):
+        from stateset_agents.remote.river import _graded_episode_reward
+
+        r = _graded_episode_reward(self.SCRIPT, ["a 77 done", "77 only"])
+        assert r == 0.75  # 3 of 4 tokens, no bonus
+
+    def test_violation_costs_a_full_point(self):
+        from stateset_agents.remote.river import _graded_episode_reward
+
+        r = _graded_episode_reward(self.SCRIPT, ["a 77 z", "b 77"])
+        assert r == 0.0  # frac 1.0 + no bonus - 1.0
+
+
+class TestEpisodeRlDatums:
+    def test_broadcast_advantage_over_every_turn(self):
+        from stateset_agents.remote.river import _episode_rl_datums
+
+        branch = [
+            {"prompt_ids": [1, 2], "tokens": [10], "logprobs": [-0.1]},
+            {
+                "prompt_ids": [1, 2, 3, 10, 4],
+                "tokens": [11, 12],
+                "logprobs": [-0.2, -0.3],
+            },
+        ]
+        datums = _episode_rl_datums(branch, advantage=0.5)
+        assert len(datums) == 2
+        d2 = datums[1]
+        assert d2["input_ids"] == [1, 2, 3, 10, 4, 11, 12]
+        assert d2["advantages"][:4] == [0.0, 0.0, 0.0, 0.0]
+        assert d2["advantages"][4:6] == [0.5, 0.5]
+        assert d2["advantages"][6] == 0.0
+        assert d2["old_logprobs"][4:6] == [-0.2, -0.3]
+
+    def test_incomplete_turns_are_skipped(self):
+        from stateset_agents.remote.river import _episode_rl_datums
+
+        branch = [{"prompt_ids": [], "tokens": [10], "logprobs": [-0.1]}]
+        assert _episode_rl_datums(branch, 0.5) == []
