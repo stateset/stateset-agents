@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-08-18 — The curriculum climbed, the wall mapped from both sides, and runs you can watch
+
 ### Added
 
 - **Multi-turn RL, live — and the wall confirmed from the second

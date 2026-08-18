@@ -146,7 +146,29 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.35.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.36.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **The multi-turn curriculum, climbed and mapped.** N-turn episode
+  scripts (`build_episode_ladder(turns=N)`) whose final turn demands a
+  summary of everything done: rung 3 lifted 8/12 → **12/12**; the rung-3
+  adapter transferred UPWARD to rung 4 at 11/12 and topped off at
+  **12/12**; rung 5 found the wall (9/12, held by both methods) — a
+  transferable skill, a climbable ladder, and an honestly mapped boundary.
+- **Multi-turn RL, live.** Episode-level advantages over whole
+  conversations (per-turn prompt ids tokenized client-side, sampler
+  logprobs verbatim, shaped episode rewards with completeness bonus and
+  refusal penalty). First campaign confirmed the rung-5 wall from the
+  second direction: where imitation regressed, RL held stable — a genuine
+  model-capacity ceiling, mapped from both sides
+  ([`PROOFS.md`](docs/PROOFS.md)).
+- **You can watch River runs now.** `STATESET_RIVER_VERBOSE=1` streams
+  every executor log line and step ticks (with loss) live — built after a
+  slow provider pool turned two runs into silent 45-minute mysteries, one
+  of which was a retry loop nobody could see. Scalars are read from
+  `ForwardResult.metrics`; step counters reset per retry attempt; harvest
+  retries transients like training does.
+
+**v0.35.1:**
 
 - **The first multi-turn ceiling-raise: 8/12 → 12/12 in one generation.**
   N-turn episode scripts (`build_episode_ladder(turns=N)`) where the final
@@ -544,7 +566,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.35.1)
+pip install stateset-agents          # latest release (v0.36.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1246,7 +1268,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.35.1`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.36.0`).
 
 Other entry points:
 
