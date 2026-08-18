@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The multi-turn ceiling-raise: 8/12 → 12/12 in one generation.**
+  N-turn episode scripts (`build_episode_ladder(turns=N)`) where the
+  final turn demands a summary of everything done — every earlier
+  resolution token plus the never-repeated reference must reappear.
+  At rung 3 (three turns, 40% refusals) the single-turn-trained 9B
+  scored 8/12 with a 60% episode harvest; one flywheel turn on the 115
+  passing conversations produced a **perfect 12/12** — the first
+  multi-turn ceiling-raise, confirming the rarity doctrine from both
+  sides (rung 2's 65%-harvest plateau, rung 3's lift).
+
 ## [0.35.0] - 2026-08-18 — Conversations enter the flywheel: multi-turn episodes, scored for carryover
 
 ### Added
