@@ -344,7 +344,8 @@ class RiverExecutor(RemoteExecutor):
                 client, project=Path(spec.output_dir).name or None
             ) as session:
                 model = session.create_model(
-                    base_model=spec.base_model, checkpoint=checkpoint
+                    base_model=spec.base_model,
+                    checkpoint=_inference_checkpoint(client, checkpoint),
                 )
                 logs.append(f"sampling from {checkpoint or spec.base_model} via River")
                 if eval_specs:
@@ -752,6 +753,23 @@ def _open_session(client: Any, project: str | None = None) -> Iterator[Any]:
         yield client.create_session()
         return
     yield client
+
+
+def _inference_checkpoint(client: Any, uri: str | None) -> Any:
+    """Wrap a ``river://`` URI as an inference-mode ``Checkpoint``.
+
+    ``create_model`` given a bare path tries to restore optimizer state,
+    which an inference-mode save does not carry — observed live:
+    "Cannot load optimizer from an inference checkpoint". Typing the
+    checkpoint tells the server weights-only is intended.
+    """
+    if uri is None:
+        return None
+    river = _river_module(client)
+    checkpoint_cls = getattr(river, "Checkpoint", None)
+    if checkpoint_cls is None:
+        return uri
+    return checkpoint_cls(path=uri, step=0, checkpoint_type="inference")
 
 
 def _checkpoint_from_pointer(adapter_dir: str | None) -> str | None:
