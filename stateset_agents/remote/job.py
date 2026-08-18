@@ -193,10 +193,18 @@ class RemoteJobSpec:
 
         if self.eval_prompts is not None:
             # Validate spec entries at submit time — on this machine, before
-            # a GPU is rented — with the same rules the job applies.
+            # a GPU is rented — with the same rules the job applies. Episode
+            # scripts (multi-turn: {"turns", "turn_expect", "forbid"}) have
+            # their own shape and are validated by the episode consumer.
             from stateset_agents.training.sft import normalize_eval_prompts
 
-            normalize_eval_prompts(self.eval_prompts)
+            plain = [
+                e
+                for e in self.eval_prompts
+                if not (isinstance(e, dict) and "turns" in e)
+            ]
+            if plain:
+                normalize_eval_prompts(plain)
 
         if self.container_disk_gb is not None and self.container_disk_gb <= 0:
             raise ValueError(

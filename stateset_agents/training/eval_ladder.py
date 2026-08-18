@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-__all__ = ["DomainSpec", "Issue", "build_ladder", "main"]
+__all__ = ["DomainSpec", "Issue", "build_episode_ladder", "build_ladder", "main"]
 
 
 @dataclass
@@ -192,6 +192,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--train-count", type=int, default=140)
     parser.add_argument("--refusal-fraction", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--episodes",
+        action="store_true",
+        help="Also write two-turn episode scripts (episode_eval.json / episode_harvest.json)",
+    )
     args = parser.parse_args(argv)
 
     spec = DomainSpec.from_dict(json.loads(args.spec.read_text()))
@@ -214,6 +219,20 @@ def main(argv: list[str] | None = None) -> int:
     (args.output_dir / "harvest_prompts.json").write_text(
         json.dumps(kit["harvest"], indent=1)
     )
+    if args.episodes:
+        episodes = build_episode_ladder(
+            spec,
+            eval_count=args.eval_count,
+            harvest_count=args.harvest_count,
+            refusal_fraction=args.refusal_fraction,
+            seed=args.seed,
+        )
+        (args.output_dir / "episode_eval.json").write_text(
+            json.dumps(episodes["eval"], indent=1)
+        )
+        (args.output_dir / "episode_harvest.json").write_text(
+            json.dumps(episodes["harvest"], indent=1)
+        )
     print(
         f"depth={args.depth} refusals={args.refusal_fraction}: "
         f"{len(kit['train'])} train rows, {len(kit['eval'])} evals, "
@@ -224,3 +243,71 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover — exercised via subprocess tests
     raise SystemExit(main())
+
+
+def build_episode_ladder(
+    spec: DomainSpec,
+    *,
+    eval_count: int = 12,
+    harvest_count: int = 30,
+    refusal_fraction: float = 0.0,
+    seed: int = 0,
+) -> dict[str, list[dict]]:
+    """Two-turn episode scripts that make context carryover objective.
+
+    Turn 1 raises one issue with the account reference. Turn 2 raises a
+    SECOND issue and asks for confirmation of the first — **without ever
+    repeating the reference**. The turn-2 checks require both the second
+    issue's proof token AND the reference: a model that cannot carry
+    context across turns objectively fails, exactly like the live
+    "I got double charged for it" behaviour chat-remote verified.
+
+    With ``refusal_fraction``, turn 2's new issue is instead DECLINED
+    ("...but don't {remedy}, just confirm the first fix") — its token
+    becomes the episode's ``forbid``.
+
+    Script shape: ``{"turns": [...], "turn_expect": [[...], [...]],
+    "forbid": [...]}`` — scored per turn, forbids over the whole episode.
+    """
+    names = sorted(spec.issues)
+    if len(names) < 2:
+        raise ValueError("episodes need at least 2 issues")
+    rng = random.Random(seed)
+
+    def build_set(count: int, ref_base: int) -> list[dict]:
+        scripts = []
+        for i in range(count):
+            a, b = rng.sample(names, 2)
+            first, second = spec.issues[a], spec.issues[b]
+            ref = spec.ref(ref_base + i)
+            label = spec.ref_label.format(ref=ref)
+            turn1 = f"{label} — {first.phrasing}."
+            refused = refusal_fraction > 0.0 and rng.random() < refusal_fraction
+            if refused:
+                decline = second.refusal or f"please do NOT {second.token} anything"
+                turn2 = (
+                    f"Thanks! One more thing — {second.phrasing}, but "
+                    f"{decline}. Just confirm the first fix is on my account."
+                )
+                turn2_expect = [ref]
+                forbid = [second.token]
+            else:
+                turn2 = (
+                    f"Thanks! One more thing — {second.phrasing}. And can "
+                    "you confirm that first fix is applied to my account?"
+                )
+                turn2_expect = [second.token, ref]
+                forbid = []
+            scripts.append(
+                {
+                    "turns": [turn1, turn2],
+                    "turn_expect": [[first.token, ref], turn2_expect],
+                    "forbid": forbid,
+                }
+            )
+        return scripts
+
+    return {
+        "eval": build_set(eval_count, 7700),
+        "harvest": build_set(harvest_count, 8800),
+    }

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The multi-turn episode flywheel.** The loop now learns CONVERSATIONS:
+  `build_episode_ladder` generates two-turn scripts where the user's
+  second turn raises a new issue and asks for confirmation of the first
+  — **without ever repeating the account reference** — so context
+  carryover is objectively scored (turn 2's checks demand the reference
+  from turn 1; refusal variants forbid the declined remedy across the
+  whole episode). River rollouts branch best-of-N per script, batched per
+  turn (a T-turn rollout costs T sample calls); passing episodes become
+  multi-turn chat rows the SFT batcher already weights turn-by-turn, and
+  both harvest and post-train evals speak episodes end to end.
+
 ## [0.34.2] - 2026-08-18 — Goodhart, observed: a live reward hack caught, diagnosed, and fixed by A/B
 
 ### Added
