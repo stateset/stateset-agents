@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787073888555,
+  "lastUpdate": 1787074270290,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -6294,6 +6294,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.9541710103797384e-8",
             "extra": "mean: 436.97147750654653 nsec\nrounds: 108886"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "af3b69ea743173c313b70d2246ba776f0b071db0",
+          "message": "feat(episodes): N-turn scripts — the final turn demands a full summary\n\nbuild_episode_ladder(turns=N): each turn raises a new issue (the\nreference never repeated after turn 1), and the final turn asks the\nmodel to summarize everything done — its reply must recall every\nearlier resolution token plus the reference. Long-range recall of the\nmodel's own actions, objectively scored; refusal variants decline the\nfinal remedy while still demanding the summary.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T10:28:01-07:00",
+          "tree_id": "0af7087b8a22a8cc04a25471fd8d5109ad7af74d",
+          "url": "https://github.com/stateset/stateset-agents/commit/af3b69ea743173c313b70d2246ba776f0b071db0"
+        },
+        "date": 1787074269007,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5920.609503751551,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015736381257859132",
+            "extra": "mean: 168.9015293723319 usec\nrounds: 1481"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6402.034944322195,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015102228649777459",
+            "extra": "mean: 156.20033453376803 usec\nrounds: 1943"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4948.286121411223,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015816368474108978",
+            "extra": "mean: 202.09017333759303 usec\nrounds: 3173"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 734.9083646318574,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000026964305167498823",
+            "extra": "mean: 1.3607138632868017 msec\nrounds: 651"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 180.86195002929617,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005487853429441672",
+            "extra": "mean: 5.529078945781681 msec\nrounds: 166"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2104097.055235837,
+            "unit": "iter/sec",
+            "range": "stddev: 4.791351084821765e-8",
+            "extra": "mean: 475.2632477250035 nsec\nrounds: 105286"
           }
         ]
       }
