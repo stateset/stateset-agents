@@ -178,3 +178,67 @@ class TestRunPodHarvestCommands:
         # the submitting machine's filesystem.
         assert "--adapter /workspace/current_adapter" in run
         assert str(tmp_path) not in run
+
+
+class TestJudgeGate:
+    """Semantic success criteria on top of (or instead of) substrings —
+    the step toward real-data flywheels where success is not a token."""
+
+    SPEC = {
+        "prompt": "help me",
+        "expect": ["resolved"],
+        "judge": "customer_support",
+        "min_judge_score": 0.8,
+    }
+
+    def _passes(self, monkeypatch, score, spec=None, sample="resolved it for you"):
+        import stateset_agents.training.harvest as h
+
+        monkeypatch.setattr(
+            h, "judge_completion", lambda judge, prompt, completion: score
+        )
+        from stateset_agents.training.harvest import sample_passes
+
+        return sample_passes(spec or self.SPEC, sample)
+
+    def test_judge_above_threshold_passes(self, monkeypatch):
+        assert self._passes(monkeypatch, 0.9) is True
+
+    def test_judge_below_threshold_rejects(self, monkeypatch):
+        assert self._passes(monkeypatch, 0.5) is False
+
+    def test_unavailable_judge_rejects_rather_than_waves_through(self, monkeypatch):
+        """A broken judge must not silently become a pass — that harvests
+        noise with a green checkmark on it."""
+        assert self._passes(monkeypatch, None) is False
+
+    def test_substring_failure_short_circuits_before_the_judge(self, monkeypatch):
+        import stateset_agents.training.harvest as h
+
+        def exploding_judge(judge, prompt, completion):
+            raise AssertionError("judge must not run when substrings fail")
+
+        monkeypatch.setattr(h, "judge_completion", exploding_judge)
+        from stateset_agents.training.harvest import sample_passes
+
+        assert sample_passes(self.SPEC, "no magic word here") is False
+
+    def test_judge_only_specs_are_allowed(self, monkeypatch, tmp_path):
+        """No expect/forbid at all — the judge IS the criterion."""
+        from stateset_agents.training.harvest import run_harvest_job
+
+        summary = run_harvest_job(
+            {
+                "base_model": "base/model",
+                "adapter_dir": None,
+                "harvest_prompts": [{"prompt": "p", "judge": "customer_support"}],
+                "eval_prompts": None,
+                "output_dir": str(tmp_path / "out"),
+                "best_of": 2,
+                "temperature": 0.9,
+                "top_p": 0.95,
+                "max_new_tokens": 50,
+                "dry_run": True,
+            }
+        )
+        assert summary["prompts"] == 1

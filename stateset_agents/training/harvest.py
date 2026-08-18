@@ -35,6 +35,7 @@ from stateset_agents.training.sft import (
     evaluate_checks,
     generate_completions,
     gpu_available,
+    judge_completion,
     load_base_model_for_sft,
     normalize_eval_prompts,
 )
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "build_harvest_rows",
+    "sample_passes",
     "main",
     "run_harvest_job",
     "sample_completions",
@@ -97,6 +99,32 @@ def sample_completions(
     ]
 
 
+def sample_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
+    """One sample against one spec: substring checks AND the judge, if any.
+
+    ``expect``/``forbid`` are exact and cheap and run first. A ``judge``
+    (with ``min_judge_score``, default 0.7) adds a semantic gate on top —
+    the step from proof-token experiments toward real-data flywheels, where
+    success is not a substring. A judge that is unavailable on this worker
+    scores ``None`` and the sample is REJECTED: an unscorable gate must not
+    silently become a pass, or a broken judge harvests noise.
+    """
+    result = evaluate_checks(
+        sample,
+        prompt_spec.get("expect", []),
+        prompt_spec.get("forbid", []),
+    )
+    if not result["passed"]:
+        return False
+    judge = prompt_spec.get("judge")
+    if judge:
+        score = judge_completion(judge, prompt_spec["prompt"], sample)
+        threshold = float(prompt_spec.get("min_judge_score", 0.7))
+        if score is None or score < threshold:
+            return False
+    return True
+
+
 def build_harvest_rows(
     prompt_spec: dict[str, Any], samples: list[str]
 ) -> list[dict[str, Any]]:
@@ -108,12 +136,7 @@ def build_harvest_rows(
     """
     rows: list[dict[str, Any]] = []
     for sample in samples:
-        result = evaluate_checks(
-            sample,
-            prompt_spec.get("expect", []),
-            prompt_spec.get("forbid", []),
-        )
-        if result["passed"]:
+        if sample_passes(prompt_spec, sample):
             rows.append(
                 {
                     "messages": [
@@ -156,11 +179,11 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     harvest_specs = normalize_eval_prompts(payload["harvest_prompts"])
     for i, spec in enumerate(harvest_specs):
-        if not spec.get("expect") and not spec.get("forbid"):
+        if not spec.get("expect") and not spec.get("forbid") and not spec.get("judge"):
             raise ValueError(
-                f"harvest prompt {i} has no expect/forbid checks — without "
-                "them every sample passes and the harvest is noise, not "
-                "signal"
+                f"harvest prompt {i} has no expect/forbid checks and no "
+                "judge — without a success criterion every sample passes "
+                "and the harvest is noise, not signal"
             )
     eval_specs = normalize_eval_prompts(payload.get("eval_prompts") or [])
 

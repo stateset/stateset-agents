@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Judge-gated harvests — the step toward real-data flywheels.** Harvest
+  prompt specs accept `judge` + `min_judge_score` (default 0.7) alongside
+  or instead of `expect`/`forbid`: substring checks run first and cheap,
+  then the domain-reward judge gates semantically. An unavailable judge
+  REJECTS rather than waving samples through — a broken gate must not
+  harvest noise with a green checkmark on it.
+
+### Added
+
 - **Serving is self-verifying.** After readiness, `serve-remote` probes
   every served adapter with a greedy base-vs-adapter completion through
   the live endpoint: byte-identical output — the silent no-op that once
