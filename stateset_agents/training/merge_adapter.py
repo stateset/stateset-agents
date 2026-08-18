@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+from typing import Any
 
 from stateset_agents.training.sft import (
     generate_completions,
@@ -139,7 +140,7 @@ def merge_adapter(base_model: str, adapter_dir: Path, output_dir: Path) -> Path:
     return output_dir
 
 
-def _load_full_checkpoint(base_model: str) -> object:
+def _load_full_checkpoint(base_model: str) -> Any:
     """Load the checkpoint in its OWN architecture, composite included.
 
     ``load_base_model_for_sft`` (via ``AutoModelForCausalLM``) extracts the
@@ -160,7 +161,7 @@ def _load_full_checkpoint(base_model: str) -> object:
     return load_base_model_for_sft(base_model)
 
 
-def _adapter_for_model(model: object, adapter_dir: Path) -> Path:
+def _adapter_for_model(model: Any, adapter_dir: Path) -> Path:
     """Return an adapter directory whose keys match ``model``'s modules.
 
     Adapters trained through the text extraction need their keys remapped
@@ -175,7 +176,7 @@ def _adapter_for_model(model: object, adapter_dir: Path) -> Path:
     if not tensor_file.exists():
         return adapter_dir
     weights = load_file(str(tensor_file))
-    param_names = {n for n, _ in model.named_parameters()}  # type: ignore[attr-defined]
+    param_names = {n for n, _ in model.named_parameters()}
     remapped, changed = remap_adapter_keys(weights, param_names)
     if not changed:
         return adapter_dir

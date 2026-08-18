@@ -114,7 +114,8 @@ class RunPodApi:
                     raise
                 last = exc
                 time.sleep(backoff_s * attempt)
-        raise last  # pragma: no cover - unreachable
+        assert last is not None  # pragma: no cover - loop always sets it
+        raise last
 
     def create_pod(
         self,
