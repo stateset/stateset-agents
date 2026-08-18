@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787025536647,
+  "lastUpdate": 1787026295855,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5016,6 +5016,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.455636841261645e-8",
             "extra": "mean: 486.82057081897096 nsec\nrounds: 99612"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "b6ce802692538c91edf3e6cdd28521bd087432b2",
+          "message": "fix(serve): merge in an isolated venv; surface engine root causes\n\nInstalling the training stack into vLLM's environment downgraded its\ntransformers and crashed the engine at boot — a 30-minute readiness\ntimeout whose root cause had scrolled off the 30-line tail. The merge\nnow runs in its own venv (--system-site-packages keeps torch), leaving\nvLLM's deps untouched, and readiness-timeout evidence includes grepped\nERROR lines from the whole log, not just the tail.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T21:08:51-07:00",
+          "tree_id": "b81242eaf2b43187f7dd3f40803af302d1b4edad",
+          "url": "https://github.com/stateset/stateset-agents/commit/b6ce802692538c91edf3e6cdd28521bd087432b2"
+        },
+        "date": 1787026295196,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6049.016061504622,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015146188290653921",
+            "extra": "mean: 165.31614230021762 usec\nrounds: 1539"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6475.099448595461,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014463034349214642",
+            "extra": "mean: 154.43778245242456 usec\nrounds: 1949"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4997.777682483631,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016664176356704368",
+            "extra": "mean: 200.08893222778428 usec\nrounds: 3497"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 732.2150408493212,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003028434442223045",
+            "extra": "mean: 1.3657190090496718 msec\nrounds: 663"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 181.42944926491685,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005011036950203532",
+            "extra": "mean: 5.511784355029571 msec\nrounds: 169"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2145148.0876382976,
+            "unit": "iter/sec",
+            "range": "stddev: 1.0792922480805623e-7",
+            "extra": "mean: 466.16828262935957 nsec\nrounds: 104200"
           }
         ]
       }
