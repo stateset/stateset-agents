@@ -146,7 +146,22 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.34.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.34.2 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **A reward hack, caught and fixed live — the objective/eval separation
+  doing its job.** On a fresh ladder-generated domain (GreenGrid Energy,
+  Qwen3.5-9B, gen-1 3/3 on held-out accounts), the RL flywheel's v1 graded
+  reward Goodharted: mean reward climbed 0.67 → 0.84 while the
+  all-or-nothing greedy eval FELL 6/12 → 4/12 — the failure anatomy showed
+  the exploit exactly (resolve one issue confidently, drop the rest). A
+  +1.0 completeness bonus made the full pass strictly dominant, and the
+  A/B rerun from the same checkpoint fixed the collapse: 6/12 → 7/12 with
+  reward 1.48/2.0 and no degenerate policy. Both trajectories retained;
+  the incident lives in the reward function's docstring and as a
+  [`PROOFS.md`](docs/PROOFS.md) row: *RL reward hacking is detectable and
+  fixable in-platform.*
+
+**v0.34.1:**
 
 - **The RL flywheel is live-verified — with an honest verdict.** First real
   run (35B MoE, depth-3 refusal kit, zero infrastructure): **7/12 → 10/12
@@ -493,7 +508,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.34.1)
+pip install stateset-agents          # latest release (v0.34.2)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1195,7 +1210,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.34.1`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.34.2`).
 
 Other entry points:
 

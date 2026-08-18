@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.2] - 2026-08-18 — Goodhart, observed: a live reward hack caught, diagnosed, and fixed by A/B
+
 ### Added
 
 - **A reward hack, caught and fixed live — the objective/eval separation
