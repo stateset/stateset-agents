@@ -151,7 +151,10 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
   distinct failure modes, `serve-remote` answered an authenticated
   `POST /v1/chat/completions` over RunPod's proxy — first from a hand-driven
   verification run, then through the shipped CLI serving a real fine-tuned
-  adapter (`--adapter`), whose answers visibly differ from the base model's.
+  adapter (`--adapter`). *(Correction, found by a later greedy A/B probe:
+  the transport is verified, but vLLM silently does not apply hybrid-Qwen3.5
+  LoRA adapters — see [`docs/PROOFS.md`](docs/PROOFS.md); `chat-remote`
+  remains the verified way to talk to hybrid fine-tunes.)*
   Two live-only bugs fell out and are fixed with tests: a flashinfer
   annotation that crashes vLLM's engine on Python 3.11 (now patched in place
   post-install) and a shell-precedence bug that made the self-destruct arm

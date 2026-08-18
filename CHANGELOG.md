@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Correction, from a live A/B probe: vLLM does NOT apply LoRA adapters
+  for hybrid Qwen3.5 models — it loads them without error and silently
+  serves the base weights.** Greedy completions from the served adapter
+  are byte-identical to the base model on training-format prompts, on an
+  endpoint whose `/v1/models` listed the adapter and whose logs said
+  "Loaded new LoRA adapter". The hybrid architecture's `linear_attn`
+  target modules (`in_proj_qkv` etc.) never match vLLM's LoRA mapping.
+  Consequences, stated plainly: v0.31.0's "serve-remote --adapter
+  verified" claim holds for the transport (auth, proxy, multi-adapter
+  registration, SSE streaming — all re-verified live) but NOT for the
+  fine-tune's effect on hybrid models; the earlier "visibly different"
+  adapter answers were sampling noise at default temperature.
+  `chat-remote` (transformers+peft) remains the verified way to talk to
+  hybrid fine-tunes. Standard-architecture adapters are untested in vLLM
+  and now labelled as such.
+
 - **The flywheel replicates — as a product**
   ([`docs/FLYWHEEL_DOMAIN2.md`](docs/FLYWHEEL_DOMAIN2.md)). A single
   `stateset-agents flywheel` invocation took an IT-helpdesk agent on

@@ -25,8 +25,8 @@ true over time. The categories are strict:
 | A failed eval gate preserves its adapter | Unit-pinned (from a live incident) | `test_failed_job_still_attempts_fetch` — docstring cites the lost 10/12 adapter |
 | Unknown cost is refused, never treated as $0 | Unit-pinned | `tests/unit/test_remote_ledger.py` budget tests |
 | Pods terminate on every exit path, incl. client death | Live-verified + unit-pinned | self-destruct fired with the client force-killed (v0.26.0); armed-first ordering tested |
-| Multi-adapter A/B serving; `deploy` one-shot | Unit-pinned; **first live run pending** | `test_multiple_adapters_ride_one_endpoint_under_their_own_names`; `TestDeploy` |
-| Streaming over the RunPod proxy | **Unverified** | vLLM streams natively; proxy passthrough queued for the next live serve run |
+| Multi-adapter serving + SSE streaming over the proxy | Live-verified (2026‑08‑18), mechanics only | `/v1/models` listed both adapters; SSE chunks flowed; **see LoRA caveat below** |
+| **vLLM applies hybrid-Qwen3.5 LoRA adapters** | **DISPROVEN (2026‑08‑18)** | Greedy adapter output byte-identical to base on training-format prompts; vLLM logs 'Loaded' with no error. Upstream limitation: the hybrid `linear_attn` target names never match. `chat-remote` (transformers+peft) remains the verified way to talk to these fine-tunes; earlier 'adapter answers differed' observations were temperature noise |
 | River AI provider | **Unverified** (blocked on River) | [`RIVER_PROVIDER.md`](RIVER_PROVIDER.md) — their SDK is not installable and their upstream inference errors |
 | `stateset-agents flywheel` (the loop as one command) | **Live-verified** (2026‑08‑17) | [`FLYWHEEL_DOMAIN2.md`](FLYWHEEL_DOMAIN2.md) — full multi-generation run: 0/12 → 6/12 → 7/12 for $2.60 |
 | The ceiling-raise replicates across domain and scale | Live-verified (2026‑08‑17, single seed) | same report — second domain, 0.8B, harvest rate 5.8% → 42.7% |
