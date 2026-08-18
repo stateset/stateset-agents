@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787089005575,
+  "lastUpdate": 1787089974130,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -6920,6 +6920,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 9.033325481029333e-8",
             "extra": "mean: 466.61410132320344 nsec\nrounds: 101338"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "69d7a93c425547068500f56717d6d8de0d01cd7e",
+          "message": "fix(river): echo job logs live for real; reset steps per retry attempt\n\nsubmit() passed a plain [] into the job, bypassing the _ProgressLogs\necho — a mid-run transient retry stayed invisible for an hour while\nstep ticks (direct verbose calls) kept printing past 180/180. Steps now\nreset per attempt so the counter states the truth.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T14:50:15-07:00",
+          "tree_id": "e24efda7cd0770a17b9763789223153b3f6f2c88",
+          "url": "https://github.com/stateset/stateset-agents/commit/69d7a93c425547068500f56717d6d8de0d01cd7e"
+        },
+        "date": 1787089973460,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8643.011906714753,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013740482487115318",
+            "extra": "mean: 115.70040754231754 usec\nrounds: 1379"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9293.367316132919,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014012636995868722",
+            "extra": "mean: 107.60362374400498 usec\nrounds: 2089"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6771.264967716586,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015267666044066045",
+            "extra": "mean: 147.68289304401878 usec\nrounds: 3263"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 839.1772378938488,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000020323740744452025",
+            "extra": "mean: 1.1916433797820605 msec\nrounds: 732"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 178.26604610109575,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006885742599795538",
+            "extra": "mean: 5.609593200002282 msec\nrounds: 145"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2314084.9883994935,
+            "unit": "iter/sec",
+            "range": "stddev: 5.9544402040949374e-8",
+            "extra": "mean: 432.13624608128026 nsec\nrounds: 188751"
           }
         ]
       }
