@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787028895087,
+  "lastUpdate": 1787031380301,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5208,6 +5208,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.114443434005143e-8",
             "extra": "mean: 473.90748319936216 nsec\nrounds: 102376"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "73ea73b690b3ebd94753f6bc7f51b7a0c7e8c263",
+          "message": "fix(merge): load composites as themselves; remap text-trained adapter keys\n\nTwo measured facts from merge attempt 4's corpse and a CPU repro:\nAutoModelForCausalLM extracts the text model from composite checkpoints\nand saves a config with model_type=qwen3_5_text and architectures:None\n(vLLM then guesses and dies), and an adapter trained through that\nextraction silently no-ops on the composite — probe delta exactly 0.0,\npeft warning only. The merge now loads the checkpoint in its own\narchitecture and remaps adapter keys (model.layers.* ->\nmodel.language_model.layers.*) when — and only when — the composite\nspelling exists on the model; measured 372/372 keys with real deltas.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T22:33:41-07:00",
+          "tree_id": "f0fd7eebc7a10ecbab02cf457ebd6e20a562d6e1",
+          "url": "https://github.com/stateset/stateset-agents/commit/73ea73b690b3ebd94753f6bc7f51b7a0c7e8c263"
+        },
+        "date": 1787031379660,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6131.2286819439,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001541039321773831",
+            "extra": "mean: 163.09944578399757 usec\nrounds: 1494"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6568.3712707245495,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015798865383152534",
+            "extra": "mean: 152.24474360288272 usec\nrounds: 1837"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5060.0232095728215,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001689516029276683",
+            "extra": "mean: 197.62755200571942 usec\nrounds: 3663"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 746.5227557577252,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000027148876540726136",
+            "extra": "mean: 1.3395438950618375 msec\nrounds: 648"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 185.9057159004305,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005064593307882908",
+            "extra": "mean: 5.379070757219705 msec\nrounds: 173"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2175902.008271096,
+            "unit": "iter/sec",
+            "range": "stddev: 3.786183670080232e-8",
+            "extra": "mean: 459.5795197572197 nsec\nrounds: 73282"
           }
         ]
       }
