@@ -214,6 +214,102 @@ def make_nsr_client(cfg: NSRVerifierConfig) -> NSRClient:
     return call
 
 
+# ---------------------------------------------------------------------------
+# Request builders — the /v1/decisions payload shapes, encoded once.
+# Established by driving a live nsr-server: facts wrap their predicate,
+# rules use "if"/"then" condition lists, variables are "?x" strings, and
+# authorization goals / facts must be fully grounded (no variables).
+# ---------------------------------------------------------------------------
+
+VALID_RULE_EFFECTS = frozenset({"permit", "deny"})
+
+
+def predicate(name: str, *args: Any, negated: bool = False) -> dict[str, Any]:
+    """A predicate term: ``predicate("return_received", "A1")``. Use ``"?o"``
+    strings for variables in rule conditions/conclusions."""
+    p: dict[str, Any] = {"name": name, "args": list(args)}
+    if negated:
+        p["negated"] = True
+    return p
+
+
+def _require_grounded(p: dict[str, Any], what: str) -> None:
+    for arg in p.get("args", []):
+        if isinstance(arg, str) and arg.startswith("?"):
+            raise ValueError(
+                f"{what} must be fully grounded; found variable '{arg}'"
+            )
+
+
+def fact(
+    name: str,
+    *args: Any,
+    confidence: float | None = None,
+    source: str | None = None,
+) -> dict[str, Any]:
+    """A request-scoped fact — wraps its predicate per the API shape."""
+    p = predicate(name, *args)
+    _require_grounded(p, "fact")
+    f: dict[str, Any] = {"predicate": p}
+    if confidence is not None:
+        f["confidence"] = confidence
+    if source is not None:
+        f["source"] = source
+    return f
+
+
+def rule(
+    name: str,
+    *,
+    effect: str,
+    when: list[dict[str, Any]],
+    then: list[dict[str, Any]],
+    priority: int | None = None,
+) -> dict[str, Any]:
+    """A request-scoped rule: ``when`` becomes the API's ``if`` list."""
+    if effect not in VALID_RULE_EFFECTS:
+        raise ValueError(
+            f"effect must be one of {sorted(VALID_RULE_EFFECTS)}, got '{effect}'"
+        )
+    r: dict[str, Any] = {"name": name, "effect": effect, "if": when, "then": then}
+    if priority is not None:
+        r["priority"] = priority
+    return r
+
+
+def decision_request(
+    query: str,
+    *,
+    action: str | None = None,
+    goal: dict[str, Any] | None = None,
+    rules: list[dict[str, Any]] | None = None,
+    facts: list[dict[str, Any]] | None = None,
+    external_ref: str | None = None,
+    hydrate_org_context: bool | None = None,
+    mode: str | None = None,
+) -> dict[str, Any]:
+    """Build a /v1/decisions body — the value for ``context["nsr_request"]``
+    or a harvest/eval spec's ``nsr`` key. Unset fields are omitted."""
+    if goal is not None:
+        _require_grounded(goal, "authorization goal")
+    req: dict[str, Any] = {"query": query}
+    if action is not None:
+        req["action"] = action
+    if goal is not None:
+        req["authorization_goal"] = goal
+    if rules is not None:
+        req["rules"] = rules
+    if facts is not None:
+        req["facts"] = facts
+    if external_ref is not None:
+        req["external_ref"] = external_ref
+    if hydrate_org_context is not None:
+        req["hydrate_org_context"] = hydrate_org_context
+    if mode is not None:
+        req["mode"] = mode
+    return req
+
+
 VALID_OUTCOMES = frozenset({"honored", "reversed", "overridden", "escalated"})
 
 
@@ -292,7 +388,12 @@ __all__ = [
     "NSRVerifierConfig",
     "NSRVerifierReward",
     "VALID_OUTCOMES",
+    "VALID_RULE_EFFECTS",
+    "decision_request",
     "extract_verdict",
+    "fact",
     "make_nsr_client",
     "make_nsr_poster",
+    "predicate",
+    "rule",
 ]
