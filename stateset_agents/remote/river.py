@@ -1645,6 +1645,13 @@ def _extract(result: Any, *names: str) -> Any:
         value = getattr(result, name, None)
         if value is not None:
             return value
+    # ForwardResult keeps its scalars in a ``metrics`` mapping — observed
+    # live: step ticks printed without loss because loss_mean lives there.
+    metrics = getattr(result, "metrics", None)
+    if isinstance(metrics, dict):
+        for name in names:
+            if name in metrics:
+                return metrics[name]
     return None
 
 
