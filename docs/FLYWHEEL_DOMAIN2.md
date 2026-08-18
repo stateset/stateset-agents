@@ -58,6 +58,23 @@ into majority-reliable behaviour. The harvest-rate jump (5.8% → 42.7%) is
 the cleanest single number: the same 480-sample procedure against the same
 checks, before and after one turn of the wheel.
 
+## The third substrate: zero infrastructure (2026-08-18)
+
+The same loop then ran **entirely through River's training API** — no pods,
+no SSH, no disks; `flywheel --provider river` from a laptop. Starting from
+the River-trained TechNest checkpoint on Qwen3.5-9B (single-issue only):
+
+| | eval (same 12 compound tickets) | harvest rate |
+|---|---|---|
+| start | **7/12** | 161/240 (67%) |
+| gen-1 (trained on those 161) | **11/12** | 212/240 (88%) |
+| gen-2 | 11/12 → plateau stop, gen-1 kept | — |
+
+Three substrates (RunPod pods at 0.8B and 30B, River's remote autograd at
+9B), one mechanism, and two independent paths converging on 11/12 in this
+domain. River quotes no prices to the SDK, so the ledger reports the run's
+cost as unknown — never zero.
+
 ## What it took (the honest part)
 
 The first three spins failed, each finding a real bug now fixed with tests:

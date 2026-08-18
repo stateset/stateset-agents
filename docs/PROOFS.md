@@ -29,7 +29,7 @@ true over time. The categories are strict:
 | **vLLM applies hybrid-Qwen3.5 LoRA adapters** | **DISPROVEN (2026‑08‑18)** | Greedy adapter output byte-identical to base on training-format prompts; vLLM logs 'Loaded' with no error. Upstream limitation: the hybrid `linear_attn` target names never match. `chat-remote` (transformers+peft) remains the verified way to talk to these fine-tunes; earlier 'adapter answers differed' observations were temperature noise |
 | River AI provider | **Live-verified** (2026‑08‑18) | `train-remote --provider river` trained Qwen3.5‑9B for real (session → LoRA model → train step → `river://` checkpoint, lineage manifest written) and the training EFFECT is proven: 140 TechNest rows × 3 epochs (210 steps), then **3/3 held-out tickets** answered from the checkpoint with the canonical resolutions, persona signature, and echoed ticket numbers. Their SDK landed on PyPI 2026‑08‑17; Python ≥3.12 (separate venv — the repo runs 3.10) |
 | `stateset-agents flywheel` (the loop as one command) | **Live-verified** (2026‑08‑17) | [`FLYWHEEL_DOMAIN2.md`](FLYWHEEL_DOMAIN2.md) — full multi-generation run: 0/12 → 6/12 → 7/12 for $2.60 |
-| The ceiling-raise replicates across domain and scale | Live-verified (2026‑08‑17/18, **reproduced twice**) | same report — 0/12 → 7/12 and 0/12 → 11/12; harvest rate 5.8→42.7% and 6.7→57.9% |
+| The ceiling-raise replicates across domain and scale | Live-verified (2026‑08‑17/18, **reproduced on three substrates**) | same report — RunPod 0.8B: 0/12 → 7/12 and 0/12 → 11/12; River 9B, zero infrastructure: 7/12 → 11/12 with plateau-stop |
 
 \* **Honesty note on "weekly":** the scheduled GPU jobs need the
 `RUNPOD_API_KEY` repository secret, which has not yet been configured — so
