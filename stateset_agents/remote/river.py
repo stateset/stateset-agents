@@ -330,7 +330,7 @@ class RiverExecutor(RemoteExecutor):
             try:
                 self._train(client, spec, data, job)
                 return
-            except transient as exc:  # type: ignore[misc]
+            except transient as exc:
                 if attempt >= self.MAX_TRANSIENT_ATTEMPTS:
                     raise
                 delay = self.TRANSIENT_BACKOFF_S * (2 ** (attempt - 1))
