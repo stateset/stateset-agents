@@ -509,3 +509,69 @@ class TestDetachedSteps:
 
         with pytest.raises(RemoteExecutionError, match="could not start"):
             session.start("m")
+
+
+class TestMerge:
+    """--merge exists because vLLM loads hybrid-Qwen3.5 LoRA adapters
+    without error and silently serves the base weights (byte-identical
+    greedy completions — docs/PROOFS.md 2026-08-18). Merging folds the
+    deltas in with peft and serves an ordinary full checkpoint."""
+
+    def _started(self, tmp_path, **kwargs):
+        adapter = tmp_path / "adapter"
+        adapter.mkdir()
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh)
+        session.start("Qwen/Qwen3.5-0.8B", adapters={"adapter": adapter}, **kwargs)
+        return ssh
+
+    def test_merge_runs_between_patch_and_launch_and_serves_the_merged_dir(
+        self, tmp_path
+    ):
+        ssh = self._started(tmp_path, merge=True)
+
+        merge = next(i for i, c in enumerate(ssh.commands) if "merge_adapter" in c)
+        launch = next(i for i, c in enumerate(ssh.commands) if "vllm serve" in c)
+        patch = next(i for i, c in enumerate(ssh.commands) if "fd_exchange" in c)
+        assert patch < merge < launch
+        merge_cmd = ssh.commands[merge]
+        assert "--base-model Qwen/Qwen3.5-0.8B" in merge_cmd
+        assert "--adapter /workspace/adapter" in merge_cmd
+        assert "--output-dir /workspace/merged" in merge_cmd
+
+    def test_merged_launch_serves_full_weights_not_lora(self, tmp_path):
+        ssh = self._started(tmp_path, merge=True)
+
+        launch = next(c for c in ssh.commands if "vllm serve" in c)
+        assert "vllm serve /workspace/merged" in launch
+        assert "--enable-lora" not in launch
+        # Same API name with and without --merge: callers always ask for
+        # model "adapter".
+        assert "--served-model-name adapter" in launch
+
+    def test_merge_installs_the_training_deps_first(self, tmp_path):
+        ssh = self._started(tmp_path, merge=True)
+
+        deps = next(
+            i for i, c in enumerate(ssh.commands) if "stateset-agents[training]" in c
+        )
+        merge = next(i for i, c in enumerate(ssh.commands) if "merge_adapter" in c)
+        assert deps < merge
+
+    def test_merge_with_multiple_adapters_is_refused_before_renting(self, tmp_path):
+        a, b = tmp_path / "a", tmp_path / "b"
+        for d in (a, b):
+            d.mkdir()
+        api = FakeApi()
+        session = make_session(api)
+
+        with pytest.raises(RemoteExecutionError, match="ONE adapter"):
+            session.start("m", adapters={"x": a, "y": b}, merge=True)
+        assert api.created == []
+
+    def test_without_merge_nothing_changes(self, tmp_path):
+        ssh = self._started(tmp_path, merge=False)
+
+        assert not any("merge_adapter" in c for c in ssh.commands)
+        launch = next(c for c in ssh.commands if "vllm serve" in c)
+        assert "--enable-lora" in launch

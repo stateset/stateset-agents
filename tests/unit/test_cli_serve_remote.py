@@ -38,6 +38,7 @@ class FakeSession:
         gpu=None,
         max_hours=1.0,
         adapters=None,
+        merge=False,
     ):
         if FakeSession.start_raises is not None:
             raise FakeSession.start_raises

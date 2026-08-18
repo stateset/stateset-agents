@@ -96,10 +96,11 @@ stateset-agents train-remote --provider river \
   therefore cannot be checked against a River run.
 - LoRA rank is capped at 32 by River and is validated locally.
 
-**This provider has not been verified against the live service** — no API key
-was available and `river-client` is not installable from PyPI, so it is
-exercised only against fakes. Read `docs/RIVER_PROVIDER.md` for the specific
-assumptions (notably the next-token target shift) before relying on it.
+**Live-verified 2026-08-18**: a real run trained Qwen3.5-9B (140 rows,
+3 epochs) and sampling the `river://` checkpoint answered 3/3 held-out
+prompts with the trained behaviour. Note `river-client` requires Python
+≥3.12 (this repo runs 3.10 — use a separate venv for River runs). See
+`docs/RIVER_PROVIDER.md`.
 
 #### Options
 
@@ -792,6 +793,11 @@ pick a bigger `--gpu` (e.g. `"NVIDIA H100 80GB HBM3"`) and raise
   install (~10 GB) plus ~2.5x the model checkpoint. Default `60`.
 - `--max-hours FLOAT`: On-pod self-destruct deadline in hours. Default
   `1.0`; must be positive.
+- `--merge`: Fold the (single) adapter into full base weights on the pod
+  and serve the merged checkpoint. REQUIRED for hybrid models
+  (Qwen3.5/3.8 families) — vLLM loads their LoRA adapters without error
+  and silently serves the base weights. Still answers as model
+  `adapter`; needs disk for a second full copy of the weights.
 - `--stop TEXT`: Terminate a running serve pod by name or id, then exit.
 - `--list`: List running serve pods (name, id, status, age, $/hr), then
   exit.

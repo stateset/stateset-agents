@@ -226,6 +226,16 @@ def serve_remote(
         "after this many hours, even if this machine goes away. The RunPod "
         "API key is copied to the pod (chmod 600) to make that possible.",
     ),
+    merge: bool = typer.Option(
+        False,
+        "--merge",
+        help="Fold the (single) adapter into full base weights on the pod "
+        "and serve the merged checkpoint. REQUIRED for hybrid models "
+        "(Qwen3.5/3.8 families): vLLM loads their LoRA adapters without "
+        "error and silently serves the base weights (docs/PROOFS.md). The "
+        "merged model still answers as model name 'adapter'. Needs disk "
+        "for a second full copy of the weights.",
+    ),
     stop: str | None = typer.Option(
         None,
         "--stop",
@@ -294,6 +304,8 @@ def serve_remote(
     _echo(f"Renting a {gpu} pod and serving {base_model} with vLLM…")
     for name, directory in adapters.items():
         _echo(f"With adapter: {directory} (served-model name: {name})")
+    if merge:
+        _echo("Merging the adapter into full weights before serving (--merge).")
     _echo(f"Self-destruct armed on the pod at {max_hours}h.")
     try:
         session.start(
@@ -301,6 +313,7 @@ def serve_remote(
             adapters=adapters,
             gpu=gpu,
             max_hours=max_hours,
+            merge=merge,
         )
     except StateSetError as exc:
         _echo(str(exc), err=True)

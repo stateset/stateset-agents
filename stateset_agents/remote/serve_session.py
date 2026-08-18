@@ -67,6 +67,7 @@ _REMOTE_KEY_FILE = f"{_REMOTE_WORKDIR}/.runpod_key"
 _REMOTE_DESTRUCT_SCRIPT = f"{_REMOTE_WORKDIR}/self_destruct.sh"
 _REMOTE_VLLM_LOG = f"{_REMOTE_WORKDIR}/vllm.log"
 _VLLM_PORT = 8000
+_REMOTE_MERGED_DIR = f"{_REMOTE_WORKDIR}/merged"
 
 #: flashinfer (pulled in by vllm) annotates with ``array.array[int]``, which
 #: raises TypeError at import time on the image's Python 3.11 and takes the
@@ -456,7 +457,43 @@ class RemoteServeSession:
             f"&& echo armed",
         )
 
-    def _vllm_command(self, base_model: str, adapter_names: list[str]) -> str:
+    def _merge_adapter_remotely(self, ssh: Any, base_model: str, name: str) -> None:
+        """Fold the uploaded adapter into full weights at ``/workspace/merged``.
+
+        Exists because vLLM loads hybrid-Qwen3.5 LoRA adapters without error
+        and silently serves the base weights — the hybrid ``linear_attn``
+        target modules never match its LoRA mapping (proven by byte-identical
+        greedy completions; ``docs/PROOFS.md`` 2026-08-18). peft knows the
+        modules it trained, so merging applies every delta, and vLLM then
+        serves an ordinary full checkpoint with no ``--enable-lora`` at all.
+
+        Runs detached: a 30B merge is a model download plus a full-weight
+        save, and a dropped ssh link must cost a poll, not the run.
+        """
+        from stateset_agents import __version__
+
+        self._run_detached(
+            ssh,
+            f"pip install --quiet 'stateset-agents[training]=={__version__}'",
+            label="merge-deps",
+            timeout_s=self.ready_timeout_s,
+        )
+        self._run_detached(
+            ssh,
+            "python -m stateset_agents.training.merge_adapter "
+            f"--base-model {shlex.quote(base_model)} "
+            f"--adapter {_REMOTE_WORKDIR}/{shlex.quote(name)} "
+            f"--output-dir {_REMOTE_MERGED_DIR}",
+            label="merge",
+            timeout_s=self.ready_timeout_s,
+        )
+
+    def _vllm_command(
+        self,
+        base_model: str,
+        adapter_names: list[str],
+        model_path: str | None = None,
+    ) -> str:
         """The launch line: vLLM's built-in OpenAI-compatible server.
 
         ``vllm serve`` binds 0.0.0.0:8000 with ``/v1`` chat/completions
@@ -469,11 +506,15 @@ class RemoteServeSession:
             "nohup",
             "vllm",
             "serve",
-            shlex.quote(base_model),
+            shlex.quote(model_path or base_model),
             "--host 0.0.0.0",
             f"--port {_VLLM_PORT}",
             f"--api-key {shlex.quote(self.token)}",
         ]
+        if model_path is not None:
+            # A merged checkpoint serves under the API name "adapter" so
+            # callers address it the same way with and without --merge.
+            parts += ["--served-model-name adapter"]
         if adapter_names:
             modules = " ".join(
                 f"{shlex.quote(n)}={_REMOTE_WORKDIR}/{shlex.quote(n)}"
@@ -520,6 +561,7 @@ class RemoteServeSession:
         gpu: str | None = None,
         max_hours: float = 1.0,
         adapters: dict[str, Path] | None = None,
+        merge: bool = False,
     ) -> None:
         """Provision, arm the self-destruct, boot vLLM, block until ready.
 
@@ -537,6 +579,13 @@ class RemoteServeSession:
         all_adapters: dict[str, Path] = dict(adapters or {})
         if adapter_dir is not None:
             all_adapters.setdefault("adapter", Path(adapter_dir))
+        if merge and len(all_adapters) != 1:
+            raise RemoteExecutionError(
+                "--merge folds ONE adapter into the base weights; got "
+                f"{len(all_adapters)}. Serve multiple adapters without "
+                "--merge, or pick one.",
+                provider=self.provider,
+            )
         api = self._require_api()
         public_key = self._require_public_key()
         ssh = self._require_ssh()
@@ -600,7 +649,15 @@ class RemoteServeSession:
             # subscript in place; it is annotation-only. Observed live on the
             # first verified endpoint run (2026-08-17).
             self._run_checked(ssh, _FLASHINFER_PATCH_COMMAND)
-            self._run_checked(ssh, self._vllm_command(base_model, list(all_adapters)))
+            if merge:
+                name = next(iter(all_adapters))
+                self._merge_adapter_remotely(ssh, base_model, name)
+                launch = self._vllm_command(
+                    base_model, [], model_path=_REMOTE_MERGED_DIR
+                )
+            else:
+                launch = self._vllm_command(base_model, list(all_adapters))
+            self._run_checked(ssh, launch)
             self._await_server_ready(ssh)
         except BaseException:
             self.terminate()

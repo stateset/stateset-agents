@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`serve-remote --merge` — hybrid fine-tunes now actually serve.** Folds
+  the adapter into full base weights on the pod (peft `merge_and_unload`)
+  and serves the merged checkpoint, sidestepping vLLM's LoRA mapping —
+  which loads hybrid-Qwen3.5 adapters without error and silently serves
+  the base weights (the DISPROVEN row in `docs/PROOFS.md`). The merged
+  model still answers as model name `adapter`, so callers are unchanged.
+
 ## [0.32.1] - 2026-08-17 — River training effect verified: 3/3 held-out tickets from a river:// checkpoint
 
 ### Added
