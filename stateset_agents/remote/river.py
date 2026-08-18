@@ -381,9 +381,7 @@ class RiverExecutor(RemoteExecutor):
                             chunk, lr=spec.learning_rate, loss_fn=self.SFT_LOSS_FN
                         )
                     else:
-                        result = model.forward_backward(
-                            chunk, loss_fn=self.SFT_LOSS_FN
-                        )
+                        result = model.forward_backward(chunk, loss_fn=self.SFT_LOSS_FN)
                         model.optim_step(lr=spec.learning_rate)
                     job.steps += 1
                     loss = _extract(result, "loss_mean", "loss")

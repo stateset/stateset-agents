@@ -547,14 +547,10 @@ class TestTransientRecovery:
         )
         executor._sleep = lambda s: None  # no real backoff in tests
         # The fake SDK's transient types live on the client, not a module.
-        executor._transient_exceptions = (
-            lambda c: (self.FakeRiverConnectionError,)
-        )
+        executor._transient_exceptions = lambda c: (self.FakeRiverConnectionError,)
         return executor
 
-    def test_transient_failures_are_retried_and_the_run_succeeds(
-        self, spec, tmp_path
-    ):
+    def test_transient_failures_are_retried_and_the_run_succeeds(self, spec, tmp_path):
         client = self._flaky_client(failures=2)
         executor = self._executor(client, tmp_path)
 
@@ -564,9 +560,7 @@ class TestTransientRecovery:
         assert type(client).attempts == 3
         assert any("retrying" in line for line in executor.logs(handle))
 
-    def test_persistent_transient_failure_gives_up_after_the_cap(
-        self, spec, tmp_path
-    ):
+    def test_persistent_transient_failure_gives_up_after_the_cap(self, spec, tmp_path):
         client = self._flaky_client(failures=99)
         executor = self._executor(client, tmp_path)
 
