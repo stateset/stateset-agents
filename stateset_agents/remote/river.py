@@ -261,7 +261,7 @@ class RiverExecutor(RemoteExecutor):
         started = time.monotonic()
         job.status = JobStatus.RUNNING
         try:
-            self._train(client, spec, data, job)
+            self._train_with_recovery(client, spec, data, job)
         except RemoteExecutionError:
             job.status = JobStatus.FAILED
             job.duration_s = time.monotonic() - started
@@ -284,6 +284,65 @@ class RiverExecutor(RemoteExecutor):
         job.status = JobStatus.SUCCEEDED
         self._record_cost(job_id, job)
         return handle
+
+    #: Transient-retry policy, from the SDK's own recovery taxonomy:
+    #: RiverConnectionError (which covers SessionHeartbeatError and capacity
+    #: squeezes) and RiverTimeoutError mean "back off, rebuild the session,
+    #: try again"; auth/model/data errors mean "fail fast". Observed live on
+    #: the first real run: a slow create_model timed out client-side, the
+    #: retry raced the server-side create, and ALREADY_EXISTS arrived as a
+    #: RiverConnectionError.
+    MAX_TRANSIENT_ATTEMPTS = 3
+    TRANSIENT_BACKOFF_S = 10.0
+
+    def _transient_exceptions(self, client: Any) -> tuple[type[Exception], ...]:
+        """The SDK's transient error types, if the SDK is importable."""
+        try:
+            import river_client
+        except ImportError:
+            river_client = _river_module(client)
+        names = ("RiverConnectionError", "RiverTimeoutError")
+        return tuple(
+            exc
+            for name in names
+            if isinstance(exc := getattr(river_client, name, None), type)
+            and issubclass(exc, Exception)
+        )
+
+    def _train_with_recovery(
+        self,
+        client: Any,
+        spec: RemoteJobSpec,
+        data: list[dict[str, Any]],
+        job: _RiverJob,
+    ) -> None:
+        """Run ``_train``, retrying transient SDK failures with backoff.
+
+        Each retry rebuilds the session from scratch (sessions are not
+        durable — checkpoints are; these short SFT runs restart rather than
+        resume). Auth, model-not-found, and data errors propagate on the
+        first throw — retrying those fails identically.
+        """
+        transient = self._transient_exceptions(client)
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                self._train(client, spec, data, job)
+                return
+            except transient as exc:  # type: ignore[misc]
+                if attempt >= self.MAX_TRANSIENT_ATTEMPTS:
+                    raise
+                delay = self.TRANSIENT_BACKOFF_S * (2 ** (attempt - 1))
+                job.logs.append(
+                    f"transient River failure ({type(exc).__name__}): {exc} "
+                    f"— rebuilding session and retrying in {delay:.0f}s "
+                    f"(attempt {attempt}/{self.MAX_TRANSIENT_ATTEMPTS})"
+                )
+                self._sleep(delay)
+
+    #: Seam for tests; time.sleep in production.
+    _sleep = staticmethod(time.sleep)
 
     def _train(
         self,
@@ -315,10 +374,19 @@ class RiverExecutor(RemoteExecutor):
             for epoch in range(spec.num_epochs):
                 for start in range(0, len(data), size):
                     chunk = data[start : start + size]
-                    result = model.forward_backward(chunk, loss_fn=self.SFT_LOSS_FN)
-                    model.optim_step(lr=spec.learning_rate)
+                    if hasattr(model, "train_step"):
+                        # The SDK's preferred complete step: forward+backward
+                        # and the optimizer step pipelined server-side.
+                        result, _ = model.train_step(
+                            chunk, lr=spec.learning_rate, loss_fn=self.SFT_LOSS_FN
+                        )
+                    else:
+                        result = model.forward_backward(
+                            chunk, loss_fn=self.SFT_LOSS_FN
+                        )
+                        model.optim_step(lr=spec.learning_rate)
                     job.steps += 1
-                    loss = _extract(result, "loss")
+                    loss = _extract(result, "loss_mean", "loss")
                     if loss is not None:
                         job.final_loss = float(loss)
                     counted = _extract(result, "num_tokens", "tokens", "total_tokens")

@@ -515,3 +515,97 @@ class TestAccountStateErrors:
         ex = self._failing_executor("CUDA kernel exploded", tmp_path)
         with pytest.raises(RemoteExecutionError, match="River training run failed"):
             ex.submit(spec)
+
+
+class TestTransientRecovery:
+    """The SDK's taxonomy: RiverConnectionError/RiverTimeoutError mean
+    'back off, rebuild the session, retry'; observed live when a slow
+    create_model timed out client-side and the retry raced the server-side
+    create into ALREADY_EXISTS."""
+
+    class FakeRiverConnectionError(Exception):
+        pass
+
+    def _flaky_client(self, failures):
+        outer = self
+
+        class FlakyClient(FakeRiverClient):
+            RiverConnectionError = outer.FakeRiverConnectionError
+            attempts = 0
+
+            def create_session(self):
+                type(self).attempts += 1
+                if type(self).attempts <= failures:
+                    raise outer.FakeRiverConnectionError("Resource already exists")
+                return super().create_session()
+
+        return FlakyClient()
+
+    def _executor(self, client, tmp_path):
+        executor = RiverExecutor(
+            client=client, tokenizer=FakeTokenizer(), ledger_path=tmp_path / "l.jsonl"
+        )
+        executor._sleep = lambda s: None  # no real backoff in tests
+        # The fake SDK's transient types live on the client, not a module.
+        executor._transient_exceptions = (
+            lambda c: (self.FakeRiverConnectionError,)
+        )
+        return executor
+
+    def test_transient_failures_are_retried_and_the_run_succeeds(
+        self, spec, tmp_path
+    ):
+        client = self._flaky_client(failures=2)
+        executor = self._executor(client, tmp_path)
+
+        handle = executor.submit(spec)
+
+        assert executor.status(handle) is JobStatus.SUCCEEDED
+        assert type(client).attempts == 3
+        assert any("retrying" in line for line in executor.logs(handle))
+
+    def test_persistent_transient_failure_gives_up_after_the_cap(
+        self, spec, tmp_path
+    ):
+        client = self._flaky_client(failures=99)
+        executor = self._executor(client, tmp_path)
+
+        with pytest.raises(RemoteExecutionError):
+            executor.submit(spec)
+        assert type(client).attempts == RiverExecutor.MAX_TRANSIENT_ATTEMPTS
+
+
+class TestTrainStepPreference:
+    def test_train_step_is_used_when_the_model_offers_it(self, spec, tmp_path):
+        class StepModel(FakeModel):
+            train_steps: list[dict] = []
+
+            def train_step(self, data, lr, loss_fn="cross_entropy", **kw):
+                type(self).train_steps.append({"n": len(data), "lr": lr})
+                return {"loss_mean": 0.25}, {"ok": True}
+
+        class StepSession(FakeSession):
+            def create_model(self, base_model, lora):
+                model = StepModel(base_model=base_model, lora=lora)
+                self.models.append(model)
+                return model
+
+        class StepClient(FakeRiverClient):
+            def create_session(self):
+                session = StepSession()
+                self.sessions.append(session)
+                return session
+
+        StepModel.train_steps = []
+        client = StepClient()
+        executor = RiverExecutor(
+            client=client, tokenizer=FakeTokenizer(), ledger_path=tmp_path / "l.jsonl"
+        )
+
+        handle = executor.submit(spec)
+
+        assert executor.status(handle) is JobStatus.SUCCEEDED
+        assert StepModel.train_steps, "train_step was never called"
+        assert client.model.forward_backward_calls == []
+        # loss_mean (train_step's metric name) reaches the job record.
+        assert any("loss 0.25" in line for line in executor.logs(handle))
