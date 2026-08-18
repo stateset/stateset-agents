@@ -91,6 +91,31 @@ class RunPodApi:
             "Content-Type": "application/json",
         }
 
+    @staticmethod
+    def _send(request: Any, attempts: int = 3, backoff_s: float = 2.0) -> Any:
+        """Issue ``request()`` retrying transient 5xx answers.
+
+        RunPod's REST API intermittently answers 500 on /v1/pods (observed
+        repeatedly live; one such 500 killed a whole serve attempt during
+        provisioning). A 5xx is their infrastructure hiccuping, not our
+        request being wrong — retry briefly; 4xx still raises immediately.
+        """
+        import requests
+
+        last: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                response = request()
+                response.raise_for_status()
+                return response
+            except requests.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else 0
+                if status < 500 or attempt == attempts:
+                    raise
+                last = exc
+                time.sleep(backoff_s * attempt)
+        raise last  # pragma: no cover - unreachable
+
     def create_pod(
         self,
         *,
@@ -133,22 +158,24 @@ class RunPodApi:
             payload["volumeMountPath"] = volume_mount_path or _REMOTE_WORKDIR
             if data_center_id:
                 payload["dataCenterIds"] = [data_center_id]
-        response = requests.post(
-            f"{self.root}/pods",
-            headers=self._headers(),
-            json=payload,
-            timeout=60,
+        response = self._send(
+            lambda: requests.post(
+                f"{self.root}/pods",
+                headers=self._headers(),
+                json=payload,
+                timeout=60,
+            )
         )
-        response.raise_for_status()
         return dict(response.json())
 
     def get_pod(self, pod_id: str) -> dict[str, Any]:
         import requests
 
-        response = requests.get(
-            f"{self.root}/pods/{pod_id}", headers=self._headers(), timeout=60
+        response = self._send(
+            lambda: requests.get(
+                f"{self.root}/pods/{pod_id}", headers=self._headers(), timeout=60
+            )
         )
-        response.raise_for_status()
         return dict(response.json())
 
     def list_pods(self) -> list[dict[str, Any]]:
@@ -157,10 +184,11 @@ class RunPodApi:
         """
         import requests
 
-        response = requests.get(
-            f"{self.root}/pods", headers=self._headers(), timeout=60
+        response = self._send(
+            lambda: requests.get(
+                f"{self.root}/pods", headers=self._headers(), timeout=60
+            )
         )
-        response.raise_for_status()
         payload = response.json()
         pods = payload.get("pods", []) if isinstance(payload, dict) else payload
         return [dict(p) for p in pods]
