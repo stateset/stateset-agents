@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787039117941,
+  "lastUpdate": 1787053128417,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5462,6 +5462,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.122806895400291e-8",
             "extra": "mean: 479.1955071039428 nsec\nrounds: 103864"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "003c3b84f74bb5dcc4dbc659696845c73c68474c",
+          "message": "chore(release): v0.33.0 — Nothing rented, nothing unverified: the zero-infrastructure flywheel and self-verifying serving\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T04:35:37-07:00",
+          "tree_id": "b756f8e6a35b5373b7d49eb7625f654075458fc4",
+          "url": "https://github.com/stateset/stateset-agents/commit/003c3b84f74bb5dcc4dbc659696845c73c68474c"
+        },
+        "date": 1787053127487,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 10858.080195407285,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012983508042492032",
+            "extra": "mean: 92.09731204812584 usec\nrounds: 1660"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11776.46896867843,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011772279601288677",
+            "extra": "mean: 84.91509659301732 usec\nrounds: 2671"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8613.018624265897,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015625833205136383",
+            "extra": "mean: 116.10331332416361 usec\nrounds: 3565"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1038.6948595094173,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00012377000095811037",
+            "extra": "mean: 962.7466534996688 usec\nrounds: 886"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 227.13129684312275,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005111127130617422",
+            "extra": "mean: 4.402739798076747 msec\nrounds: 208"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2907532.801733644,
+            "unit": "iter/sec",
+            "range": "stddev: 5.931728193421038e-8",
+            "extra": "mean: 343.93421095842507 nsec\nrounds: 140037"
           }
         ]
       }
