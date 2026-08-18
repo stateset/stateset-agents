@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787068976128,
+  "lastUpdate": 1787069521739,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -6038,6 +6038,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.452349865599283e-8",
             "extra": "mean: 429.8584565725145 nsec\nrounds: 111570"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "1bb1d885e75ca218206314873f7a0e2c5c00deb9",
+          "message": "chore(release): v0.34.2 — Goodhart, observed: a live reward hack caught, diagnosed, and fixed by A/B\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T09:09:19-07:00",
+          "tree_id": "afefe15f60abb9797c3bffc56a5e7dbddfb10ab4",
+          "url": "https://github.com/stateset/stateset-agents/commit/1bb1d885e75ca218206314873f7a0e2c5c00deb9"
+        },
+        "date": 1787069521023,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8422.306565527411,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014950903573431318",
+            "extra": "mean: 118.73232020465872 usec\nrounds: 1371"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9129.794069190048,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014314811871802934",
+            "extra": "mean: 109.53149571846973 usec\nrounds: 2102"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6647.088343736575,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016962834025053957",
+            "extra": "mean: 150.441809750021 usec\nrounds: 3159"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 827.8211293564832,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000023580813037240476",
+            "extra": "mean: 1.2079904275665954 msec\nrounds: 711"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 175.21947069113574,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006004763159227073",
+            "extra": "mean: 5.707128300614079 msec\nrounds: 163"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2263472.420924109,
+            "unit": "iter/sec",
+            "range": "stddev: 4.85336367980646e-8",
+            "extra": "mean: 441.7990653456822 nsec\nrounds: 108543"
           }
         ]
       }
