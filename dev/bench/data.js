@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787064571110,
+  "lastUpdate": 1787064619859,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5782,6 +5782,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.689771643906125e-8",
             "extra": "mean: 337.6146281519476 nsec\nrounds: 140233"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "dce0401f37873bb13a17923a325c15d8969b9591",
+          "message": "chore(release): v0.34.0 — Difficulty as a parameter, and RL joins the flywheel\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T07:47:17-07:00",
+          "tree_id": "23ea3fb01471e310fa2af56e8d3d747df8a4f9cb",
+          "url": "https://github.com/stateset/stateset-agents/commit/dce0401f37873bb13a17923a325c15d8969b9591"
+        },
+        "date": 1787064618918,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8393.496617091274,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015436925335565017",
+            "extra": "mean: 119.13985858572315 usec\nrounds: 1386"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 8969.106348903051,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000357805025854416",
+            "extra": "mean: 111.49382793552259 usec\nrounds: 2069"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6604.980453842978,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016306712063300155",
+            "extra": "mean: 151.40090224160613 usec\nrounds: 3212"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 825.4589596902011,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000041269560828280626",
+            "extra": "mean: 1.2114472661067304 msec\nrounds: 714"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 176.02869613861765,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005266943751143671",
+            "extra": "mean: 5.68089193373635 msec\nrounds: 166"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2289973.333436676,
+            "unit": "iter/sec",
+            "range": "stddev: 4.8215864837863494e-8",
+            "extra": "mean: 436.6863078266727 nsec\nrounds: 107251"
           }
         ]
       }
