@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787074270290,
+  "lastUpdate": 1787075177974,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -6358,6 +6358,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.791351084821765e-8",
             "extra": "mean: 475.2632477250035 nsec\nrounds: 105286"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "6a53952d374568e39651fa6d6cc7c6476cd0a172",
+          "message": "chore(release): v0.35.1 — The founding promise, closed: multi-turn memory trained by the flywheel, 8/12 to 12/12\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T10:43:10-07:00",
+          "tree_id": "147c3af223c66057eb34f35459a8a49826b3ef13",
+          "url": "https://github.com/stateset/stateset-agents/commit/6a53952d374568e39651fa6d6cc7c6476cd0a172"
+        },
+        "date": 1787075177347,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 11022.460843976538,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000010325266392511832",
+            "extra": "mean: 90.72384235744158 usec\nrounds: 1459"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11858.408203631032,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011555793149093507",
+            "extra": "mean: 84.32835021599281 usec\nrounds: 2547"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8674.964011779692,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011475194685775352",
+            "extra": "mean: 115.27425343115024 usec\nrounds: 4226"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1067.9929450273287,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014061759177405389",
+            "extra": "mean: 936.3357732427822 usec\nrounds: 882"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 226.90807763322238,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000046735425988142194",
+            "extra": "mean: 4.4070709620854265 msec\nrounds: 211"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2875859.8930013496,
+            "unit": "iter/sec",
+            "range": "stddev: 3.7987592848338395e-8",
+            "extra": "mean: 347.72208563900676 nsec\nrounds: 136222"
           }
         ]
       }
