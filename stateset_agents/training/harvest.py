@@ -99,6 +99,48 @@ def sample_completions(
     ]
 
 
+def _create_nsr_reward() -> Any:
+    """Import hook for the NSR gate — split out so tests can fake it."""
+    from stateset_agents.rewards.nsr_verifier import (
+        NSRVerifierConfig,
+        NSRVerifierReward,
+    )
+
+    config = NSRVerifierConfig.from_env()
+    config.error_score = 0.0  # curation is fail-closed
+    return NSRVerifierReward(config=config)
+
+
+def nsr_gate_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
+    """Gate one sample on agreement with a verified NSR decision.
+
+    The spec's ``nsr`` object is the /v1/decisions request body. Fail-closed
+    throughout: a verifier that errors, is unreachable (``mode="nsr_error"``),
+    or disagrees with the sample's asserted verdict REJECTS the sample.
+    """
+    import asyncio
+
+    from stateset_agents.core.trajectory import ConversationTurn
+
+    try:
+        reward = _create_nsr_reward()
+        result = asyncio.run(
+            reward.compute_reward(
+                turns=[
+                    ConversationTurn(role="user", content=prompt_spec["prompt"]),
+                    ConversationTurn(role="assistant", content=sample),
+                ],
+                context={"nsr_request": prompt_spec["nsr"]},
+            )
+        )
+    except Exception as exc:
+        logger.warning("NSR gate failed (%s); rejecting sample (fail-closed).", exc)
+        return False
+    if result.metadata.get("mode") != "verified":
+        return False
+    return result.score >= 1.0
+
+
 def sample_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
     """One sample against one spec: substring checks AND the judge, if any.
 
@@ -107,7 +149,9 @@ def sample_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
     the step from proof-token experiments toward real-data flywheels, where
     success is not a substring. A judge that is unavailable on this worker
     scores ``None`` and the sample is REJECTED: an unscorable gate must not
-    silently become a pass, or a broken judge harvests noise.
+    silently become a pass, or a broken judge harvests noise. An ``nsr``
+    spec adds the strongest gate: the sample's verdict must agree with a
+    verified NSR decision, with the same fail-closed doctrine.
     """
     result = evaluate_checks(
         sample,
@@ -122,6 +166,8 @@ def sample_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
         threshold = float(prompt_spec.get("min_judge_score", 0.7))
         if score is None or score < threshold:
             return False
+    if prompt_spec.get("nsr"):
+        return nsr_gate_passes(prompt_spec, sample)
     return True
 
 
