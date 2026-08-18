@@ -181,6 +181,7 @@ def build_ladder(
 def build_episode_ladder(
     spec: DomainSpec,
     *,
+    turns: int = 2,
     eval_count: int = 12,
     harvest_count: int = 30,
     refusal_fraction: float = 0.0,
@@ -203,38 +204,56 @@ def build_episode_ladder(
     "forbid": [...]}`` — scored per turn, forbids over the whole episode.
     """
     names = sorted(spec.issues)
-    if len(names) < 2:
-        raise ValueError("episodes need at least 2 issues")
+    if turns < 2:
+        raise ValueError(f"episodes need at least 2 turns, got {turns}")
+    if len(names) < turns:
+        raise ValueError(
+            f"{turns}-turn episodes need at least {turns} issues; "
+            f"domain has {len(names)}"
+        )
     rng = random.Random(seed)
 
     def build_set(count: int, ref_base: int) -> list[dict]:
         scripts = []
         for i in range(count):
-            a, b = rng.sample(names, 2)
-            first, second = spec.issues[a], spec.issues[b]
+            chosen = rng.sample(names, turns)
+            issues = [spec.issues[n] for n in chosen]
             ref = spec.ref(ref_base + i)
             label = spec.ref_label.format(ref=ref)
-            turn1 = f"{label} — {first.phrasing}."
+            script_turns = [f"{label} — {issues[0].phrasing}."]
+            turn_expect: list[list[str]] = [[issues[0].token, ref]]
+            # Middle turns: one new issue each, reference never repeated.
+            for issue in issues[1:-1]:
+                script_turns.append(
+                    f"Thanks! Next thing — {issue.phrasing}. Same account."
+                )
+                turn_expect.append([issue.token, ref])
+            # Final turn: one more issue (or a refusal of it) AND a demand
+            # to summarize EVERYTHING done — long-range recall of the
+            # model's own actions: every earlier token must reappear.
+            last = issues[-1]
+            earlier_tokens = [issue.token for issue in issues[:-1]]
             refused = refusal_fraction > 0.0 and rng.random() < refusal_fraction
             if refused:
-                decline = second.refusal or f"please do NOT {second.token} anything"
-                turn2 = (
-                    f"Thanks! One more thing — {second.phrasing}, but "
-                    f"{decline}. Just confirm the first fix is on my account."
+                decline = last.refusal or f"please do NOT {last.token} anything"
+                script_turns.append(
+                    f"Last thing — {last.phrasing}, but {decline}. Now "
+                    "please summarize everything you've done on my account "
+                    "so far."
                 )
-                turn2_expect = [ref]
-                forbid = [second.token]
+                turn_expect.append([*earlier_tokens, ref])
+                forbid = [last.token]
             else:
-                turn2 = (
-                    f"Thanks! One more thing — {second.phrasing}. And can "
-                    "you confirm that first fix is applied to my account?"
+                script_turns.append(
+                    f"Last thing — {last.phrasing}. And please summarize "
+                    "everything you've done on my account so far."
                 )
-                turn2_expect = [second.token, ref]
+                turn_expect.append([last.token, *earlier_tokens, ref])
                 forbid = []
             scripts.append(
                 {
-                    "turns": [turn1, turn2],
-                    "turn_expect": [[first.token, ref], turn2_expect],
+                    "turns": script_turns,
+                    "turn_expect": turn_expect,
                     "forbid": forbid,
                 }
             )
@@ -260,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--train-count", type=int, default=140)
     parser.add_argument("--refusal-fraction", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--episode-turns", type=int, default=2)
     parser.add_argument(
         "--episodes",
         action="store_true",
@@ -290,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.episodes:
         episodes = build_episode_ladder(
             spec,
+            turns=args.episode_turns,
             eval_count=args.eval_count,
             harvest_count=args.harvest_count,
             refusal_fraction=args.refusal_fraction,

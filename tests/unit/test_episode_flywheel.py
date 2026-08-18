@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import sys
 
+import pytest
+
 from stateset_agents.remote.river import _score_episode
 from stateset_agents.training.eval_ladder import build_episode_ladder
 from tests.unit.test_eval_ladder import SPEC
@@ -184,3 +186,34 @@ class TestEpisodeHarvestExecutor:
         assert roles == ["user", "assistant", "user", "assistant"]
         # Turn-2 reply carries the reference the user never repeated.
         assert "8800" in rows[0]["messages"][3]["content"]
+
+
+class TestThreeTurnEpisodes:
+    def test_final_turn_demands_all_previous_tokens_and_the_ref(self):
+        kit = build_episode_ladder(SPEC, turns=3, eval_count=8, seed=2)
+        for script in kit["eval"]:
+            assert len(script["turns"]) == 3
+            ref = script["turn_expect"][0][-1]
+            # Reference appears only in turn 1's user text...
+            assert ref in script["turns"][0]
+            assert all(ref not in t for t in script["turns"][1:])
+            # ...but every turn's reply must carry it,
+            for expects in script["turn_expect"]:
+                assert ref in expects
+            # and the final reply must recall BOTH earlier resolutions.
+            final = script["turn_expect"][-1]
+            assert len(final) == 4  # last token + 2 earlier + ref
+
+    def test_refused_final_issue_still_demands_the_summary(self):
+        kit = build_episode_ladder(
+            SPEC, turns=3, eval_count=20, refusal_fraction=1.0, seed=2
+        )
+        for script in kit["eval"]:
+            assert len(script["forbid"]) == 1
+            final = script["turn_expect"][-1]
+            assert script["forbid"][0] not in final
+            assert len(final) == 3  # 2 earlier tokens + ref
+
+    def test_too_many_turns_for_the_domain_is_refused(self):
+        with pytest.raises(ValueError, match="at least 6"):
+            build_episode_ladder(SPEC, turns=6)
