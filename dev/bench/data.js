@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787024354339,
+  "lastUpdate": 1787024358018,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4760,6 +4760,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.8919898967512e-8",
             "extra": "mean: 474.7988418783432 nsec\nrounds: 105731"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "e2d62ac22fa34cc0377f4b8518fb41a6f2f9c75f",
+          "message": "feat(flywheel): --repeats N — 'reproduced' becomes a distribution\n\nRuns the whole loop N times under one shared budget; per-run best\nscores plus min/mean/max land in flywheel_repeats_report.json, and a\nrepeat that would start with no budget left is skipped loudly.\nMotivated by the live spread: two identical runs scored 7/12 and 11/12.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:36:36-07:00",
+          "tree_id": "280653ff72f3e6a31b17736e7febde5442d5e18a",
+          "url": "https://github.com/stateset/stateset-agents/commit/e2d62ac22fa34cc0377f4b8518fb41a6f2f9c75f"
+        },
+        "date": 1787024357443,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8521.994994381508,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014522187237606163",
+            "extra": "mean: 117.34341555695504 usec\nrounds: 1427"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9250.021251847267,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013827284885638534",
+            "extra": "mean: 108.1078597306245 usec\nrounds: 2153"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6631.98478003131,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016751495453609254",
+            "extra": "mean: 150.78442324098322 usec\nrounds: 3511"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 824.5329343541289,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000022046858974700822",
+            "extra": "mean: 1.2128078313613 msec\nrounds: 676"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 175.58802516780705,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004850416232445149",
+            "extra": "mean: 5.695149193940269 msec\nrounds: 165"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2265167.2892573727,
+            "unit": "iter/sec",
+            "range": "stddev: 3.7598665041897155e-8",
+            "extra": "mean: 441.4684975995069 nsec\nrounds: 56606"
           }
         ]
       }
