@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787022182134,
+  "lastUpdate": 1787022515210,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4376,6 +4376,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.7173795541831535e-8",
             "extra": "mean: 474.24379526895575 nsec\nrounds: 103542"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "99817f2c1d41c089a70ff6f06574819a0bd4b974",
+          "message": "chore(release): v0.32.0 — The flywheel is a product: replicated ceiling-raise, River live, honest serving\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:05:24-07:00",
+          "tree_id": "79b4f73349e017d6e3cc8ff5a3b32fe672d2b431",
+          "url": "https://github.com/stateset/stateset-agents/commit/99817f2c1d41c089a70ff6f06574819a0bd4b974"
+        },
+        "date": 1787022514262,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 14185.595938789713,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00000870457050788643",
+            "extra": "mean: 70.49404228873857 usec\nrounds: 1608"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 14932.41022494772,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008604357870051673",
+            "extra": "mean: 66.96842538716827 usec\nrounds: 2647"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 11138.33024927888,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009117181237100473",
+            "extra": "mean: 89.78006376357372 usec\nrounds: 3858"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1326.034812400179,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014475803387005245",
+            "extra": "mean: 754.1280143241171 usec\nrounds: 1117"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 342.13102018614256,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000028911869644376312",
+            "extra": "mean: 2.922856861841794 msec\nrounds: 304"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 3602417.1421325714,
+            "unit": "iter/sec",
+            "range": "stddev: 3.2197154918179384e-8",
+            "extra": "mean: 277.5913950398361 nsec\nrounds: 168153"
           }
         ]
       }
