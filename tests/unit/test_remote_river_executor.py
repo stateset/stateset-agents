@@ -658,13 +658,13 @@ class TestRiverHarvest:
         prompts.write_text(
             json.dumps([{"prompt": "fix my vpn", "expect": ["vpn profile"]}])
         )
-        defaults = dict(
-            dataset=prompts,
-            base_model="Qwen/Qwen3.5-9B",
-            output_dir=tmp_path / "harvest",
-            job_kind="harvest",
-            harvest={"adapter_dir": None, "best_of": 4, "temperature": 0.9},
-        )
+        defaults = {
+            "dataset": prompts,
+            "base_model": "Qwen/Qwen3.5-9B",
+            "output_dir": tmp_path / "harvest",
+            "job_kind": "harvest",
+            "harvest": {"adapter_dir": None, "best_of": 4, "temperature": 0.9},
+        }
         defaults.update(overrides)
         return RemoteJobSpec(**defaults)
 

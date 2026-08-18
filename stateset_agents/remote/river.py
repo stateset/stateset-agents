@@ -363,7 +363,7 @@ class RiverExecutor(RemoteExecutor):
                     from stateset_agents.training.sft import evaluate_checks
 
                     results = []
-                    for espec, completions in zip(eval_specs, greedy):
+                    for espec, completions in zip(eval_specs, greedy, strict=True):
                         checked = evaluate_checks(
                             completions[0],
                             espec.get("expect", []),
@@ -391,7 +391,7 @@ class RiverExecutor(RemoteExecutor):
                     max_tokens=int(knobs.get("max_new_tokens", 300)),
                 )
                 rows: list[dict[str, Any]] = []
-                for hspec, completions in zip(harvest_specs, sampled):
+                for hspec, completions in zip(harvest_specs, sampled, strict=True):
                     summary["samples"] += len(completions)
                     kept = build_harvest_rows(hspec, completions)
                     if kept:
@@ -564,7 +564,7 @@ class RiverExecutor(RemoteExecutor):
                     max_tokens=spec.eval_max_new_tokens,
                 )
                 eval_rows = []
-                for espec, completions in zip(specs_, greedy):
+                for espec, completions in zip(specs_, greedy, strict=True):
                     checked = evaluate_checks(
                         completions[0],
                         espec.get("expect", []),
