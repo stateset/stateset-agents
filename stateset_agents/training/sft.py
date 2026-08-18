@@ -478,7 +478,9 @@ def generate_completions(
 
 #: Keys an eval prompt-spec dict may carry. Anything else is a typo the user
 #: should hear about before renting a GPU.
-_EVAL_SPEC_KEYS = frozenset({"prompt", "expect", "forbid", "judge", "min_judge_score"})
+_EVAL_SPEC_KEYS = frozenset(
+    {"prompt", "expect", "forbid", "judge", "min_judge_score", "nsr"}
+)
 
 
 def normalize_eval_prompts(
@@ -521,6 +523,10 @@ def normalize_eval_prompts(
             entry["min_judge_score"], (int, float)
         ):
             raise ValueError(f"eval prompt {i}: 'min_judge_score' must be a number")
+        if "nsr" in entry and not isinstance(entry["nsr"], dict):
+            raise ValueError(
+                f"eval prompt {i}: 'nsr' must be an object (a /v1/decisions request body)"
+            )
         specs.append(dict(entry))
     return specs
 
@@ -603,6 +609,11 @@ def build_eval_extras(
             score = judge_completion(spec["judge"], spec["prompt"], completion)
             if score is not None:
                 extra["judge_score"] = score
+        if spec.get("nsr"):
+            # Lazy import: harvest imports this module at load time.
+            from stateset_agents.training import harvest
+
+            extra["nsr_verified"] = harvest.nsr_gate_passes(spec, completion)
         extras.append(extra)
     return extras
 
@@ -614,7 +625,10 @@ def eval_gate_failures(
 
     A row fails when its substring checks did not pass, or when the spec set
     ``min_judge_score`` and a judge score exists below it. A judge that could
-    not run never fails the gate — judge failures degrade, by design.
+    not run never fails the gate — judge failures degrade, by design. NSR
+    verification is the opposite: fail-closed, so ``nsr_verified: false``
+    (disagreement OR an unreachable verifier) fails the gate — an eval that
+    silently skips its strongest check would overstate the model.
     """
     failures: list[str] = []
     for spec, row in zip(specs, rows, strict=True):
@@ -635,6 +649,11 @@ def eval_gate_failures(
         if min_score is not None and score is not None and score < min_score:
             failures.append(
                 f"{prompt!r}: judge_score {score:.3f} < min_judge_score {min_score}"
+            )
+        if row.get("nsr_verified") is False:
+            failures.append(
+                f"{prompt!r}: nsr_verified is false — the completion's verdict "
+                "did not agree with a verified NSR decision"
             )
     return failures
 
