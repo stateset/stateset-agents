@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787025321853,
+  "lastUpdate": 1787025536647,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4952,6 +4952,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.289382326771932e-8",
             "extra": "mean: 356.3745634444853 nsec\nrounds: 135264"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "1ac172f92e92853d63b81f46f74f9f9a3f4a2a15",
+          "message": "fix(river): render sample prompts with the SDK's renderers, thinking off\n\nmodel.sample takes raw text; model_input message dicts are a multimodal\nparts format ('must be a dict with a type field', observed live). The\nSDK's per-family renderers apply the chat template client-side with\nthinking disabled (the Nemotron budget lesson) and supply stop strings;\nunknown models fall back to raw text. Also restores the module logger\nthat the harvest path referenced without defining.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:55:20-07:00",
+          "tree_id": "9875dc57c71455efb0c95cd105e132910f4991a2",
+          "url": "https://github.com/stateset/stateset-agents/commit/1ac172f92e92853d63b81f46f74f9f9a3f4a2a15"
+        },
+        "date": 1787025535454,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5585.51426163401,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001675085810607561",
+            "extra": "mean: 179.03454420819182 usec\nrounds: 1459"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6028.9685191498775,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016927710597751352",
+            "extra": "mean: 165.86585198175928 usec\nrounds: 1993"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4639.715523335686,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018284608209086196",
+            "extra": "mean: 215.53045547091173 usec\nrounds: 3144"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 671.3045761644383,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003380065966761381",
+            "extra": "mean: 1.4896367990124448 msec\nrounds: 607"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 173.7635158200047,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005428650048228949",
+            "extra": "mean: 5.75494801242318 msec\nrounds: 161"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2054144.914866097,
+            "unit": "iter/sec",
+            "range": "stddev: 5.455636841261645e-8",
+            "extra": "mean: 486.82057081897096 nsec\nrounds: 99612"
           }
         ]
       }
