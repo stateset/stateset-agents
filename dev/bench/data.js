@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787072685631,
+  "lastUpdate": 1787072793676,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -6166,6 +6166,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.543993599858151e-8",
             "extra": "mean: 469.95890742155956 nsec\nrounds: 100523"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "df3d417b5f8ea18235fbc97a8970a612296616aa",
+          "message": "fix(evals): define build_episode_ladder above the __main__ guard\n\nAppended below it, -m execution raised NameError before the definition\nwas reached — caught on the first live launch.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T10:03:26-07:00",
+          "tree_id": "1832b65702251a596d8a4264745bcce1083fa31c",
+          "url": "https://github.com/stateset/stateset-agents/commit/df3d417b5f8ea18235fbc97a8970a612296616aa"
+        },
+        "date": 1787072792434,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6156.931162900882,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014437899851207998",
+            "extra": "mean: 162.4185772979867 usec\nrounds: 1436"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6590.556522597767,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015265383449806236",
+            "extra": "mean: 151.7322545632057 usec\nrounds: 2027"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5064.794099386156,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017268611717187387",
+            "extra": "mean: 197.44139255753717 usec\nrounds: 3574"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 742.4490302086098,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000026612976478517005",
+            "extra": "mean: 1.3468938059209596 msec\nrounds: 608"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 182.36548329425167,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000049057986560213685",
+            "extra": "mean: 5.483493816570939 msec\nrounds: 169"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2105075.607793958,
+            "unit": "iter/sec",
+            "range": "stddev: 5.917857740312986e-8",
+            "extra": "mean: 475.04231976159906 nsec\nrounds: 101338"
           }
         ]
       }
