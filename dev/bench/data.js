@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787028884695,
+  "lastUpdate": 1787028895087,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5144,6 +5144,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.200558935221663e-8",
             "extra": "mean: 469.33185056121744 nsec\nrounds: 104298"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "20a5f8bb1462eb9c0fdfaf1219fd024c0e206fc3",
+          "message": "fix(lint): strict zips and a dict literal in the river harvest\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T21:52:17-07:00",
+          "tree_id": "af300ef1727888ed6c3826743a3df75adbceccb6",
+          "url": "https://github.com/stateset/stateset-agents/commit/20a5f8bb1462eb9c0fdfaf1219fd024c0e206fc3"
+        },
+        "date": 1787028894132,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5831.797678523639,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004114211169918293",
+            "extra": "mean: 171.47371275972614 usec\nrounds: 1591"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6190.762471988395,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00007249632446667932",
+            "extra": "mean: 161.5309914610264 usec\nrounds: 2225"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5134.042469027167,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017229746861389567",
+            "extra": "mean: 194.77828748648562 usec\nrounds: 3788"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 739.0680574189346,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000029911758321103728",
+            "extra": "mean: 1.3530553647418135 msec\nrounds: 658"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 183.84410811773716,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000046498845251669365",
+            "extra": "mean: 5.439391070175508 msec\nrounds: 171"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2110116.500480164,
+            "unit": "iter/sec",
+            "range": "stddev: 5.114443434005143e-8",
+            "extra": "mean: 473.90748319936216 nsec\nrounds: 102376"
           }
         ]
       }
