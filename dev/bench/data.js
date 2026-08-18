@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787023726227,
+  "lastUpdate": 1787024180759,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4632,6 +4632,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.3595339836101718e-7",
             "extra": "mean: 476.53856546698444 nsec\nrounds: 107101"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "96954441e82b010314f5eec8d79e81c4a519d755",
+          "message": "feat(serve): self-verifying — every adapter serve probes its own effect\n\nAfter readiness, serve-remote runs a greedy base-vs-adapter completion\nthrough the live endpoint for every served adapter: byte-identical\noutput (the silent no-op that once survived a 'successful'\nverification — docs/PROOFS.md 2026-08-18) warns loudly, or fails and\nterminates the pod with --strict. --merge verifies itself on the pod:\na pre-vs-post-merge greedy probe recorded in merge_probe.json, refusing\nto serve a merge with no observable effect. Probe transport is\nbest-effort; a completed comparison that finds no effect never is.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:33:13-07:00",
+          "tree_id": "506be101c9782ab608b944fde4d2c9705515d177",
+          "url": "https://github.com/stateset/stateset-agents/commit/96954441e82b010314f5eec8d79e81c4a519d755"
+        },
+        "date": 1787024180032,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6025.159246975492,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015525607828684725",
+            "extra": "mean: 165.970716956897 usec\nrounds: 1498"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6418.241755429255,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003698707814991265",
+            "extra": "mean: 155.8059104199511 usec\nrounds: 2121"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4972.298777235607,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000020897738786792376",
+            "extra": "mean: 201.11422197279114 usec\nrounds: 3568"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 712.4825067085213,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00014395774502503044",
+            "extra": "mean: 1.4035432317064631 msec\nrounds: 656"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 180.28686230739717,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005779405267704065",
+            "extra": "mean: 5.546715868264184 msec\nrounds: 167"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2093562.6872696201,
+            "unit": "iter/sec",
+            "range": "stddev: 5.6096194377549826e-8",
+            "extra": "mean: 477.6546726213288 nsec\nrounds: 102052"
           }
         ]
       }
