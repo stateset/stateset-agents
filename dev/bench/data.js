@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787064292575,
+  "lastUpdate": 1787064571110,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5718,6 +5718,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.89381624499748e-8",
             "extra": "mean: 484.80899597444767 nsec\nrounds: 101740"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "f02ea4f6c22115a7decac0bb7263b1091cae2020",
+          "message": "fix(rl): client-side prompt ids — River echoes none for text sampling\n\nObserved on the RL flywheel's first live launch: sample() with text\nprompts returns no prompt_token_ids, and the RL datum layout needs the\nprompt ids exactly. The renderer's own tokenizer now encodes the\nrendered prompt and the ids are PASSED to sample(), so the server\ngenerates from precisely the ids the datums carry; environments without\nthe SDK renderer fall back to echoed ids or fail loudly.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T07:46:33-07:00",
+          "tree_id": "85ba15d2cc5fe9f8dc7d2a88ee388002d58e7a86",
+          "url": "https://github.com/stateset/stateset-agents/commit/f02ea4f6c22115a7decac0bb7263b1091cae2020"
+        },
+        "date": 1787064569080,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 11592.504155614351,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008642700568896492",
+            "extra": "mean: 86.26263890668447 usec\nrounds: 1573"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 12164.870953678903,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008378873475024083",
+            "extra": "mean: 82.20391353165812 usec\nrounds: 2313"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 9157.603457742589,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008797191663340053",
+            "extra": "mean: 109.1988755152439 usec\nrounds: 3639"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1094.745647089343,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000021432544559256792",
+            "extra": "mean: 913.45419153641 usec\nrounds: 898"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 276.36022379296907,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0002518808914765563",
+            "extra": "mean: 3.6184657338717976 msec\nrounds: 248"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2961956.966953273,
+            "unit": "iter/sec",
+            "range": "stddev: 2.689771643906125e-8",
+            "extra": "mean: 337.6146281519476 nsec\nrounds: 140233"
           }
         ]
       }
