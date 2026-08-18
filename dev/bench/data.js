@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787007898950,
+  "lastUpdate": 1787022182134,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4312,6 +4312,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.5963641334243534e-8",
             "extra": "mean: 341.398991042702 nsec\nrounds: 138658"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "0c629f20854291cd2b58771ed466c347b669d898",
+          "message": "feat(river): live-verified — first real training run through RiverExecutor\n\nriver-client appeared on PyPI (0.6.2, published 2026-08-17, Python>=3.12,\ngRPC): a real run built 2 chat rows into River's wire format, opened a\nsession, created a LoRA model on Qwen/Qwen3.5-9B, took a training step,\nand saved river://.../sampler_weights/river_out — pointer + lineage\nmanifest written locally. Our blind-written batch shape matched their\nprediction-position contract exactly (target_tokens[i]=t[i+1]).\n\nHardening from first contact, per the SDK's own recovery taxonomy:\ntransient failures (RiverConnectionError — which covers heartbeat loss\nand capacity — and RiverTimeoutError) now back off and rebuild the\nsession up to 3 attempts (observed live: a slow create_model timeout\nraced into ALREADY_EXISTS); auth/model errors still fail fast. The\nexecutor prefers the SDK's pipelined train_step and reads its loss_mean\nmetric, falling back to forward_backward+optim_step for older shapes.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:00:20-07:00",
+          "tree_id": "c859c0994e983d9c2a0112973f89a71653af2359",
+          "url": "https://github.com/stateset/stateset-agents/commit/0c629f20854291cd2b58771ed466c347b669d898"
+        },
+        "date": 1787022181479,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6004.415732826357,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017314209596438706",
+            "extra": "mean: 166.5440976268455 usec\nrounds: 1475"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6457.603400354701,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016034658441808532",
+            "extra": "mean: 154.85621181769577 usec\nrounds: 1997"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4931.896657953801,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016653967697230413",
+            "extra": "mean: 202.76175057059913 usec\nrounds: 3504"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 725.878686616527,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00014029613397412898",
+            "extra": "mean: 1.3776406697670238 msec\nrounds: 645"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 181.77480490620766,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000582904977873918",
+            "extra": "mean: 5.501312464705881 msec\nrounds: 170"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2108620.1020993316,
+            "unit": "iter/sec",
+            "range": "stddev: 5.7173795541831535e-8",
+            "extra": "mean: 474.24379526895575 nsec\nrounds: 103542"
           }
         ]
       }
