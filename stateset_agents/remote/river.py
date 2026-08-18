@@ -246,7 +246,10 @@ class RiverExecutor(RemoteExecutor):
         self._counter += 1
         job_id = f"river-{self._counter}"
         handle = JobHandle(provider=self.name, job_id=job_id)
-        logs: list[str] = []
+        # _ProgressLogs so appends echo live under STATESET_RIVER_VERBOSE —
+        # a plain [] here silently bypassed the echo and hid a mid-run
+        # transient retry for an hour (observed live).
+        logs: list[str] = _ProgressLogs()
         job = _RiverJob(spec=spec, status=JobStatus.PENDING, logs=logs)
         self._jobs[job_id] = job
 
@@ -1085,6 +1088,7 @@ class RiverExecutor(RemoteExecutor):
         while True:
             attempt += 1
             try:
+                job.steps = 0  # each attempt trains from scratch
                 self._train(client, spec, data, job)
                 return
             except transient as exc:
