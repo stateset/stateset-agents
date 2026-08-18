@@ -146,7 +146,22 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.35.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.35.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **The first multi-turn ceiling-raise: 8/12 → 12/12 in one generation.**
+  N-turn episode scripts (`build_episode_ladder(turns=N)`) where the final
+  turn demands a summary of everything done — every earlier resolution
+  token plus the never-repeated account reference must reappear in the
+  last reply. At rung 3 (three turns, 40% refusals) the
+  single-turn-trained 9B scored 8/12 greedy with a 60% episode harvest,
+  and one flywheel turn on the 115 passing conversations produced a
+  **perfect 12/12** — cross-turn memory and self-summarization, trained
+  by the loop, with zero machines rented. The rarity doctrine now stands
+  confirmed from both sides: rung 2 (9/12 baseline, 65% harvest)
+  honestly plateaued; rung 3 lifted to perfection
+  ([`PROOFS.md`](docs/PROOFS.md)).
+
+**v0.35.0:**
 
 - **The multi-turn episode flywheel — the founding claim enters the
   loop.** `build_episode_ladder` generates two-turn scripts where the
@@ -529,7 +544,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.35.0)
+pip install stateset-agents          # latest release (v0.35.1)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1231,7 +1246,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.35.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.35.1`).
 
 Other entry points:
 

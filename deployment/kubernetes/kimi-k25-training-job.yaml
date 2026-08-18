@@ -17,7 +17,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: trainer
-        image: stateset/stateset-agents-trainer:0.35.0
+        image: stateset/stateset-agents-trainer:0.35.1
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

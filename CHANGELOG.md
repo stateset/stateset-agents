@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-08-18 — The founding promise, closed: multi-turn memory trained by the flywheel, 8/12 to 12/12
+
 ### Added
 
 - **The multi-turn ceiling-raise: 8/12 → 12/12 in one generation.**
