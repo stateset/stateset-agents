@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The curriculum curve, complete — including its wall.** Rung 5
+  (five turns, 60% refusals): the rung-4 adapter still transferred
+  (9/12 baseline) but with an 83% harvest rate the trained gen-2 scored
+  7/12 and the plateau stop kept rung 4 — the correct call, made
+  autonomously. Four rungs now pin the flywheel's operating regime with
+  unusual precision: it lifts when harvest rates sit near ~60% with
+  greedy headroom (rungs 3, 4 → both 12/12), and stalls when temperature
+  success is too common to carry information (rungs 2, 5). Total cost of
+  the entire five-rung curriculum study: API tokens only.
+
+### Added
+
 - **The ladder is a curriculum — proven by climbing it.** The
   rung-3-trained adapter transferred UPWARD: 11/12 at rung 4 (four
   turns, 50% refusals, final-turn summary of three prior actions) —
