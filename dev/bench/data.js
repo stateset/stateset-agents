@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787023636194,
+  "lastUpdate": 1787023726227,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4568,6 +4568,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.33165122122933e-8",
             "extra": "mean: 433.28585338274894 nsec\nrounds: 57026"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "82c3df6c4d7cab3341a3e486a1238a1ac247eed3",
+          "message": "fix(serve): --merge honors STATESET_AGENTS_WHEEL — unreleased merge module on pods\n\nCaught before the pod did this time: the merge deps install pinned the\nPyPI release, which cannot contain a module that has not been released.\nSame seam as the training executor.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:25:01-07:00",
+          "tree_id": "dfc36961237016fff55939ce94d5fa708eb86a4d",
+          "url": "https://github.com/stateset/stateset-agents/commit/82c3df6c4d7cab3341a3e486a1238a1ac247eed3"
+        },
+        "date": 1787023725019,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6024.098650677425,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014921641009933926",
+            "extra": "mean: 165.99993758195635 usec\nrounds: 1522"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6411.43127986187,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015154237440628768",
+            "extra": "mean: 155.97141361258485 usec\nrounds: 2101"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4964.239113441788,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018368535652930293",
+            "extra": "mean: 201.440739889478 usec\nrounds: 3264"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 724.1907965062622,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003761566911458785",
+            "extra": "mean: 1.3808515722988104 msec\nrounds: 657"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 178.59031134568124,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00034677725973032643",
+            "extra": "mean: 5.59940789881031 msec\nrounds: 168"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2098466.047590606,
+            "unit": "iter/sec",
+            "range": "stddev: 1.3595339836101718e-7",
+            "extra": "mean: 476.53856546698444 nsec\nrounds: 107101"
           }
         ]
       }
