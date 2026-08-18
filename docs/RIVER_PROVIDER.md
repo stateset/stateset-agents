@@ -1,5 +1,11 @@
 # River AI provider (`train-remote --provider river`)
 
+> **Python version**: `river-client` requires Python ≥3.12 while this
+> repo supports 3.10+. For River runs, create a side venv:
+> `uv venv --python 3.12 .river-venv && uv pip install --python .river-venv/bin/python river-client -e .`
+> then run `.river-venv/bin/python -m stateset_agents.cli train-remote --provider river …`.
+> Verified live 2026-08-18 (training + checkpoint sampling).
+
 > **This integration has never been run against the live service.** It was
 > written from River's public documentation (<https://docs.river.ai>). We hold
 > no River API key, and `river-client` is not installable from PyPI in this

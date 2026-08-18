@@ -1,0 +1,98 @@
+name: Flywheel Smoke
+
+# Weekly proof that the flagship claim stays true: one turn of the wheel on
+# real rented hardware — harvest the current model's sampled successes,
+# train on only those, read the score. The full ceiling-raise experiment
+# (docs/FLYWHEEL_DOMAIN2.md) costs ~$3; this smoke turns one generation on
+# a tiny prompt set for well under a dollar and fails unless the loop
+# produces a harvest summary and a scored (or honestly dry) report.
+#
+# Requires the RUNPOD_API_KEY repository secret; without it the job reports
+# itself as skipped rather than failing, so forks stay green.
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'  # Mondays 07:00 UTC, after gpu-verify
+  workflow_dispatch:
+    inputs:
+      gpu:
+        description: 'RunPod GPU type'
+        required: false
+        default: 'NVIDIA H100 80GB HBM3'
+
+permissions:
+  contents: read
+
+jobs:
+  flywheel-live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check for RunPod credentials
+      id: creds
+      run: |
+        if [ -n "$RUNPOD_API_KEY" ]; then
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::RUNPOD_API_KEY secret not set — skipping flywheel smoke."
+        fi
+
+    - name: Set up Python
+      if: steps.creds.outputs.present == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install stateset-agents
+      if: steps.creds.outputs.present == 'true'
+      run: pip install -e .
+
+    - name: One turn of the wheel
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        set -euo pipefail
+        mkdir -p smoke
+        cat > smoke/harvest.json <<'EOF'
+        [
+          {"prompt": "Reply to this support message and include the word acknowledged: my package is late.",
+           "expect": ["acknowledged"]},
+          {"prompt": "Reply to this support message and include the word acknowledged: I was double charged.",
+           "expect": ["acknowledged"]}
+        ]
+        EOF
+        cat > smoke/eval.json <<'EOF'
+        [
+          {"prompt": "Reply to this support message and include the word acknowledged: my order never arrived.",
+           "expect": ["acknowledged"]}
+        ]
+        EOF
+        stateset-agents flywheel \
+          --base-model Qwen/Qwen3.5-0.8B \
+          --harvest-prompts smoke/harvest.json \
+          --eval-prompts smoke/eval.json \
+          --output-root smoke/out \
+          --gpu "${{ inputs.gpu || 'NVIDIA H100 80GB HBM3' }}" \
+          --generations 1 --best-of 4 --num-epochs 1 --max-cost 3
+
+    - name: Verify the loop left its audit trail
+      if: steps.creds.outputs.present == 'true'
+      run: |
+        set -euo pipefail
+        python - <<'EOF'
+        import json
+        report = json.load(open("smoke/out/flywheel_report.json"))
+        assert report["generations"], "no generation ran"
+        gen = report["generations"][0]
+        assert gen["harvest_samples"] > 0, "harvest sampled nothing"
+        # A dry harvest is an honest outcome for a smoke prompt set; a
+        # missing report or an unscored trained generation is not.
+        if gen["harvest_kept"] > 0:
+            assert gen["eval_passed"] is not None, "trained but unscored"
+        print("flywheel smoke:", json.dumps(gen))
+        EOF

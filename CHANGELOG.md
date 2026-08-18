@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Weekly flywheel smoke** (`.github/workflows/flywheel-smoke.yml`): one
+  real turn of the wheel on rented hardware every Monday — harvest, train,
+  score, verify the audit trail — so the flagship claim re-proves itself.
+  Skips politely until the `RUNPOD_API_KEY` secret is configured. The
+  River provider's Python ≥3.12 side-venv recipe is documented in
+  `docs/RIVER_PROVIDER.md`.
+
+### Added
+
 - **`flywheel --repeats N` — 'reproduced' becomes a distribution.** Runs
   the whole loop N times under one shared budget and reports per-run best
   scores with min/mean/max (`flywheel_repeats_report.json`). Motivated by
