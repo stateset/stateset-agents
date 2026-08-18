@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The flywheel replicates — as a product**
+  ([`docs/FLYWHEEL_DOMAIN2.md`](docs/FLYWHEEL_DOMAIN2.md)). A single
+  `stateset-agents flywheel` invocation took an IT-helpdesk agent on
+  Qwen3.5-0.8B from 0/12 to 6/12 to 7/12 on out-of-distribution compound
+  tickets, with the harvest rate rising 5.8% → 42.7% between generations,
+  for $2.60 — the headroom mechanism reproduced in a second domain, at 35×
+  smaller scale, through the shipped command instead of hand-driven
+  scripts. Getting there surfaced and fixed three live-only bugs (wheel
+  seam, CPU-bound harvest, artifact salvage) — all in this log.
+
 - **`stateset-agents flywheel` — the improvement loop as one unattended
   command.** Harvest the current generation's rare successes (best-of-N
   rejection sampling against objective `expect`/`forbid` checks), train the

@@ -28,7 +28,8 @@ true over time. The categories are strict:
 | Multi-adapter A/B serving; `deploy` one-shot | Unit-pinned; **first live run pending** | `test_multiple_adapters_ride_one_endpoint_under_their_own_names`; `TestDeploy` |
 | Streaming over the RunPod proxy | **Unverified** | vLLM streams natively; proxy passthrough queued for the next live serve run |
 | River AI provider | **Unverified** (blocked on River) | [`RIVER_PROVIDER.md`](RIVER_PROVIDER.md) — their SDK is not installable and their upstream inference errors |
-| `stateset-agents flywheel` (the loop as one command) | Unit-pinned; methodology live-verified | `tests/unit/test_flywheel.py` stopping discipline; headroom report for the method |
+| `stateset-agents flywheel` (the loop as one command) | **Live-verified** (2026‑08‑17) | [`FLYWHEEL_DOMAIN2.md`](FLYWHEEL_DOMAIN2.md) — full multi-generation run: 0/12 → 6/12 → 7/12 for $2.60 |
+| The ceiling-raise replicates across domain and scale | Live-verified (2026‑08‑17, single seed) | same report — second domain, 0.8B, harvest rate 5.8% → 42.7% |
 
 \* **Honesty note on "weekly":** the scheduled GPU jobs need the
 `RUNPOD_API_KEY` repository secret, which has not yet been configured — so
