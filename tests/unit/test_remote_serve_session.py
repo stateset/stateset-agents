@@ -575,3 +575,15 @@ class TestMerge:
         assert not any("merge_adapter" in c for c in ssh.commands)
         launch = next(c for c in ssh.commands if "vllm serve" in c)
         assert "--enable-lora" in launch
+
+    def test_merge_ships_the_env_wheel_when_set(self, tmp_path, monkeypatch):
+        """STATESET_AGENTS_WHEEL reaches the merge deps install — the PyPI
+        pin cannot contain an unreleased merge module."""
+        wheel = tmp_path / "stateset_agents-9.9.9-py3-none-any.whl"
+        wheel.write_bytes(b"x")
+        monkeypatch.setenv("STATESET_AGENTS_WHEEL", str(wheel))
+        ssh = self._started(tmp_path, merge=True)
+
+        assert any(r.endswith(wheel.name) for _, r in ssh.uploads)
+        deps = next(c for c in ssh.commands if "pip install" in c and "whl" in c)
+        assert f"/workspace/{wheel.name}[training]" in deps

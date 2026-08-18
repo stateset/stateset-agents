@@ -470,11 +470,25 @@ class RemoteServeSession:
         Runs detached: a 30B merge is a model download plus a full-weight
         save, and a dropped ssh link must cost a poll, not the run.
         """
+        import os
+
         from stateset_agents import __version__
 
+        # Same seam as the training executor: STATESET_AGENTS_WHEEL ships an
+        # unreleased build to the pod, because the PyPI pin cannot contain a
+        # module that has not been released yet (the flywheel's first live
+        # spin died exactly this way).
+        env_wheel = os.environ.get("STATESET_AGENTS_WHEEL", "").strip()
+        if env_wheel:
+            wheel = Path(env_wheel)
+            wheel_remote = f"{_REMOTE_WORKDIR}/{wheel.name}"
+            ssh.upload(wheel, wheel_remote)
+            requirement = f"{wheel_remote}[training]"
+        else:
+            requirement = f"stateset-agents[training]=={__version__}"
         self._run_detached(
             ssh,
-            f"pip install --quiet 'stateset-agents[training]=={__version__}'",
+            f"pip install --quiet '{requirement}'",
             label="merge-deps",
             timeout_s=self.ready_timeout_s,
         )
