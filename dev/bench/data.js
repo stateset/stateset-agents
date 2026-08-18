@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787069521739,
+  "lastUpdate": 1787072685631,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -6102,6 +6102,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.85336367980646e-8",
             "extra": "mean: 441.7990653456822 nsec\nrounds: 108543"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "0dee49f9b6246d81355723f0c2ca22eee00f5695",
+          "message": "feat(flywheel): multi-turn episodes — the loop learns conversations\n\nbuild_episode_ladder emits two-turn scripts where turn 2 never repeats\nthe account reference: context carryover becomes an objective per-turn\ncheck (with refusal variants forbidding the declined remedy episode-\nwide). River rollouts branch best-of-N per script, batched per turn;\npassing episodes become multi-turn chat rows (every assistant turn\nweighted by the existing batcher); harvest summaries, post-train evals,\nand spec validation all speak episodes. This is the platform's founding\nmulti-turn claim entering the flywheel.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T10:01:49-07:00",
+          "tree_id": "aea70ac4a795183e46c22ee19dce5ea584a56a65",
+          "url": "https://github.com/stateset/stateset-agents/commit/0dee49f9b6246d81355723f0c2ca22eee00f5695"
+        },
+        "date": 1787072684452,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5787.896527369312,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005005011631065744",
+            "extra": "mean: 172.77433956728237 usec\nrounds: 1337"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6067.1083458310695,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000031428486754268224",
+            "extra": "mean: 164.82316500695694 usec\nrounds: 1406"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4953.012990802817,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002343558266643253",
+            "extra": "mean: 201.8973101538168 usec\nrounds: 3437"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 730.479846291719,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004526740636531488",
+            "extra": "mean: 1.3689631617853664 msec\nrounds: 649"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 176.8476471463086,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00048312738815607604",
+            "extra": "mean: 5.654584701218476 msec\nrounds: 164"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2127845.614176191,
+            "unit": "iter/sec",
+            "range": "stddev: 5.543993599858151e-8",
+            "extra": "mean: 469.95890742155956 nsec\nrounds: 100523"
           }
         ]
       }
