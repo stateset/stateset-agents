@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787024180759,
+  "lastUpdate": 1787024354339,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4696,6 +4696,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.6096194377549826e-8",
             "extra": "mean: 477.6546726213288 nsec\nrounds: 102052"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "7b7622e131a080bd1f04894a1e7873bbebe28b80",
+          "message": "feat(harvest): judge-gated sampling — semantic success criteria\n\nHarvest specs accept judge/min_judge_score alongside or instead of\nexpect/forbid. Substrings short-circuit first; the judge gates\nsemantically on top; an unavailable judge rejects rather than passes.\nFirst step toward flywheels on real transcripts, where success is not\na substring.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:34:41-07:00",
+          "tree_id": "0637688fae972967ad37abe7042c11e96b44d322",
+          "url": "https://github.com/stateset/stateset-agents/commit/7b7622e131a080bd1f04894a1e7873bbebe28b80"
+        },
+        "date": 1787024353102,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6003.188492975227,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016641307426401453",
+            "extra": "mean: 166.57814445942745 usec\nrounds: 1516"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6524.976055283745,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001443493485251487",
+            "extra": "mean: 153.25726738724623 usec\nrounds: 2128"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4980.644502652076,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018728109003303583",
+            "extra": "mean: 200.7772286232281 usec\nrounds: 3298"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 710.7008831604238,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00016917548797492195",
+            "extra": "mean: 1.4070617100587925 msec\nrounds: 676"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 180.13228388398585,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001339643900058082",
+            "extra": "mean: 5.5514757179454275 msec\nrounds: 156"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2106155.095163918,
+            "unit": "iter/sec",
+            "range": "stddev: 4.8919898967512e-8",
+            "extra": "mean: 474.7988418783432 nsec\nrounds: 105731"
           }
         ]
       }
