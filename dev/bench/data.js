@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787025292647,
+  "lastUpdate": 1787025321853,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4888,6 +4888,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 7.482554251389112e-8",
             "extra": "mean: 376.3378915012096 nsec\nrounds: 124425"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "8c65df802eaa1ae8252b45d44ac34a726f77c8b9",
+          "message": "fix(river): type harvest checkpoints as inference-mode\n\ncreate_model given a bare river:// path tries to restore optimizer\nstate, which an inference-mode save does not carry — observed live:\n'Cannot load optimizer from an inference checkpoint'. Wrapping the URI\nas Checkpoint(checkpoint_type='inference') tells the server weights-only\nis intended; clients without a Checkpoint type get the bare URI as\nbefore.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:52:30-07:00",
+          "tree_id": "c61cfa58d5015e11884c74c89cdc46eb09052a2e",
+          "url": "https://github.com/stateset/stateset-agents/commit/8c65df802eaa1ae8252b45d44ac34a726f77c8b9"
+        },
+        "date": 1787025320964,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 11247.827607074316,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00000934487485945305",
+            "extra": "mean: 88.90605679011745 usec\nrounds: 1620"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11618.974456040603,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009723501073397975",
+            "extra": "mean: 86.06611571300157 usec\nrounds: 2221"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8686.993359708673,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011997524735856431",
+            "extra": "mean: 115.1146269592102 usec\nrounds: 3509"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1030.9729326548509,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000041996565242300844",
+            "extra": "mean: 969.9575695211583 usec\nrounds: 899"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 266.14727595292277,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00012254754513233397",
+            "extra": "mean: 3.7573181856532853 msec\nrounds: 237"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2806036.408251612,
+            "unit": "iter/sec",
+            "range": "stddev: 3.289382326771932e-8",
+            "extra": "mean: 356.3745634444853 nsec\nrounds: 135264"
           }
         ]
       }
