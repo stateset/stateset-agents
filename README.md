@@ -146,7 +146,28 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.34.2 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.35.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **The multi-turn episode flywheel — the founding claim enters the
+  loop.** `build_episode_ladder` generates two-turn scripts where the
+  user's second turn raises a new issue and asks for confirmation of the
+  first **without ever repeating the account reference** — context
+  carryover becomes an objective per-turn check (refusal variants forbid
+  the declined remedy episode-wide). River rollouts branch best-of-N per
+  script, batched per turn; passing episodes become whole-conversation
+  training rows (every assistant turn loss-weighted); harvest summaries,
+  post-train evals, and spec validation all speak episodes.
+- **First live run — machinery verified, doctrine confirmed.** The
+  single-turn-trained 9B already scores 9/12 greedy on two-turn carryover
+  (65% episode harvest rate); gen-2 trained on 93 passing conversations
+  scored 8/12, and the loop plateau-stopped, keeping gen-1. The honest
+  lesson is the flywheel's own doctrine seen from the other side: the
+  mechanism amplifies RARE successes — at 65% there was little latent
+  capability left to convert at this difficulty. Harder rungs (three-turn
+  scripts, higher refusal fractions) are one command away
+  ([`PROOFS.md`](docs/PROOFS.md)).
+
+**v0.34.2:**
 
 - **A reward hack, caught and fixed live — the objective/eval separation
   doing its job.** On a fresh ladder-generated domain (GreenGrid Energy,
@@ -508,7 +529,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.34.2)
+pip install stateset-agents          # latest release (v0.35.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1210,7 +1231,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.34.2`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.35.0`).
 
 Other entry points:
 

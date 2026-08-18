@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-08-18 — Conversations enter the flywheel: multi-turn episodes, scored for carryover
+
 ### Added
 
 - **The episode flywheel's first live run — machinery verified, doctrine
