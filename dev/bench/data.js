@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787035117992,
+  "lastUpdate": 1787039117941,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1302,6 +1302,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.575825948845819e-8",
             "extra": "mean: 439.69862933239773 nsec\nrounds: 55411"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "ef2034ec3cc127754ff519e0f6a3a8c67f1cf1d5",
+          "message": "fix(types): Any returns in merge loader; narrow the retry re-raise\n\nCaught by CI's mypy --all pass (the targeted local run misses these\nmodules) — the lesson, again: gate with the same strictness CI uses.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T06:35:28Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/ef2034ec3cc127754ff519e0f6a3a8c67f1cf1d5"
+        },
+        "date": 1787039117397,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8453.663873178924,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015164510378474418",
+            "extra": "mean: 118.29190455190867 usec\nrounds: 1362"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9011.251506922936,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015081178593415998",
+            "extra": "mean: 110.97237705902951 usec\nrounds: 1700"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6597.373791383749,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001633777303899373",
+            "extra": "mean: 151.5754649685019 usec\nrounds: 3140"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 813.0655489786726,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006522801353886364",
+            "extra": "mean: 1.2299131370848808 msec\nrounds: 693"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 176.19453208855313,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00010118689728354581",
+            "extra": "mean: 5.675545024844544 msec\nrounds: 161"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2271344.346949642,
+            "unit": "iter/sec",
+            "range": "stddev: 4.6991932708421425e-8",
+            "extra": "mean: 440.2678974427522 nsec\nrounds: 109362"
           }
         ]
       }
