@@ -931,3 +931,51 @@ class TestRiverRl:
         assert all("passed" in r for r in rounds[1:])
         # Final greedy eval lands in the sft-shaped file the flywheel reads.
         assert (tmp_path / "rl" / "eval_results.json").exists()
+
+
+class TestHarvestTransientRecovery:
+    def test_harvest_retries_transients_with_a_fresh_session(self, tmp_path):
+        """Observed live: a gen-2 harvest died on 'Server unavailable' and
+        took a finished generation's momentum with it. Same retry policy as
+        training."""
+
+        class Flaky(Exception):
+            pass
+
+        class FlakyClient(SamplingClient):
+            attempts = 0
+
+            def create_session(self):
+                type(self).attempts += 1
+                if type(self).attempts == 1:
+                    raise Flaky("upstream connect error")
+                return super().create_session()
+
+        FlakyClient.attempts = 0
+        SamplingModel.canned = {"fix my vpn": ["vpn profile ok"] * 4}
+        prompts = tmp_path / "p.json"
+        prompts.write_text(
+            json.dumps([{"prompt": "fix my vpn", "expect": ["vpn profile"]}])
+        )
+        executor = RiverExecutor(
+            client=FlakyClient(),
+            tokenizer=FakeTokenizer(),
+            ledger_path=tmp_path / "l.jsonl",
+        )
+        executor._sleep = lambda s: None
+        executor._transient_exceptions = lambda c: (Flaky,)
+
+        spec = RemoteJobSpec(
+            dataset=prompts,
+            base_model="Qwen/Qwen3.5-9B",
+            output_dir=tmp_path / "h",
+            job_kind="harvest",
+            harvest={"best_of": 4},
+        )
+        result = executor.wait(executor.submit(spec))
+
+        assert result.status is JobStatus.SUCCEEDED, "\n".join(result.logs)
+        assert FlakyClient.attempts == 2
+        assert any("retrying harvest" in line for line in result.logs)
+        summary = json.loads((tmp_path / "h" / "harvest_summary.json").read_text())
+        assert summary["samples"] == 4  # counters reset across the retry

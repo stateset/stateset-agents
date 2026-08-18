@@ -489,6 +489,23 @@ class RiverExecutor(RemoteExecutor):
         self._record_cost(handle.job_id, job)
         return handle
 
+    def _fail_harvest(
+        self, job: _RiverJob, started: float, handle: JobHandle, exc: Exception
+    ) -> None:
+        """Record a harvest failure and raise the caller-facing error."""
+        import time as _time
+
+        job.status = JobStatus.FAILED
+        job.duration_s = _time.monotonic() - started
+        job.logs.append(f"River harvest failed: {exc}")
+        self._record_cost(handle.job_id, job)
+        account = self._account_error(exc)
+        if account is not None:
+            raise account from exc
+        raise RemoteExecutionError.wrap(
+            exc, "River harvest failed", provider=self.name
+        ) from exc
+
     def _submit_harvest(
         self, handle: JobHandle, job: _RiverJob, spec: RemoteJobSpec
     ) -> JobHandle:
@@ -540,73 +557,88 @@ class RiverExecutor(RemoteExecutor):
         client = self._get_client()
         started = _time.monotonic()
         job.status = JobStatus.RUNNING
-        try:
-            with _open_session(
-                client, project=Path(spec.output_dir).name or None
-            ) as session:
-                model = session.create_model(
-                    base_model=spec.base_model,
-                    checkpoint=_inference_checkpoint(client, checkpoint),
-                )
-                logs.append(f"sampling from {checkpoint or spec.base_model} via River")
-                if eval_specs:
-                    greedy = _sample_texts(
+        transient = self._transient_exceptions(client)
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                with _open_session(
+                    client, project=Path(spec.output_dir).name or None
+                ) as session:
+                    model = session.create_model(
+                        base_model=spec.base_model,
+                        checkpoint=_inference_checkpoint(client, checkpoint),
+                    )
+                    logs.append(
+                        f"sampling from {checkpoint or spec.base_model} via River"
+                    )
+                    if eval_specs:
+                        greedy = _sample_texts(
+                            model,
+                            spec.base_model,
+                            [s["prompt"] for s in eval_specs],
+                            num_samples=1,
+                            temperature=0.0,
+                            max_tokens=spec.eval_max_new_tokens,
+                        )
+                        from stateset_agents.training.sft import evaluate_checks
+
+                        results = []
+                        for espec, completions in zip(eval_specs, greedy, strict=True):
+                            checked = evaluate_checks(
+                                completions[0],
+                                espec.get("expect", []),
+                                espec.get("forbid", []),
+                            )
+                            results.append(
+                                {
+                                    "prompt": espec["prompt"],
+                                    "completion": completions[0],
+                                    **checked,
+                                }
+                            )
+                        summary["eval"] = {
+                            "passed": sum(1 for r in results if r["passed"]),
+                            "total": len(results),
+                            "results": results,
+                        }
+                    sampled = _sample_texts(
                         model,
                         spec.base_model,
-                        [s["prompt"] for s in eval_specs],
-                        num_samples=1,
-                        temperature=0.0,
-                        max_tokens=spec.eval_max_new_tokens,
+                        [s["prompt"] for s in harvest_specs],
+                        num_samples=int(knobs.get("best_of", 8)),
+                        temperature=float(knobs.get("temperature", 0.9)),
+                        top_p=float(knobs.get("top_p", 0.95)),
+                        max_tokens=int(knobs.get("max_new_tokens", 300)),
                     )
-                    from stateset_agents.training.sft import evaluate_checks
-
-                    results = []
-                    for espec, completions in zip(eval_specs, greedy, strict=True):
-                        checked = evaluate_checks(
-                            completions[0],
-                            espec.get("expect", []),
-                            espec.get("forbid", []),
-                        )
-                        results.append(
-                            {
-                                "prompt": espec["prompt"],
-                                "completion": completions[0],
-                                **checked,
-                            }
-                        )
-                    summary["eval"] = {
-                        "passed": sum(1 for r in results if r["passed"]),
-                        "total": len(results),
-                        "results": results,
-                    }
-                sampled = _sample_texts(
-                    model,
-                    spec.base_model,
-                    [s["prompt"] for s in harvest_specs],
-                    num_samples=int(knobs.get("best_of", 8)),
-                    temperature=float(knobs.get("temperature", 0.9)),
-                    top_p=float(knobs.get("top_p", 0.95)),
-                    max_tokens=int(knobs.get("max_new_tokens", 300)),
+                    rows: list[dict[str, Any]] = []
+                    for hspec, completions in zip(harvest_specs, sampled, strict=True):
+                        summary["samples"] += len(completions)
+                        kept = build_harvest_rows(hspec, completions)
+                        if kept:
+                            summary["prompts_with_a_pass"] += 1
+                        rows.extend(kept)
+                break
+            except transient as exc:
+                # Same policy as training: their taxonomy says a
+                # connection/timeout error means back off, rebuild
+                # the session, try again — observed live: a gen-2
+                # harvest died on 'Server unavailable' and took a
+                # finished generation's momentum with it.
+                if attempt >= self.MAX_TRANSIENT_ATTEMPTS:
+                    self._fail_harvest(job, started, handle, exc)
+                rows = []
+                summary["samples"] = 0
+                summary["prompts_with_a_pass"] = 0
+                delay = self.TRANSIENT_BACKOFF_S * (2 ** (attempt - 1))
+                logs.append(
+                    f"transient River failure ({type(exc).__name__}): "
+                    f"{exc} — retrying harvest in {delay:.0f}s "
+                    f"(attempt {attempt}/{self.MAX_TRANSIENT_ATTEMPTS})"
                 )
-                rows: list[dict[str, Any]] = []
-                for hspec, completions in zip(harvest_specs, sampled, strict=True):
-                    summary["samples"] += len(completions)
-                    kept = build_harvest_rows(hspec, completions)
-                    if kept:
-                        summary["prompts_with_a_pass"] += 1
-                    rows.extend(kept)
-        except Exception as exc:  # noqa: BLE001 - unknown SDK exception surface
-            job.status = JobStatus.FAILED
-            job.duration_s = _time.monotonic() - started
-            logs.append(f"River harvest failed: {exc}")
-            self._record_cost(handle.job_id, job)
-            account = self._account_error(exc)
-            if account is not None:
-                raise account from exc
-            raise RemoteExecutionError.wrap(
-                exc, "River harvest failed", provider=self.name
-            ) from exc
-
+                self._sleep(delay)
+            except Exception as exc:  # noqa: BLE001 - unknown SDK surface
+                self._fail_harvest(job, started, handle, exc)
         summary["kept"] = len(rows)
         with (output_dir / "harvest.jsonl").open("w") as fh:
             for row in rows:
