@@ -78,13 +78,23 @@ class FakeSsh:
         return 0, "ok"
 
 
-def make_session(api=None, ssh=None, http_statuses=(200,), **kwargs):
+def make_session(api=None, ssh=None, http_statuses=(200,), completions=None, **kwargs):
     statuses = list(http_statuses)
     calls: list[tuple[str, dict]] = []
+    post_calls: list[dict] = []
+    #: model name -> greedy completion for the effect probe. Distinct by
+    #: default so the probe passes quietly in unrelated tests.
+    completions = completions or {}
 
     def http_get(url, headers):
         calls.append((url, dict(headers)))
         return statuses.pop(0) if len(statuses) > 1 else statuses[0]
+
+    def http_post_json(url, headers, payload):
+        post_calls.append(payload)
+        model = payload["model"]
+        text = completions.get(model, f"completion from {model}")
+        return {"choices": [{"message": {"content": text}}]}
 
     session = RemoteServeSession(
         api or FakeApi(),
@@ -92,8 +102,10 @@ def make_session(api=None, ssh=None, http_statuses=(200,), **kwargs):
         public_key="ssh-ed25519 AAA test",
         poll_interval_s=0.0,
         http_get=http_get,
+        http_post_json=http_post_json,
         **kwargs,
     )
+    session._post_calls = post_calls  # test-side telescope
     session._http_calls = calls  # test-side telescope, not API
     return session
 
@@ -587,3 +599,74 @@ class TestMerge:
         assert any(r.endswith(wheel.name) for _, r in ssh.uploads)
         deps = next(c for c in ssh.commands if "pip install" in c and "whl" in c)
         assert f"/workspace/{wheel.name}[training]" in deps
+
+
+class TestAdapterEffectProbe:
+    """The self-verifying serve: identical greedy completions from adapter
+    and base mean the adapter has no effect — the exact silent no-op that
+    survived a 'successful' verification once (docs/PROOFS.md 2026-08-18)."""
+
+    def _adapter(self, tmp_path):
+        adapter = tmp_path / "adapter"
+        adapter.mkdir()
+        return adapter
+
+    def test_differing_completions_pass_quietly(self, tmp_path):
+        session = make_session(
+            completions={"m": "base says hi", "adapter": "TechNest says hi"}
+        )
+        session.start("m", adapters={"adapter": self._adapter(tmp_path)})
+        assert session.effect_warnings == []
+
+    def test_identical_completions_warn_loudly_by_default(self, tmp_path):
+        session = make_session(completions={"m": "same", "adapter": "same"})
+        session.start("m", adapters={"adapter": self._adapter(tmp_path)})
+        (warning,) = session.effect_warnings
+        assert "NO EFFECT" in warning
+        assert "--merge" in warning
+
+    def test_identical_completions_raise_with_strict(self, tmp_path):
+        api = FakeApi()
+        session = make_session(api, completions={"m": "same", "adapter": "same"})
+        with pytest.raises(RemoteExecutionError, match="NO EFFECT"):
+            session.start(
+                "m",
+                adapters={"adapter": self._adapter(tmp_path)},
+                strict_effect=True,
+            )
+        # A failed strict start terminates the pod like any startup failure.
+        assert api.terminated == ["pod-1"]
+
+    def test_probe_is_greedy_and_hits_every_adapter(self, tmp_path):
+        a, b = tmp_path / "a", tmp_path / "b"
+        for d in (a, b):
+            d.mkdir()
+        session = make_session()
+        session.start("m", adapters={"x": a, "y": b})
+        models = [c["model"] for c in session._post_calls]
+        assert models == ["m", "x", "y"]
+        assert all(c["temperature"] == 0 for c in session._post_calls)
+
+    def test_probe_transport_failure_never_kills_a_healthy_serve(self, tmp_path):
+        def broken_post(url, headers, payload):
+            raise ConnectionError("proxy hiccup")
+
+        session = RemoteServeSession(
+            FakeApi(),
+            FakeSsh(),
+            public_key="k",
+            poll_interval_s=0.0,
+            http_get=lambda url, headers: 200,
+            http_post_json=broken_post,
+        )
+        session.start("m", adapters={"adapter": self._adapter(tmp_path)})
+        assert any("probe skipped" in w for w in session.effect_warnings)
+
+    def test_no_probe_without_adapters_or_with_merge(self, tmp_path):
+        session = make_session()
+        session.start("m")
+        assert session._post_calls == []
+
+        merged = make_session()
+        merged.start("m", adapters={"adapter": self._adapter(tmp_path)}, merge=True)
+        assert merged._post_calls == []

@@ -71,6 +71,13 @@ class TestMergeFunction:
         monkeypatch.setattr(
             ma, "load_base_model_for_sft", lambda name: calls.append(("base", name))
         )
+        monkeypatch.setattr(ma, "gpu_available", lambda: False)
+        probe = iter(["base completion", "merged completion"])
+        monkeypatch.setattr(
+            ma,
+            "generate_completions",
+            lambda m, t, p, max_new_tokens=48: [next(probe)],
+        )
 
         out = ma.merge_adapter("base/m", tmp_path / "adapter", tmp_path / "merged")
 
@@ -78,3 +85,66 @@ class TestMergeFunction:
         assert ("merge_and_unload",) in calls
         assert ("save_model", str(tmp_path / "merged"), True) in calls
         assert ("save_tokenizer", str(tmp_path / "merged")) in calls
+
+
+class TestMergeProbe:
+    def _run(self, tmp_path, monkeypatch, completions):
+        """Wire fakes so generate_completions returns base then merged."""
+        import sys
+
+        import stateset_agents.training.merge_adapter as ma
+
+        outputs = list(completions)
+
+        class FakeMerged:
+            def save_pretrained(self, path, safe_serialization=True):
+                pass
+
+        class FakePeftModel:
+            def merge_and_unload(self):
+                return FakeMerged()
+
+        class FakePeft:
+            class PeftModel:
+                @staticmethod
+                def from_pretrained(model, adapter):
+                    return FakePeftModel()
+
+        class FakeTok:
+            def save_pretrained(self, path):
+                pass
+
+        class FakeTransformers:
+            class AutoTokenizer:
+                @staticmethod
+                def from_pretrained(name):
+                    return FakeTok()
+
+        monkeypatch.setitem(sys.modules, "peft", FakePeft)
+        monkeypatch.setitem(sys.modules, "transformers", FakeTransformers)
+        monkeypatch.setattr(ma, "load_base_model_for_sft", lambda name: object())
+        monkeypatch.setattr(ma, "gpu_available", lambda: False)
+        monkeypatch.setattr(
+            ma,
+            "generate_completions",
+            lambda m, t, p, max_new_tokens=48: [outputs.pop(0)],
+        )
+        return ma.merge_adapter("base/m", tmp_path / "a", tmp_path / "merged")
+
+    def test_differing_probe_passes_and_is_recorded(self, tmp_path, monkeypatch):
+        import json
+
+        out = self._run(tmp_path, monkeypatch, ["base says", "tuned says"])
+        probe = json.loads((out / "merge_probe.json").read_text())
+        assert probe["identical"] is False
+
+    def test_identical_probe_refuses_to_serve_a_lie(self, tmp_path, monkeypatch):
+        import json
+
+        import pytest
+
+        with pytest.raises(RuntimeError, match="no observable effect"):
+            self._run(tmp_path, monkeypatch, ["same", "same"])
+        # The evidence is still on disk for diagnosis.
+        probe = json.loads((tmp_path / "merged" / "merge_probe.json").read_text())
+        assert probe["identical"] is True

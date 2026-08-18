@@ -91,11 +91,28 @@ _FLASHINFER_PATCH_COMMAND = (
 #: network. Returns an HTTP status code, raising on connection failure.
 HttpGet = Callable[[str, dict[str, str]], int]
 
+#: HTTP POST seam for the adapter-effect probe. Returns the parsed JSON body.
+HttpPostJson = Callable[[str, dict[str, str], dict[str, Any]], dict[str, Any]]
+
+#: The effect-probe prompt. Any prompt works — the probe compares greedy
+#: completions across models, not their content.
+_PROBE_PROMPT = "Reply with one sentence: what can you help me with?"
+
 
 def _default_http_get(url: str, headers: dict[str, str]) -> int:
     import requests
 
     return int(requests.get(url, headers=headers, timeout=10).status_code)
+
+
+def _default_http_post_json(
+    url: str, headers: dict[str, str], payload: dict[str, Any]
+) -> dict[str, Any]:
+    import requests
+
+    response = requests.post(url, headers=headers, json=payload, timeout=120)
+    response.raise_for_status()
+    return dict(response.json())
 
 
 def self_destruct_script(
@@ -204,6 +221,7 @@ class RemoteServeSession:
         max_provision_attempts: int = 2,
         poll_interval_s: float = 10.0,
         http_get: HttpGet | None = None,
+        http_post_json: HttpPostJson | None = None,
         token: str | None = None,
     ) -> None:
         self._api = api
@@ -233,6 +251,9 @@ class RemoteServeSession:
         self._base_model: str | None = None
         self._gpu: str | None = None
         self._http_get = http_get or _default_http_get
+        self._http_post_json = http_post_json or _default_http_post_json
+        #: Filled by the post-readiness effect probe; the CLI prints these.
+        self.effect_warnings: list[str] = []
         #: The Bearer token vLLM will require. Generated unless injected.
         self.token = token or secrets.token_urlsafe(24)
 
@@ -568,6 +589,65 @@ class RemoteServeSession:
                 )
             time.sleep(self.poll_interval_s)
 
+    def _greedy_probe(self, model: str) -> str:
+        """One greedy completion from ``model`` through the live endpoint."""
+        assert self.endpoint_url is not None
+        body = self._http_post_json(
+            f"{self.endpoint_url}/v1/chat/completions",
+            {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
+            },
+            {
+                "model": model,
+                "temperature": 0,
+                "max_tokens": 48,
+                "messages": [{"role": "user", "content": _PROBE_PROMPT}],
+            },
+        )
+        return str(body["choices"][0]["message"]["content"])
+
+    def _verify_adapter_effect(
+        self, base_model: str, adapter_names: list[str], *, strict: bool
+    ) -> None:
+        """Greedy base-vs-adapter probe: identical output means no effect.
+
+        Exists because vLLM loaded hybrid-Qwen3.5 LoRA adapters without
+        error and silently served the base weights — a "successful"
+        verification only caught it later by exactly this probe
+        (docs/PROOFS.md, 2026-08-18). Now every adapter-serving start
+        checks its own effect: identical greedy completions raise with
+        ``strict``, and are reported as loud warnings otherwise. The probe
+        is best-effort — a transport hiccup must not kill a healthy serve —
+        but a *completed* comparison that finds no effect is never ignored.
+        """
+        try:
+            base_completion = self._greedy_probe(base_model)
+        except Exception as exc:  # noqa: BLE001 - probe transport is best-effort
+            self.effect_warnings.append(
+                f"adapter-effect probe skipped (base probe failed: {exc})"
+            )
+            return
+        for name in adapter_names:
+            try:
+                adapter_completion = self._greedy_probe(name)
+            except Exception as exc:  # noqa: BLE001
+                self.effect_warnings.append(
+                    f"adapter-effect probe skipped for {name!r}: {exc}"
+                )
+                continue
+            if adapter_completion == base_completion:
+                message = (
+                    f"adapter {name!r} has NO EFFECT: its greedy completion "
+                    "is byte-identical to the base model's. vLLM loads some "
+                    "adapters (hybrid Qwen3.5 families) without error and "
+                    "silently serves base weights — use --merge for those. "
+                    "See docs/PROOFS.md."
+                )
+                if strict:
+                    raise RemoteExecutionError(message, provider=self.provider)
+                self.effect_warnings.append(message)
+
     def start(
         self,
         base_model: str,
@@ -576,6 +656,7 @@ class RemoteServeSession:
         max_hours: float = 1.0,
         adapters: dict[str, Path] | None = None,
         merge: bool = False,
+        strict_effect: bool = False,
     ) -> None:
         """Provision, arm the self-destruct, boot vLLM, block until ready.
 
@@ -673,6 +754,10 @@ class RemoteServeSession:
                 launch = self._vllm_command(base_model, list(all_adapters))
             self._run_checked(ssh, launch)
             self._await_server_ready(ssh)
+            if all_adapters and not merge:
+                self._verify_adapter_effect(
+                    base_model, list(all_adapters), strict=strict_effect
+                )
         except BaseException:
             self.terminate()
             raise

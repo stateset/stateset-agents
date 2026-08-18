@@ -26,6 +26,7 @@ class FakeSession:
         self.kwargs = kwargs
         self.started_with: dict | None = None
         self.token = "tok-test"
+        self.effect_warnings: list[str] = []
         self.endpoint_url = None
         self.pod_id = None
         self.pod_name = None
@@ -39,6 +40,7 @@ class FakeSession:
         max_hours=1.0,
         adapters=None,
         merge=False,
+        strict_effect=False,
     ):
         if FakeSession.start_raises is not None:
             raise FakeSession.start_raises

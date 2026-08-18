@@ -22,11 +22,20 @@ import argparse
 import logging
 from pathlib import Path
 
-from stateset_agents.training.sft import gpu_available, load_base_model_for_sft
+from stateset_agents.training.sft import (
+    generate_completions,
+    gpu_available,
+    load_base_model_for_sft,
+)
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["main", "merge_adapter"]
+
+
+#: The effect-probe prompt; any prompt works — the probe compares greedy
+#: completions before and after merging, not their content.
+PROBE_PROMPT = "Reply with one sentence: what can you help me with?"
 
 
 def merge_adapter(base_model: str, adapter_dir: Path, output_dir: Path) -> Path:
@@ -34,19 +43,52 @@ def merge_adapter(base_model: str, adapter_dir: Path, output_dir: Path) -> Path:
 
     The tokenizer is saved alongside the weights so the output directory is
     a complete, self-sufficient model that ``vllm serve <dir>`` accepts.
+
+    The merge verifies its own effect: one greedy completion is generated
+    before the adapter is applied and again from the merged weights, and
+    the pair lands in ``merge_probe.json``. Identical completions mean the
+    adapter changed nothing observable — the exact silent no-op this module
+    exists to prevent — and raise rather than serve a lie.
     """
+    import json
+
     from peft import PeftModel
     from transformers import AutoTokenizer
 
+    tokenizer = AutoTokenizer.from_pretrained(base_model)  # nosec: B615
     model = load_base_model_for_sft(base_model)
+    if gpu_available():
+        model = model.to("cuda")
+    (base_completion,) = generate_completions(
+        model, tokenizer, [PROBE_PROMPT], max_new_tokens=48
+    )
     model = PeftModel.from_pretrained(model, str(adapter_dir))  # nosec: B615
     logger.info("merging adapter %s into %s…", adapter_dir, base_model)
     model = model.merge_and_unload()
+    (merged_completion,) = generate_completions(
+        model, tokenizer, [PROBE_PROMPT], max_new_tokens=48
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(str(output_dir), safe_serialization=True)
-    tokenizer = AutoTokenizer.from_pretrained(base_model)  # nosec: B615
     tokenizer.save_pretrained(str(output_dir))
-    logger.info("merged model saved to %s", output_dir)
+    (output_dir / "merge_probe.json").write_text(
+        json.dumps(
+            {
+                "prompt": PROBE_PROMPT,
+                "base": base_completion,
+                "merged": merged_completion,
+                "identical": base_completion == merged_completion,
+            },
+            indent=2,
+        )
+    )
+    if base_completion == merged_completion:
+        raise RuntimeError(
+            "merged weights produce a greedy completion byte-identical to "
+            "the base model — the adapter had no observable effect; "
+            "refusing to serve it as a fine-tune (see merge_probe.json)"
+        )
+    logger.info("merged model saved to %s (effect probe: differs)", output_dir)
     return output_dir
 
 

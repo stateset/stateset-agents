@@ -798,6 +798,11 @@ pick a bigger `--gpu` (e.g. `"NVIDIA H100 80GB HBM3"`) and raise
   (Qwen3.5/3.8 families) — vLLM loads their LoRA adapters without error
   and silently serves the base weights. Still answers as model
   `adapter`; needs disk for a second full copy of the weights.
+- `--strict`: Fail (terminating the pod) if the adapter-effect probe
+  finds an adapter's greedy completion byte-identical to the base
+  model's; without it the probe warns loudly. Every adapter-serving
+  start now probes its own effect; `--merge` verifies pre-vs-post-merge
+  on the pod and writes `merge_probe.json`.
 - `--stop TEXT`: Terminate a running serve pod by name or id, then exit.
 - `--list`: List running serve pods (name, id, status, age, $/hr), then
   exit.

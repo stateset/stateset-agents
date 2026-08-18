@@ -226,6 +226,14 @@ def serve_remote(
         "after this many hours, even if this machine goes away. The RunPod "
         "API key is copied to the pod (chmod 600) to make that possible.",
     ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Fail (and terminate the pod) if the adapter-effect probe finds "
+        "the adapter's greedy completion byte-identical to the base "
+        "model's — the silent no-op vLLM produces for hybrid families. "
+        "Without --strict the probe warns loudly instead.",
+    ),
     merge: bool = typer.Option(
         False,
         "--merge",
@@ -314,12 +322,15 @@ def serve_remote(
             gpu=gpu,
             max_hours=max_hours,
             merge=merge,
+            strict_effect=strict,
         )
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
     model_name = "adapter" if adapter is not None else base_model
+    for warning in getattr(session, "effect_warnings", []):
+        _echo(f"WARNING: {warning}", err=True)
     _echo("")
     _echo(f"Endpoint ready (bills until stopped, max {max_hours}h):")
     _echo(f"  URL:   {session.endpoint_url}/v1")

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Serving is self-verifying.** After readiness, `serve-remote` probes
+  every served adapter with a greedy base-vs-adapter completion through
+  the live endpoint: byte-identical output — the silent no-op that once
+  survived a "successful" verification — warns loudly, or fails and
+  terminates the pod with `--strict`. `--merge` verifies itself the same
+  way on the pod (pre-vs-post-merge greedy probe, recorded in
+  `merge_probe.json`) and refuses to serve a merge with no observable
+  effect. The probe is best-effort on transport, never on verdicts.
+
+### Added
+
 - **`serve-remote --merge` — hybrid fine-tunes now actually serve.** Folds
   the adapter into full base weights on the pod (peft `merge_and_unload`)
   and serves the merged checkpoint, sidestepping vLLM's LoRA mapping —
