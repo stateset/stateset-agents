@@ -1,8 +1,10 @@
 # The flywheel replicates: second domain, 35× smaller model, one command
 
-**Result: 0/12 → 6/12 → 7/12 on out-of-distribution compound requests,
-with the harvest rate rising 5.8% → 42.7% between generations — produced
-by a single `stateset-agents flywheel` invocation for $2.60.**
+**Result, reproduced across two independent runs: from 0/12 on
+out-of-distribution compound requests to 7/12 (run 1) and 11/12 (run 2)
+in two generations, with the harvest rate rising 5.8% → 42.7% and
+6.7% → 57.9% respectively — each produced by a single
+`stateset-agents flywheel` invocation for ~$3.**
 
 This replicates [`FLYWHEEL_HEADROOM.md`](FLYWHEEL_HEADROOM.md) (Muse-Glimmer-30B,
 customer support, 2/12 → 10/12) in a different domain (IT helpdesk), on a
@@ -36,11 +38,18 @@ stateset-agents flywheel --base-model Qwen/Qwen3.5-0.8B \
   --num-epochs 8 --max-cost 6
 ```
 
-| generation | eval (greedy) | harvest rate | cost |
-|---|---|---|---|
-| gen-1 (start) | **0/12** | 28/480 (5.8%) | — |
-| gen-2 (trained on the 28) | **6/12** | 205/480 (**42.7%**) | $1.29 |
-| gen-3 (trained on the 205) | **7/12** | — | $1.31 |
+| generation | run 1 eval | run 1 harvest | run 2 eval | run 2 harvest |
+|---|---|---|---|---|
+| gen-1 (start) | **0/12** | 28/480 (5.8%) | **0/12** | 32/480 (6.7%) |
+| gen-2 | **6/12** | 205/480 (42.7%) | **9/12** | 278/480 (**57.9%**) |
+| gen-3 | **7/12** | — | **11/12** | — |
+
+Run 1 cost $2.60; run 2 (identical command, fresh output root, natural
+sampling variation) cost $3.06. The between-run spread (7 vs 11 of 12)
+shows meaningful seed variance in *how much* one wheel-turn consolidates —
+but both runs replicate the mechanism: a single-digit-percent latent
+capability becomes majority-reliable behaviour in one generation, and the
+harvest rate is the leading indicator.
 
 The structure is the headroom experiment's exactly: greedy decoding never
 succeeds, temperature sampling occasionally does, curation keeps only the
@@ -70,8 +79,8 @@ training dose matters as much as the harvest quality.
 
 ## Limitations
 
-- Single seed, one run of this exact configuration (the headroom result was
-  reproduced twice; this one has not been re-run yet).
+- Two runs of this exact configuration, both replicating the lift
+  (7/12 and 11/12 from 0/12) with visible seed variance in magnitude.
 - Proof-token checks measure phrasing-anchored resolution, not semantic
   correctness; gen-1 at 3 epochs *paraphrased* both resolutions while
   passing nothing, so the metric undercounts loose-but-correct behaviour.

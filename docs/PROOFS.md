@@ -29,7 +29,7 @@ true over time. The categories are strict:
 | **vLLM applies hybrid-Qwen3.5 LoRA adapters** | **DISPROVEN (2026‑08‑18)** | Greedy adapter output byte-identical to base on training-format prompts; vLLM logs 'Loaded' with no error. Upstream limitation: the hybrid `linear_attn` target names never match. `chat-remote` (transformers+peft) remains the verified way to talk to these fine-tunes; earlier 'adapter answers differed' observations were temperature noise |
 | River AI provider | **Unverified** (blocked on River) | [`RIVER_PROVIDER.md`](RIVER_PROVIDER.md) — their SDK is not installable and their upstream inference errors |
 | `stateset-agents flywheel` (the loop as one command) | **Live-verified** (2026‑08‑17) | [`FLYWHEEL_DOMAIN2.md`](FLYWHEEL_DOMAIN2.md) — full multi-generation run: 0/12 → 6/12 → 7/12 for $2.60 |
-| The ceiling-raise replicates across domain and scale | Live-verified (2026‑08‑17, single seed) | same report — second domain, 0.8B, harvest rate 5.8% → 42.7% |
+| The ceiling-raise replicates across domain and scale | Live-verified (2026‑08‑17/18, **reproduced twice**) | same report — 0/12 → 7/12 and 0/12 → 11/12; harvest rate 5.8→42.7% and 6.7→57.9% |
 
 \* **Honesty note on "weekly":** the scheduled GPU jobs need the
 `RUNPOD_API_KEY` repository secret, which has not yet been configured — so

@@ -104,7 +104,7 @@ the artifact returned — not a mock and not a plan:
 | Multi-turn memory | `chat-remote` resolved *"I got double charged for it"* to the order number from the previous turn |
 | **The loop raises a ceiling** | On compound requests gen‑1 was never trained on: base 0/12, gen‑1 **2/12**, gen‑2 — trained only on gen‑1's machine-curated sampled successes — **10/12**, reproduced twice ([`FLYWHEEL_HEADROOM.md`](docs/FLYWHEEL_HEADROOM.md)) |
 | **Serve it over HTTPS** | `serve-remote`'s endpoint answered live: an authenticated `POST /v1/chat/completions` against `https://<pod-id>-8000.proxy.runpod.net` returned a completion from a vLLM server the platform brought up on a rented H100 |
-| **The loop replicates — as a product** | Second domain (IT helpdesk), 35× smaller model (0.8B), one `stateset-agents flywheel` command: 0/12 → 6/12 → 7/12, harvest rate 5.8% → 42.7%, $2.60 ([`FLYWHEEL_DOMAIN2.md`](docs/FLYWHEEL_DOMAIN2.md)) |
+| **The loop replicates — as a product** | Second domain (IT helpdesk), 35× smaller model (0.8B), one `stateset-agents flywheel` command, reproduced twice: 0/12 → 7/12 and 0/12 → **11/12**, harvest rate rising to 42.7% and 57.9%, ~$3/run ([`FLYWHEEL_DOMAIN2.md`](docs/FLYWHEEL_DOMAIN2.md)) |
 | The loop holds under contamination | Machine-curated data trains a second generation with no manual data work ([`FLYWHEEL_EXPERIMENT.md`](docs/FLYWHEEL_EXPERIMENT.md), limitations included) |
 
 **Every claim above is tracked in [`docs/PROOFS.md`](docs/PROOFS.md)** —
