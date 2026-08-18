@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787063274871,
+  "lastUpdate": 1787064292575,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5654,6 +5654,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.2038103889655465e-7",
             "extra": "mean: 484.8296642241598 nsec\nrounds: 21799"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "842ed6d1df8423acd679bdfa3248ebc673293210",
+          "message": "feat(rl): the RL flywheel — cispo on River, zero infrastructure\n\nflywheel --algorithm cispo|importance_sampling: rounds of sample ->\ngrade -> group-relative advantages -> train_step, all in one River\nsession. Rewards are graded (expected-resolution fraction minus a full\npoint for refusal violations), datums use River's pre-shifted RL layout\nwith their sampler's own logprobs and echoed prompt token ids, and\nzero-variance groups are skipped. Per-round eval trajectory in\nrl_report.json. build_group_rl_datums is pure and tested; the executor\ngains job_kind='rl' beside sft and harvest.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T07:41:32-07:00",
+          "tree_id": "40f673ee72eee1762a89f10c4eb2c42bfe6ebd1f",
+          "url": "https://github.com/stateset/stateset-agents/commit/842ed6d1df8423acd679bdfa3248ebc673293210"
+        },
+        "date": 1787064291180,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6060.688881973503,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015906073440853547",
+            "extra": "mean: 164.99774521908415 usec\nrounds: 1464"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6521.023488200504,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016360928386324264",
+            "extra": "mean: 153.35016072391926 usec\nrounds: 1991"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4986.815942783374,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015959939163347488",
+            "extra": "mean: 200.52875651990743 usec\nrounds: 3643"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 721.0929705999747,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00009151281881740604",
+            "extra": "mean: 1.3867837307690916 msec\nrounds: 676"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 180.08282304865224,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00014302107870321583",
+            "extra": "mean: 5.553000464291001 msec\nrounds: 168"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2062667.995650613,
+            "unit": "iter/sec",
+            "range": "stddev: 4.89381624499748e-8",
+            "extra": "mean: 484.80899597444767 nsec\nrounds: 101740"
           }
         ]
       }
