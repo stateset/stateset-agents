@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **River AI: live-verified.** `river-client` appeared on PyPI (0.6.2,
+  2026-08-17, Python ≥3.12, gRPC) and the first real run worked through
+  `RiverExecutor` essentially unchanged: 2 chat rows tokenized to their
+  prediction-position wire contract (our blind-written shape matched
+  exactly — `target_tokens` even turns out to be optional), session →
+  LoRA model on Qwen/Qwen3.5-9B → training step → durable
+  `river://.../sampler_weights/...` checkpoint with pointer + lineage
+  manifest, and `chat_complete_from_checkpoint` answered from the
+  trained weights. First contact also hardened the executor per the
+  SDK's own recovery taxonomy: transient errors back off and rebuild
+  the session (3 attempts), `train_step` is preferred with the
+  `loss_mean` metric, auth/model errors fail fast. Notes: the SDK needs
+  Python ≥3.12 (this repo runs 3.10 — use a separate venv for River
+  runs), and checkpoint sampling cold-starts can exceed 5 minutes.
+
 - **Correction, from a live A/B probe: vLLM does NOT apply LoRA adapters
   for hybrid Qwen3.5 models — it loads them without error and silently
   serves the base weights.** Greedy completions from the served adapter

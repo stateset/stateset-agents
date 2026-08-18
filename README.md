@@ -113,8 +113,9 @@ or a pinned test) and which rows are still automation-pending.
 
 What is **not** yet proven is labelled as such throughout — the starter
 table's ✅ column marks which models have actually been trained rather than
-merely wired up, and the River provider remains code-complete but unverified
-(blocked on their side).
+merely wired up. The River provider is live-verified as of 2026-08-18 —
+their SDK finally landed on PyPI (Python ≥3.12) and the first real run
+trained and sampled a checkpoint through our executor unchanged.
 
 `improve` writes three things: `improve_summary.json` (machine‑readable scores
 and per‑reward breakdown), `curated.jsonl` (the turns above your threshold, ready
