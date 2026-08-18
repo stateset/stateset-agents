@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787062695935,
+  "lastUpdate": 1787063274871,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5590,6 +5590,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.827465003763548e-8",
             "extra": "mean: 275.5212926421537 nsec\nrounds: 172414"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "1c321d554b0d22e0c6b79e449e5a6fe4f456a64a",
+          "message": "feat(evals): the difficulty ladder — depth and refusals as parameters\n\nA 35B saturated the hand-written depth-2 eval in one wheel-turn; from\nthen on it measured nothing. DomainSpec + build_ladder generate\ntrain/harvest/eval kits at any compound depth, with refusal prompts\n(declined remedy -> forbid token) that punish template-spraying.\nDeterministic per seed, disjoint eval/harvest refs, the same\n{prompt, expect, forbid} shape every consumer speaks.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T07:24:30-07:00",
+          "tree_id": "f5b0ce9d3f45c5c294184ec062aa26d57c670934",
+          "url": "https://github.com/stateset/stateset-agents/commit/1c321d554b0d22e0c6b79e449e5a6fe4f456a64a"
+        },
+        "date": 1787063273728,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6078.609494280137,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000019694472987898703",
+            "extra": "mean: 164.51130820971179 usec\nrounds: 1194"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6556.957552768967,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018539438730226746",
+            "extra": "mean: 152.50975653757368 usec\nrounds: 1988"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5031.806108761133,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000019507663370672285",
+            "extra": "mean: 198.73579752185785 usec\nrounds: 2825"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 731.7294039812018,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004551790382873467",
+            "extra": "mean: 1.366625414475882 msec\nrounds: 608"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 179.48457173878276,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006845981575305826",
+            "extra": "mean: 5.57150951924366 msec\nrounds: 156"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2062580.0642793432,
+            "unit": "iter/sec",
+            "range": "stddev: 1.2038103889655465e-7",
+            "extra": "mean: 484.8296642241598 nsec\nrounds: 21799"
           }
         ]
       }
