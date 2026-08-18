@@ -146,7 +146,20 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.33.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.33.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **First perfect score: 7/12 → 12/12 in one generation.** A new domain
+  (Starlight Travel concierge) on a new model class — Qwen3.6-35B-A3B-FP8,
+  a mixture-of-experts — trained and flywheeled entirely through River with
+  zero machines rented: gen-1 passed 3/3 held-out bookings verbatim, and
+  one wheel-turn on compound requests (harvest 177/240) hit **12/12**,
+  firing the perfect-score stop in the wild for the first time. Fourth
+  model/substrate/domain combination for the ceiling-raise — and the
+  cleanest scaling datapoint yet: 0.8B needed two generations for 7–11/12,
+  9B reached 11/12, the 35B MoE maxed the eval in one turn
+  ([`FLYWHEEL_DOMAIN2.md`](docs/FLYWHEEL_DOMAIN2.md), [`PROOFS.md`](docs/PROOFS.md)).
+
+**v0.33.0:**
 
 - **The zero-infrastructure flywheel** (`flywheel --provider river`):
   harvest via River's sampling API, train via their remote autograd, no
@@ -440,7 +453,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.33.0)
+pip install stateset-agents          # latest release (v0.33.1)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1142,7 +1155,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.33.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.33.1`).
 
 Other entry points:
 

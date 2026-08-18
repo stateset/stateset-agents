@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-08-18 — First perfect score: the 35B MoE maxes the eval in one wheel-turn
+
 ### Added
 
 - **First perfect score: 7/12 → 12/12 in ONE generation.** A new domain
