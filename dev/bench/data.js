@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787064619859,
+  "lastUpdate": 1787066972082,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5846,6 +5846,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.8215864837863494e-8",
             "extra": "mean: 436.6863078266727 nsec\nrounds: 107251"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "0c2c53d6301100e470d437ce925a1ecf9ba0dec8",
+          "message": "fix(river): harvest retries transients like training does\n\nA gen-2 harvest died live on 'Server unavailable — connection\ntermination' and took a finished generation's run with it. Harvest now\nbacks off and rebuilds the session up to the same attempt cap as\ntraining, resetting its counters across retries; permanent failures\nstill fail through _fail_harvest with the account-state hints.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T08:26:55-07:00",
+          "tree_id": "86c2a0ed30f50a137a56b29f26acea44ae898122",
+          "url": "https://github.com/stateset/stateset-agents/commit/0c2c53d6301100e470d437ce925a1ecf9ba0dec8"
+        },
+        "date": 1787066971409,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5537.908745392992,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003927098897902661",
+            "extra": "mean: 180.57357857908076 usec\nrounds: 1858"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6609.385327191739,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001630765304284372",
+            "extra": "mean: 151.29999999937814 usec\nrounds: 2065"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5085.006517591454,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017546968773353037",
+            "extra": "mean: 196.65658176455128 usec\nrounds: 3718"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 745.8773382247143,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000413945717636791",
+            "extra": "mean: 1.3407030201241008 msec\nrounds: 646"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 186.1618024678614,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006136262461090208",
+            "extra": "mean: 5.371671238371459 msec\nrounds: 172"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2071874.6358341963,
+            "unit": "iter/sec",
+            "range": "stddev: 5.735416429208899e-8",
+            "extra": "mean: 482.6546851360876 nsec\nrounds: 101854"
           }
         ]
       }
