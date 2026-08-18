@@ -507,15 +507,22 @@ class RemoteServeSession:
             requirement = f"{wheel_remote}[training]"
         else:
             requirement = f"stateset-agents[training]=={__version__}"
+        # The merge runs in its OWN venv (system-site-packages for torch):
+        # installing the training stack into vLLM's environment downgraded
+        # its transformers and crashed the engine at boot — observed live,
+        # a 30-minute readiness timeout with the root cause off the tail.
+        venv_python = f"{_REMOTE_WORKDIR}/.merge-venv/bin/python"
         self._run_detached(
             ssh,
-            f"pip install --quiet '{requirement}'",
+            f"python -m venv --system-site-packages "
+            f"{_REMOTE_WORKDIR}/.merge-venv && "
+            f"{venv_python} -m pip install --quiet '{requirement}'",
             label="merge-deps",
             timeout_s=self.ready_timeout_s,
         )
         self._run_detached(
             ssh,
-            "python -m stateset_agents.training.merge_adapter "
+            f"{venv_python} -m stateset_agents.training.merge_adapter "
             f"--base-model {shlex.quote(base_model)} "
             f"--adapter {_REMOTE_WORKDIR}/{shlex.quote(name)} "
             f"--output-dir {_REMOTE_MERGED_DIR}",
@@ -581,10 +588,17 @@ class RemoteServeSession:
                     provider=self.provider,
                 )
             if time.monotonic() >= deadline:
-                _, log_tail = ssh.run(f"tail -n 30 {_REMOTE_VLLM_LOG}")
+                # The tail alone showed only the APIServer wrapper once; the
+                # engine's root cause scrolls off it. Collect ERROR lines
+                # from the whole log too.
+                _, log_tail = ssh.run(
+                    f"grep -E 'ERROR|Error' {_REMOTE_VLLM_LOG} | head -n 15; "
+                    f"echo '--- tail ---'; tail -n 15 {_REMOTE_VLLM_LOG}"
+                )
                 raise RemoteExecutionError(
                     f"vLLM did not become ready within {self.ready_timeout_s}s "
-                    f"(last HTTP status {status}). Tail of its log:\n{log_tail}",
+                    f"(last HTTP status {status}). Errors and tail of its "
+                    f"log:\n{log_tail}",
                     provider=self.provider,
                 )
             time.sleep(self.poll_interval_s)
