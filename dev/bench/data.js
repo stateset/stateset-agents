@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787066972082,
+  "lastUpdate": 1787067962592,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5910,6 +5910,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.735416429208899e-8",
             "extra": "mean: 482.6546851360876 nsec\nrounds: 101854"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "3c095526cef98e7961a753fc3a69387f6a13ad24",
+          "message": "chore(release): v0.34.1 — RL verified, honestly: parity with SFT on the refusal ladder, zero infrastructure\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T08:43:19-07:00",
+          "tree_id": "3502e38adde615aa8a3cf3bf9e1f5cdc00571add",
+          "url": "https://github.com/stateset/stateset-agents/commit/3c095526cef98e7961a753fc3a69387f6a13ad24"
+        },
+        "date": 1787067961894,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8635.104172580632,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001361590701785107",
+            "extra": "mean: 115.80636203270566 usec\nrounds: 1417"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9418.4933179939,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012727902409689051",
+            "extra": "mean: 106.17409454328687 usec\nrounds: 2126"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6820.831247965562,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014884974176297542",
+            "extra": "mean: 146.60969662579885 usec\nrounds: 3260"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 830.559349465821,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000022330515403490033",
+            "extra": "mean: 1.2040078781163028 msec\nrounds: 722"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 176.33921033713293,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006507881677730852",
+            "extra": "mean: 5.670888500000407 msec\nrounds: 164"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2295834.269144027,
+            "unit": "iter/sec",
+            "range": "stddev: 3.462827369894197e-8",
+            "extra": "mean: 435.5715102958357 nsec\nrounds: 56896"
           }
         ]
       }
