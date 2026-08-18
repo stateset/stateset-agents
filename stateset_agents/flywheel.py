@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +43,12 @@ from stateset_agents.remote.job import JobStatus, RemoteJobSpec
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["FlywheelConfig", "GenerationOutcome", "run_flywheel"]
+__all__ = [
+    "FlywheelConfig",
+    "GenerationOutcome",
+    "run_flywheel",
+    "run_flywheel_repeats",
+]
 
 
 @dataclass
@@ -374,3 +379,77 @@ def run_flywheel(
     }
     (root / "flywheel_report.json").write_text(json.dumps(report, indent=2))
     return report
+
+
+def run_flywheel_repeats(
+    config: FlywheelConfig,
+    executor: RemoteExecutor,
+    repeats: int,
+) -> dict[str, Any]:
+    """Run the flywheel ``repeats`` times; report the score distribution.
+
+    Two runs of the domain-2 experiment scored 7/12 and 11/12 — a spread
+    wide enough that any single run over- or under-states the mechanism.
+    Repeats turn "reproduced" into a distribution: per-run best scores plus
+    min/mean/max, in one report.
+
+    The budget is shared: ``config.max_cost_usd`` caps the WHOLE campaign,
+    and each repeat receives what remains — a repeat that would start with
+    nothing left is skipped and reported as such. Each repeat writes under
+    ``output_root/run<N>/`` with its own full audit trail.
+    """
+    if repeats < 1:
+        raise ValueError(f"repeats must be >= 1, got {repeats}")
+    root = Path(config.output_root)
+    root.mkdir(parents=True, exist_ok=True)
+
+    runs: list[dict[str, Any]] = []
+    spent = 0.0
+    for index in range(1, repeats + 1):
+        remaining = None if config.max_cost_usd is None else config.max_cost_usd - spent
+        if remaining is not None and remaining <= 0:
+            runs.append(
+                {
+                    "run": index,
+                    "skipped": (
+                        f"budget exhausted: ${spent:.2f} of "
+                        f"${config.max_cost_usd:.2f} spent"
+                    ),
+                }
+            )
+            continue
+        run_config = replace(
+            config,
+            output_root=root / f"run{index}",
+            max_cost_usd=remaining,
+        )
+        logger.info("repeat %d/%d starting…", index, repeats)
+        report = run_flywheel(run_config, executor)
+        spent += float(report.get("total_cost_usd") or 0.0)
+        runs.append(
+            {
+                "run": index,
+                "best_eval_passed": report.get("best_eval_passed"),
+                "stop_reason": report.get("stop_reason"),
+                "final_adapter": report.get("final_adapter"),
+                "cost_usd": report.get("total_cost_usd"),
+            }
+        )
+
+    scores = [
+        r["best_eval_passed"]
+        for r in runs
+        if isinstance(r.get("best_eval_passed"), int)
+    ]
+    aggregate = {
+        "repeats": repeats,
+        "completed": len(scores),
+        "runs": runs,
+        "scores": scores,
+        "min": min(scores) if scores else None,
+        "max": max(scores) if scores else None,
+        "mean": round(sum(scores) / len(scores), 2) if scores else None,
+        "total_cost_usd": round(spent, 4),
+    }
+    (root / "flywheel_repeats_report.json").write_text(json.dumps(aggregate, indent=2))
+    return aggregate

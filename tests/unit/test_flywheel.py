@@ -281,3 +281,69 @@ class TestSpecWiring:
         on_disk = json.loads((config.output_root / "flywheel_report.json").read_text())
         assert on_disk == report
         assert on_disk["total_cost_usd"] == pytest.approx(2.0)
+
+
+class TestRepeats:
+    """--repeats turns 'reproduced' into a distribution: two live runs
+    scored 7/12 and 11/12 — a spread wide enough that any single run
+    misstates the mechanism."""
+
+    def _script_for_one_run(self, passed, cost=1.0):
+        return [
+            {
+                "kept": 5,
+                "samples": 40,
+                "current_eval": 1,
+                "passed": passed,
+                "cost": cost,
+            }
+        ]
+
+    def test_aggregates_scores_across_runs(self, config):
+        from stateset_agents.flywheel import run_flywheel_repeats
+
+        config.generations = 1
+        executor = ScriptedExecutor(
+            self._script_for_one_run(7) + self._script_for_one_run(11)
+        )
+        report = run_flywheel_repeats(config, executor, repeats=2)
+
+        assert report["scores"] == [7, 11]
+        assert report["min"] == 7 and report["max"] == 11
+        assert report["mean"] == 9.0
+        assert report["completed"] == 2
+
+    def test_each_run_gets_its_own_output_root(self, config):
+        from stateset_agents.flywheel import run_flywheel_repeats
+
+        config.generations = 1
+        executor = ScriptedExecutor(
+            self._script_for_one_run(5) + self._script_for_one_run(6)
+        )
+        run_flywheel_repeats(config, executor, repeats=2)
+
+        assert (config.output_root / "run1" / "flywheel_report.json").exists()
+        assert (config.output_root / "run2" / "flywheel_report.json").exists()
+        assert (config.output_root / "flywheel_repeats_report.json").exists()
+
+    def test_budget_is_shared_and_exhaustion_skips_later_runs(self, config):
+        from stateset_agents.flywheel import run_flywheel_repeats
+
+        config.generations = 1
+        config.max_cost_usd = 3.0
+        executor = ScriptedExecutor(self._script_for_one_run(5, cost=2.0))
+        report = run_flywheel_repeats(config, executor, repeats=3)
+
+        # Run 1 spends 2x$2=4 > $3 total; runs 2 and 3 are skipped, loudly.
+        skipped = [r for r in report["runs"] if r.get("skipped")]
+        assert len(skipped) == 2
+        assert "budget exhausted" in skipped[0]["skipped"]
+        assert report["completed"] == 1
+
+    def test_zero_repeats_is_refused(self, config):
+        import pytest
+
+        from stateset_agents.flywheel import run_flywheel_repeats
+
+        with pytest.raises(ValueError, match="repeats"):
+            run_flywheel_repeats(config, ScriptedExecutor([]), repeats=0)

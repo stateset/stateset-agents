@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`flywheel --repeats N` — 'reproduced' becomes a distribution.** Runs
+  the whole loop N times under one shared budget and reports per-run best
+  scores with min/mean/max (`flywheel_repeats_report.json`). Motivated by
+  the live spread: two identical runs scored 7/12 and 11/12.
+
+### Added
+
 - **Judge-gated harvests — the step toward real-data flywheels.** Harvest
   prompt specs accept `judge` + `min_judge_score` (default 0.7) alongside
   or instead of `expect`/`forbid`: substring checks run first and cheap,

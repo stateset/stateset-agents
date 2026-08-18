@@ -79,12 +79,25 @@ def flywheel(
         None, help="Container disk per pod (~2.5x the checkpoint size)."
     ),
     num_epochs: int = typer.Option(3, help="Training epochs per generation."),
+    repeats: int = typer.Option(
+        1,
+        help=(
+            "Run the whole loop this many times and report the score "
+            "distribution (min/mean/max). The budget is shared across "
+            "repeats. Two live runs scored 7/12 and 11/12 — one run "
+            "misstates the mechanism."
+        ),
+    ),
     dry_run: bool = typer.Option(
         False, help="Print each job's plan without renting anything."
     ),
 ) -> None:
     """Run the self-improvement loop until it stops earning its cost."""
-    from stateset_agents.flywheel import FlywheelConfig, run_flywheel
+    from stateset_agents.flywheel import (
+        FlywheelConfig,
+        run_flywheel,
+        run_flywheel_repeats,
+    )
 
     config = FlywheelConfig(
         base_model=base_model,
@@ -114,6 +127,26 @@ def flywheel(
         + ("  [dry run]" if dry_run else "")
     )
     try:
+        if repeats > 1:
+            aggregate = run_flywheel_repeats(config, executor, repeats)
+            _echo("")
+            for run in aggregate["runs"]:
+                if run.get("skipped"):
+                    _echo(f"  run {run['run']}: SKIPPED — {run['skipped']}")
+                else:
+                    _echo(
+                        f"  run {run['run']}: best {run['best_eval_passed']} "
+                        f"({run['stop_reason']}, "
+                        f"${run['cost_usd'] or 0:.2f})"
+                    )
+            _echo(
+                f"Distribution over {aggregate['completed']} run(s): "
+                f"min {aggregate['min']}  mean {aggregate['mean']}  "
+                f"max {aggregate['max']}"
+            )
+            _echo(f"Total: ${aggregate['total_cost_usd']:.2f}")
+            _echo(f"Report: {output_root / 'flywheel_repeats_report.json'}")
+            return
         report = run_flywheel(config, executor)
     except StateSetError as exc:
         _echo(str(exc))

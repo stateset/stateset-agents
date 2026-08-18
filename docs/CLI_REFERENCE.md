@@ -869,6 +869,9 @@ stateset-agents flywheel --base-model meta-models/Muse-Glimmer-30B \
 - `--gpu TEXT`: GPU type, in the provider's own vocabulary.
 - `--container-disk-gb INTEGER`: Container disk per pod.
 - `--num-epochs INTEGER`: Training epochs per generation (default 3).
+- `--repeats INTEGER`: Run the whole loop N times and report the score
+  distribution (min/mean/max); the budget is shared across repeats
+  (default 1).
 - `--dry-run`: Print each job's plan without renting anything.
 
 ### `stateset-agents fine-tune`
