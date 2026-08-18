@@ -49,6 +49,7 @@ from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
 from stateset_agents.remote.ledger import CostEntry, record_entry
 from stateset_agents.remote.river_batches import (
+    build_group_rl_datums,
     build_sft_batch,
     validate_base_model,
     validate_lora_rank,
@@ -241,6 +242,8 @@ class RiverExecutor(RemoteExecutor):
 
         if spec.job_kind == "harvest":
             return self._submit_harvest(handle, job, spec)
+        if spec.job_kind == "rl":
+            return self._submit_rl(handle, job, spec)
 
         client = self._get_client()
         tokenizer = self._get_tokenizer(spec.base_model)
@@ -289,6 +292,211 @@ class RiverExecutor(RemoteExecutor):
         job.duration_s = time.monotonic() - started
         job.status = JobStatus.SUCCEEDED
         self._record_cost(job_id, job)
+        return handle
+
+    def _submit_rl(
+        self, handle: JobHandle, job: _RiverJob, spec: RemoteJobSpec
+    ) -> JobHandle:
+        """GRPO-style RL, zero infrastructure: rounds of sample -> grade ->
+        group-relative advantages -> ``train_step(loss_fn=cispo)``.
+
+        The rejection-sampling flywheel imitates winners; this trains on the
+        WHOLE sample group, gradient-weighted by graded reward — failures
+        push probability mass away, and refusal violations (forbid hits)
+        are punished directly instead of merely filtered out. Logprobs come
+        from River's own sampler verbatim (never recomputed), prompt ids
+        from the echoed tokenization, and the datum layout is their
+        pre-shifted RL contract (see ``build_group_rl_datums``).
+        """
+        import time as _time
+
+        from stateset_agents.training.sft import (
+            evaluate_checks,
+            normalize_eval_prompts,
+        )
+
+        logs = job.logs
+        prompts = normalize_eval_prompts(json.loads(Path(spec.dataset).read_text()))
+        eval_specs = normalize_eval_prompts(list(spec.eval_prompts or []))
+        knobs = spec.harvest or {}
+        rounds = int(knobs.get("rounds", 4))
+        num_samples = int(knobs.get("best_of", 8))
+        loss_fn = str(knobs.get("loss_fn", "cispo"))
+        checkpoint = _checkpoint_from_pointer(knobs.get("adapter_dir"))
+        output_dir = Path(spec.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        def graded_reward(pspec: dict[str, Any], text: str) -> float:
+            checked = evaluate_checks(
+                text, pspec.get("expect", []), pspec.get("forbid", [])
+            )
+            expect = pspec.get("expect", [])
+            frac = len(checked["expect_hits"]) / len(expect) if expect else 1.0
+            return frac - (1.0 if checked["forbid_hits"] else 0.0)
+
+        if spec.dry_run:
+            (output_dir / "rl_report.json").write_text(
+                json.dumps({"rounds": rounds, "prompts": len(prompts), "dry_run": True})
+            )
+            job.status = JobStatus.SUCCEEDED
+            return handle
+
+        client = self._get_client()
+        rendered, stops = _rendered_prompts(
+            spec.base_model, [p["prompt"] for p in prompts]
+        )
+        eval_texts = [e["prompt"] for e in eval_specs]
+        started = _time.monotonic()
+        job.status = JobStatus.RUNNING
+        round_evals: list[dict[str, Any]] = []
+        try:
+            with _open_session(
+                client, project=Path(spec.output_dir).name or None
+            ) as session:
+                model = session.create_model(
+                    base_model=spec.base_model,
+                    lora=_river_module(client).LoraConfig(rank=spec.lora_r),
+                    checkpoint=_inference_checkpoint(client, checkpoint),
+                )
+
+                def greedy_eval() -> dict[str, Any] | None:
+                    if not eval_specs:
+                        return None
+                    outs = _sample_texts(
+                        model,
+                        spec.base_model,
+                        eval_texts,
+                        num_samples=1,
+                        temperature=0.0,
+                        max_tokens=spec.eval_max_new_tokens,
+                    )
+                    results = []
+                    for espec, completions in zip(eval_specs, outs, strict=True):
+                        checked = evaluate_checks(
+                            completions[0],
+                            espec.get("expect", []),
+                            espec.get("forbid", []),
+                        )
+                        results.append(
+                            {
+                                "prompt": espec["prompt"],
+                                "finetuned": completions[0],
+                                "checks": checked,
+                            }
+                        )
+                    passed = sum(1 for r in results if r["checks"]["passed"])
+                    return {"passed": passed, "total": len(results), "results": results}
+
+                before = greedy_eval()
+                if before:
+                    round_evals.append(
+                        {
+                            "round": 0,
+                            "passed": before["passed"],
+                            "total": before["total"],
+                        }
+                    )
+                    logs.append(
+                        f"round 0 (before): {before['passed']}/{before['total']}"
+                    )
+
+                for rnd in range(1, rounds + 1):
+                    groups = model.sample(
+                        rendered,
+                        num_samples=num_samples,
+                        temperature=float(knobs.get("temperature", 0.9)),
+                        top_p=float(knobs.get("top_p", 0.95)),
+                        max_tokens=int(knobs.get("max_new_tokens", 300)),
+                        stop=stops,
+                    )
+                    data: list[dict[str, Any]] = []
+                    mean_rewards: list[float] = []
+                    for pspec, group in zip(prompts, groups, strict=True):
+                        rewards = [
+                            graded_reward(pspec, str(getattr(s_, "text", "")))
+                            for s_ in group
+                        ]
+                        mean_rewards.append(sum(rewards) / len(rewards))
+                        prompt_ids = getattr(group[0], "prompt_token_ids", None)
+                        if not prompt_ids:
+                            raise RemoteExecutionError(
+                                "River returned no prompt_token_ids; the RL "
+                                "datum layout needs the server's own "
+                                "tokenization",
+                                provider=self.name,
+                            )
+                        samples = [
+                            {"tokens": s_.tokens, "logprobs": s_.logprobs}
+                            for s_ in group
+                        ]
+                        data.extend(
+                            build_group_rl_datums(list(prompt_ids), samples, rewards)
+                        )
+                    if not data:
+                        logs.append(
+                            f"round {rnd}: every group zero-variance — "
+                            "nothing to train on this round"
+                        )
+                        continue
+                    fb, _opt = model.train_step(
+                        data, lr=spec.learning_rate, loss_fn=loss_fn
+                    )
+                    job.steps += 1
+                    loss = _extract(fb, "loss_mean", "loss")
+                    if loss is not None:
+                        job.final_loss = float(loss)
+                    after = greedy_eval()
+                    entry: dict[str, Any] = {
+                        "round": rnd,
+                        "datums": len(data),
+                        "mean_reward": round(sum(mean_rewards) / len(mean_rewards), 4),
+                    }
+                    if after:
+                        entry["passed"] = after["passed"]
+                        entry["total"] = after["total"]
+                    round_evals.append(entry)
+                    logs.append(
+                        f"round {rnd}: {len(data)} datums, mean reward "
+                        f"{entry['mean_reward']}"
+                        + (
+                            f", eval {entry['passed']}/{entry['total']}"
+                            if "passed" in entry
+                            else ""
+                        )
+                    )
+
+                name = Path(spec.output_dir).name or "rl_adapter"
+                uri = model.save_weights(name, mode="inference")
+                job.checkpoint_uri = _as_uri(uri)
+                logs.append(f"saved River checkpoint: {job.checkpoint_uri}")
+                final = greedy_eval()
+                if final:
+                    (output_dir / "eval_results.json").write_text(
+                        json.dumps(final["results"], indent=2)
+                    )
+        except RemoteExecutionError:
+            job.status = JobStatus.FAILED
+            job.duration_s = _time.monotonic() - started
+            self._record_cost(handle.job_id, job)
+            raise
+        except Exception as exc:  # noqa: BLE001 - unknown SDK exception surface
+            job.status = JobStatus.FAILED
+            job.duration_s = _time.monotonic() - started
+            logs.append(f"River RL run failed: {exc}")
+            self._record_cost(handle.job_id, job)
+            account = self._account_error(exc)
+            if account is not None:
+                raise account from exc
+            raise RemoteExecutionError.wrap(
+                exc, "River RL run failed", provider=self.name
+            ) from exc
+
+        (output_dir / "rl_report.json").write_text(
+            json.dumps({"rounds": round_evals, "loss_fn": loss_fn}, indent=2)
+        )
+        job.duration_s = _time.monotonic() - started
+        job.status = JobStatus.SUCCEEDED
+        self._record_cost(handle.job_id, job)
         return handle
 
     def _submit_harvest(

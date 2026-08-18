@@ -50,6 +50,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "build_group_rl_datums",
     "DOCUMENTED_BASE_MODELS",
     "MAX_LORA_RANK",
     "MIN_LORA_RANK",
@@ -416,3 +417,55 @@ def build_rl_batch(
             continue
         batch.append(datum)
     return batch
+
+
+def build_group_rl_datums(
+    prompt_token_ids: list[int],
+    samples: list[dict[str, Any]],
+    rewards: list[float],
+) -> list[dict[str, Any]]:
+    """GRPO-style datums for one prompt's sample group, River wire layout.
+
+    ``samples`` carry the SDK's own ``tokens`` (generated ids) and
+    ``logprobs`` (per generated token) — never recomputed client-side, per
+    River's guidance. Advantages are group-relative (reward minus the group
+    mean) broadcast over the response positions, in the pre-shifted layout
+    their RL losses expect: response ``old_logprobs``/``advantages`` start
+    at index ``prompt_len - 1`` and end with one trailing ``0.0``.
+
+    A zero-variance group (all rewards equal) returns ``[]`` — it carries
+    zero gradient and only wastes compute, so callers skip it.
+    """
+    if len(samples) != len(rewards):
+        raise ValueError(f"got {len(samples)} samples but {len(rewards)} rewards")
+    if not samples:
+        return []
+    mean_reward = sum(rewards) / len(rewards)
+    if all(r == rewards[0] for r in rewards):
+        return []
+
+    prompt_len = len(prompt_token_ids)
+    if prompt_len < 1:
+        raise ValueError("prompt_token_ids must be non-empty")
+    datums: list[dict[str, Any]] = []
+    for sample, reward in zip(samples, rewards, strict=True):
+        tokens = [int(t) for t in sample["tokens"]]
+        logprobs = [float(x) for x in sample["logprobs"]]
+        if len(tokens) != len(logprobs):
+            raise ValueError(
+                f"sample has {len(tokens)} tokens but {len(logprobs)} logprobs"
+            )
+        if not tokens:
+            continue
+        advantage = reward - mean_reward
+        input_ids = list(prompt_token_ids) + tokens
+        pad = [0.0] * (prompt_len - 1)
+        datums.append(
+            {
+                "input_ids": input_ids,
+                "old_logprobs": pad + logprobs + [0.0],
+                "advantages": pad + [advantage] * len(tokens) + [0.0],
+                "attention_mask": [1] * len(input_ids),
+            }
+        )
+    return datums

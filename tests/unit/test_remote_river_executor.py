@@ -806,3 +806,128 @@ class TestRiverPostTrainEval:
         from stateset_agents.flywheel import _eval_score
 
         assert _eval_score(tmp_path / "out") == (1, 1)
+
+
+class RlModel(SamplingModel):
+    """SamplingModel that also trains — the RL surface."""
+
+    train_steps: list[dict] = []
+    canned_rl: dict[str, list[dict]] = {}  # prompt -> samples w/ text/tokens/logprobs
+
+    def sample(self, prompts=None, *, num_samples=1, temperature=1.0, **kw):
+        class _S:
+            def __init__(self, spec):
+                self.text = spec["text"]
+                self.tokens = spec.get("tokens", [1, 2])
+                self.logprobs = spec.get("logprobs", [-0.5] * len(self.tokens))
+                self.prompt_token_ids = spec.get("prompt_token_ids", [7, 8, 9])
+
+        groups = []
+        for prompt in prompts:
+            canned = type(self).canned_rl.get(
+                prompt, [{"text": "nothing"}] * num_samples
+            )
+            groups.append([_S(c) for c in canned[:num_samples]])
+        return groups
+
+    def train_step(self, data, lr, loss_fn="cross_entropy", **kw):
+        type(self).train_steps.append({"n": len(data), "loss_fn": loss_fn, "lr": lr})
+        return {"loss_mean": 0.1}, {"ok": True}
+
+
+class RlClient(FakeRiverClient):
+    def create_session(self):
+        class _Session(FakeSession):
+            def create_model(self, base_model, lora=None, checkpoint=None):
+                model = RlModel(base_model=base_model, lora=lora)
+                self.models.append(model)
+                return model
+
+        session = _Session()
+        self.sessions.append(session)
+        return session
+
+
+class TestRiverRl:
+    def _spec(self, tmp_path, **overrides):
+        prompts = tmp_path / "prompts.json"
+        prompts.write_text(
+            json.dumps([{"prompt": "fix it", "expect": ["done"], "forbid": ["oops"]}])
+        )
+        defaults = {
+            "dataset": prompts,
+            "base_model": "Qwen/Qwen3.6-35B-A3B-FP8",
+            "output_dir": tmp_path / "rl",
+            "job_kind": "rl",
+            "harvest": {"best_of": 2, "rounds": 2, "loss_fn": "cispo"},
+        }
+        defaults.update(overrides)
+        return RemoteJobSpec(**defaults)
+
+    def test_rounds_of_grouped_training_with_graded_rewards(self, tmp_path):
+        RlModel.train_steps = []
+        RlModel.canned_rl = {
+            "fix it": [
+                {"text": "done, no problem"},
+                {"text": "oops I also did the forbidden thing done"},
+            ]
+        }
+        client = RlClient()
+        executor = RiverExecutor(
+            client=client, tokenizer=FakeTokenizer(), ledger_path=tmp_path / "l.jsonl"
+        )
+
+        result = executor.wait(executor.submit(self._spec(tmp_path)))
+
+        assert result.status is JobStatus.SUCCEEDED, "\n".join(result.logs)
+        # 2 rounds x (2 samples w/ differing rewards -> 2 datums each).
+        assert [s["loss_fn"] for s in RlModel.train_steps] == ["cispo", "cispo"]
+        assert all(s["n"] == 2 for s in RlModel.train_steps)
+        report = json.loads((tmp_path / "rl" / "rl_report.json").read_text())
+        assert len(report["rounds"]) == 2
+        # Graded reward: pass=1.0, forbid-hit = 1.0(expect) - 1.0 = 0.0 ->
+        # group mean 0.5.
+        assert report["rounds"][0]["mean_reward"] == 0.5
+        assert client.model.saved  # checkpoint saved at the end
+
+    def test_zero_variance_rounds_train_nothing(self, tmp_path):
+        RlModel.train_steps = []
+        RlModel.canned_rl = {"fix it": [{"text": "done"}, {"text": "done"}]}
+        client = RlClient()
+        executor = RiverExecutor(
+            client=client, tokenizer=FakeTokenizer(), ledger_path=tmp_path / "l.jsonl"
+        )
+
+        result = executor.wait(executor.submit(self._spec(tmp_path)))
+
+        assert result.status is JobStatus.SUCCEEDED
+        assert RlModel.train_steps == []
+        assert any("zero-variance" in line for line in result.logs)
+
+    def test_eval_trajectory_is_recorded_per_round(self, tmp_path):
+        RlModel.train_steps = []
+        RlModel.canned_rl = {
+            "fix it": [{"text": "done"}, {"text": "nope"}],
+            "check me": [{"text": "the token is here"}],
+        }
+        client = RlClient()
+        executor = RiverExecutor(
+            client=client, tokenizer=FakeTokenizer(), ledger_path=tmp_path / "l.jsonl"
+        )
+
+        result = executor.wait(
+            executor.submit(
+                self._spec(
+                    tmp_path,
+                    eval_prompts=[{"prompt": "check me", "expect": ["token"]}],
+                )
+            )
+        )
+
+        assert result.status is JobStatus.SUCCEEDED
+        report = json.loads((tmp_path / "rl" / "rl_report.json").read_text())
+        rounds = report["rounds"]
+        assert rounds[0]["round"] == 0 and rounds[0]["passed"] == 1
+        assert all("passed" in r for r in rounds[1:])
+        # Final greedy eval lands in the sft-shaped file the flywheel reads.
+        assert (tmp_path / "rl" / "eval_results.json").exists()

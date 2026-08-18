@@ -79,6 +79,19 @@ def flywheel(
         None, help="Container disk per pod (~2.5x the checkpoint size)."
     ),
     num_epochs: int = typer.Option(3, help="Training epochs per generation."),
+    algorithm: str = typer.Option(
+        "sft",
+        help=(
+            "sft (default): rejection-sampling flywheel — imitate the "
+            "winners. cispo or importance_sampling: GRPO-style RL on River "
+            "— train on EVERY sample, gradient-weighted by graded reward "
+            "(refusal violations punished, not just filtered). RL requires "
+            "--provider river."
+        ),
+    ),
+    rounds: int = typer.Option(
+        4, help="RL only: sample->grade->train_step rounds in one session."
+    ),
     repeats: int = typer.Option(
         1,
         help=(
@@ -119,6 +132,46 @@ def flywheel(
     except StateSetError as exc:
         _echo(str(exc))
         raise typer.Exit(code=1) from exc
+
+    if algorithm != "sft":
+        if provider != "river":
+            _echo("--algorithm requires --provider river (zero-infra RL).")
+            raise typer.Exit(code=2)
+        from stateset_agents.remote.job import RemoteJobSpec
+
+        spec = RemoteJobSpec(
+            dataset=harvest_prompts,
+            base_model=base_model,
+            output_dir=output_root,
+            job_kind="rl",
+            lora_r=16,
+            learning_rate=4e-5,
+            harvest={
+                "adapter_dir": str(initial_adapter) if initial_adapter else None,
+                "best_of": best_of,
+                "temperature": temperature,
+                "rounds": rounds,
+                "loss_fn": algorithm,
+            },
+            eval_prompts=list[str | dict](_load_specs(eval_prompts, "--eval-prompts")),
+            dry_run=dry_run,
+        )
+        _echo(
+            f"RL flywheel ({algorithm}): {base_model} on river, "
+            f"{rounds} round(s) x best-of {best_of}"
+        )
+        try:
+            result = executor.wait(executor.submit(spec))
+        except StateSetError as exc:
+            _echo(str(exc))
+            raise typer.Exit(code=1) from exc
+        for line in result.logs:
+            _echo(f"  {line}")
+        if not result.succeeded:
+            _echo("RL run failed.", err=True)
+            raise typer.Exit(code=1)
+        _echo(f"Report: {output_root / 'rl_report.json'}")
+        return
 
     _echo(
         f"Flywheel: {base_model} on {provider}, up to {generations} "

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The RL flywheel: `flywheel --algorithm cispo` — GRPO-style RL with
+  zero infrastructure.** Instead of imitating harvest winners, each round
+  samples best-of-N per prompt through River, grades EVERY sample
+  (fraction of expected resolutions, minus a full point for violating a
+  refusal), computes group-relative advantages, and trains with River's
+  clipped importance-sampling losses on their own sampler logprobs
+  (never recomputed) in their pre-shifted RL datum layout. Failures push
+  probability mass away instead of being discarded; zero-variance groups
+  are skipped as pure waste. Per-round greedy eval trajectory lands in
+  `rl_report.json`; the final checkpoint and sft-shaped
+  `eval_results.json` drop out like any other run.
+
+### Added
+
 - **The eval difficulty ladder** (`stateset_agents.training.eval_ladder`,
   `python -m ... --spec domain.json --depth 3 --refusal-fraction 0.5`).
   A 35B MoE saturated the hand-written depth-2 compound eval in one

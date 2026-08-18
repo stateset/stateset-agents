@@ -15,6 +15,7 @@ import pytest
 from stateset_agents.core.trajectory import Trajectory
 from stateset_agents.remote.river_batches import (
     DOCUMENTED_BASE_MODELS,
+    build_group_rl_datums,
     build_rl_batch,
     build_sft_batch,
     validate_base_model,
@@ -384,3 +385,57 @@ class TestRlBatch:
             build_rl_batch([self._traj(response="")], tokenizer, old_logprobs=[[]])
             == []
         )
+
+
+class TestGroupRlDatums:
+    """GRPO-style datums in River's pre-shifted wire layout."""
+
+    def _sample(self, tokens, logprobs=None):
+        return {"tokens": tokens, "logprobs": logprobs or [-0.5] * len(tokens)}
+
+    def test_pre_shifted_layout(self):
+        datums = build_group_rl_datums(
+            [1, 2, 3],
+            [self._sample([10, 11]), self._sample([12, 13])],
+            [1.0, 0.0],
+        )
+        d = datums[0]
+        T = len(d["input_ids"])
+        assert d["input_ids"] == [1, 2, 3, 10, 11]
+        # Response old_logprobs start at prompt_len-1 (=2), trailing 0.0.
+        assert d["old_logprobs"][:2] == [0.0, 0.0]
+        assert d["old_logprobs"][2:4] == [-0.5, -0.5]
+        assert d["old_logprobs"][4] == 0.0
+        assert len(d["old_logprobs"]) == T
+        assert len(d["advantages"]) == T
+        assert d["attention_mask"] == [1] * T
+
+    def test_advantages_are_group_relative(self):
+        datums = build_group_rl_datums(
+            [1],
+            [self._sample([10]), self._sample([11])],
+            [1.0, 0.0],
+        )
+        # mean 0.5 -> advantages +0.5 / -0.5 on the single response slot.
+        assert datums[0]["advantages"][0] == 0.5
+        assert datums[1]["advantages"][0] == -0.5
+
+    def test_zero_variance_group_is_skipped(self):
+        assert (
+            build_group_rl_datums(
+                [1, 2], [self._sample([10]), self._sample([11])], [1.0, 1.0]
+            )
+            == []
+        )
+
+    def test_mismatched_lengths_are_loud(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="rewards"):
+            build_group_rl_datums([1], [self._sample([10])], [1.0, 0.0])
+        with pytest.raises(ValueError, match="logprobs"):
+            build_group_rl_datums(
+                [1],
+                [{"tokens": [10, 11], "logprobs": [-0.1]}, self._sample([12])],
+                [1.0, 0.0],
+            )
