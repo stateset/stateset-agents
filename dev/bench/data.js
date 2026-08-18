@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787075177974,
+  "lastUpdate": 1787079460779,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -6422,6 +6422,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.7987592848338395e-8",
             "extra": "mean: 347.72208563900676 nsec\nrounds: 136222"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "50cf5fe86cc9fdde9fa604d2765d1d0761abff29",
+          "message": "feat(rl): multi-turn RL — episode-level advantages over whole conversations\n\nBuilt for the wall imitation hit at rung 5: when most sampled episodes\npass, passing examples carry little signal — graded rewards still\nseparate near-misses, violations, and clean passes. Rollouts now\ncapture per-turn prompt ids (tokenized client-side and passed to the\nsampler) plus sampler logprobs; each episode earns a shaped reward\n(turn-token fraction + completeness bonus − violation, mirroring the\nsingle-turn shaping that fixed the Goodhart), and the group-relative\nadvantage broadcasts across every assistant turn's datum. Greedy\nepisode evals bracket each round; --algorithm cispo now routes episode\nscripts automatically.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T11:54:52-07:00",
+          "tree_id": "7dabf982bf9e5a32bdc3a57293a4f556ec338d6d",
+          "url": "https://github.com/stateset/stateset-agents/commit/50cf5fe86cc9fdde9fa604d2765d1d0761abff29"
+        },
+        "date": 1787079459066,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 11190.91006362189,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000021960687175841173",
+            "extra": "mean: 89.35823756199095 usec\nrounds: 1608"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 13306.742996182566,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009347110946081666",
+            "extra": "mean: 75.14986952756807 usec\nrounds: 2307"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 10610.678148721301,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008528983563850039",
+            "extra": "mean: 94.24468313747794 usec\nrounds: 4169"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1313.8746300754897,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000019128078800875453",
+            "extra": "mean: 761.1076255750097 usec\nrounds: 1087"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 335.544608226335,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001396478528498306",
+            "extra": "mean: 2.980229678807623 msec\nrounds: 302"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 3645357.35773645,
+            "unit": "iter/sec",
+            "range": "stddev: 2.8928917982384038e-8",
+            "extra": "mean: 274.32152786824184 nsec\nrounds: 170126"
           }
         ]
       }
