@@ -10,7 +10,7 @@ This replicates [`FLYWHEEL_HEADROOM.md`](FLYWHEEL_HEADROOM.md) (Muse-Glimmer-30B
 customer support, 2/12 → 10/12) in a different domain (IT helpdesk), on a
 different base model (Qwen/Qwen3.5-0.8B — 35× smaller), and — the product
 point — through the shipped autonomous command rather than hand-driven
-scripts. Run 2026-08-17.
+scripts. Runs 2026-08-17/18.
 
 ## Setup
 
@@ -92,5 +92,6 @@ training dose matters as much as the harvest quality.
 ## Cost of the whole campaign
 
 Gen-1 training (twice: 3 then 8 epochs) $1.02; three failed spins $4.04
-(the CPU-grinding hour is $3.60 of that); the successful run $2.60 —
-**$7.66 total**, every line in the cost ledger.
+(the CPU-grinding hour is $3.60 of that); successful run 1 $2.60 and
+reproduction run 2 $3.06 — **$10.72 total**, every line in the cost
+ledger.
