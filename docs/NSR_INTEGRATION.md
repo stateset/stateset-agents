@@ -77,6 +77,12 @@ never harvest unverified training rows.
  "nsr": {"query": "Can order A1 be refunded?", "action": "issue_refund"}}
 ```
 
+The same gate is available in the improve loop: `stateset-agents improve
+run --reward nsr` grades transcripts with the verifier (the one
+network-backed reward allowed there — it is deterministic and rule-based,
+unlike the refused LLM judges, and runs fail-closed). Supply each assistant
+turn's decision question via the contexts JSONL as `{"nsr_request": {...}}`.
+
 ## 3. Rollout tools: `nsr_decide` / `nsr_verify_plan`
 
 Expose the verifier to tool-calling policies so they can consult it
