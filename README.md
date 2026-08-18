@@ -146,7 +146,42 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.31.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.32.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **`stateset-agents flywheel` — the improvement loop as one unattended
+  command, live-verified and replicated.** Harvest the current generation's
+  rare successes (best-of-N against objective checks), train the next
+  generation on only those, measure, repeat — stopping on plateau, dry
+  harvest, perfect score, or a hard `--max-cost` ceiling checked before each
+  rental. Two independent runs in a NEW domain (IT helpdesk) at 35× smaller
+  scale (Qwen3.5-0.8B): **0/12 → 7/12 and 0/12 → 11/12** on compound
+  tickets, harvest rate rising to 42.7% and 57.9%, ~$3/run
+  ([`FLYWHEEL_DOMAIN2.md`](docs/FLYWHEEL_DOMAIN2.md)).
+- **River AI: live-verified.** Their SDK landed on PyPI (Python ≥3.12) and
+  the first real run worked through our blind-written executor essentially
+  unchanged — session → LoRA model on Qwen3.5-9B → training step →
+  `river://` checkpoint with lineage manifest → sampled the trained
+  weights. Hardened on first contact with their own recovery taxonomy
+  (transient backoff + session rebuild; `train_step` preferred).
+- **Serve grows up**: repeatable `--adapter name=path` serves several
+  fine-tunes on one endpoint for A/B; `stateset-agents deploy` is
+  train-then-serve in one command; SSE streaming over the RunPod proxy
+  verified live. **Honesty row**: vLLM silently does NOT apply
+  hybrid-Qwen3.5 LoRA adapters (greedy A/B proof; `chat-remote` remains the
+  verified path — see the DISPROVEN entry in
+  [`docs/PROOFS.md`](docs/PROOFS.md)).
+- **Failed jobs no longer destroy their artifacts** — the RunPod executor
+  salvages the output dir before terminating the pod on non-zero exits (the
+  eval gate saves artifacts before failing), and `fetch()` accepts any
+  terminal status.
+- **`docs/PROOFS.md`** — every headline claim mapped to its evidence class
+  (re-proved automatically / live-verified / unit-pinned / unverified /
+  disproven), linked from the README.
+- `STATESET_AGENTS_WHEEL` ships an unreleased build to rented pods; the
+  harvest module moves the model to GPU (an H100 sat at 0% for an hour
+  finding this).
+
+**v0.31.0:**
 
 - **The serve claim is now a receipt.** After nine failed attempts across five
   distinct failure modes, `serve-remote` answered an authenticated
@@ -370,7 +405,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.31.0)
+pip install stateset-agents          # latest release (v0.32.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1072,7 +1107,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.31.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.32.0`).
 
 Other entry points:
 

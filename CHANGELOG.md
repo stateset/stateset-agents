@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-08-17 — The flywheel is a product: replicated ceiling-raise, River live, honest serving
+
 ### Added
 
 - **River AI: live-verified.** `river-client` appeared on PyPI (0.6.2,
