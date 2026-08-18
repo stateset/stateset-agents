@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multi-turn RL, live — and the wall confirmed from the second
+  direction.** Episode-level RL (rollouts capturing per-turn prompt ids
+  and sampler logprobs; shaped episode rewards; group-relative advantages
+  broadcast across every assistant turn; clipped-IS training) ran its
+  first real campaign at the rung-5 wall: flat 9/12 across four rounds,
+  mean reward pinned at 1.70/2.0, most groups zero-variance. Where
+  imitation REGRESSED at this difficulty (9→7, auto-discarded), RL held
+  stable; neither climbed. Verdict: a genuine 9B capability ceiling at
+  five-turn/60%-refusal difficulty, now mapped by both methods — the
+  honest boundary of this model on this ladder.
+
+### Added
+
 - **The curriculum curve, complete — including its wall.** Rung 5
   (five turns, 60% refusals): the rung-4 adapter still transferred
   (9/12 baseline) but with an 83% harvest rate the trained gen-2 scored
