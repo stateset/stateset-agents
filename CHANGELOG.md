@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The episode flywheel's first live run — machinery verified, doctrine
+  confirmed.** On two-turn energy episodes (turn 2 never repeats the
+  account reference; a third decline a remedy), the single-turn-trained
+  9B already scores 9/12 greedy with a 65% episode harvest rate — and
+  gen-2 trained on 93 passing conversations scored 8/12, so the loop
+  plateau-stopped and kept gen-1. The honest lesson is the flywheel's own
+  doctrine seen from the other side: the mechanism amplifies RARE
+  successes, and a 65% harvest rate means there was little latent
+  capability left to convert at this difficulty. Every new piece worked
+  live: batched branch rollouts, per-turn carryover scoring, episode-wide
+  forbids, multi-turn training rows, episode-aware evals — the next lift
+  needs a harder rung (three-turn scripts, more refusals).
+
+### Added
+
 - **The multi-turn episode flywheel.** The loop now learns CONVERSATIONS:
   `build_episode_ladder` generates two-turn scripts where the user's
   second turn raises a new issue and asks for confirmation of the first
