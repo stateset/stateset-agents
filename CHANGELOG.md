@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **First perfect score: 7/12 → 12/12 in ONE generation.** A new domain
+  (Starlight Travel concierge) on a new model class — Qwen3.6-35B-A3B-FP8,
+  a mixture-of-experts — trained and flywheeled entirely through River
+  with zero machines rented: gen-1 persona training passed 3/3 held-out
+  bookings verbatim, and one wheel-turn on compound requests (harvest
+  177/240) hit 12/12, firing the perfect-score stopping rule in the wild
+  for the first time. Fourth model/substrate/domain combination for the
+  ceiling-raise; the mechanism's strength scales with the model.
+
 ## [0.33.0] - 2026-08-18 — Nothing rented, nothing unverified: the zero-infrastructure flywheel and self-verifying serving
 
 ### Added
