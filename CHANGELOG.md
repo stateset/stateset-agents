@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **River: training effect verified, not just mechanics.** A second run
+  trained the 140-row TechNest persona on Qwen3.5-9B via
+  `train-remote --provider river` (3 epochs, 210 steps), and sampling the
+  `river://` checkpoint answered **3/3 held-out tickets** with the exact
+  canonical resolutions, the persona signature, and the ticket numbers
+  echoed — the same objective standard the RunPod training path cleared.
+
 ## [0.32.0] - 2026-08-17 — The flywheel is a product: replicated ceiling-raise, River live, honest serving
 
 ### Added
