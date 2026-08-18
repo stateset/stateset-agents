@@ -12,7 +12,7 @@ api:
   image:
     # Python API gateway image built from `deployment/docker/Dockerfile`.
     repository: stateset/stateset-agents-api
-    tag: "0.33.1"
+    tag: "0.34.0"
     digest: ""
     pullPolicy: IfNotPresent
   service:
@@ -140,7 +140,7 @@ trainingJob:
     # Trainer image should include the `training` extras and any example/scripts
     # you plan to run in the Job.
     repository: stateset/stateset-agents-trainer
-    tag: "0.33.1"
+    tag: "0.34.0"
     digest: ""
     pullPolicy: IfNotPresent
   hfSecretName: "hf-secret"

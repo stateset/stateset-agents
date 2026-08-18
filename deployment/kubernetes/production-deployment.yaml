@@ -79,7 +79,7 @@ spec:
         emptyDir: {}
       containers:
       - name: stateset-agents
-        image: stateset/stateset-agents-api:0.33.1
+        image: stateset/stateset-agents-api:0.34.0
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

@@ -146,7 +146,29 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.33.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.34.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **The eval difficulty ladder** (`stateset_agents.training.eval_ladder`):
+  a 35B saturated the hand-written depth-2 eval in one wheel-turn — from
+  then on it measured nothing. Difficulty is now a parameter: a declarative
+  `DomainSpec` generates train/harvest/eval kits at any compound depth,
+  with **refusal prompts** (the user declines one remedy; its proof token
+  becomes a `forbid`) that punish template-spraying. First live rung:
+  the 12/12 model scores **7/12 at depth-3 with refusals** — headroom
+  restored, and the refusal skill isolated as the thing to learn.
+- **The RL flywheel** (`flywheel --algorithm cispo`, `--provider river`):
+  GRPO-style RL with zero infrastructure. Each round samples best-of-N per
+  prompt, grades EVERY sample (expected-resolution fraction, minus a full
+  point for violating a refusal), computes group-relative advantages, and
+  trains with River's clipped importance-sampling losses on their own
+  sampler logprobs in their pre-shifted RL datum layout — failures push
+  probability mass away instead of being discarded. Prompt ids are
+  tokenized client-side and passed to the sampler, so the datums carry
+  exactly the ids generation used. Per-round eval trajectory in
+  `rl_report.json`; zero-variance groups skipped. The SFT-vs-RL
+  head-to-head on the refusal ladder is running as this ships.
+
+**v0.33.1:**
 
 - **First perfect score: 7/12 → 12/12 in one generation.** A new domain
   (Starlight Travel concierge) on a new model class — Qwen3.6-35B-A3B-FP8,
@@ -453,7 +475,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.33.1)
+pip install stateset-agents          # latest release (v0.34.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1155,7 +1177,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.33.1`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.34.0`).
 
 Other entry points:
 
