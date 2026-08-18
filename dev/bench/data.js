@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787082042919,
+  "lastUpdate": 1787082175522,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -6548,6 +6548,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.797857693087525e-8",
             "extra": "mean: 428.72209764296446 nsec\nrounds: 56635"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "committer": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "id": "344e9c01b4f67a37f7b005f90951bac72245a337",
+          "message": "feat(nsr): StateSet NSR verifier integration — reward, harvest gate, tools, outcome loop, eval gate",
+          "timestamp": "2026-08-18T19:13:56Z",
+          "url": "https://github.com/stateset/stateset-agents/pull/30/commits/344e9c01b4f67a37f7b005f90951bac72245a337"
+        },
+        "date": 1787082173846,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 10962.751946116254,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014334320052090049",
+            "extra": "mean: 91.21797199418232 usec\nrounds: 1464"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11642.287799547348,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012111770011571716",
+            "extra": "mean: 85.89377081357499 usec\nrounds: 2138"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8408.942871668387,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018527298573249885",
+            "extra": "mean: 118.92101245796593 usec\nrounds: 3532"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1039.1481134995627,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006286217924219382",
+            "extra": "mean: 962.326724178209 usec\nrounds: 852"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 265.9955104394344,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00027262811448238995",
+            "extra": "mean: 3.759461948616964 msec\nrounds: 253"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2907325.15493644,
+            "unit": "iter/sec",
+            "range": "stddev: 3.6280838832016556e-8",
+            "extra": "mean: 343.95877540634496 nsec\nrounds: 141965"
           }
         ]
       }
