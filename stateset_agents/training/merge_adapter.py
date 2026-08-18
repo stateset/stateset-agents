@@ -71,6 +71,19 @@ def merge_adapter(base_model: str, adapter_dir: Path, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(str(output_dir), safe_serialization=True)
     tokenizer.save_pretrained(str(output_dir))
+    # Composite multimodal checkpoints (the Qwen3.5 family included) need
+    # their PROCESSOR artifacts too — without them vLLM's engine dies
+    # loading the merged directory (observed live: Qwen3-VL video-processor
+    # errors at boot). Text-only models simply have no processor; skip.
+    try:
+        from transformers import AutoProcessor
+
+        AutoProcessor.from_pretrained(base_model).save_pretrained(  # nosec: B615
+            str(output_dir)
+        )
+        logger.info("processor artifacts saved alongside the merged weights")
+    except Exception as exc:  # noqa: BLE001 - text-only models land here
+        logger.info("no processor saved (%s) — fine for text-only models", exc)
     (output_dir / "merge_probe.json").write_text(
         json.dumps(
             {

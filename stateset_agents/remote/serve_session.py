@@ -591,9 +591,12 @@ class RemoteServeSession:
                 # The tail alone showed only the APIServer wrapper once; the
                 # engine's root cause scrolls off it. Collect ERROR lines
                 # from the whole log too.
+                # The root exception sits at the END of the engine's
+                # ERROR traceback — tail it (a head once cut the evidence
+                # off exactly at the interesting frame).
                 _, log_tail = ssh.run(
-                    f"grep -E 'ERROR|Error' {_REMOTE_VLLM_LOG} | head -n 15; "
-                    f"echo '--- tail ---'; tail -n 15 {_REMOTE_VLLM_LOG}"
+                    f"grep -E 'ERROR|Error' {_REMOTE_VLLM_LOG} | tail -n 20; "
+                    f"echo '--- tail ---'; tail -n 10 {_REMOTE_VLLM_LOG}"
                 )
                 raise RemoteExecutionError(
                     f"vLLM did not become ready within {self.ready_timeout_s}s "
