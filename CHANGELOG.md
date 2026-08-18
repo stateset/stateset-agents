@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The eval difficulty ladder** (`stateset_agents.training.eval_ladder`,
+  `python -m ... --spec domain.json --depth 3 --refusal-fraction 0.5`).
+  A 35B MoE saturated the hand-written depth-2 compound eval in one
+  flywheel turn — from that point it measured nothing. Difficulty is now
+  a parameter: a declarative `DomainSpec` (issues with phrasings,
+  canonical resolutions, proof tokens) generates train/harvest/eval kits
+  at any compound depth, with **refusal prompts** — the user raises one
+  more issue but declines its remedy, whose proof token becomes a
+  `forbid`. That punishes template-spraying, the reward-hack that
+  resolution-token checks otherwise invite. Deterministic per seed,
+  disjoint eval/harvest references, same `{prompt, expect, forbid}` shape
+  every consumer already speaks.
+
 ## [0.33.1] - 2026-08-18 — First perfect score: the 35B MoE maxes the eval in one wheel-turn
 
 ### Added
