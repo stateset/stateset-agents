@@ -146,7 +146,25 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.34.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.34.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **The RL flywheel is live-verified — with an honest verdict.** First real
+  run (35B MoE, depth-3 refusal kit, zero infrastructure): **7/12 → 10/12
+  by round 1**, mean graded reward monotone 0.72 → 0.89 across 4 rounds.
+  The head-to-head from the identical start on the identical kit: SFT on
+  the 171-row harvest reached **11/12** — so untuned RL lands at rough
+  parity, not superiority, and BOTH methods retain exactly one refusal
+  violation. Verified, not oversold ([`PROOFS.md`](docs/PROOFS.md)).
+- **The ladder's rung 2 stands as its own result**: the depth-2-perfect
+  (12/12) model scores 7/12 at depth-3 with refusals, and one SFT
+  wheel-turn restores 11/12 — the residual failure being exactly a refusal
+  violation, the skill neither method has fully learned.
+- Hardening from the runs: River harvests retry transients like training
+  does (a live 'Server unavailable' had killed a finished generation's
+  run), and RL prompt ids are tokenized client-side and passed to the
+  sampler (River echoes none for text prompts).
+
+**v0.34.0:**
 
 - **The eval difficulty ladder** (`stateset_agents.training.eval_ladder`):
   a 35B saturated the hand-written depth-2 eval in one wheel-turn — from
@@ -475,7 +493,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.34.0)
+pip install stateset-agents          # latest release (v0.34.1)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1177,7 +1195,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.34.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.34.1`).
 
 Other entry points:
 
