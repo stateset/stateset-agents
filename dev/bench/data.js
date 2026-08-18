@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787022515210,
+  "lastUpdate": 1787023360140,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4440,6 +4440,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.2197154918179384e-8",
             "extra": "mean: 277.5913950398361 nsec\nrounds: 168153"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "6377621a003c98467fee5e394cf37b470581a54d",
+          "message": "chore(release): v0.32.1 — River training effect verified: 3/3 held-out tickets from a river:// checkpoint\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:19:10-07:00",
+          "tree_id": "924e7ba5f5d7f77d4dff6d42a741fd88ddca5187",
+          "url": "https://github.com/stateset/stateset-agents/commit/6377621a003c98467fee5e394cf37b470581a54d"
+        },
+        "date": 1787023358759,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 10795.59706944504,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017058045167888098",
+            "extra": "mean: 92.6303560208186 usec\nrounds: 1528"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11922.998895908151,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001405295520028469",
+            "extra": "mean: 83.87151661510173 usec\nrounds: 1926"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8624.476045594953,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014498626282426143",
+            "extra": "mean: 115.94907269882918 usec\nrounds: 3824"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1073.5917675275157,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000031413582245525094",
+            "extra": "mean: 931.4527460498344 usec\nrounds: 886"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 227.17254540944953,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005464448782759992",
+            "extra": "mean: 4.401940376191267 msec\nrounds: 210"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2904583.6277714106,
+            "unit": "iter/sec",
+            "range": "stddev: 3.534720547902019e-8",
+            "extra": "mean: 344.28342514870764 nsec\nrounds: 89310"
           }
         ]
       }
