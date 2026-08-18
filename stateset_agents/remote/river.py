@@ -342,9 +342,6 @@ class RiverExecutor(RemoteExecutor):
             return handle
 
         client = self._get_client()
-        rendered, stops = _rendered_prompts(
-            spec.base_model, [p["prompt"] for p in prompts]
-        )
         eval_texts = [e["prompt"] for e in eval_specs]
         started = _time.monotonic()
         job.status = JobStatus.RUNNING
@@ -401,37 +398,30 @@ class RiverExecutor(RemoteExecutor):
                     )
 
                 for rnd in range(1, rounds + 1):
-                    groups = model.sample(
-                        rendered,
+                    groups, prompt_ids_per = _rl_sample_groups(
+                        model,
+                        spec.base_model,
+                        [p["prompt"] for p in prompts],
                         num_samples=num_samples,
                         temperature=float(knobs.get("temperature", 0.9)),
                         top_p=float(knobs.get("top_p", 0.95)),
                         max_tokens=int(knobs.get("max_new_tokens", 300)),
-                        stop=stops,
                     )
                     data: list[dict[str, Any]] = []
                     mean_rewards: list[float] = []
-                    for pspec, group in zip(prompts, groups, strict=True):
+                    for pspec, group, prompt_ids in zip(
+                        prompts, groups, prompt_ids_per, strict=True
+                    ):
                         rewards = [
                             graded_reward(pspec, str(getattr(s_, "text", "")))
                             for s_ in group
                         ]
                         mean_rewards.append(sum(rewards) / len(rewards))
-                        prompt_ids = getattr(group[0], "prompt_token_ids", None)
-                        if not prompt_ids:
-                            raise RemoteExecutionError(
-                                "River returned no prompt_token_ids; the RL "
-                                "datum layout needs the server's own "
-                                "tokenization",
-                                provider=self.name,
-                            )
                         samples = [
                             {"tokens": s_.tokens, "logprobs": s_.logprobs}
                             for s_ in group
                         ]
-                        data.extend(
-                            build_group_rl_datums(list(prompt_ids), samples, rewards)
-                        )
+                        data.extend(build_group_rl_datums(prompt_ids, samples, rewards))
                     if not data:
                         logs.append(
                             f"round {rnd}: every group zero-variance — "
@@ -1039,6 +1029,72 @@ def _rendered_prompts(
     except Exception as exc:  # noqa: BLE001 - renderer coverage varies by model
         logger.warning("no River renderer for %s (%s); sampling raw", base_model, exc)
         return list(prompts), None
+
+
+def _rl_sample_groups(
+    model: Any,
+    base_model: str,
+    prompts: list[str],
+    *,
+    num_samples: int,
+    temperature: float,
+    top_p: float,
+    max_tokens: int,
+) -> tuple[list[list[Any]], list[list[int]]]:
+    """Sample groups for RL with CLIENT-side prompt token ids.
+
+    River does not echo ``prompt_token_ids`` for text-prompt sampling
+    (observed live), and the RL datum layout needs the prompt ids exactly.
+    So the renderer's own tokenizer encodes the rendered prompt and the ids
+    are PASSED to ``sample`` — the server then generates from precisely the
+    ids the datums will carry.
+    """
+    try:
+        from river_client.renderers import get_renderer
+
+        renderer = get_renderer(base_model, thinking=False)
+    except Exception as exc:  # noqa: BLE001 - fakes/unknown models land here
+        logger.warning(
+            "no River renderer for %s (%s); sampling raw text and relying "
+            "on echoed prompt ids",
+            base_model,
+            exc,
+        )
+        groups = model.sample(
+            prompts,
+            num_samples=num_samples,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+        )
+        prompt_ids = [
+            [int(t) for t in (getattr(g[0], "prompt_token_ids", None) or [])]
+            for g in groups
+        ]
+        if any(not ids for ids in prompt_ids):
+            raise RemoteExecutionError(
+                "no renderer available and River echoed no prompt_token_ids; "
+                "the RL datum layout needs the prompt ids exactly",
+                provider="river",
+            ) from exc
+        return groups, prompt_ids
+
+    rendered = [
+        renderer.build_sample_prompt([{"role": "user", "content": p}]).prompt
+        for p in prompts
+    ]
+    prompt_ids = [
+        [int(t) for t in renderer.tokenizer.encode(text)] for text in rendered
+    ]
+    groups = model.sample(
+        prompt_token_ids=prompt_ids,
+        num_samples=num_samples,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+        stop=list(renderer.get_stop_strings()) or None,
+    )
+    return groups, prompt_ids
 
 
 def _sample_texts(
