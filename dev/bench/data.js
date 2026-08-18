@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787067962592,
+  "lastUpdate": 1787068976128,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5974,6 +5974,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.462827369894197e-8",
             "extra": "mean: 435.5715102958357 nsec\nrounds: 56896"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "4fd819a6fb043d983c94882f83486746f80c0ef6",
+          "message": "fix(rl): completeness bonus — the graded reward Goodharted live\n\nObserved on the energy-domain RL run: mean reward climbed 0.67 -> 0.84\nacross four rounds while the all-or-nothing greedy eval FELL 6/12 ->\n4/12. Failure anatomy: almost every miss was one dropped resolution —\npartial credit made 'resolve one issue confidently' out-earn occasional\nfull passes. A +1.0 bonus on the full pass makes completeness strictly\ndominant; the violation penalty is unchanged.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T09:00:13-07:00",
+          "tree_id": "7a75bd4f955e311446fc6b427f8ac55d7e710199",
+          "url": "https://github.com/stateset/stateset-agents/commit/4fd819a6fb043d983c94882f83486746f80c0ef6"
+        },
+        "date": 1787068974995,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8410.314428437285,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014278656704844902",
+            "extra": "mean: 118.90161878119096 usec\nrounds: 1427"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9163.575033414341,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013699672269362929",
+            "extra": "mean: 109.1277144950054 usec\nrounds: 2049"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6728.414197407036,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015353648963793796",
+            "extra": "mean: 148.62343052325392 usec\nrounds: 3440"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 827.3966179962778,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000393485174736739",
+            "extra": "mean: 1.2086102097222964 msec\nrounds: 720"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 176.5947638284915,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006408147341398042",
+            "extra": "mean: 5.6626820542153675 msec\nrounds: 166"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2326347.1608154955,
+            "unit": "iter/sec",
+            "range": "stddev: 5.452349865599283e-8",
+            "extra": "mean: 429.8584565725145 nsec\nrounds: 111570"
           }
         ]
       }
