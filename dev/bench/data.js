@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787026295855,
+  "lastUpdate": 1787028884695,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -5080,6 +5080,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.0792922480805623e-7",
             "extra": "mean: 466.16828262935957 nsec\nrounds: 104200"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "4651989ec493189cb68197cb0eb993516aeffaf3",
+          "message": "fix(merge): save processor artifacts; tail the engine's error evidence\n\nThe Qwen3.5 family is a composite multimodal arch: a merged save of\nmodel+tokenizer alone lacks the processor files, and vLLM's engine dies\nat boot loading the directory (observed live: Qwen3-VL video-processor\nerrors). AutoProcessor is saved alongside when the base has one;\ntext-only models skip. Readiness-failure evidence now tails the ERROR\nblock — the root exception sits at its end, and a head cut it off at\nexactly the interesting frame.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T21:51:38-07:00",
+          "tree_id": "20785c72fcf00c9807fe03a0f31c07c6fd349464",
+          "url": "https://github.com/stateset/stateset-agents/commit/4651989ec493189cb68197cb0eb993516aeffaf3"
+        },
+        "date": 1787028883623,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5918.423794746536,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001961684037869893",
+            "extra": "mean: 168.96390570875403 usec\nrounds: 1559"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6097.431943264755,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003698486999460141",
+            "extra": "mean: 164.00347052739204 usec\nrounds: 1934"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5006.102074445409,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017086815441784926",
+            "extra": "mean: 199.75621454158681 usec\nrounds: 3631"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 726.6931629166387,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003096453338256094",
+            "extra": "mean: 1.3760966127525176 msec\nrounds: 643"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 183.5189655197366,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0002590483212928747",
+            "extra": "mean: 5.449028100000131 msec\nrounds: 170"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2130688.549699366,
+            "unit": "iter/sec",
+            "range": "stddev: 5.200558935221663e-8",
+            "extra": "mean: 469.33185056121744 nsec\nrounds: 104298"
           }
         ]
       }
