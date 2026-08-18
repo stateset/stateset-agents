@@ -603,3 +603,207 @@ class TestTrainStepPreference:
         assert client.model.forward_backward_calls == []
         # loss_mean (train_step's metric name) reaches the job record.
         assert any("loss 0.25" in line for line in executor.logs(handle))
+
+
+class SamplingModel(FakeModel):
+    """FakeModel that also answers ``sample`` — the harvest surface."""
+
+    #: prompt-text -> list of sample texts (greedy calls get [0]).
+    canned: dict[str, list[str]] = {}
+    sample_calls: list[dict] = []
+
+    def sample(self, model_input=None, num_samples=1, temperature=1.0, **kw):
+        type(self).sample_calls.append({"n": num_samples, "temperature": temperature})
+
+        class _S:
+            def __init__(self, text):
+                self.text = text
+
+        groups = []
+        for messages in model_input:
+            prompt = messages[0]["content"]
+            texts = type(self).canned.get(prompt, ["nothing"] * num_samples)
+            groups.append([_S(t) for t in texts[:num_samples]])
+        return groups
+
+
+class SamplingClient(FakeRiverClient):
+    def __init__(self):
+        super().__init__()
+        self.created_with: list[dict] = []
+
+    def create_session(self):
+        outer = self
+
+        class _Session(FakeSession):
+            def create_model(self, base_model, lora=None, checkpoint=None):
+                outer.created_with.append(
+                    {"base_model": base_model, "checkpoint": checkpoint}
+                )
+                model = SamplingModel(base_model=base_model, lora=lora)
+                self.models.append(model)
+                return model
+
+        session = _Session()
+        self.sessions.append(session)
+        return session
+
+
+class TestRiverHarvest:
+    """The zero-infrastructure flywheel step: best-of-N through River's
+    sampling API, writing the same artifacts as the pod-based harvest so
+    run_flywheel cannot tell the difference."""
+
+    def _spec(self, tmp_path, **overrides):
+        prompts = tmp_path / "prompts.json"
+        prompts.write_text(
+            json.dumps([{"prompt": "fix my vpn", "expect": ["vpn profile"]}])
+        )
+        defaults = dict(
+            dataset=prompts,
+            base_model="Qwen/Qwen3.5-9B",
+            output_dir=tmp_path / "harvest",
+            job_kind="harvest",
+            harvest={"adapter_dir": None, "best_of": 4, "temperature": 0.9},
+        )
+        defaults.update(overrides)
+        return RemoteJobSpec(**defaults)
+
+    def _executor(self, client, tmp_path):
+        return RiverExecutor(
+            client=client,
+            tokenizer=FakeTokenizer(),
+            ledger_path=tmp_path / "l.jsonl",
+        )
+
+    def test_harvest_writes_the_pod_contract_artifacts(self, tmp_path):
+        SamplingModel.canned = {
+            "fix my vpn": [
+                "re-provisioned your vpn profile",
+                "no idea",
+                "vpn profile reset",
+                "sorry",
+            ]
+        }
+        SamplingModel.sample_calls = []
+        client = SamplingClient()
+        executor = self._executor(client, tmp_path)
+
+        result = executor.wait(executor.submit(self._spec(tmp_path)))
+
+        assert result.status is JobStatus.SUCCEEDED
+        summary = json.loads(
+            (tmp_path / "harvest" / "harvest_summary.json").read_text()
+        )
+        assert summary["kept"] == 2 and summary["samples"] == 4
+        rows = [
+            json.loads(line)
+            for line in (tmp_path / "harvest" / "harvest.jsonl")
+            .read_text()
+            .splitlines()
+        ]
+        assert all("vpn profile" in r["messages"][1]["content"] for r in rows)
+
+    def test_harvest_resolves_the_previous_generation_pointer(self, tmp_path):
+        pointer_dir = tmp_path / "gen1"
+        pointer_dir.mkdir()
+        (pointer_dir / CHECKPOINT_POINTER_NAME).write_text(
+            json.dumps({"checkpoint": "river://abc/sampler_weights/gen1"})
+        )
+        SamplingModel.canned = {"fix my vpn": ["vpn profile ok"] * 4}
+        client = SamplingClient()
+        executor = self._executor(client, tmp_path)
+
+        executor.wait(
+            executor.submit(
+                self._spec(
+                    tmp_path,
+                    harvest={"adapter_dir": str(pointer_dir), "best_of": 4},
+                )
+            )
+        )
+
+        assert client.created_with[0]["checkpoint"] == (
+            "river://abc/sampler_weights/gen1"
+        )
+
+    def test_bogus_pointer_dir_fails_loudly(self, tmp_path):
+        client = SamplingClient()
+        executor = self._executor(client, tmp_path)
+
+        with pytest.raises(RemoteExecutionError, match="checkpoint pointer"):
+            executor.submit(
+                self._spec(
+                    tmp_path,
+                    harvest={"adapter_dir": str(tmp_path / "nope"), "best_of": 4},
+                )
+            )
+
+    def test_eval_prompts_are_scored_greedily_first(self, tmp_path):
+        SamplingModel.canned = {
+            "fix my vpn": ["vpn profile"] * 4,
+            "eval me": ["contains token"],
+        }
+        SamplingModel.sample_calls = []
+        client = SamplingClient()
+        executor = self._executor(client, tmp_path)
+
+        executor.wait(
+            executor.submit(
+                self._spec(
+                    tmp_path,
+                    eval_prompts=[{"prompt": "eval me", "expect": ["token"]}],
+                )
+            )
+        )
+
+        summary = json.loads(
+            (tmp_path / "harvest" / "harvest_summary.json").read_text()
+        )
+        assert summary["eval"] == {
+            "passed": 1,
+            "total": 1,
+            "results": summary["eval"]["results"],
+        }
+        # First sample call is the greedy eval; second is the harvest.
+        assert SamplingModel.sample_calls[0]["temperature"] == 0.0
+        assert SamplingModel.sample_calls[1]["n"] == 4
+
+    def test_dry_run_writes_only_the_summary(self, tmp_path):
+        client = SamplingClient()
+        executor = self._executor(client, tmp_path)
+
+        result = executor.wait(executor.submit(self._spec(tmp_path, dry_run=True)))
+
+        assert result.status is JobStatus.SUCCEEDED
+        assert (tmp_path / "harvest" / "harvest_summary.json").exists()
+        assert not (tmp_path / "harvest" / "harvest.jsonl").exists()
+        assert client.sessions == []
+
+
+class TestRiverPostTrainEval:
+    def test_training_with_eval_prompts_writes_eval_results(self, dataset, tmp_path):
+        SamplingModel.canned = {"eval me": ["the token appears"]}
+        client = SamplingClient()
+        executor = RiverExecutor(
+            client=client,
+            tokenizer=FakeTokenizer(),
+            ledger_path=tmp_path / "l.jsonl",
+        )
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-9B",
+            output_dir=tmp_path / "out",
+            num_epochs=1,
+            eval_prompts=[{"prompt": "eval me", "expect": ["token"]}],
+        )
+
+        result = executor.wait(executor.submit(spec))
+
+        assert result.status is JobStatus.SUCCEEDED
+        rows = json.loads((tmp_path / "out" / "eval_results.json").read_text())
+        assert rows[0]["checks"]["passed"] is True
+        # The flywheel's reader consumes this file unchanged.
+        from stateset_agents.flywheel import _eval_score
+
+        assert _eval_score(tmp_path / "out") == (1, 1)

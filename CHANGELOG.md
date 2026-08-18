@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The zero-infrastructure flywheel: `flywheel --provider river`.** The
+  harvest step now runs entirely through River's sampling API — create a
+  model from the previous generation's `river://` checkpoint, sample
+  best-of-N in-session, filter by checks, write the same
+  `harvest.jsonl`/`harvest_summary.json` the pod harvest writes — and
+  training scores itself greedily in-session, writing `eval_results.json`
+  in the sft shape. No pods, no SSH, no disks: the whole loop is an API
+  key and a laptop. `run_flywheel` cannot tell the providers apart.
+
+### Added
+
 - **Weekly flywheel smoke** (`.github/workflows/flywheel-smoke.yml`): one
   real turn of the wheel on rented hardware every Monday — harvest, train,
   score, verify the audit trail — so the flagship claim re-proves itself.

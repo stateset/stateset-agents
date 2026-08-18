@@ -236,6 +236,9 @@ class RiverExecutor(RemoteExecutor):
         validate_lora_rank(spec.lora_r)
         validate_base_model(spec.base_model)
 
+        if spec.job_kind == "harvest":
+            return self._submit_harvest(handle, job, spec)
+
         client = self._get_client()
         tokenizer = self._get_tokenizer(spec.base_model)
 
@@ -283,6 +286,135 @@ class RiverExecutor(RemoteExecutor):
         job.duration_s = time.monotonic() - started
         job.status = JobStatus.SUCCEEDED
         self._record_cost(job_id, job)
+        return handle
+
+    def _submit_harvest(
+        self, handle: JobHandle, job: _RiverJob, spec: RemoteJobSpec
+    ) -> JobHandle:
+        """Best-of-N harvest with ZERO rented machines.
+
+        The flywheel's forward step, entirely through River's sampling API:
+        create a model from the previous generation's ``river://``
+        checkpoint (or the bare base), ``model.sample`` ``best_of``
+        completions per harvest prompt, keep the ones passing their own
+        checks, and write ``harvest.jsonl`` + ``harvest_summary.json``
+        exactly where the pod-based harvest would — so ``run_flywheel``
+        cannot tell the difference. The eval set is measured greedily from
+        the same in-memory model, giving the loop its "before" number.
+        """
+        import time as _time
+
+        from stateset_agents.training.harvest import build_harvest_rows
+        from stateset_agents.training.sft import normalize_eval_prompts
+
+        logs = job.logs
+        prompts = json.loads(Path(spec.dataset).read_text())
+        harvest_specs = normalize_eval_prompts(prompts)
+        eval_specs = normalize_eval_prompts(list(spec.eval_prompts or []))
+        knobs = spec.harvest or {}
+        checkpoint = _checkpoint_from_pointer(knobs.get("adapter_dir"))
+        output_dir = Path(spec.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        summary: dict[str, Any] = {
+            "base_model": spec.base_model,
+            "adapter_dir": knobs.get("adapter_dir"),
+            "best_of": knobs.get("best_of", 8),
+            "temperature": knobs.get("temperature", 0.9),
+            "prompts": len(harvest_specs),
+            "samples": 0,
+            "kept": 0,
+            "prompts_with_a_pass": 0,
+            "eval": None,
+            "dry_run": bool(spec.dry_run),
+        }
+        if spec.dry_run:
+            (output_dir / "harvest_summary.json").write_text(
+                json.dumps(summary, indent=2)
+            )
+            logs.append("dry run: harvest plan only, nothing sampled")
+            job.status = JobStatus.SUCCEEDED
+            return handle
+
+        client = self._get_client()
+        started = _time.monotonic()
+        job.status = JobStatus.RUNNING
+        try:
+            with _open_session(
+                client, project=Path(spec.output_dir).name or None
+            ) as session:
+                model = session.create_model(
+                    base_model=spec.base_model, checkpoint=checkpoint
+                )
+                logs.append(f"sampling from {checkpoint or spec.base_model} via River")
+                if eval_specs:
+                    greedy = _sample_texts(
+                        model,
+                        [s["prompt"] for s in eval_specs],
+                        num_samples=1,
+                        temperature=0.0,
+                        max_tokens=spec.eval_max_new_tokens,
+                    )
+                    from stateset_agents.training.sft import evaluate_checks
+
+                    results = []
+                    for espec, completions in zip(eval_specs, greedy):
+                        checked = evaluate_checks(
+                            completions[0],
+                            espec.get("expect", []),
+                            espec.get("forbid", []),
+                        )
+                        results.append(
+                            {
+                                "prompt": espec["prompt"],
+                                "completion": completions[0],
+                                **checked,
+                            }
+                        )
+                    summary["eval"] = {
+                        "passed": sum(1 for r in results if r["passed"]),
+                        "total": len(results),
+                        "results": results,
+                    }
+                sampled = _sample_texts(
+                    model,
+                    [s["prompt"] for s in harvest_specs],
+                    num_samples=int(knobs.get("best_of", 8)),
+                    temperature=float(knobs.get("temperature", 0.9)),
+                    top_p=float(knobs.get("top_p", 0.95)),
+                    max_tokens=int(knobs.get("max_new_tokens", 300)),
+                )
+                rows: list[dict[str, Any]] = []
+                for hspec, completions in zip(harvest_specs, sampled):
+                    summary["samples"] += len(completions)
+                    kept = build_harvest_rows(hspec, completions)
+                    if kept:
+                        summary["prompts_with_a_pass"] += 1
+                    rows.extend(kept)
+        except Exception as exc:  # noqa: BLE001 - unknown SDK exception surface
+            job.status = JobStatus.FAILED
+            job.duration_s = _time.monotonic() - started
+            logs.append(f"River harvest failed: {exc}")
+            self._record_cost(handle.job_id, job)
+            account = self._account_error(exc)
+            if account is not None:
+                raise account from exc
+            raise RemoteExecutionError.wrap(
+                exc, "River harvest failed", provider=self.name
+            ) from exc
+
+        summary["kept"] = len(rows)
+        with (output_dir / "harvest.jsonl").open("w") as fh:
+            for row in rows:
+                fh.write(json.dumps(row) + "\n")
+        (output_dir / "harvest_summary.json").write_text(json.dumps(summary, indent=2))
+        logs.append(
+            f"harvest: kept {summary['kept']}/{summary['samples']} across "
+            f"{summary['prompts_with_a_pass']}/{summary['prompts']} prompts"
+        )
+        job.duration_s = _time.monotonic() - started
+        job.status = JobStatus.SUCCEEDED
+        self._record_cost(handle.job_id, job)
         return handle
 
     #: Transient-retry policy, from the SDK's own recovery taxonomy:
@@ -406,6 +538,48 @@ class RiverExecutor(RemoteExecutor):
             uri = model.save_weights(name, mode="inference")
             job.checkpoint_uri = _as_uri(uri)
             logs.append(f"saved River checkpoint: {job.checkpoint_uri}")
+
+            if spec.eval_prompts:
+                # Greedy-score the freshly trained weights in-session and
+                # write eval_results.json in the sft writer's shape, so the
+                # flywheel reads River generations exactly like pod ones.
+                from stateset_agents.training.sft import (
+                    evaluate_checks,
+                    normalize_eval_prompts,
+                )
+
+                specs_ = normalize_eval_prompts(list(spec.eval_prompts))
+                greedy = _sample_texts(
+                    model,
+                    [e["prompt"] for e in specs_],
+                    num_samples=1,
+                    temperature=0.0,
+                    max_tokens=spec.eval_max_new_tokens,
+                )
+                eval_rows = []
+                for espec, completions in zip(specs_, greedy):
+                    checked = evaluate_checks(
+                        completions[0],
+                        espec.get("expect", []),
+                        espec.get("forbid", []),
+                    )
+                    eval_rows.append(
+                        {
+                            "prompt": espec["prompt"],
+                            "finetuned": completions[0],
+                            "checks": checked,
+                        }
+                    )
+                out_dir = Path(spec.output_dir)
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / "eval_results.json").write_text(
+                    json.dumps(eval_rows, indent=2)
+                )
+                passed = sum(1 for r in eval_rows if r["checks"]["passed"])
+                logs.append(
+                    f"eval: {passed}/{len(eval_rows)} prompt(s) passed "
+                    "(greedy, in-session)"
+                )
 
     def _record_cost(self, job_id: str, job: _RiverJob) -> None:
         """Append a ledger line.
@@ -578,6 +752,60 @@ def _open_session(client: Any, project: str | None = None) -> Iterator[Any]:
         yield client.create_session()
         return
     yield client
+
+
+def _checkpoint_from_pointer(adapter_dir: str | None) -> str | None:
+    """Resolve a flywheel adapter reference to a ``river://`` URI.
+
+    Between generations the flywheel passes the previous training job's
+    output directory — which for River is a POINTER directory holding
+    ``river_checkpoint.json``, not weights. A bare ``river://`` string and
+    ``None`` (start from base) pass through unchanged.
+    """
+    if not adapter_dir:
+        return None
+    if str(adapter_dir).startswith("river://"):
+        return str(adapter_dir)
+    pointer = Path(adapter_dir) / CHECKPOINT_POINTER_NAME
+    try:
+        data = json.loads(pointer.read_text())
+    except (OSError, ValueError) as exc:
+        raise RemoteExecutionError(
+            f"{adapter_dir!r} is not a River checkpoint pointer directory "
+            f"(no readable {CHECKPOINT_POINTER_NAME}): {exc}",
+            provider="river",
+        ) from exc
+    checkpoint = data.get("checkpoint")
+    if not isinstance(checkpoint, str) or not checkpoint:
+        raise RemoteExecutionError(
+            f"{pointer} has no 'checkpoint' field", provider="river"
+        )
+    return checkpoint
+
+
+def _sample_texts(
+    model: Any,
+    prompts: list[str],
+    *,
+    num_samples: int,
+    temperature: float,
+    top_p: float = 1.0,
+    max_tokens: int = 300,
+) -> list[list[str]]:
+    """``model.sample`` for chat prompts -> texts, one list per prompt.
+
+    ``model_input`` carries message lists so River renders the model's own
+    chat template server-side; the return shape is ``list[list[Sample]]``
+    (per prompt, then per sample) whose entries expose ``.text``.
+    """
+    groups = model.sample(
+        model_input=[[{"role": "user", "content": p}] for p in prompts],
+        num_samples=num_samples,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+    )
+    return [[str(getattr(s, "text", s)) for s in group] for group in groups]
 
 
 def _river_module(client: Any) -> Any:
