@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787024358018,
+  "lastUpdate": 1787025292647,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -4824,6 +4824,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.7598665041897155e-8",
             "extra": "mean: 441.4684975995069 nsec\nrounds: 56606"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "0bd21397fb9edcf6f0d6c764deb840d24743c024",
+          "message": "feat(river): the zero-infrastructure flywheel — harvest via River sampling\n\njob_kind=\"harvest\" on the River executor: create a model from the\nprevious generation's river:// checkpoint pointer (the flywheel's\nadapter reference), model.sample best-of-N in-session with chat\nmessage rendering server-side, filter with the shared check/judge\nlogic, and write the exact artifacts the pod harvest writes. Training\nnow also greedy-scores itself in-session when eval_prompts are set,\nwriting eval_results.json in the sft shape — run_flywheel reads River\ngenerations exactly like pod ones. No pods, no SSH: the loop is an API\nkey and a laptop.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-17T20:51:25-07:00",
+          "tree_id": "10d9d58fdc2af80fb53b5ea5ad6a7b81b43f0762",
+          "url": "https://github.com/stateset/stateset-agents/commit/0bd21397fb9edcf6f0d6c764deb840d24743c024"
+        },
+        "date": 1787025291347,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 10687.833474087422,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011237519000966514",
+            "extra": "mean: 93.56433204395381 usec\nrounds: 1551"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11330.889049868238,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000010333657306587122",
+            "extra": "mean: 88.25432811131698 usec\nrounds: 2234"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8364.184833728707,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012152172158489758",
+            "extra": "mean: 119.55737706410842 usec\nrounds: 3270"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1000.857700862708,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000058058933911110344",
+            "extra": "mean: 999.1430341576342 usec\nrounds: 849"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 258.94959899689235,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001796177712781422",
+            "extra": "mean: 3.8617553526777266 msec\nrounds: 224"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2657186.5937044127,
+            "unit": "iter/sec",
+            "range": "stddev: 7.482554251389112e-8",
+            "extra": "mean: 376.3378915012096 nsec\nrounds: 124425"
           }
         ]
       }
