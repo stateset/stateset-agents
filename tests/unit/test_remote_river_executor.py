@@ -885,9 +885,10 @@ class TestRiverRl:
         assert all(s["n"] == 2 for s in RlModel.train_steps)
         report = json.loads((tmp_path / "rl" / "rl_report.json").read_text())
         assert len(report["rounds"]) == 2
-        # Graded reward: pass=1.0, forbid-hit = 1.0(expect) - 1.0 = 0.0 ->
-        # group mean 0.5.
-        assert report["rounds"][0]["mean_reward"] == 0.5
+        # Graded reward: full pass = frac 1.0 + completeness bonus 1.0 =
+        # 2.0; forbid-hit = frac 1.0 + no bonus - 1.0 penalty = 0.0 ->
+        # group mean 1.0.
+        assert report["rounds"][0]["mean_reward"] == 1.0
         assert client.model.saved  # checkpoint saved at the end
 
     def test_zero_variance_rounds_train_nothing(self, tmp_path):

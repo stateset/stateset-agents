@@ -327,12 +327,23 @@ class RiverExecutor(RemoteExecutor):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         def graded_reward(pspec: dict[str, Any], text: str) -> float:
+            """Partial credit + a completeness bonus + a violation penalty.
+
+            v1 was the bare expect-fraction minus the forbid penalty, and it
+            Goodharted live: mean reward climbed 0.67 -> 0.84 across rounds
+            while the all-or-nothing greedy eval FELL 6/12 -> 4/12 — the
+            model learned to resolve one issue confidently and drop the
+            rest, because 2-of-3 tokens at lower difficulty out-earned
+            occasional full passes. The +1.0 completeness bonus makes the
+            full pass strictly dominant again.
+            """
             checked = evaluate_checks(
                 text, pspec.get("expect", []), pspec.get("forbid", [])
             )
             expect = pspec.get("expect", [])
             frac = len(checked["expect_hits"]) / len(expect) if expect else 1.0
-            return frac - (1.0 if checked["forbid_hits"] else 0.0)
+            bonus = 1.0 if checked["passed"] else 0.0
+            return frac + bonus - (1.0 if checked["forbid_hits"] else 0.0)
 
         if spec.dry_run:
             (output_dir / "rl_report.json").write_text(
