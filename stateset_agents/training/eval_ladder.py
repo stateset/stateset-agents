@@ -178,72 +178,6 @@ def build_ladder(
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Generate train/harvest/eval sets for a domain at a chosen difficulty."
-    )
-    parser.add_argument("--spec", type=Path, required=True, help="DomainSpec JSON file")
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--depth", type=int, default=2)
-    parser.add_argument("--eval-count", type=int, default=12)
-    parser.add_argument("--harvest-count", type=int, default=30)
-    parser.add_argument("--train-count", type=int, default=140)
-    parser.add_argument("--refusal-fraction", type=float, default=0.0)
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument(
-        "--episodes",
-        action="store_true",
-        help="Also write two-turn episode scripts (episode_eval.json / episode_harvest.json)",
-    )
-    args = parser.parse_args(argv)
-
-    spec = DomainSpec.from_dict(json.loads(args.spec.read_text()))
-    kit = build_ladder(
-        spec,
-        depth=args.depth,
-        eval_count=args.eval_count,
-        harvest_count=args.harvest_count,
-        train_count=args.train_count,
-        refusal_fraction=args.refusal_fraction,
-        seed=args.seed,
-    )
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    with (args.output_dir / "train.jsonl").open("w") as fh:
-        for row in kit["train"]:
-            fh.write(json.dumps(row) + "\n")
-    (args.output_dir / "eval_prompts.json").write_text(
-        json.dumps(kit["eval"], indent=1)
-    )
-    (args.output_dir / "harvest_prompts.json").write_text(
-        json.dumps(kit["harvest"], indent=1)
-    )
-    if args.episodes:
-        episodes = build_episode_ladder(
-            spec,
-            eval_count=args.eval_count,
-            harvest_count=args.harvest_count,
-            refusal_fraction=args.refusal_fraction,
-            seed=args.seed,
-        )
-        (args.output_dir / "episode_eval.json").write_text(
-            json.dumps(episodes["eval"], indent=1)
-        )
-        (args.output_dir / "episode_harvest.json").write_text(
-            json.dumps(episodes["harvest"], indent=1)
-        )
-    print(
-        f"depth={args.depth} refusals={args.refusal_fraction}: "
-        f"{len(kit['train'])} train rows, {len(kit['eval'])} evals, "
-        f"{len(kit['harvest'])} harvest prompts -> {args.output_dir}"
-    )
-    return 0
-
-
-if __name__ == "__main__":  # pragma: no cover — exercised via subprocess tests
-    raise SystemExit(main())
-
 
 def build_episode_ladder(
     spec: DomainSpec,
@@ -311,3 +245,71 @@ def build_episode_ladder(
         "eval": build_set(eval_count, 7700),
         "harvest": build_set(harvest_count, 8800),
     }
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Generate train/harvest/eval sets for a domain at a chosen difficulty."
+    )
+    parser.add_argument("--spec", type=Path, required=True, help="DomainSpec JSON file")
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--depth", type=int, default=2)
+    parser.add_argument("--eval-count", type=int, default=12)
+    parser.add_argument("--harvest-count", type=int, default=30)
+    parser.add_argument("--train-count", type=int, default=140)
+    parser.add_argument("--refusal-fraction", type=float, default=0.0)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--episodes",
+        action="store_true",
+        help="Also write two-turn episode scripts (episode_eval.json / episode_harvest.json)",
+    )
+    args = parser.parse_args(argv)
+
+    spec = DomainSpec.from_dict(json.loads(args.spec.read_text()))
+    kit = build_ladder(
+        spec,
+        depth=args.depth,
+        eval_count=args.eval_count,
+        harvest_count=args.harvest_count,
+        train_count=args.train_count,
+        refusal_fraction=args.refusal_fraction,
+        seed=args.seed,
+    )
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    with (args.output_dir / "train.jsonl").open("w") as fh:
+        for row in kit["train"]:
+            fh.write(json.dumps(row) + "\n")
+    (args.output_dir / "eval_prompts.json").write_text(
+        json.dumps(kit["eval"], indent=1)
+    )
+    (args.output_dir / "harvest_prompts.json").write_text(
+        json.dumps(kit["harvest"], indent=1)
+    )
+    if args.episodes:
+        episodes = build_episode_ladder(
+            spec,
+            eval_count=args.eval_count,
+            harvest_count=args.harvest_count,
+            refusal_fraction=args.refusal_fraction,
+            seed=args.seed,
+        )
+        (args.output_dir / "episode_eval.json").write_text(
+            json.dumps(episodes["eval"], indent=1)
+        )
+        (args.output_dir / "episode_harvest.json").write_text(
+            json.dumps(episodes["harvest"], indent=1)
+        )
+    print(
+        f"depth={args.depth} refusals={args.refusal_fraction}: "
+        f"{len(kit['train'])} train rows, {len(kit['eval'])} evals, "
+        f"{len(kit['harvest'])} harvest prompts -> {args.output_dir}"
+    )
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover — exercised via subprocess tests
+    raise SystemExit(main())
+
