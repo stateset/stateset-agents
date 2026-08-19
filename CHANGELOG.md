@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The wall, cleared by scale: 2/12 → 11/12 → 12/12.** The rung-5
+  difficulty that stopped the curriculum-trained 9B at 9/12 under both
+  SFT and RL fell to the 35B MoE in two flywheel turns from an
+  episode-naive start — including the refusal episode every smaller model
+  left standing. The capacity study is complete: the ladder finds each
+  model's ceiling, the flywheel drives to it, and scale moves it. The run
+  also survived a full River outage mid-experiment via an auto-resuming
+  serving probe, and streamed every step live through the new
+  instrumentation.
+
 ## [0.36.0] - 2026-08-18 — The curriculum climbed, the wall mapped from both sides, and runs you can watch
 
 ### Added
