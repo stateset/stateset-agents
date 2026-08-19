@@ -357,7 +357,9 @@ class TestToolCalls:
         tooled = [s for s in episodes["eval"] if "turn_tool" in s]
         assert tooled, "no episode carried a tool spec"
         for script in tooled:
-            for tool, expects in zip(script["turn_tool"], script["turn_expect"]):
+            for tool, expects in zip(
+                script["turn_tool"], script["turn_expect"], strict=True
+            ):
                 if tool:
                     ref = expects[-1]
                     assert tool["args"]["ticket"] == ref
