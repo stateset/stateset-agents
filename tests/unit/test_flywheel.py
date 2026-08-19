@@ -347,3 +347,46 @@ class TestRepeats:
 
         with pytest.raises(ValueError, match="repeats"):
             run_flywheel_repeats(config, ScriptedExecutor([]), repeats=0)
+
+
+class TestDistillation:
+    """Teacher harvests, student trains: the 35B clears walls the 9B
+    cannot, but the 9B is what you want to serve."""
+
+    def test_harvest_uses_the_fixed_teacher_and_train_uses_the_student(self, config):
+        config.generations = 2
+        config.teacher_base_model = "big/teacher-35b"
+        config.teacher_adapter = Path("outputs/teacher_ckpt")
+        executor = ScriptedExecutor(
+            [
+                {"kept": 5, "samples": 40, "current_eval": None, "passed": 4},
+                {"kept": 5, "samples": 40, "current_eval": None, "passed": 6},
+            ]
+        )
+        run_flywheel(config, executor)
+
+        harvests = [s for s in executor.specs if s.job_kind == "harvest"]
+        trains = [s for s in executor.specs if s.job_kind == "sft"]
+        # Every harvest samples the TEACHER with its fixed adapter...
+        assert all(h.base_model == "big/teacher-35b" for h in harvests)
+        assert all(
+            h.harvest["adapter_dir"] == str(Path("outputs/teacher_ckpt"))
+            for h in harvests
+        )
+        # ...the teacher never advances, and never gets eval prompts.
+        assert all(h.eval_prompts is None for h in harvests)
+        # Every train job trains the STUDENT, chaining student lineage.
+        assert all(t.base_model == "base/model" for t in trains)
+        assert Path(trains[1].parent_adapter).parts[-2:] == ("gen1", "adapter")
+
+    def test_student_scores_drive_the_stopping_rules(self, config):
+        config.teacher_base_model = "big/teacher-35b"
+        config.teacher_adapter = Path("t")
+        executor = ScriptedExecutor(
+            [
+                {"kept": 5, "samples": 40, "current_eval": None, "passed": 12},
+            ]
+        )
+        report = run_flywheel(config, executor)
+        assert "perfect score" in report["stop_reason"]
+        assert report["best_eval_passed"] == 12

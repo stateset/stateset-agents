@@ -67,6 +67,14 @@ class FlywheelConfig:
     #: Adapter directory of the current generation, if one already exists
     #: (e.g. a persona fine-tune). ``None`` starts from the bare base model.
     initial_adapter: Path | None = None
+    #: Distillation mode: a FIXED teacher does the harvesting while the
+    #: student (``base_model`` + ``initial_adapter``) is what gets trained
+    #: and measured. The teacher never advances between generations — its
+    #: successes are the curriculum, not the pupil. Motivated by the
+    #: capacity study: the 35B clears walls the 9B cannot, but the 9B is
+    #: what you want to serve.
+    teacher_base_model: str | None = None
+    teacher_adapter: Path | None = None
     #: Maximum NEW generations to train.
     generations: int = 3
     best_of: int = 8
@@ -186,19 +194,26 @@ def run_flywheel(
         # ---- 1. harvest from the current generation ----------------------
         prompts_file = gen_dir / "harvest_prompts.json"
         prompts_file.write_text(json.dumps(config.harvest_prompts, indent=2))
+        distilling = config.teacher_base_model is not None
         harvest_spec = RemoteJobSpec(
             dataset=prompts_file,
-            base_model=config.base_model,
+            base_model=config.teacher_base_model or config.base_model,
             output_dir=gen_dir / "harvest",
             job_kind="harvest",
             harvest={
-                "adapter_dir": str(adapter) if adapter else None,
+                # In distillation the teacher is fixed; otherwise the
+                # current student generation harvests from itself.
+                "adapter_dir": (
+                    str(config.teacher_adapter)
+                    if distilling
+                    else (str(adapter) if adapter else None)
+                ),
                 "best_of": config.best_of,
                 "temperature": config.temperature,
                 "top_p": config.top_p,
                 "max_new_tokens": config.max_new_tokens,
             },
-            eval_prompts=list(config.eval_prompts),
+            eval_prompts=None if distilling else list(config.eval_prompts),
             eval_max_new_tokens=config.eval_max_new_tokens,
             dry_run=config.dry_run,
             gpu=config.gpu,
@@ -212,7 +227,11 @@ def run_flywheel(
                 else max(0.0, config.max_cost_usd - _spend(costs))
             ),
         )
-        logger.info("generation %d: harvesting…", generation)
+        logger.info(
+            "generation %d: harvesting%s…",
+            generation,
+            " (from the teacher)" if distilling else "",
+        )
         harvest_result = executor.wait(executor.submit(harvest_spec))
         costs.append(harvest_result.cost_usd)
         if not harvest_result.succeeded:

@@ -59,6 +59,15 @@ def flywheel(
     initial_adapter: Path | None = typer.Option(
         None, help="Existing adapter to start from (defaults to the bare base)."
     ),
+    teacher_base_model: str | None = typer.Option(
+        None,
+        help="Distillation: a FIXED teacher model does the harvesting while "
+        "the student (--base-model) trains on its successes. Rent wisdom, "
+        "deploy cheap.",
+    ),
+    teacher_adapter: Path | None = typer.Option(
+        None, help="The teacher's adapter (checkpoint pointer dir for River)."
+    ),
     generations: int = typer.Option(3, help="Maximum NEW generations to train."),
     best_of: int = typer.Option(8, help="Samples per harvest prompt."),
     temperature: float = typer.Option(0.9, help="Harvest sampling temperature."),
@@ -118,6 +127,8 @@ def flywheel(
         eval_prompts=_load_specs(eval_prompts, "--eval-prompts"),
         output_root=output_root,
         initial_adapter=initial_adapter,
+        teacher_base_model=teacher_base_model,
+        teacher_adapter=teacher_adapter,
         generations=generations,
         best_of=best_of,
         temperature=temperature,
