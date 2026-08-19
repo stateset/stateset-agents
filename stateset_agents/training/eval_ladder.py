@@ -285,6 +285,14 @@ def build_episode_ladder(
             }
             if any(t is not None for t in turn_tool):
                 script["turn_tool"] = turn_tool
+            # Every tool the domain knows: any json block naming anything
+            # else (or failing to parse) fails the episode, so unchecked
+            # turns cannot smuggle invented actions into the harvest.
+            domain_tools = sorted(
+                {i.tool["tool"] for i in spec.issues.values() if i.tool}
+            )
+            if domain_tools:
+                script["known_tools"] = domain_tools
             scripts.append(script)
         return scripts
 

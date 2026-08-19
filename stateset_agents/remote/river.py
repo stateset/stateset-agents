@@ -1738,6 +1738,31 @@ def check_tool_call(reply: str, expected: dict[str, Any]) -> bool:
     return False
 
 
+def _tool_blocks_are_clean(reply: str, known_tools: list[str]) -> bool:
+    """No junk actions anywhere: every json block parses and names a known tool.
+
+    A turn with no ``turn_tool`` requirement is UNCHECKED, not unconstrained —
+    and the flywheel will happily harvest whatever it emits there. Observed
+    live: unchecked turns produced invented tool names ("suppress_dispatch",
+    "summarize_account") and two concatenated objects in one block; 113
+    such episodes entered training and the trained model stopped emitting
+    valid actions entirely under greedy decoding. The harvest must reject
+    junk in dimensions the per-turn checks do not cover.
+    """
+    import re
+
+    for block in re.findall(r"```json\s*(.*?)```", reply, flags=re.DOTALL):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            return False  # malformed (e.g. two objects concatenated)
+        if not isinstance(data, dict):
+            return False
+        if data.get("tool") not in known_tools:
+            return False  # invented tool name
+    return True
+
+
 def _score_episode(
     script: dict[str, Any], assistant_turns: list[str]
 ) -> tuple[bool, dict[str, Any]]:
@@ -1768,9 +1793,19 @@ def _score_episode(
     forbid_checked = evaluate_checks(whole, [], list(script.get("forbid", [])))
     if not forbid_checked["passed"]:
         passed = False
+    known_tools = script.get("known_tools")
+    junk_tools = False
+    if known_tools:
+        junk_tools = not all(
+            _tool_blocks_are_clean(reply, list(known_tools))
+            for reply in assistant_turns
+        )
+        if junk_tools:
+            passed = False
     return passed, {
         "per_turn": per_turn,
         "forbid_hits": forbid_checked["forbid_hits"],
+        "junk_tools": junk_tools,
         "passed": passed,
     }
 

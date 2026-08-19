@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Unchecked turns are not unconstrained — a new failure mode, found and
+  fenced.** Live: episode turns carrying no tool requirement emitted
+  invented tools and malformed multi-object json; 113 such episodes were
+  harvested (59% — the rarity controller working perfectly) and the model
+  trained on them stopped emitting valid actions entirely (5/12 → 0/12
+  greedy). Episodes now declare `known_tools`, and **any** json block that
+  fails to parse or names an unknown tool fails the whole episode. The
+  harvest must reject junk in dimensions the per-turn checks don't cover.
+- **Rarity controller live-verified**: `--target-harvest-rate 0.6` probed
+  three temperatures, chose 0.7, and the harvest landed at 59%.
+- **Tool verification live-verified**: a ladder-trained 9B scored 5/12 on
+  tool-gated episodes — prose claiming an action never passes.
+
+### Added
+
 - **Distillation breaks walls self-training cannot: 9/12 → 11/12.**
   `flywheel --teacher-base-model/--teacher-adapter`: a FIXED teacher
   harvests, the student trains on its successes, and the student's evals

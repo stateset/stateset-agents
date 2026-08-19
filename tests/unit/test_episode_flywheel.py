@@ -363,3 +363,73 @@ class TestToolCalls:
                 if tool:
                     ref = expects[-1]
                     assert tool["args"]["ticket"] == ref
+
+
+class TestJunkToolGuardrail:
+    """Unchecked turns are not unconstrained. Observed live: turns with no
+    turn_tool requirement emitted invented tool names and malformed
+    multi-object blocks; 113 such episodes were harvested and the trained
+    model stopped emitting valid actions entirely (0/12 greedy)."""
+
+    SCRIPT = {
+        "turns": ["t1", "t2"],
+        "turn_expect": [["done", "77"], ["ok", "77"]],
+        "turn_tool": [{"tool": "act", "args": {"ref": "77"}}, None],
+        "known_tools": ["act", "other"],
+        "forbid": [],
+    }
+
+    def _replies(self, second):
+        first = 'done 77\n```json\n{"tool": "act", "args": {"ref": "77"}}\n```'
+        return [first, second]
+
+    def test_clean_unchecked_turn_passes(self):
+        from stateset_agents.remote.river import _score_episode
+
+        passed, detail = _score_episode(
+            self.SCRIPT,
+            self._replies('ok 77\n```json\n{"tool": "other", "args": {}}\n```'),
+        )
+        assert passed and detail["junk_tools"] is False
+
+    def test_invented_tool_in_an_unchecked_turn_fails_the_episode(self):
+        from stateset_agents.remote.river import _score_episode
+
+        passed, detail = _score_episode(
+            self.SCRIPT,
+            self._replies(
+                'ok 77\n```json\n{"tool": "summarize_account", "args": {}}\n```'
+            ),
+        )
+        assert not passed and detail["junk_tools"] is True
+
+    def test_malformed_multi_object_block_fails(self):
+        from stateset_agents.remote.river import _score_episode
+
+        junk = 'ok 77\n```json\n{"tool": "act", "args": {}}\n{"tool": "act", "args": {}}\n```'
+        passed, detail = _score_episode(self.SCRIPT, self._replies(junk))
+        assert not passed and detail["junk_tools"] is True
+
+    def test_domains_without_tools_are_unaffected(self):
+        from stateset_agents.remote.river import _score_episode
+
+        script = {"turns": ["t"], "turn_expect": [["done"]], "forbid": []}
+        passed, detail = _score_episode(script, ['done\n```json\n{"anything": 1}\n```'])
+        assert passed and detail["junk_tools"] is False
+
+    def test_ladder_declares_the_domains_known_tools(self):
+        from stateset_agents.training.eval_ladder import (
+            DomainSpec,
+            Issue,
+            build_episode_ladder,
+        )
+
+        spec = DomainSpec(
+            persona="P",
+            issues={
+                "a": Issue("p1", "r1 t1", "t1", tool={"tool": "do_a", "args": {}}),
+                "b": Issue("p2", "r2 t2", "t2"),
+            },
+        )
+        kit = build_episode_ladder(spec, turns=2, eval_count=4, seed=1)
+        assert all(s["known_tools"] == ["do_a"] for s in kit["eval"])
