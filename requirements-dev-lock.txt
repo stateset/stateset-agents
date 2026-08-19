@@ -654,7 +654,7 @@ wcmatch==8.5.2
     # via semgrep
 wheel==0.47.0
     # via pip-tools
-wrapt==1.17.3
+wrapt==2.2.2
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-threading
