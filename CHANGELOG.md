@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   greedy). Episodes now declare `known_tools`, and **any** json block that
   fails to parse or names an unknown tool fails the whole episode. The
   harvest must reject junk in dimensions the per-turn checks don't cover.
+  **Verified by rerun**: the same starting model held 5/12 instead of
+  collapsing to 0/12, with the harvest tightening to 51% clean episodes
+  — the degradation is fixed, and the loop honestly plateau-stopped
+  rather than claiming a win it didn't earn.
 - **Rarity controller live-verified**: `--target-harvest-rate 0.6` probed
   three temperatures, chose 0.7, and the harvest landed at 59%.
 - **Tool verification live-verified**: a ladder-trained 9B scored 5/12 on
