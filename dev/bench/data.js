@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787153159145,
+  "lastUpdate": 1787157319072,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -7430,6 +7430,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.160875565605409e-7",
             "extra": "mean: 502.6916273928856 nsec\nrounds: 183151"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "0f48d187fc54f61e9fe8699746e470f2a64eb29f",
+          "message": "fix(episodes): reject junk actions — unchecked turns are not unconstrained\n\nLive finding: turns with no turn_tool requirement emitted invented tool\nnames and two concatenated json objects in one block; 113 such episodes\npassed the harvest (59%, the rarity controller working exactly as\ndesigned) and training on them produced a model that emitted NO valid\nactions at greedy decoding (5/12 -> 0/12). Episodes now declare\nknown_tools and any block that fails to parse or names an unknown tool\nfails the episode. Also records the controller's and tool checks' first\nlive verifications.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-19T09:32:01-07:00",
+          "tree_id": "bc50fc5d3ec367322a96e635c808ff3f34d95aec",
+          "url": "https://github.com/stateset/stateset-agents/commit/0f48d187fc54f61e9fe8699746e470f2a64eb29f"
+        },
+        "date": 1787157317839,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5999.758500005534,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016331258740028145",
+            "extra": "mean: 166.67337526986753 usec\nrounds: 1391"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6493.55783647365,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000166364040748373",
+            "extra": "mean: 153.99878235981856 usec\nrounds: 1746"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5009.460649454421,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016338210377321048",
+            "extra": "mean: 199.62228870066272 usec\nrounds: 3540"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 747.1498918987318,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006503390319577903",
+            "extra": "mean: 1.338419520424075 msec\nrounds: 661"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 177.56716353827554,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001512381973841752",
+            "extra": "mean: 5.631671870370586 msec\nrounds: 162"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2201193.6185877686,
+            "unit": "iter/sec",
+            "range": "stddev: 4.8940594575133284e-8",
+            "extra": "mean: 454.29897286435676 nsec\nrounds: 105731"
           }
         ]
       }
