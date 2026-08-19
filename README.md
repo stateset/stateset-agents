@@ -148,7 +148,26 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.36.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.36.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **The wall, cleared by scale: 2/12 → 11/12 → 12/12.** The rung-5
+  difficulty (five-turn episodes, 60% refusals, final-turn summaries) that
+  held the curriculum-trained 9B at 9/12 under both SFT and RL fell to an
+  episode-naive 35B MoE in two flywheel turns — including the refusal
+  episode every smaller model left standing, with the harvest rate arcing
+  23% → 93% exactly as the measured operating regime predicts. The
+  capacity study is complete: the ladder finds each model's ceiling, the
+  flywheel drives to it, scale moves it. The run survived a ~12-hour River
+  outage mid-experiment via an auto-resuming serving probe.
+- **[`docs/GETTING_STARTED_RIVER.md`](docs/GETTING_STARTED_RIVER.md)** —
+  train, self-improve, and RL-tune with zero machines rented, written
+  entirely from 20+ live runs, including a failure-mode table where every
+  row actually happened to us.
+- **[`docs/rl-vibe.md`](docs/rl-vibe.md)** — the state of the framework,
+  told straight: headline numbers, the compressed experimental arc, what
+  broke and taught, and what's honestly not done.
+
+**v0.36.0:**
 
 - **The multi-turn curriculum, climbed and mapped.** N-turn episode
   scripts (`build_episode_ladder(turns=N)`) whose final turn demands a
@@ -568,7 +587,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.36.0)
+pip install stateset-agents          # latest release (v0.36.1)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1270,7 +1289,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.36.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.36.1`).
 
 Other entry points:
 

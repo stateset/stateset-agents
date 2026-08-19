@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-08-19 — The wall falls to scale — and the field guide for training with zero machines
+
 ### Added
 
 - **The wall, cleared by scale: 2/12 → 11/12 → 12/12.** The rung-5
