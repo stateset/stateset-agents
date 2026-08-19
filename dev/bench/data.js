@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787152939037,
+  "lastUpdate": 1787153159145,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -7366,6 +7366,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 6.60572590633289e-8",
             "extra": "mean: 347.4951469836023 nsec\nrounds: 136781"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "10ab877fbd2f24b12025993bdec2b7a4e0e52db7",
+          "message": "feat(episodes): tool-use — verifiable structured actions in the loop\n\nIssues can declare a tool ({tool, args} with {ref} placeholders):\ntraining rows teach emitting it as a fenced json block, episode scripts\ncarry turn_tool, and scoring verifies the action DETERMINISTICALLY —\nthe block parses, names the tool, and includes the expected args, or\nthe turn fails regardless of how convincing the prose is. Agents that\ndo things, with proof; the seam the NSR verifier extends.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-19T08:22:30-07:00",
+          "tree_id": "3f53bde982af0fd8807c94d01477602c2bac8310",
+          "url": "https://github.com/stateset/stateset-agents/commit/10ab877fbd2f24b12025993bdec2b7a4e0e52db7"
+        },
+        "date": 1787153158013,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6142.8589554257005,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014908903056751257",
+            "extra": "mean: 162.79064963989555 usec\nrounds: 1527"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6628.700688289608,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014471690523246113",
+            "extra": "mean: 150.85912715392618 usec\nrounds: 2147"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4809.243260575261,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016815261761555032",
+            "extra": "mean: 207.93292121396752 usec\nrounds: 3592"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 687.2764488007138,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002970286004410963",
+            "extra": "mean: 1.4550185762148315 msec\nrounds: 597"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 177.33427153709457,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00012808318839569257",
+            "extra": "mean: 5.639067910180133 msec\nrounds: 167"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 1989291.138955923,
+            "unit": "iter/sec",
+            "range": "stddev: 1.160875565605409e-7",
+            "extra": "mean: 502.6916273928856 nsec\nrounds: 183151"
           }
         ]
       }
