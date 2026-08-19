@@ -75,7 +75,9 @@ stateset-agents chat-remote --base-model meta-models/Muse-Glimmer-30B \
 Every conversation is saved in the format `ingest` accepts — so the loop
 closes: chat → ingest → improve → train → chat.
 
-**New here?** [`docs/GETTING_STARTED_API.md`](docs/GETTING_STARTED_API.md)
+**New here?** [`docs/GETTING_STARTED_RIVER.md`](docs/GETTING_STARTED_RIVER.md)
+trains, self-improves, and RL-tunes a model with **zero machines rented**
+(River's remote autograd); [`docs/GETTING_STARTED_API.md`](docs/GETTING_STARTED_API.md)
 walks from zero to calling your own fine-tuned model over an
 OpenAI-compatible or Anthropic-style API, and
 [`docs/RUNPOD_GUIDE.md`](docs/RUNPOD_GUIDE.md) covers renting GPUs in detail —
