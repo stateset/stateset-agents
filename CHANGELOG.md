@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-08-19 — Rent wisdom, deploy cheap — distillation, the rarity thermostat, and verified tool use
+
 ### Added
 
 - **Unchecked turns are not unconstrained — a new failure mode, found and

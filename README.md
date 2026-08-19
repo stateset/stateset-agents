@@ -154,7 +154,35 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.36.1 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.37.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Distillation breaks walls self-training cannot: 9/12 → 11/12.**
+  `flywheel --teacher-base-model/--teacher-adapter` — a FIXED teacher
+  harvests, the student trains on its successes, the student's evals drive
+  the stops. Live: the 9B that walled at 9/12 under both its own SFT and
+  RL reached **11/12 in one generation** on the 35B teacher's 97% harvest.
+  Patterns the student never samples at any temperature, bought once at
+  big-model prices and owned forever at small-model serving cost — through
+  River, zero machines rented.
+- **The rarity controller** (`--target-harvest-rate`): per-generation
+  temperature probes keep the harvest inside the measured ~60% operating
+  window. Live on first attempt: probed three temperatures, chose 0.7, and
+  the real harvest landed at **59%**.
+- **Tool-use episodes — agents that do things, with proof.** Ladder issues
+  declare `{tool, args}` actions; training rows teach emitting fenced json
+  blocks; episode scoring verifies them deterministically (parse + tool
+  name + args subset). Prose that merely claims the action always fails.
+  Live: a ladder-trained 9B scored 5/12 on tool-gated episodes.
+- **And the failure mode that found: unchecked turns are not
+  unconstrained.** Turns without a tool requirement emitted invented tools
+  and malformed multi-object json; 113 such episodes were harvested and
+  the model trained on them stopped emitting valid actions entirely
+  (5/12 → 0/12). Episodes now declare `known_tools` and any junk block
+  anywhere fails the episode — verified by rerun: the same start held
+  **5/12 instead of collapsing**, with the harvest tightening to 51% clean
+  episodes ([`PROOFS.md`](docs/PROOFS.md)).
+
+**v0.36.1:**
 
 - **The wall, cleared by scale: 2/12 → 11/12 → 12/12.** The rung-5
   difficulty (five-turn episodes, 60% refusals, final-turn summaries) that
@@ -593,7 +621,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.36.1)
+pip install stateset-agents          # latest release (v0.37.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1295,7 +1323,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.36.1`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.37.0`).
 
 Other entry points:
 
