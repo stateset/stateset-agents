@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787152652586,
+  "lastUpdate": 1787152939037,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -7302,6 +7302,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.1180223137022224e-8",
             "extra": "mean: 426.8654491421461 nsec\nrounds: 112058"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "c1d3d1b171938dd32a36547416df99fdee76cb9e",
+          "message": "feat(flywheel): the rarity controller — --target-harvest-rate\n\nEach generation probes a few prompts at several temperatures (tiny\nbest-of, best-effort) and harvests at the one whose pass rate lands\nnearest the target — keeping the loop inside its measured operating\nwindow (~60%: lifts at rungs 3/4, stalls at 65%/83%). The discovered\nregime becomes a thermostat instead of a manual judgment.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-19T08:19:25-07:00",
+          "tree_id": "ebcf4f6b496e1bc930029b175eae9f0726730bcb",
+          "url": "https://github.com/stateset/stateset-agents/commit/c1d3d1b171938dd32a36547416df99fdee76cb9e"
+        },
+        "date": 1787152938070,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 11017.49344484667,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011185073384210743",
+            "extra": "mean: 90.76474653749314 usec\nrounds: 1444"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11930.639780576235,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011159681907109654",
+            "extra": "mean: 83.81780176014176 usec\nrounds: 2613"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8712.649938083096,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012135175225348913",
+            "extra": "mean: 114.77564312884742 usec\nrounds: 4206"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1067.0906620163048,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000279792906067941",
+            "extra": "mean: 937.1274959059855 usec\nrounds: 855"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 226.7520035666944,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004054969795672621",
+            "extra": "mean: 4.410104361904219 msec\nrounds: 210"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2877738.0308197173,
+            "unit": "iter/sec",
+            "range": "stddev: 6.60572590633289e-8",
+            "extra": "mean: 347.4951469836023 nsec\nrounds: 136781"
           }
         ]
       }
