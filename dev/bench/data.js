@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787149956659,
+  "lastUpdate": 1787152652586,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -7238,6 +7238,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.2227957056091956e-8",
             "extra": "mean: 431.6101647292474 nsec\nrounds: 111882"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "5586b7cf304fb0f3e2d5d63695a34136b0dde246",
+          "message": "feat(flywheel): distillation — a fixed teacher harvests, the student trains\n\n--teacher-base-model/--teacher-adapter: the teacher samples every\ngeneration's harvest (never advancing, never evaluated); the student\ntrains on the teacher's passing outputs and its post-train evals drive\nthe stopping rules. Motivated by the capacity study: the 35B clears\nwalls the 9B cannot, but the 9B is what you want to serve — rent wisdom,\ndeploy cheap.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-19T08:14:50-07:00",
+          "tree_id": "fada7248937ac822aff7c93fa798ce17cb621061",
+          "url": "https://github.com/stateset/stateset-agents/commit/5586b7cf304fb0f3e2d5d63695a34136b0dde246"
+        },
+        "date": 1787152651127,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8559.108886966744,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015495526999260925",
+            "extra": "mean: 116.83459262011904 usec\nrounds: 1328"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9267.207990000916,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014039868834433698",
+            "extra": "mean: 107.90736552788874 usec\nrounds: 2019"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6801.320335467029,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014234628636668053",
+            "extra": "mean: 147.0302751048606 usec\nrounds: 3326"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 835.1919198626307,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000025330030146665556",
+            "extra": "mean: 1.1973295912207536 msec\nrounds: 729"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 178.71858106091662,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005878125945975541",
+            "extra": "mean: 5.5953890975619816 msec\nrounds: 164"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2342658.563745693,
+            "unit": "iter/sec",
+            "range": "stddev: 5.1180223137022224e-8",
+            "extra": "mean: 426.8654491421461 nsec\nrounds: 112058"
           }
         ]
       }
