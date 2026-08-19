@@ -210,7 +210,7 @@ joblib==1.5.3
     #   scikit-learn
 joserfc==1.7.4
     # via authlib
-jsonschema==4.25.1
+jsonschema==4.26.0
     # via
     #   mcp
     #   semgrep
