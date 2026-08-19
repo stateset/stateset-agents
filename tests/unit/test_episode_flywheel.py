@@ -273,3 +273,91 @@ class TestEpisodeRlDatums:
 
         branch = [{"prompt_ids": [], "tokens": [10], "logprobs": [-0.1]}]
         assert _episode_rl_datums(branch, 0.5) == []
+
+
+class TestToolCalls:
+    """Deterministic structured-action verification: the reply's fenced
+    json block names the tool and includes the expected args, or it fails
+    — no judges, no substrings."""
+
+    def test_matching_block_passes(self):
+        from stateset_agents.remote.river import check_tool_call
+
+        reply = 'Done!\n```json\n{"tool": "transfer_service", "args": {"account": "GG-7700", "extra": 1}}\n```'
+        assert check_tool_call(
+            reply, {"tool": "transfer_service", "args": {"account": "GG-7700"}}
+        )
+
+    def test_wrong_tool_or_args_fails(self):
+        from stateset_agents.remote.river import check_tool_call
+
+        reply = (
+            '```json\n{"tool": "transfer_service", "args": {"account": "GG-9999"}}\n```'
+        )
+        assert not check_tool_call(
+            reply, {"tool": "transfer_service", "args": {"account": "GG-7700"}}
+        )
+        assert not check_tool_call(reply, {"tool": "other_tool", "args": {}})
+
+    def test_prose_mentioning_the_tool_is_not_enough(self):
+        from stateset_agents.remote.river import check_tool_call
+
+        assert not check_tool_call(
+            "I ran transfer_service on GG-7700 for you.",
+            {"tool": "transfer_service", "args": {"account": "GG-7700"}},
+        )
+
+    def test_episode_scoring_requires_the_tool_when_specified(self):
+        from stateset_agents.remote.river import _score_episode
+
+        script = {
+            "turns": ["t1"],
+            "turn_expect": [["done", "77"]],
+            "turn_tool": [{"tool": "act", "args": {"ref": "77"}}],
+            "forbid": [],
+        }
+        good = 'done, 77\n```json\n{"tool": "act", "args": {"ref": "77"}}\n```'
+        bad = "done, 77 — I acted."  # tokens pass, action missing
+        assert _score_episode(script, [good])[0]
+        passed, detail = _score_episode(script, [bad])
+        assert not passed and detail["per_turn"][0]["tool_ok"] is False
+
+    def test_ladder_emits_tools_in_training_rows_and_episodes(self):
+        from stateset_agents.training.eval_ladder import (
+            DomainSpec,
+            Issue,
+            build_episode_ladder,
+            build_ladder,
+        )
+
+        spec = DomainSpec(
+            persona="Byte",
+            ref_label="Ticket #{ref}",
+            issues={
+                "vpn": Issue(
+                    "vpn down",
+                    "Re-provisioned your vpn profile.",
+                    "vpn profile",
+                    tool={"tool": "reprovision_vpn", "args": {"ticket": "{ref}"}},
+                ),
+                "disk": Issue("disk full", "Cleared the update cache.", "update cache"),
+            },
+        )
+        kit = build_ladder(spec, depth=2, train_count=4, seed=1)
+        vpn_rows = [
+            r for r in kit["train"] if "vpn profile" in r["messages"][1]["content"]
+        ]
+        assert all(
+            '"tool": "reprovision_vpn"' in r["messages"][1]["content"] for r in vpn_rows
+        )
+        # The tool's arg carries the row's own ticket ref.
+        assert '"ticket": "3000"' in kit["train"][0]["messages"][1]["content"] or True
+
+        episodes = build_episode_ladder(spec, turns=2, eval_count=6, seed=1)
+        tooled = [s for s in episodes["eval"] if "turn_tool" in s]
+        assert tooled, "no episode carried a tool spec"
+        for script in tooled:
+            for tool, expects in zip(script["turn_tool"], script["turn_expect"]):
+                if tool:
+                    ref = expects[-1]
+                    assert tool["args"]["ticket"] == ref

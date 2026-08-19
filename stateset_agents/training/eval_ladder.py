@@ -45,6 +45,10 @@ class Issue:
     token: str
     #: How a user declines this issue's remedy, for refusal prompts.
     refusal: str = ""
+    #: Optional structured action: {"tool": name, "args": {...}} with "{ref}"
+    #: placeholders in arg values. Training rows teach emitting it as a
+    #: fenced ```json block; episode scoring verifies it deterministically.
+    tool: dict | None = None
 
 
 @dataclass
@@ -75,6 +79,21 @@ class DomainSpec:
         return f"{self.ref_prefix}{number}"
 
 
+def _tool_for(issue: Issue, ref: str) -> dict | None:
+    """The issue's tool spec with ``{ref}`` placeholders filled."""
+    if not issue.tool:
+        return None
+    args = {
+        k: (v.replace("{ref}", ref) if isinstance(v, str) else v)
+        for k, v in (issue.tool.get("args") or {}).items()
+    }
+    return {"tool": issue.tool["tool"], "args": args}
+
+
+def _tool_block(tool: dict) -> str:
+    return "\n```json\n" + json.dumps(tool) + "\n```"
+
+
 def _training_rows(spec: DomainSpec, count: int, rng: random.Random) -> list[dict]:
     """Single-issue rows — the deliberately narrow gen-1 distribution."""
     names = sorted(spec.issues)
@@ -93,6 +112,11 @@ def _training_rows(spec: DomainSpec, count: int, rng: random.Random) -> list[dic
                         "content": (
                             f"{spec.greeting} On {label}: {issue.resolution} "
                             f"{spec.signoff} — {spec.persona}"
+                            + (
+                                _tool_block(tool)
+                                if (tool := _tool_for(issue, ref))
+                                else ""
+                            )
                         ),
                     },
                 ]
@@ -222,12 +246,14 @@ def build_episode_ladder(
             label = spec.ref_label.format(ref=ref)
             script_turns = [f"{label} — {issues[0].phrasing}."]
             turn_expect: list[list[str]] = [[issues[0].token, ref]]
+            turn_tool: list[dict | None] = [_tool_for(issues[0], ref)]
             # Middle turns: one new issue each, reference never repeated.
             for issue in issues[1:-1]:
                 script_turns.append(
                     f"Thanks! Next thing — {issue.phrasing}. Same account."
                 )
                 turn_expect.append([issue.token, ref])
+                turn_tool.append(_tool_for(issue, ref))
             # Final turn: one more issue (or a refusal of it) AND a demand
             # to summarize EVERYTHING done — long-range recall of the
             # model's own actions: every earlier token must reappear.
@@ -242,6 +268,7 @@ def build_episode_ladder(
                     "so far."
                 )
                 turn_expect.append([*earlier_tokens, ref])
+                turn_tool.append(None)
                 forbid = [last.token]
             else:
                 script_turns.append(
@@ -249,14 +276,16 @@ def build_episode_ladder(
                     "everything you've done on my account so far."
                 )
                 turn_expect.append([last.token, *earlier_tokens, ref])
+                turn_tool.append(_tool_for(last, ref))
                 forbid = []
-            scripts.append(
-                {
-                    "turns": script_turns,
-                    "turn_expect": turn_expect,
-                    "forbid": forbid,
-                }
-            )
+            script = {
+                "turns": script_turns,
+                "turn_expect": turn_expect,
+                "forbid": forbid,
+            }
+            if any(t is not None for t in turn_tool):
+                script["turn_tool"] = turn_tool
+            scripts.append(script)
         return scripts
 
     return {

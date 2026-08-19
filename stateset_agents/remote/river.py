@@ -1711,6 +1711,33 @@ def _episode_rl_datums(
     return datums
 
 
+def check_tool_call(reply: str, expected: dict[str, Any]) -> bool:
+    """Deterministically verify a structured action in ``reply``.
+
+    The reply must contain a fenced ```json block whose object names the
+    expected ``tool`` and includes every expected ``args`` key with an
+    exactly-equal value (extra args are allowed — the check is a subset
+    match). No judges, no substrings: the action parses or it does not.
+    """
+    import re
+
+    blocks = re.findall(r"```json\s*(.*?)```", reply, flags=re.DOTALL)
+    for block in blocks:
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if data.get("tool") != expected.get("tool"):
+            continue
+        want = expected.get("args") or {}
+        have = data.get("args") or {}
+        if all(have.get(k) == v for k, v in want.items()):
+            return True
+    return False
+
+
 def _score_episode(
     script: dict[str, Any], assistant_turns: list[str]
 ) -> tuple[bool, dict[str, Any]]:
@@ -1724,10 +1751,16 @@ def _score_episode(
 
     per_turn = []
     passed = True
-    for expects, reply in zip(
-        script.get("turn_expect", []), assistant_turns, strict=True
+    tool_specs = script.get("turn_tool") or [None] * len(assistant_turns)
+    for expects, tool, reply in zip(
+        script.get("turn_expect", []), tool_specs, assistant_turns, strict=True
     ):
         checked = evaluate_checks(reply, list(expects), [])
+        if tool is not None:
+            checked = dict(checked)
+            checked["tool_ok"] = check_tool_call(reply, tool)
+            if not checked["tool_ok"]:
+                checked["passed"] = False
         per_turn.append(checked)
         if not checked["passed"]:
             passed = False
