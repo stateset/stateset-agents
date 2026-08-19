@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Distillation breaks walls self-training cannot: 9/12 → 11/12.**
+  `flywheel --teacher-base-model/--teacher-adapter`: a FIXED teacher
+  harvests, the student trains on its successes, and the student's evals
+  drive the stops. Live: the 9B that walled at 9/12 under both its own
+  SFT and RL reached 11/12 in one generation on the 35B teacher's 97%
+  harvest — patterns the student never samples at any temperature,
+  bought once at big-model prices, owned forever at small-model cost.
+  Gen-2 (9/12, seed variance) honestly discarded.
+- **The rarity controller** (`--target-harvest-rate`): per-generation
+  temperature probes keep the harvest inside the measured ~60% operating
+  window — the discovered regime as autopilot.
+- **Tool-use episodes**: ladder Issues declare `{tool, args}` actions;
+  training rows teach emitting fenced json blocks; episode scoring
+  verifies them deterministically (parse + tool name + args subset) —
+  prose claiming the action fails. The seam the NSR verifier extends.
+
 ## [0.36.1] - 2026-08-19 — The wall falls to scale — and the field guide for training with zero machines
 
 ### Added
