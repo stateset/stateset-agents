@@ -75,13 +75,19 @@ stateset-agents chat-remote --base-model meta-models/Muse-Glimmer-30B \
 Every conversation is saved in the format `ingest` accepts — so the loop
 closes: chat → ingest → improve → train → chat.
 
-**New here?** [`docs/GETTING_STARTED_RIVER.md`](docs/GETTING_STARTED_RIVER.md)
-trains, self-improves, and RL-tunes a model with **zero machines rented**
-(River's remote autograd); [`docs/GETTING_STARTED_API.md`](docs/GETTING_STARTED_API.md)
-walks from zero to calling your own fine-tuned model over an
-OpenAI-compatible or Anthropic-style API, and
-[`docs/RUNPOD_GUIDE.md`](docs/RUNPOD_GUIDE.md) covers renting GPUs in detail —
-sizing, spot pricing, multi-GPU, and every failure mode we hit getting here.
+### Getting started — pick your substrate
+
+| you have | start here |
+|---|---|
+| **Nothing but an API key** (no GPUs, ever) | [`docs/GETTING_STARTED_RIVER.md`](docs/GETTING_STARTED_RIVER.md) — train, self-improve, and RL-tune through River's remote autograd; zero machines rented |
+| **A few dollars for rented GPUs** | [`docs/GETTING_STARTED_API.md`](docs/GETTING_STARTED_API.md) — zero to calling your own fine-tuned model over an OpenAI-compatible API |
+| **Bigger jobs on rented GPUs** | [`docs/RUNPOD_GUIDE.md`](docs/RUNPOD_GUIDE.md) — GPU/disk sizing, spot pricing, multi-GPU sharding, merged serving for hybrid models, and every failure mode we hit |
+| **Five minutes and curiosity** | `bash examples/five_minute_demo.sh` — the whole loop offline, no GPU, no key |
+
+Both guides are written from live runs — the pitfalls listed are ones we
+actually paid for. What the loop has proven, with numbers:
+[`docs/rl-vibe.md`](docs/rl-vibe.md); every claim's evidence status:
+[`docs/PROOFS.md`](docs/PROOFS.md).
 
 ### It works. Here is the receipt.
 
