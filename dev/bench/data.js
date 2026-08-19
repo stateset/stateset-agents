@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787125590393,
+  "lastUpdate": 1787149956659,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -7174,6 +7174,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.071626626083092e-8",
             "extra": "mean: 468.97348872520655 nsec\nrounds: 100412"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "committer": {
+            "email": "team@stateset.ai",
+            "name": "domsteil"
+          },
+          "distinct": true,
+          "id": "a1ea18a24d78eaa917e8efa225da1125b6a94628",
+          "message": "chore(release): v0.36.1 — The wall falls to scale — and the field guide for training with zero machines\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-19T07:29:22-07:00",
+          "tree_id": "61f6f435dcddba48585bec3fde4a1332e55f5e09",
+          "url": "https://github.com/stateset/stateset-agents/commit/a1ea18a24d78eaa917e8efa225da1125b6a94628"
+        },
+        "date": 1787149955421,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8442.194901215473,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000010777631616055971",
+            "extra": "mean: 118.45260760990297 usec\nrounds: 1682"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 8861.288465312095,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011432628928053696",
+            "extra": "mean: 112.85040588787332 usec\nrounds: 2072"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6819.177750740252,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011695635347353342",
+            "extra": "mean: 146.64524617963588 usec\nrounds: 3599"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 880.1995459644032,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017274106684416978",
+            "extra": "mean: 1.1361060166241461 msec\nrounds: 782"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 207.7568537635985,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006740175415317632",
+            "extra": "mean: 4.813318944162852 msec\nrounds: 197"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2316905.5822105305,
+            "unit": "iter/sec",
+            "range": "stddev: 3.2227957056091956e-8",
+            "extra": "mean: 431.6101647292474 nsec\nrounds: 111882"
           }
         ]
       }
