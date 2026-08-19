@@ -512,7 +512,7 @@ safetensors==0.8.0
     #   transformers
 safety==3.8.1
     # via stateset-agents (pyproject.toml)
-safety-schemas==0.0.16
+safety-schemas==0.0.19
     # via safety
 scikit-learn==1.9.0
     # via stateset-agents (pyproject.toml)
