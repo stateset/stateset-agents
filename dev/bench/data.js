@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787090116530,
+  "lastUpdate": 1787125590393,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -1364,6 +1364,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.6991932708421425e-8",
             "extra": "mean: 440.2678974427522 nsec\nrounds: 109362"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "243499fee7e8a265da95ecb22eee58b3f7227230",
+          "message": "chore(release): v0.36.0 — The curriculum climbed, the wall mapped from both sides, and runs you can watch\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T21:52:01Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/243499fee7e8a265da95ecb22eee58b3f7227230"
+        },
+        "date": 1787125589586,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6064.283192132999,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016567017209607175",
+            "extra": "mean: 164.89995079670226 usec\nrounds: 1443"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6509.499254441799,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001709646154559223",
+            "extra": "mean: 153.6216475203747 usec\nrounds: 2037"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5027.18179394622,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001733424862176621",
+            "extra": "mean: 198.91860708204533 usec\nrounds: 3530"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 738.5452355845537,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00007014746975447241",
+            "extra": "mean: 1.3540132030078111 msec\nrounds: 665"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 181.95540032102335,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000683253549192682",
+            "extra": "mean: 5.495852270587754 msec\nrounds: 170"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2118213.9530504965,
+            "unit": "iter/sec",
+            "range": "stddev: 4.9016283367422036e-8",
+            "extra": "mean: 472.0958421409099 nsec\nrounds: 104080"
           }
         ]
       }
