@@ -150,6 +150,13 @@ port anywhere.
 
 ## Step 3b — Serve it on a rented GPU
 
+> **Hybrid models (Qwen3.5/3.8 families): add `--merge`.** vLLM silently
+> ignores their LoRA adapters (it loads them, then serves base weights) —
+> `--merge` folds the adapter into full weights on the pod and the serve
+> self-verifies its effect. All adapter serves probe adapter-vs-base at
+> startup and warn (or fail, with `--strict`) on identical output.
+> Prefer one command end to end? `stateset-agents deploy` = train + serve.
+
 When the model is too big for your hardware, rent the inference too. This
 starts a vLLM OpenAI-compatible server on a pod and prints its URL and a
 generated token:
