@@ -40,7 +40,11 @@ class ScriptedExecutor(RemoteExecutor):
         self._counter += 1
         job_id = str(self._counter)
         self.specs.append(spec)
-        step = self.script[0]
+        is_probe = (
+            spec.job_kind == "harvest"
+            and Path(spec.dataset).name == "probe_prompts.json"
+        )
+        step = self.script.pop(0) if is_probe else self.script[0]
         out = Path(spec.output_dir)
         out.mkdir(parents=True, exist_ok=True)
         if spec.job_kind == "harvest":
@@ -390,3 +394,39 @@ class TestDistillation:
         report = run_flywheel(config, executor)
         assert "perfect score" in report["stop_reason"]
         assert report["best_eval_passed"] == 12
+
+
+class TestRarityController:
+    """The thermostat: probe temperatures, harvest in the measured window."""
+
+    def _probe_step(self, kept, samples=24):
+        return {"kept": kept, "samples": samples, "current_eval": None}
+
+    def test_chooses_the_temperature_nearest_the_target(self, config):
+        config.generations = 1
+        config.target_harvest_rate = 0.6
+        config.probe_temperatures = (0.7, 0.9, 1.1)
+        executor = ScriptedExecutor(
+            [
+                self._probe_step(22),  # t=0.7 -> 92%
+                self._probe_step(14),  # t=0.9 -> 58%  <- nearest 60%
+                self._probe_step(5),  # t=1.1 -> 21%
+                {"kept": 10, "samples": 80, "current_eval": 2, "passed": 12},
+            ]
+        )
+        report = run_flywheel(config, executor)
+
+        assert "perfect score" in report["stop_reason"]
+        # The real harvest (the 4th submitted spec) ran at the chosen temp.
+        real_harvest = executor.specs[3]
+        assert real_harvest.harvest["temperature"] == 0.9
+        # Probes were tiny: subset of prompts, small best_of.
+        assert executor.specs[0].harvest["best_of"] == config.probe_best_of
+
+    def test_no_target_means_no_probes(self, config):
+        config.generations = 1
+        executor = ScriptedExecutor(
+            [{"kept": 10, "samples": 80, "current_eval": 2, "passed": 12}]
+        )
+        run_flywheel(config, executor)
+        assert len([s for s in executor.specs if s.job_kind == "harvest"]) == 1
