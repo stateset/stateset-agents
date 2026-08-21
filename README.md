@@ -345,6 +345,17 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 - **River executor aligned to the published docs** while their SDK remains
   uninstallable: canonical `client.session(project=...)` support and a
   one-argument flip (`shift_targets`) for the causal-shift assumption.
+- **Fireworks AI provider (`train-remote --provider fireworks`) — code
+  complete, *not* live-verified.** A managed fine-tuning service with a
+  genuinely asynchronous job: the job id outlives your process. The tuned
+  LoRA addon lives on Fireworks, with weights downloaded locally when the
+  account allows it — the checkpoint pointer records which happened rather
+  than promising a `serve --checkpoint` that would fail. `--deploy` rents
+  on-demand hardware and serves the addon behind an OpenAI-compatible URL;
+  `undeploy` tears it down, because it bills until deleted. Written against
+  the real `fireworks-ai` 1.x SDK, so the call shapes come from the client
+  rather than from prose; what is unverified is the service's behaviour,
+  itemised with symptoms in [`docs/FIREWORKS_PROVIDER.md`](docs/FIREWORKS_PROVIDER.md).
 
 **v0.30.0:**
 

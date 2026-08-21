@@ -56,8 +56,7 @@ def _save_transcript(
     _echo(f"Transcript saved to {path}")
     _echo("Feed it back into training with:")
     _echo(
-        f"  stateset-agents ingest --format openai --input {path} "
-        "--output graded.jsonl"
+        f"  stateset-agents ingest --format openai --input {path} --output graded.jsonl"
     )
 
 
@@ -485,7 +484,11 @@ def train_remote(
             "renting a machine, so the GPU/disk/cloud-type options are "
             "ignored, and the result is a river:// checkpoint pointer rather "
             "than local adapter weights (NOT live-verified — see "
-            "docs/RIVER_PROVIDER.md)."
+            "docs/RIVER_PROVIDER.md). 'fireworks' is Fireworks AI's managed "
+            "fine-tuning service: it also picks its own training hardware, "
+            "so the GPU/disk/cloud-type options are ignored, and the tuned "
+            "LoRA addon lives on Fireworks — add --deploy to serve it (see "
+            "docs/FIREWORKS_PROVIDER.md)."
         ),
     ),
     output_dir: Path = typer.Option(
@@ -583,6 +586,22 @@ def train_remote(
         help="Token budget per eval completion. Raise it for reasoning "
         "models whose answers follow a long preamble.",
     ),
+    deploy: bool = typer.Option(
+        False,
+        "--deploy",
+        help="Fireworks only: after training, create an on-demand deployment "
+        "and load the tuned LoRA addon onto it, printing the "
+        "OpenAI-compatible base URL. This rents hardware and bills for as "
+        "long as the deployment exists — tear it down with "
+        "`stateset-agents undeploy --deployment <name>`.",
+    ),
+    deploy_accelerator: str | None = typer.Option(
+        None,
+        "--deploy-accelerator",
+        help="Fireworks only: accelerator for --deploy, in Fireworks' own "
+        'vocabulary ("NVIDIA_H100_80GB", "NVIDIA_A100_80GB", …). '
+        "Defaults to whatever Fireworks picks for the base model.",
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Print the training plan without training."
     ),
@@ -634,9 +653,14 @@ def train_remote(
         _echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
+    if deploy and provider.strip().lower() != "fireworks":
+        _echo("--deploy is only supported by --provider fireworks.", err=True)
+        raise typer.Exit(code=2)
+
     _echo(f"Submitting SFT job to '{provider}' ({spec.gpu or 'provider default'})…")
     try:
-        result = executor.wait(executor.submit(spec))
+        handle = executor.submit(spec)
+        result = executor.wait(handle)
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -659,8 +683,74 @@ def train_remote(
             f"API using the checkpoint in {result.output_dir}/river_checkpoint.json"
         )
         return
+    if provider.strip().lower() == "fireworks":
+        _fireworks_done(executor, handle, result, deploy, deploy_accelerator)
+        return
     _echo(f"Done. Adapter written to {result.output_dir}")
-    _echo("Use it with: stateset-agents serve --checkpoint " f"{result.output_dir}")
+    _echo(f"Use it with: stateset-agents serve --checkpoint {result.output_dir}")
+
+
+def _fireworks_done(executor, handle, result, deploy: bool, accelerator: str | None):
+    """Report where the tuned addon lives, and optionally serve it.
+
+    Whether local weights landed depends on the account, so the pointer is
+    read back rather than assumed — telling a user to `serve --checkpoint`
+    a directory holding only a pointer would be a lie.
+    """
+    import json
+
+    from stateset_agents.remote.fireworks import CHECKPOINT_POINTER_NAME
+
+    pointer_path = Path(result.output_dir) / CHECKPOINT_POINTER_NAME
+    pointer = json.loads(pointer_path.read_text()) if pointer_path.exists() else {}
+    model = pointer.get("model", "<unknown>")
+
+    _echo(f"Done. Fireworks model: {model}")
+    if pointer.get("weights_downloaded"):
+        _echo(
+            "Adapter weights were downloaded — use them with: "
+            f"stateset-agents serve --checkpoint {result.output_dir}"
+        )
+    else:
+        _echo(
+            "The trained LoRA lives on Fireworks — sample it through their "
+            f"OpenAI-compatible API at {pointer.get('inference_base_url', '')} "
+            f"using model id {model}"
+        )
+
+    if not deploy:
+        return
+    _echo("Creating an on-demand deployment (this rents hardware)…")
+    try:
+        deployment = executor.deploy(handle, accelerator_type=accelerator)
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo(f"Deployed: {deployment['deployment']}")
+    _echo(f"Base URL: {deployment['base_url']}  model: {deployment['model']}")
+    _echo(
+        "It bills until deleted: stateset-agents undeploy --deployment "
+        f"{deployment['deployment']}"
+    )
+
+
+@app.command("undeploy")
+def undeploy(
+    deployment: str = typer.Option(
+        ...,
+        "--deployment",
+        help="Fireworks deployment name or id to delete, as printed by "
+        "`train-remote --deploy`.",
+    ),
+) -> None:
+    """Delete a Fireworks deployment so it stops billing."""
+    executor = get_executor("fireworks")
+    try:
+        executor.undeploy(deployment)
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo(f"Deleted deployment {deployment}.")
 
 
 @app.command("costs")

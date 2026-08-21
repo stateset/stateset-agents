@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Fireworks AI provider (`train-remote --provider fireworks`).** A fifth
+  compute provider, and the first managed fine-tuning service with a
+  genuinely asynchronous job: upload dataset -> create supervised
+  fine-tuning job -> poll -> the tuned LoRA addon lives on Fireworks, with
+  the weights downloaded locally when the account allows it (the pointer's
+  `weights_downloaded` says which happened, so no run claims a
+  `serve --checkpoint` that would fail). `--deploy` additionally rents
+  on-demand hardware and loads the addon onto it, printing an
+  OpenAI-compatible base URL; `stateset-agents undeploy` tears it down,
+  because it bills until deleted. Machine-shaped spec fields are ignored
+  with a log line rather than rejected, so the same spec still runs
+  anywhere. Costs come from Fireworks' own `estimatedCost` or are recorded
+  as `null` — never a guessed zero. Written against the real `fireworks-ai`
+  1.x SDK but **not yet live-verified**; the assumptions most likely to be
+  wrong, each with its symptom, are in `docs/FIREWORKS_PROVIDER.md`.
+
 - **Multi-turn RL, live — and the wall confirmed from the second
   direction.** Episode-level RL (rollouts capturing per-turn prompt ids
   and sampler logprobs; shaped episode rewards; group-relative advantages

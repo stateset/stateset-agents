@@ -394,3 +394,24 @@ class TestEvalPromptsOption:
         assert "does not exist" in result.output
         assert "absent.txt" in result.output
         assert "spec" not in captured
+
+
+class TestFireworksOptions:
+    """`--deploy` rents hardware, so it is opt-in and separately flagged."""
+
+    def _params(self):
+        import inspect
+
+        command = next(c for c in app.registered_commands if c.name == "train-remote")
+        return inspect.signature(command.callback).parameters
+
+    def test_deploy_is_off_by_default(self):
+        assert self._params()["deploy"].default.default is False
+
+    def test_deploy_accelerator_can_be_chosen(self):
+        assert "deploy_accelerator" in self._params()
+
+    def test_fireworks_is_offered_as_a_provider(self):
+        result = invoke_help("train-remote")
+
+        assert "fireworks" in result.output

@@ -102,12 +102,38 @@ prompts with the trained behaviour. Note `river-client` requires Python
 ≥3.12 (this repo runs 3.10 — use a separate venv for River runs). See
 `docs/RIVER_PROVIDER.md`.
 
+#### The `fireworks` provider
+
+`--provider fireworks` is Fireworks AI's **managed fine-tuning service**. Like
+River it schedules its own hardware, so the same machine-shaped options are
+ignored; unlike River the job is asynchronous (the job id stays valid after
+your process exits) and the trained LoRA addon may be downloadable.
+
+- `fetch()` always writes `fireworks_checkpoint.json` plus the usual manifest,
+  and additionally downloads the addon's weights when the API offers them.
+  `weights_downloaded` in the pointer says whether `serve --checkpoint` will
+  work.
+- `--deploy` (Fireworks only) creates an on-demand deployment of the base
+  model with addons enabled and loads the tuned LoRA onto it, printing an
+  OpenAI-compatible base URL. It rents hardware and bills until deleted —
+  tear it down with `stateset-agents undeploy --deployment <name>`.
+- The cost ledger records Fireworks' own `estimatedCost`, or `null` when the
+  job reports none. Deployment cost is not in the ledger.
+- Needs `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`, and the
+  `stateset-agents[fireworks]` extra.
+
+**Not yet live-verified** — written against the real `fireworks-ai` 1.x SDK,
+exercised only against fakes. See `docs/FIREWORKS_PROVIDER.md`.
+
 #### Options
 
 - `--dataset PATH`: Chat-format JSONL to train on (required).
 - `--base-model TEXT`: Hugging Face base model (required).
-- `--provider [local|modal|river|runpod]`: Where to run. Default `local`.
-  `river` is different in kind from the others — see the note below.
+- `--provider [fireworks|local|modal|river|runpod]`: Where to run. Default
+  `local`. `river` and `fireworks` are different in kind from the others —
+  see the notes above.
+- `--deploy` / `--deploy-accelerator TEXT`: Fireworks only — serve the tuned
+  addon on an on-demand deployment after training.
 - `--output-dir PATH`: Adapter output directory. Default `outputs/sft_v1`.
 - `--num-epochs`, `--lora-r`, `--lora-alpha`, `--learning-rate`,
   `--max-length`, `--per-device-batch-size`,
@@ -215,6 +241,24 @@ it is published):
 ```python
 RunPodExecutor(wheel=Path("dist/stateset_agents-0.20.0-py3-none-any.whl"))
 ```
+
+### `stateset-agents undeploy`
+
+Delete a Fireworks deployment so it stops billing. Deployments are created by
+`train-remote --provider fireworks --deploy`, and they bill for as long as they
+exist — nothing tears one down implicitly.
+
+```bash
+stateset-agents undeploy --deployment accounts/my-org/deployments/dep-1
+```
+
+#### Options
+
+- `--deployment TEXT`: Deployment name or bare id, as printed by
+  `train-remote --deploy` (required).
+
+Needs `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`. See
+`docs/FIREWORKS_PROVIDER.md`.
 
 ### `stateset-agents qwen3-5-0-8b`
 
