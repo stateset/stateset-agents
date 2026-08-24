@@ -92,7 +92,7 @@ def _verbose_log(message: str) -> None:
 class _ProgressLogs(list):
     """A log list that optionally echoes appends live (see RIVER_VERBOSE_ENV)."""
 
-    def append(self, item: Any) -> None:  # type: ignore[override]
+    def append(self, item: Any) -> None:
         _verbose_log(str(item))
         super().append(item)
 

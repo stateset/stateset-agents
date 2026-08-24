@@ -27,7 +27,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from collections.abc import Callable, Awaitable
 
 from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
@@ -53,7 +53,7 @@ def extract_verdict(text: str) -> str | None:
     try:
         data = json.loads(text)
         if isinstance(data, dict) and isinstance(data.get("decision"), str):
-            verdict = data["decision"].strip().lower()
+            verdict = str(data["decision"]).strip().lower()
             if verdict in ("approved", "denied", "refused"):
                 return verdict
     except (json.JSONDecodeError, ValueError):
@@ -199,7 +199,7 @@ def make_nsr_poster(cfg: NSRVerifierConfig) -> NSRPoster:
                 timeout=aiohttp.ClientTimeout(total=cfg.timeout_seconds),
             ) as resp:
                 resp.raise_for_status()
-                return await resp.json()
+                return cast(dict[str, Any], await resp.json())
 
     return post
 

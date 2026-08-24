@@ -138,7 +138,7 @@ def nsr_gate_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
         return False
     if result.metadata.get("mode") != "verified":
         return False
-    return result.score >= 1.0
+    return bool(result.score >= 1.0)
 
 
 def sample_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
