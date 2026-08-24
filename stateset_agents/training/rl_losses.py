@@ -44,3 +44,22 @@ def masked_mean(x: Any, mask: Any, *, mode: str = "token") -> Any:
         per_row = (x * mask).sum(-1) / torch.clamp(mask.sum(-1), min=1.0)
         return per_row.mean()
     raise ValueError(f"unknown mode {mode!r}; expected 'token' or 'seq'")
+
+
+def group_advantages(rewards: Any, *, normalize: bool = True, eps: float = 1e-8) -> Any:
+    """Group-relative advantages for one group of rewards ``[G]``.
+
+    Groups of size 1, constant rewards, or non-finite statistics yield zeros
+    rather than NaN (a NaN advantage silently poisons the whole batch).
+    """
+    torch = _t()
+    rewards = rewards.float()
+    if rewards.numel() <= 1:
+        return torch.zeros_like(rewards)
+    adv = rewards - rewards.mean()
+    if not normalize:
+        return adv
+    std = adv.std(correction=0)
+    if not torch.isfinite(std) or std <= eps:
+        return torch.zeros_like(rewards)
+    return adv / (std + eps)

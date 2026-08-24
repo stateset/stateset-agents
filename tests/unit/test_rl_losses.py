@@ -34,3 +34,26 @@ def test_masked_mean_empty_mask_is_zero_not_nan():
     x = torch.ones(2, 3)
     m = torch.zeros(2, 3)
     assert L.masked_mean(x, m).item() == 0.0
+
+
+def test_group_advantages_matches_manual():
+    r = torch.tensor([1.0, 2.0, 3.0, 6.0])
+    a = L.group_advantages(r)
+    want = (r - r.mean()) / (r.std(correction=0) + 1e-8)
+    torch.testing.assert_close(a, want)
+    assert a.mean().abs().item() < 1e-6
+
+
+def test_group_advantages_single_sample_is_zero_not_nan():
+    a = L.group_advantages(torch.tensor([0.7]))
+    assert a.shape == (1,) and a.item() == 0.0 and torch.isfinite(a).all()
+
+
+def test_group_advantages_constant_rewards_zero():
+    a = L.group_advantages(torch.tensor([1.0, 1.0, 1.0]))
+    assert torch.equal(a, torch.zeros(3))
+
+
+def test_group_advantages_unnormalized():
+    r = torch.tensor([0.0, 2.0])
+    torch.testing.assert_close(L.group_advantages(r, normalize=False), torch.tensor([-1.0, 1.0]))
