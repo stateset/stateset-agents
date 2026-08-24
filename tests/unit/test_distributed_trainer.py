@@ -452,3 +452,134 @@ class TestBackendSelection:
         config = DistributedConfig(backend="gloo")
 
         assert config.backend == "gloo"
+
+
+class TestDistributedGRPOLoss:
+    """The GRPO loss must be a real function of the rewards, not a 0.0 stub."""
+
+    @staticmethod
+    def _make_trainer():
+        from types import SimpleNamespace
+
+        from stateset_agents.training.config import TrainingConfig
+        from stateset_agents.training.distributed_trainer import (
+            DistributedConfig,
+            DistributedGRPOTrainer,
+        )
+
+        class _Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.p = torch.nn.Parameter(torch.tensor(0.5))
+                self.device = torch.device("cpu")
+
+            def forward(self, input_ids=None, attention_mask=None, labels=None, **kw):
+                seq = input_ids.shape[1]
+                logits = torch.zeros(1, seq, 7) + self.p
+                # NLL varies with sequence length so distinct trajectories
+                # contribute distinct terms to the loss.
+                return SimpleNamespace(loss=self.p * seq, logits=logits)
+
+        class _Tokenizer:
+            def apply_chat_template(
+                self,
+                messages,
+                *,
+                return_dict: bool = False,
+                return_assistant_tokens_mask: bool = False,
+                **kwargs,
+            ):
+                n = 4 + sum(len(m["content"]) for m in messages)
+                half = n // 2
+                return {
+                    "input_ids": torch.arange(1, n + 1).unsqueeze(0),
+                    "attention_mask": torch.ones(1, n, dtype=torch.long),
+                    "assistant_tokens_mask": torch.tensor(
+                        [[0] * (n - half) + [1] * half]
+                    ),
+                }
+
+        agent = SimpleNamespace(model=_Model(), tokenizer=_Tokenizer())
+        trainer = DistributedGRPOTrainer(
+            agent=agent,
+            environment=MagicMock(),
+            reward_function=MagicMock(),
+            training_config=TrainingConfig(
+                num_generations=2, advantage_normalization=False
+            ),
+            distributed_config=DistributedConfig(backend="gloo"),
+        )
+        return trainer
+
+    @staticmethod
+    def _trajectories(n):
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(
+                turns=[
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "hello" * (i + 1)},
+                ],
+                total_reward=0.0,
+                metadata={},
+            )
+            for i in range(n)
+        ]
+
+    def test_distributed_trainer_loss_is_not_constant(self):
+        """Two different reward lists must produce different losses."""
+        trainer = self._make_trainer()
+
+        loss_a = trainer._compute_grpo_loss(self._trajectories(2), [0.0, 1.0])
+        loss_b = trainer._compute_grpo_loss(self._trajectories(2), [1.0, 0.0])
+
+        assert loss_a.item() != 0.0
+        assert loss_a.item() != pytest.approx(loss_b.item())
+        assert loss_a.requires_grad
+
+    def test_compute_rewards_uses_reward_function(self):
+        """_compute_rewards must delegate to the configured reward function."""
+        import asyncio
+
+        from stateset_agents.core.reward import RewardResult
+
+        trainer = self._make_trainer()
+        trajectories = self._trajectories(2)
+
+        async def fake_reward(turns, context=None):
+            return RewardResult(score=0.75, breakdown={"fake": 0.75})
+
+        trainer.reward_function = MagicMock()
+        trainer.reward_function.compute_reward = fake_reward
+
+        rewards = asyncio.run(trainer._compute_rewards(trajectories))
+
+        assert rewards == [0.75, 0.75]
+        assert trajectories[0].total_reward == 0.75
+
+    def test_generate_trajectories_uses_environment(self):
+        """_generate_trajectories must run real episodes, not echo the batch."""
+        import asyncio
+        from types import SimpleNamespace
+
+        trainer = self._make_trainer()
+
+        episodes = []
+
+        async def run_episode(agent_fn, scenario=None, **kwargs):
+            episodes.append(scenario)
+            return SimpleNamespace(turns=[], total_reward=0.0, metadata={})
+
+        trainer.environment = MagicMock()
+        trainer.environment.run_episode = run_episode
+        trainer.agent.generate_response = MagicMock()
+
+        trajectories = asyncio.run(
+            trainer._generate_trajectories({"prompt": "p", "response": "r"})
+        )
+
+        assert len(trajectories) == 2  # num_generations
+        assert len(episodes) == 2
+        assert episodes[0]["prompt"] == "p"
+        assert not isinstance(trajectories[0], dict)

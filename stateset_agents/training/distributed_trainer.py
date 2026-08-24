@@ -35,9 +35,12 @@ except ImportError:
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
+from stateset_agents.core.trajectory import TrajectoryGroup
 from stateset_agents.utils.monitoring import MonitoringService
 
 from .config import TrainingConfig
+from .loss_computation import compute_grpo_loss
+from .multi_turn_evaluation import coerce_reward_result
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +129,11 @@ class DistributedGRPOTrainer:
         self.training_metrics: dict[str, Any] = {}
         self.step_count = 0
         self.epoch_count = 0
+
+        # Running reward statistics (used by the `global_mean` GRPO baseline)
+        self._global_reward_mean = 0.0
+        self._global_reward_sum = 0.0
+        self._global_reward_count = 0
 
     def setup_distributed(self, rank: int, world_size: int):
         """Setup distributed training environment"""
@@ -371,24 +379,75 @@ class DistributedGRPOTrainer:
 
         return loss, step_metrics
 
-    async def _generate_trajectories(
-        self, batch: dict[str, Any]
-    ) -> list[dict[str, Any]]:
-        """Generate trajectories for the batch"""
-        # Placeholder implementation
-        return [{"prompt": batch["prompt"], "response": batch["response"]}]
+    async def _generate_trajectories(self, batch: dict[str, Any]) -> list[Any]:
+        """Roll out `num_generations` episodes for the batch's scenario."""
+        scenario = dict(batch)
+        num_generations = int(getattr(self.training_config, "num_generations", 1) or 1)
 
-    async def _compute_rewards(self, trajectories: list[dict[str, Any]]) -> list[float]:
-        """Compute rewards for trajectories"""
-        # Placeholder implementation
-        return [0.5 for _ in trajectories]
+        async def agent_fn(history: Any, context: Any) -> Any:
+            return await self.agent.generate_response(history, context)
+
+        trajectories: list[Any] = []
+        for _ in range(num_generations):
+            reset_fn = getattr(self.agent, "reset", None)
+            if callable(reset_fn):
+                reset_result = reset_fn()
+                if asyncio.iscoroutine(reset_result):
+                    await reset_result
+            trajectories.append(await self.environment.run_episode(agent_fn, scenario))
+        return trajectories
+
+    async def _compute_rewards(self, trajectories: list[Any]) -> list[float]:
+        """Score each trajectory with the configured reward function."""
+        rewards: list[float] = []
+        for trajectory in trajectories:
+            context = getattr(trajectory, "metadata", None) or {}
+            reward_result = await self.reward_function.compute_reward(
+                getattr(trajectory, "turns", []), context
+            )
+            score, breakdown = await coerce_reward_result(
+                reward_result, DISTRIBUTED_TRAIN_EXCEPTIONS
+            )
+            trajectory.total_reward = score
+            if hasattr(trajectory, "metadata") and isinstance(
+                trajectory.metadata, dict
+            ):
+                trajectory.metadata["reward_breakdown"] = breakdown
+            rewards.append(score)
+        return rewards
 
     def _compute_grpo_loss(
-        self, trajectories: list[dict[str, Any]], rewards: list[float]
+        self, trajectories: list[Any], rewards: list[float]
     ) -> torch.Tensor:
-        """Compute GRPO loss"""
-        # Placeholder implementation
-        return torch.tensor(0.0, device=self.device, requires_grad=True)
+        """Compute the real GRPO loss for one group of trajectories."""
+        for trajectory, reward in zip(trajectories, rewards, strict=False):
+            trajectory.total_reward = float(reward)
+
+        group = TrajectoryGroup(
+            scenario_id=f"step_{self.step_count}",
+            trajectories=list(trajectories),
+        )
+        loss_dict = compute_grpo_loss(
+            trajectory_groups=[group],
+            config=self.training_config,
+            agent=self.agent,
+            global_reward_mean=self._global_reward_mean,
+            global_reward_count=self._global_reward_count,
+            update_global_stats=self._update_global_stats,
+        )
+        loss = loss_dict["total_loss"]
+        if self.device is not None:
+            loss = loss.to(self.device)
+        return loss
+
+    def _update_global_stats(self, batch_mean: float, batch_size: int) -> None:
+        """Track a running global reward mean for the `global_mean` baseline."""
+        self._global_reward_sum += batch_mean * batch_size
+        self._global_reward_count += batch_size
+        if self._global_reward_count > 0:
+            self._global_reward_mean = (
+                self._global_reward_sum / self._global_reward_count
+            )
 
     def _reduce_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
         """Reduce metrics across all processes"""
