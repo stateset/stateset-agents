@@ -1238,7 +1238,7 @@ The CLI is a thin wrapper around the Python API:
 stateset-agents version
 stateset-agents doctor
 stateset-agents train --stub
-stateset-agents train --config ./config.yaml --dry-run false --save ./outputs/ckpt
+stateset-agents train --config ./config.yaml --no-dry-run --save ./outputs/ckpt
 stateset-agents evaluate --checkpoint ./outputs/ckpt --message "Hello"
 stateset-agents serve --host 0.0.0.0 --port 8001
 stateset-agents auto-research --proposer smart --max-experiments 50
