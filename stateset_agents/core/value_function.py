@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .checkpoint_io import load_checkpoint_file
+
 logger = logging.getLogger(__name__)
 
 # Lazy imports for optional dependencies
@@ -449,10 +451,6 @@ class ValueFunction:
                 ``True`` only for checkpoints from a source you control.
         """
         _require_torch()
-        # Imported lazily: stateset_agents.training pulls in heavy optional
-        # dependencies and importing it at module scope would be circular.
-        from ..training.checkpoint_io import load_checkpoint_file
-
         checkpoint = load_checkpoint_file(path, trusted=trusted, torch_module=torch)
         self.value_head.load_state_dict(checkpoint["value_head_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
