@@ -326,4 +326,4 @@ ignore = [
 "stateset_agents/utils/wandb_integration.py" = ["E402"]
 "tests/**/*" = ["B011"]  # assert false
 "tests/unit/test_trl_grpo_trainer.py" = ["E402"]
-"tests/unit/test_rl_losses.py" = ["E402", "E702"]
+"tests/unit/test_rl_losses.py" = ["E402"]

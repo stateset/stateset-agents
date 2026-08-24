@@ -91,7 +91,8 @@ def test_clip_fraction():
 
 
 def test_k3_kl_nonnegative_and_zero_at_equality():
-    cur = torch.tensor([[-1.0, -2.0]]); ref = torch.tensor([[-1.5, -1.0]])
+    cur = torch.tensor([[-1.0, -2.0]])
+    ref = torch.tensor([[-1.5, -1.0]])
     assert L.k3_kl(cur, ref).item() >= 0
     assert L.k3_kl(cur, cur).item() == 0.0
 
@@ -108,6 +109,7 @@ def test_k3_kl_gradient_pulls_toward_ref():
 
 
 def test_k3_kl_respects_mask():
-    cur = torch.tensor([[0.0, -5.0]]); ref = torch.tensor([[0.0, 0.0]])
+    cur = torch.tensor([[0.0, -5.0]])
+    ref = torch.tensor([[0.0, 0.0]])
     mask = torch.tensor([[1.0, 0.0]])
     assert L.k3_kl(cur, ref, mask).item() == 0.0
