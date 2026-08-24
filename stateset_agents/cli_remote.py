@@ -750,6 +750,9 @@ def undeploy(
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+    except NotImplementedError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
     _echo(f"Deleted deployment {deployment}.")
 
 

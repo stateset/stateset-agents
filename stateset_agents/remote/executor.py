@@ -117,3 +117,11 @@ class RemoteExecutor(abc.ABC):
         Default: unknown. Providers that rent metered hardware override it.
         """
         return (None, None)
+
+    def undeploy(self, deployment: str) -> None:
+        """Tear down a managed deployment.
+
+        Default: unsupported. Providers that manage deployments (e.g.
+        Fireworks on-demand serving) override this.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not manage deployments")
