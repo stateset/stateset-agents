@@ -23,6 +23,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
+from . import rl_losses
 from .config import TrainingConfig
 from .trainer_runtime import (
     SharedModelManager,
@@ -354,18 +355,14 @@ class GEPOTrainer:
             advantages: Normalized advantages [group_size]
             stats: Reward statistics
         """
-        mean_reward = rewards.mean()
-        std_reward = rewards.std()
+        advantages = rl_losses.group_advantages(rewards)
 
-        # Avoid division by zero
-        if std_reward < 1e-8:
-            std_reward = torch.tensor(1.0, device=rewards.device)
-
-        advantages = (rewards - mean_reward) / std_reward
-
+        std_reward = (
+            rewards.float().std(correction=0) if rewards.numel() > 1 else 0.0
+        )
         stats = {
-            "mean_reward": mean_reward.item(),
-            "std_reward": std_reward.item(),
+            "mean_reward": rewards.mean().item(),
+            "std_reward": float(std_reward),
             "max_reward": rewards.max().item(),
             "min_reward": rewards.min().item(),
         }

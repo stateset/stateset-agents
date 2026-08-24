@@ -311,7 +311,9 @@ class TestGEPOTrainer:
         # Advantages should be normalized
         assert advantages.shape == rewards.shape
         assert abs(advantages.mean().item()) < 0.1  # Should be close to 0
-        assert abs(advantages.std().item() - 1.0) < 0.1  # Should be close to 1
+        # rl_losses.group_advantages normalizes by the population std
+        # (correction=0), the standard group-relative convention.
+        assert abs(advantages.std(correction=0).item() - 1.0) < 0.1
 
         # Stats should be populated
         assert "mean_reward" in stats

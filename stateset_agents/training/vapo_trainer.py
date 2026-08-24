@@ -28,6 +28,7 @@ import torch.nn.functional as F
 
 from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
+from . import rl_losses
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -516,17 +517,10 @@ class VAPOTrainer:
     ) -> torch.Tensor:
         """Compute per-token log probabilities"""
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-        logits = outputs.logits
-
-        # Shift for next-token prediction
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = input_ids[:, 1:].contiguous()
-
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
+        # No response mask here: every position is kept, masking happens later.
+        token_log_probs, _ = rl_losses.gather_token_logprobs(
+            outputs.logits, input_ids, torch.ones_like(input_ids)
+        )
         return token_log_probs
 
     async def generate_group_responses(
@@ -737,27 +731,19 @@ class VAPOTrainer:
         log_ratio = current_log_probs - old_log_probs.detach()
         ratio = torch.exp(log_ratio)
 
-        # Clip-Higher (asymmetric)
-        clipped_ratio = torch.clamp(
+        # Clip-Higher (asymmetric); clipped_surrogate is already a loss, so no
+        # extra sign flip here.
+        surrogate_loss = rl_losses.clipped_surrogate(
             ratio,
-            1.0 - self.config.clip_eps_low,
-            1.0 + self.config.clip_eps_high,
+            policy_advantages,
+            clip_low=self.config.clip_eps_low,
+            clip_high=self.config.clip_eps_high,
         )
-
-        # Policy surrogate (uses the policy-lambda GAE advantages)
-        unclipped_obj = ratio * policy_advantages
-        clipped_obj = clipped_ratio * policy_advantages
-        surrogate = torch.min(unclipped_obj, clipped_obj)
-
-        # Apply mask
-        masked_surrogate = surrogate * response_mask
-
-        # Token-level normalization
-        if self.config.use_token_level_loss:
-            total_tokens = response_mask.sum().clamp(min=1)
-            policy_loss = -masked_surrogate.sum() / total_tokens
-        else:
-            policy_loss = -masked_surrogate.sum(dim=-1).mean()
+        policy_loss = rl_losses.masked_mean(
+            surrogate_loss,
+            response_mask,
+            mode="token" if self.config.use_token_level_loss else "seq",
+        )
 
         # Decoupled GAE: value target is built from the critic-lambda
         # advantages, not the policy-lambda advantages used above.

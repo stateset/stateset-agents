@@ -42,3 +42,12 @@ def test_response_mask_offset_clamped_at_zero():
     )
     assert mask.shape == (1, 4)
     assert mask.sum() == 4
+
+
+def test_group_of_one_advantage_is_finite():
+    """A group of size 1 has zero variance: advantages must be 0, never NaN."""
+    trainer = object.__new__(GEPOTrainer)
+    adv, stats = trainer.compute_group_advantages(torch.tensor([0.3]))
+    assert torch.isfinite(adv).all()
+    assert adv.item() == 0.0
+    assert all(v == v for v in stats.values())  # no NaN in stats
