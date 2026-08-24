@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .checkpoint_io import load_checkpoint_file
 from .trainer_utils import get_torch
 
 
@@ -106,8 +107,8 @@ def load_checkpoint_artifacts(
     ):
         try:
             if model_file.is_file():
-                state_dict = torch.load(
-                    model_file, map_location="cpu", weights_only=not trusted
+                state_dict = load_checkpoint_file(
+                    model_file, trusted=trusted, torch_module=torch
                 )
                 if isinstance(state_dict, dict) and "state_dict" in state_dict:
                     state_dict = state_dict["state_dict"]
@@ -140,7 +141,7 @@ def load_checkpoint_artifacts(
         return False
 
     try:
-        state = torch.load(state_path, map_location="cpu", weights_only=not trusted)
+        state = load_checkpoint_file(state_path, trusted=trusted, torch_module=torch)
     except exceptions as exc:
         logger.warning("Failed to load training state: %s", exc)
         return False

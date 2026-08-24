@@ -15,6 +15,8 @@ from typing import Any
 
 import numpy as np
 
+from .checkpoint_io import load_checkpoint_file
+
 try:
     import torch as _torch
     import torch.nn as _nn
@@ -830,8 +832,8 @@ class DecisionTransformerTrainer:
                 control; the default unpickles with ``weights_only=True`` so a
                 malicious checkpoint cannot execute code.
         """
-        checkpoint = torch.load(
-            path, map_location=self.device, weights_only=not trusted
+        checkpoint = load_checkpoint_file(
+            path, map_location=self.device, trusted=trusted
         )
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
@@ -839,6 +841,14 @@ class DecisionTransformerTrainer:
         self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         self.training_step = checkpoint.get("training_step", 0)
         self.training_metrics = checkpoint.get("training_metrics", [])
+
+        # Checkpoints store the config as a plain dict (see save()); rebuild it.
+        config_payload = checkpoint.get("config")
+        if isinstance(config_payload, dict):
+            try:
+                self.config = DecisionTransformerConfig(**config_payload)
+            except (TypeError, ValueError) as exc:
+                logger.warning("Failed to restore config from checkpoint: %s", exc)
 
         logger.info(f"Loaded Decision Transformer from {path}")
 

@@ -16,6 +16,8 @@ from typing import Any, cast
 
 import numpy as np
 
+from .checkpoint_io import load_checkpoint_file
+
 try:
     import torch as _torch
     import torch.nn as _nn
@@ -797,8 +799,8 @@ class SimToRealTransfer:
                 control; the default unpickles with ``weights_only=True`` so a
                 malicious checkpoint cannot execute code.
         """
-        checkpoint = torch.load(
-            path, map_location=self.device, weights_only=not trusted
+        checkpoint = load_checkpoint_file(
+            path, map_location=self.device, trusted=trusted
         )
 
         self.user_model.load_state_dict(checkpoint["user_model_state_dict"])
@@ -807,5 +809,13 @@ class SimToRealTransfer:
         self.training_step = checkpoint.get("training_step", 0)
         self.gap_history = checkpoint.get("gap_history", [])
         self.is_calibrated = checkpoint.get("is_calibrated", False)
+
+        # Checkpoints store the config as a plain dict (see save()); rebuild it.
+        config_payload = checkpoint.get("config")
+        if isinstance(config_payload, dict):
+            try:
+                self.config = SimToRealConfig(**config_payload)
+            except (TypeError, ValueError) as exc:
+                logger.warning("Failed to restore config from checkpoint: %s", exc)
 
         logger.info(f"Loaded sim-to-real transfer state from {path}")

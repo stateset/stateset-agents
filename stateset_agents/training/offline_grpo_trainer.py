@@ -27,6 +27,7 @@ except ImportError:
     F = cast(Any, None)
     AdamW = cast(Any, None)
 
+from .checkpoint_io import load_checkpoint_file
 from .base_trainer import BaseTrainerConfig
 
 logger = logging.getLogger(__name__)
@@ -757,8 +758,8 @@ class OfflineGRPOTrainer:
                 control; the default unpickles with ``weights_only=True`` so a
                 malicious checkpoint cannot execute code.
         """
-        checkpoint = torch.load(
-            path, map_location=self.device, weights_only=not trusted
+        checkpoint = load_checkpoint_file(
+            path, map_location=self.device, trusted=trusted
         )
 
         self.value_net.load_state_dict(checkpoint["value_net_state_dict"])
@@ -769,5 +770,13 @@ class OfflineGRPOTrainer:
         self.training_step = checkpoint.get("training_step", 0)
         self.value_pretrained = checkpoint.get("value_pretrained", False)
         self.training_metrics = checkpoint.get("training_metrics", [])
+
+        # Checkpoints store the config as a plain dict (see save()); rebuild it.
+        config_payload = checkpoint.get("config")
+        if isinstance(config_payload, dict):
+            try:
+                self.config = OfflineGRPOConfig(**config_payload)
+            except (TypeError, ValueError) as exc:
+                logger.warning("Failed to restore config from checkpoint: %s", exc)
 
         logger.info(f"Loaded Offline GRPO trainer from {path}")

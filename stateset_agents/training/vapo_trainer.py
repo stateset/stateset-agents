@@ -28,6 +28,7 @@ import torch.nn.functional as F
 
 from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
+from .checkpoint_io import load_checkpoint_file
 from . import rl_losses
 from .trainer_runtime import (
     SharedModelManager,
@@ -1025,18 +1026,16 @@ class VAPOTrainer:
         value_head_path = os.path.join(checkpoint_dir, "value_head.pt")
         if os.path.exists(value_head_path):
             self.value_head.load_state_dict(
-                torch.load(
-                    value_head_path,
-                    map_location=self.device,
-                    weights_only=not trusted,
+                load_checkpoint_file(
+                    value_head_path, map_location=self.device, trusted=trusted
                 )
             )
 
         # Load training state
         state_path = os.path.join(checkpoint_dir, "training_state.pt")
         if os.path.exists(state_path):
-            state = torch.load(
-                state_path, map_location=self.device, weights_only=not trusted
+            state = load_checkpoint_file(
+                state_path, map_location=self.device, trusted=trusted
             )
             self.global_step = state["global_step"]
             self.value_warmup_complete = state.get("value_warmup_complete", True)

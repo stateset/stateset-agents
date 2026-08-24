@@ -227,9 +227,9 @@ class CheckpointManager:
         # Strategy 2: state_dict
         if state_pt.exists():
             try:
-                import torch
+                from ..checkpoint_io import load_checkpoint_file
 
-                state_dict = torch.load(state_pt, map_location="cpu", weights_only=True)
+                state_dict = load_checkpoint_file(state_pt)
                 model.load_state_dict(state_dict, strict=False)
                 logger.info("Restored state_dict from %s", state_pt)
                 return True

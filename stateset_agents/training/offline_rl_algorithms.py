@@ -14,6 +14,8 @@ from typing import Any
 
 import numpy as np
 
+from .checkpoint_io import load_checkpoint_file
+
 try:
     import torch as _torch
     import torch.nn as _nn
@@ -764,8 +766,8 @@ class OfflineRLTrainer:
                 control; the default unpickles with ``weights_only=True`` so a
                 malicious checkpoint cannot execute code.
         """
-        checkpoint = torch.load(
-            path, map_location=self.device, weights_only=not trusted
+        checkpoint = load_checkpoint_file(
+            path, map_location=self.device, trusted=trusted
         )
 
         for name, module in self.learner.__dict__.items():

@@ -23,6 +23,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
+from .checkpoint_io import load_checkpoint_file
 from . import rl_losses
 from .config import TrainingConfig
 from .trainer_runtime import (
@@ -588,8 +589,8 @@ class GEPOTrainer:
         """
         state_path = os.path.join(checkpoint_dir, "training_state.pt")
         if os.path.exists(state_path):
-            state = torch.load(
-                state_path, map_location=self.device, weights_only=not trusted
+            state = load_checkpoint_file(
+                state_path, map_location=self.device, trusted=trusted
             )
             self.global_step = state["global_step"]
             self.optimizer.load_state_dict(state["optimizer_state_dict"])

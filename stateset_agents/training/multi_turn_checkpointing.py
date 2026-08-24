@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from .checkpoint_io import load_checkpoint_file
+
 logger = logging.getLogger(__name__)
 
 
@@ -107,8 +109,8 @@ def load_multi_turn_checkpoint(
     ):
         try:
             if model_file.is_file():
-                state_dict = torch.load(
-                    model_file, map_location="cpu", weights_only=not trusted
+                state_dict = load_checkpoint_file(
+                    model_file, trusted=trusted, torch_module=torch
                 )
                 if isinstance(state_dict, dict) and "state_dict" in state_dict:
                     state_dict = state_dict["state_dict"]
@@ -141,7 +143,7 @@ def load_multi_turn_checkpoint(
         return False
 
     try:
-        state = torch.load(state_path, map_location="cpu", weights_only=not trusted)
+        state = load_checkpoint_file(state_path, trusted=trusted, torch_module=torch)
     except trainer_exceptions as exc:
         logger.warning("Failed to load training state: %s", exc)
         return False

@@ -30,6 +30,7 @@ except ImportError:
     TORCH_AVAILABLE = False
 
 from stateset_agents.core.reward import RewardFunction, RewardResult
+from stateset_agents.training.checkpoint_io import load_checkpoint_file
 from stateset_agents.core.trajectory import ConversationTurn, Trajectory
 from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
@@ -508,8 +509,8 @@ class NeuralRewardTrainer:
                 control; the default unpickles with ``weights_only=True`` so a
                 malicious checkpoint cannot execute code.
         """
-        checkpoint = torch.load(
-            path, map_location=self.device, weights_only=not trusted
+        checkpoint = load_checkpoint_file(
+            path, map_location=self.device, trusted=trusted
         )
 
         self.model.load_state_dict(checkpoint["model_state_dict"])

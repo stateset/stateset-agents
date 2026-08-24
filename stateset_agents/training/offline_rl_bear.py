@@ -16,6 +16,8 @@ from typing import Any
 
 import numpy as np
 
+from .checkpoint_io import load_checkpoint_file
+
 try:
     import torch as _torch
     import torch.nn as _nn
@@ -768,8 +770,8 @@ class ConversationalBEAR:
                 control; the default unpickles with ``weights_only=True`` so a
                 malicious checkpoint cannot execute code.
         """
-        checkpoint = torch.load(
-            path, map_location=self.device, weights_only=not trusted
+        checkpoint = load_checkpoint_file(
+            path, map_location=self.device, trusted=trusted
         )
 
         self.actor.load_state_dict(checkpoint["actor_state_dict"])
@@ -779,6 +781,14 @@ class ConversationalBEAR:
         self.q2_target.load_state_dict(checkpoint["q2_target_state_dict"])
         self.log_alpha = checkpoint["log_alpha"]
         self.training_step = checkpoint.get("training_step", 0)
+
+        # Checkpoints store the config as a plain dict (see save()); rebuild it.
+        config_payload = checkpoint.get("config")
+        if isinstance(config_payload, dict):
+            try:
+                self.config = BEARConfig(**config_payload)
+            except (TypeError, ValueError) as exc:
+                logger.warning("Failed to restore config from checkpoint: %s", exc)
 
         logger.info(f"Loaded BEAR model from {path}")
 
