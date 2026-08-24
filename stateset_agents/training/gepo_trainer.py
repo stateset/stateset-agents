@@ -357,9 +357,7 @@ class GEPOTrainer:
         """
         advantages = rl_losses.group_advantages(rewards)
 
-        std_reward = (
-            rewards.float().std(correction=0) if rewards.numel() > 1 else 0.0
-        )
+        std_reward = rewards.float().std(correction=0) if rewards.numel() > 1 else 0.0
         stats = {
             "mean_reward": rewards.mean().item(),
             "std_reward": float(std_reward),
@@ -579,11 +577,20 @@ class GEPOTrainer:
             config_filename="gepo_config.json",
         )
 
-    def load_checkpoint(self, checkpoint_dir: str) -> None:
-        """Load model checkpoint"""
+    def load_checkpoint(self, checkpoint_dir: str, trusted: bool = False) -> None:
+        """Load model checkpoint.
+
+        Args:
+            checkpoint_dir: Directory written by :meth:`save_checkpoint`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
         state_path = os.path.join(checkpoint_dir, "training_state.pt")
         if os.path.exists(state_path):
-            state = torch.load(state_path, map_location=self.device)  # nosec: B614
+            state = torch.load(
+                state_path, map_location=self.device, weights_only=not trusted
+            )
             self.global_step = state["global_step"]
             self.optimizer.load_state_dict(state["optimizer_state_dict"])
             self.scheduler.load_state_dict(state["scheduler_state_dict"])

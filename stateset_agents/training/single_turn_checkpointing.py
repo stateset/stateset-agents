@@ -72,8 +72,17 @@ def load_checkpoint_artifacts(
     require_torch_fn: Any,
     exceptions: tuple[type[BaseException], ...],
     logger: Any,
+    *,
+    trusted: bool = False,
 ) -> bool:
-    """Load model and trainer state from a checkpoint directory."""
+    """Load model and trainer state from a checkpoint directory.
+
+    Args:
+        trusted: When ``False`` (the default) checkpoints are unpickled with
+            ``weights_only=True``, so only tensors and plain data are restored
+            and a malicious checkpoint cannot execute code.  Pass ``True`` only
+            for checkpoints from a source you control.
+    """
     try:
         torch = require_torch_fn()
     except ImportError:
@@ -97,7 +106,9 @@ def load_checkpoint_artifacts(
     ):
         try:
             if model_file.is_file():
-                state_dict = torch.load(model_file, map_location="cpu")
+                state_dict = torch.load(
+                    model_file, map_location="cpu", weights_only=not trusted
+                )
                 if isinstance(state_dict, dict) and "state_dict" in state_dict:
                     state_dict = state_dict["state_dict"]
                 agent.model.load_state_dict(state_dict, strict=False)
@@ -129,7 +140,7 @@ def load_checkpoint_artifacts(
         return False
 
     try:
-        state = torch.load(state_path, map_location="cpu")
+        state = torch.load(state_path, map_location="cpu", weights_only=not trusted)
     except exceptions as exc:
         logger.warning("Failed to load training state: %s", exc)
         return False

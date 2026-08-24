@@ -755,9 +755,18 @@ class OfflineRLTrainer:
         )
         logger.info(f"Saved {self.algorithm.upper()} model to {path}")
 
-    def load(self, path: str) -> None:
-        """Load trained model"""
-        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
+    def load(self, path: str, trusted: bool = False) -> None:
+        """Load trained model
+
+        Args:
+            path: Checkpoint written by :meth:`save`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
+        checkpoint = torch.load(
+            path, map_location=self.device, weights_only=not trusted
+        )
 
         for name, module in self.learner.__dict__.items():
             if isinstance(module, nn.Module) and name in checkpoint["learner_state"]:

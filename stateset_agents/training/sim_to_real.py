@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -773,7 +773,13 @@ class SimToRealTransfer:
                 "user_model_state_dict": self.user_model.state_dict(),
                 "domain_adapter_state_dict": self.domain_adapter.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),
-                "config": self.config,
+                # Persist the config as plain data so checkpoints stay
+                # loadable under torch.load(weights_only=True).
+                "config": (
+                    asdict(self.config)
+                    if is_dataclass(self.config) and not isinstance(self.config, type)
+                    else dict(getattr(self.config, "__dict__", {}))
+                ),
                 "training_step": self.training_step,
                 "gap_history": self.gap_history,
                 "is_calibrated": self.is_calibrated,
@@ -782,9 +788,18 @@ class SimToRealTransfer:
         )
         logger.info(f"Saved sim-to-real transfer state to {path}")
 
-    def load(self, path: str) -> None:
-        """Load transfer state"""
-        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
+    def load(self, path: str, trusted: bool = False) -> None:
+        """Load transfer state
+
+        Args:
+            path: Checkpoint written by :meth:`save`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
+        checkpoint = torch.load(
+            path, map_location=self.device, weights_only=not trusted
+        )
 
         self.user_model.load_state_dict(checkpoint["user_model_state_dict"])
         self.domain_adapter.load_state_dict(checkpoint["domain_adapter_state_dict"])

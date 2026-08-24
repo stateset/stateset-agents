@@ -8,7 +8,7 @@ uses those value estimates as baselines for GRPO training.
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from typing import Any, cast
 
@@ -733,7 +733,13 @@ class OfflineGRPOTrainer:
                 "value_target_state_dict": self.value_target.state_dict(),
                 "value_optimizer_state_dict": self.value_optimizer.state_dict(),
                 "q_optimizer_state_dict": self.q_optimizer.state_dict(),
-                "config": self.config,
+                # Persist the config as plain data so checkpoints stay
+                # loadable under torch.load(weights_only=True).
+                "config": (
+                    asdict(self.config)
+                    if is_dataclass(self.config) and not isinstance(self.config, type)
+                    else dict(getattr(self.config, "__dict__", {}))
+                ),
                 "training_step": self.training_step,
                 "value_pretrained": self.value_pretrained,
                 "training_metrics": self.training_metrics,
@@ -742,9 +748,18 @@ class OfflineGRPOTrainer:
         )
         logger.info(f"Saved Offline GRPO trainer to {path}")
 
-    def load(self, path: str) -> None:
-        """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
+    def load(self, path: str, trusted: bool = False) -> None:
+        """Load model checkpoint
+
+        Args:
+            path: Checkpoint written by :meth:`save`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
+        checkpoint = torch.load(
+            path, map_location=self.device, weights_only=not trusted
+        )
 
         self.value_net.load_state_dict(checkpoint["value_net_state_dict"])
         self.q_net.load_state_dict(checkpoint["q_net_state_dict"])

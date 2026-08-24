@@ -439,10 +439,17 @@ class ValueFunction:
         )
         logger.info(f"Value function saved to {path}")
 
-    def load(self, path: str):
-        """Load value function state"""
+    def load(self, path: str, trusted: bool = False):
+        """Load value function state.
+
+        Args:
+            path: Checkpoint written by :meth:`save`.
+            trusted: When ``False`` (the default) the checkpoint is unpickled
+                with ``weights_only=True`` so it cannot execute code.  Pass
+                ``True`` only for checkpoints from a source you control.
+        """
         _require_torch()
-        checkpoint = torch.load(path)  # nosec: B614
+        checkpoint = torch.load(path, map_location="cpu", weights_only=not trusted)
         self.value_head.load_state_dict(checkpoint["value_head_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.gamma = checkpoint["gamma"]

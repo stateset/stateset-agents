@@ -499,9 +499,18 @@ class NeuralRewardTrainer:
             path,
         )
 
-    def load_model(self, path: str):
-        """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
+    def load_model(self, path: str, trusted: bool = False):
+        """Load model checkpoint
+
+        Args:
+            path: Checkpoint written by :meth:`save_model`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
+        checkpoint = torch.load(
+            path, map_location=self.device, weights_only=not trusted
+        )
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])

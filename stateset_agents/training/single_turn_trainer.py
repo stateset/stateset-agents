@@ -694,13 +694,22 @@ class SingleTurnGRPOTrainer:
         """Add training callback"""
         self.callbacks.append(callback)
 
-    def load_checkpoint(self, checkpoint_path: str | Path) -> bool:
-        """Load model and training state from a checkpoint directory."""
+    def load_checkpoint(
+        self, checkpoint_path: str | Path, trusted: bool = False
+    ) -> bool:
+        """Load model and training state from a checkpoint directory.
+
+        Args:
+            checkpoint_path: Directory written by :meth:`save_checkpoint`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True``.
+        """
         loaded: bool = load_checkpoint_artifacts(
             self,
             checkpoint_path,
             require_torch,
             SINGLE_TRAINER_EXCEPTIONS,
             logger,
+            trusted=trusted,
         )
         return loaded

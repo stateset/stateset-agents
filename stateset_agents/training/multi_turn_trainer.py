@@ -885,13 +885,20 @@ class MultiTurnGRPOTrainer:
         """Add training callback"""
         self.callbacks.append(callback)
 
-    def load_checkpoint(self, checkpoint_path: Any) -> bool:
-        """Load model and training state from a checkpoint directory."""
+    def load_checkpoint(self, checkpoint_path: Any, trusted: bool = False) -> bool:
+        """Load model and training state from a checkpoint directory.
+
+        Args:
+            checkpoint_path: Directory written by :meth:`save_checkpoint`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True``.
+        """
         loaded: bool = load_multi_turn_checkpoint(
             self,
             checkpoint_path,
             require_torch_fn=require_torch,
             trainer_exceptions=MULTI_TRAINER_EXCEPTIONS,
+            trusted=trusted,
         )
         return loaded
 

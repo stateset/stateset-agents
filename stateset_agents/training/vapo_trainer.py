@@ -1012,19 +1012,32 @@ class VAPOTrainer:
             config_filename="vapo_config.json",
         )
 
-    def load_checkpoint(self, checkpoint_dir: str) -> None:
-        """Load checkpoint"""
+    def load_checkpoint(self, checkpoint_dir: str, trusted: bool = False) -> None:
+        """Load checkpoint.
+
+        Args:
+            checkpoint_dir: Directory written by :meth:`save_checkpoint`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
         # Load value head
         value_head_path = os.path.join(checkpoint_dir, "value_head.pt")
         if os.path.exists(value_head_path):
             self.value_head.load_state_dict(
-                torch.load(value_head_path, map_location=self.device)  # nosec: B614
+                torch.load(
+                    value_head_path,
+                    map_location=self.device,
+                    weights_only=not trusted,
+                )
             )
 
         # Load training state
         state_path = os.path.join(checkpoint_dir, "training_state.pt")
         if os.path.exists(state_path):
-            state = torch.load(state_path, map_location=self.device)  # nosec: B614
+            state = torch.load(
+                state_path, map_location=self.device, weights_only=not trusted
+            )
             self.global_step = state["global_step"]
             self.value_warmup_complete = state.get("value_warmup_complete", True)
             self.actor_optimizer.load_state_dict(state["actor_optimizer_state_dict"])
