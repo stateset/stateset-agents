@@ -8,6 +8,7 @@ proper rank handling, memory optimization, and fault tolerance.
 import asyncio
 import logging
 import os
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -134,6 +135,13 @@ class DistributedGRPOTrainer:
         self._global_reward_mean = 0.0
         self._global_reward_sum = 0.0
         self._global_reward_count = 0
+
+        warnings.warn(
+            "DistributedGRPOTrainer is deprecated and non-functional for real "
+            "training; use stateset_agents.training.distributed.DistributedTrainer",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     def setup_distributed(self, rank: int, world_size: int):
         """Setup distributed training environment"""
@@ -340,14 +348,12 @@ class DistributedGRPOTrainer:
         return epoch_metrics
 
     async def _generate_training_data(self) -> list[dict[str, Any]]:
-        """Generate training data for the epoch"""
-        # This should be implemented based on your specific training data requirements
-        # For now, return placeholder data
-        batch_size = int(self.training_config.batch_size or 1)
-        return [
-            {"prompt": f"Training prompt {i}", "response": f"Response {i}"}
-            for i in range(batch_size)
-        ]
+        """This trainer has no data source — fabricated scenarios are not training."""
+        raise NotImplementedError(
+            "DistributedGRPOTrainer has no data source; use "
+            "stateset_agents.training.distributed.DistributedTrainer, which "
+            "drives real scenarios"
+        )
 
     def _distribute_data(self, data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Distribute training data across processes"""
@@ -427,6 +433,10 @@ class DistributedGRPOTrainer:
             scenario_id=f"step_{self.step_count}",
             trajectories=list(trajectories),
         )
+        # NOTE: the forward pass inside `compute_grpo_loss` runs through the
+        # unwrapped `agent.model`, bypassing the DDP wrapper held in
+        # `self.model`, so gradient all-reduce never fires. This is one of the
+        # reasons the class is deprecated (see the __init__ warning).
         loss_dict = compute_grpo_loss(
             trajectory_groups=[group],
             config=self.training_config,

@@ -141,15 +141,21 @@ class TestDistributedGRPOTrainer:
         distributed_config,
     ):
         """Create a DistributedGRPOTrainer for testing."""
+        import warnings
+
         from stateset_agents.training.distributed_trainer import DistributedGRPOTrainer
 
-        return DistributedGRPOTrainer(
-            agent=mock_agent,
-            environment=mock_environment,
-            reward_function=mock_reward_function,
-            training_config=training_config,
-            distributed_config=distributed_config,
-        )
+        # The class is deprecated (non-functional for real training); this
+        # fixture only exercises its inert construction-time state.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            return DistributedGRPOTrainer(
+                agent=mock_agent,
+                environment=mock_environment,
+                reward_function=mock_reward_function,
+                training_config=training_config,
+                distributed_config=distributed_config,
+            )
 
     def test_trainer_creation(self, trainer):
         """Test trainer creation."""
@@ -458,7 +464,7 @@ class TestDistributedGRPOLoss:
     """The GRPO loss must be a real function of the rewards, not a 0.0 stub."""
 
     @staticmethod
-    def _make_trainer():
+    def _construct():
         from types import SimpleNamespace
 
         from stateset_agents.training.config import TrainingConfig
@@ -500,7 +506,7 @@ class TestDistributedGRPOLoss:
                 }
 
         agent = SimpleNamespace(model=_Model(), tokenizer=_Tokenizer())
-        trainer = DistributedGRPOTrainer(
+        return DistributedGRPOTrainer(
             agent=agent,
             environment=MagicMock(),
             reward_function=MagicMock(),
@@ -509,7 +515,26 @@ class TestDistributedGRPOLoss:
             ),
             distributed_config=DistributedConfig(backend="gloo"),
         )
-        return trainer
+
+    @classmethod
+    def _make_trainer(cls):
+        """Construct the (deprecated) trainer, absorbing its expected warning."""
+        with pytest.warns(DeprecationWarning):
+            return cls._construct()
+
+    def test_init_warns_deprecated(self):
+        """Constructing the trainer must emit a DeprecationWarning."""
+        with pytest.warns(DeprecationWarning, match="DistributedGRPOTrainer"):
+            self._construct()
+
+    def test_generate_training_data_raises(self):
+        """The trainer must refuse to fabricate training data."""
+        import asyncio
+
+        trainer = self._make_trainer()
+
+        with pytest.raises(NotImplementedError, match="no data source"):
+            asyncio.run(trainer._generate_training_data())
 
     @staticmethod
     def _trajectories(n):
