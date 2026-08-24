@@ -67,7 +67,9 @@ class TestListRewards:
         from stateset_agents.mcp_server import list_rewards
 
         result = list_rewards()
-        assert result == {"rewards": ["gsm8k", "customer_support", "tool_calling"]}
+        assert result == {
+            "rewards": ["gsm8k", "customer_support", "tool_calling", "nsr"]
+        }
 
 
 class TestListModelPresets:
@@ -407,6 +409,7 @@ class TestLiveProtocolSession:
                     "gsm8k",
                     "customer_support",
                     "tool_calling",
+                    "nsr",
                 }
 
                 grade_result = await asyncio.wait_for(
