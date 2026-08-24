@@ -139,3 +139,73 @@ def test_mask_prompt_tokens_handles_zero_length_prompt(gspo_token_trainer_tiny):
     lp = torch.arange(5, dtype=torch.float).unsqueeze(0)
     masked = trainer.mask_prompt_tokens(lp, prompt_length=0)
     assert torch.equal(masked, lp)
+
+
+def _set_old_log_probs(trainer, monkeypatch, log_ratios):
+    """Point the fake generator at old log probs producing the given
+    length-normalised log importance ratios for ("ok", "nope")."""
+    responses = ["ok", "nope"]
+    with torch.no_grad():
+        cur, lengths = trainer._compute_group_sequence_log_probs("hello", responses)
+    olds = [
+        float(cur[i]) - float(lengths[i]) * log_ratios[i] for i in range(len(responses))
+    ]
+
+    async def fake_generate_group_responses(prompt, num_responses):
+        return list(zip(responses, olds, strict=True))
+
+    monkeypatch.setattr(
+        trainer.generator, "generate_group_responses", fake_generate_group_responses
+    )
+
+
+@pytest.mark.asyncio
+async def test_gspo_token_out_of_region_sequence_gets_no_gradient(
+    gspo_token_trainer_tiny, monkeypatch
+):
+    """A response whose sequence ratio is pushed past the clip boundary in the
+    direction its advantage points must contribute no gradient at all.
+
+    The clipped branch of ``min(r*A, clip(r)*A)`` has zero gradient there, so
+    weighting the token log probs by the (clipped) sequence ratio — as the
+    pre-fix code did — leaks gradient from a sample the trust region excludes.
+    """
+    trainer = gspo_token_trainer_tiny
+    import copy
+
+    baseline_state = copy.deepcopy(trainer.model.state_dict())
+
+    # Response 0 ("ok") has the positive advantage; put its ratio far above
+    # 1 + clip_range_right. Response 1 stays exactly in region (ratio == 1).
+    _set_old_log_probs(trainer, monkeypatch, [3.0, 0.0])
+    await trainer.train_step_token_level(["hello"], num_groups=1)
+    grads_gated = {
+        n: p.grad.detach().clone()
+        for n, p in trainer.model.named_parameters()
+        if p.grad is not None
+    }
+    assert grads_gated
+
+    # Reference run: identical inputs, but response 0's advantage forced to 0
+    # so it provably contributes nothing.
+    trainer.model.load_state_dict(baseline_state)
+    real_advantages = trainer.compute_group_advantages
+
+    def zero_first_advantage(rewards):
+        advantages, stats = real_advantages(rewards)
+        advantages = advantages.clone()
+        advantages[0] = 0.0
+        return advantages, stats
+
+    monkeypatch.setattr(trainer, "compute_group_advantages", zero_first_advantage)
+    _set_old_log_probs(trainer, monkeypatch, [3.0, 0.0])
+    await trainer.train_step_token_level(["hello"], num_groups=1)
+    grads_removed = {
+        n: p.grad.detach().clone()
+        for n, p in trainer.model.named_parameters()
+        if p.grad is not None
+    }
+
+    assert set(grads_gated) == set(grads_removed)
+    for name, g in grads_gated.items():
+        assert torch.allclose(g, grads_removed[name], atol=1e-6), name

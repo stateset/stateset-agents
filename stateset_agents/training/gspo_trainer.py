@@ -35,6 +35,7 @@ from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction as MultiObjectiveReward,
 )
 
+from . import rl_losses
 from .gspo_config import GSPOConfig
 from .gspo_generation import (
     VLLM_AVAILABLE,
@@ -651,15 +652,12 @@ class GSPOTrainer:
 
             # Compute policy loss using GSPO objective
             # J_GSPO = E[1/G * Σ min(s_i(θ) * Â_i, clip(s_i(θ)) * Â_i)]
-
-            # Unclipped objective
-            unclipped_obj = importance_ratios * advantages
-
-            # Clipped objective
-            clipped_obj = clipped_ratios * advantages
-
-            # Take minimum (conservative policy update)
-            policy_loss = -torch.min(unclipped_obj, clipped_obj).mean()
+            policy_loss = rl_losses.clipped_surrogate(
+                importance_ratios,
+                advantages,
+                clip_low=self.config.clip_range_left,
+                clip_high=self.config.clip_range_right,
+            ).mean()
 
             # Add KL penalty if specified
             if self.config.beta > 0 and self.ref_model is not None:
@@ -668,9 +666,14 @@ class GSPOTrainer:
                 if model_device is not None:
                     ref_log_probs = ref_log_probs.to(model_device)
 
-                # KL = log(π_θ/π_ref) = log π_θ - log π_ref
-                kl_div = (current_log_probs - ref_log_probs) / sequence_lengths
-                kl_penalty = self.config.beta * kl_div.mean()
+                # k3 on the length-normalised sequence log-probs (one value
+                # per response): non-negative, and its gradient's expectation
+                # is the true KL gradient.
+                kl_div = rl_losses.k3_kl(
+                    current_log_probs / sequence_lengths,
+                    ref_log_probs / sequence_lengths,
+                )
+                kl_penalty = self.config.beta * kl_div
 
                 total_loss_item = policy_loss + kl_penalty
             else:
