@@ -63,3 +63,30 @@ def group_advantages(rewards: Any, *, normalize: bool = True, eps: float = 1e-8)
     if not torch.isfinite(std) or std <= eps:
         return torch.zeros_like(rewards)
     return adv / (std + eps)
+
+
+def clipped_surrogate(ratio: Any, advantages: Any, *, clip_low: float, clip_high: float) -> Any:
+    """PPO/GSPO/DAPO clipped surrogate *loss* (elementwise, not reduced).
+
+    ``-min(r·A, clip(r)·A)``. When the ratio leaves the trust region on the
+    side the advantage would push it, the clipped branch is selected and,
+    because ``clamp`` has zero gradient there, the sample contributes no
+    gradient — that is the mechanism that bounds the policy step.
+    """
+    torch = _t()
+    clipped = torch.clamp(ratio, 1.0 - clip_low, 1.0 + clip_high)
+    return -torch.min(ratio * advantages, clipped * advantages)
+
+
+def sequence_ratio(logp_cur: Any, logp_old: Any, mask: Any) -> Any:
+    """GSPO length-normalised sequence importance ratio, one value per row."""
+    torch = _t()
+    mask = mask.to(logp_cur.dtype)
+    log_ratio = ((logp_cur - logp_old) * mask).sum(-1) / torch.clamp(mask.sum(-1), min=1.0)
+    return torch.exp(log_ratio)
+
+
+def clip_fraction(ratio: Any, *, clip_low: float, clip_high: float) -> float:
+    """Fraction of ratios outside the trust region (for logging)."""
+    out = (ratio < 1.0 - clip_low) | (ratio > 1.0 + clip_high)
+    return float(out.float().mean().item()) if ratio.numel() else 0.0

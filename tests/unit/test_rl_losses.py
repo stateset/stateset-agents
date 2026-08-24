@@ -57,3 +57,34 @@ def test_group_advantages_constant_rewards_zero():
 def test_group_advantages_unnormalized():
     r = torch.tensor([0.0, 2.0])
     torch.testing.assert_close(L.group_advantages(r, normalize=False), torch.tensor([-1.0, 1.0]))
+
+
+def test_clipped_surrogate_zero_advantage_zero_grad():
+    logp = torch.zeros(3, requires_grad=True)
+    ratio = torch.exp(logp - torch.tensor([0.1, -0.1, 0.0]))
+    loss = L.clipped_surrogate(ratio, torch.zeros(3), clip_low=0.2, clip_high=0.2).sum()
+    loss.backward()
+    assert torch.equal(logp.grad, torch.zeros(3))
+
+
+def test_clipped_surrogate_out_of_region_has_zero_grad_inside_has_grad():
+    # ratio 1.5 with A>0 is above 1+clip_high -> clipped branch wins -> no grad
+    logp = torch.tensor([0.0, 0.0], requires_grad=True)
+    old = torch.tensor([-0.405465, 0.0])  # exp(0.405)=1.5 ; exp(0)=1.0
+    ratio = torch.exp(logp - old)
+    loss = L.clipped_surrogate(ratio, torch.tensor([1.0, 1.0]), clip_low=0.2, clip_high=0.2).sum()
+    loss.backward()
+    assert logp.grad[0].item() == 0.0
+    assert logp.grad[1].item() != 0.0
+
+
+def test_sequence_ratio_length_normalised():
+    cur = torch.tensor([[0.0, -1.0, -1.0]])
+    old = torch.tensor([[0.0, -2.0, -2.0]])
+    mask = torch.tensor([[0.0, 1.0, 1.0]])
+    torch.testing.assert_close(L.sequence_ratio(cur, old, mask), torch.tensor([torch.e]))
+
+
+def test_clip_fraction():
+    ratio = torch.tensor([1.0, 1.5, 0.5, 1.1])
+    assert L.clip_fraction(ratio, clip_low=0.2, clip_high=0.2) == pytest.approx(0.5)
