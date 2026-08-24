@@ -88,3 +88,26 @@ def test_sequence_ratio_length_normalised():
 def test_clip_fraction():
     ratio = torch.tensor([1.0, 1.5, 0.5, 1.1])
     assert L.clip_fraction(ratio, clip_low=0.2, clip_high=0.2) == pytest.approx(0.5)
+
+
+def test_k3_kl_nonnegative_and_zero_at_equality():
+    cur = torch.tensor([[-1.0, -2.0]]); ref = torch.tensor([[-1.5, -1.0]])
+    assert L.k3_kl(cur, ref).item() >= 0
+    assert L.k3_kl(cur, cur).item() == 0.0
+
+
+def test_k3_kl_gradient_pulls_toward_ref():
+    ref = torch.tensor([[-1.0, -1.0]])
+    cur = torch.tensor([[-2.0, -0.5]], requires_grad=True)
+    before = L.k3_kl(cur, ref)
+    before.backward()
+    with torch.no_grad():
+        cur2 = cur - 0.1 * cur.grad
+    after = L.k3_kl(cur2, ref)
+    assert after.item() < before.item()
+
+
+def test_k3_kl_respects_mask():
+    cur = torch.tensor([[0.0, -5.0]]); ref = torch.tensor([[0.0, 0.0]])
+    mask = torch.tensor([[1.0, 0.0]])
+    assert L.k3_kl(cur, ref, mask).item() == 0.0

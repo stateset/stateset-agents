@@ -90,3 +90,19 @@ def clip_fraction(ratio: Any, *, clip_low: float, clip_high: float) -> float:
     """Fraction of ratios outside the trust region (for logging)."""
     out = (ratio < 1.0 - clip_low) | (ratio > 1.0 + clip_high)
     return float(out.float().mean().item()) if ratio.numel() else 0.0
+
+
+def k3_kl(logp_cur: Any, logp_ref: Any, mask: Any | None = None) -> Any:
+    """Schulman's k3 estimator of KL(π_cur ‖ π_ref) from sampled log-probs.
+
+    ``k3 = exp(r) − r − 1`` with ``r = log π_ref − log π_cur``. It is
+    non-negative, unbiased, and — unlike the naive ``log π_cur − log π_ref``
+    — has a gradient whose expectation is the true KL gradient, so the
+    penalty actually pulls the policy toward the reference.
+    """
+    torch = _t()
+    r = logp_ref.detach() - logp_cur
+    k3 = torch.exp(r) - r - 1.0
+    if mask is None:
+        return k3.mean()
+    return masked_mean(k3, mask, mode="seq")
