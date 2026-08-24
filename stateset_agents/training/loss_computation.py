@@ -16,6 +16,7 @@ from typing import Any
 import numpy as np
 
 from ..exceptions import LOSS_EXCEPTIONS
+from . import rl_losses
 from .trainer_utils import get_amp, get_functional, get_torch, require_torch
 
 logger = logging.getLogger(__name__)
@@ -249,10 +250,11 @@ def _compute_group_policy_loss(
     entropy_count = 0
 
     # PPO-style clipping ratio (falls back to advantage clipping when old log probs are absent).
+    # `clip_ratio` stays the on/off switch, but the clip magnitude comes from
+    # `seq_clip_ratio`: the ratio here is a per-token-mean sequence ratio, so it
+    # needs a GSPO-scale bound (+/-0.2 would never trigger).
     clip_ratio = getattr(config, "clip_ratio", getattr(config, "clip_epsilon", 0.2))
-    # Token-level loss normalization — divide loss by response token count to
-    # prevent bias toward longer sequences (aligned with DAPO's approach).
-    use_token_level = getattr(config, "token_level_loss", False)
+    seq_clip = getattr(config, "seq_clip_ratio", 3e-4)
 
     for traj_idx, (trajectory, advantage) in enumerate(
         zip(group.trajectories, advantages, strict=False)
@@ -298,7 +300,6 @@ def _compute_group_policy_loss(
                     # consistently against `old_log_prob` (also a raw sum).
                     new_log_prob = -(outputs.loss * token_count)
 
-                used_ratio_clipping = False
                 # Optional: PPO-style clipping when old log probs are available.
                 if (
                     clip_ratio > 0
@@ -307,13 +308,9 @@ def _compute_group_policy_loss(
                     and token_count > 0
                 ):
                     ratio = compute_ppo_ratio(new_log_prob, old_log_prob, token_count)
-                    surrogate = ratio * advantage
-                    clipped = (
-                        torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
-                        * advantage
+                    policy_loss = rl_losses.clipped_surrogate(
+                        ratio, advantage, clip_low=seq_clip, clip_high=seq_clip
                     )
-                    policy_loss = -torch.min(surrogate, clipped)
-                    used_ratio_clipping = True
                 elif clip_ratio > 0:
                     global _warned_missing_log_probs
                     if not _warned_missing_log_probs:
@@ -326,20 +323,9 @@ def _compute_group_policy_loss(
                     # clip_ratio operates in ratio space, not advantage magnitude.
                     policy_loss = advantage * nll
 
-                # Token-level normalization: divide by response token count
-                # to avoid biasing toward longer sequences. When ratio
-                # clipping was used, the length normalization already lives
-                # inside the ratio (mean log-prob), so skip it here to avoid
-                # double-normalizing.
-                if (
-                    use_token_level
-                    and not used_ratio_clipping
-                    and torch.is_tensor(labels)
-                ):
-                    _mask = labels.ne(-100)
-                    _tc = int(_mask.sum().item())
-                    if _tc > 1:
-                        policy_loss = policy_loss / _tc
+                # outputs.loss is already the per-token mean NLL, and the
+                # clipped branch normalizes inside the ratio; no further
+                # length division (dividing again gave a 1/L^2 bias).
 
                 # Differentiable entropy bonus: computed from the same
                 # grad-enabled forward pass's logits, so it actually
@@ -472,15 +458,13 @@ def compute_enhanced_grpo_loss(
                 if torch.is_tensor(labels):
                     token_count = int(labels.ne(-100).sum().item())
 
+                seq_clip = getattr(config, "seq_clip_ratio", 3e-4)
                 if clip_ratio > 0 and old_log_prob is not None and token_count > 0:
                     new_log_prob = -(nll * token_count)
                     ratio = compute_ppo_ratio(new_log_prob, old_log_prob, token_count)
-                    surrogate = ratio * advantage
-                    clipped = (
-                        torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
-                        * advantage
+                    policy_loss = rl_losses.clipped_surrogate(
+                        ratio, advantage, clip_low=seq_clip, clip_high=seq_clip
                     )
-                    policy_loss = -torch.min(surrogate, clipped)
 
                 all_losses.append(policy_loss)
 
