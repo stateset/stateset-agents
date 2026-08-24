@@ -125,6 +125,8 @@ dparse==0.6.4
     #   safety-schemas
 exceptiongroup==1.2.2
     # via semgrep
+execnet==2.1.2
+    # via pytest-xdist
 face==26.0.1
     # via glom
 farama-notifications==0.0.6
@@ -438,12 +440,15 @@ pytest==9.1.1
     #   pytest-asyncio
     #   pytest-benchmark
     #   pytest-cov
+    #   pytest-xdist
     #   stateset-agents (pyproject.toml)
 pytest-asyncio==1.4.0
     # via stateset-agents (pyproject.toml)
 pytest-benchmark==5.2.3
     # via stateset-agents (pyproject.toml)
 pytest-cov==7.1.0
+    # via stateset-agents (pyproject.toml)
+pytest-xdist==3.8.0
     # via stateset-agents (pyproject.toml)
 python-dateutil==2.9.0.post0
     # via pandas
