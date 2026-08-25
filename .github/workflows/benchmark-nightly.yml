@@ -47,8 +47,12 @@ jobs:
 
       - name: Run full benchmark suite
         run: |
+          # -n0 overrides the repo-wide `-n auto` (pytest.ini addopts): pytest-benchmark
+          # auto-disables itself under xdist, so benchmark-results.json is never written
+          # unless benchmarks run serially in the main process.
           python -m pytest benchmarks/ tests/performance/ \
             -v \
+            -n0 \
             --benchmark-only \
             --benchmark-json=benchmark-results.json \
             --benchmark-columns=min,mean,median,stddev,rounds,iterations \

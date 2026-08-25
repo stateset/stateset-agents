@@ -44,7 +44,10 @@ jobs:
         # The pytest-benchmark regression tests live in tests/performance/
         # (benchmarks/ holds standalone scripts, which pytest collects as 0
         # items and exits 5). -m benchmark overrides the default deselect.
-        python -m pytest tests/performance -m benchmark -v --benchmark-json=benchmark-results.json
+        # -n0 overrides the repo-wide `-n auto` (pytest.ini addopts): pytest-benchmark
+        # auto-disables itself under xdist, so benchmark-results.json is never written
+        # unless benchmarks run serially in the main process.
+        python -m pytest tests/performance -m benchmark -v -n0 --benchmark-json=benchmark-results.json
 
     - name: Store benchmark result
       uses: benchmark-action/github-action-benchmark@v1
