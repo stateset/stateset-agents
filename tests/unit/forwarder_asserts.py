@@ -124,8 +124,7 @@ def _forwarded_argv(tree: ast.Module, alias: str) -> list[str] | None:
     ):
         if _calls_alias(tree, alias):
             raise AssertionError(
-                "forwarder's last top-level statement must be "
-                "sys.exit(main([...]))"
+                "forwarder's last top-level statement must be " "sys.exit(main([...]))"
             )
         return None
 

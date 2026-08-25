@@ -87,9 +87,7 @@ HEAD = (
 )
 
 
-def test_rejects_a_shim_that_stars_something_other_than_sys_argv(
-    tmp_path, monkeypatch
-):
+def test_rejects_a_shim_that_stars_something_other_than_sys_argv(tmp_path, monkeypatch):
     """``*extra`` is not ``*sys.argv[1:]``: the caller's flags never arrive."""
     _write(
         tmp_path,
