@@ -273,3 +273,21 @@ def test_vapo_policy_loss_finite_for_extreme_log_ratio(vapo_trainer_tiny):
         torch.zeros(1, 2),
     )
     assert torch.isfinite(policy_loss)
+
+
+def test_compute_token_log_probs_masks_prompt_positions(vapo_trainer_tiny):
+    """Passing the real response mask must zero prompt positions; the caller
+    masks anyway, so the losses are unchanged either way."""
+    t = vapo_trainer_tiny
+    torch.manual_seed(5)
+    input_ids = torch.randint(0, 200, (1, 8))
+    attention_mask = torch.ones(1, 8, dtype=torch.long)
+    response_mask = torch.zeros(1, 8)
+    response_mask[:, 4:] = 1.0
+
+    unmasked = t.compute_token_log_probs(input_ids, attention_mask)
+    masked = t.compute_token_log_probs(input_ids, attention_mask, response_mask)
+
+    assert masked.shape == unmasked.shape
+    assert torch.all(masked[:, :3] == 0.0)  # shifted: P-1 leading zeros
+    assert torch.allclose(masked[:, 3:], unmasked[:, 3:])

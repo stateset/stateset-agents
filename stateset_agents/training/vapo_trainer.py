@@ -515,12 +515,20 @@ class VAPOTrainer:
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
+        response_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Compute per-token log probabilities"""
+        """Compute per-token log probabilities.
+
+        ``response_mask`` (optional, for backward compatibility) zeroes
+        prompt positions up front. Every consumer masks to response tokens
+        anyway, so the losses are identical — passing the real mask just
+        avoids carrying scores that are guaranteed to be discarded.
+        """
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-        # No response mask here: every position is kept, masking happens later.
+        if response_mask is None:
+            response_mask = torch.ones_like(input_ids)
         token_log_probs, _ = rl_losses.gather_token_logprobs(
-            outputs.logits, input_ids, torch.ones_like(input_ids)
+            outputs.logits, input_ids, response_mask
         )
         return token_log_probs
 
@@ -847,7 +855,7 @@ class VAPOTrainer:
             # Get old log probs and values
             with torch.no_grad():
                 old_log_probs = self.compute_token_log_probs(
-                    batch_input_ids, batch_attention_mask
+                    batch_input_ids, batch_attention_mask, batch_response_mask
                 )
                 old_values = self.compute_values(batch_input_ids, batch_attention_mask)
 
@@ -917,7 +925,7 @@ class VAPOTrainer:
 
                 # Compute current log probs and values
                 current_log_probs = self.compute_token_log_probs(
-                    batch_input_ids, batch_attention_mask
+                    batch_input_ids, batch_attention_mask, batch_response_mask
                 )
                 current_values = self.compute_values(
                     batch_input_ids, batch_attention_mask
