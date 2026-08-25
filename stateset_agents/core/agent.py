@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
+from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
 
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
@@ -1027,28 +1028,41 @@ class MultiTurnAgent(Agent):
         return turn
 
 
-from .agent_factories import (
-    AGENT_CONFIGS,
-    _load_agent_configs,
-    create_agent,
-    create_peft_agent,
-    get_preset_config,
-    load_agent_from_checkpoint,
-    save_agent_checkpoint,
-)
-from .tool_agent import ToolAgent
+# ``agent_factories`` and ``tool_agent`` both import this module, so importing
+# them here at module level would be a cycle that only resolves by luck of
+# import order. Re-export them on first attribute access instead, which keeps
+# ``from stateset_agents.core.agent import ToolAgent`` (and the factory names)
+# working without the cycle.
+_LAZY_REEXPORTS: dict[str, str] = {
+    "AGENT_CONFIGS": ".agent_factories",
+    "_load_agent_configs": ".agent_factories",
+    "create_agent": ".agent_factories",
+    "create_peft_agent": ".agent_factories",
+    "get_preset_config": ".agent_factories",
+    "load_agent_from_checkpoint": ".agent_factories",
+    "save_agent_checkpoint": ".agent_factories",
+    "ToolAgent": ".tool_agent",
+}
 
+# Starred so the lazily re-exported names above are not flagged as undefined.
 __all__ = [
     "Agent",
     "AgentConfig",
     "ConfigValidationError",
     "MultiTurnAgent",
-    "ToolAgent",
-    "AGENT_CONFIGS",
-    "_load_agent_configs",
-    "create_agent",
-    "create_peft_agent",
-    "save_agent_checkpoint",
-    "load_agent_from_checkpoint",
-    "get_preset_config",
+    *_LAZY_REEXPORTS,
 ]
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _LAZY_REEXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = import_module(module_name, __package__)
+    value = getattr(module, name)
+    globals()[name] = value  # cache, so __getattr__ runs at most once per name
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_LAZY_REEXPORTS))

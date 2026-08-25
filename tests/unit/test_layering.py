@@ -229,3 +229,46 @@ def test_enhanced_gspo_config_is_the_canonical_one(
     monkeypatch.delitem(vars(advanced_rl_algorithms), "GSPOConfig", raising=False)
     with pytest.warns(DeprecationWarning, match="training.gspo_config"):
         assert advanced_rl_algorithms.GSPOConfig is GSPOConfig
+
+
+# --- No bottom-of-file imports under core/ ---------------------------------
+
+
+def _imports_after_first_definition(path: Path) -> list[str]:
+    """Return module-level imports that appear after the first def/class.
+
+    A top-level ``import`` placed below the definitions it feeds is a cycle
+    worked around by import order: the module only loads because something
+    else imported it first. Imports inside functions or under
+    ``if TYPE_CHECKING:`` are not module-level and do not count.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    seen_definition = False
+    offenders: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            seen_definition = True
+            continue
+        if not seen_definition:
+            continue
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                offenders.append(f"{path.name}:{node.lineno} import {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            dots = "." * node.level
+            offenders.append(
+                f"{path.name}:{node.lineno} from {dots}{node.module or ''}"
+            )
+    return offenders
+
+
+def test_core_has_no_bottom_of_file_imports() -> None:
+    offenders: list[str] = []
+    for path in _core_modules():
+        offenders.extend(_imports_after_first_definition(path))
+    assert offenders == [], (
+        "no module under stateset_agents/core may place a module-level import "
+        "after its first function or class definition: such an import is a "
+        "circular dependency that only resolves by import order. Re-export "
+        "lazily with a module-level __getattr__ instead: " + ", ".join(offenders)
+    )
