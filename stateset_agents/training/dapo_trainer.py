@@ -125,7 +125,12 @@ _vllm_backend_loaded = False
 
 def _load_vllm_backend() -> bool:
     """Lazily load vLLM backend to avoid import-time errors."""
-    global _vllm_backend_loaded, VLLMConfig, VLLMGenerator, GenerationResult, VLLM_BACKEND_AVAILABLE
+    global \
+        _vllm_backend_loaded, \
+        VLLMConfig, \
+        VLLMGenerator, \
+        GenerationResult, \
+        VLLM_BACKEND_AVAILABLE
     if _vllm_backend_loaded:
         return VLLM_BACKEND_AVAILABLE
     try:
@@ -464,9 +469,12 @@ class DAPOTrainer:
 
         r_t = pi_theta(a_t|s_t) / pi_theta_old(a_t|s_t)
             = exp(log_pi_theta - log_pi_theta_old)
+
+        The log-ratio is clamped before exponentiating (see
+        ``rl_losses.safe_exp_ratio``) so a single wildly off-policy token
+        cannot overflow to inf and make the whole batch's loss non-finite.
         """
-        log_ratio = current_log_probs - old_log_probs
-        return torch.exp(log_ratio)
+        return rl_losses.safe_exp_ratio(current_log_probs - old_log_probs)
 
     def compute_group_advantages(self, rewards: torch.Tensor) -> torch.Tensor:
         """Group-relative advantages for one group of rewards [group_size].

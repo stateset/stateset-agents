@@ -251,3 +251,25 @@ async def test_vapo_default_single_update_is_on_policy(vapo_trainer_tiny, monkey
     assert len(captured) == 1
     cur, old = captured[0]
     assert torch.allclose(cur, old, atol=1e-5)
+
+
+def test_vapo_policy_loss_finite_for_extreme_log_ratio(vapo_trainer_tiny):
+    """An extreme off-policy token must not overflow the importance ratio to
+    inf and take the whole policy loss with it."""
+    t = vapo_trainer_tiny
+    current_log_probs = torch.tensor([[200.0, 0.0]], requires_grad=True)
+    old_log_probs = torch.tensor([[0.0, 0.0]])
+    assert not torch.isfinite(torch.exp(current_log_probs - old_log_probs)).all()
+
+    policy_loss, _, _ = t.compute_vapo_losses(
+        current_log_probs,
+        old_log_probs,
+        torch.tensor([[-1.0, -1.0]]),  # policy advantages: the unclipped
+        # branch wins for a negative advantage, so an inf ratio propagates
+        torch.tensor([[0.0, 0.0]]),  # critic advantages
+        torch.zeros(1, 2),
+        torch.zeros(1, 2),
+        torch.ones(1, 2),
+        torch.zeros(1, 2),
+    )
+    assert torch.isfinite(policy_loss)

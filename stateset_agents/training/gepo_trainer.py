@@ -315,7 +315,10 @@ class GEPOTrainer:
         ) - torch.logsumexp(sampler_lp, dim=0)
 
         log_coef = learner_seq_log_probs - log_group_expectation
-        return torch.exp(torch.clamp(log_coef, min=-30.0, max=30.0))
+        # Same overflow guard as DAPO/VAPO, at GEPO's historical +/-30 bound:
+        # group coefficients are not ratios against a clip boundary, so the
+        # wider window is kept.
+        return rl_losses.safe_exp_ratio(log_coef, clamp=30.0)
 
     def compute_gepo_coefficient(
         self,

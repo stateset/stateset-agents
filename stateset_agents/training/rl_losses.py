@@ -38,6 +38,22 @@ def gather_token_logprobs(
     return token_logprobs * shifted_mask, shifted_mask
 
 
+def safe_exp_ratio(log_ratio: Any, *, clamp: float = 20.0) -> Any:
+    """``exp(log_ratio)`` with the exponent clamped to ``[-clamp, +clamp]``.
+
+    A raw ``exp`` of a log-ratio overflows to ``inf`` past ~88 in fp32, and an
+    ``inf`` ratio makes the surrogate loss (and every gradient in the batch)
+    non-finite. Early in training, or after a bad update, individual token
+    log-ratios genuinely do reach those magnitudes. Clamping first keeps the
+    ratio finite; the clamped region has zero gradient, which is the right
+    behaviour anyway since such a sample is far outside any trust region.
+    ``exp(±20) ~ 5e8 / 2e-9`` is already several orders of magnitude beyond
+    every clip boundary, so in-region samples are untouched.
+    """
+    torch = _t()
+    return torch.exp(torch.clamp(log_ratio, min=-clamp, max=clamp))
+
+
 def masked_mean(x: Any, mask: Any, *, mode: str = "token") -> Any:
     """Mean of ``x`` over positions where ``mask`` is 1.
 

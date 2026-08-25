@@ -165,3 +165,21 @@ def test_group_of_one_advantage_is_finite(dapo_trainer_factory):
     adv = trainer.compute_group_advantages(torch.tensor([0.3]))
     assert torch.isfinite(adv).all()
     assert adv.item() == 0.0
+
+
+def test_importance_ratio_finite_for_extreme_log_ratio(dapo_trainer_factory):
+    """A token 50 nats off-policy must give a finite ratio (raw exp overflows
+    fp32 past ~88 and would poison the batch loss)."""
+    trainer = dapo_trainer_factory(tiny_model())
+    current = torch.tensor([[50.0, 200.0, 0.0]])
+    old = torch.tensor([[0.0, 0.0, 0.0]])
+    ratio = trainer.compute_importance_ratio(current, old)
+    assert torch.isfinite(ratio).all()
+    # Raw exp(200) is +inf in fp32; the clamp caps the exponent at 20.
+    assert not torch.isfinite(torch.exp(current - old)).all()
+    assert ratio[0, 1].item() == ratio[0, 0].item()
+
+    loss = trainer.compute_dapo_loss(
+        ratio, torch.tensor([[1.0, 1.0, 1.0]]), torch.tensor([[1.0, 1.0, 1.0]])
+    )
+    assert torch.isfinite(loss).all()

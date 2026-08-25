@@ -728,9 +728,10 @@ class VAPOTrainer:
         2. Value loss (decoupled GAE: value target from critic-lambda GAE)
         3. Positive example LM loss
         """
-        # Importance ratios
-        log_ratio = current_log_probs - old_log_probs.detach()
-        ratio = torch.exp(log_ratio)
+        # Importance ratios. Clamped before exp (see
+        # rl_losses.safe_exp_ratio): a single wildly off-policy token would
+        # otherwise overflow to inf and make the whole loss non-finite.
+        ratio = rl_losses.safe_exp_ratio(current_log_probs - old_log_probs.detach())
 
         # Clip-Higher (asymmetric); clipped_surrogate is already a loss, so no
         # extra sign flip here.

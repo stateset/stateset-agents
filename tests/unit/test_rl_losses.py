@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 torch = pytest.importorskip("torch")
@@ -131,3 +133,31 @@ def test_k3_kl_respects_mask():
     ref = torch.tensor([[0.0, 0.0]])
     mask = torch.tensor([[1.0, 0.0]])
     assert L.k3_kl(cur, ref, mask).item() == 0.0
+
+
+def test_safe_exp_ratio_is_finite_for_huge_log_ratios():
+    log_ratio = torch.tensor([50.0, -50.0, 0.0])
+    ratio = L.safe_exp_ratio(log_ratio)
+    assert torch.isfinite(ratio).all()
+    assert ratio[2].item() == pytest.approx(1.0)
+    assert ratio[0].item() == pytest.approx(math.exp(20.0))
+    assert ratio[1].item() == pytest.approx(math.exp(-20.0))
+
+
+def test_safe_exp_ratio_is_transparent_inside_the_clamp():
+    log_ratio = torch.tensor([0.5, -0.5])
+    assert torch.allclose(L.safe_exp_ratio(log_ratio), torch.exp(log_ratio))
+
+
+def test_safe_exp_ratio_custom_clamp():
+    log_ratio = torch.tensor([100.0])
+    assert L.safe_exp_ratio(log_ratio, clamp=30.0).item() == pytest.approx(
+        math.exp(30.0)
+    )
+
+
+def test_safe_exp_ratio_keeps_gradients_inside_the_clamp():
+    log_ratio = torch.tensor([0.25], requires_grad=True)
+    L.safe_exp_ratio(log_ratio).backward()
+    assert log_ratio.grad is not None
+    assert log_ratio.grad.item() == pytest.approx(math.exp(0.25))
