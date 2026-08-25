@@ -44,6 +44,46 @@ class ModelPreset:
     driver's own ``build_gspo_config``.
     """
 
+    cli_command: str | None = None
+    """Name of the packaged ``stateset-agents <cli_command>`` Typer command
+    generated for this preset (e.g. ``"qwen3-5-0-8b"``). CLI command names do
+    not always match the preset key (``qwen3.5-0.8b``), so the mapping is
+    explicit. ``None`` means no CLI command is generated for this preset.
+    """
+
+    cli_display_name: str = ""
+    """Long label used in ``--help`` text and the command docstring
+    (e.g. ``"Qwen/Qwen3.5-0.8B"``)."""
+
+    cli_echo_label: str = ""
+    """Short label used in the command's console messages
+    (e.g. ``"Qwen3.5-0.8B"``)."""
+
+    cli_write_label: str = ""
+    """Label used in the ``--write-config`` help string (e.g. ``"Qwen"``)."""
+
+    cli_config_stem: str = ""
+    """File stem suggested by the dry-run ``--write-config`` hint
+    (e.g. ``"qwen3_5_0_8b"`` for ``./qwen3_5_0_8b.json``)."""
+
+    cli_symbol_prefix: str = ""
+    """Prefix of the starter module's module-level constants
+    (e.g. ``"QWEN35_08B"`` for ``QWEN35_08B_TASK_CHOICES``)."""
+
+    cli_symbol_infix: str = ""
+    """Infix of the starter module's helper functions
+    (e.g. ``"qwen3_5"`` for ``get_qwen3_5_config``)."""
+
+    cli_run_function: str | None = None
+    """Name of the starter's run function. Defaults to
+    ``run_<cli_symbol_infix>_config`` when ``None``."""
+
+    cli_model_help_verb: str = "prefer"
+    """Verb used in the ``--model`` help string ("prefer" or "use")."""
+
+    cli_default_iterations: int = 16
+    """Fallback used by ``--iterations`` coercion when the value is invalid."""
+
 
 PRESETS: dict[str, ModelPreset] = {
     "muse-glimmer": ModelPreset(
@@ -71,6 +111,13 @@ PRESETS: dict[str, ModelPreset] = {
             "to the packaged starter rather than duplicating hyperparameters."
         ),
         starter_module="muse_glimmer_starter",
+        cli_command="muse-glimmer",
+        cli_display_name="meta-models/Muse-Glimmer-30B",
+        cli_echo_label="Muse Glimmer",
+        cli_write_label="Muse Glimmer",
+        cli_config_stem="muse_glimmer",
+        cli_symbol_prefix="MUSE_GLIMMER",
+        cli_symbol_infix="muse_glimmer",
     ),
     "nemotron-3-5": ModelPreset(
         model_id="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
@@ -96,6 +143,13 @@ PRESETS: dict[str, ModelPreset] = {
             "to the packaged starter rather than duplicating hyperparameters."
         ),
         starter_module="nemotron_3_5_starter",
+        cli_command="nemotron-3-5",
+        cli_display_name="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        cli_echo_label="Nemotron 3.5",
+        cli_write_label="Nemotron 3.5",
+        cli_config_stem="nemotron_3_5",
+        cli_symbol_prefix="NEMOTRON_3_5",
+        cli_symbol_infix="nemotron_3_5",
     ),
     "qwen3.8-27b": ModelPreset(
         model_id="Qwen/Qwen3.8-27B",
@@ -124,6 +178,13 @@ PRESETS: dict[str, ModelPreset] = {
             "to the packaged starter rather than duplicating hyperparameters."
         ),
         starter_module="qwen3_8_starter",
+        cli_command="qwen3-8-27b",
+        cli_display_name="Qwen/Qwen3.8-27B",
+        cli_echo_label="Qwen3.8 27B",
+        cli_write_label="Qwen3.8 27B",
+        cli_config_stem="qwen3_8_27b",
+        cli_symbol_prefix="QWEN38_27B",
+        cli_symbol_infix="qwen3_8",
     ),
     "qwen3-coder": ModelPreset(
         model_id="Qwen/Qwen3-Coder-30B-A3B-Instruct",
@@ -149,6 +210,13 @@ PRESETS: dict[str, ModelPreset] = {
             "impractical LoRA targets."
         ),
         starter_module="qwen3_coder_starter",
+        cli_command="qwen3-coder",
+        cli_display_name="Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        cli_echo_label="Qwen3 Coder",
+        cli_write_label="Qwen3 Coder",
+        cli_config_stem="qwen3_coder",
+        cli_symbol_prefix="QWEN3_CODER",
+        cli_symbol_infix="qwen3_coder",
     ),
     "gpt-oss": ModelPreset(
         model_id="openai/gpt-oss-20b",
@@ -174,6 +242,13 @@ PRESETS: dict[str, ModelPreset] = {
             "weight map); the MoE expert weights are fused per-layer tensors."
         ),
         starter_module="gpt_oss_starter",
+        cli_command="gpt-oss",
+        cli_display_name="openai/gpt-oss-20b",
+        cli_echo_label="gpt-oss",
+        cli_write_label="gpt-oss",
+        cli_config_stem="gpt_oss",
+        cli_symbol_prefix="GPT_OSS",
+        cli_symbol_infix="gpt_oss",
     ),
     "deepseek-v4": ModelPreset(
         model_id="deepseek-ai/DeepSeek-V4-Flash",
@@ -201,6 +276,13 @@ PRESETS: dict[str, ModelPreset] = {
             "v_proj do not exist in this architecture."
         ),
         starter_module="deepseek_v4_starter",
+        cli_command="deepseek-v4",
+        cli_display_name="deepseek-ai/DeepSeek-V4-Flash",
+        cli_echo_label="deepseek-v4",
+        cli_write_label="deepseek-v4",
+        cli_config_stem="deepseek_v4",
+        cli_symbol_prefix="DEEPSEEK_V4",
+        cli_symbol_infix="deepseek_v4",
     ),
     "kimi-k3": ModelPreset(
         model_id="moonshotai/Kimi-K3",
@@ -227,6 +309,13 @@ PRESETS: dict[str, ModelPreset] = {
             "packaged starter rather than duplicating hyperparameters."
         ),
         starter_module="kimi_k3_starter",
+        cli_command="kimi-k3",
+        cli_display_name="moonshotai/Kimi-K3",
+        cli_echo_label="Kimi-K3",
+        cli_write_label="Kimi",
+        cli_config_stem="kimi_k3",
+        cli_symbol_prefix="KIMI_K3",
+        cli_symbol_infix="kimi_k3",
     ),
     "kimi-k2.5": ModelPreset(
         model_id="moonshotai/Kimi-K2.5",
@@ -287,6 +376,13 @@ PRESETS: dict[str, ModelPreset] = {
             "the packaged starter."
         ),
         starter_module="kimi_k2_6_starter",
+        cli_command="kimi-k2-6",
+        cli_display_name="moonshotai/Kimi-K2.6",
+        cli_echo_label="Kimi-K2.6",
+        cli_write_label="Kimi",
+        cli_config_stem="kimi_k2_6",
+        cli_symbol_prefix="KIMI_K26",
+        cli_symbol_infix="kimi_k2_6",
     ),
     "glm5.1": ModelPreset(
         model_id="zai-org/GLM-5.1",
@@ -389,6 +485,15 @@ PRESETS: dict[str, ModelPreset] = {
             "over the same packaged starter."
         ),
         starter_module="qwen3_5_starter",
+        cli_command="qwen3-5-0-8b",
+        cli_display_name="Qwen/Qwen3.5-0.8B",
+        cli_echo_label="Qwen3.5-0.8B",
+        cli_write_label="Qwen",
+        cli_config_stem="qwen3_5_0_8b",
+        cli_symbol_prefix="QWEN35_08B",
+        cli_symbol_infix="qwen3_5",
+        cli_run_function="run_qwen3_5_0_8b_config",
+        cli_default_iterations=25,
     ),
     "qwen3.5-27b": ModelPreset(
         model_id="Qwen/Qwen3.5-27B",
@@ -470,6 +575,15 @@ PRESETS: dict[str, ModelPreset] = {
             "the same packaged starter."
         ),
         starter_module="gemma4_starter",
+        cli_command="gemma-4-31b",
+        cli_display_name="Gemma 4 31B",
+        cli_echo_label="Gemma 4 31B",
+        cli_write_label="Gemma",
+        cli_config_stem="gemma4_31b",
+        cli_symbol_prefix="GEMMA4_31B",
+        cli_symbol_infix="gemma4_31b",
+        cli_model_help_verb="use",
+        cli_default_iterations=20,
     ),
     "llama3": ModelPreset(
         model_id="meta-llama/Llama-3.1-8B-Instruct",

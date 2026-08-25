@@ -10,6 +10,7 @@ these commands.
 
 from __future__ import annotations
 
+import importlib
 import json
 import typing as t
 
@@ -26,6 +27,7 @@ from stateset_agents.cli import (
     CLI_TRAIN_EXCEPTIONS,
     app,
 )
+from stateset_agents.core.model_presets import PRESETS, ModelPreset
 
 # Convenience re-exports — these helpers are NOT patched by any test, so a
 # local rebinding is fine and keeps function bodies readable.
@@ -223,2629 +225,309 @@ def train(
     raise typer.Exit(code=0)
 
 
-@app.command("qwen3-5-0-8b")
-def qwen3_5_0_8b(
-    config: str | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to a Qwen/Qwen3.5-0.8B starter config file (JSON/YAML).",
-    ),
-    task: str = typer.Option(
-        "customer_service",
-        help="Task preset for the Qwen/Qwen3.5-0.8B starter path.",
-    ),
-    starter_profile: str = typer.Option(
-        "balanced",
-        "--starter-profile",
-        help="Starter profile: balanced, memory, or quality.",
-    ),
-    list_profiles: bool = typer.Option(
-        False,
-        "--list-profiles",
-        help="Describe all built-in starter profiles and exit.",
-    ),
-    model: str = typer.Option(
-        "Qwen/Qwen3.5-0.8B-Base",
-        "--model",
-        help="Model name. For post-training, prefer Qwen/Qwen3.5-0.8B-Base.",
-    ),
-    use_lora: bool | None = typer.Option(
-        None,
-        "--use-lora/--no-lora",
-        help="Override LoRA usage. Defaults come from --starter-profile.",
-    ),
-    use_4bit: bool | None = typer.Option(
-        None,
-        "--use-4bit/--no-use-4bit",
-        help="Override 4-bit quantization. Defaults come from --starter-profile.",
-    ),
-    use_8bit: bool | None = typer.Option(
-        None,
-        "--use-8bit/--no-use-8bit",
-        help="Override 8-bit quantization. Defaults come from --starter-profile.",
-    ),
-    output_dir: str | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Override the output directory for checkpoints and adapters.",
-    ),
-    iterations: int | None = typer.Option(
-        None,
-        "--iterations",
-        help="Override the outer GSPO iteration count for the starter run.",
-    ),
-    wandb: bool = typer.Option(
-        False,
-        "--wandb",
-        help="Enable Weights & Biases logging.",
-    ),
-    wandb_project: str | None = typer.Option(
-        None,
-        "--wandb-project",
-        help="Optional W&B project name.",
-    ),
-    write_config: str | None = typer.Option(
-        None,
-        "--write-config",
-        help="Write the resolved Qwen starter config to JSON/YAML and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--no-dry-run",
-        help="Preview the resolved config instead of loading a model.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "--json-output",
-        help="Output machine-readable JSON.",
-    ),
-) -> None:
-    """Preview or run the dedicated Qwen/Qwen3.5-0.8B GSPO starter path."""
-    try:
-        from stateset_agents.training.qwen3_5_starter import (
-            QWEN35_08B_BASE_MODEL,
-            QWEN35_08B_STARTER_PROFILE_CHOICES,
-            QWEN35_08B_TASK_CHOICES,
-            create_qwen3_5_preview,
-            describe_qwen3_5_starter_profiles,
-            get_qwen3_5_config,
-            load_qwen3_5_config_file,
-            run_qwen3_5_0_8b_config,
-            write_qwen3_5_config_file,
-        )
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Qwen3.5-0.8B starter helpers unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
+def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
+    """Register one per-model GSPO starter command for ``preset``.
 
-    if list_profiles:
-        if config is not None:
-            _echo("`--list-profiles` cannot be combined with `--config`.")
-            raise typer.Exit(code=2)
-        if task not in QWEN35_08B_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(QWEN35_08B_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
+    Every packaged starter exposes the same nine symbols and the commands that
+    drive them were byte-identical apart from a handful of labels, so one
+    closure covers all of them. The parameter list below is the command's real
+    signature — Typer introspects it directly, which keeps ``--help`` output
+    (flag names, order, defaults and help strings) identical to the ten
+    hand-written commands this replaced.
+    """
 
-        profile_catalog = describe_qwen3_5_starter_profiles(
-            task=task,
-            model_name=model,
-        )
-        if json_output:
-            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
-            return
+    display = preset.cli_display_name
+    label = preset.cli_echo_label
+    module = f"stateset_agents.training.{preset.starter_module}"
+    command_name = preset.cli_command
+    run_function = preset.cli_run_function or f"run_{preset.cli_symbol_infix}_config"
 
-        _echo("Available Qwen3.5-0.8B starter profiles:")
-        _echo(f"Model: {profile_catalog['model_name']}")
-        _echo(f"Task: {profile_catalog['task']}")
-        for profile_name in QWEN35_08B_STARTER_PROFILE_CHOICES:
-            profile_payload = profile_catalog["profiles"][profile_name]
-            summary = profile_payload["summary"]
-            _echo(f"- {profile_name}: {profile_payload['description']}")
-            _echo(
-                "  "
-                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
-                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
-                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
-            )
-        return
-
-    if config:
-        conflicting_options: list[str] = []
-        if task != "customer_service":
-            conflicting_options.append("--task")
-        if starter_profile != "balanced":
-            conflicting_options.append("--starter-profile")
-        if model != QWEN35_08B_BASE_MODEL:
-            conflicting_options.append("--model")
-        if use_lora is not None:
-            conflicting_options.append("--use-lora/--no-lora")
-        if use_4bit is not None:
-            conflicting_options.append("--use-4bit")
-        if use_8bit is not None:
-            conflicting_options.append("--use-8bit")
-        if output_dir is not None:
-            conflicting_options.append("--output-dir")
-        if iterations is not None:
-            conflicting_options.append("--iterations")
-        if wandb:
-            conflicting_options.append("--wandb")
-        if wandb_project is not None:
-            conflicting_options.append("--wandb-project")
-        if conflicting_options:
-            _echo(
-                "`--config` cannot be combined with starter override options: "
-                + ", ".join(conflicting_options)
-            )
-            raise typer.Exit(code=2)
+    def model_command(
+        config: str | None = typer.Option(
+            None,
+            "--config",
+            "-c",
+            help=f"Path to a {display} starter config file (JSON/YAML).",
+        ),
+        task: str = typer.Option(
+            "customer_service",
+            help=f"Task preset for the {display} starter path.",
+        ),
+        starter_profile: str = typer.Option(
+            "balanced",
+            "--starter-profile",
+            help="Starter profile: balanced, memory, or quality.",
+        ),
+        list_profiles: bool = typer.Option(
+            False,
+            "--list-profiles",
+            help="Describe all built-in starter profiles and exit.",
+        ),
+        model: str = typer.Option(
+            preset.model_id,
+            "--model",
+            help=(
+                "Model name. For post-training, "
+                f"{preset.cli_model_help_verb} {preset.model_id}."
+            ),
+        ),
+        use_lora: bool | None = typer.Option(
+            None,
+            "--use-lora/--no-lora",
+            help="Override LoRA usage. Defaults come from --starter-profile.",
+        ),
+        use_4bit: bool | None = typer.Option(
+            None,
+            "--use-4bit/--no-use-4bit",
+            help="Override 4-bit quantization. Defaults come from --starter-profile.",
+        ),
+        use_8bit: bool | None = typer.Option(
+            None,
+            "--use-8bit/--no-use-8bit",
+            help="Override 8-bit quantization. Defaults come from --starter-profile.",
+        ),
+        output_dir: str | None = typer.Option(
+            None,
+            "--output-dir",
+            help="Override the output directory for checkpoints and adapters.",
+        ),
+        iterations: int | None = typer.Option(
+            None,
+            "--iterations",
+            help="Override the outer GSPO iteration count for the starter run.",
+        ),
+        wandb: bool = typer.Option(
+            False,
+            "--wandb",
+            help="Enable Weights & Biases logging.",
+        ),
+        wandb_project: str | None = typer.Option(
+            None,
+            "--wandb-project",
+            help="Optional W&B project name.",
+        ),
+        write_config: str | None = typer.Option(
+            None,
+            "--write-config",
+            help=(
+                f"Write the resolved {preset.cli_write_label} starter config "
+                "to JSON/YAML and exit."
+            ),
+        ),
+        dry_run: bool = typer.Option(
+            True,
+            "--dry-run/--no-dry-run",
+            help="Preview the resolved config instead of loading a model.",
+        ),
+        json_output: bool = typer.Option(
+            False,
+            "--json",
+            "--json-output",
+            help="Output machine-readable JSON.",
+        ),
+    ) -> None:
         try:
-            resolved_config = load_qwen3_5_config_file(config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to load Qwen3.5-0.8B config: {e}")
-            raise typer.Exit(code=2) from e
-    else:
-        if task not in QWEN35_08B_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(QWEN35_08B_TASK_CHOICES)}."
+            starter = importlib.import_module(module)
+            base_model: str = getattr(starter, f"{preset.cli_symbol_prefix}_BASE_MODEL")
+            profile_choices: t.Sequence[str] = getattr(
+                starter, f"{preset.cli_symbol_prefix}_STARTER_PROFILE_CHOICES"
             )
-            raise typer.Exit(code=2)
-        if starter_profile not in QWEN35_08B_STARTER_PROFILE_CHOICES:
-            _echo(
-                f"Unsupported starter profile. Use one of: {', '.join(QWEN35_08B_STARTER_PROFILE_CHOICES)}."
+            task_choices: t.Sequence[str] = getattr(
+                starter, f"{preset.cli_symbol_prefix}_TASK_CHOICES"
             )
-            raise typer.Exit(code=2)
-        config_overrides: dict[str, t.Any] = {}
-        if iterations is not None:
-            config_overrides["num_outer_iterations"] = _coerce_positive_int(
-                iterations,
-                "iterations",
-                25,
-            )
-        resolved_config = get_qwen3_5_config(
-            model_name=model,
-            task=task,
-            starter_profile=starter_profile,
-            use_lora=use_lora,
-            use_4bit=use_4bit,
-            use_8bit=use_8bit,
-            output_dir=output_dir,
-            use_wandb=wandb,
-            wandb_project=wandb_project,
-            **config_overrides,
-        )
-
-    preview = create_qwen3_5_preview(resolved_config)
-
-    if write_config:
-        try:
-            written_path = write_qwen3_5_config_file(resolved_config, write_config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to write Qwen3.5-0.8B config: {e}")
+            infix = preset.cli_symbol_infix
+            create_preview = getattr(starter, f"create_{infix}_preview")
+            describe_profiles = getattr(starter, f"describe_{infix}_starter_profiles")
+            get_config = getattr(starter, f"get_{infix}_config")
+            load_config_file = getattr(starter, f"load_{infix}_config_file")
+            run_config = getattr(starter, run_function)
+            write_config_file = getattr(starter, f"write_{infix}_config_file")
+        except CLI_IMPORT_EXCEPTIONS as e:
+            _echo(f"{label} starter helpers unavailable. Install training extras.")
+            _echo(f"Details: {e}")
             raise typer.Exit(code=2) from e
 
-        if json_output:
-            payload = dict(preview)
-            payload["config_file"] = str(written_path)
-            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
-            return
+        if list_profiles:
+            if config is not None:
+                _echo("`--list-profiles` cannot be combined with `--config`.")
+                raise typer.Exit(code=2)
+            if task not in task_choices:
+                _echo(f"Unsupported task. Use one of: {', '.join(task_choices)}.")
+                raise typer.Exit(code=2)
 
-        _echo(f"Wrote Qwen3.5-0.8B config to {written_path}")
-        return
-
-    if dry_run:
-        if json_output:
-            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Dry-run: Qwen3.5-0.8B starter config resolved.")
-        _echo(f"Model: {preview['config']['model_name']}")
-        _echo(f"Task: {preview['config']['task']}")
-        _echo(f"Starter profile: {preview['config']['starter_profile']}")
-        _echo(f"Output dir: {preview['config']['output_dir']}")
-        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
-        _echo(
-            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
-        )
-        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
-        for warning in preview.get("warnings", []):
-            _echo(f"Warning: {warning}")
-        _echo("Run with:")
-        _echo("  stateset-agents qwen3-5-0-8b --no-dry-run --task customer_service")
-        _echo("Or try the low-memory preset:")
-        _echo("  stateset-agents qwen3-5-0-8b --starter-profile memory --json-output")
-        _echo("Or save a reusable config:")
-        _echo("  stateset-agents qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json")
-        return
-
-    import asyncio
-
-    try:
-        result = asyncio.run(run_qwen3_5_0_8b_config(resolved_config, dry_run=False))
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Qwen3.5-0.8B training components unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-    except CLI_TRAIN_EXCEPTIONS as e:
-        _echo(f"Qwen3.5-0.8B starter failed: {e}")
-        raise typer.Exit(code=2) from e
-
-    if json_output:
-        payload = {
-            "status": "completed",
-            "task": resolved_config.task,
-            "starter_profile": resolved_config.starter_profile,
-            "model_name": resolved_config.model_name,
-            "output_dir": resolved_config.output_dir,
-            "result": str(result),
-        }
-        _echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    _echo("Qwen3.5-0.8B starter run complete.")
-
-
-@app.command("kimi-k2-6")
-def kimi_k2_6(
-    config: str | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to a moonshotai/Kimi-K2.6 starter config file (JSON/YAML).",
-    ),
-    task: str = typer.Option(
-        "customer_service",
-        help="Task preset for the moonshotai/Kimi-K2.6 starter path.",
-    ),
-    starter_profile: str = typer.Option(
-        "balanced",
-        "--starter-profile",
-        help="Starter profile: balanced, memory, or quality.",
-    ),
-    list_profiles: bool = typer.Option(
-        False,
-        "--list-profiles",
-        help="Describe all built-in starter profiles and exit.",
-    ),
-    model: str = typer.Option(
-        "moonshotai/Kimi-K2.6",
-        "--model",
-        help="Model name. For post-training, prefer moonshotai/Kimi-K2.6.",
-    ),
-    use_lora: bool | None = typer.Option(
-        None,
-        "--use-lora/--no-lora",
-        help="Override LoRA usage. Defaults come from --starter-profile.",
-    ),
-    use_4bit: bool | None = typer.Option(
-        None,
-        "--use-4bit/--no-use-4bit",
-        help="Override 4-bit quantization. Defaults come from --starter-profile.",
-    ),
-    use_8bit: bool | None = typer.Option(
-        None,
-        "--use-8bit/--no-use-8bit",
-        help="Override 8-bit quantization. Defaults come from --starter-profile.",
-    ),
-    output_dir: str | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Override the output directory for checkpoints and adapters.",
-    ),
-    iterations: int | None = typer.Option(
-        None,
-        "--iterations",
-        help="Override the outer GSPO iteration count for the starter run.",
-    ),
-    wandb: bool = typer.Option(
-        False,
-        "--wandb",
-        help="Enable Weights & Biases logging.",
-    ),
-    wandb_project: str | None = typer.Option(
-        None,
-        "--wandb-project",
-        help="Optional W&B project name.",
-    ),
-    write_config: str | None = typer.Option(
-        None,
-        "--write-config",
-        help="Write the resolved Kimi starter config to JSON/YAML and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--no-dry-run",
-        help="Preview the resolved config instead of loading a model.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "--json-output",
-        help="Output machine-readable JSON.",
-    ),
-) -> None:
-    """Preview or run the dedicated moonshotai/Kimi-K2.6 GSPO starter path."""
-    try:
-        from stateset_agents.training.kimi_k2_6_starter import (
-            KIMI_K26_BASE_MODEL,
-            KIMI_K26_STARTER_PROFILE_CHOICES,
-            KIMI_K26_TASK_CHOICES,
-            create_kimi_k2_6_preview,
-            describe_kimi_k2_6_starter_profiles,
-            get_kimi_k2_6_config,
-            load_kimi_k2_6_config_file,
-            run_kimi_k2_6_config,
-            write_kimi_k2_6_config_file,
-        )
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Kimi-K2.6 starter helpers unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-
-    if list_profiles:
-        if config is not None:
-            _echo("`--list-profiles` cannot be combined with `--config`.")
-            raise typer.Exit(code=2)
-        if task not in KIMI_K26_TASK_CHOICES:
-            _echo(f"Unsupported task. Use one of: {', '.join(KIMI_K26_TASK_CHOICES)}.")
-            raise typer.Exit(code=2)
-
-        profile_catalog = describe_kimi_k2_6_starter_profiles(
-            task=task,
-            model_name=model,
-        )
-        if json_output:
-            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Available Kimi-K2.6 starter profiles:")
-        _echo(f"Model: {profile_catalog['model_name']}")
-        _echo(f"Task: {profile_catalog['task']}")
-        for profile_name in KIMI_K26_STARTER_PROFILE_CHOICES:
-            profile_payload = profile_catalog["profiles"][profile_name]
-            summary = profile_payload["summary"]
-            _echo(f"- {profile_name}: {profile_payload['description']}")
-            _echo(
-                "  "
-                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
-                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
-                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
+            profile_catalog = describe_profiles(
+                task=task,
+                model_name=model,
             )
-        return
+            if json_output:
+                _echo(
+                    json.dumps(profile_catalog, indent=2, sort_keys=True, default=str)
+                )
+                return
 
-    if config:
-        conflicting_options: list[str] = []
-        if task != "customer_service":
-            conflicting_options.append("--task")
-        if starter_profile != "balanced":
-            conflicting_options.append("--starter-profile")
-        if model != KIMI_K26_BASE_MODEL:
-            conflicting_options.append("--model")
-        if use_lora is not None:
-            conflicting_options.append("--use-lora/--no-lora")
-        if use_4bit is not None:
-            conflicting_options.append("--use-4bit")
-        if use_8bit is not None:
-            conflicting_options.append("--use-8bit")
-        if output_dir is not None:
-            conflicting_options.append("--output-dir")
-        if iterations is not None:
-            conflicting_options.append("--iterations")
-        if wandb:
-            conflicting_options.append("--wandb")
-        if wandb_project is not None:
-            conflicting_options.append("--wandb-project")
-        if conflicting_options:
-            _echo(
-                "`--config` cannot be combined with starter override options: "
-                + ", ".join(conflicting_options)
+            _echo(f"Available {label} starter profiles:")
+            _echo(f"Model: {profile_catalog['model_name']}")
+            _echo(f"Task: {profile_catalog['task']}")
+            for profile_name in profile_choices:
+                profile_payload = profile_catalog["profiles"][profile_name]
+                summary = profile_payload["summary"]
+                _echo(f"- {profile_name}: {profile_payload['description']}")
+                _echo(
+                    "  "
+                    f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
+                    f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
+                    f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
+                )
+            return
+
+        if config:
+            conflicting_options: list[str] = []
+            if task != "customer_service":
+                conflicting_options.append("--task")
+            if starter_profile != "balanced":
+                conflicting_options.append("--starter-profile")
+            if model != base_model:
+                conflicting_options.append("--model")
+            if use_lora is not None:
+                conflicting_options.append("--use-lora/--no-lora")
+            if use_4bit is not None:
+                conflicting_options.append("--use-4bit")
+            if use_8bit is not None:
+                conflicting_options.append("--use-8bit")
+            if output_dir is not None:
+                conflicting_options.append("--output-dir")
+            if iterations is not None:
+                conflicting_options.append("--iterations")
+            if wandb:
+                conflicting_options.append("--wandb")
+            if wandb_project is not None:
+                conflicting_options.append("--wandb-project")
+            if conflicting_options:
+                _echo(
+                    "`--config` cannot be combined with starter override options: "
+                    + ", ".join(conflicting_options)
+                )
+                raise typer.Exit(code=2)
+            try:
+                resolved_config = load_config_file(config)
+            except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
+                _echo(f"Failed to load {label} config: {e}")
+                raise typer.Exit(code=2) from e
+        else:
+            if task not in task_choices:
+                _echo(f"Unsupported task. Use one of: {', '.join(task_choices)}.")
+                raise typer.Exit(code=2)
+            if starter_profile not in profile_choices:
+                _echo(
+                    f"Unsupported starter profile. Use one of: {', '.join(profile_choices)}."
+                )
+                raise typer.Exit(code=2)
+            config_overrides: dict[str, t.Any] = {}
+            if iterations is not None:
+                config_overrides["num_outer_iterations"] = _coerce_positive_int(
+                    iterations,
+                    "iterations",
+                    preset.cli_default_iterations,
+                )
+            resolved_config = get_config(
+                model_name=model,
+                task=task,
+                starter_profile=starter_profile,
+                use_lora=use_lora,
+                use_4bit=use_4bit,
+                use_8bit=use_8bit,
+                output_dir=output_dir,
+                use_wandb=wandb,
+                wandb_project=wandb_project,
+                **config_overrides,
             )
-            raise typer.Exit(code=2)
+
+        preview = create_preview(resolved_config)
+
+        if write_config:
+            try:
+                written_path = write_config_file(resolved_config, write_config)
+            except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
+                _echo(f"Failed to write {label} config: {e}")
+                raise typer.Exit(code=2) from e
+
+            if json_output:
+                payload = dict(preview)
+                payload["config_file"] = str(written_path)
+                _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+                return
+
+            _echo(f"Wrote {label} config to {written_path}")
+            return
+
+        if dry_run:
+            if json_output:
+                _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
+                return
+
+            _echo(f"Dry-run: {label} starter config resolved.")
+            _echo(f"Model: {preview['config']['model_name']}")
+            _echo(f"Task: {preview['config']['task']}")
+            _echo(f"Starter profile: {preview['config']['starter_profile']}")
+            _echo(f"Output dir: {preview['config']['output_dir']}")
+            _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
+            _echo(
+                f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
+            )
+            _echo(
+                f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}"
+            )
+            for warning in preview.get("warnings", []):
+                _echo(f"Warning: {warning}")
+            _echo("Run with:")
+            _echo(
+                f"  stateset-agents {command_name} --no-dry-run --task customer_service"
+            )
+            _echo("Or try the low-memory preset:")
+            _echo(
+                f"  stateset-agents {command_name} --starter-profile memory --json-output"
+            )
+            _echo("Or save a reusable config:")
+            _echo(
+                f"  stateset-agents {command_name} --write-config ./{preset.cli_config_stem}.json"
+            )
+            return
+
+        import asyncio
+
         try:
-            resolved_config = load_kimi_k2_6_config_file(config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to load Kimi-K2.6 config: {e}")
+            result = asyncio.run(run_config(resolved_config, dry_run=False))
+        except CLI_IMPORT_EXCEPTIONS as e:
+            _echo(f"{label} training components unavailable. Install training extras.")
+            _echo(f"Details: {e}")
             raise typer.Exit(code=2) from e
-    else:
-        if task not in KIMI_K26_TASK_CHOICES:
-            _echo(f"Unsupported task. Use one of: {', '.join(KIMI_K26_TASK_CHOICES)}.")
-            raise typer.Exit(code=2)
-        if starter_profile not in KIMI_K26_STARTER_PROFILE_CHOICES:
-            _echo(
-                f"Unsupported starter profile. Use one of: {', '.join(KIMI_K26_STARTER_PROFILE_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        config_overrides: dict[str, t.Any] = {}
-        if iterations is not None:
-            config_overrides["num_outer_iterations"] = _coerce_positive_int(
-                iterations,
-                "iterations",
-                16,
-            )
-        resolved_config = get_kimi_k2_6_config(
-            model_name=model,
-            task=task,
-            starter_profile=starter_profile,
-            use_lora=use_lora,
-            use_4bit=use_4bit,
-            use_8bit=use_8bit,
-            output_dir=output_dir,
-            use_wandb=wandb,
-            wandb_project=wandb_project,
-            **config_overrides,
-        )
-
-    preview = create_kimi_k2_6_preview(resolved_config)
-
-    if write_config:
-        try:
-            written_path = write_kimi_k2_6_config_file(resolved_config, write_config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to write Kimi-K2.6 config: {e}")
+        except CLI_TRAIN_EXCEPTIONS as e:
+            _echo(f"{label} starter failed: {e}")
             raise typer.Exit(code=2) from e
 
         if json_output:
-            payload = dict(preview)
-            payload["config_file"] = str(written_path)
-            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+            payload = {
+                "status": "completed",
+                "task": resolved_config.task,
+                "starter_profile": resolved_config.starter_profile,
+                "model_name": resolved_config.model_name,
+                "output_dir": resolved_config.output_dir,
+                "result": str(result),
+            }
+            _echo(json.dumps(payload, indent=2, sort_keys=True))
             return
 
-        _echo(f"Wrote Kimi-K2.6 config to {written_path}")
-        return
+        _echo(f"{label} starter run complete.")
 
-    if dry_run:
-        if json_output:
-            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
-            return
+    model_command.__name__ = (command_name or "").replace("-", "_")
+    model_command.__doc__ = f"Preview or run the dedicated {display} GSPO starter path."
+    app.command(command_name)(model_command)
 
-        _echo("Dry-run: Kimi-K2.6 starter config resolved.")
-        _echo(f"Model: {preview['config']['model_name']}")
-        _echo(f"Task: {preview['config']['task']}")
-        _echo(f"Starter profile: {preview['config']['starter_profile']}")
-        _echo(f"Output dir: {preview['config']['output_dir']}")
-        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
-        _echo(
-            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
-        )
-        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
-        for warning in preview.get("warnings", []):
-            _echo(f"Warning: {warning}")
-        _echo("Run with:")
-        _echo("  stateset-agents kimi-k2-6 --no-dry-run --task customer_service")
-        _echo("Or try the low-memory preset:")
-        _echo("  stateset-agents kimi-k2-6 --starter-profile memory --json-output")
-        _echo("Or save a reusable config:")
-        _echo("  stateset-agents kimi-k2-6 --write-config ./kimi_k2_6.json")
-        return
 
-    import asyncio
+GENERATED_MODEL_COMMANDS: tuple[str, ...] = tuple(
+    preset.cli_command for preset in PRESETS.values() if preset.cli_command is not None
+)
 
-    try:
-        result = asyncio.run(run_kimi_k2_6_config(resolved_config, dry_run=False))
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Kimi-K2.6 training components unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-    except CLI_TRAIN_EXCEPTIONS as e:
-        _echo(f"Kimi-K2.6 starter failed: {e}")
-        raise typer.Exit(code=2) from e
-
-    if json_output:
-        payload = {
-            "status": "completed",
-            "task": resolved_config.task,
-            "starter_profile": resolved_config.starter_profile,
-            "model_name": resolved_config.model_name,
-            "output_dir": resolved_config.output_dir,
-            "result": str(result),
-        }
-        _echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    _echo("Kimi-K2.6 starter run complete.")
-
-
-@app.command("kimi-k3")
-def kimi_k3(
-    config: str | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to a moonshotai/Kimi-K3 starter config file (JSON/YAML).",
-    ),
-    task: str = typer.Option(
-        "customer_service",
-        help="Task preset for the moonshotai/Kimi-K3 starter path.",
-    ),
-    starter_profile: str = typer.Option(
-        "balanced",
-        "--starter-profile",
-        help="Starter profile: balanced, memory, or quality.",
-    ),
-    list_profiles: bool = typer.Option(
-        False,
-        "--list-profiles",
-        help="Describe all built-in starter profiles and exit.",
-    ),
-    model: str = typer.Option(
-        "moonshotai/Kimi-K3",
-        "--model",
-        help="Model name. For post-training, prefer moonshotai/Kimi-K3.",
-    ),
-    use_lora: bool | None = typer.Option(
-        None,
-        "--use-lora/--no-lora",
-        help="Override LoRA usage. Defaults come from --starter-profile.",
-    ),
-    use_4bit: bool | None = typer.Option(
-        None,
-        "--use-4bit/--no-use-4bit",
-        help="Override 4-bit quantization. Defaults come from --starter-profile.",
-    ),
-    use_8bit: bool | None = typer.Option(
-        None,
-        "--use-8bit/--no-use-8bit",
-        help="Override 8-bit quantization. Defaults come from --starter-profile.",
-    ),
-    output_dir: str | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Override the output directory for checkpoints and adapters.",
-    ),
-    iterations: int | None = typer.Option(
-        None,
-        "--iterations",
-        help="Override the outer GSPO iteration count for the starter run.",
-    ),
-    wandb: bool = typer.Option(
-        False,
-        "--wandb",
-        help="Enable Weights & Biases logging.",
-    ),
-    wandb_project: str | None = typer.Option(
-        None,
-        "--wandb-project",
-        help="Optional W&B project name.",
-    ),
-    write_config: str | None = typer.Option(
-        None,
-        "--write-config",
-        help="Write the resolved Kimi starter config to JSON/YAML and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--no-dry-run",
-        help="Preview the resolved config instead of loading a model.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "--json-output",
-        help="Output machine-readable JSON.",
-    ),
-) -> None:
-    """Preview or run the dedicated moonshotai/Kimi-K3 GSPO starter path."""
-    try:
-        from stateset_agents.training.kimi_k3_starter import (
-            KIMI_K3_BASE_MODEL,
-            KIMI_K3_STARTER_PROFILE_CHOICES,
-            KIMI_K3_TASK_CHOICES,
-            create_kimi_k3_preview,
-            describe_kimi_k3_starter_profiles,
-            get_kimi_k3_config,
-            load_kimi_k3_config_file,
-            run_kimi_k3_config,
-            write_kimi_k3_config_file,
-        )
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Kimi-K3 starter helpers unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-
-    if list_profiles:
-        if config is not None:
-            _echo("`--list-profiles` cannot be combined with `--config`.")
-            raise typer.Exit(code=2)
-        if task not in KIMI_K3_TASK_CHOICES:
-            _echo(f"Unsupported task. Use one of: {', '.join(KIMI_K3_TASK_CHOICES)}.")
-            raise typer.Exit(code=2)
-
-        profile_catalog = describe_kimi_k3_starter_profiles(
-            task=task,
-            model_name=model,
-        )
-        if json_output:
-            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Available Kimi-K3 starter profiles:")
-        _echo(f"Model: {profile_catalog['model_name']}")
-        _echo(f"Task: {profile_catalog['task']}")
-        for profile_name in KIMI_K3_STARTER_PROFILE_CHOICES:
-            profile_payload = profile_catalog["profiles"][profile_name]
-            summary = profile_payload["summary"]
-            _echo(f"- {profile_name}: {profile_payload['description']}")
-            _echo(
-                "  "
-                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
-                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
-                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
-            )
-        return
-
-    if config:
-        conflicting_options: list[str] = []
-        if task != "customer_service":
-            conflicting_options.append("--task")
-        if starter_profile != "balanced":
-            conflicting_options.append("--starter-profile")
-        if model != KIMI_K3_BASE_MODEL:
-            conflicting_options.append("--model")
-        if use_lora is not None:
-            conflicting_options.append("--use-lora/--no-lora")
-        if use_4bit is not None:
-            conflicting_options.append("--use-4bit")
-        if use_8bit is not None:
-            conflicting_options.append("--use-8bit")
-        if output_dir is not None:
-            conflicting_options.append("--output-dir")
-        if iterations is not None:
-            conflicting_options.append("--iterations")
-        if wandb:
-            conflicting_options.append("--wandb")
-        if wandb_project is not None:
-            conflicting_options.append("--wandb-project")
-        if conflicting_options:
-            _echo(
-                "`--config` cannot be combined with starter override options: "
-                + ", ".join(conflicting_options)
-            )
-            raise typer.Exit(code=2)
-        try:
-            resolved_config = load_kimi_k3_config_file(config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to load Kimi-K3 config: {e}")
-            raise typer.Exit(code=2) from e
-    else:
-        if task not in KIMI_K3_TASK_CHOICES:
-            _echo(f"Unsupported task. Use one of: {', '.join(KIMI_K3_TASK_CHOICES)}.")
-            raise typer.Exit(code=2)
-        if starter_profile not in KIMI_K3_STARTER_PROFILE_CHOICES:
-            _echo(
-                f"Unsupported starter profile. Use one of: {', '.join(KIMI_K3_STARTER_PROFILE_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        config_overrides: dict[str, t.Any] = {}
-        if iterations is not None:
-            config_overrides["num_outer_iterations"] = _coerce_positive_int(
-                iterations,
-                "iterations",
-                16,
-            )
-        resolved_config = get_kimi_k3_config(
-            model_name=model,
-            task=task,
-            starter_profile=starter_profile,
-            use_lora=use_lora,
-            use_4bit=use_4bit,
-            use_8bit=use_8bit,
-            output_dir=output_dir,
-            use_wandb=wandb,
-            wandb_project=wandb_project,
-            **config_overrides,
-        )
-
-    preview = create_kimi_k3_preview(resolved_config)
-
-    if write_config:
-        try:
-            written_path = write_kimi_k3_config_file(resolved_config, write_config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to write Kimi-K3 config: {e}")
-            raise typer.Exit(code=2) from e
-
-        if json_output:
-            payload = dict(preview)
-            payload["config_file"] = str(written_path)
-            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo(f"Wrote Kimi-K3 config to {written_path}")
-        return
-
-    if dry_run:
-        if json_output:
-            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Dry-run: Kimi-K3 starter config resolved.")
-        _echo(f"Model: {preview['config']['model_name']}")
-        _echo(f"Task: {preview['config']['task']}")
-        _echo(f"Starter profile: {preview['config']['starter_profile']}")
-        _echo(f"Output dir: {preview['config']['output_dir']}")
-        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
-        _echo(
-            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
-        )
-        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
-        for warning in preview.get("warnings", []):
-            _echo(f"Warning: {warning}")
-        _echo("Run with:")
-        _echo("  stateset-agents kimi-k3 --no-dry-run --task customer_service")
-        _echo("Or try the low-memory preset:")
-        _echo("  stateset-agents kimi-k3 --starter-profile memory --json-output")
-        _echo("Or save a reusable config:")
-        _echo("  stateset-agents kimi-k3 --write-config ./kimi_k3.json")
-        return
-
-    import asyncio
-
-    try:
-        result = asyncio.run(run_kimi_k3_config(resolved_config, dry_run=False))
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Kimi-K3 training components unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-    except CLI_TRAIN_EXCEPTIONS as e:
-        _echo(f"Kimi-K3 starter failed: {e}")
-        raise typer.Exit(code=2) from e
-
-    if json_output:
-        payload = {
-            "status": "completed",
-            "task": resolved_config.task,
-            "starter_profile": resolved_config.starter_profile,
-            "model_name": resolved_config.model_name,
-            "output_dir": resolved_config.output_dir,
-            "result": str(result),
-        }
-        _echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    _echo("Kimi-K3 starter run complete.")
-
-
-@app.command("gemma-4-31b")
-def gemma4_31b(
-    config: str | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to a Gemma 4 31B starter config file (JSON/YAML).",
-    ),
-    task: str = typer.Option(
-        "customer_service",
-        help="Task preset for the Gemma 4 31B starter path.",
-    ),
-    starter_profile: str = typer.Option(
-        "balanced",
-        "--starter-profile",
-        help="Starter profile: balanced, memory, or quality.",
-    ),
-    list_profiles: bool = typer.Option(
-        False,
-        "--list-profiles",
-        help="Describe all built-in starter profiles and exit.",
-    ),
-    model: str = typer.Option(
-        "google/gemma-4-31B-it",
-        "--model",
-        help="Model name. For post-training, use google/gemma-4-31B-it.",
-    ),
-    use_lora: bool | None = typer.Option(
-        None,
-        "--use-lora/--no-lora",
-        help="Override LoRA usage. Defaults come from --starter-profile.",
-    ),
-    use_4bit: bool | None = typer.Option(
-        None,
-        "--use-4bit/--no-use-4bit",
-        help="Override 4-bit quantization. Defaults come from --starter-profile.",
-    ),
-    use_8bit: bool | None = typer.Option(
-        None,
-        "--use-8bit/--no-use-8bit",
-        help="Override 8-bit quantization. Defaults come from --starter-profile.",
-    ),
-    output_dir: str | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Override the output directory for checkpoints and adapters.",
-    ),
-    iterations: int | None = typer.Option(
-        None,
-        "--iterations",
-        help="Override the outer GSPO iteration count for the starter run.",
-    ),
-    wandb: bool = typer.Option(
-        False,
-        "--wandb",
-        help="Enable Weights & Biases logging.",
-    ),
-    wandb_project: str | None = typer.Option(
-        None,
-        "--wandb-project",
-        help="Optional W&B project name.",
-    ),
-    write_config: str | None = typer.Option(
-        None,
-        "--write-config",
-        help="Write the resolved Gemma starter config to JSON/YAML and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--no-dry-run",
-        help="Preview the resolved config instead of loading a model.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "--json-output",
-        help="Output machine-readable JSON.",
-    ),
-) -> None:
-    """Preview or run the dedicated Gemma 4 31B GSPO starter path."""
-    try:
-        from stateset_agents.training.gemma4_starter import (
-            GEMMA4_31B_BASE_MODEL,
-            GEMMA4_31B_STARTER_PROFILE_CHOICES,
-            GEMMA4_31B_TASK_CHOICES,
-            create_gemma4_31b_preview,
-            describe_gemma4_31b_starter_profiles,
-            get_gemma4_31b_config,
-            load_gemma4_31b_config_file,
-            run_gemma4_31b_config,
-            write_gemma4_31b_config_file,
-        )
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Gemma 4 31B starter helpers unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-
-    if list_profiles:
-        if config is not None:
-            _echo("`--list-profiles` cannot be combined with `--config`.")
-            raise typer.Exit(code=2)
-        if task not in GEMMA4_31B_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(GEMMA4_31B_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-
-        profile_catalog = describe_gemma4_31b_starter_profiles(
-            task=task,
-            model_name=model,
-        )
-        if json_output:
-            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Available Gemma 4 31B starter profiles:")
-        _echo(f"Model: {profile_catalog['model_name']}")
-        _echo(f"Task: {profile_catalog['task']}")
-        for profile_name in GEMMA4_31B_STARTER_PROFILE_CHOICES:
-            profile_payload = profile_catalog["profiles"][profile_name]
-            summary = profile_payload["summary"]
-            _echo(f"- {profile_name}: {profile_payload['description']}")
-            _echo(
-                "  "
-                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
-                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
-                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
-            )
-        return
-
-    if config:
-        conflicting_options: list[str] = []
-        if task != "customer_service":
-            conflicting_options.append("--task")
-        if starter_profile != "balanced":
-            conflicting_options.append("--starter-profile")
-        if model != GEMMA4_31B_BASE_MODEL:
-            conflicting_options.append("--model")
-        if use_lora is not None:
-            conflicting_options.append("--use-lora/--no-lora")
-        if use_4bit is not None:
-            conflicting_options.append("--use-4bit")
-        if use_8bit is not None:
-            conflicting_options.append("--use-8bit")
-        if output_dir is not None:
-            conflicting_options.append("--output-dir")
-        if iterations is not None:
-            conflicting_options.append("--iterations")
-        if wandb:
-            conflicting_options.append("--wandb")
-        if wandb_project is not None:
-            conflicting_options.append("--wandb-project")
-        if conflicting_options:
-            _echo(
-                "`--config` cannot be combined with starter override options: "
-                + ", ".join(conflicting_options)
-            )
-            raise typer.Exit(code=2)
-        try:
-            resolved_config = load_gemma4_31b_config_file(config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to load Gemma 4 31B config: {e}")
-            raise typer.Exit(code=2) from e
-    else:
-        if task not in GEMMA4_31B_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(GEMMA4_31B_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        if starter_profile not in GEMMA4_31B_STARTER_PROFILE_CHOICES:
-            _echo(
-                f"Unsupported starter profile. Use one of: {', '.join(GEMMA4_31B_STARTER_PROFILE_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        config_overrides: dict[str, t.Any] = {}
-        if iterations is not None:
-            config_overrides["num_outer_iterations"] = _coerce_positive_int(
-                iterations,
-                "iterations",
-                20,
-            )
-        resolved_config = get_gemma4_31b_config(
-            model_name=model,
-            task=task,
-            starter_profile=starter_profile,
-            use_lora=use_lora,
-            use_4bit=use_4bit,
-            use_8bit=use_8bit,
-            output_dir=output_dir,
-            use_wandb=wandb,
-            wandb_project=wandb_project,
-            **config_overrides,
-        )
-
-    preview = create_gemma4_31b_preview(resolved_config)
-
-    if write_config:
-        try:
-            written_path = write_gemma4_31b_config_file(resolved_config, write_config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to write Gemma 4 31B config: {e}")
-            raise typer.Exit(code=2) from e
-
-        if json_output:
-            payload = dict(preview)
-            payload["config_file"] = str(written_path)
-            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo(f"Wrote Gemma 4 31B config to {written_path}")
-        return
-
-    if dry_run:
-        if json_output:
-            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Dry-run: Gemma 4 31B starter config resolved.")
-        _echo(f"Model: {preview['config']['model_name']}")
-        _echo(f"Task: {preview['config']['task']}")
-        _echo(f"Starter profile: {preview['config']['starter_profile']}")
-        _echo(f"Output dir: {preview['config']['output_dir']}")
-        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
-        _echo(
-            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
-        )
-        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
-        for warning in preview.get("warnings", []):
-            _echo(f"Warning: {warning}")
-        _echo("Run with:")
-        _echo("  stateset-agents gemma-4-31b --no-dry-run --task customer_service")
-        _echo("Or try the low-memory preset:")
-        _echo("  stateset-agents gemma-4-31b --starter-profile memory --json-output")
-        _echo("Or save a reusable config:")
-        _echo("  stateset-agents gemma-4-31b --write-config ./gemma4_31b.json")
-        return
-
-    import asyncio
-
-    try:
-        result = asyncio.run(run_gemma4_31b_config(resolved_config, dry_run=False))
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Gemma 4 31B training components unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-    except CLI_TRAIN_EXCEPTIONS as e:
-        _echo(f"Gemma 4 31B starter failed: {e}")
-        raise typer.Exit(code=2) from e
-
-    if json_output:
-        payload = {
-            "status": "completed",
-            "task": resolved_config.task,
-            "starter_profile": resolved_config.starter_profile,
-            "model_name": resolved_config.model_name,
-            "output_dir": resolved_config.output_dir,
-            "result": str(result),
-        }
-        _echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    _echo("Gemma 4 31B starter run complete.")
-
-
-@app.command("muse-glimmer")
-def muse_glimmer(
-    config: str | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to a meta-models/Muse-Glimmer-30B starter config file (JSON/YAML).",
-    ),
-    task: str = typer.Option(
-        "customer_service",
-        help="Task preset for the meta-models/Muse-Glimmer-30B starter path.",
-    ),
-    starter_profile: str = typer.Option(
-        "balanced",
-        "--starter-profile",
-        help="Starter profile: balanced, memory, or quality.",
-    ),
-    list_profiles: bool = typer.Option(
-        False,
-        "--list-profiles",
-        help="Describe all built-in starter profiles and exit.",
-    ),
-    model: str = typer.Option(
-        "meta-models/Muse-Glimmer-30B",
-        "--model",
-        help="Model name. For post-training, prefer meta-models/Muse-Glimmer-30B.",
-    ),
-    use_lora: bool | None = typer.Option(
-        None,
-        "--use-lora/--no-lora",
-        help="Override LoRA usage. Defaults come from --starter-profile.",
-    ),
-    use_4bit: bool | None = typer.Option(
-        None,
-        "--use-4bit/--no-use-4bit",
-        help="Override 4-bit quantization. Defaults come from --starter-profile.",
-    ),
-    use_8bit: bool | None = typer.Option(
-        None,
-        "--use-8bit/--no-use-8bit",
-        help="Override 8-bit quantization. Defaults come from --starter-profile.",
-    ),
-    output_dir: str | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Override the output directory for checkpoints and adapters.",
-    ),
-    iterations: int | None = typer.Option(
-        None,
-        "--iterations",
-        help="Override the outer GSPO iteration count for the starter run.",
-    ),
-    wandb: bool = typer.Option(
-        False,
-        "--wandb",
-        help="Enable Weights & Biases logging.",
-    ),
-    wandb_project: str | None = typer.Option(
-        None,
-        "--wandb-project",
-        help="Optional W&B project name.",
-    ),
-    write_config: str | None = typer.Option(
-        None,
-        "--write-config",
-        help="Write the resolved Muse Glimmer starter config to JSON/YAML and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--no-dry-run",
-        help="Preview the resolved config instead of loading a model.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "--json-output",
-        help="Output machine-readable JSON.",
-    ),
-) -> None:
-    """Preview or run the dedicated meta-models/Muse-Glimmer-30B GSPO starter path."""
-    try:
-        from stateset_agents.training.muse_glimmer_starter import (
-            MUSE_GLIMMER_BASE_MODEL,
-            MUSE_GLIMMER_STARTER_PROFILE_CHOICES,
-            MUSE_GLIMMER_TASK_CHOICES,
-            create_muse_glimmer_preview,
-            describe_muse_glimmer_starter_profiles,
-            get_muse_glimmer_config,
-            load_muse_glimmer_config_file,
-            run_muse_glimmer_config,
-            write_muse_glimmer_config_file,
-        )
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Muse Glimmer starter helpers unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-
-    if list_profiles:
-        if config is not None:
-            _echo("`--list-profiles` cannot be combined with `--config`.")
-            raise typer.Exit(code=2)
-        if task not in MUSE_GLIMMER_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(MUSE_GLIMMER_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-
-        profile_catalog = describe_muse_glimmer_starter_profiles(
-            task=task,
-            model_name=model,
-        )
-        if json_output:
-            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Available Muse Glimmer starter profiles:")
-        _echo(f"Model: {profile_catalog['model_name']}")
-        _echo(f"Task: {profile_catalog['task']}")
-        for profile_name in MUSE_GLIMMER_STARTER_PROFILE_CHOICES:
-            profile_payload = profile_catalog["profiles"][profile_name]
-            summary = profile_payload["summary"]
-            _echo(f"- {profile_name}: {profile_payload['description']}")
-            _echo(
-                "  "
-                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
-                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
-                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
-            )
-        return
-
-    if config:
-        conflicting_options: list[str] = []
-        if task != "customer_service":
-            conflicting_options.append("--task")
-        if starter_profile != "balanced":
-            conflicting_options.append("--starter-profile")
-        if model != MUSE_GLIMMER_BASE_MODEL:
-            conflicting_options.append("--model")
-        if use_lora is not None:
-            conflicting_options.append("--use-lora/--no-lora")
-        if use_4bit is not None:
-            conflicting_options.append("--use-4bit")
-        if use_8bit is not None:
-            conflicting_options.append("--use-8bit")
-        if output_dir is not None:
-            conflicting_options.append("--output-dir")
-        if iterations is not None:
-            conflicting_options.append("--iterations")
-        if wandb:
-            conflicting_options.append("--wandb")
-        if wandb_project is not None:
-            conflicting_options.append("--wandb-project")
-        if conflicting_options:
-            _echo(
-                "`--config` cannot be combined with starter override options: "
-                + ", ".join(conflicting_options)
-            )
-            raise typer.Exit(code=2)
-        try:
-            resolved_config = load_muse_glimmer_config_file(config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to load Muse Glimmer config: {e}")
-            raise typer.Exit(code=2) from e
-    else:
-        if task not in MUSE_GLIMMER_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(MUSE_GLIMMER_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        if starter_profile not in MUSE_GLIMMER_STARTER_PROFILE_CHOICES:
-            _echo(
-                f"Unsupported starter profile. Use one of: {', '.join(MUSE_GLIMMER_STARTER_PROFILE_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        config_overrides: dict[str, t.Any] = {}
-        if iterations is not None:
-            config_overrides["num_outer_iterations"] = _coerce_positive_int(
-                iterations,
-                "iterations",
-                16,
-            )
-        resolved_config = get_muse_glimmer_config(
-            model_name=model,
-            task=task,
-            starter_profile=starter_profile,
-            use_lora=use_lora,
-            use_4bit=use_4bit,
-            use_8bit=use_8bit,
-            output_dir=output_dir,
-            use_wandb=wandb,
-            wandb_project=wandb_project,
-            **config_overrides,
-        )
-
-    preview = create_muse_glimmer_preview(resolved_config)
-
-    if write_config:
-        try:
-            written_path = write_muse_glimmer_config_file(resolved_config, write_config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to write Muse Glimmer config: {e}")
-            raise typer.Exit(code=2) from e
-
-        if json_output:
-            payload = dict(preview)
-            payload["config_file"] = str(written_path)
-            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo(f"Wrote Muse Glimmer config to {written_path}")
-        return
-
-    if dry_run:
-        if json_output:
-            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Dry-run: Muse Glimmer starter config resolved.")
-        _echo(f"Model: {preview['config']['model_name']}")
-        _echo(f"Task: {preview['config']['task']}")
-        _echo(f"Starter profile: {preview['config']['starter_profile']}")
-        _echo(f"Output dir: {preview['config']['output_dir']}")
-        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
-        _echo(
-            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
-        )
-        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
-        for warning in preview.get("warnings", []):
-            _echo(f"Warning: {warning}")
-        _echo("Run with:")
-        _echo("  stateset-agents muse-glimmer --no-dry-run --task customer_service")
-        _echo("Or try the low-memory preset:")
-        _echo("  stateset-agents muse-glimmer --starter-profile memory --json-output")
-        _echo("Or save a reusable config:")
-        _echo("  stateset-agents muse-glimmer --write-config ./muse_glimmer.json")
-        return
-
-    import asyncio
-
-    try:
-        result = asyncio.run(run_muse_glimmer_config(resolved_config, dry_run=False))
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Muse Glimmer training components unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-    except CLI_TRAIN_EXCEPTIONS as e:
-        _echo(f"Muse Glimmer starter failed: {e}")
-        raise typer.Exit(code=2) from e
-
-    if json_output:
-        payload = {
-            "status": "completed",
-            "task": resolved_config.task,
-            "starter_profile": resolved_config.starter_profile,
-            "model_name": resolved_config.model_name,
-            "output_dir": resolved_config.output_dir,
-            "result": str(result),
-        }
-        _echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    _echo("Muse Glimmer starter run complete.")
-
-
-@app.command("nemotron-3-5")
-def nemotron_3_5(
-    config: str | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to a nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 starter config file (JSON/YAML).",
-    ),
-    task: str = typer.Option(
-        "customer_service",
-        help="Task preset for the nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 starter path.",
-    ),
-    starter_profile: str = typer.Option(
-        "balanced",
-        "--starter-profile",
-        help="Starter profile: balanced, memory, or quality.",
-    ),
-    list_profiles: bool = typer.Option(
-        False,
-        "--list-profiles",
-        help="Describe all built-in starter profiles and exit.",
-    ),
-    model: str = typer.Option(
-        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
-        "--model",
-        help="Model name. For post-training, prefer nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16.",
-    ),
-    use_lora: bool | None = typer.Option(
-        None,
-        "--use-lora/--no-lora",
-        help="Override LoRA usage. Defaults come from --starter-profile.",
-    ),
-    use_4bit: bool | None = typer.Option(
-        None,
-        "--use-4bit/--no-use-4bit",
-        help="Override 4-bit quantization. Defaults come from --starter-profile.",
-    ),
-    use_8bit: bool | None = typer.Option(
-        None,
-        "--use-8bit/--no-use-8bit",
-        help="Override 8-bit quantization. Defaults come from --starter-profile.",
-    ),
-    output_dir: str | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Override the output directory for checkpoints and adapters.",
-    ),
-    iterations: int | None = typer.Option(
-        None,
-        "--iterations",
-        help="Override the outer GSPO iteration count for the starter run.",
-    ),
-    wandb: bool = typer.Option(
-        False,
-        "--wandb",
-        help="Enable Weights & Biases logging.",
-    ),
-    wandb_project: str | None = typer.Option(
-        None,
-        "--wandb-project",
-        help="Optional W&B project name.",
-    ),
-    write_config: str | None = typer.Option(
-        None,
-        "--write-config",
-        help="Write the resolved Nemotron 3.5 starter config to JSON/YAML and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--no-dry-run",
-        help="Preview the resolved config instead of loading a model.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "--json-output",
-        help="Output machine-readable JSON.",
-    ),
-) -> None:
-    """Preview or run the dedicated nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 GSPO starter path."""
-    try:
-        from stateset_agents.training.nemotron_3_5_starter import (
-            NEMOTRON_3_5_BASE_MODEL,
-            NEMOTRON_3_5_STARTER_PROFILE_CHOICES,
-            NEMOTRON_3_5_TASK_CHOICES,
-            create_nemotron_3_5_preview,
-            describe_nemotron_3_5_starter_profiles,
-            get_nemotron_3_5_config,
-            load_nemotron_3_5_config_file,
-            run_nemotron_3_5_config,
-            write_nemotron_3_5_config_file,
-        )
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Nemotron 3.5 starter helpers unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-
-    if list_profiles:
-        if config is not None:
-            _echo("`--list-profiles` cannot be combined with `--config`.")
-            raise typer.Exit(code=2)
-        if task not in NEMOTRON_3_5_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(NEMOTRON_3_5_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-
-        profile_catalog = describe_nemotron_3_5_starter_profiles(
-            task=task,
-            model_name=model,
-        )
-        if json_output:
-            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Available Nemotron 3.5 starter profiles:")
-        _echo(f"Model: {profile_catalog['model_name']}")
-        _echo(f"Task: {profile_catalog['task']}")
-        for profile_name in NEMOTRON_3_5_STARTER_PROFILE_CHOICES:
-            profile_payload = profile_catalog["profiles"][profile_name]
-            summary = profile_payload["summary"]
-            _echo(f"- {profile_name}: {profile_payload['description']}")
-            _echo(
-                "  "
-                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
-                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
-                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
-            )
-        return
-
-    if config:
-        conflicting_options: list[str] = []
-        if task != "customer_service":
-            conflicting_options.append("--task")
-        if starter_profile != "balanced":
-            conflicting_options.append("--starter-profile")
-        if model != NEMOTRON_3_5_BASE_MODEL:
-            conflicting_options.append("--model")
-        if use_lora is not None:
-            conflicting_options.append("--use-lora/--no-lora")
-        if use_4bit is not None:
-            conflicting_options.append("--use-4bit")
-        if use_8bit is not None:
-            conflicting_options.append("--use-8bit")
-        if output_dir is not None:
-            conflicting_options.append("--output-dir")
-        if iterations is not None:
-            conflicting_options.append("--iterations")
-        if wandb:
-            conflicting_options.append("--wandb")
-        if wandb_project is not None:
-            conflicting_options.append("--wandb-project")
-        if conflicting_options:
-            _echo(
-                "`--config` cannot be combined with starter override options: "
-                + ", ".join(conflicting_options)
-            )
-            raise typer.Exit(code=2)
-        try:
-            resolved_config = load_nemotron_3_5_config_file(config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to load Nemotron 3.5 config: {e}")
-            raise typer.Exit(code=2) from e
-    else:
-        if task not in NEMOTRON_3_5_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(NEMOTRON_3_5_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        if starter_profile not in NEMOTRON_3_5_STARTER_PROFILE_CHOICES:
-            _echo(
-                f"Unsupported starter profile. Use one of: {', '.join(NEMOTRON_3_5_STARTER_PROFILE_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        config_overrides: dict[str, t.Any] = {}
-        if iterations is not None:
-            config_overrides["num_outer_iterations"] = _coerce_positive_int(
-                iterations,
-                "iterations",
-                16,
-            )
-        resolved_config = get_nemotron_3_5_config(
-            model_name=model,
-            task=task,
-            starter_profile=starter_profile,
-            use_lora=use_lora,
-            use_4bit=use_4bit,
-            use_8bit=use_8bit,
-            output_dir=output_dir,
-            use_wandb=wandb,
-            wandb_project=wandb_project,
-            **config_overrides,
-        )
-
-    preview = create_nemotron_3_5_preview(resolved_config)
-
-    if write_config:
-        try:
-            written_path = write_nemotron_3_5_config_file(resolved_config, write_config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to write Nemotron 3.5 config: {e}")
-            raise typer.Exit(code=2) from e
-
-        if json_output:
-            payload = dict(preview)
-            payload["config_file"] = str(written_path)
-            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo(f"Wrote Nemotron 3.5 config to {written_path}")
-        return
-
-    if dry_run:
-        if json_output:
-            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Dry-run: Nemotron 3.5 starter config resolved.")
-        _echo(f"Model: {preview['config']['model_name']}")
-        _echo(f"Task: {preview['config']['task']}")
-        _echo(f"Starter profile: {preview['config']['starter_profile']}")
-        _echo(f"Output dir: {preview['config']['output_dir']}")
-        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
-        _echo(
-            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
-        )
-        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
-        for warning in preview.get("warnings", []):
-            _echo(f"Warning: {warning}")
-        _echo("Run with:")
-        _echo("  stateset-agents nemotron-3-5 --no-dry-run --task customer_service")
-        _echo("Or try the low-memory preset:")
-        _echo("  stateset-agents nemotron-3-5 --starter-profile memory --json-output")
-        _echo("Or save a reusable config:")
-        _echo("  stateset-agents nemotron-3-5 --write-config ./nemotron_3_5.json")
-        return
-
-    import asyncio
-
-    try:
-        result = asyncio.run(run_nemotron_3_5_config(resolved_config, dry_run=False))
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Nemotron 3.5 training components unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-    except CLI_TRAIN_EXCEPTIONS as e:
-        _echo(f"Nemotron 3.5 starter failed: {e}")
-        raise typer.Exit(code=2) from e
-
-    if json_output:
-        payload = {
-            "status": "completed",
-            "task": resolved_config.task,
-            "starter_profile": resolved_config.starter_profile,
-            "model_name": resolved_config.model_name,
-            "output_dir": resolved_config.output_dir,
-            "result": str(result),
-        }
-        _echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    _echo("Nemotron 3.5 starter run complete.")
-
-
-@app.command("qwen3-8-27b")
-def qwen3_8(
-    config: str | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to a Qwen/Qwen3.8-27B starter config file (JSON/YAML).",
-    ),
-    task: str = typer.Option(
-        "customer_service",
-        help="Task preset for the Qwen/Qwen3.8-27B starter path.",
-    ),
-    starter_profile: str = typer.Option(
-        "balanced",
-        "--starter-profile",
-        help="Starter profile: balanced, memory, or quality.",
-    ),
-    list_profiles: bool = typer.Option(
-        False,
-        "--list-profiles",
-        help="Describe all built-in starter profiles and exit.",
-    ),
-    model: str = typer.Option(
-        "Qwen/Qwen3.8-27B",
-        "--model",
-        help="Model name. For post-training, prefer Qwen/Qwen3.8-27B.",
-    ),
-    use_lora: bool | None = typer.Option(
-        None,
-        "--use-lora/--no-lora",
-        help="Override LoRA usage. Defaults come from --starter-profile.",
-    ),
-    use_4bit: bool | None = typer.Option(
-        None,
-        "--use-4bit/--no-use-4bit",
-        help="Override 4-bit quantization. Defaults come from --starter-profile.",
-    ),
-    use_8bit: bool | None = typer.Option(
-        None,
-        "--use-8bit/--no-use-8bit",
-        help="Override 8-bit quantization. Defaults come from --starter-profile.",
-    ),
-    output_dir: str | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Override the output directory for checkpoints and adapters.",
-    ),
-    iterations: int | None = typer.Option(
-        None,
-        "--iterations",
-        help="Override the outer GSPO iteration count for the starter run.",
-    ),
-    wandb: bool = typer.Option(
-        False,
-        "--wandb",
-        help="Enable Weights & Biases logging.",
-    ),
-    wandb_project: str | None = typer.Option(
-        None,
-        "--wandb-project",
-        help="Optional W&B project name.",
-    ),
-    write_config: str | None = typer.Option(
-        None,
-        "--write-config",
-        help="Write the resolved Qwen3.8 27B starter config to JSON/YAML and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--no-dry-run",
-        help="Preview the resolved config instead of loading a model.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "--json-output",
-        help="Output machine-readable JSON.",
-    ),
-) -> None:
-    """Preview or run the dedicated Qwen/Qwen3.8-27B GSPO starter path."""
-    try:
-        from stateset_agents.training.qwen3_8_starter import (
-            QWEN38_27B_BASE_MODEL,
-            QWEN38_27B_STARTER_PROFILE_CHOICES,
-            QWEN38_27B_TASK_CHOICES,
-            create_qwen3_8_preview,
-            describe_qwen3_8_starter_profiles,
-            get_qwen3_8_config,
-            load_qwen3_8_config_file,
-            run_qwen3_8_config,
-            write_qwen3_8_config_file,
-        )
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Qwen3.8 27B starter helpers unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-
-    if list_profiles:
-        if config is not None:
-            _echo("`--list-profiles` cannot be combined with `--config`.")
-            raise typer.Exit(code=2)
-        if task not in QWEN38_27B_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(QWEN38_27B_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-
-        profile_catalog = describe_qwen3_8_starter_profiles(
-            task=task,
-            model_name=model,
-        )
-        if json_output:
-            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Available Qwen3.8 27B starter profiles:")
-        _echo(f"Model: {profile_catalog['model_name']}")
-        _echo(f"Task: {profile_catalog['task']}")
-        for profile_name in QWEN38_27B_STARTER_PROFILE_CHOICES:
-            profile_payload = profile_catalog["profiles"][profile_name]
-            summary = profile_payload["summary"]
-            _echo(f"- {profile_name}: {profile_payload['description']}")
-            _echo(
-                "  "
-                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
-                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
-                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
-            )
-        return
-
-    if config:
-        conflicting_options: list[str] = []
-        if task != "customer_service":
-            conflicting_options.append("--task")
-        if starter_profile != "balanced":
-            conflicting_options.append("--starter-profile")
-        if model != QWEN38_27B_BASE_MODEL:
-            conflicting_options.append("--model")
-        if use_lora is not None:
-            conflicting_options.append("--use-lora/--no-lora")
-        if use_4bit is not None:
-            conflicting_options.append("--use-4bit")
-        if use_8bit is not None:
-            conflicting_options.append("--use-8bit")
-        if output_dir is not None:
-            conflicting_options.append("--output-dir")
-        if iterations is not None:
-            conflicting_options.append("--iterations")
-        if wandb:
-            conflicting_options.append("--wandb")
-        if wandb_project is not None:
-            conflicting_options.append("--wandb-project")
-        if conflicting_options:
-            _echo(
-                "`--config` cannot be combined with starter override options: "
-                + ", ".join(conflicting_options)
-            )
-            raise typer.Exit(code=2)
-        try:
-            resolved_config = load_qwen3_8_config_file(config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to load Qwen3.8 27B config: {e}")
-            raise typer.Exit(code=2) from e
-    else:
-        if task not in QWEN38_27B_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(QWEN38_27B_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        if starter_profile not in QWEN38_27B_STARTER_PROFILE_CHOICES:
-            _echo(
-                f"Unsupported starter profile. Use one of: {', '.join(QWEN38_27B_STARTER_PROFILE_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        config_overrides: dict[str, t.Any] = {}
-        if iterations is not None:
-            config_overrides["num_outer_iterations"] = _coerce_positive_int(
-                iterations,
-                "iterations",
-                16,
-            )
-        resolved_config = get_qwen3_8_config(
-            model_name=model,
-            task=task,
-            starter_profile=starter_profile,
-            use_lora=use_lora,
-            use_4bit=use_4bit,
-            use_8bit=use_8bit,
-            output_dir=output_dir,
-            use_wandb=wandb,
-            wandb_project=wandb_project,
-            **config_overrides,
-        )
-
-    preview = create_qwen3_8_preview(resolved_config)
-
-    if write_config:
-        try:
-            written_path = write_qwen3_8_config_file(resolved_config, write_config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to write Qwen3.8 27B config: {e}")
-            raise typer.Exit(code=2) from e
-
-        if json_output:
-            payload = dict(preview)
-            payload["config_file"] = str(written_path)
-            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo(f"Wrote Qwen3.8 27B config to {written_path}")
-        return
-
-    if dry_run:
-        if json_output:
-            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Dry-run: Qwen3.8 27B starter config resolved.")
-        _echo(f"Model: {preview['config']['model_name']}")
-        _echo(f"Task: {preview['config']['task']}")
-        _echo(f"Starter profile: {preview['config']['starter_profile']}")
-        _echo(f"Output dir: {preview['config']['output_dir']}")
-        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
-        _echo(
-            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
-        )
-        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
-        for warning in preview.get("warnings", []):
-            _echo(f"Warning: {warning}")
-        _echo("Run with:")
-        _echo("  stateset-agents qwen3-8-27b --no-dry-run --task customer_service")
-        _echo("Or try the low-memory preset:")
-        _echo("  stateset-agents qwen3-8-27b --starter-profile memory --json-output")
-        _echo("Or save a reusable config:")
-        _echo("  stateset-agents qwen3-8-27b --write-config ./qwen3_8_27b.json")
-        return
-
-    import asyncio
-
-    try:
-        result = asyncio.run(run_qwen3_8_config(resolved_config, dry_run=False))
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Qwen3.8 27B training components unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-    except CLI_TRAIN_EXCEPTIONS as e:
-        _echo(f"Qwen3.8 27B starter failed: {e}")
-        raise typer.Exit(code=2) from e
-
-    if json_output:
-        payload = {
-            "status": "completed",
-            "task": resolved_config.task,
-            "starter_profile": resolved_config.starter_profile,
-            "model_name": resolved_config.model_name,
-            "output_dir": resolved_config.output_dir,
-            "result": str(result),
-        }
-        _echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    _echo("Qwen3.8 27B starter run complete.")
-
-
-@app.command("qwen3-coder")
-def qwen3_coder(
-    config: str | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to a Qwen/Qwen3-Coder-30B-A3B-Instruct starter config file (JSON/YAML).",
-    ),
-    task: str = typer.Option(
-        "customer_service",
-        help="Task preset for the Qwen/Qwen3-Coder-30B-A3B-Instruct starter path.",
-    ),
-    starter_profile: str = typer.Option(
-        "balanced",
-        "--starter-profile",
-        help="Starter profile: balanced, memory, or quality.",
-    ),
-    list_profiles: bool = typer.Option(
-        False,
-        "--list-profiles",
-        help="Describe all built-in starter profiles and exit.",
-    ),
-    model: str = typer.Option(
-        "Qwen/Qwen3-Coder-30B-A3B-Instruct",
-        "--model",
-        help="Model name. For post-training, prefer Qwen/Qwen3-Coder-30B-A3B-Instruct.",
-    ),
-    use_lora: bool | None = typer.Option(
-        None,
-        "--use-lora/--no-lora",
-        help="Override LoRA usage. Defaults come from --starter-profile.",
-    ),
-    use_4bit: bool | None = typer.Option(
-        None,
-        "--use-4bit/--no-use-4bit",
-        help="Override 4-bit quantization. Defaults come from --starter-profile.",
-    ),
-    use_8bit: bool | None = typer.Option(
-        None,
-        "--use-8bit/--no-use-8bit",
-        help="Override 8-bit quantization. Defaults come from --starter-profile.",
-    ),
-    output_dir: str | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Override the output directory for checkpoints and adapters.",
-    ),
-    iterations: int | None = typer.Option(
-        None,
-        "--iterations",
-        help="Override the outer GSPO iteration count for the starter run.",
-    ),
-    wandb: bool = typer.Option(
-        False,
-        "--wandb",
-        help="Enable Weights & Biases logging.",
-    ),
-    wandb_project: str | None = typer.Option(
-        None,
-        "--wandb-project",
-        help="Optional W&B project name.",
-    ),
-    write_config: str | None = typer.Option(
-        None,
-        "--write-config",
-        help="Write the resolved Qwen3 Coder starter config to JSON/YAML and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--no-dry-run",
-        help="Preview the resolved config instead of loading a model.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "--json-output",
-        help="Output machine-readable JSON.",
-    ),
-) -> None:
-    """Preview or run the dedicated Qwen/Qwen3-Coder-30B-A3B-Instruct GSPO starter path."""
-    try:
-        from stateset_agents.training.qwen3_coder_starter import (
-            QWEN3_CODER_BASE_MODEL,
-            QWEN3_CODER_STARTER_PROFILE_CHOICES,
-            QWEN3_CODER_TASK_CHOICES,
-            create_qwen3_coder_preview,
-            describe_qwen3_coder_starter_profiles,
-            get_qwen3_coder_config,
-            load_qwen3_coder_config_file,
-            run_qwen3_coder_config,
-            write_qwen3_coder_config_file,
-        )
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Qwen3 Coder starter helpers unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-
-    if list_profiles:
-        if config is not None:
-            _echo("`--list-profiles` cannot be combined with `--config`.")
-            raise typer.Exit(code=2)
-        if task not in QWEN3_CODER_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(QWEN3_CODER_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-
-        profile_catalog = describe_qwen3_coder_starter_profiles(
-            task=task,
-            model_name=model,
-        )
-        if json_output:
-            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Available Qwen3 Coder starter profiles:")
-        _echo(f"Model: {profile_catalog['model_name']}")
-        _echo(f"Task: {profile_catalog['task']}")
-        for profile_name in QWEN3_CODER_STARTER_PROFILE_CHOICES:
-            profile_payload = profile_catalog["profiles"][profile_name]
-            summary = profile_payload["summary"]
-            _echo(f"- {profile_name}: {profile_payload['description']}")
-            _echo(
-                "  "
-                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
-                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
-                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
-            )
-        return
-
-    if config:
-        conflicting_options: list[str] = []
-        if task != "customer_service":
-            conflicting_options.append("--task")
-        if starter_profile != "balanced":
-            conflicting_options.append("--starter-profile")
-        if model != QWEN3_CODER_BASE_MODEL:
-            conflicting_options.append("--model")
-        if use_lora is not None:
-            conflicting_options.append("--use-lora/--no-lora")
-        if use_4bit is not None:
-            conflicting_options.append("--use-4bit")
-        if use_8bit is not None:
-            conflicting_options.append("--use-8bit")
-        if output_dir is not None:
-            conflicting_options.append("--output-dir")
-        if iterations is not None:
-            conflicting_options.append("--iterations")
-        if wandb:
-            conflicting_options.append("--wandb")
-        if wandb_project is not None:
-            conflicting_options.append("--wandb-project")
-        if conflicting_options:
-            _echo(
-                "`--config` cannot be combined with starter override options: "
-                + ", ".join(conflicting_options)
-            )
-            raise typer.Exit(code=2)
-        try:
-            resolved_config = load_qwen3_coder_config_file(config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to load Qwen3 Coder config: {e}")
-            raise typer.Exit(code=2) from e
-    else:
-        if task not in QWEN3_CODER_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(QWEN3_CODER_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        if starter_profile not in QWEN3_CODER_STARTER_PROFILE_CHOICES:
-            _echo(
-                f"Unsupported starter profile. Use one of: {', '.join(QWEN3_CODER_STARTER_PROFILE_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        config_overrides: dict[str, t.Any] = {}
-        if iterations is not None:
-            config_overrides["num_outer_iterations"] = _coerce_positive_int(
-                iterations,
-                "iterations",
-                16,
-            )
-        resolved_config = get_qwen3_coder_config(
-            model_name=model,
-            task=task,
-            starter_profile=starter_profile,
-            use_lora=use_lora,
-            use_4bit=use_4bit,
-            use_8bit=use_8bit,
-            output_dir=output_dir,
-            use_wandb=wandb,
-            wandb_project=wandb_project,
-            **config_overrides,
-        )
-
-    preview = create_qwen3_coder_preview(resolved_config)
-
-    if write_config:
-        try:
-            written_path = write_qwen3_coder_config_file(resolved_config, write_config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to write Qwen3 Coder config: {e}")
-            raise typer.Exit(code=2) from e
-
-        if json_output:
-            payload = dict(preview)
-            payload["config_file"] = str(written_path)
-            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo(f"Wrote Qwen3 Coder config to {written_path}")
-        return
-
-    if dry_run:
-        if json_output:
-            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Dry-run: Qwen3 Coder starter config resolved.")
-        _echo(f"Model: {preview['config']['model_name']}")
-        _echo(f"Task: {preview['config']['task']}")
-        _echo(f"Starter profile: {preview['config']['starter_profile']}")
-        _echo(f"Output dir: {preview['config']['output_dir']}")
-        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
-        _echo(
-            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
-        )
-        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
-        for warning in preview.get("warnings", []):
-            _echo(f"Warning: {warning}")
-        _echo("Run with:")
-        _echo("  stateset-agents qwen3-coder --no-dry-run --task customer_service")
-        _echo("Or try the low-memory preset:")
-        _echo("  stateset-agents qwen3-coder --starter-profile memory --json-output")
-        _echo("Or save a reusable config:")
-        _echo("  stateset-agents qwen3-coder --write-config ./qwen3_coder.json")
-        return
-
-    import asyncio
-
-    try:
-        result = asyncio.run(run_qwen3_coder_config(resolved_config, dry_run=False))
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("Qwen3 Coder training components unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-    except CLI_TRAIN_EXCEPTIONS as e:
-        _echo(f"Qwen3 Coder starter failed: {e}")
-        raise typer.Exit(code=2) from e
-
-    if json_output:
-        payload = {
-            "status": "completed",
-            "task": resolved_config.task,
-            "starter_profile": resolved_config.starter_profile,
-            "model_name": resolved_config.model_name,
-            "output_dir": resolved_config.output_dir,
-            "result": str(result),
-        }
-        _echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    _echo("Qwen3 Coder starter run complete.")
-
-
-@app.command("gpt-oss")
-def gpt_oss(
-    config: str | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to a openai/gpt-oss-20b starter config file (JSON/YAML).",
-    ),
-    task: str = typer.Option(
-        "customer_service",
-        help="Task preset for the openai/gpt-oss-20b starter path.",
-    ),
-    starter_profile: str = typer.Option(
-        "balanced",
-        "--starter-profile",
-        help="Starter profile: balanced, memory, or quality.",
-    ),
-    list_profiles: bool = typer.Option(
-        False,
-        "--list-profiles",
-        help="Describe all built-in starter profiles and exit.",
-    ),
-    model: str = typer.Option(
-        "openai/gpt-oss-20b",
-        "--model",
-        help="Model name. For post-training, prefer openai/gpt-oss-20b.",
-    ),
-    use_lora: bool | None = typer.Option(
-        None,
-        "--use-lora/--no-lora",
-        help="Override LoRA usage. Defaults come from --starter-profile.",
-    ),
-    use_4bit: bool | None = typer.Option(
-        None,
-        "--use-4bit/--no-use-4bit",
-        help="Override 4-bit quantization. Defaults come from --starter-profile.",
-    ),
-    use_8bit: bool | None = typer.Option(
-        None,
-        "--use-8bit/--no-use-8bit",
-        help="Override 8-bit quantization. Defaults come from --starter-profile.",
-    ),
-    output_dir: str | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Override the output directory for checkpoints and adapters.",
-    ),
-    iterations: int | None = typer.Option(
-        None,
-        "--iterations",
-        help="Override the outer GSPO iteration count for the starter run.",
-    ),
-    wandb: bool = typer.Option(
-        False,
-        "--wandb",
-        help="Enable Weights & Biases logging.",
-    ),
-    wandb_project: str | None = typer.Option(
-        None,
-        "--wandb-project",
-        help="Optional W&B project name.",
-    ),
-    write_config: str | None = typer.Option(
-        None,
-        "--write-config",
-        help="Write the resolved gpt-oss starter config to JSON/YAML and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--no-dry-run",
-        help="Preview the resolved config instead of loading a model.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "--json-output",
-        help="Output machine-readable JSON.",
-    ),
-) -> None:
-    """Preview or run the dedicated openai/gpt-oss-20b GSPO starter path."""
-    try:
-        from stateset_agents.training.gpt_oss_starter import (
-            GPT_OSS_BASE_MODEL,
-            GPT_OSS_STARTER_PROFILE_CHOICES,
-            GPT_OSS_TASK_CHOICES,
-            create_gpt_oss_preview,
-            describe_gpt_oss_starter_profiles,
-            get_gpt_oss_config,
-            load_gpt_oss_config_file,
-            run_gpt_oss_config,
-            write_gpt_oss_config_file,
-        )
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("gpt-oss starter helpers unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-
-    if list_profiles:
-        if config is not None:
-            _echo("`--list-profiles` cannot be combined with `--config`.")
-            raise typer.Exit(code=2)
-        if task not in GPT_OSS_TASK_CHOICES:
-            _echo(f"Unsupported task. Use one of: {', '.join(GPT_OSS_TASK_CHOICES)}.")
-            raise typer.Exit(code=2)
-
-        profile_catalog = describe_gpt_oss_starter_profiles(
-            task=task,
-            model_name=model,
-        )
-        if json_output:
-            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Available gpt-oss starter profiles:")
-        _echo(f"Model: {profile_catalog['model_name']}")
-        _echo(f"Task: {profile_catalog['task']}")
-        for profile_name in GPT_OSS_STARTER_PROFILE_CHOICES:
-            profile_payload = profile_catalog["profiles"][profile_name]
-            summary = profile_payload["summary"]
-            _echo(f"- {profile_name}: {profile_payload['description']}")
-            _echo(
-                "  "
-                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
-                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
-                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
-            )
-        return
-
-    if config:
-        conflicting_options: list[str] = []
-        if task != "customer_service":
-            conflicting_options.append("--task")
-        if starter_profile != "balanced":
-            conflicting_options.append("--starter-profile")
-        if model != GPT_OSS_BASE_MODEL:
-            conflicting_options.append("--model")
-        if use_lora is not None:
-            conflicting_options.append("--use-lora/--no-lora")
-        if use_4bit is not None:
-            conflicting_options.append("--use-4bit")
-        if use_8bit is not None:
-            conflicting_options.append("--use-8bit")
-        if output_dir is not None:
-            conflicting_options.append("--output-dir")
-        if iterations is not None:
-            conflicting_options.append("--iterations")
-        if wandb:
-            conflicting_options.append("--wandb")
-        if wandb_project is not None:
-            conflicting_options.append("--wandb-project")
-        if conflicting_options:
-            _echo(
-                "`--config` cannot be combined with starter override options: "
-                + ", ".join(conflicting_options)
-            )
-            raise typer.Exit(code=2)
-        try:
-            resolved_config = load_gpt_oss_config_file(config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to load gpt-oss config: {e}")
-            raise typer.Exit(code=2) from e
-    else:
-        if task not in GPT_OSS_TASK_CHOICES:
-            _echo(f"Unsupported task. Use one of: {', '.join(GPT_OSS_TASK_CHOICES)}.")
-            raise typer.Exit(code=2)
-        if starter_profile not in GPT_OSS_STARTER_PROFILE_CHOICES:
-            _echo(
-                f"Unsupported starter profile. Use one of: {', '.join(GPT_OSS_STARTER_PROFILE_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        config_overrides: dict[str, t.Any] = {}
-        if iterations is not None:
-            config_overrides["num_outer_iterations"] = _coerce_positive_int(
-                iterations,
-                "iterations",
-                16,
-            )
-        resolved_config = get_gpt_oss_config(
-            model_name=model,
-            task=task,
-            starter_profile=starter_profile,
-            use_lora=use_lora,
-            use_4bit=use_4bit,
-            use_8bit=use_8bit,
-            output_dir=output_dir,
-            use_wandb=wandb,
-            wandb_project=wandb_project,
-            **config_overrides,
-        )
-
-    preview = create_gpt_oss_preview(resolved_config)
-
-    if write_config:
-        try:
-            written_path = write_gpt_oss_config_file(resolved_config, write_config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to write gpt-oss config: {e}")
-            raise typer.Exit(code=2) from e
-
-        if json_output:
-            payload = dict(preview)
-            payload["config_file"] = str(written_path)
-            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo(f"Wrote gpt-oss config to {written_path}")
-        return
-
-    if dry_run:
-        if json_output:
-            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Dry-run: gpt-oss starter config resolved.")
-        _echo(f"Model: {preview['config']['model_name']}")
-        _echo(f"Task: {preview['config']['task']}")
-        _echo(f"Starter profile: {preview['config']['starter_profile']}")
-        _echo(f"Output dir: {preview['config']['output_dir']}")
-        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
-        _echo(
-            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
-        )
-        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
-        for warning in preview.get("warnings", []):
-            _echo(f"Warning: {warning}")
-        _echo("Run with:")
-        _echo("  stateset-agents gpt-oss --no-dry-run --task customer_service")
-        _echo("Or try the low-memory preset:")
-        _echo("  stateset-agents gpt-oss --starter-profile memory --json-output")
-        _echo("Or save a reusable config:")
-        _echo("  stateset-agents gpt-oss --write-config ./gpt_oss.json")
-        return
-
-    import asyncio
-
-    try:
-        result = asyncio.run(run_gpt_oss_config(resolved_config, dry_run=False))
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("gpt-oss training components unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-    except CLI_TRAIN_EXCEPTIONS as e:
-        _echo(f"gpt-oss starter failed: {e}")
-        raise typer.Exit(code=2) from e
-
-    if json_output:
-        payload = {
-            "status": "completed",
-            "task": resolved_config.task,
-            "starter_profile": resolved_config.starter_profile,
-            "model_name": resolved_config.model_name,
-            "output_dir": resolved_config.output_dir,
-            "result": str(result),
-        }
-        _echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    _echo("gpt-oss starter run complete.")
-
-
-@app.command("deepseek-v4")
-def deepseek_v4(
-    config: str | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to a deepseek-ai/DeepSeek-V4-Flash starter config file (JSON/YAML).",
-    ),
-    task: str = typer.Option(
-        "customer_service",
-        help="Task preset for the deepseek-ai/DeepSeek-V4-Flash starter path.",
-    ),
-    starter_profile: str = typer.Option(
-        "balanced",
-        "--starter-profile",
-        help="Starter profile: balanced, memory, or quality.",
-    ),
-    list_profiles: bool = typer.Option(
-        False,
-        "--list-profiles",
-        help="Describe all built-in starter profiles and exit.",
-    ),
-    model: str = typer.Option(
-        "deepseek-ai/DeepSeek-V4-Flash",
-        "--model",
-        help="Model name. For post-training, prefer deepseek-ai/DeepSeek-V4-Flash.",
-    ),
-    use_lora: bool | None = typer.Option(
-        None,
-        "--use-lora/--no-lora",
-        help="Override LoRA usage. Defaults come from --starter-profile.",
-    ),
-    use_4bit: bool | None = typer.Option(
-        None,
-        "--use-4bit/--no-use-4bit",
-        help="Override 4-bit quantization. Defaults come from --starter-profile.",
-    ),
-    use_8bit: bool | None = typer.Option(
-        None,
-        "--use-8bit/--no-use-8bit",
-        help="Override 8-bit quantization. Defaults come from --starter-profile.",
-    ),
-    output_dir: str | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Override the output directory for checkpoints and adapters.",
-    ),
-    iterations: int | None = typer.Option(
-        None,
-        "--iterations",
-        help="Override the outer GSPO iteration count for the starter run.",
-    ),
-    wandb: bool = typer.Option(
-        False,
-        "--wandb",
-        help="Enable Weights & Biases logging.",
-    ),
-    wandb_project: str | None = typer.Option(
-        None,
-        "--wandb-project",
-        help="Optional W&B project name.",
-    ),
-    write_config: str | None = typer.Option(
-        None,
-        "--write-config",
-        help="Write the resolved deepseek-v4 starter config to JSON/YAML and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        True,
-        "--dry-run/--no-dry-run",
-        help="Preview the resolved config instead of loading a model.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "--json-output",
-        help="Output machine-readable JSON.",
-    ),
-) -> None:
-    """Preview or run the dedicated deepseek-ai/DeepSeek-V4-Flash GSPO starter path."""
-    try:
-        from stateset_agents.training.deepseek_v4_starter import (
-            DEEPSEEK_V4_BASE_MODEL,
-            DEEPSEEK_V4_STARTER_PROFILE_CHOICES,
-            DEEPSEEK_V4_TASK_CHOICES,
-            create_deepseek_v4_preview,
-            describe_deepseek_v4_starter_profiles,
-            get_deepseek_v4_config,
-            load_deepseek_v4_config_file,
-            run_deepseek_v4_config,
-            write_deepseek_v4_config_file,
-        )
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("deepseek-v4 starter helpers unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-
-    if list_profiles:
-        if config is not None:
-            _echo("`--list-profiles` cannot be combined with `--config`.")
-            raise typer.Exit(code=2)
-        if task not in DEEPSEEK_V4_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(DEEPSEEK_V4_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-
-        profile_catalog = describe_deepseek_v4_starter_profiles(
-            task=task,
-            model_name=model,
-        )
-        if json_output:
-            _echo(json.dumps(profile_catalog, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Available deepseek-v4 starter profiles:")
-        _echo(f"Model: {profile_catalog['model_name']}")
-        _echo(f"Task: {profile_catalog['task']}")
-        for profile_name in DEEPSEEK_V4_STARTER_PROFILE_CHOICES:
-            profile_payload = profile_catalog["profiles"][profile_name]
-            summary = profile_payload["summary"]
-            _echo(f"- {profile_name}: {profile_payload['description']}")
-            _echo(
-                "  "
-                f"quantization={summary['quantization_mode']}; effective_batch_size={summary['effective_batch_size']}; "
-                f"prompt/completion={summary['max_prompt_length']}/{summary['max_completion_length']}; "
-                f"generations={summary['num_generations']}; outer_iterations={summary['num_outer_iterations']}"
-            )
-        return
-
-    if config:
-        conflicting_options: list[str] = []
-        if task != "customer_service":
-            conflicting_options.append("--task")
-        if starter_profile != "balanced":
-            conflicting_options.append("--starter-profile")
-        if model != DEEPSEEK_V4_BASE_MODEL:
-            conflicting_options.append("--model")
-        if use_lora is not None:
-            conflicting_options.append("--use-lora/--no-lora")
-        if use_4bit is not None:
-            conflicting_options.append("--use-4bit")
-        if use_8bit is not None:
-            conflicting_options.append("--use-8bit")
-        if output_dir is not None:
-            conflicting_options.append("--output-dir")
-        if iterations is not None:
-            conflicting_options.append("--iterations")
-        if wandb:
-            conflicting_options.append("--wandb")
-        if wandb_project is not None:
-            conflicting_options.append("--wandb-project")
-        if conflicting_options:
-            _echo(
-                "`--config` cannot be combined with starter override options: "
-                + ", ".join(conflicting_options)
-            )
-            raise typer.Exit(code=2)
-        try:
-            resolved_config = load_deepseek_v4_config_file(config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to load deepseek-v4 config: {e}")
-            raise typer.Exit(code=2) from e
-    else:
-        if task not in DEEPSEEK_V4_TASK_CHOICES:
-            _echo(
-                f"Unsupported task. Use one of: {', '.join(DEEPSEEK_V4_TASK_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        if starter_profile not in DEEPSEEK_V4_STARTER_PROFILE_CHOICES:
-            _echo(
-                f"Unsupported starter profile. Use one of: {', '.join(DEEPSEEK_V4_STARTER_PROFILE_CHOICES)}."
-            )
-            raise typer.Exit(code=2)
-        config_overrides: dict[str, t.Any] = {}
-        if iterations is not None:
-            config_overrides["num_outer_iterations"] = _coerce_positive_int(
-                iterations,
-                "iterations",
-                16,
-            )
-        resolved_config = get_deepseek_v4_config(
-            model_name=model,
-            task=task,
-            starter_profile=starter_profile,
-            use_lora=use_lora,
-            use_4bit=use_4bit,
-            use_8bit=use_8bit,
-            output_dir=output_dir,
-            use_wandb=wandb,
-            wandb_project=wandb_project,
-            **config_overrides,
-        )
-
-    preview = create_deepseek_v4_preview(resolved_config)
-
-    if write_config:
-        try:
-            written_path = write_deepseek_v4_config_file(resolved_config, write_config)
-        except CLI_CONFIG_EXCEPTIONS + (ImportError,) as e:
-            _echo(f"Failed to write deepseek-v4 config: {e}")
-            raise typer.Exit(code=2) from e
-
-        if json_output:
-            payload = dict(preview)
-            payload["config_file"] = str(written_path)
-            _echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo(f"Wrote deepseek-v4 config to {written_path}")
-        return
-
-    if dry_run:
-        if json_output:
-            _echo(json.dumps(preview, indent=2, sort_keys=True, default=str))
-            return
-
-        _echo("Dry-run: deepseek-v4 starter config resolved.")
-        _echo(f"Model: {preview['config']['model_name']}")
-        _echo(f"Task: {preview['config']['task']}")
-        _echo(f"Starter profile: {preview['config']['starter_profile']}")
-        _echo(f"Output dir: {preview['config']['output_dir']}")
-        _echo(f"LoRA: {preview['gspo_overrides']['use_lora']}")
-        _echo(
-            f"4-bit: {preview['gspo_overrides']['use_4bit']}; 8-bit: {preview['gspo_overrides']['use_8bit']}"
-        )
-        _echo(f"Outer iterations: {preview['gspo_overrides']['num_outer_iterations']}")
-        for warning in preview.get("warnings", []):
-            _echo(f"Warning: {warning}")
-        _echo("Run with:")
-        _echo("  stateset-agents deepseek-v4 --no-dry-run --task customer_service")
-        _echo("Or try the low-memory preset:")
-        _echo("  stateset-agents deepseek-v4 --starter-profile memory --json-output")
-        _echo("Or save a reusable config:")
-        _echo("  stateset-agents deepseek-v4 --write-config ./deepseek_v4.json")
-        return
-
-    import asyncio
-
-    try:
-        result = asyncio.run(run_deepseek_v4_config(resolved_config, dry_run=False))
-    except CLI_IMPORT_EXCEPTIONS as e:
-        _echo("deepseek-v4 training components unavailable. Install training extras.")
-        _echo(f"Details: {e}")
-        raise typer.Exit(code=2) from e
-    except CLI_TRAIN_EXCEPTIONS as e:
-        _echo(f"deepseek-v4 starter failed: {e}")
-        raise typer.Exit(code=2) from e
-
-    if json_output:
-        payload = {
-            "status": "completed",
-            "task": resolved_config.task,
-            "starter_profile": resolved_config.starter_profile,
-            "model_name": resolved_config.model_name,
-            "output_dir": resolved_config.output_dir,
-            "result": str(result),
-        }
-        _echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    _echo("deepseek-v4 starter run complete.")
+for _preset in PRESETS.values():
+    if _preset.cli_command is not None:
+        _register_model_command(app, _preset)
