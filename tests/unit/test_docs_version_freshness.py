@@ -22,6 +22,7 @@ import pathlib
 import re
 
 import stateset_agents
+from tests.unit._paths import rel_posix
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 WHEEL_RE = re.compile(r"stateset_agents-(\d+\.\d+\.\d+(?:[.\w-]*)?)-py3-none-any\.whl")
@@ -72,7 +73,7 @@ def test_wheel_version_mentions_match_current_version():
     for path in _doc_files():
         stale.extend(
             _stale_mentions(
-                path.read_text(encoding="utf-8"), current, str(path.relative_to(ROOT))
+                path.read_text(encoding="utf-8"), current, rel_posix(path, ROOT)
             )
         )
     assert not stale, "stale wheel version mentions found:\n" + "\n".join(stale)
