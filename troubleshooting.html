@@ -1,0 +1,280 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Troubleshooting &mdash; StateSet Agents 0.39.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/custom.css?v=779363f2" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=ee774964"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Contributing" href="contributing.html" />
+    <link rel="prev" title="Deployment" href="deployment.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search"  style="background: #2980B9" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            StateSet Agents
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="platform_tour.html">Platform Tour</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="platform_tour.html#what-the-tour-covers">What the tour covers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="platform_tour.html#live-demo">Live demo</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="cookbook.html">Cookbook</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="cookbook.html#recipes-covered">Recipes covered</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qwen3_5_starter.html">Qwen 3.5 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#inspect-profile-catalog">Inspect profile catalog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#config-roundtrip">Config roundtrip</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="kimi_k2_6_starter.html">Kimi-K2.6 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="kimi_k3_starter.html">Kimi-K3 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="muse_glimmer_starter.html">Muse Glimmer Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nemotron_3_5_starter.html">Nemotron 3.5 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qwen3_8_starter.html">Qwen3.8 27B Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qwen3_coder_starter.html">Qwen3 Coder Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="gpt_oss_starter.html">gpt-oss Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="deepseek_v4_starter.html">DeepSeek V4 Flash Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="glm5_1_starter.html">GLM 5.1 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#serving-recommendations">Serving recommendations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#helm-values-rendering">Helm values rendering</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="glm5_2_starter.html">GLM 5.2 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#serving-recommendations">Serving recommendations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#helm-values-rendering">Helm values rendering</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="core-concepts.html">Core Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agents.html">Agents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="environments.html">Environments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rewards.html">Rewards</a></li>
+<li class="toctree-l1"><a class="reference internal" href="training.html">Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="monitoring.html">Monitoring</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="api/agent.html">API: Agents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/environment.html">API: Environments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/reward.html">API: Rewards</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/training.html">API: Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/monitoring.html">API: Monitoring</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/security.html">API: Security</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/enhanced-api.html">API: OpenAI and Anthropic Compatibility</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="distributed-training.html">Distributed Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="custom-rewards.html">Custom Rewards</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance-optimization.html">Performance Optimization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deployment.html">Deployment</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu"  style="background: #2980B9" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">StateSet Agents</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Troubleshooting</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/troubleshooting.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="troubleshooting">
+<h1>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading"></a></h1>
+<p>If something does not start:</p>
+<ul class="simple">
+<li><p>Check <cite>/health</cite> and <cite>/healthz</cite></p></li>
+<li><p>Confirm <cite>INFERENCE_BACKEND_URL</cite> points at a reachable backend</p></li>
+<li><p>For local dev, set <cite>API_REQUIRE_AUTH=false</cite></p></li>
+</ul>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="deployment.html" class="btn btn-neutral float-left" title="Deployment" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="contributing.html" class="btn btn-neutral float-right" title="Contributing" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, StateSet Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

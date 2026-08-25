@@ -1,0 +1,360 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GLM 5.1 Starter Path &mdash; StateSet Agents 0.39.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/custom.css?v=779363f2" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=ee774964"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="GLM 5.2 Starter Path" href="glm5_2_starter.html" />
+    <link rel="prev" title="DeepSeek V4 Flash Starter Path" href="deepseek_v4_starter.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search"  style="background: #2980B9" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            StateSet Agents
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="platform_tour.html">Platform Tour</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="platform_tour.html#what-the-tour-covers">What the tour covers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="platform_tour.html#live-demo">Live demo</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="cookbook.html">Cookbook</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="cookbook.html#recipes-covered">Recipes covered</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qwen3_5_starter.html">Qwen 3.5 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#inspect-profile-catalog">Inspect profile catalog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#config-roundtrip">Config roundtrip</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="kimi_k2_6_starter.html">Kimi-K2.6 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="kimi_k3_starter.html">Kimi-K3 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="muse_glimmer_starter.html">Muse Glimmer Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nemotron_3_5_starter.html">Nemotron 3.5 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qwen3_8_starter.html">Qwen3.8 27B Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qwen3_coder_starter.html">Qwen3 Coder Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="gpt_oss_starter.html">gpt-oss Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="deepseek_v4_starter.html">DeepSeek V4 Flash Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">GLM 5.1 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#serving-recommendations">Serving recommendations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#helm-values-rendering">Helm values rendering</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="glm5_2_starter.html">GLM 5.2 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#serving-recommendations">Serving recommendations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#helm-values-rendering">Helm values rendering</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="core-concepts.html">Core Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agents.html">Agents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="environments.html">Environments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rewards.html">Rewards</a></li>
+<li class="toctree-l1"><a class="reference internal" href="training.html">Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="monitoring.html">Monitoring</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="api/agent.html">API: Agents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/environment.html">API: Environments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/reward.html">API: Rewards</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/training.html">API: Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/monitoring.html">API: Monitoring</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/security.html">API: Security</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/enhanced-api.html">API: OpenAI and Anthropic Compatibility</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="distributed-training.html">Distributed Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="custom-rewards.html">Custom Rewards</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance-optimization.html">Performance Optimization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deployment.html">Deployment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu"  style="background: #2980B9" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">StateSet Agents</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">GLM 5.1 Starter Path</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/glm5_1_starter.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="glm-5-1-starter-path">
+<h1>GLM 5.1 Starter Path<a class="headerlink" href="#glm-5-1-starter-path" title="Link to this heading"></a></h1>
+<p>Use this starter when you want the fastest path to a first GSPO post-training
+run for <code class="docutils literal notranslate"><span class="pre">zai-org/GLM-5.1</span></code>. GLM 5.1 is a 754B-parameter Mixture-of-Experts
+model with DeepSeek V3-style Multi-head Latent Attention (MLA) and 256 routed
+experts (8 active per token). A private FP8 deployment alias such as
+<code class="docutils literal notranslate"><span class="pre">your-org/GLM-5.1-FP8</span></code> requires a full 8×H200/B200 host, so this starter
+assumes QLoRA training and vLLM-backed serving.</p>
+<section id="cli-quick-start">
+<h2>CLI quick start<a class="headerlink" href="#cli-quick-start" title="Link to this heading"></a></h2>
+<p>Start with a dry-run to inspect the resolved configuration without loading
+weights:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>examples/finetune_glm5_1_gspo.py<span class="w"> </span>--dry-run
+python<span class="w"> </span>examples/finetune_glm5_1_gspo.py<span class="w"> </span>--task<span class="w"> </span>customer_service<span class="w"> </span>--dry-run
+python<span class="w"> </span>examples/finetune_glm5_1_gspo.py<span class="w"> </span>--starter-profile<span class="w"> </span>memory<span class="w"> </span>--dry-run
+python<span class="w"> </span>examples/finetune_glm5_1_gspo.py<span class="w"> </span>--list-profiles
+</pre></div>
+</div>
+<p>Then launch the starter run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>examples/finetune_glm5_1_gspo.py<span class="w"> </span>--task<span class="w"> </span>customer_service<span class="w"> </span>--no-dry-run
+</pre></div>
+</div>
+</section>
+<section id="starter-profiles">
+<h2>Starter profiles<a class="headerlink" href="#starter-profiles" title="Link to this heading"></a></h2>
+<p>The GLM 5.1 starter ships with three built-in profiles:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">balanced</span></code>: first-run QLoRA defaults, 4-bit quantization, moderate context.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">memory</span></code>: lower-memory variant with smaller groups and shorter context.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">quality</span></code>: larger context/rollout sizes for B200/H200 clusters.</p></li>
+</ul>
+</section>
+<section id="serving-recommendations">
+<h2>Serving recommendations<a class="headerlink" href="#serving-recommendations" title="Link to this heading"></a></h2>
+<p>Invoke <code class="docutils literal notranslate"><span class="pre">get_glm5_1_serving_recommendations()</span></code> to get vLLM-compatible flags:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">stateset_agents.training</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_glm5_1_serving_recommendations</span>
+
+<span class="c1"># bf16 (full precision)</span>
+<span class="n">bf16</span> <span class="o">=</span> <span class="n">get_glm5_1_serving_recommendations</span><span class="p">()</span>
+<span class="c1"># fp8 (single-host)</span>
+<span class="n">fp8</span> <span class="o">=</span> <span class="n">get_glm5_1_serving_recommendations</span><span class="p">(</span><span class="n">use_fp8</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The recommendation payload maps directly to the <code class="docutils literal notranslate"><span class="pre">recommended</span></code> block in
+<code class="docutils literal notranslate"><span class="pre">serving_manifest.json</span></code>, which drives the Helm render scripts (see
+<a class="reference internal" href="deployment.html"><span class="doc">Deployment</span></a>).</p>
+</section>
+<section id="helm-values-rendering">
+<h2>Helm values rendering<a class="headerlink" href="#helm-values-rendering" title="Link to this heading"></a></h2>
+<p>After a training run writes a <code class="docutils literal notranslate"><span class="pre">serving_manifest.json</span></code>, render a Helm values
+override with <code class="docutils literal notranslate"><span class="pre">scripts/render_glm5_1_helm_values.py</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/render_glm5_1_helm_values.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--manifest<span class="w"> </span>./outputs/glm5_1_gspo/serving_manifest.json<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>&gt;<span class="w"> </span>deployment/helm/stateset-agents/values-glm5-1-finetuned.yaml
+
+python<span class="w"> </span>scripts/render_glm5_1_helm_values.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--manifest<span class="w"> </span>./outputs/glm5_1_gspo/serving_manifest.json<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gcs-uri<span class="w"> </span>gs://YOUR_BUCKET/glm5-1/runs/YOUR_RUN_ID/merged
+</pre></div>
+</div>
+</section>
+<section id="programmatic-surface">
+<h2>Programmatic surface<a class="headerlink" href="#programmatic-surface" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">stateset_agents.training</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">GLM5_1_BASE_MODEL</span><span class="p">,</span>
+    <span class="n">GLM5_1_FP8_MODEL</span><span class="p">,</span>
+    <span class="n">Glm51Config</span><span class="p">,</span>
+    <span class="n">get_glm5_1_config</span><span class="p">,</span>
+    <span class="n">get_glm5_1_serving_recommendations</span><span class="p">,</span>
+    <span class="n">build_serving_manifest</span><span class="p">,</span>
+    <span class="n">export_merged_model_for_serving</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">config</span> <span class="o">=</span> <span class="n">get_glm5_1_config</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="s2">"customer_service"</span><span class="p">,</span> <span class="n">starter_profile</span><span class="o">=</span><span class="s2">"balanced"</span><span class="p">)</span>
+<span class="n">serving</span> <span class="o">=</span> <span class="n">get_glm5_1_serving_recommendations</span><span class="p">(</span><span class="n">use_fp8</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="related-repo-files">
+<h2>Related repo files<a class="headerlink" href="#related-repo-files" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">stateset_agents/training/glm5_1_starter.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">examples/finetune_glm5_1_gspo.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">scripts/render_glm5_1_helm_values.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">deployment/helm/stateset-agents/values-glm5-1*.yaml</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">docs/GLM5_1_HOSTING_PLAN.md</span></code></p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="deepseek_v4_starter.html" class="btn btn-neutral float-left" title="DeepSeek V4 Flash Starter Path" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="glm5_2_starter.html" class="btn btn-neutral float-right" title="GLM 5.2 Starter Path" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, StateSet Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

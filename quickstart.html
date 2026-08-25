@@ -1,0 +1,453 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quick Start Guide &mdash; StateSet Agents 0.39.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/custom.css?v=779363f2" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=ee774964"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Platform Tour" href="platform_tour.html" />
+    <link rel="prev" title="Installation" href="installation.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search"  style="background: #2980B9" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            StateSet Agents
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Quick Start Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="platform_tour.html">Platform Tour</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="platform_tour.html#what-the-tour-covers">What the tour covers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="platform_tour.html#live-demo">Live demo</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="cookbook.html">Cookbook</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="cookbook.html#recipes-covered">Recipes covered</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qwen3_5_starter.html">Qwen 3.5 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#inspect-profile-catalog">Inspect profile catalog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#config-roundtrip">Config roundtrip</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_5_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="kimi_k2_6_starter.html">Kimi-K2.6 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k2_6_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="kimi_k3_starter.html">Kimi-K3 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kimi_k3_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="muse_glimmer_starter.html">Muse Glimmer Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="muse_glimmer_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nemotron_3_5_starter.html">Nemotron 3.5 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nemotron_3_5_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qwen3_8_starter.html">Qwen3.8 27B Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_8_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qwen3_coder_starter.html">Qwen3 Coder Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qwen3_coder_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="gpt_oss_starter.html">gpt-oss Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gpt_oss_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="deepseek_v4_starter.html">DeepSeek V4 Flash Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#run-the-starter">Run the starter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#low-memory-profile">Low-memory profile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#example-script">Example script</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#starter-defaults">Starter defaults</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deepseek_v4_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="glm5_1_starter.html">GLM 5.1 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#serving-recommendations">Serving recommendations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#helm-values-rendering">Helm values rendering</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_1_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="glm5_2_starter.html">GLM 5.2 Starter Path</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#cli-quick-start">CLI quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#starter-profiles">Starter profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#serving-recommendations">Serving recommendations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#helm-values-rendering">Helm values rendering</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#programmatic-surface">Programmatic surface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glm5_2_starter.html#related-repo-files">Related repo files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="core-concepts.html">Core Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agents.html">Agents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="environments.html">Environments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rewards.html">Rewards</a></li>
+<li class="toctree-l1"><a class="reference internal" href="training.html">Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="monitoring.html">Monitoring</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="api/agent.html">API: Agents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/environment.html">API: Environments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/reward.html">API: Rewards</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/training.html">API: Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/monitoring.html">API: Monitoring</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/security.html">API: Security</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/enhanced-api.html">API: OpenAI and Anthropic Compatibility</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="distributed-training.html">Distributed Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="custom-rewards.html">Custom Rewards</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance-optimization.html">Performance Optimization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deployment.html">Deployment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu"  style="background: #2980B9" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">StateSet Agents</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Quick Start Guide</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/quickstart.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="quick-start-guide">
+<h1>Quick Start Guide<a class="headerlink" href="#quick-start-guide" title="Link to this heading"></a></h1>
+<p>This guide will get you up and running with StateSet Agents in just a few minutes.</p>
+<p>🎯 <strong>What You’ll Learn</strong></p>
+<ul class="simple">
+<li><p>How to install StateSet Agents</p></li>
+<li><p>Create your first AI agent</p></li>
+<li><p>Train the agent using reinforcement learning</p></li>
+<li><p>Have conversations with your trained agent</p></li>
+</ul>
+<p>📦 <strong>Installation</strong></p>
+<p><strong>Option 1: Install from PyPI (Recommended)</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>stateset-agents
+</pre></div>
+</div>
+<p><strong>Option 2: Install from source</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/stateset/stateset-agents.git
+<span class="nb">cd</span><span class="w"> </span>stateset-agents
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[dev]"</span>
+</pre></div>
+</div>
+<p><strong>Option 3: Using Docker</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>-p<span class="w"> </span><span class="m">8000</span>:8000<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">API_ENVIRONMENT</span><span class="o">=</span>development<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">API_REQUIRE_AUTH</span><span class="o">=</span><span class="nb">false</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">INFERENCE_BACKEND</span><span class="o">=</span>stub<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>stateset/stateset-agents-api:latest
+</pre></div>
+</div>
+<p>🔧 <strong>Verify Installation</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">stateset_agents</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">stateset_agents</span><span class="o">.</span><span class="n">__version__</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>🤖 <strong>Creating Your First Agent</strong></p>
+<p>Let’s create a simple conversational agent:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">stateset_agents</span><span class="w"> </span><span class="kn">import</span> <span class="n">MultiTurnAgent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">stateset_agents.core.agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">AgentConfig</span>
+
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">AgentConfig</span><span class="p">(</span>
+        <span class="n">model_name</span><span class="o">=</span><span class="s2">"stub://quickstart"</span><span class="p">,</span>
+        <span class="n">use_stub_model</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">temperature</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span>
+        <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span>
+        <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"You are a helpful AI assistant."</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">agent</span> <span class="o">=</span> <span class="n">MultiTurnAgent</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+    <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">initialize</span><span class="p">()</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+    <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+</pre></div>
+</div>
+<p>This stub-backed setup avoids heavyweight model downloads and matches the
+smoke-tested example in <code class="docutils literal notranslate"><span class="pre">examples/quick_start.py</span></code>.</p>
+<p>💬 <strong>Having a Conversation</strong></p>
+<p>Now let’s have a conversation with our agent:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Continue inside the async main() function after agent.initialize()</span>
+<span class="n">messages</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">{</span><span class="s2">"role"</span><span class="p">:</span> <span class="s2">"system"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="s2">"You are a helpful assistant."</span><span class="p">},</span>
+    <span class="p">{</span><span class="s2">"role"</span><span class="p">:</span> <span class="s2">"user"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="s2">"Hello! Can you help me learn Python?"</span><span class="p">},</span>
+<span class="p">]</span>
+
+<span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">generate_response</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Agent: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>🎓 <strong>Training Your Agent</strong></p>
+<p>To make your agent better at specific tasks, you can train it using reinforcement learning:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">stateset_agents</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ConversationEnvironment</span><span class="p">,</span>
+    <span class="n">HelpfulnessReward</span><span class="p">,</span>
+    <span class="n">SafetyReward</span><span class="p">,</span>
+    <span class="n">train</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">stateset_agents.core.reward</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompositeReward</span>
+
+<span class="c1"># Continue inside the async main() function after agent.initialize()</span>
+<span class="n">scenarios</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">{</span>
+        <span class="s2">"id"</span><span class="p">:</span> <span class="s2">"learning_python"</span><span class="p">,</span>
+        <span class="s2">"topic"</span><span class="p">:</span> <span class="s2">"education"</span><span class="p">,</span>
+        <span class="s2">"user_responses"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s2">"Hi, I want to learn Python. Where should I start?"</span><span class="p">,</span>
+            <span class="s2">"That sounds good. What about practical projects?"</span><span class="p">,</span>
+            <span class="s2">"Great suggestions! How long will it take?"</span><span class="p">,</span>
+            <span class="s2">"Thank you for all the helpful advice!"</span>
+        <span class="p">]</span>
+    <span class="p">}</span>
+<span class="p">]</span>
+
+<span class="n">environment</span> <span class="o">=</span> <span class="n">ConversationEnvironment</span><span class="p">(</span><span class="n">scenarios</span><span class="o">=</span><span class="n">scenarios</span><span class="p">)</span>
+
+<span class="n">reward_fn</span> <span class="o">=</span> <span class="n">CompositeReward</span><span class="p">([</span>
+    <span class="n">HelpfulnessReward</span><span class="p">(</span><span class="n">weight</span><span class="o">=</span><span class="mf">0.7</span><span class="p">),</span>
+    <span class="n">SafetyReward</span><span class="p">(</span><span class="n">weight</span><span class="o">=</span><span class="mf">0.3</span><span class="p">),</span>
+<span class="p">])</span>
+
+<span class="n">trained_agent</span> <span class="o">=</span> <span class="k">await</span> <span class="n">train</span><span class="p">(</span>
+    <span class="n">agent</span><span class="o">=</span><span class="n">agent</span><span class="p">,</span>
+    <span class="n">environment</span><span class="o">=</span><span class="n">environment</span><span class="p">,</span>
+    <span class="n">reward_fn</span><span class="o">=</span><span class="n">reward_fn</span><span class="p">,</span>
+    <span class="n">num_episodes</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+    <span class="n">profile</span><span class="o">=</span><span class="s2">"balanced"</span><span class="p">,</span>
+    <span class="n">training_mode</span><span class="o">=</span><span class="s2">"single_turn"</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Training completed! 🎉"</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>For the fully wired version, run <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">examples/quick_start.py</span></code>.</p>
+<p>📊 <strong>Monitoring Training Progress</strong></p>
+<p>Monitor your training progress with built-in monitoring:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">stateset_agents</span><span class="w"> </span><span class="kn">import</span> <span class="n">init_wandb</span>
+
+<span class="c1"># Initialize Weights &amp; Biases monitoring</span>
+<span class="n">init_wandb</span><span class="p">(</span>
+    <span class="n">project</span><span class="o">=</span><span class="s2">"my-agent-training"</span><span class="p">,</span>
+    <span class="n">name</span><span class="o">=</span><span class="s2">"python-tutor-agent"</span>
+<span class="p">)</span>
+
+<span class="c1"># Training progress will be automatically logged</span>
+</pre></div>
+</div>
+<p>🔒 <strong>Using the REST API</strong></p>
+<p>Start the REST API server:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Using the CLI</span>
+stateset-agents<span class="w"> </span>serve<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
+
+<span class="c1"># Using Docker Compose (development)</span>
+docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>deployment/docker/docker-compose.dev.yml<span class="w"> </span>up<span class="w"> </span>stateset-agents-api-dev
+</pre></div>
+</div>
+<p>The API will be available at <a class="reference external" href="http://localhost:8000">http://localhost:8000</a></p>
+<p><strong>API Documentation</strong>: Visit <a class="reference external" href="http://localhost:8000/docs">http://localhost:8000/docs</a> for interactive API documentation.</p>
+<p>🧪 <strong>Testing Your Agent</strong></p>
+<p>Test your agent with different scenarios:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">test_scenarios</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"How do I install Python?"</span><span class="p">,</span>
+    <span class="s2">"What are the best Python libraries for data science?"</span><span class="p">,</span>
+    <span class="s2">"Can you help me debug this Python error?"</span><span class="p">,</span>
+    <span class="s2">"What's the difference between lists and tuples?"</span>
+<span class="p">]</span>
+
+<span class="k">for</span> <span class="n">question</span> <span class="ow">in</span> <span class="n">test_scenarios</span><span class="p">:</span>
+    <span class="n">messages</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">"role"</span><span class="p">:</span> <span class="s2">"user"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="n">question</span><span class="p">}]</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">generate_response</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Q: </span><span class="si">{</span><span class="n">question</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"A: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"-"</span> <span class="o">*</span> <span class="mi">50</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>🚀 <strong>Next Steps</strong></p>
+<p>Now that you have a working agent, here are some next steps:</p>
+<ol class="arabic simple">
+<li><p><strong>Customize Reward Functions</strong>: Create domain-specific reward functions</p></li>
+<li><p><strong>Scale Training</strong>: Use distributed training for larger models</p></li>
+<li><p><strong>Deploy to Production</strong>: Use Docker and Kubernetes for deployment</p></li>
+<li><p><strong>Add Monitoring</strong>: Set up comprehensive monitoring and alerting</p></li>
+<li><p><strong>Experiment</strong>: Try different models, training configurations, and scenarios</p></li>
+</ol>
+<p>📚 <strong>Learn More</strong></p>
+<ul class="simple">
+<li><p><a class="reference internal" href="examples.html"><span class="doc">Examples</span></a> - Complete examples and use cases</p></li>
+<li><p><a class="reference internal" href="training.html"><span class="doc">Training</span></a> - Advanced training techniques</p></li>
+<li><p><a class="reference internal" href="deployment.html"><span class="doc">Deployment</span></a> - Production deployment guides</p></li>
+<li><p><a class="reference internal" href="api/enhanced-api.html"><span class="doc">API: OpenAI and Anthropic Compatibility</span></a> - Complete API reference</p></li>
+</ul>
+<p>🆘 <strong>Getting Help</strong></p>
+<p>If you run into issues:</p>
+<ol class="arabic simple">
+<li><p>Check the <a class="reference internal" href="troubleshooting.html"><span class="doc">Troubleshooting</span></a> guide</p></li>
+<li><p>Search existing <a class="reference external" href="https://github.com/stateset/stateset-agents/issues">issues</a></p></li>
+<li><p>Ask questions in our <a class="reference external" href="https://discord.gg/stateset">Discord community</a></p></li>
+<li><p><a class="reference external" href="https://github.com/stateset/stateset-agents/issues/new">Open a new issue</a></p></li>
+</ol>
+<p>Happy building! 🚀</p>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="platform_tour.html" class="btn btn-neutral float-right" title="Platform Tour" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, StateSet Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
