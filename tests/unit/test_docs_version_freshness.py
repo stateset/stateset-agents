@@ -35,5 +35,7 @@ def test_wheel_version_mentions_match_current_version():
             version = match.group(1)
             if version != current:
                 lineno = text.count("\n", 0, match.start()) + 1
-                stale.append(f"{path.relative_to(ROOT)}:{lineno}: wheel version {version} != {current}")
+                stale.append(
+                    f"{path.relative_to(ROOT)}:{lineno}: wheel version {version} != {current}"
+                )
     assert not stale, "stale wheel version mentions found:\n" + "\n".join(stale)
