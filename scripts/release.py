@@ -65,6 +65,8 @@ PLAIN_FILES: list[str] = [
     "deployment/kubernetes/deployment.yaml",
     "docs/ARCHITECTURE.md",
     "docs/KIMI_K25_GKE_AUTOPILOT.md",
+    "docs/CLI_REFERENCE.md",
+    "docs/FLYWHEEL_EXPERIMENT.md",
 ]
 
 GUARD_TESTS = [

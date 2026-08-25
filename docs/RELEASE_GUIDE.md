@@ -38,14 +38,14 @@ the exact sequence performed manually for v0.21.0 through v0.25.0:
 
 ```bash
 # Dry run: print every change it would make, touch nothing
-make release VERSION=0.26.0 TITLE="short release title" RELEASE_FLAGS="--dry-run"
+make release VERSION=<x.y.z> TITLE="short release title" RELEASE_FLAGS="--dry-run"
 
 # Real release: bump versions, update CHANGELOG/README, run guard tests,
 # commit + annotated tag (no push, no publish — dry-safe for the remote world)
-make release VERSION=0.26.0 TITLE="short release title" NOTES_FILE=notes.md
+make release VERSION=<x.y.z> TITLE="short release title" NOTES_FILE=notes.md
 
 # Push master + tag and publish to PyPI
-make release VERSION=0.26.0 TITLE="..." RELEASE_FLAGS="--push --publish"
+make release VERSION=<x.y.z> TITLE="..." RELEASE_FLAGS="--push --publish"
 ```
 
 The procedure it codifies:

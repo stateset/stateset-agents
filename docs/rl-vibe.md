@@ -30,7 +30,7 @@ three.
 | Reward hacks caught live and fixed by A/B | 1 (metric ↑ 0.67→0.84 while truth ↓ 6→4/12) |
 | Shipped claims later DISPROVEN and recorded as such | 1 (vLLM hybrid-LoRA silent no-op) |
 | Live-only bugs found on real hardware/services | **25+**, each now a tested fix |
-| Releases in the sprint (v0.21.0 → v0.36.0) | ~15, all on PyPI, ~140 commits |
+| Releases in the sprint (v0.21.0 → v0.38.0) | ~15, all on PyPI, ~140 commits |
 | Unit test files | 189 |
 | Total compute spend for every result above | **≈ $40** (RunPod) + River tokens |
 
