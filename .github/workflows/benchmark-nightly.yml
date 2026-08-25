@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload raw benchmark JSON as artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-results-${{ github.run_id }}
           path: benchmark-results.json
