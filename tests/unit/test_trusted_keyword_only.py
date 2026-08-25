@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from tests.unit._paths import rel_posix
+
 PACKAGE = Path(__file__).resolve().parents[2] / "stateset_agents"
 
 
@@ -17,7 +19,7 @@ def _offenders() -> list[str]:
                 continue
             names = [a.arg for a in node.args.args + node.args.posonlyargs]
             if "trusted" in names:
-                rel = path.relative_to(PACKAGE.parent)
+                rel = rel_posix(path, PACKAGE.parent)
                 bad.append(f"{rel}:{node.lineno} {node.name}")
     return bad
 

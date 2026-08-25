@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._paths import rel_posix
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PKG = REPO_ROOT / "stateset_agents"
 ALLOWLIST_PATH = Path(__file__).with_name("torch_import_allowlist.txt")
@@ -45,7 +47,8 @@ def _load_allowlist() -> list[str]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        entries.append(line.split("#", 1)[0].strip())
+        # Normalise to POSIX so the committed list compares equal on Windows.
+        entries.append(line.split("#", 1)[0].strip().replace("\\", "/"))
     return entries
 
 
@@ -71,7 +74,7 @@ def _module_level_torch_imports(path: Path) -> list[int]:
 
 def _offenders() -> dict[str, list[int]]:
     return {
-        str(path.relative_to(PKG.parent)): hits
+        rel_posix(path, PKG.parent): hits
         for path in sorted(PKG.rglob("*.py"))
         if (hits := _module_level_torch_imports(path))
     }

@@ -16,6 +16,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.unit._paths import rel_posix
+
 torch = pytest.importorskip("torch")
 
 from stateset_agents.core.errors import ModelError  # noqa: E402
@@ -270,7 +272,7 @@ def test_only_checkpoint_io_calls_torch_load():
         if py == _CHECKPOINT_IO:
             continue
         for call in _torch_load_calls(py.read_text(encoding="utf-8")):
-            offenders.append(f"{py.relative_to(root)}:{call.lineno}")
+            offenders.append(f"{rel_posix(py, root)}:{call.lineno}")
     assert offenders == [], (
         "torch.load called outside core/checkpoint_io.py; route it through "
         "load_checkpoint_file(..., trusted=...) instead"
