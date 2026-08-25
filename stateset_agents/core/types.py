@@ -225,3 +225,19 @@ class ConfigurationError(FrameworkError):
     """Error related to configuration."""
 
     pass
+
+
+def __getattr__(name: str) -> Any:
+    """Deprecation shim for names that moved out of this module."""
+    if name == "TrainingConfig":
+        import warnings
+
+        warnings.warn(
+            "import TrainingConfig from stateset_agents.training.config",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        from stateset_agents.training.config import TrainingConfig
+
+        return TrainingConfig
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
