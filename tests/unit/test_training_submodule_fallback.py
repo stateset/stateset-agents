@@ -17,4 +17,4 @@ def test_submodule_attribute_resolves() -> None:
 def test_unknown_attribute_raises_attribute_error() -> None:
     training = importlib.import_module("stateset_agents.training")
     with pytest.raises(AttributeError):
-        training.definitely_not_a_module
+        _ = training.definitely_not_a_module

@@ -19,4 +19,4 @@ def test_unknown_attribute_still_raises() -> None:
     import stateset_agents.core.types as types_mod
 
     with pytest.raises(AttributeError):
-        types_mod.NoSuchNameAtAll
+        _ = types_mod.NoSuchNameAtAll
