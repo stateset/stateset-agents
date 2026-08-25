@@ -285,7 +285,7 @@ omit = [
 # History: 70 set in v0.15.1 (aspirational — silently broke the CI test
 # step because measured coverage was ~54.5%); lowered to 54 to match the
 # measured floor on the post-CLI-decomp tree.
-fail_under = 57
+fail_under = 59
 precision = 2
 show_missing = true
 skip_covered = false
