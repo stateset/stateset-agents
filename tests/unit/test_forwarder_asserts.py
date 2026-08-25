@@ -71,3 +71,69 @@ def test_rejects_a_shim_that_swallows_the_callers_flags(tmp_path, monkeypatch):
 
     with pytest.raises(AssertionError, match=r"\*sys.argv\[1:\]"):
         assert_forwards_to_driver("lossy_forwarder.py", model="gpt-oss")
+
+
+def _write(tmp_path, monkeypatch, name: str, body: str) -> None:
+    examples = tmp_path / "examples"
+    examples.mkdir(exist_ok=True)
+    (examples / name).write_text(body, encoding="utf-8")
+    monkeypatch.setattr("tests.unit.forwarder_asserts.REPO_ROOT", tmp_path)
+
+
+HEAD = (
+    "import sys\n"
+    "from examples.finetune_gspo import main as _driver_main\n"
+    'print("shim.py is a forwarder for gpt-oss", file=sys.stderr)\n'
+)
+
+
+def test_rejects_a_shim_that_stars_something_other_than_sys_argv(
+    tmp_path, monkeypatch
+):
+    """``*extra`` is not ``*sys.argv[1:]``: the caller's flags never arrive."""
+    _write(
+        tmp_path,
+        monkeypatch,
+        "shim.py",
+        HEAD + "extra = []\n"
+        'sys.exit(_driver_main(["--model", "gpt-oss", *extra]))\n',
+    )
+    with pytest.raises(AssertionError, match=r"\*sys.argv\[1:\]"):
+        assert_forwards_to_driver("shim.py", model="gpt-oss")
+
+
+def test_rejects_a_shim_that_forwards_argv_zero(tmp_path, monkeypatch):
+    """``*sys.argv`` passes the script's own path through as a positional."""
+    _write(
+        tmp_path,
+        monkeypatch,
+        "shim.py",
+        HEAD + 'sys.exit(_driver_main(["--model", "gpt-oss", *sys.argv]))\n',
+    )
+    with pytest.raises(AssertionError, match=r"\*sys.argv\[1:\]"):
+        assert_forwards_to_driver("shim.py", model="gpt-oss")
+
+
+def test_rejects_a_shim_whose_forwarding_call_is_not_last(tmp_path, monkeypatch):
+    """Code after the forward is dead, or the forward is conditional."""
+    _write(
+        tmp_path,
+        monkeypatch,
+        "shim.py",
+        HEAD + 'sys.exit(_driver_main(["--model", "gpt-oss", *sys.argv[1:]]))\n'
+        'print("unreachable")\n',
+    )
+    with pytest.raises(AssertionError, match="last top-level statement"):
+        assert_forwards_to_driver("shim.py", model="gpt-oss")
+
+
+def test_rejects_a_shim_that_drops_sys_exit(tmp_path, monkeypatch):
+    """Without ``sys.exit`` the driver's exit code is thrown away."""
+    _write(
+        tmp_path,
+        monkeypatch,
+        "shim.py",
+        HEAD + '_driver_main(["--model", "gpt-oss", *sys.argv[1:]])\n',
+    )
+    with pytest.raises(AssertionError, match="sys.exit"):
+        assert_forwards_to_driver("shim.py", model="gpt-oss")
