@@ -69,13 +69,31 @@ def _is_subcommand(word: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", word))
 
 
+# Rich styles help text token-by-token when colour is forced, so a flag can
+# come back as ``\x1b[1m--\x1b[0m\x1b[1mformat\x1b[0m`` — no longer a plain
+# substring. GitHub Actions exports ``FORCE_COLOR=1`` for every step, which is
+# why this test passed locally and failed on every snippet in CI. Belt and
+# braces: drop the colour-forcing variables from the child environment *and*
+# strip any escape sequences that survive.
+_COLOR_FORCING_VARS = ("FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR")
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def _run_help(path: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    env = {k: v for k, v in os.environ.items() if k not in _COLOR_FORCING_VARS}
+    env.update({"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"})
+    proc = subprocess.run(
         [sys.executable, "-m", "stateset_agents", *path, "--help"],
         capture_output=True,
         text=True,
         cwd=ROOT,
-        env={**os.environ, "COLUMNS": "200", "NO_COLOR": "1"},
+        env=env,
+    )
+    return subprocess.CompletedProcess(
+        proc.args,
+        proc.returncode,
+        _ANSI.sub("", proc.stdout),
+        _ANSI.sub("", proc.stderr),
     )
 
 
@@ -144,3 +162,18 @@ def test_expected_snippet_count() -> None:
     """Guard against the extractor silently matching nothing."""
     per_doc = {name: sum(1 for s, _, _ in SNIPPETS if s == name) for name in DOCS}
     assert per_doc == {"README.md": 21, "QUICKSTART.md": 6}, per_doc
+
+
+def test_help_stays_plain_when_the_environment_forces_color(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CI exports FORCE_COLOR=1; the help probe must still be plain text.
+
+    Without this, rich splits every flag across ANSI escapes and each snippet
+    assertion fails with a bogus "unknown flag" message.
+    """
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    result = _run_help(("ingest",))
+    assert result.returncode == 0, result.stderr
+    assert "\x1b[" not in result.stdout
+    assert "--format" in result.stdout

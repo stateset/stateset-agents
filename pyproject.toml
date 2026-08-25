@@ -254,7 +254,13 @@ skips = ["B101", "B601", "B614"]
 # Black configuration
 [tool.black]
 line-length = 88
-target-version = ['py310', 'py311', 'py312', 'py313']
+# The floor only. Black's AST safety check is *skipped* whenever the running
+# interpreter is older than the highest target version, so listing py313 here
+# silently disabled the check on 3.10-3.12 (CI printed "Python 3.11 cannot
+# parse code formatted for Python 3.13"). py310 is the project's minimum
+# supported version, so formatting for it is valid on every interpreter we
+# support and the safety check runs everywhere.
+target-version = ['py310']
 include = '\.pyi?$'
 extend-exclude = '''
 /(

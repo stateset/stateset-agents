@@ -231,12 +231,44 @@ def test_submit_without_an_api_key_names_the_variable(monkeypatch, tmp_path, spe
         executor.submit(spec)
 
 
-def test_submit_without_an_account_id_names_the_variable(monkeypatch, tmp_path, spec):
+def test_account_id_without_the_env_var_names_the_variable(monkeypatch, tmp_path):
+    """The account id is read from the environment, with no SDK involved.
+
+    Asserted on the property rather than through ``submit()``: submit reaches
+    the account id only via ``_get_client()``, which first imports the
+    ``fireworks`` SDK — so routing through it made the expected message depend
+    on whether the optional SDK happened to be installed (it is not, in CI).
+    A fake client is injected so the executor is constructible either way.
+    """
     monkeypatch.delenv(FIREWORKS_ACCOUNT_ENV, raising=False)
-    executor = FireworksExecutor(ledger_path=tmp_path / "ledger.jsonl")
+    executor = FireworksExecutor(
+        client=FakeFireworks(), ledger_path=tmp_path / "ledger.jsonl"
+    )
 
     with pytest.raises(RemoteExecutionError, match=FIREWORKS_ACCOUNT_ENV):
-        executor.submit(spec)
+        _ = executor.account_id
+
+
+def test_account_id_prefers_the_explicit_argument_over_the_env_var(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv(FIREWORKS_ACCOUNT_ENV, "from-env")
+    executor = FireworksExecutor(
+        client=FakeFireworks(),
+        account_id="explicit",
+        ledger_path=tmp_path / "ledger.jsonl",
+    )
+
+    assert executor.account_id == "explicit"
+
+
+def test_account_id_falls_back_to_the_env_var(monkeypatch, tmp_path):
+    monkeypatch.setenv(FIREWORKS_ACCOUNT_ENV, "from-env")
+    executor = FireworksExecutor(
+        client=FakeFireworks(), ledger_path=tmp_path / "ledger.jsonl"
+    )
+
+    assert executor.account_id == "from-env"
 
 
 def test_submit_rejects_a_dataset_row_without_messages(executor, spec, tmp_path):
