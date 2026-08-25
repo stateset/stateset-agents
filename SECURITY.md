@@ -4,10 +4,12 @@
 
 We take security seriously and actively maintain security updates for the following versions:
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.35.x  | :white_check_mark: |
-| < 0.35  | :x:                |
+| Version                              | Supported          |
+| ------------------------------------ | ------------------ |
+| Latest 0.x minor release             | :white_check_mark: |
+| Any older minor release              | :x:                |
+
+Concretely: the latest published minor is currently 0.37.x.
 
 ## Reporting a Vulnerability
 
