@@ -54,6 +54,11 @@ class VAPOConfig(TrainingConfig):
 
     mini_batch_size: int = 512
 
+    # Inner gradient updates per rollout (mu). The default of 1 keeps VAPO
+    # strictly on-policy; values > 1 reuse each rollout, and the importance
+    # ratio is then computed against log probs frozen at rollout time.
+    num_gradient_updates: int = 1
+
     value_loss_coef: float = 0.5
     entropy_coef: float = 0.0
 

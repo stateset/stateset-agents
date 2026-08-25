@@ -118,6 +118,11 @@ class GEPOConfig(TrainingConfig):
     # Advantage computation
     use_group_baseline: bool = True  # Use within-group baseline normalization
 
+    # Inner gradient updates per rollout (mu). The default of 1 keeps GEPO
+    # strictly on-policy; values > 1 reuse each rollout, and the sampler
+    # (old-policy) log probs are the snapshot taken at rollout time.
+    num_gradient_updates: int = 1
+
     @classmethod
     def from_training_config(
         cls, config: TrainingConfig, **kwargs: Any
@@ -449,15 +454,17 @@ class GEPOTrainer:
         """
         self.model.train()
 
-        all_rewards = []
-        all_advantages = []
-        all_gepo_coefs = []
-        num_groups = 0
+        all_rewards: list[float] = []
+        all_advantages: list[float] = []
+        all_gepo_coefs: list[float] = []
 
-        accumulated_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-
+        # --- Rollout phase ------------------------------------------------
+        # Generate every group and freeze the sampler (old-policy) sequence
+        # log probs here, before any inner update can move the weights. When
+        # they were recomputed from the just-updated model the GEPO
+        # coefficient collapsed to ~1 and clipping never fired.
+        rollouts: list[dict[str, Any]] = []
         for prompt in prompts:
-            # Generate group of responses
             group_responses = await self.generate_group_responses(
                 prompt, self.config.group_size
             )
@@ -466,83 +473,90 @@ class GEPOTrainer:
                 logger.warning("Insufficient responses for prompt, skipping")
                 continue
 
-            # Compute rewards
-            rewards = []
-            for resp in group_responses:
-                reward = self.reward_fn(prompt, resp["response"])
-                rewards.append(reward)
-
+            rewards = [
+                self.reward_fn(prompt, resp["response"]) for resp in group_responses
+            ]
             rewards_tensor = torch.tensor(
                 rewards, dtype=torch.float32, device=self.device
             )
             all_rewards.extend(rewards)
 
-            # Compute group advantages
-            advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
+            advantages, _reward_stats = self.compute_group_advantages(rewards_tensor)
             all_advantages.extend(advantages.tolist())
 
-            # Stack inputs for batch processing
             batch_input_ids, batch_attention_mask, _ = build_group_batch(
                 group_responses, self.device, include_response_mask=False
             )
-
             response_start_idx = group_responses[0]["response_start_idx"]
 
-            # Compute current policy log probs (with gradients)
-            _, learner_seq_log_probs = self.compute_sequence_log_probs(
-                batch_input_ids, batch_attention_mask, response_start_idx
-            )
-
-            # Compute old policy log probs (detached, from generation time)
-            # In practice, we use the same model but detached
             with torch.no_grad():
                 _, sampler_seq_log_probs = self.compute_sequence_log_probs(
                     batch_input_ids, batch_attention_mask, response_start_idx
                 )
 
-            # Compute GEPO coefficients (log-space, safe against underflow)
-            gepo_coefs = self.compute_gepo_coefficient(
-                learner_seq_log_probs, sampler_seq_log_probs
-            )
-            all_gepo_coefs.extend(gepo_coefs.detach().tolist())
-
-            # Apply PPO-style clipping
-            clipped_coefs = torch.clamp(
-                gepo_coefs,
-                1.0 - self.config.clip_eps,
-                1.0 + self.config.clip_eps,
+            rollouts.append(
+                {
+                    "input_ids": batch_input_ids,
+                    "attention_mask": batch_attention_mask,
+                    "response_start_idx": response_start_idx,
+                    "advantages": advantages,
+                    "sampler_seq_log_probs": sampler_seq_log_probs.detach(),
+                }
             )
 
-            # Compute policy loss: -min(coef * A, clipped_coef * A)
-            unclipped_obj = gepo_coefs * advantages
-            clipped_obj = clipped_coefs * advantages
-
-            policy_loss = -torch.min(unclipped_obj, clipped_obj).mean()
-
-            # Accumulate loss
-            accumulated_loss = accumulated_loss + policy_loss
-            num_groups += 1
-
+        num_groups = len(rollouts)
         if num_groups == 0:
             logger.warning("No valid groups in batch")
             return {"policy_loss": 0.0, "average_reward": 0.0}
 
-        # Average loss over groups
-        final_loss = accumulated_loss / num_groups
+        # --- Update phase --------------------------------------------------
+        # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
+        # against the frozen sampler log probs, exactly like DAPO. The default
+        # of 1 leaves the on-policy behaviour bit-for-bit unchanged.
+        num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
+        final_loss = torch.tensor(0.0, device=self.device)
 
-        # Backward pass
-        self.optimizer.zero_grad()
-        final_loss.backward()
+        for _ in range(num_updates):
+            all_gepo_coefs = []
+            accumulated_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
 
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(
-            self.model.parameters(), self.config.max_grad_norm
-        )
+            for rollout in rollouts:
+                _, learner_seq_log_probs = self.compute_sequence_log_probs(
+                    rollout["input_ids"],
+                    rollout["attention_mask"],
+                    rollout["response_start_idx"],
+                )
 
-        # Update
-        self.optimizer.step()
-        self.scheduler.step()
-        self.global_step += 1
+                gepo_coefs = self.compute_gepo_coefficient(
+                    learner_seq_log_probs, rollout["sampler_seq_log_probs"]
+                )
+                all_gepo_coefs.extend(gepo_coefs.detach().tolist())
+
+                clipped_coefs = torch.clamp(
+                    gepo_coefs,
+                    1.0 - self.config.clip_eps,
+                    1.0 + self.config.clip_eps,
+                )
+
+                advantages = rollout["advantages"]
+                unclipped_obj = gepo_coefs * advantages
+                clipped_obj = clipped_coefs * advantages
+                policy_loss = -torch.min(unclipped_obj, clipped_obj).mean()
+
+                accumulated_loss = accumulated_loss + policy_loss
+
+            final_loss = accumulated_loss / num_groups
+
+            self.optimizer.zero_grad()
+            final_loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.config.max_grad_norm
+            )
+
+            self.optimizer.step()
+            self.scheduler.step()
+            self.global_step += 1
 
         # Compute metrics
         metrics = {

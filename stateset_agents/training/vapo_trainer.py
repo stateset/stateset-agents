@@ -783,15 +783,18 @@ class VAPOTrainer:
             warmup_metrics = await self.warmup_value_network(prompts)
             return warmup_metrics
 
-        all_policy_losses = []
-        all_value_losses = []
-        all_positive_lm_losses = []
-        all_rewards = []
-        all_accuracies = []
-        all_explained_variances = []
+        # Per-update metrics are (re)initialised inside the update loop below,
+        # which always runs at least once; rollout-level metrics accumulate
+        # across the whole step.
+        all_rewards: list[float] = []
+        all_accuracies: list[float] = []
 
-        accumulated_loss: torch.Tensor | None = None
-        prompt_count = 0
+        # --- Rollout phase --------------------------------------------------
+        # Generate every group and freeze the old-policy log probs and values
+        # here, before any inner update moves the weights. Recomputing them
+        # from the current model made the importance ratio identically 1 and
+        # the Clip-Higher trust region a no-op.
+        rollouts: list[dict[str, Any]] = []
 
         for prompt in prompts[: self.config.per_device_train_batch_size]:
             # Generate group responses
@@ -878,79 +881,114 @@ class VAPOTrainer:
                     policy_adv_masked.std() + 1e-8
                 )
 
-            # Compute current log probs and values
-            current_log_probs = self.compute_token_log_probs(
-                batch_input_ids, batch_attention_mask
-            )
-            current_values = self.compute_values(batch_input_ids, batch_attention_mask)
-
-            # Shift masks for loss computation
-            shifted_response_mask = batch_response_mask[:, 1:]
-            shifted_policy_adv = policy_advantages[:, :-1]
-            shifted_critic_adv = critic_advantages[:, :-1]
-            shifted_old_values = old_values[:, :-1]
-            shifted_values = current_values[:, :-1]
-
-            # Compute VAPO losses
-            policy_loss, value_loss, positive_lm_loss = self.compute_vapo_losses(
-                current_log_probs,
-                old_log_probs,
-                shifted_policy_adv,
-                shifted_critic_adv,
-                shifted_values,
-                shifted_old_values,
-                shifted_response_mask,
-                positive_mask,
+            rollouts.append(
+                {
+                    "input_ids": batch_input_ids,
+                    "attention_mask": batch_attention_mask,
+                    "response_mask": batch_response_mask,
+                    "positive_mask": positive_mask,
+                    "old_log_probs": old_log_probs.detach(),
+                    "old_values": old_values.detach(),
+                    "critic_advantages": critic_advantages,
+                    "policy_advantages": policy_advantages,
+                    "returns": returns,
+                }
             )
 
-            # Total loss for this prompt, accumulated (not stepped) so the
-            # optimizer sees a single averaged update per train_step instead
-            # of one partial update per prompt.
-            total_loss = (
-                policy_loss
-                + self.config.value_loss_coef * value_loss
-                + self.config.positive_lm_weight * positive_lm_loss
-            )
-            accumulated_loss = (
-                total_loss
-                if accumulated_loss is None
-                else accumulated_loss + total_loss
-            )
-            prompt_count += 1
+        # --- Update phase ---------------------------------------------------
+        # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
+        # against the frozen old log probs/values, exactly like DAPO. The
+        # default of 1 leaves the on-policy behaviour unchanged.
+        num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
 
-            all_policy_losses.append(policy_loss.item())
-            all_value_losses.append(value_loss.item())
-            all_positive_lm_losses.append(positive_lm_loss.item())
+        for _ in range(num_updates):
+            accumulated_loss: torch.Tensor | None = None
+            prompt_count = 0
+            all_policy_losses: list[float] = []
+            all_value_losses: list[float] = []
+            all_positive_lm_losses: list[float] = []
+            all_explained_variances: list[float] = []
 
-            # Compute explained variance
-            with torch.no_grad():
-                returns_masked = returns[batch_response_mask > 0]
-                values_masked = current_values[batch_response_mask > 0]
-                if len(returns_masked) > 1:
-                    var_returns = returns_masked.var()
-                    var_residual = (returns_masked - values_masked).var()
-                    if var_returns > 1e-8:
-                        explained_var = 1 - var_residual / var_returns
-                        all_explained_variances.append(explained_var.item())
+            for rollout in rollouts:
+                batch_input_ids = rollout["input_ids"]
+                batch_attention_mask = rollout["attention_mask"]
+                batch_response_mask = rollout["response_mask"]
 
-        # Single optimizer update per train_step: average the accumulated
-        # loss over prompts, then one backward()/step() pair.
-        if prompt_count > 0 and accumulated_loss is not None:
-            mean_loss = accumulated_loss / prompt_count
+                # Compute current log probs and values
+                current_log_probs = self.compute_token_log_probs(
+                    batch_input_ids, batch_attention_mask
+                )
+                current_values = self.compute_values(
+                    batch_input_ids, batch_attention_mask
+                )
 
-            self.actor_optimizer.zero_grad()
-            self.critic_optimizer.zero_grad()
-            mean_loss.backward()
+                # Shift masks for loss computation
+                shifted_response_mask = batch_response_mask[:, 1:]
+                shifted_policy_adv = rollout["policy_advantages"][:, :-1]
+                shifted_critic_adv = rollout["critic_advantages"][:, :-1]
+                shifted_old_values = rollout["old_values"][:, :-1]
+                shifted_values = current_values[:, :-1]
 
-            _params = list(self.model.parameters())
-            if _params:
-                torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
-            torch.nn.utils.clip_grad_norm_(
-                self.value_head.parameters(), self.config.max_grad_norm
-            )
+                # Compute VAPO losses
+                policy_loss, value_loss, positive_lm_loss = self.compute_vapo_losses(
+                    current_log_probs,
+                    rollout["old_log_probs"],
+                    shifted_policy_adv,
+                    shifted_critic_adv,
+                    shifted_values,
+                    shifted_old_values,
+                    shifted_response_mask,
+                    rollout["positive_mask"],
+                )
 
-            self.actor_optimizer.step()
-            self.critic_optimizer.step()
+                # Total loss for this prompt, accumulated (not stepped) so the
+                # optimizer sees a single averaged update per inner update
+                # instead of one partial update per prompt.
+                total_loss = (
+                    policy_loss
+                    + self.config.value_loss_coef * value_loss
+                    + self.config.positive_lm_weight * positive_lm_loss
+                )
+                accumulated_loss = (
+                    total_loss
+                    if accumulated_loss is None
+                    else accumulated_loss + total_loss
+                )
+                prompt_count += 1
+
+                all_policy_losses.append(policy_loss.item())
+                all_value_losses.append(value_loss.item())
+                all_positive_lm_losses.append(positive_lm_loss.item())
+
+                # Compute explained variance
+                with torch.no_grad():
+                    returns_masked = rollout["returns"][batch_response_mask > 0]
+                    values_masked = current_values[batch_response_mask > 0]
+                    if len(returns_masked) > 1:
+                        var_returns = returns_masked.var()
+                        var_residual = (returns_masked - values_masked).var()
+                        if var_returns > 1e-8:
+                            explained_var = 1 - var_residual / var_returns
+                            all_explained_variances.append(explained_var.item())
+
+            # Single optimizer update per inner update: average the
+            # accumulated loss over prompts, then one backward()/step() pair.
+            if prompt_count > 0 and accumulated_loss is not None:
+                mean_loss = accumulated_loss / prompt_count
+
+                self.actor_optimizer.zero_grad()
+                self.critic_optimizer.zero_grad()
+                mean_loss.backward()
+
+                _params = list(self.model.parameters())
+                if _params:
+                    torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(
+                    self.value_head.parameters(), self.config.max_grad_norm
+                )
+
+                self.actor_optimizer.step()
+                self.critic_optimizer.step()
 
         # Update schedulers
         self.actor_scheduler.step()

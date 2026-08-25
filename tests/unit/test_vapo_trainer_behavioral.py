@@ -173,3 +173,81 @@ async def test_train_step_single_optimizer_step_per_call(
 
     assert len(actor_steps) == 1
     assert len(critic_steps) == 1
+
+
+def _fake_group_generator():
+    async def fake_generate_group_responses(prompt):
+        torch.manual_seed(3)
+        responses = []
+        for _ in range(2):
+            input_ids = torch.randint(0, 200, (10,))
+            attention_mask = torch.ones(10, dtype=torch.long)
+            response_mask = torch.zeros(10)
+            response_mask[4:] = 1.0
+            responses.append(
+                {
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                    "response_mask": response_mask,
+                    "sequence_length": 6,
+                    "prompt_length": 4,
+                    "response": "hello",
+                }
+            )
+        return responses
+
+    return fake_generate_group_responses
+
+
+def _spy_on_losses(trainer, monkeypatch):
+    captured: list[tuple[torch.Tensor, torch.Tensor]] = []
+    orig = trainer.compute_vapo_losses
+
+    def spy(current_log_probs, old_log_probs, *args, **kwargs):
+        captured.append(
+            (current_log_probs.detach().clone(), old_log_probs.detach().clone())
+        )
+        return orig(current_log_probs, old_log_probs, *args, **kwargs)
+
+    monkeypatch.setattr(trainer, "compute_vapo_losses", spy)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_vapo_old_logprobs_frozen_across_gradient_updates(
+    vapo_trainer_tiny, monkeypatch
+):
+    """num_gradient_updates=2 must reuse the rollout-time old log probs, so
+    the second inner update sees a genuinely off-policy ratio."""
+    t = vapo_trainer_tiny
+    t.config.num_gradient_updates = 2
+    t.config.actor_learning_rate = 1e-2
+    for group in t.actor_optimizer.param_groups:
+        group["lr"] = 1e-2
+    monkeypatch.setattr(t, "generate_group_responses", _fake_group_generator())
+    captured = _spy_on_losses(t, monkeypatch)
+
+    await t.train_step(["prompt one"])
+
+    assert len(captured) == 2
+    cur0, old0 = captured[0]
+    assert torch.allclose(cur0, old0, atol=1e-5)  # first update is on-policy
+    cur1, old1 = captured[1]
+    assert torch.allclose(old0, old1, atol=1e-6)  # snapshot unchanged
+    ratio = torch.exp(torch.clamp(cur1 - old1, min=-20.0, max=20.0))
+    assert (ratio - 1.0).abs().mean().item() > 1e-6
+
+
+@pytest.mark.asyncio
+async def test_vapo_default_single_update_is_on_policy(vapo_trainer_tiny, monkeypatch):
+    """The default single-update path is unchanged: exactly one loss call,
+    on-policy."""
+    t = vapo_trainer_tiny
+    monkeypatch.setattr(t, "generate_group_responses", _fake_group_generator())
+    captured = _spy_on_losses(t, monkeypatch)
+
+    await t.train_step(["prompt one"])
+
+    assert len(captured) == 1
+    cur, old = captured[0]
+    assert torch.allclose(cur, old, atol=1e-5)
