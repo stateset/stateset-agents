@@ -191,7 +191,7 @@ _LAZY_EXPORTS.update(
             "ensure_type_safety",
             "ensure_async_type_safety",
             "ModelConfig",
-            "TrainingConfig",
+            "TrainingConfigDict",
             "TypedTrainingConfig",
             "TrajectoryData",
             "RewardMetrics",
@@ -200,6 +200,14 @@ _LAZY_EXPORTS.update(
             "TrainingStage",
         ],
     )
+)
+# ``TrainingConfig`` is canonically the training-layer dataclass; keep the
+# name importable from ``core`` as a lazy string path so no core->training
+# module-level import edge is created.
+_LAZY_EXPORTS["TrainingConfig"] = (
+    "stateset_agents.training.config",
+    "TrainingConfig",
+    _TRAINING_INSTALL_HINT,
 )
 _LAZY_EXPORTS["TypedConversationTurn"] = (
     "stateset_agents.core.type_system",

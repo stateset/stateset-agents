@@ -5,6 +5,7 @@ Value objects and serialization helpers for the advanced training orchestrator.
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -54,8 +55,8 @@ class ResourceRequirement:
 
 
 @dataclass
-class TrainingConfig:
-    """Comprehensive training configuration."""
+class TrainingJobSpec:
+    """Specification of one orchestrated training job."""
 
     experiment_name: str
     agent_type: str
@@ -94,7 +95,7 @@ class TrainingJob:
     """Training job definition."""
 
     job_id: str
-    config: TrainingConfig
+    config: TrainingJobSpec
     status: TrainingStatus = TrainingStatus.PENDING
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
@@ -156,10 +157,10 @@ def _serialize_resource_requirements(
 
 
 def deserialize_training_config(
-    config_data: TrainingConfig | dict[str, Any],
-) -> TrainingConfig:
-    """Convert serialized config data back into a TrainingConfig."""
-    if isinstance(config_data, TrainingConfig):
+    config_data: TrainingJobSpec | dict[str, Any],
+) -> TrainingJobSpec:
+    """Convert serialized config data back into a TrainingJobSpec."""
+    if isinstance(config_data, TrainingJobSpec):
         return config_data
 
     raw_requirements = list(config_data.get("resource_requirements", []))
@@ -176,11 +177,11 @@ def deserialize_training_config(
 
     config_kwargs = dict(config_data)
     config_kwargs["resource_requirements"] = requirements
-    return TrainingConfig(**config_kwargs)
+    return TrainingJobSpec(**config_kwargs)
 
 
-def serialize_training_config(config: TrainingConfig) -> dict[str, Any]:
-    """Convert a TrainingConfig into a JSON-friendly dict."""
+def serialize_training_config(config: TrainingJobSpec) -> dict[str, Any]:
+    """Convert a TrainingJobSpec into a JSON-friendly dict."""
     config_dict = dict(config.__dict__)
     config_dict["resource_requirements"] = _serialize_resource_requirements(
         list(config.resource_requirements)
@@ -213,7 +214,7 @@ __all__ = [
     "ResourceRequirement",
     "ResourceType",
     "SchedulingStrategy",
-    "TrainingConfig",
+    "TrainingJobSpec",
     "TrainingJob",
     "TrainingStatus",
     "deserialize_training_config",
@@ -221,3 +222,16 @@ __all__ = [
     "serialize_training_config",
     "serialize_training_job",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Serve the renamed ``TrainingJobSpec`` under its old name."""
+    if name == "TrainingConfig":
+        warnings.warn(
+            "use TrainingJobSpec (TrainingConfig now refers only to "
+            "stateset_agents.training.config.TrainingConfig)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return TrainingJobSpec
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

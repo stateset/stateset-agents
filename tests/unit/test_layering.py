@@ -185,6 +185,19 @@ def _training_module_level_imports(path: Path) -> list[str]:
     return offenders
 
 
+def _training_config_class_definitions() -> list[str]:
+    """Every ``class TrainingConfig`` defined under ``stateset_agents/``."""
+    found: list[str] = []
+    for path in sorted(PACKAGE_DIR.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == "TrainingConfig":
+                found.append(
+                    f"{path.relative_to(PACKAGE_DIR).as_posix()}:{node.lineno}"
+                )
+    return found
+
+
 def test_core_does_not_import_training_at_module_level() -> None:
     offenders: list[str] = []
     for path in _core_modules():
@@ -193,6 +206,15 @@ def test_core_does_not_import_training_at_module_level() -> None:
         "stateset_agents.core must not import stateset_agents.training at "
         "module level (move the import into the function that uses it): "
         + ", ".join(offenders)
+    )
+
+
+def test_exactly_one_training_config_class() -> None:
+    found = _training_config_class_definitions()
+    assert found == ["training/config.py:26"], (
+        "exactly one class named TrainingConfig may be defined under "
+        "stateset_agents/ and it must live in training/config.py; found: "
+        + ", ".join(found)
     )
 
 

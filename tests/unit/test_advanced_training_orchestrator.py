@@ -20,7 +20,7 @@ try:
         ResourceRequirement,
         ResourceType,
         SchedulingStrategy,
-        TrainingConfig,
+        TrainingJobSpec,
         TrainingJob,
         TrainingStatus,
         TrainingWorker,
@@ -106,12 +106,12 @@ class TestResourceRequirement:
         assert req.priority == 1
 
 
-class TestTrainingConfig:
-    """Test TrainingConfig dataclass."""
+class TestTrainingJobSpec:
+    """Test TrainingJobSpec dataclass."""
 
     def test_training_config_creation(self):
-        """Test creating a TrainingConfig."""
-        config = TrainingConfig(
+        """Test creating a TrainingJobSpec."""
+        config = TrainingJobSpec(
             experiment_name="test_experiment",
             agent_type="MultiTurnAgent",
             model_config={"model_type": "gpt2"},
@@ -125,8 +125,8 @@ class TestTrainingConfig:
         assert config.learning_rate == 1e-4
 
     def test_training_config_custom(self):
-        """Test TrainingConfig with custom values."""
-        config = TrainingConfig(
+        """Test TrainingJobSpec with custom values."""
+        config = TrainingJobSpec(
             experiment_name="custom_experiment",
             agent_type="CustomAgent",
             model_config={"model_type": "custom"},
@@ -150,7 +150,7 @@ class TestTrainingJob:
     @pytest.fixture
     def training_config(self):
         """Create a test training config."""
-        return TrainingConfig(
+        return TrainingJobSpec(
             experiment_name="test",
             agent_type="TestAgent",
             model_config={},
@@ -285,7 +285,7 @@ class TestJobScheduler:
     @pytest.fixture
     def training_config(self):
         """Create a test training config."""
-        return TrainingConfig(
+        return TrainingJobSpec(
             experiment_name="test",
             agent_type="TestAgent",
             model_config={},
@@ -387,7 +387,7 @@ class TestExperimentTracker:
     @pytest.fixture
     def training_config(self):
         """Create a test training config."""
-        return TrainingConfig(
+        return TrainingJobSpec(
             experiment_name="test_experiment",
             agent_type="TestAgent",
             model_config={},
@@ -457,7 +457,7 @@ class TestTrainingWorker:
     @pytest.fixture
     def training_config(self):
         """Create a test training config."""
-        return TrainingConfig(
+        return TrainingJobSpec(
             experiment_name="test",
             agent_type="TestAgent",
             model_config={},
@@ -547,7 +547,7 @@ class TestAdvancedTrainingOrchestrator:
     @pytest.fixture
     def training_config(self):
         """Create a test training config."""
-        return TrainingConfig(
+        return TrainingJobSpec(
             experiment_name="test",
             agent_type="TestAgent",
             model_config={},
@@ -664,7 +664,7 @@ class TestAdvancedTrainingOrchestrator:
     async def test_shutdown(self, orchestrator, mock_dependencies):
         """Test orchestrator shutdown."""
         # Add a running job
-        config = TrainingConfig(
+        config = TrainingJobSpec(
             experiment_name="test",
             agent_type="TestAgent",
             model_config={},
