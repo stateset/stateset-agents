@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`stateset_agents/training/__init__.py` shrunk from 1679 to 144 lines** — the
+  ~1200-line lazy-export string map now lives in `stateset_agents/training/_registry.py`
+  as the plain data constants `OPTIONAL_EXPORTS` and `PUBLIC_NAMES`. Public surface,
+  `__all__`, `TRL_AVAILABLE` and the submodule fallback are unchanged; new meta-tests
+  in `tests/unit/test_training_lazy_exports.py` keep the registry and `__all__` from drifting.
+
 ## [0.39.0] - 2026-08-25 — Real trust regions, no silent NaNs, CI that tells the truth
 
 ### Added
