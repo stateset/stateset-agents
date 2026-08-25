@@ -34,7 +34,7 @@ jobs:
       name: ${{ (github.event_name == 'release' || github.event_name == 'push') && 'pypi' || github.event.inputs.environment }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
@@ -175,7 +175,7 @@ jobs:
       run: |
         echo "::warning::Skipping the Docker image publish: the DOCKER_USERNAME and DOCKER_PASSWORD repository secrets are not configured. Set both under Settings > Secrets and variables > Actions (DOCKER_PASSWORD should be a Docker Hub access token with Read/Write scope for the stateset/* repositories), then re-run this workflow to publish the images."
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       if: env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != ''
 
     - name: Set up Docker Buildx
@@ -248,7 +248,7 @@ jobs:
     if: github.event.inputs.environment == 'pypi' || github.event_name == 'release' || github.event_name == 'push'
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Set up Python
       uses: actions/setup-python@v5
