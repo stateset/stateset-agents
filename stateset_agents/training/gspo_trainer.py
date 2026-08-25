@@ -436,20 +436,15 @@ class GSPOTrainer:
             if isinstance(rewards, torch.Tensor)
             else torch.as_tensor(rewards, dtype=torch.float32)
         )
-        mean_reward = rewards_tensor.mean()
-        std_reward = rewards_tensor.std(unbiased=False)
 
-        # Avoid division by zero / NaNs (e.g., group_size == 1)
-        if torch.isnan(std_reward) or std_reward < 1e-8:
-            std_reward_safe = std_reward.new_tensor(1.0)
-        else:
-            std_reward_safe = std_reward
+        # Single source of truth for the formula; this method only adds the
+        # logging stats on top.
+        advantages = rl_losses.group_advantages(rewards_tensor)
 
-        advantages = (rewards_tensor - mean_reward) / std_reward_safe
-
+        std_reward = rewards_tensor.float().std(unbiased=False)
         stats = {
-            "mean_reward": float(mean_reward.item()),
-            "std_reward": float(std_reward.item()),
+            "mean_reward": float(rewards_tensor.mean().item()),
+            "std_reward": 0.0 if torch.isnan(std_reward) else float(std_reward.item()),
             "max_reward": float(rewards_tensor.max().item()),
             "min_reward": float(rewards_tensor.min().item()),
         }

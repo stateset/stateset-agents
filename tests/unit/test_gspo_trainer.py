@@ -522,6 +522,24 @@ class TestGSPOTrainerComputeGroupAdvantages:
         assert torch.allclose(advantages, torch.zeros_like(rewards))
         assert stats["mean_reward"] == 2.0
 
+    def test_matches_rl_losses_group_advantages(self):
+        """The trainer must not carry its own copy of the formula: it is a
+        thin wrapper over rl_losses.group_advantages plus logging stats."""
+        from stateset_agents.training import rl_losses
+        from stateset_agents.training.gspo_trainer import GSPOTrainer
+
+        for rewards in (
+            torch.tensor([0.0, 1.0, 2.0, 5.0]),
+            torch.tensor([1.0, 1.0, 1.0]),
+            torch.tensor([2.0]),
+            torch.tensor([-3.0, 4.0]),
+        ):
+            advantages, stats = GSPOTrainer.compute_group_advantages(None, rewards)
+            assert torch.allclose(advantages, rl_losses.group_advantages(rewards))
+            assert stats["mean_reward"] == pytest.approx(float(rewards.mean()))
+            assert stats["max_reward"] == pytest.approx(float(rewards.max()))
+            assert stats["min_reward"] == pytest.approx(float(rewards.min()))
+
 
 class TestGSPOTrainerSequenceLogProbs:
     """Tests for GSPOTrainer._compute_group_sequence_log_probs."""

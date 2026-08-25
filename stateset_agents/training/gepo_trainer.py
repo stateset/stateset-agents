@@ -535,16 +535,13 @@ class GEPOTrainer:
                 )
                 all_gepo_coefs.extend(gepo_coefs.detach().tolist())
 
-                clipped_coefs = torch.clamp(
+                # Shared PPO-style clipped surrogate (already a loss).
+                policy_loss = rl_losses.clipped_surrogate(
                     gepo_coefs,
-                    1.0 - self.config.clip_eps,
-                    1.0 + self.config.clip_eps,
-                )
-
-                advantages = rollout["advantages"]
-                unclipped_obj = gepo_coefs * advantages
-                clipped_obj = clipped_coefs * advantages
-                policy_loss = -torch.min(unclipped_obj, clipped_obj).mean()
+                    rollout["advantages"],
+                    clip_low=self.config.clip_eps,
+                    clip_high=self.config.clip_eps,
+                ).mean()
 
                 accumulated_loss = accumulated_loss + policy_loss
 

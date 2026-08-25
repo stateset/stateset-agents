@@ -8,13 +8,13 @@ import logging
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS as VLLM_EXCEPTIONS
 from stateset_agents.exceptions import MODEL_DEVICE_EXCEPTIONS
 
+from . import rl_losses
 from .gspo_config import GSPOConfig
 
 logger = logging.getLogger(__name__)
@@ -436,21 +436,28 @@ class GSPOTrajectoryGenerator:
             outputs = model(**inputs)
             logits = outputs.logits
 
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = inputs["input_ids"][..., 1:].contiguous()
-
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
+        input_ids = inputs["input_ids"]
+        # Shared gather (fp32 log-softmax), masked to response positions:
+        # unshifted position p is a response token when p >= prompt_length,
+        # i.e. shifted index max(prompt_length - 1, 0) onwards.
+        response_mask = torch.zeros_like(input_ids, dtype=torch.float32)
+        if prompt_length < response_mask.shape[-1]:
+            response_mask[..., prompt_length:] = 1.0
 
         response_start = max(prompt_length - 1, 0)
-        if response_start >= token_log_probs.shape[-1]:
+        if response_start >= input_ids.shape[-1] - 1:
+            # Degenerate case (prompt fills the window): fall back to the
+            # whole sequence rather than returning 0.
+            all_ones = torch.ones_like(input_ids, dtype=torch.float32)
+            token_log_probs, _ = rl_losses.gather_token_logprobs(
+                logits, input_ids, all_ones
+            )
             return float(token_log_probs.sum().item())
 
-        response_log_probs = token_log_probs[..., response_start:]
-        sequence_log_prob = float(response_log_probs.sum().item())
-        return sequence_log_prob
+        token_log_probs, _ = rl_losses.gather_token_logprobs(
+            logits, input_ids, response_mask
+        )
+        return float(token_log_probs.sum().item())
 
 
 __all__ = [

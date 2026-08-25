@@ -12,7 +12,6 @@ from typing import Any
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
@@ -208,23 +207,23 @@ class GSPOTokenTrainer(GSPOTrainer):
                 outputs = self.model(**inputs)
                 logits = outputs.logits
 
-                shift_logits = logits[..., :-1, :].contiguous()
-                shift_labels = inputs["input_ids"][..., 1:].contiguous()
+                # Shared gather (fp32 log-softmax). The response mask is
+                # built on the unshifted axis: position p is a response
+                # token when p >= prompt_length, which after the helper's
+                # shift-by-one is exactly `mask_prompt_tokens` semantics
+                # (first kept index max(prompt_length - 1, 0)).
+                input_ids = inputs["input_ids"]
+                response_mask = torch.zeros_like(input_ids, dtype=torch.float32)
+                if prompt_length < response_mask.shape[-1]:
+                    response_mask[..., prompt_length:] = 1.0
 
-                log_probs = F.log_softmax(shift_logits, dim=-1)
-                token_log_probs = log_probs.gather(
-                    dim=-1, index=shift_labels.unsqueeze(-1)
-                ).squeeze(-1)
-
-                # Mask out prompt positions — only response tokens count
-                # towards the sequence log prob and the loss.
-                masked_token_log_probs = self.mask_prompt_tokens(
-                    token_log_probs, prompt_length
+                masked_token_log_probs, _ = rl_losses.gather_token_logprobs(
+                    logits, input_ids, response_mask
                 )
                 token_log_probs_list.append(masked_token_log_probs)
 
                 response_start = max(prompt_length - 1, 0)
-                response_len = max(token_log_probs.shape[-1] - response_start, 1)
+                response_len = max(masked_token_log_probs.shape[-1] - response_start, 1)
                 sequence_lengths_list.append(float(response_len))
 
             # Keep tensors (not .item()) so gradients survive into the loss.
