@@ -1,0 +1,2091 @@
+{
+  "episode_harvest": {
+    "artifacts": {
+      "harvest/harvest.jsonl": "{\"messages\": [{\"role\": \"user\", \"content\": \"hi\"}, {\"role\": \"assistant\", \"content\": \"done vpn profile\"}, {\"role\": \"user\", \"content\": \"and then?\"}, {\"role\": \"assistant\", \"content\": \"done vpn profile\"}]}\n",
+      "harvest/harvest_summary.json": "{\n  \"base_model\": \"Qwen/Qwen3.5-9B\",\n  \"adapter_dir\": null,\n  \"best_of\": 2,\n  \"temperature\": 0.9,\n  \"prompts\": 1,\n  \"samples\": 2,\n  \"kept\": 1,\n  \"prompts_with_a_pass\": 1,\n  \"eval\": {\n    \"passed\": 1,\n    \"total\": 1,\n    \"results\": [\n      {\n        \"prompt\": \"e1\",\n        \"completion\": \"done vpn profile\",\n        \"passed\": true,\n        \"detail\": {\n          \"per_turn\": [\n            {\n              \"expect_hits\": [\n                \"done\"\n              ],\n              \"forbid_hits\": [],\n              \"passed\": true\n            }\n          ],\n          \"forbid_hits\": [],\n          \"junk_tools\": false,\n          \"passed\": true\n        }\n      }\n    ]\n  },\n  \"episodes\": true,\n  \"dry_run\": false\n}",
+      "p.json": "[{\"turns\": [\"hi\", \"and then?\"], \"turn_expect\": [[\"done\"], [\"vpn\"]], \"forbid\": [\"oops\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "succeeded"
+      }
+    ],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": true,
+      "logs": [
+        "current generation (episodes, greedy): 1/1",
+        "episode harvest: kept 1/2 across 1/1 scripts"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": [
+      {
+        "call": "session",
+        "project": "harvest"
+      },
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "call": "create_model",
+        "checkpoint": "None",
+        "lora": "None"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:e1"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:hi",
+          "user:hi"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:hi|assistant:oops nope|user:and then?",
+          "user:hi|assistant:done vpn profile|user:and then?"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "session_close"
+      }
+    ]
+  },
+  "episode_harvest_dry_run": {
+    "artifacts": {
+      "harvest/harvest_summary.json": "{\n  \"base_model\": \"Qwen/Qwen3.5-9B\",\n  \"adapter_dir\": null,\n  \"best_of\": 3,\n  \"temperature\": 0.9,\n  \"prompts\": 1,\n  \"samples\": 0,\n  \"kept\": 0,\n  \"prompts_with_a_pass\": 0,\n  \"eval\": null,\n  \"episodes\": true,\n  \"dry_run\": true\n}",
+      "p.json": "[{\"turns\": [\"hi\", \"and then?\"], \"turn_expect\": [[\"done\"], [\"vpn\"]], \"forbid\": [\"oops\"]}]"
+    },
+    "ledger": [],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": false,
+      "logs": [],
+      "status": "succeeded"
+    },
+    "sdk_calls": []
+  },
+  "episode_rl": {
+    "artifacts": {
+      "p.json": "[{\"turns\": [\"hi\", \"and then?\"], \"turn_expect\": [[\"done\"], [\"vpn\"]], \"forbid\": [\"oops\"]}]",
+      "rl/eval_results.json": "[\n  {\n    \"prompt\": \"e1\",\n    \"finetuned\": \"oops nope\",\n    \"passed\": false,\n    \"detail\": {\n      \"per_turn\": [\n        {\n          \"expect_hits\": [],\n          \"forbid_hits\": [],\n          \"passed\": false\n        }\n      ],\n      \"forbid_hits\": [],\n      \"junk_tools\": false,\n      \"passed\": false\n    }\n  }\n]",
+      "rl/rl_report.json": "{\n  \"rounds\": [\n    {\n      \"round\": 0,\n      \"passed\": 1,\n      \"total\": 1\n    },\n    {\n      \"round\": 1,\n      \"datums\": 4,\n      \"mean_reward\": 0.5,\n      \"passed\": 0,\n      \"total\": 1\n    },\n    {\n      \"round\": 2,\n      \"datums\": 4,\n      \"mean_reward\": 0.5,\n      \"passed\": 1,\n      \"total\": 1\n    }\n  ],\n  \"loss_fn\": \"cispo\"\n}"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "succeeded"
+      }
+    ],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": true,
+      "logs": [
+        "round 0 (before): 1/1",
+        "round 1: 4 datums, mean reward 0.5, eval 0/1",
+        "round 2: 4 datums, mean reward 0.5, eval 1/1",
+        "saved River checkpoint: river://checkpoints/rl"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": [
+      {
+        "call": "session",
+        "project": "rl"
+      },
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "call": "create_model",
+        "checkpoint": "None",
+        "lora": "FakeLoraConfig(rank=16, train_attn=True, train_mlp=True, train_unembed=False)"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:e1"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 1,
+        "prompt_token_ids": [
+          [
+            8,
+            3
+          ],
+          [
+            8,
+            3
+          ]
+        ],
+        "prompts": null,
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 1,
+        "prompt_token_ids": [
+          [
+            43,
+            38
+          ],
+          [
+            50,
+            38
+          ]
+        ],
+        "prompts": null,
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "train_step",
+        "datums": [
+          {
+            "advantages": [
+              0.0,
+              -1.5,
+              -1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              8,
+              3,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          },
+          {
+            "advantages": [
+              0.0,
+              -1.5,
+              -1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              43,
+              38,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          },
+          {
+            "advantages": [
+              0.0,
+              1.5,
+              1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              8,
+              3,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          },
+          {
+            "advantages": [
+              0.0,
+              1.5,
+              1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              50,
+              38,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          }
+        ],
+        "loss_fn": "cispo",
+        "lr": 2e-05
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:e1"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 1,
+        "prompt_token_ids": [
+          [
+            8,
+            3
+          ],
+          [
+            8,
+            3
+          ]
+        ],
+        "prompts": null,
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 1,
+        "prompt_token_ids": [
+          [
+            50,
+            38
+          ],
+          [
+            43,
+            38
+          ]
+        ],
+        "prompts": null,
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "train_step",
+        "datums": [
+          {
+            "advantages": [
+              0.0,
+              1.5,
+              1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              8,
+              3,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          },
+          {
+            "advantages": [
+              0.0,
+              1.5,
+              1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              50,
+              38,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          },
+          {
+            "advantages": [
+              0.0,
+              -1.5,
+              -1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              8,
+              3,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          },
+          {
+            "advantages": [
+              0.0,
+              -1.5,
+              -1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              43,
+              38,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          }
+        ],
+        "loss_fn": "cispo",
+        "lr": 2e-05
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:e1"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "save_weights",
+        "mode": "inference",
+        "name": "rl"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:e1"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "session_close"
+      }
+    ]
+  },
+  "episode_rl_dry_run": {
+    "artifacts": {
+      "p.json": "[{\"turns\": [\"hi\", \"and then?\"], \"turn_expect\": [[\"done\"], [\"vpn\"]], \"forbid\": [\"oops\"]}]",
+      "rl/rl_report.json": "{\"rounds\": 5, \"episodes\": 1, \"dry_run\": true}"
+    },
+    "ledger": [],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": false,
+      "logs": [],
+      "status": "succeeded"
+    },
+    "sdk_calls": []
+  },
+  "fail_episode_harvest": {
+    "artifacts": {
+      "p.json": "[{\"turns\": [\"hi\", \"and then?\"], \"turn_expect\": [[\"done\"], [\"vpn\"]], \"forbid\": [\"oops\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "failed"
+      }
+    ],
+    "outcome": {
+      "raised": "RemoteExecutionError: [NET_003] River harvest failed | Context: {'provider': 'river'} | Caused by: RuntimeError: kaboom"
+    },
+    "sdk_calls": []
+  },
+  "fail_episode_rl": {
+    "artifacts": {
+      "p.json": "[{\"turns\": [\"hi\", \"and then?\"], \"turn_expect\": [[\"done\"], [\"vpn\"]], \"forbid\": [\"oops\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "failed"
+      }
+    ],
+    "outcome": {
+      "raised": "RemoteExecutionError: [NET_003] River episode RL failed | Context: {'provider': 'river'} | Caused by: RuntimeError: kaboom"
+    },
+    "sdk_calls": []
+  },
+  "fail_harvest": {
+    "artifacts": {
+      "p.json": "[{\"prompt\": \"fix my vpn\", \"expect\": [\"vpn profile\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "failed"
+      }
+    ],
+    "outcome": {
+      "raised": "RemoteExecutionError: [NET_003] River harvest failed | Context: {'provider': 'river'} | Caused by: RuntimeError: kaboom"
+    },
+    "sdk_calls": []
+  },
+  "fail_rl": {
+    "artifacts": {
+      "p.json": "[{\"prompt\": \"fix my vpn\", \"expect\": [\"vpn profile\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "failed"
+      }
+    ],
+    "outcome": {
+      "raised": "RemoteExecutionError: [NET_003] River RL run failed | Context: {'provider': 'river'} | Caused by: RuntimeError: kaboom"
+    },
+    "sdk_calls": []
+  },
+  "fail_sft": {
+    "artifacts": {
+      "curated.jsonl": "{\"messages\": [{\"role\": \"user\", \"content\": \"question 0\"}, {\"role\": \"assistant\", \"content\": \"answer 0\"}]}\n"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "failed"
+      }
+    ],
+    "outcome": {
+      "raised": "RemoteExecutionError: [NET_003] River training run failed | Context: {'provider': 'river'} | Caused by: RuntimeError: kaboom"
+    },
+    "sdk_calls": []
+  },
+  "harvest": {
+    "artifacts": {
+      "harvest/harvest.jsonl": "{\"messages\": [{\"role\": \"user\", \"content\": \"fix my vpn\"}, {\"role\": \"assistant\", \"content\": \"re-provisioned your vpn profile\"}]}\n{\"messages\": [{\"role\": \"user\", \"content\": \"fix my vpn\"}, {\"role\": \"assistant\", \"content\": \"vpn profile reset\"}]}\n",
+      "harvest/harvest_summary.json": "{\n  \"base_model\": \"Qwen/Qwen3.5-9B\",\n  \"adapter_dir\": null,\n  \"best_of\": 4,\n  \"temperature\": 0.9,\n  \"prompts\": 1,\n  \"samples\": 4,\n  \"kept\": 2,\n  \"prompts_with_a_pass\": 1,\n  \"eval\": {\n    \"passed\": 1,\n    \"total\": 1,\n    \"results\": [\n      {\n        \"prompt\": \"eval me\",\n        \"completion\": \"done, and eval passes\",\n        \"expect_hits\": [\n          \"done\"\n        ],\n        \"forbid_hits\": [],\n        \"passed\": true\n      }\n    ]\n  },\n  \"dry_run\": false\n}",
+      "p.json": "[{\"prompt\": \"fix my vpn\", \"expect\": [\"vpn profile\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "succeeded"
+      }
+    ],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": true,
+      "logs": [
+        "sampling from Qwen/Qwen3.5-9B via River",
+        "harvest: kept 2/4 across 1/1 prompts"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": [
+      {
+        "call": "session",
+        "project": "harvest"
+      },
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "call": "create_model",
+        "checkpoint": "None",
+        "lora": "None"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:eval me"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 4,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:fix my vpn"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "session_close"
+      }
+    ]
+  },
+  "harvest_dry_run": {
+    "artifacts": {
+      "harvest/harvest_summary.json": "{\n  \"base_model\": \"Qwen/Qwen3.5-9B\",\n  \"adapter_dir\": null,\n  \"best_of\": 4,\n  \"temperature\": 0.9,\n  \"prompts\": 1,\n  \"samples\": 0,\n  \"kept\": 0,\n  \"prompts_with_a_pass\": 0,\n  \"eval\": null,\n  \"dry_run\": true\n}",
+      "p.json": "[{\"prompt\": \"fix my vpn\", \"expect\": [\"vpn profile\"]}]"
+    },
+    "ledger": [],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": false,
+      "logs": [
+        "dry run: harvest plan only, nothing sampled"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": []
+  },
+  "harvest_from_pointer": {
+    "artifacts": {
+      "gen1/river_checkpoint.json": "{\"checkpoint\": \"river://abc/sampler_weights/gen1\"}",
+      "harvest/harvest.jsonl": "{\"messages\": [{\"role\": \"user\", \"content\": \"fix my vpn\"}, {\"role\": \"assistant\", \"content\": \"vpn profile ok\"}]}\n{\"messages\": [{\"role\": \"user\", \"content\": \"fix my vpn\"}, {\"role\": \"assistant\", \"content\": \"vpn profile ok\"}]}\n",
+      "harvest/harvest_summary.json": "{\n  \"base_model\": \"Qwen/Qwen3.5-9B\",\n  \"adapter_dir\": \"<tmp>/gen1\",\n  \"best_of\": 2,\n  \"temperature\": 0.9,\n  \"prompts\": 1,\n  \"samples\": 2,\n  \"kept\": 2,\n  \"prompts_with_a_pass\": 1,\n  \"eval\": null,\n  \"dry_run\": false\n}",
+      "p.json": "[{\"prompt\": \"fix my vpn\", \"expect\": [\"vpn profile\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "succeeded"
+      }
+    ],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": true,
+      "logs": [
+        "sampling from river://abc/sampler_weights/gen1 via River",
+        "harvest: kept 2/2 across 1/1 prompts"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": [
+      {
+        "call": "session",
+        "project": "harvest"
+      },
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "call": "create_model",
+        "checkpoint": "FakeCheckpoint(path='river://abc/sampler_weights/gen1', step=0, checkpoint_type='inference')",
+        "lora": "None"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 2,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:fix my vpn"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "session_close"
+      }
+    ]
+  },
+  "rl": {
+    "artifacts": {
+      "p.json": "[{\"prompt\": \"fix it\", \"expect\": [\"done\"], \"forbid\": [\"oops\"]}]",
+      "rl/eval_results.json": "[\n  {\n    \"prompt\": \"check me\",\n    \"finetuned\": \"oops nope\",\n    \"checks\": {\n      \"expect_hits\": [],\n      \"forbid_hits\": [],\n      \"passed\": false\n    }\n  }\n]",
+      "rl/rl_report.json": "{\n  \"rounds\": [\n    {\n      \"round\": 0,\n      \"passed\": 1,\n      \"total\": 1\n    },\n    {\n      \"round\": 1,\n      \"datums\": 2,\n      \"mean_reward\": 0.5,\n      \"passed\": 0,\n      \"total\": 1\n    },\n    {\n      \"round\": 2,\n      \"datums\": 2,\n      \"mean_reward\": 0.5,\n      \"passed\": 1,\n      \"total\": 1\n    }\n  ],\n  \"loss_fn\": \"cispo\"\n}"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "succeeded"
+      }
+    ],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": true,
+      "logs": [
+        "round 0 (before): 1/1",
+        "round 1: 2 datums, mean reward 0.5, eval 0/1",
+        "round 2: 2 datums, mean reward 0.5, eval 1/1",
+        "saved River checkpoint: river://checkpoints/rl"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": [
+      {
+        "call": "session",
+        "project": "rl"
+      },
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "call": "create_model",
+        "checkpoint": "None",
+        "lora": "FakeLoraConfig(rank=16, train_attn=True, train_mlp=True, train_unembed=False)"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:check me"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 2,
+        "prompt_token_ids": [
+          [
+            12,
+            32
+          ]
+        ],
+        "prompts": null,
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "train_step",
+        "datums": [
+          {
+            "advantages": [
+              0.0,
+              -1.5,
+              -1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              12,
+              32,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          },
+          {
+            "advantages": [
+              0.0,
+              1.5,
+              1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              12,
+              32,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          }
+        ],
+        "loss_fn": "cispo",
+        "lr": 2e-05
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:check me"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 2,
+        "prompt_token_ids": [
+          [
+            12,
+            32
+          ]
+        ],
+        "prompts": null,
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "train_step",
+        "datums": [
+          {
+            "advantages": [
+              0.0,
+              1.5,
+              1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              12,
+              32,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          },
+          {
+            "advantages": [
+              0.0,
+              -1.5,
+              -1.5,
+              0.0
+            ],
+            "attention_mask": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "input_ids": [
+              12,
+              32,
+              11,
+              12
+            ],
+            "old_logprobs": [
+              0.0,
+              -0.5,
+              -0.25,
+              0.0
+            ]
+          }
+        ],
+        "loss_fn": "cispo",
+        "lr": 2e-05
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:check me"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "save_weights",
+        "mode": "inference",
+        "name": "rl"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:check me"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "session_close"
+      }
+    ]
+  },
+  "rl_dry_run": {
+    "artifacts": {
+      "p.json": "[{\"prompt\": \"fix it\", \"expect\": [\"done\"]}]",
+      "rl/rl_report.json": "{\"rounds\": 3, \"prompts\": 1, \"dry_run\": true}"
+    },
+    "ledger": [],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": false,
+      "logs": [],
+      "status": "succeeded"
+    },
+    "sdk_calls": []
+  },
+  "rl_zero_variance": {
+    "artifacts": {
+      "p.json": "[{\"prompt\": \"fix it\", \"expect\": [\"done\"]}]",
+      "rl/rl_report.json": "{\n  \"rounds\": [],\n  \"loss_fn\": \"cispo\"\n}"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "succeeded"
+      }
+    ],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": true,
+      "logs": [
+        "round 1: every group zero-variance \u2014 nothing to train on this round",
+        "saved River checkpoint: river://checkpoints/rl"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": [
+      {
+        "call": "session",
+        "project": "rl"
+      },
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "call": "create_model",
+        "checkpoint": "None",
+        "lora": "FakeLoraConfig(rank=16, train_attn=True, train_mlp=True, train_unembed=False)"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 2,
+        "prompt_token_ids": [
+          [
+            12,
+            32
+          ]
+        ],
+        "prompts": null,
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "save_weights",
+        "mode": "inference",
+        "name": "rl"
+      },
+      {
+        "call": "session_close"
+      }
+    ]
+  },
+  "sft": {
+    "artifacts": {
+      "curated.jsonl": "{\"messages\": [{\"role\": \"user\", \"content\": \"question 0\"}, {\"role\": \"assistant\", \"content\": \"answer 0\"}]}\n{\"messages\": [{\"role\": \"user\", \"content\": \"question 1\"}, {\"role\": \"assistant\", \"content\": \"answer 1\"}]}\n{\"messages\": [{\"role\": \"user\", \"content\": \"question 2\"}, {\"role\": \"assistant\", \"content\": \"answer 2\"}]}\n{\"messages\": [{\"role\": \"user\", \"content\": \"question 3\"}, {\"role\": \"assistant\", \"content\": \"answer 3\"}]}\n",
+      "out/eval_results.json": "[\n  {\n    \"prompt\": \"eval me\",\n    \"finetuned\": \"done at last\",\n    \"checks\": {\n      \"expect_hits\": [\n        \"done\"\n      ],\n      \"forbid_hits\": [],\n      \"passed\": true\n    }\n  }\n]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "succeeded"
+      }
+    ],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": true,
+      "logs": [
+        "built 4 River SFT data from 4 rows",
+        "created River model on Qwen/Qwen3.5-9B (LoRA rank 16, attn+mlp)",
+        "epoch 1/2 complete (2 steps, loss 0.1000)",
+        "epoch 2/2 complete (4 steps, loss 0.1000)",
+        "saved River checkpoint: river://checkpoints/out",
+        "eval: 1/1 prompt(s) passed (greedy, in-session)"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": [
+      {
+        "call": "session",
+        "project": "out"
+      },
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "call": "create_model",
+        "checkpoint": "None",
+        "lora": "FakeLoraConfig(rank=16, train_attn=True, train_mlp=True, train_unembed=False)"
+      },
+      {
+        "call": "train_step",
+        "datums": [
+          {
+            "input_ids": [
+              14,
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              49,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33
+            ],
+            "target_tokens": [
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              49,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33,
+              49
+            ],
+            "weights": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "input_ids": [
+              14,
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              50,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33
+            ],
+            "target_tokens": [
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              50,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33,
+              50
+            ],
+            "weights": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "loss_fn": "cross_entropy",
+        "lr": 2e-05
+      },
+      {
+        "call": "train_step",
+        "datums": [
+          {
+            "input_ids": [
+              14,
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              1,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33
+            ],
+            "target_tokens": [
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              1,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33,
+              1
+            ],
+            "weights": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "input_ids": [
+              14,
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              2,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33
+            ],
+            "target_tokens": [
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              2,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33,
+              2
+            ],
+            "weights": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "loss_fn": "cross_entropy",
+        "lr": 2e-05
+      },
+      {
+        "call": "train_step",
+        "datums": [
+          {
+            "input_ids": [
+              14,
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              49,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33
+            ],
+            "target_tokens": [
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              49,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33,
+              49
+            ],
+            "weights": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "input_ids": [
+              14,
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              50,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33
+            ],
+            "target_tokens": [
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              50,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33,
+              50
+            ],
+            "weights": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "loss_fn": "cross_entropy",
+        "lr": 2e-05
+      },
+      {
+        "call": "train_step",
+        "datums": [
+          {
+            "input_ids": [
+              14,
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              1,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33
+            ],
+            "target_tokens": [
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              1,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33,
+              1
+            ],
+            "weights": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "input_ids": [
+              14,
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              2,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33
+            ],
+            "target_tokens": [
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              2,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33,
+              2
+            ],
+            "weights": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "loss_fn": "cross_entropy",
+        "lr": 2e-05
+      },
+      {
+        "call": "save_weights",
+        "mode": "inference",
+        "name": "out"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:eval me"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "session_close"
+      }
+    ]
+  },
+  "sft_dry_run": {
+    "artifacts": {
+      "curated.jsonl": "{\"messages\": [{\"role\": \"user\", \"content\": \"question 0\"}, {\"role\": \"assistant\", \"content\": \"answer 0\"}]}\n{\"messages\": [{\"role\": \"user\", \"content\": \"question 1\"}, {\"role\": \"assistant\", \"content\": \"answer 1\"}]}\n{\"messages\": [{\"role\": \"user\", \"content\": \"question 2\"}, {\"role\": \"assistant\", \"content\": \"answer 2\"}]}\n{\"messages\": [{\"role\": \"user\", \"content\": \"question 3\"}, {\"role\": \"assistant\", \"content\": \"answer 3\"}]}\n"
+    },
+    "ledger": [],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": false,
+      "logs": [
+        "built 4 River SFT data from 4 rows",
+        "dry run: would train 3 epoch(s) of 4 data on Qwen/Qwen3.5-9B (LoRA rank 16) via River"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": []
+  },
+  "sft_empty_dataset": {
+    "artifacts": {
+      "empty.jsonl": ""
+    },
+    "ledger": [],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": false,
+      "logs": [
+        "no trainable rows in <tmp>/empty.jsonl"
+      ],
+      "status": "failed"
+    },
+    "sdk_calls": []
+  },
+  "sft_episode_eval": {
+    "artifacts": {
+      "curated.jsonl": "{\"messages\": [{\"role\": \"user\", \"content\": \"question 0\"}, {\"role\": \"assistant\", \"content\": \"answer 0\"}]}\n",
+      "out/eval_results.json": "[\n  {\n    \"prompt\": \"t1 / t2\",\n    \"finetuned\": \"done vpn profile ||| done vpn profile\",\n    \"passed\": true,\n    \"detail\": {\n      \"per_turn\": [\n        {\n          \"expect_hits\": [\n            \"done\"\n          ],\n          \"forbid_hits\": [],\n          \"passed\": true\n        },\n        {\n          \"expect_hits\": [\n            \"vpn\"\n          ],\n          \"forbid_hits\": [],\n          \"passed\": true\n        }\n      ],\n      \"forbid_hits\": [],\n      \"junk_tools\": false,\n      \"passed\": true\n    }\n  }\n]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "succeeded"
+      }
+    ],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": true,
+      "logs": [
+        "built 1 River SFT data from 1 rows",
+        "created River model on Qwen/Qwen3.5-9B (LoRA rank 8, attn+mlp)",
+        "epoch 1/1 complete (1 steps, loss 0.1000)",
+        "saved River checkpoint: river://checkpoints/out",
+        "eval: 1/1 episode(s) passed (greedy, in-session)"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": [
+      {
+        "call": "session",
+        "project": "out"
+      },
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "call": "create_model",
+        "checkpoint": "None",
+        "lora": "FakeLoraConfig(rank=8, train_attn=True, train_mlp=True, train_unembed=False)"
+      },
+      {
+        "call": "train_step",
+        "datums": [
+          {
+            "input_ids": [
+              14,
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              49,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33
+            ],
+            "target_tokens": [
+              18,
+              2,
+              16,
+              17,
+              6,
+              12,
+              11,
+              33,
+              49,
+              33,
+              48,
+              11,
+              16,
+              20,
+              2,
+              15,
+              33,
+              49
+            ],
+            "weights": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "loss_fn": "cross_entropy",
+        "lr": 2e-05
+      },
+      {
+        "call": "save_weights",
+        "mode": "inference",
+        "name": "out"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:t1"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "sample",
+        "max_tokens": 90,
+        "num_samples": 1,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:t1|assistant:done vpn profile|user:t2"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.0,
+        "top_p": 1.0
+      },
+      {
+        "call": "session_close"
+      }
+    ]
+  },
+  "sft_without_train_step": {
+    "artifacts": {
+      "curated.jsonl": "{\"messages\": [{\"role\": \"user\", \"content\": \"question 0\"}, {\"role\": \"assistant\", \"content\": \"answer 0\"}]}\n{\"messages\": [{\"role\": \"user\", \"content\": \"question 1\"}, {\"role\": \"assistant\", \"content\": \"answer 1\"}]}\n"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "succeeded"
+      }
+    ],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": true,
+      "logs": [
+        "built 2 River SFT data from 2 rows",
+        "created River model on Qwen/Qwen3.5-9B (LoRA rank 16, attn+mlp)",
+        "epoch 1/1 complete (2 steps, loss 0.5000)",
+        "saved River checkpoint: river://checkpoints/out"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": [
+      {
+        "call": "session",
+        "project": "out"
+      },
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "call": "create_model",
+        "checkpoint": "None",
+        "lora": "FakeLoraConfig(rank=16, train_attn=True, train_mlp=True, train_unembed=False)"
+      },
+      {
+        "batch_size": 1,
+        "call": "forward_backward",
+        "loss_fn": "cross_entropy"
+      },
+      {
+        "call": "optim_step",
+        "lr": 2e-05
+      },
+      {
+        "batch_size": 1,
+        "call": "forward_backward",
+        "loss_fn": "cross_entropy"
+      },
+      {
+        "call": "optim_step",
+        "lr": 2e-05
+      },
+      {
+        "call": "save_weights",
+        "mode": "inference",
+        "name": "out"
+      },
+      {
+        "call": "session_close"
+      }
+    ]
+  },
+  "unfunded_episode_harvest": {
+    "artifacts": {
+      "p.json": "[{\"turns\": [\"hi\", \"and then?\"], \"turn_expect\": [[\"done\"], [\"vpn\"]], \"forbid\": [\"oops\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "failed"
+      }
+    ],
+    "outcome": {
+      "raised": "RemoteExecutionError: [NET_003] River reports the account has no credits (HTTP 402, 'Billing: insufficient_funds'). Add funds at https://river.ai before running a job \u2014 no training call will succeed until then. | Context: {'provider': 'river'}"
+    },
+    "sdk_calls": []
+  },
+  "unfunded_episode_rl": {
+    "artifacts": {
+      "p.json": "[{\"turns\": [\"hi\", \"and then?\"], \"turn_expect\": [[\"done\"], [\"vpn\"]], \"forbid\": [\"oops\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "failed"
+      }
+    ],
+    "outcome": {
+      "raised": "RemoteExecutionError: [NET_003] River reports the account has no credits (HTTP 402, 'Billing: insufficient_funds'). Add funds at https://river.ai before running a job \u2014 no training call will succeed until then. | Context: {'provider': 'river'}"
+    },
+    "sdk_calls": []
+  },
+  "unfunded_harvest": {
+    "artifacts": {
+      "p.json": "[{\"prompt\": \"fix my vpn\", \"expect\": [\"vpn profile\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "failed"
+      }
+    ],
+    "outcome": {
+      "raised": "RemoteExecutionError: [NET_003] River reports the account has no credits (HTTP 402, 'Billing: insufficient_funds'). Add funds at https://river.ai before running a job \u2014 no training call will succeed until then. | Context: {'provider': 'river'}"
+    },
+    "sdk_calls": []
+  },
+  "unfunded_rl": {
+    "artifacts": {
+      "p.json": "[{\"prompt\": \"fix my vpn\", \"expect\": [\"vpn profile\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "failed"
+      }
+    ],
+    "outcome": {
+      "raised": "RemoteExecutionError: [NET_003] River reports the account has no credits (HTTP 402, 'Billing: insufficient_funds'). Add funds at https://river.ai before running a job \u2014 no training call will succeed until then. | Context: {'provider': 'river'}"
+    },
+    "sdk_calls": []
+  },
+  "unfunded_sft": {
+    "artifacts": {
+      "curated.jsonl": "{\"messages\": [{\"role\": \"user\", \"content\": \"question 0\"}, {\"role\": \"assistant\", \"content\": \"answer 0\"}]}\n"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "failed"
+      }
+    ],
+    "outcome": {
+      "raised": "RemoteExecutionError: [NET_003] River reports the account has no credits (HTTP 402, 'Billing: insufficient_funds'). Add funds at https://river.ai before running a job \u2014 no training call will succeed until then. | Context: {'provider': 'river'}"
+    },
+    "sdk_calls": []
+  }
+}

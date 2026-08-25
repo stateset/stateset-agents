@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A behavioural golden over every `RiverExecutor.submit` mode** —
+  `tests/unit/test_river_submit_golden.py` plus `tests/unit/data/river_submit_golden.json`
+  record, for 25 offline scenarios across all five submit paths, the exact SDK call
+  sequence with every keyword argument, the job status, the full log list, the cost,
+  every artifact written, and the ledger line. This closes a real coverage hole: the
+  two multi-turn *episode* paths (`_submit_episode_rl`, `_submit_episode_harvest`)
+  import `river_client.renderers` unconditionally, which no existing test stubbed, so
+  neither had ever been executed by the suite.
+
 ### Changed
 
 - **`stateset_agents/training/__init__.py` shrunk from 1679 to 144 lines** — the
