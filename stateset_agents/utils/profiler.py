@@ -14,8 +14,7 @@ import pstats
 import time
 from collections.abc import Callable
 from functools import wraps
-from typing import Any
-
+from types import ModuleType
 import psutil
 
 from .performance_monitor import (
@@ -27,7 +26,7 @@ from .performance_monitor import (
 logger = logging.getLogger(__name__)
 
 
-def _torch_cuda() -> Any | None:
+def _torch_cuda() -> ModuleType | None:
     """Return ``torch.cuda`` if torch is importable, else ``None``.
 
     ``torch`` is an optional heavy dependency and profiling is useful without
@@ -37,7 +36,8 @@ def _torch_cuda() -> Any | None:
         import torch
     except ImportError:
         return None
-    return torch.cuda
+    cuda: ModuleType = torch.cuda
+    return cuda
 
 
 def profiled(func: Callable) -> Callable:

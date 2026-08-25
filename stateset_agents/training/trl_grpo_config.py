@@ -7,25 +7,11 @@ from __future__ import annotations
 import importlib.util
 from dataclasses import dataclass
 
-
 from stateset_agents.exceptions import (
     IMPORT_EXCEPTIONS as BITSANDBYTES_IMPORT_EXCEPTIONS,
 )
 
-from .config import TrainingConfig
-
-
-def _cuda_is_available() -> bool:
-    """Return whether a CUDA device is usable, without importing torch eagerly.
-
-    ``torch`` is an optional heavy dependency; configuration modules must stay
-    importable without it, so the import happens inside this helper.
-    """
-    try:
-        import torch
-    except ImportError:  # pragma: no cover - torch is installed in CI
-        return False
-    return bool(torch.cuda.is_available())
+from .config import TrainingConfig, cuda_is_available
 
 
 @dataclass
@@ -89,7 +75,7 @@ class TRLGRPOConfig(TrainingConfig):
             )
 
         if self.use_4bit or self.use_8bit:
-            if not _cuda_is_available():
+            if not cuda_is_available():
                 warnings.append(
                     "4-bit/8-bit quantization requires CUDA; disable `use_4bit/use_8bit` "
                     "or run on a CUDA-enabled machine."

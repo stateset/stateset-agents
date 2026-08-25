@@ -10,6 +10,7 @@ from __future__ import annotations
 import warnings
 from importlib import import_module
 from importlib.util import find_spec
+from types import ModuleType
 from typing import Any
 
 __version__ = "0.35.1"
@@ -254,7 +255,7 @@ def _build_import_error(
     return message
 
 
-def _maybe_import_submodule(name: str) -> Any | None:
+def _maybe_import_submodule(name: str) -> ModuleType | None:
     """Import real subpackages like ``stateset_agents.training`` on demand."""
     module_name = f"{__name__}.{name}"
     try:
@@ -283,9 +284,9 @@ def __getattr__(name: str) -> Any:
 
     export = _LAZY_EXPORTS.get(name)
     if export is None:
-        module = _maybe_import_submodule(name)
-        if module is not None:
-            return module
+        submodule = _maybe_import_submodule(name)
+        if submodule is not None:
+            return submodule
         raise AttributeError(f"module 'stateset_agents' has no attribute {name!r}")
 
     module_name, attr_name, install_hint = export

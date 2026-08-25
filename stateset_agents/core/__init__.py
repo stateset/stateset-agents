@@ -12,6 +12,7 @@ import os
 import warnings
 from importlib import import_module
 from importlib.util import find_spec
+from types import ModuleType
 from typing import Any
 
 # Optional deprecation warning for legacy imports.
@@ -269,7 +270,7 @@ def _build_import_error(
     return message
 
 
-def _maybe_import_submodule(name: str) -> Any | None:
+def _maybe_import_submodule(name: str) -> ModuleType | None:
     """Import real submodules like ``stateset_agents.core.enhanced_state_management``."""
     module_name = f"{__name__}.{name}"
     try:
@@ -298,9 +299,9 @@ def __getattr__(name: str) -> Any:
 
     export = _LAZY_EXPORTS.get(name)
     if export is None:
-        module = _maybe_import_submodule(name)
-        if module is not None:
-            return module
+        submodule = _maybe_import_submodule(name)
+        if submodule is not None:
+            return submodule
         raise AttributeError(f"module 'stateset_agents.core' has no attribute {name!r}")
 
     module_name, attr_name, install_hint = export

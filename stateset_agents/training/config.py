@@ -568,3 +568,17 @@ def example_config_usage():
 
 if __name__ == "__main__":
     example_config_usage()
+
+
+def cuda_is_available() -> bool:
+    """Return whether a CUDA device is usable, without importing torch eagerly.
+
+    ``torch`` is an optional heavy dependency and configuration modules must
+    stay importable without it (see ``tests/unit/test_torch_import_policy.py``),
+    so the import happens inside this helper rather than at module level.
+    """
+    try:
+        import torch
+    except ImportError:  # pragma: no cover - torch is installed in CI
+        return False
+    return bool(torch.cuda.is_available())
