@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from stateset_agents.training.config import get_config_for_task
 from stateset_agents.training.qwen3_coder_starter import (
     QWEN3_CODER_BASE_MODEL,
@@ -27,6 +29,7 @@ from stateset_agents.training.qwen3_coder_starter import (
     validate_qwen3_coder_config,
     write_qwen3_coder_config_file,
 )
+from tests.unit.forwarder_asserts import assert_forwards_to_driver
 
 
 class TestQwen3CoderConfig:
@@ -223,20 +226,16 @@ class TestQwen3CoderStarterScript:
 
     def test_script_is_a_forwarder(self):
         """finetune_qwen3_coder_gspo.py is a thin forwarder onto
-        examples/finetune_gspo.py --model qwen3-coder. It prints a notice
-        to stderr and exits 0 under --dry-run."""
-        repo_root = Path(__file__).resolve().parents[2]
-        result = subprocess.run(
-            [sys.executable, "examples/finetune_qwen3_coder_gspo.py", "--dry-run"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+        examples/finetune_gspo.py --model qwen3-coder.
+
+        Checked structurally (AST) rather than by spawning an interpreter --
+        see tests/unit/forwarder_asserts.py for why, and
+        test_example_model_presets.py for the one real subprocess that still
+        proves the driver runs end to end."""
+        assert_forwards_to_driver(
+            "finetune_qwen3_coder_gspo.py",
+            model="qwen3-coder",
         )
-        assert result.returncode == 0, result.stderr
-        assert "forwarder" in result.stderr.lower()
-        assert "qwen3-coder" in result.stderr
 
     def test_dry_run_preview_via_starter_profile(self):
         """The starter's own config resolution is reachable through the
@@ -268,6 +267,12 @@ class TestQwen3CoderStarterScript:
         assert payload["agent_config"]["attn_implementation"] == "sdpa"
         assert payload["gspo_overrides"]["use_lora"] is True
 
+    @pytest.mark.slow
+    # One real interpreter spawn per file is enough to prove the script is
+    # runnable end to end; that job belongs to this file's kept
+    # test_cli_dry_run_subprocess. This variant only re-checks profile values
+    # the in-process config tests already assert directly, and costs ~9 s of
+    # wall time to do it. Run it with `-m slow`.
     def test_cli_memory_profile_subprocess(self):
         repo_root = Path(__file__).resolve().parents[2]
         output = subprocess.check_output(
@@ -288,6 +293,12 @@ class TestQwen3CoderStarterScript:
         assert payload["gspo_overrides"]["use_4bit"] is True
         assert payload["gspo_overrides"]["num_generations"] == 2
 
+    @pytest.mark.slow
+    # One real interpreter spawn per file is enough to prove the script is
+    # runnable end to end; that job belongs to this file's kept
+    # test_cli_dry_run_subprocess. This variant only re-checks profile values
+    # the in-process config tests already assert directly, and costs ~9 s of
+    # wall time to do it. Run it with `-m slow`.
     def test_cli_list_profiles_subprocess(self):
         repo_root = Path(__file__).resolve().parents[2]
         output = subprocess.check_output(

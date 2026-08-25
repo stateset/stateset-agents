@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from stateset_agents.training.config import get_config_for_task
 from stateset_agents.training.glm5_1_starter import (
     GLM5_1_BASE_MODEL,
@@ -303,6 +305,12 @@ class TestGlm51StarterScript:
         assert payload["gspo_overrides"]["use_lora"] is True
         assert payload["serving_manifest"]["recommended"]["reasoning_parser"] == "glm45"
 
+    @pytest.mark.slow
+    # One real interpreter spawn per file is enough to prove the script is
+    # runnable end to end; that job belongs to this file's kept
+    # test_cli_dry_run_subprocess. This variant only re-checks profile values
+    # the in-process config tests already assert directly, and costs ~9 s of
+    # wall time to do it. Run it with `-m slow`.
     def test_cli_memory_profile_subprocess(self):
         repo_root = Path(__file__).resolve().parents[2]
         output = subprocess.check_output(
@@ -323,6 +331,12 @@ class TestGlm51StarterScript:
         assert payload["gspo_overrides"]["use_4bit"] is True
         assert payload["gspo_overrides"]["num_generations"] == 2
 
+    @pytest.mark.slow
+    # One real interpreter spawn per file is enough to prove the script is
+    # runnable end to end; that job belongs to this file's kept
+    # test_cli_dry_run_subprocess. This variant only re-checks profile values
+    # the in-process config tests already assert directly, and costs ~9 s of
+    # wall time to do it. Run it with `-m slow`.
     def test_cli_list_profiles_subprocess(self):
         repo_root = Path(__file__).resolve().parents[2]
         output = subprocess.check_output(

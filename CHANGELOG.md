@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The starter-script tests stopped spawning 30 interpreters.** Ten
+  `test_script_is_a_forwarder` tests each burned ~9 s proving, via a real
+  `python examples/finetune_<model>_gspo.py --dry-run`, a property that is
+  purely structural. They now read it out of the AST
+  (`tests/unit/forwarder_asserts.py`): the script must import the unified
+  driver's `main`, print a notice naming itself and its preset to stderr, and
+  end in `sys.exit(main(["--model", <preset>, *sys.argv[1:]]))`. The helper
+  has its own tests proving it rejects a non-forwarder, a wrong preset, a
+  silent shim, and one that swallows the caller's flags.
+
+  The remaining subprocess dry-runs keep exactly one real spawn per test
+  file — enough to catch import-path and argv breakage a fresh process would
+  see — and the duplicates are marked `slow` (deselected by default, run with
+  `-m slow`). Their assertions about profile values were already covered
+  in-process.
+
 ### Removed
 
 - **Two dead modules.** `utils/advanced_dashboard.py` (464 lines) and
