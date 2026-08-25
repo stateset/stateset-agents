@@ -3,7 +3,7 @@
 River drives the training loop *in process*: ``submit()`` opens a session,
 creates a model, samples, trains and saves — there is no payload to inspect
 and no job to poll. So the only way to pin what a mode does is to record what
-it asks River to do. That is what this file is: eighteen scenarios, each
+it asks River to do. That is what this file is: twenty-seven scenarios, each
 recording
 
 * every SDK call in order, with every keyword argument
@@ -75,6 +75,18 @@ class _StubRenderer:
         return ["<|end|>"]
 
 
+class RiverConnectionError(Exception):
+    """The SDK's "back off and rebuild the session" signal.
+
+    Named to match ``river_client``: ``_transient_exceptions`` looks these up
+    by attribute name on the module, so the name is the contract.
+    """
+
+
+class RiverTimeoutError(Exception):
+    """Ditto, for a client-side timeout."""
+
+
 @pytest.fixture(autouse=True)
 def stub_river_renderers(monkeypatch):
     """Install ``river_client.renderers`` for the duration of a test.
@@ -87,6 +99,11 @@ def stub_river_renderers(monkeypatch):
     renderers = types.ModuleType("river_client.renderers")
     renderers.get_renderer = lambda base_model, thinking=False: _StubRenderer()
     river_client.renderers = renderers
+    # The retry policy is read off the SDK by name (see
+    # ``_transient_exceptions``), so the stub must carry these for a
+    # transient scenario to be recognised as retryable rather than fatal.
+    river_client.RiverConnectionError = RiverConnectionError
+    river_client.RiverTimeoutError = RiverTimeoutError
     monkeypatch.setitem(sys.modules, "river_client", river_client)
     monkeypatch.setitem(sys.modules, "river_client.renderers", renderers)
     return renderers
@@ -247,6 +264,26 @@ class UnfundedClient(ExplodingClient):
     """River's live 402 envelope, which every mode should name rather than wrap."""
 
     message = "Billing: insufficient_funds"
+
+
+class FlakyClient(RecordingClient):
+    """Dies once at session open the way River's pool does under load.
+
+    Observed live: a gen-2 harvest died on 'Server unavailable' and took a
+    finished generation's momentum with it. The second attempt must rebuild
+    the session and succeed, with the counters reset rather than doubled.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.session_attempts = 0
+
+    def session(self, project=None):
+        self.session_attempts += 1
+        if self.session_attempts == 1:
+            self.calls.append({"call": "session_failed_transiently"})
+            raise RiverConnectionError("upstream connect error")
+        return super().session(project=project)
 
 
 class FakeTokenizer:
@@ -434,6 +471,19 @@ def scenario_harvest_string_best_of(tmp_path):
     return spec, RecordingClient(texts=["vpn profile ok"])
 
 
+def scenario_harvest_transient_retry(tmp_path):
+    """A transient failure is retried against a fresh session, and the
+    per-attempt counters restart instead of double-counting."""
+    spec = _spec(
+        tmp_path,
+        dataset=_write(tmp_path / "p.json", SINGLE_TURN_PROMPTS),
+        output_dir=tmp_path / "harvest",
+        job_kind="harvest",
+        harvest={"best_of": 2},
+    )
+    return spec, FlakyClient(texts=["vpn profile ok"])
+
+
 def scenario_episode_harvest(tmp_path):
     """Multi-turn harvest: whole conversations, episode-level pass."""
     spec = _spec(
@@ -556,6 +606,7 @@ SCENARIOS = {
     "harvest_dry_run": scenario_harvest_dry_run,
     "harvest_from_pointer": scenario_harvest_from_pointer,
     "harvest_string_best_of": scenario_harvest_string_best_of,
+    "harvest_transient_retry": scenario_harvest_transient_retry,
     "episode_harvest": scenario_episode_harvest,
     "episode_harvest_dry_run": scenario_episode_harvest_dry_run,
     "rl": scenario_rl,
@@ -790,6 +841,21 @@ class TestTheGoldenSaysWhatWeThinkItSays:
             assert golden[name]["outcome"]["logs"] == [
                 "dry run: harvest plan only, nothing sampled"
             ], name
+
+    def test_a_transient_failure_is_retried_not_fatal(self, golden):
+        entry = golden["harvest_transient_retry"]
+        assert entry["outcome"]["status"] == "succeeded"
+        assert any(
+            "retrying harvest in" in line for line in entry["outcome"]["logs"]
+        ), "the retry was not announced"
+        # Two session opens: the one that died, and the one that worked.
+        assert len([c for c in entry["sdk_calls"] if c["call"] == "session"]) == 1
+        assert [
+            c for c in entry["sdk_calls"] if c["call"] == "session_failed_transiently"
+        ]
+        # Counters restart per attempt rather than accumulating across them.
+        summary = json.loads(entry["artifacts"]["harvest/harvest_summary.json"])
+        assert summary["samples"] == 2
 
     def test_a_previous_generation_pointer_is_resolved_to_its_uri(self, golden):
         created = [
