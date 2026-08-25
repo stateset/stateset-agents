@@ -66,12 +66,12 @@ PLAIN_FILES: list[str] = [
     "docs/ARCHITECTURE.md",
     "docs/KIMI_K25_GKE_AUTOPILOT.md",
     "docs/CLI_REFERENCE.md",
-    "docs/FLYWHEEL_EXPERIMENT.md",
 ]
 
 GUARD_TESTS = [
     "tests/unit/test_readme_onboarding.py",
     "tests/unit/test_pyproject_extras.py",
+    "tests/unit/test_docs_version_freshness.py",
 ]
 
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
