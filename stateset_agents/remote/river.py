@@ -40,7 +40,7 @@ import json
 import logging
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -110,6 +110,52 @@ class _RiverJob:
     tokens: int | None = None
     duration_s: float | None = None
     cost_usd: float | None = None
+
+
+@dataclass(frozen=True)
+class _RlMode:
+    """What differs between the single-turn and multi-turn RL loops.
+
+    Everything else — the rounds loop, the eval bracketing, the optimiser
+    call, the report and the failure/ledger handling — is shared in
+    :meth:`RiverExecutor._run_rl_rounds`.
+    """
+
+    #: Previous generation's ``river://`` weights, or None to start from base.
+    checkpoint: str | None
+    #: Written to ``rl_report.json`` when the spec is a dry run.
+    dry_run_report: dict[str, Any]
+    #: (model) -> {"passed", "total", "results"}, or None with no eval set.
+    greedy_eval: Callable[[Any], dict[str, Any] | None]
+    #: (model) -> (datums to train on, per-group mean rewards).
+    collect_round: Callable[[Any], tuple[list[dict[str, Any]], list[float]]]
+    #: How a round with nothing to learn from is described in the log.
+    zero_variance_note: str
+    #: Log line and wrapped-error text when the run fails.
+    failure_label: str
+
+
+@dataclass(frozen=True)
+class _HarvestMode:
+    """What differs between the single-turn and multi-turn harvests.
+
+    The retry loop, artifact writes and ledger live in
+    :meth:`RiverExecutor._run_harvest_attempts`.
+    """
+
+    checkpoint: str | None
+    #: Seed ``harvest_summary.json``; the runner and ``collect_rows`` fill in
+    #: the counters, so this is mutated in place rather than frozen.
+    summary: dict[str, Any]
+    greedy_eval: Callable[[Any], dict[str, Any] | None]
+    #: (model, summary) -> kept rows, counting into summary as it goes.
+    collect_rows: Callable[[Any, dict[str, Any]], list[dict[str, Any]]]
+    #: Noun for the retry and completion log lines ("harvest"/"episode harvest").
+    label: str
+    #: What ``prompts_with_a_pass`` counts ("prompts"/"scripts").
+    unit: str
+    #: Suffix on the "current generation" eval line.
+    eval_note: str
 
 
 class RiverExecutor(RemoteExecutor):
@@ -318,45 +364,33 @@ class RiverExecutor(RemoteExecutor):
         self._record_cost(job_id, job)
         return handle
 
-    def _submit_episode_rl(
+    # -- RL: one loop, two modes -------------------------------------------
+
+    def _run_rl_rounds(
         self,
         handle: JobHandle,
         job: _RiverJob,
         spec: RemoteJobSpec,
-        scripts: list[dict[str, Any]],
+        mode: _RlMode,
     ) -> JobHandle:
-        """Multi-turn RL: whole conversations, episode-level advantages.
+        """Rounds of sample -> grade -> group-relative advantages -> train.
 
-        Built for the wall imitation hit at rung 5: when most sampled
-        episodes pass, passing examples carry little signal — but graded
-        rewards still separate near-misses, violations, and clean passes.
-        Rounds of: branch-rollout every script (capturing per-turn ids and
-        sampler logprobs), grade each episode (token fraction +
-        completeness bonus − violation), compute group-relative advantages
-        per script, broadcast each episode's advantage across all its
-        turns' datums, ``train_step`` with the clipped-IS loss. Greedy
-        episode eval brackets every round.
+        The loop is identical for single-turn and multi-turn RL; ``mode``
+        supplies the four things that are not — how to sample and grade a
+        round into datums, how to score the greedy eval, what the dry-run
+        report says, and what to call the run when it fails.
         """
         import time as _time
 
         logs = job.logs
         knobs = spec.harvest or {}
         rounds = int(knobs.get("rounds", 4))
-        branches = int(knobs.get("best_of", 8))
         loss_fn = str(knobs.get("loss_fn", "cispo"))
-        checkpoint = _checkpoint_from_pointer(knobs.get("adapter_dir"))
-        eval_scripts = [
-            e for e in (spec.eval_prompts or []) if isinstance(e, dict) and "turns" in e
-        ]
         output_dir = Path(spec.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if spec.dry_run:
-            (output_dir / "rl_report.json").write_text(
-                json.dumps(
-                    {"rounds": rounds, "episodes": len(scripts), "dry_run": True}
-                )
-            )
+            (output_dir / "rl_report.json").write_text(json.dumps(mode.dry_run_report))
             job.status = JobStatus.SUCCEEDED
             return handle
 
@@ -371,39 +405,10 @@ class RiverExecutor(RemoteExecutor):
                 model = session.create_model(
                     base_model=spec.base_model,
                     lora=_river_module(client).LoraConfig(rank=spec.lora_r),
-                    checkpoint=_inference_checkpoint(client, checkpoint),
+                    checkpoint=_inference_checkpoint(client, mode.checkpoint),
                 )
 
-                def greedy_eval() -> dict[str, Any] | None:
-                    if not eval_scripts:
-                        return None
-                    outs = _rollout_episodes(
-                        model,
-                        spec.base_model,
-                        eval_scripts,
-                        branches=1,
-                        temperature=0.0,
-                        top_p=1.0,
-                        max_tokens=spec.eval_max_new_tokens,
-                    )
-                    results = []
-                    for script, bouts in zip(eval_scripts, outs, strict=True):
-                        passed_ep, detail = _score_episode(script, bouts[0])
-                        results.append(
-                            {
-                                "prompt": " / ".join(script["turns"]),
-                                "finetuned": " ||| ".join(bouts[0]),
-                                "passed": passed_ep,
-                                "detail": detail,
-                            }
-                        )
-                    return {
-                        "passed": sum(1 for r in results if r["passed"]),
-                        "total": len(results),
-                        "results": results,
-                    }
-
-                before = greedy_eval()
+                before = mode.greedy_eval(model)
                 if before:
                     round_evals.append(
                         {
@@ -417,35 +422,11 @@ class RiverExecutor(RemoteExecutor):
                     )
 
                 for rnd in range(1, rounds + 1):
-                    episodes = _rollout_episodes(
-                        model,
-                        spec.base_model,
-                        scripts,
-                        branches=branches,
-                        temperature=float(knobs.get("temperature", 0.9)),
-                        top_p=float(knobs.get("top_p", 0.95)),
-                        max_tokens=int(knobs.get("max_new_tokens", 300)),
-                        capture=True,
-                    )
-                    data: list[dict[str, Any]] = []
-                    mean_rewards: list[float] = []
-                    for script, branch_records in zip(scripts, episodes, strict=True):
-                        rewards = [
-                            _graded_episode_reward(script, [t["text"] for t in records])
-                            for records in branch_records
-                        ]
-                        mean_rewards.append(sum(rewards) / len(rewards))
-                        if all(r == rewards[0] for r in rewards):
-                            continue
-                        mean = sum(rewards) / len(rewards)
-                        for records, reward in zip(
-                            branch_records, rewards, strict=True
-                        ):
-                            data.extend(_episode_rl_datums(records, reward - mean))
+                    data, mean_rewards = mode.collect_round(model)
                     if not data:
                         logs.append(
-                            f"round {rnd}: every episode group zero-variance "
-                            "— nothing to train on this round"
+                            f"round {rnd}: {mode.zero_variance_note} — "
+                            "nothing to train on this round"
                         )
                         continue
                     fb, _opt = model.train_step(
@@ -455,7 +436,7 @@ class RiverExecutor(RemoteExecutor):
                     loss = _extract(fb, "loss_mean", "loss")
                     if loss is not None:
                         job.final_loss = float(loss)
-                    after = greedy_eval()
+                    after = mode.greedy_eval(model)
                     entry: dict[str, Any] = {
                         "round": rnd,
                         "datums": len(data),
@@ -479,7 +460,7 @@ class RiverExecutor(RemoteExecutor):
                 uri = model.save_weights(name, mode="inference")
                 job.checkpoint_uri = _as_uri(uri)
                 logs.append(f"saved River checkpoint: {job.checkpoint_uri}")
-                final = greedy_eval()
+                final = mode.greedy_eval(model)
                 if final:
                     (output_dir / "eval_results.json").write_text(
                         json.dumps(final["results"], indent=2)
@@ -492,13 +473,13 @@ class RiverExecutor(RemoteExecutor):
         except Exception as exc:  # noqa: BLE001 - unknown SDK exception surface
             job.status = JobStatus.FAILED
             job.duration_s = _time.monotonic() - started
-            logs.append(f"River episode RL failed: {exc}")
+            logs.append(f"{mode.failure_label}: {exc}")
             self._record_cost(handle.job_id, job)
             account = self._account_error(exc)
             if account is not None:
                 raise account from exc
             raise RemoteExecutionError.wrap(
-                exc, "River episode RL failed", provider=self.name
+                exc, mode.failure_label, provider=self.name
             ) from exc
 
         (output_dir / "rl_report.json").write_text(
@@ -508,6 +489,104 @@ class RiverExecutor(RemoteExecutor):
         job.status = JobStatus.SUCCEEDED
         self._record_cost(handle.job_id, job)
         return handle
+
+    def _submit_episode_rl(
+        self,
+        handle: JobHandle,
+        job: _RiverJob,
+        spec: RemoteJobSpec,
+        scripts: list[dict[str, Any]],
+    ) -> JobHandle:
+        """Multi-turn RL: whole conversations, episode-level advantages.
+
+        Built for the wall imitation hit at rung 5: when most sampled
+        episodes pass, passing examples carry little signal — but graded
+        rewards still separate near-misses, violations, and clean passes.
+        Rounds of: branch-rollout every script (capturing per-turn ids and
+        sampler logprobs), grade each episode (token fraction +
+        completeness bonus − violation), compute group-relative advantages
+        per script, broadcast each episode's advantage across all its
+        turns' datums, ``train_step`` with the clipped-IS loss. Greedy
+        episode eval brackets every round.
+        """
+        knobs = spec.harvest or {}
+        branches = int(knobs.get("best_of", 8))
+        eval_scripts = [
+            e for e in (spec.eval_prompts or []) if isinstance(e, dict) and "turns" in e
+        ]
+
+        def greedy_eval(model: Any) -> dict[str, Any] | None:
+            if not eval_scripts:
+                return None
+            outs = _rollout_episodes(
+                model,
+                spec.base_model,
+                eval_scripts,
+                branches=1,
+                temperature=0.0,
+                top_p=1.0,
+                max_tokens=spec.eval_max_new_tokens,
+            )
+            results = []
+            for script, bouts in zip(eval_scripts, outs, strict=True):
+                passed_ep, detail = _score_episode(script, bouts[0])
+                results.append(
+                    {
+                        "prompt": " / ".join(script["turns"]),
+                        "finetuned": " ||| ".join(bouts[0]),
+                        "passed": passed_ep,
+                        "detail": detail,
+                    }
+                )
+            return {
+                "passed": sum(1 for r in results if r["passed"]),
+                "total": len(results),
+                "results": results,
+            }
+
+        def collect_round(model: Any) -> tuple[list[dict[str, Any]], list[float]]:
+            episodes = _rollout_episodes(
+                model,
+                spec.base_model,
+                scripts,
+                branches=branches,
+                temperature=float(knobs.get("temperature", 0.9)),
+                top_p=float(knobs.get("top_p", 0.95)),
+                max_tokens=int(knobs.get("max_new_tokens", 300)),
+                capture=True,
+            )
+            data: list[dict[str, Any]] = []
+            mean_rewards: list[float] = []
+            for script, branch_records in zip(scripts, episodes, strict=True):
+                rewards = [
+                    _graded_episode_reward(script, [t["text"] for t in records])
+                    for records in branch_records
+                ]
+                mean_rewards.append(sum(rewards) / len(rewards))
+                if all(r == rewards[0] for r in rewards):
+                    continue
+                mean = sum(rewards) / len(rewards)
+                for records, reward in zip(branch_records, rewards, strict=True):
+                    data.extend(_episode_rl_datums(records, reward - mean))
+            return data, mean_rewards
+
+        return self._run_rl_rounds(
+            handle,
+            job,
+            spec,
+            _RlMode(
+                checkpoint=_checkpoint_from_pointer(knobs.get("adapter_dir")),
+                dry_run_report={
+                    "rounds": int(knobs.get("rounds", 4)),
+                    "episodes": len(scripts),
+                    "dry_run": True,
+                },
+                greedy_eval=greedy_eval,
+                collect_round=collect_round,
+                zero_variance_note="every episode group zero-variance",
+                failure_label="River episode RL failed",
+            ),
+        )
 
     def _submit_rl(
         self, handle: JobHandle, job: _RiverJob, spec: RemoteJobSpec
@@ -523,14 +602,11 @@ class RiverExecutor(RemoteExecutor):
         from the echoed tokenization, and the datum layout is their
         pre-shifted RL contract (see ``build_group_rl_datums``).
         """
-        import time as _time
-
         from stateset_agents.training.sft import (
             evaluate_checks,
             normalize_eval_prompts,
         )
 
-        logs = job.logs
         raw_prompts = json.loads(Path(spec.dataset).read_text())
         if (
             raw_prompts
@@ -541,12 +617,7 @@ class RiverExecutor(RemoteExecutor):
         prompts = normalize_eval_prompts(raw_prompts)
         eval_specs = normalize_eval_prompts(list(spec.eval_prompts or []))
         knobs = spec.harvest or {}
-        rounds = int(knobs.get("rounds", 4))
         num_samples = int(knobs.get("best_of", 8))
-        loss_fn = str(knobs.get("loss_fn", "cispo"))
-        checkpoint = _checkpoint_from_pointer(knobs.get("adapter_dir"))
-        output_dir = Path(spec.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
 
         def graded_reward(pspec: dict[str, Any], text: str) -> float:
             """Partial credit + a completeness bonus + a violation penalty.
@@ -567,155 +638,165 @@ class RiverExecutor(RemoteExecutor):
             bonus = 1.0 if checked["passed"] else 0.0
             return frac + bonus - (1.0 if checked["forbid_hits"] else 0.0)
 
-        if spec.dry_run:
-            (output_dir / "rl_report.json").write_text(
-                json.dumps({"rounds": rounds, "prompts": len(prompts), "dry_run": True})
+        eval_texts = [e["prompt"] for e in eval_specs]
+
+        def greedy_eval(model: Any) -> dict[str, Any] | None:
+            if not eval_specs:
+                return None
+            outs = _sample_texts(
+                model,
+                spec.base_model,
+                eval_texts,
+                num_samples=1,
+                temperature=0.0,
+                max_tokens=spec.eval_max_new_tokens,
             )
+            results = []
+            for espec, completions in zip(eval_specs, outs, strict=True):
+                checked = evaluate_checks(
+                    completions[0],
+                    espec.get("expect", []),
+                    espec.get("forbid", []),
+                )
+                results.append(
+                    {
+                        "prompt": espec["prompt"],
+                        "finetuned": completions[0],
+                        "checks": checked,
+                    }
+                )
+            passed = sum(1 for r in results if r["checks"]["passed"])
+            return {"passed": passed, "total": len(results), "results": results}
+
+        def collect_round(model: Any) -> tuple[list[dict[str, Any]], list[float]]:
+            groups, prompt_ids_per = _rl_sample_groups(
+                model,
+                spec.base_model,
+                [p["prompt"] for p in prompts],
+                num_samples=num_samples,
+                temperature=float(knobs.get("temperature", 0.9)),
+                top_p=float(knobs.get("top_p", 0.95)),
+                max_tokens=int(knobs.get("max_new_tokens", 300)),
+            )
+            data: list[dict[str, Any]] = []
+            mean_rewards: list[float] = []
+            for pspec, group, prompt_ids in zip(
+                prompts, groups, prompt_ids_per, strict=True
+            ):
+                rewards = [
+                    graded_reward(pspec, str(getattr(s_, "text", ""))) for s_ in group
+                ]
+                mean_rewards.append(sum(rewards) / len(rewards))
+                samples = [
+                    {"tokens": s_.tokens, "logprobs": s_.logprobs} for s_ in group
+                ]
+                data.extend(build_group_rl_datums(prompt_ids, samples, rewards))
+            return data, mean_rewards
+
+        return self._run_rl_rounds(
+            handle,
+            job,
+            spec,
+            _RlMode(
+                checkpoint=_checkpoint_from_pointer(knobs.get("adapter_dir")),
+                dry_run_report={
+                    "rounds": int(knobs.get("rounds", 4)),
+                    "prompts": len(prompts),
+                    "dry_run": True,
+                },
+                greedy_eval=greedy_eval,
+                collect_round=collect_round,
+                zero_variance_note="every group zero-variance",
+                failure_label="River RL run failed",
+            ),
+        )
+
+    # -- harvest: one retry loop, two modes --------------------------------
+
+    def _run_harvest_attempts(
+        self,
+        handle: JobHandle,
+        job: _RiverJob,
+        spec: RemoteJobSpec,
+        mode: _HarvestMode,
+    ) -> JobHandle:
+        """Sample, keep what passes, write the pod-contract artifacts.
+
+        The retry policy comes from the SDK's own recovery taxonomy: a
+        connection or timeout error means back off, rebuild the session and
+        try again — observed live, a gen-2 harvest died on 'Server
+        unavailable' and took a finished generation's momentum with it.
+        ``mode`` supplies only how to score the eval set and how to turn
+        samples into kept rows.
+        """
+        import time as _time
+
+        logs = job.logs
+        summary = mode.summary
+        output_dir = Path(spec.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if spec.dry_run:
+            (output_dir / "harvest_summary.json").write_text(
+                json.dumps(summary, indent=2)
+            )
+            logs.append("dry run: harvest plan only, nothing sampled")
             job.status = JobStatus.SUCCEEDED
             return handle
 
         client = self._get_client()
-        eval_texts = [e["prompt"] for e in eval_specs]
         started = _time.monotonic()
         job.status = JobStatus.RUNNING
-        round_evals: list[dict[str, Any]] = []
-        try:
-            with _open_session(
-                client, project=Path(spec.output_dir).name or None
-            ) as session:
-                model = session.create_model(
-                    base_model=spec.base_model,
-                    lora=_river_module(client).LoraConfig(rank=spec.lora_r),
-                    checkpoint=_inference_checkpoint(client, checkpoint),
-                )
-
-                def greedy_eval() -> dict[str, Any] | None:
-                    if not eval_specs:
-                        return None
-                    outs = _sample_texts(
-                        model,
-                        spec.base_model,
-                        eval_texts,
-                        num_samples=1,
-                        temperature=0.0,
-                        max_tokens=spec.eval_max_new_tokens,
-                    )
-                    results = []
-                    for espec, completions in zip(eval_specs, outs, strict=True):
-                        checked = evaluate_checks(
-                            completions[0],
-                            espec.get("expect", []),
-                            espec.get("forbid", []),
-                        )
-                        results.append(
-                            {
-                                "prompt": espec["prompt"],
-                                "finetuned": completions[0],
-                                "checks": checked,
-                            }
-                        )
-                    passed = sum(1 for r in results if r["checks"]["passed"])
-                    return {"passed": passed, "total": len(results), "results": results}
-
-                before = greedy_eval()
-                if before:
-                    round_evals.append(
-                        {
-                            "round": 0,
-                            "passed": before["passed"],
-                            "total": before["total"],
-                        }
+        transient = self._transient_exceptions(client)
+        attempt = 0
+        rows: list[dict[str, Any]] = []
+        while True:
+            attempt += 1
+            try:
+                with _open_session(
+                    client, project=Path(spec.output_dir).name or None
+                ) as session:
+                    model = session.create_model(
+                        base_model=spec.base_model,
+                        checkpoint=_inference_checkpoint(client, mode.checkpoint),
                     )
                     logs.append(
-                        f"round 0 (before): {before['passed']}/{before['total']}"
+                        f"sampling from {mode.checkpoint or spec.base_model} via River"
                     )
-
-                for rnd in range(1, rounds + 1):
-                    groups, prompt_ids_per = _rl_sample_groups(
-                        model,
-                        spec.base_model,
-                        [p["prompt"] for p in prompts],
-                        num_samples=num_samples,
-                        temperature=float(knobs.get("temperature", 0.9)),
-                        top_p=float(knobs.get("top_p", 0.95)),
-                        max_tokens=int(knobs.get("max_new_tokens", 300)),
-                    )
-                    data: list[dict[str, Any]] = []
-                    mean_rewards: list[float] = []
-                    for pspec, group, prompt_ids in zip(
-                        prompts, groups, prompt_ids_per, strict=True
-                    ):
-                        rewards = [
-                            graded_reward(pspec, str(getattr(s_, "text", "")))
-                            for s_ in group
-                        ]
-                        mean_rewards.append(sum(rewards) / len(rewards))
-                        samples = [
-                            {"tokens": s_.tokens, "logprobs": s_.logprobs}
-                            for s_ in group
-                        ]
-                        data.extend(build_group_rl_datums(prompt_ids, samples, rewards))
-                    if not data:
+                    # Counters are per-attempt: a retry re-samples everything.
+                    rows = []
+                    summary["samples"] = 0
+                    summary["prompts_with_a_pass"] = 0
+                    evaluated = mode.greedy_eval(model)
+                    if evaluated is not None:
+                        summary["eval"] = evaluated
                         logs.append(
-                            f"round {rnd}: every group zero-variance — "
-                            "nothing to train on this round"
+                            f"current generation{mode.eval_note}: "
+                            f"{evaluated['passed']}/{evaluated['total']}"
                         )
-                        continue
-                    fb, _opt = model.train_step(
-                        data, lr=spec.learning_rate, loss_fn=loss_fn
-                    )
-                    job.steps += 1
-                    loss = _extract(fb, "loss_mean", "loss")
-                    if loss is not None:
-                        job.final_loss = float(loss)
-                    after = greedy_eval()
-                    entry: dict[str, Any] = {
-                        "round": rnd,
-                        "datums": len(data),
-                        "mean_reward": round(sum(mean_rewards) / len(mean_rewards), 4),
-                    }
-                    if after:
-                        entry["passed"] = after["passed"]
-                        entry["total"] = after["total"]
-                    round_evals.append(entry)
-                    logs.append(
-                        f"round {rnd}: {len(data)} datums, mean reward "
-                        f"{entry['mean_reward']}"
-                        + (
-                            f", eval {entry['passed']}/{entry['total']}"
-                            if "passed" in entry
-                            else ""
-                        )
-                    )
+                    rows = mode.collect_rows(model, summary)
+                break
+            except transient as exc:
+                if attempt >= self.MAX_TRANSIENT_ATTEMPTS:
+                    self._fail_harvest(job, started, handle, exc)
+                delay = self.TRANSIENT_BACKOFF_S * (2 ** (attempt - 1))
+                logs.append(
+                    f"transient River failure ({type(exc).__name__}): "
+                    f"{exc} — retrying {mode.label} in {delay:.0f}s "
+                    f"(attempt {attempt}/{self.MAX_TRANSIENT_ATTEMPTS})"
+                )
+                self._sleep(delay)
+            except Exception as exc:  # noqa: BLE001 - unknown SDK surface
+                self._fail_harvest(job, started, handle, exc)
 
-                name = Path(spec.output_dir).name or "rl_adapter"
-                uri = model.save_weights(name, mode="inference")
-                job.checkpoint_uri = _as_uri(uri)
-                logs.append(f"saved River checkpoint: {job.checkpoint_uri}")
-                final = greedy_eval()
-                if final:
-                    (output_dir / "eval_results.json").write_text(
-                        json.dumps(final["results"], indent=2)
-                    )
-        except RemoteExecutionError:
-            job.status = JobStatus.FAILED
-            job.duration_s = _time.monotonic() - started
-            self._record_cost(handle.job_id, job)
-            raise
-        except Exception as exc:  # noqa: BLE001 - unknown SDK exception surface
-            job.status = JobStatus.FAILED
-            job.duration_s = _time.monotonic() - started
-            logs.append(f"River RL run failed: {exc}")
-            self._record_cost(handle.job_id, job)
-            account = self._account_error(exc)
-            if account is not None:
-                raise account from exc
-            raise RemoteExecutionError.wrap(
-                exc, "River RL run failed", provider=self.name
-            ) from exc
-
-        (output_dir / "rl_report.json").write_text(
-            json.dumps({"rounds": round_evals, "loss_fn": loss_fn}, indent=2)
+        summary["kept"] = len(rows)
+        with (output_dir / "harvest.jsonl").open("w") as fh:
+            for row in rows:
+                fh.write(json.dumps(row) + "\n")
+        (output_dir / "harvest_summary.json").write_text(json.dumps(summary, indent=2))
+        logs.append(
+            f"{mode.label}: kept {summary['kept']}/{summary['samples']} across "
+            f"{summary['prompts_with_a_pass']}/{summary['prompts']} {mode.unit}"
         )
         job.duration_s = _time.monotonic() - started
         job.status = JobStatus.SUCCEEDED
@@ -740,148 +821,95 @@ class RiverExecutor(RemoteExecutor):
         score. Same artifacts, same retry policy as the single-turn
         harvest.
         """
-        import time as _time
-
-        logs = job.logs
         knobs = spec.harvest or {}
         eval_scripts = [
             e for e in (spec.eval_prompts or []) if isinstance(e, dict) and "turns" in e
         ]
-        checkpoint = _checkpoint_from_pointer(knobs.get("adapter_dir"))
-        output_dir = Path(spec.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
         branches = int(knobs.get("best_of", 8))
 
-        summary: dict[str, Any] = {
-            "base_model": spec.base_model,
-            "adapter_dir": knobs.get("adapter_dir"),
-            "best_of": branches,
-            "temperature": knobs.get("temperature", 0.9),
-            "prompts": len(scripts),
-            "samples": 0,
-            "kept": 0,
-            "prompts_with_a_pass": 0,
-            "eval": None,
-            "episodes": True,
-            "dry_run": bool(spec.dry_run),
-        }
-        if spec.dry_run:
-            (output_dir / "harvest_summary.json").write_text(
-                json.dumps(summary, indent=2)
+        def greedy_eval(model: Any) -> dict[str, Any] | None:
+            if not eval_scripts:
+                return None
+            greedy = _rollout_episodes(
+                model,
+                spec.base_model,
+                eval_scripts,
+                branches=1,
+                temperature=0.0,
+                top_p=1.0,
+                max_tokens=spec.eval_max_new_tokens,
             )
-            logs.append("dry run: harvest plan only, nothing sampled")
-            job.status = JobStatus.SUCCEEDED
-            return handle
-
-        client = self._get_client()
-        started = _time.monotonic()
-        job.status = JobStatus.RUNNING
-        transient = self._transient_exceptions(client)
-        attempt = 0
-        rows: list[dict[str, Any]] = []
-        while True:
-            attempt += 1
-            try:
-                with _open_session(
-                    client, project=Path(spec.output_dir).name or None
-                ) as session:
-                    model = session.create_model(
-                        base_model=spec.base_model,
-                        checkpoint=_inference_checkpoint(client, checkpoint),
-                    )
-                    logs.append(
-                        f"sampling from {checkpoint or spec.base_model} via River"
-                    )
-                    if eval_scripts:
-                        greedy = _rollout_episodes(
-                            model,
-                            spec.base_model,
-                            eval_scripts,
-                            branches=1,
-                            temperature=0.0,
-                            top_p=1.0,
-                            max_tokens=spec.eval_max_new_tokens,
-                        )
-                        results = []
-                        for script, branches_out in zip(
-                            eval_scripts, greedy, strict=True
-                        ):
-                            passed, detail = _score_episode(script, branches_out[0])
-                            results.append(
-                                {
-                                    "prompt": " / ".join(script["turns"]),
-                                    "completion": " ||| ".join(branches_out[0]),
-                                    "passed": passed,
-                                    "detail": detail,
-                                }
-                            )
-                        summary["eval"] = {
-                            "passed": sum(1 for r in results if r["passed"]),
-                            "total": len(results),
-                            "results": results,
-                        }
-                        logs.append(
-                            f"current generation (episodes, greedy): "
-                            f"{summary['eval']['passed']}/{summary['eval']['total']}"
-                        )
-                    episodes = _rollout_episodes(
-                        model,
-                        spec.base_model,
-                        scripts,
-                        branches=branches,
-                        temperature=float(knobs.get("temperature", 0.9)),
-                        top_p=float(knobs.get("top_p", 0.95)),
-                        max_tokens=int(knobs.get("max_new_tokens", 300)),
-                    )
-                    rows = []
-                    summary["samples"] = 0
-                    summary["prompts_with_a_pass"] = 0
-                    for script, branch_replies in zip(scripts, episodes, strict=True):
-                        script_pass = False
-                        for replies in branch_replies:
-                            summary["samples"] += 1
-                            passed, _detail = _score_episode(script, replies)
-                            if not passed:
-                                continue
-                            script_pass = True
-                            messages: list[dict[str, str]] = []
-                            for user, assistant in zip(
-                                script["turns"], replies, strict=True
-                            ):
-                                messages.append({"role": "user", "content": user})
-                                messages.append(
-                                    {"role": "assistant", "content": assistant}
-                                )
-                            rows.append({"messages": messages})
-                        if script_pass:
-                            summary["prompts_with_a_pass"] += 1
-                    break
-            except transient as exc:
-                if attempt >= self.MAX_TRANSIENT_ATTEMPTS:
-                    self._fail_harvest(job, started, handle, exc)
-                delay = self.TRANSIENT_BACKOFF_S * (2 ** (attempt - 1))
-                logs.append(
-                    f"transient River failure ({type(exc).__name__}): {exc} "
-                    f"— retrying episode harvest in {delay:.0f}s "
-                    f"(attempt {attempt}/{self.MAX_TRANSIENT_ATTEMPTS})"
+            results = []
+            for script, branches_out in zip(eval_scripts, greedy, strict=True):
+                passed, detail = _score_episode(script, branches_out[0])
+                results.append(
+                    {
+                        "prompt": " / ".join(script["turns"]),
+                        "completion": " ||| ".join(branches_out[0]),
+                        "passed": passed,
+                        "detail": detail,
+                    }
                 )
-                self._sleep(delay)
-            except Exception as exc:  # noqa: BLE001 - unknown SDK surface
-                self._fail_harvest(job, started, handle, exc)
+            return {
+                "passed": sum(1 for r in results if r["passed"]),
+                "total": len(results),
+                "results": results,
+            }
 
-        summary["kept"] = len(rows)
-        with (output_dir / "harvest.jsonl").open("w") as fh:
-            for row in rows:
-                fh.write(json.dumps(row) + "\n")
-        (output_dir / "harvest_summary.json").write_text(json.dumps(summary, indent=2))
-        logs.append(
-            f"episode harvest: kept {summary['kept']}/{summary['samples']} "
-            f"across {summary['prompts_with_a_pass']}/{summary['prompts']} scripts"
+        def collect_rows(model: Any, summary: dict[str, Any]) -> list[dict[str, Any]]:
+            episodes = _rollout_episodes(
+                model,
+                spec.base_model,
+                scripts,
+                branches=branches,
+                temperature=float(knobs.get("temperature", 0.9)),
+                top_p=float(knobs.get("top_p", 0.95)),
+                max_tokens=int(knobs.get("max_new_tokens", 300)),
+            )
+            rows: list[dict[str, Any]] = []
+            for script, branch_replies in zip(scripts, episodes, strict=True):
+                script_pass = False
+                for replies in branch_replies:
+                    summary["samples"] += 1
+                    passed, _detail = _score_episode(script, replies)
+                    if not passed:
+                        continue
+                    script_pass = True
+                    messages: list[dict[str, str]] = []
+                    for user, assistant in zip(script["turns"], replies, strict=True):
+                        messages.append({"role": "user", "content": user})
+                        messages.append({"role": "assistant", "content": assistant})
+                    rows.append({"messages": messages})
+                if script_pass:
+                    summary["prompts_with_a_pass"] += 1
+            return rows
+
+        return self._run_harvest_attempts(
+            handle,
+            job,
+            spec,
+            _HarvestMode(
+                checkpoint=_checkpoint_from_pointer(knobs.get("adapter_dir")),
+                summary={
+                    "base_model": spec.base_model,
+                    "adapter_dir": knobs.get("adapter_dir"),
+                    "best_of": branches,
+                    "temperature": knobs.get("temperature", 0.9),
+                    "prompts": len(scripts),
+                    "samples": 0,
+                    "kept": 0,
+                    "prompts_with_a_pass": 0,
+                    "eval": None,
+                    "episodes": True,
+                    "dry_run": bool(spec.dry_run),
+                },
+                greedy_eval=greedy_eval,
+                collect_rows=collect_rows,
+                label="episode harvest",
+                unit="scripts",
+                eval_note=" (episodes, greedy)",
+            ),
         )
-        job.duration_s = _time.monotonic() - started
-        job.status = JobStatus.SUCCEEDED
-        self._record_cost(handle.job_id, job)
-        return handle
 
     def _fail_harvest(
         self, job: _RiverJob, started: float, handle: JobHandle, exc: Exception
@@ -914,153 +942,93 @@ class RiverExecutor(RemoteExecutor):
         cannot tell the difference. The eval set is measured greedily from
         the same in-memory model, giving the loop its "before" number.
         """
-        import time as _time
-
         from stateset_agents.training.harvest import build_harvest_rows
-        from stateset_agents.training.sft import normalize_eval_prompts
+        from stateset_agents.training.sft import evaluate_checks, normalize_eval_prompts
 
-        logs = job.logs
         prompts = json.loads(Path(spec.dataset).read_text())
         if prompts and isinstance(prompts[0], dict) and "turns" in prompts[0]:
             return self._submit_episode_harvest(handle, job, spec, prompts)
         harvest_specs = normalize_eval_prompts(prompts)
         eval_specs = normalize_eval_prompts(list(spec.eval_prompts or []))
         knobs = spec.harvest or {}
-        checkpoint = _checkpoint_from_pointer(knobs.get("adapter_dir"))
-        output_dir = Path(spec.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
         best_of = int(knobs.get("best_of", 8))
 
-        summary: dict[str, Any] = {
-            "base_model": spec.base_model,
-            "adapter_dir": knobs.get("adapter_dir"),
-            "best_of": best_of,
-            "temperature": knobs.get("temperature", 0.9),
-            "prompts": len(harvest_specs),
-            "samples": 0,
-            "kept": 0,
-            "prompts_with_a_pass": 0,
-            "eval": None,
-            "dry_run": bool(spec.dry_run),
-        }
-        if spec.dry_run:
-            (output_dir / "harvest_summary.json").write_text(
-                json.dumps(summary, indent=2)
+        def greedy_eval(model: Any) -> dict[str, Any] | None:
+            if not eval_specs:
+                return None
+            greedy = _sample_texts(
+                model,
+                spec.base_model,
+                [s["prompt"] for s in eval_specs],
+                num_samples=1,
+                temperature=0.0,
+                max_tokens=spec.eval_max_new_tokens,
             )
-            logs.append("dry run: harvest plan only, nothing sampled")
-            job.status = JobStatus.SUCCEEDED
-            return handle
-
-        client = self._get_client()
-        started = _time.monotonic()
-        job.status = JobStatus.RUNNING
-        transient = self._transient_exceptions(client)
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                with _open_session(
-                    client, project=Path(spec.output_dir).name or None
-                ) as session:
-                    model = session.create_model(
-                        base_model=spec.base_model,
-                        checkpoint=_inference_checkpoint(client, checkpoint),
-                    )
-                    logs.append(
-                        f"sampling from {checkpoint or spec.base_model} via River"
-                    )
-                    if eval_specs:
-                        greedy = _sample_texts(
-                            model,
-                            spec.base_model,
-                            [s["prompt"] for s in eval_specs],
-                            num_samples=1,
-                            temperature=0.0,
-                            max_tokens=spec.eval_max_new_tokens,
-                        )
-                        from stateset_agents.training.sft import evaluate_checks
-
-                        results = []
-                        for espec, completions in zip(eval_specs, greedy, strict=True):
-                            checked = evaluate_checks(
-                                completions[0],
-                                espec.get("expect", []),
-                                espec.get("forbid", []),
-                            )
-                            results.append(
-                                {
-                                    "prompt": espec["prompt"],
-                                    "completion": completions[0],
-                                    **checked,
-                                }
-                            )
-                        summary["eval"] = {
-                            "passed": sum(1 for r in results if r["passed"]),
-                            "total": len(results),
-                            "results": results,
-                        }
-                        logs.append(
-                            f"current generation (greedy): "
-                            f"{summary['eval']['passed']}/{summary['eval']['total']}"
-                        )
-                    sampled = _sample_texts(
-                        model,
-                        spec.base_model,
-                        [s["prompt"] for s in harvest_specs],
-                        num_samples=best_of,
-                        temperature=float(knobs.get("temperature", 0.9)),
-                        top_p=float(knobs.get("top_p", 0.95)),
-                        max_tokens=int(knobs.get("max_new_tokens", 300)),
-                    )
-                    rows: list[dict[str, Any]] = []
-                    for hspec, completions in zip(harvest_specs, sampled, strict=True):
-                        summary["samples"] += len(completions)
-                        kept = build_harvest_rows(hspec, completions)
-                        if kept:
-                            summary["prompts_with_a_pass"] += 1
-                        rows.extend(kept)
-                break
-            except transient as exc:
-                # Same policy as training: their taxonomy says a
-                # connection/timeout error means back off, rebuild
-                # the session, try again — observed live: a gen-2
-                # harvest died on 'Server unavailable' and took a
-                # finished generation's momentum with it.
-                if attempt >= self.MAX_TRANSIENT_ATTEMPTS:
-                    self._fail_harvest(job, started, handle, exc)
-                rows = []
-                summary["samples"] = 0
-                summary["prompts_with_a_pass"] = 0
-                delay = self.TRANSIENT_BACKOFF_S * (2 ** (attempt - 1))
-                logs.append(
-                    f"transient River failure ({type(exc).__name__}): "
-                    f"{exc} — retrying harvest in {delay:.0f}s "
-                    f"(attempt {attempt}/{self.MAX_TRANSIENT_ATTEMPTS})"
+            results = []
+            for espec, completions in zip(eval_specs, greedy, strict=True):
+                checked = evaluate_checks(
+                    completions[0],
+                    espec.get("expect", []),
+                    espec.get("forbid", []),
                 )
-                self._sleep(delay)
-            except Exception as exc:  # noqa: BLE001 - unknown SDK surface
-                self._fail_harvest(job, started, handle, exc)
-        summary["kept"] = len(rows)
-        with (output_dir / "harvest.jsonl").open("w") as fh:
-            for row in rows:
-                fh.write(json.dumps(row) + "\n")
-        (output_dir / "harvest_summary.json").write_text(json.dumps(summary, indent=2))
-        logs.append(
-            f"harvest: kept {summary['kept']}/{summary['samples']} across "
-            f"{summary['prompts_with_a_pass']}/{summary['prompts']} prompts"
-        )
-        job.duration_s = _time.monotonic() - started
-        job.status = JobStatus.SUCCEEDED
-        self._record_cost(handle.job_id, job)
-        return handle
+                results.append(
+                    {
+                        "prompt": espec["prompt"],
+                        "completion": completions[0],
+                        **checked,
+                    }
+                )
+            return {
+                "passed": sum(1 for r in results if r["passed"]),
+                "total": len(results),
+                "results": results,
+            }
 
-    #: Transient-retry policy, from the SDK's own recovery taxonomy:
-    #: RiverConnectionError (which covers SessionHeartbeatError and capacity
-    #: squeezes) and RiverTimeoutError mean "back off, rebuild the session,
-    #: try again"; auth/model/data errors mean "fail fast". Observed live on
-    #: the first real run: a slow create_model timed out client-side, the
-    #: retry raced the server-side create, and ALREADY_EXISTS arrived as a
-    #: RiverConnectionError.
+        def collect_rows(model: Any, summary: dict[str, Any]) -> list[dict[str, Any]]:
+            sampled = _sample_texts(
+                model,
+                spec.base_model,
+                [s["prompt"] for s in harvest_specs],
+                num_samples=best_of,
+                temperature=float(knobs.get("temperature", 0.9)),
+                top_p=float(knobs.get("top_p", 0.95)),
+                max_tokens=int(knobs.get("max_new_tokens", 300)),
+            )
+            rows: list[dict[str, Any]] = []
+            for hspec, completions in zip(harvest_specs, sampled, strict=True):
+                summary["samples"] += len(completions)
+                kept = build_harvest_rows(hspec, completions)
+                if kept:
+                    summary["prompts_with_a_pass"] += 1
+                rows.extend(kept)
+            return rows
+
+        return self._run_harvest_attempts(
+            handle,
+            job,
+            spec,
+            _HarvestMode(
+                checkpoint=_checkpoint_from_pointer(knobs.get("adapter_dir")),
+                summary={
+                    "base_model": spec.base_model,
+                    "adapter_dir": knobs.get("adapter_dir"),
+                    "best_of": best_of,
+                    "temperature": knobs.get("temperature", 0.9),
+                    "prompts": len(harvest_specs),
+                    "samples": 0,
+                    "kept": 0,
+                    "prompts_with_a_pass": 0,
+                    "eval": None,
+                    "dry_run": bool(spec.dry_run),
+                },
+                greedy_eval=greedy_eval,
+                collect_rows=collect_rows,
+                label="harvest",
+                unit="prompts",
+                eval_note=" (greedy)",
+            ),
+        )
+
     MAX_TRANSIENT_ATTEMPTS = 3
     TRANSIENT_BACKOFF_S = 10.0
 

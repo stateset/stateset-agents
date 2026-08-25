@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The four River submit paths are now two implementations, not four.**
+  `_submit_rl`/`_submit_episode_rl` share one `_run_rl_rounds`, and
+  `_submit_harvest`/`_submit_episode_harvest` share one `_run_harvest_attempts`;
+  each mode contributes only what actually differs (how to sample and grade a
+  round, how to score the eval set, its labels) through a small `_RlMode` /
+  `_HarvestMode` adapter. The rounds loop, the retry-with-backoff policy, the
+  artifact writes and the failure/ledger handling now exist once each — which is
+  the point, since the four drift bugs fixed above were all caused by them
+  existing twice. Behaviour is unchanged, proven by the golden.
+
 - **`stateset_agents/training/__init__.py` shrunk from 1679 to 144 lines** — the
   ~1200-line lazy-export string map now lives in `stateset_agents/training/_registry.py`
   as the plain data constants `OPTIONAL_EXPORTS` and `PUBLIC_NAMES`. Public surface,

@@ -348,7 +348,11 @@ def scenario_sft_episode_eval(tmp_path):
         num_epochs=1,
         lora_r=8,
         eval_prompts=[
-            {"turns": ["t1", "t2"], "turn_expect": [["done"], ["vpn"]], "forbid": ["oops"]}
+            {
+                "turns": ["t1", "t2"],
+                "turn_expect": [["done"], ["vpn"]],
+                "forbid": ["oops"],
+            }
         ],
     )
     return spec, RecordingClient(texts=["done vpn profile"])
@@ -569,7 +573,9 @@ SCENARIOS = {
     "fail_rl": _failure_scenario("rl", SINGLE_TURN_PROMPTS, ExplodingClient),
     "fail_episode_rl": _failure_scenario("rl", EPISODE_SCRIPTS, ExplodingClient),
     "unfunded_sft": _sft_failure_scenario(UnfundedClient),
-    "unfunded_harvest": _failure_scenario("harvest", SINGLE_TURN_PROMPTS, UnfundedClient),
+    "unfunded_harvest": _failure_scenario(
+        "harvest", SINGLE_TURN_PROMPTS, UnfundedClient
+    ),
     "unfunded_episode_harvest": _failure_scenario(
         "harvest", EPISODE_SCRIPTS, UnfundedClient
     ),
@@ -663,9 +669,9 @@ def test_submit_matches_the_recorded_behaviour(name, tmp_path, golden):
     """
     if os.environ.get(REGEN_ENV):
         pytest.skip("regenerating the golden")
-    assert name in golden, (
-        f"{name!r} has no golden entry; regenerate with {REGEN_ENV}=1"
-    )
+    assert (
+        name in golden
+    ), f"{name!r} has no golden entry; regenerate with {REGEN_ENV}=1"
     assert record_scenario(name, tmp_path) == golden[name]
 
 
@@ -673,8 +679,7 @@ def test_submit_matches_the_recorded_behaviour(name, tmp_path, golden):
 def test_regenerate_the_golden(tmp_path_factory):
     """Rewrite the golden file. Opt-in, and the diff is the review."""
     fresh = {
-        name: record_scenario(name, tmp_path_factory.mktemp(name))
-        for name in SCENARIOS
+        name: record_scenario(name, tmp_path_factory.mktemp(name)) for name in SCENARIOS
     }
     GOLDEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     GOLDEN_PATH.write_text(json.dumps(fresh, indent=2, sort_keys=True) + "\n")
@@ -768,7 +773,9 @@ class TestTheGoldenSaysWhatWeThinkItSays:
 
     def test_best_of_is_a_number_in_every_summary(self, golden):
         for name in ("harvest", "harvest_string_best_of", "episode_harvest"):
-            summary = json.loads(golden[name]["artifacts"]["harvest/harvest_summary.json"])
+            summary = json.loads(
+                golden[name]["artifacts"]["harvest/harvest_summary.json"]
+            )
             assert isinstance(summary["best_of"], int), name
 
     def test_both_harvest_modes_report_the_same_progress_lines(self, golden):
