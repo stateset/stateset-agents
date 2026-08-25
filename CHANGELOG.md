@@ -95,6 +95,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carry pickled config objects, which is what makes the `weights_only`
   load below possible without losing information.
 
+- `create_gspo_trainer(**kwargs)` now builds the canonical `GSPOConfig`
+  (no `gamma`).
+- `stateset_agents.core.TrainingConfig` now resolves to
+  `training.config.TrainingConfig`.
+
 ### Fixed
 
 - **GSPO: the k3 KL penalty and the clip gate for GSPO-token.**
@@ -133,6 +138,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`SECURITY.md` states the real trust boundaries** — which inputs are
   assumed hostile (checkpoints, datasets, transcripts) and which are not —
   alongside an accurate supported-versions table.
+
+## [0.37.0] - 2026-08-19 — Rent wisdom, deploy cheap — distillation, the rarity thermostat, and verified tool use
+
+### Added
+
+- **Unchecked turns are not unconstrained — a new failure mode, found and
+  fenced.** Live: episode turns carrying no tool requirement emitted
+  invented tools and malformed multi-object json; 113 such episodes were
+  harvested (59% — the rarity controller working perfectly) and the model
+  trained on them stopped emitting valid actions entirely (5/12 → 0/12
+  greedy). Episodes now declare `known_tools`, and **any** json block that
+  fails to parse or names an unknown tool fails the whole episode. The
+  harvest must reject junk in dimensions the per-turn checks don't cover.
+  **Verified by rerun**: the same starting model held 5/12 instead of
+  collapsing to 0/12, with the harvest tightening to 51% clean episodes
+  — the degradation is fixed, and the loop honestly plateau-stopped
+  rather than claiming a win it didn't earn.
+- **Rarity controller live-verified**: `--target-harvest-rate 0.6` probed
+  three temperatures, chose 0.7, and the harvest landed at 59%.
+- **Tool verification live-verified**: a ladder-trained 9B scored 5/12 on
+  tool-gated episodes — prose claiming an action never passes.
+
+### Added
+
+- **Distillation breaks walls self-training cannot: 9/12 → 11/12.**
+  `flywheel --teacher-base-model/--teacher-adapter`: a FIXED teacher
+  harvests, the student trains on its successes, and the student's evals
+  drive the stops. Live: the 9B that walled at 9/12 under both its own
+  SFT and RL reached 11/12 in one generation on the 35B teacher's 97%
+  harvest — patterns the student never samples at any temperature,
+  bought once at big-model prices, owned forever at small-model cost.
+  Gen-2 (9/12, seed variance) honestly discarded.
+- **The rarity controller** (`--target-harvest-rate`): per-generation
+  temperature probes keep the harvest inside the measured ~60% operating
+  window — the discovered regime as autopilot.
+- **Tool-use episodes**: ladder Issues declare `{tool, args}` actions;
+  training rows teach emitting fenced json blocks; episode scoring
+  verifies them deterministically (parse + tool name + args subset) —
+  prose claiming the action fails. The seam the NSR verifier extends.
+
+## [0.36.1] - 2026-08-19 — The wall falls to scale — and the field guide for training with zero machines
+
+### Added
+
+- **The wall, cleared by scale: 2/12 → 11/12 → 12/12.** The rung-5
+  difficulty that stopped the curriculum-trained 9B at 9/12 under both
+  SFT and RL fell to the 35B MoE in two flywheel turns from an
+  episode-naive start — including the refusal episode every smaller model
+  left standing. The capacity study is complete: the ladder finds each
+  model's ceiling, the flywheel drives to it, and scale moves it. The run
+  also survived a full River outage mid-experiment via an auto-resuming
+  serving probe, and streamed every step live through the new
+  instrumentation.
+
+## [0.36.0] - 2026-08-18 — The curriculum climbed, the wall mapped from both sides, and runs you can watch
+
+### Added
+
+- **Multi-turn RL, live — and the wall confirmed from the second
+  direction.** Episode-level RL (rollouts capturing per-turn prompt ids
+  and sampler logprobs; shaped episode rewards; group-relative advantages
+  broadcast across every assistant turn; clipped-IS training) ran its
+  first real campaign at the rung-5 wall: flat 9/12 across four rounds,
+  mean reward pinned at 1.70/2.0, most groups zero-variance. Where
+  imitation REGRESSED at this difficulty (9→7, auto-discarded), RL held
+  stable; neither climbed. Verdict: a genuine 9B capability ceiling at
+  five-turn/60%-refusal difficulty, now mapped by both methods — the
+  honest boundary of this model on this ladder.
+
+### Added
+
+- **The curriculum curve, complete — including its wall.** Rung 5
+  (five turns, 60% refusals): the rung-4 adapter still transferred
+  (9/12 baseline) but with an 83% harvest rate the trained gen-2 scored
+  7/12 and the plateau stop kept rung 4 — the correct call, made
+  autonomously. Four rungs now pin the flywheel's operating regime with
+  unusual precision: it lifts when harvest rates sit near ~60% with
+  greedy headroom (rungs 3, 4 → both 12/12), and stalls when temperature
+  success is too common to carry information (rungs 2, 5). Total cost of
+  the entire five-rung curriculum study: API tokens only.
+
+### Added
+
+- **The ladder is a curriculum — proven by climbing it.** The
+  rung-3-trained adapter transferred UPWARD: 11/12 at rung 4 (four
+  turns, 50% refusals, final-turn summary of three prior actions) —
+  above the untrained model's score at the easier rung 3 — and one more
+  wheel-turn reached 12/12. Two rungs, two perfect scores, one
+  transferable skill: train → transfer → top off → repeat, zero machines
+  rented throughout.
 
 ## [0.35.1] - 2026-08-18 — The founding promise, closed: multi-turn memory trained by the flywheel, 8/12 to 12/12
 

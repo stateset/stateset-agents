@@ -89,11 +89,11 @@ def _verbose_log(message: str) -> None:
         print(f"[river] {message}", file=sys.stderr, flush=True)
 
 
-class _ProgressLogs(list):
+class _ProgressLogs(list[str]):
     """A log list that optionally echoes appends live (see RIVER_VERBOSE_ENV)."""
 
-    def append(self, item: Any) -> None:
-        _verbose_log(str(item))
+    def append(self, item: str) -> None:
+        _verbose_log(item)
         super().append(item)
 
 
@@ -1711,6 +1711,58 @@ def _episode_rl_datums(
     return datums
 
 
+def check_tool_call(reply: str, expected: dict[str, Any]) -> bool:
+    """Deterministically verify a structured action in ``reply``.
+
+    The reply must contain a fenced ```json block whose object names the
+    expected ``tool`` and includes every expected ``args`` key with an
+    exactly-equal value (extra args are allowed — the check is a subset
+    match). No judges, no substrings: the action parses or it does not.
+    """
+    import re
+
+    blocks = re.findall(r"```json\s*(.*?)```", reply, flags=re.DOTALL)
+    for block in blocks:
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if data.get("tool") != expected.get("tool"):
+            continue
+        want = expected.get("args") or {}
+        have = data.get("args") or {}
+        if all(have.get(k) == v for k, v in want.items()):
+            return True
+    return False
+
+
+def _tool_blocks_are_clean(reply: str, known_tools: list[str]) -> bool:
+    """No junk actions anywhere: every json block parses and names a known tool.
+
+    A turn with no ``turn_tool`` requirement is UNCHECKED, not unconstrained —
+    and the flywheel will happily harvest whatever it emits there. Observed
+    live: unchecked turns produced invented tool names ("suppress_dispatch",
+    "summarize_account") and two concatenated objects in one block; 113
+    such episodes entered training and the trained model stopped emitting
+    valid actions entirely under greedy decoding. The harvest must reject
+    junk in dimensions the per-turn checks do not cover.
+    """
+    import re
+
+    for block in re.findall(r"```json\s*(.*?)```", reply, flags=re.DOTALL):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            return False  # malformed (e.g. two objects concatenated)
+        if not isinstance(data, dict):
+            return False
+        if data.get("tool") not in known_tools:
+            return False  # invented tool name
+    return True
+
+
 def _score_episode(
     script: dict[str, Any], assistant_turns: list[str]
 ) -> tuple[bool, dict[str, Any]]:
@@ -1724,10 +1776,16 @@ def _score_episode(
 
     per_turn = []
     passed = True
-    for expects, reply in zip(
-        script.get("turn_expect", []), assistant_turns, strict=True
+    tool_specs = script.get("turn_tool") or [None] * len(assistant_turns)
+    for expects, tool, reply in zip(
+        script.get("turn_expect", []), tool_specs, assistant_turns, strict=True
     ):
         checked = evaluate_checks(reply, list(expects), [])
+        if tool is not None:
+            checked = dict(checked)
+            checked["tool_ok"] = check_tool_call(reply, tool)
+            if not checked["tool_ok"]:
+                checked["passed"] = False
         per_turn.append(checked)
         if not checked["passed"]:
             passed = False
@@ -1735,9 +1793,19 @@ def _score_episode(
     forbid_checked = evaluate_checks(whole, [], list(script.get("forbid", [])))
     if not forbid_checked["passed"]:
         passed = False
+    known_tools = script.get("known_tools")
+    junk_tools = False
+    if known_tools:
+        junk_tools = not all(
+            _tool_blocks_are_clean(reply, list(known_tools))
+            for reply in assistant_turns
+        )
+        if junk_tools:
+            passed = False
     return passed, {
         "per_turn": per_turn,
         "forbid_hits": forbid_checked["forbid_hits"],
+        "junk_tools": junk_tools,
         "passed": passed,
     }
 

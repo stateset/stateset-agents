@@ -67,6 +67,26 @@ class FlywheelConfig:
     #: Adapter directory of the current generation, if one already exists
     #: (e.g. a persona fine-tune). ``None`` starts from the bare base model.
     initial_adapter: Path | None = None
+    #: Distillation mode: a FIXED teacher does the harvesting while the
+    #: student (``base_model`` + ``initial_adapter``) is what gets trained
+    #: and measured. The teacher never advances between generations — its
+    #: successes are the curriculum, not the pupil. Motivated by the
+    #: capacity study: the 35B clears walls the 9B cannot, but the 9B is
+    #: what you want to serve.
+    teacher_base_model: str | None = None
+    teacher_adapter: Path | None = None
+    #: The rarity controller. When set (e.g. 0.6), each generation first
+    #: probes a few prompts at several temperatures and harvests at the one
+    #: whose pass rate lands nearest this target — keeping the loop inside
+    #: its measured operating window (~60% harvest with headroom: lifts at
+    #: rungs 3/4, stalls at 65%/83%). None (default) uses ``temperature``.
+    target_harvest_rate: float | None = None
+    #: Temperatures the controller may choose between.
+    probe_temperatures: tuple[float, ...] = (0.7, 0.9, 1.1)
+    #: Prompts and samples per probe (kept tiny: the probe is a thermometer,
+    #: not a harvest).
+    probe_prompts: int = 6
+    probe_best_of: int = 4
     #: Maximum NEW generations to train.
     generations: int = 3
     best_of: int = 8
@@ -152,6 +172,70 @@ def _spend(results: list[float | None]) -> float:
     return sum(c for c in results if c is not None)
 
 
+def _probe_temperature(
+    config: FlywheelConfig,
+    executor: RemoteExecutor,
+    gen_dir: Path,
+    harvest_base: str,
+    adapter_dir: str | None,
+) -> tuple[float, list[float | None]]:
+    """Pick the sampling temperature whose pass rate lands nearest target.
+
+    Runs one tiny harvest per candidate temperature over the first few
+    prompts. Returns (chosen temperature, probe costs). A probe that
+    fails is skipped rather than fatal — the thermostat must never kill
+    the furnace.
+    """
+    assert config.target_harvest_rate is not None
+    prompts = config.harvest_prompts[: config.probe_prompts]
+    probe_file = gen_dir / "probe_prompts.json"
+    probe_file.write_text(json.dumps(prompts))
+    best_temp = config.temperature
+    best_gap: float | None = None
+    costs: list[float | None] = []
+    for temp in config.probe_temperatures:
+        spec = RemoteJobSpec(
+            dataset=probe_file,
+            base_model=harvest_base,
+            output_dir=gen_dir / f"probe_t{temp}",
+            job_kind="harvest",
+            harvest={
+                "adapter_dir": adapter_dir,
+                "best_of": config.probe_best_of,
+                "temperature": temp,
+                "top_p": config.top_p,
+                "max_new_tokens": config.max_new_tokens,
+            },
+            dry_run=config.dry_run,
+            gpu=config.gpu,
+            gpu_count=config.gpu_count,
+            container_disk_gb=config.container_disk_gb,
+            cloud_type=config.cloud_type,
+            timeout_s=config.timeout_s,
+        )
+        try:
+            result = executor.wait(executor.submit(spec))
+        except Exception as exc:  # noqa: BLE001 - probe is best-effort
+            logger.warning("temperature probe %.2f failed (%s); skipping", temp, exc)
+            continue
+        costs.append(result.cost_usd)
+        summary = (
+            _read_json(Path(result.output_dir) / "harvest_summary.json")
+            if result.output_dir
+            else None
+        ) or {}
+        samples = int(summary.get("samples") or 0)
+        if not samples:
+            continue
+        rate = int(summary.get("kept") or 0) / samples
+        gap = abs(rate - config.target_harvest_rate)
+        logger.info("probe t=%.2f: harvest rate %.0f%%", temp, rate * 100)
+        if best_gap is None or gap < best_gap:
+            best_gap, best_temp = gap, temp
+    logger.info("rarity controller chose temperature %.2f", best_temp)
+    return best_temp, costs
+
+
 def run_flywheel(
     config: FlywheelConfig,
     executor: RemoteExecutor,
@@ -186,19 +270,40 @@ def run_flywheel(
         # ---- 1. harvest from the current generation ----------------------
         prompts_file = gen_dir / "harvest_prompts.json"
         prompts_file.write_text(json.dumps(config.harvest_prompts, indent=2))
+        distilling = config.teacher_base_model is not None
+        harvest_temperature = config.temperature
+        if config.target_harvest_rate is not None and not config.dry_run:
+            harvest_temperature, probe_costs = _probe_temperature(
+                config,
+                executor,
+                gen_dir,
+                config.teacher_base_model or config.base_model,
+                (
+                    str(config.teacher_adapter)
+                    if distilling
+                    else (str(adapter) if adapter else None)
+                ),
+            )
+            costs.extend(probe_costs)
         harvest_spec = RemoteJobSpec(
             dataset=prompts_file,
-            base_model=config.base_model,
+            base_model=config.teacher_base_model or config.base_model,
             output_dir=gen_dir / "harvest",
             job_kind="harvest",
             harvest={
-                "adapter_dir": str(adapter) if adapter else None,
+                # In distillation the teacher is fixed; otherwise the
+                # current student generation harvests from itself.
+                "adapter_dir": (
+                    str(config.teacher_adapter)
+                    if distilling
+                    else (str(adapter) if adapter else None)
+                ),
                 "best_of": config.best_of,
-                "temperature": config.temperature,
+                "temperature": harvest_temperature,
                 "top_p": config.top_p,
                 "max_new_tokens": config.max_new_tokens,
             },
-            eval_prompts=list(config.eval_prompts),
+            eval_prompts=None if distilling else list(config.eval_prompts),
             eval_max_new_tokens=config.eval_max_new_tokens,
             dry_run=config.dry_run,
             gpu=config.gpu,
@@ -212,7 +317,11 @@ def run_flywheel(
                 else max(0.0, config.max_cost_usd - _spend(costs))
             ),
         )
-        logger.info("generation %d: harvesting…", generation)
+        logger.info(
+            "generation %d: harvesting%s…",
+            generation,
+            " (from the teacher)" if distilling else "",
+        )
         harvest_result = executor.wait(executor.submit(harvest_spec))
         costs.append(harvest_result.cost_usd)
         if not harvest_result.succeeded:

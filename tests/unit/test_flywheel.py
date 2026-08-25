@@ -40,7 +40,11 @@ class ScriptedExecutor(RemoteExecutor):
         self._counter += 1
         job_id = str(self._counter)
         self.specs.append(spec)
-        step = self.script[0]
+        is_probe = (
+            spec.job_kind == "harvest"
+            and Path(spec.dataset).name == "probe_prompts.json"
+        )
+        step = self.script.pop(0) if is_probe else self.script[0]
         out = Path(spec.output_dir)
         out.mkdir(parents=True, exist_ok=True)
         if spec.job_kind == "harvest":
@@ -347,3 +351,82 @@ class TestRepeats:
 
         with pytest.raises(ValueError, match="repeats"):
             run_flywheel_repeats(config, ScriptedExecutor([]), repeats=0)
+
+
+class TestDistillation:
+    """Teacher harvests, student trains: the 35B clears walls the 9B
+    cannot, but the 9B is what you want to serve."""
+
+    def test_harvest_uses_the_fixed_teacher_and_train_uses_the_student(self, config):
+        config.generations = 2
+        config.teacher_base_model = "big/teacher-35b"
+        config.teacher_adapter = Path("outputs/teacher_ckpt")
+        executor = ScriptedExecutor(
+            [
+                {"kept": 5, "samples": 40, "current_eval": None, "passed": 4},
+                {"kept": 5, "samples": 40, "current_eval": None, "passed": 6},
+            ]
+        )
+        run_flywheel(config, executor)
+
+        harvests = [s for s in executor.specs if s.job_kind == "harvest"]
+        trains = [s for s in executor.specs if s.job_kind == "sft"]
+        # Every harvest samples the TEACHER with its fixed adapter...
+        assert all(h.base_model == "big/teacher-35b" for h in harvests)
+        assert all(
+            h.harvest["adapter_dir"] == str(Path("outputs/teacher_ckpt"))
+            for h in harvests
+        )
+        # ...the teacher never advances, and never gets eval prompts.
+        assert all(h.eval_prompts is None for h in harvests)
+        # Every train job trains the STUDENT, chaining student lineage.
+        assert all(t.base_model == "base/model" for t in trains)
+        assert Path(trains[1].parent_adapter).parts[-2:] == ("gen1", "adapter")
+
+    def test_student_scores_drive_the_stopping_rules(self, config):
+        config.teacher_base_model = "big/teacher-35b"
+        config.teacher_adapter = Path("t")
+        executor = ScriptedExecutor(
+            [
+                {"kept": 5, "samples": 40, "current_eval": None, "passed": 12},
+            ]
+        )
+        report = run_flywheel(config, executor)
+        assert "perfect score" in report["stop_reason"]
+        assert report["best_eval_passed"] == 12
+
+
+class TestRarityController:
+    """The thermostat: probe temperatures, harvest in the measured window."""
+
+    def _probe_step(self, kept, samples=24):
+        return {"kept": kept, "samples": samples, "current_eval": None}
+
+    def test_chooses_the_temperature_nearest_the_target(self, config):
+        config.generations = 1
+        config.target_harvest_rate = 0.6
+        config.probe_temperatures = (0.7, 0.9, 1.1)
+        executor = ScriptedExecutor(
+            [
+                self._probe_step(22),  # t=0.7 -> 92%
+                self._probe_step(14),  # t=0.9 -> 58%  <- nearest 60%
+                self._probe_step(5),  # t=1.1 -> 21%
+                {"kept": 10, "samples": 80, "current_eval": 2, "passed": 12},
+            ]
+        )
+        report = run_flywheel(config, executor)
+
+        assert "perfect score" in report["stop_reason"]
+        # The real harvest (the 4th submitted spec) ran at the chosen temp.
+        real_harvest = executor.specs[3]
+        assert real_harvest.harvest["temperature"] == 0.9
+        # Probes were tiny: subset of prompts, small best_of.
+        assert executor.specs[0].harvest["best_of"] == config.probe_best_of
+
+    def test_no_target_means_no_probes(self, config):
+        config.generations = 1
+        executor = ScriptedExecutor(
+            [{"kept": 10, "samples": 80, "current_eval": 2, "passed": 12}]
+        )
+        run_flywheel(config, executor)
+        assert len([s for s in executor.specs if s.job_kind == "harvest"]) == 1

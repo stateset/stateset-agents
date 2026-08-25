@@ -166,6 +166,36 @@ so `stateset-agents adapters` can show you the family tree later.
 
 ---
 
+## 5b. Serving: merge, verify, or both
+
+Two hard-won rules for serving what you trained:
+
+- **Hybrid model families (Qwen3.5/3.8) need `--merge`.** vLLM loads
+  their LoRA adapters without error and silently serves the base weights
+  (proven by byte-identical greedy completions — see the DISPROVEN row in
+  [`PROOFS.md`](PROOFS.md)). `serve-remote --merge` folds the adapter into
+  full weights on the pod and serves the merged checkpoint; the merge
+  verifies its own effect (`merge_probe.json`) and refuses to serve a
+  no-op.
+- **Every adapter serve now self-verifies**: after readiness the endpoint
+  is probed greedy adapter-vs-base; identical output warns loudly, or
+  fails and terminates the pod with `--strict`. Multiple adapters can ride
+  one endpoint for A/B: `--adapter champion=... --adapter challenger=...`.
+
+And the one-command path: `stateset-agents deploy --dataset ...
+--base-model ...` rents, trains, releases the hardware, and serves the
+fresh adapter with URL + token printed.
+
+## 5c. Self-improvement on pods
+
+The flywheel (`stateset-agents flywheel --provider runpod ...`) runs the
+harvest → curate → train → measure loop on rented GPUs — same command as
+the zero-infrastructure River version, same stopping rules (plateau,
+perfection, dry harvest, `--max-cost`). Live results and the measured
+operating regime are in [`FLYWHEEL_DOMAIN2.md`](FLYWHEEL_DOMAIN2.md) and
+[`rl-vibe.md`](rl-vibe.md); difficulty-parameterized eval kits come from
+`python -m stateset_agents.training.eval_ladder`.
+
 ## 6. Spending less
 
 **Community cloud** is spot-priced and interruptible — roughly half the cost of
