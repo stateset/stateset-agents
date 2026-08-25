@@ -24,6 +24,11 @@ try:
     import torch
 except ImportError:  # pragma: no cover - allow stub mode without PyTorch
     torch = None
+
+try:
+    from jinja2.exceptions import TemplateError as _Jinja2TemplateError
+except ImportError:  # pragma: no cover
+    _Jinja2TemplateError = ValueError
 # Lazy imports for transformers to avoid torch/torchvision compatibility issues
 AutoModelForCausalLM: Any | None = None
 AutoTokenizer: Any | None = None
@@ -173,11 +178,6 @@ PLANNING_EXCEPTIONS: tuple[type[BaseException], ...] = (
     KeyError,
     RuntimeError,
 )
-try:
-    from jinja2.exceptions import TemplateError as _Jinja2TemplateError
-except ImportError:  # pragma: no cover
-    _Jinja2TemplateError = ValueError
-
 CHAT_TEMPLATE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     TypeError,
