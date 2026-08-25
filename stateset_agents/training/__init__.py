@@ -31,7 +31,6 @@ import logging
 from types import ModuleType
 from typing import Any
 
-
 logger = logging.getLogger(__name__)
 
 # vLLM backend for fast generation - use lazy import to avoid torchvision issues

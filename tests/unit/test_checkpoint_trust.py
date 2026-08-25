@@ -19,7 +19,6 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from stateset_agents.core.errors import ModelError  # noqa: E402
-
 from stateset_agents.training.multi_turn_checkpointing import (  # noqa: E402
     load_multi_turn_checkpoint,
 )

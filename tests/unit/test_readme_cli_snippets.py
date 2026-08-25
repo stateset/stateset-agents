@@ -121,9 +121,9 @@ def test_readme_command_flags_exist(src: str, lineno: int, line: str) -> None:
 
     help_text = result.stdout
     for flag in sorted(flags):
-        assert flag in help_text, (
-            f"{where} — unknown flag {flag} for `{' '.join(path)}`"
-        )
+        assert (
+            flag in help_text
+        ), f"{where} — unknown flag {flag} for `{' '.join(path)}`"
 
     # Boolean flags (rendered as `--flag  --no-flag`) take no value: a snippet
     # writing `--dry-run false` would silently pass `false` as a positional.

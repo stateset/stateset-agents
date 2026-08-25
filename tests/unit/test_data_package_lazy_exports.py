@@ -31,9 +31,7 @@ def _declared_all(path: Path) -> list[str] | None:
         targets = (
             node.targets
             if isinstance(node, ast.Assign)
-            else [node.target]
-            if isinstance(node, ast.AnnAssign)
-            else []
+            else [node.target] if isinstance(node, ast.AnnAssign) else []
         )
         if any(isinstance(t, ast.Name) and t.id == "__all__" for t in targets):
             if node.value is not None:
@@ -81,7 +79,7 @@ def test_dunder_all_matches_lazy_exports() -> None:
 
 def test_lazy_export_modules_exist() -> None:
     for name, module_name in sorted(data_pkg._LAZY_EXPORTS.items()):
-        assert (DATA_DIR / f"{module_name}.py").is_file(), (
-            f"_LAZY_EXPORTS[{name!r}] points at missing module {module_name!r}"
-        )
+        assert (
+            DATA_DIR / f"{module_name}.py"
+        ).is_file(), f"_LAZY_EXPORTS[{name!r}] points at missing module {module_name!r}"
         importlib.import_module(f"stateset_agents.data.{module_name}")

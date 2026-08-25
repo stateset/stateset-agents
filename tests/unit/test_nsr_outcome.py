@@ -38,8 +38,7 @@ class TestNSROutcomeReporter:
         poster = FakePoster()
         reporter = NSROutcomeReporter(poster=poster)
         assert (
-            await reporter.record(external_ref="episode-42", outcome="reversed")
-            is True
+            await reporter.record(external_ref="episode-42", outcome="reversed") is True
         )
         path, payload = poster.calls[0]
         assert path == "/v1/decisions/outcome-by-ref"

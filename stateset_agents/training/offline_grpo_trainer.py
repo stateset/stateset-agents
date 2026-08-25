@@ -27,8 +27,8 @@ except ImportError:
     F = cast(Any, None)
     AdamW = cast(Any, None)
 
-from .checkpoint_io import load_checkpoint_file
 from .base_trainer import BaseTrainerConfig
+from .checkpoint_io import load_checkpoint_file
 
 logger = logging.getLogger(__name__)
 

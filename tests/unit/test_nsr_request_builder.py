@@ -57,7 +57,12 @@ class TestRule:
 
     def test_effect_is_validated(self):
         with pytest.raises(ValueError, match="effect"):
-            rule("r", effect="allow", when=[predicate("a", "?x")], then=[predicate("b", "?x")])
+            rule(
+                "r",
+                effect="allow",
+                when=[predicate("a", "?x")],
+                then=[predicate("b", "?x")],
+            )
 
 
 class TestDecisionRequest:

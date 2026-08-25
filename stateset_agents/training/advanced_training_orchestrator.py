@@ -62,8 +62,8 @@ from .advanced_training_models import (
     ResourceRequirement,
     ResourceType,
     SchedulingStrategy,
-    TrainingJobSpec,
     TrainingJob,
+    TrainingJobSpec,
     TrainingStatus,
     deserialize_training_job,
     serialize_training_job,
@@ -89,9 +89,9 @@ class ResourceManager:
 
     def __init__(self):
         self.available_resources: dict[ResourceType, float] = {}
-        self.allocated_resources: dict[
-            str, dict[ResourceType, float]
-        ] = {}  # job_id -> resources
+        self.allocated_resources: dict[str, dict[ResourceType, float]] = (
+            {}
+        )  # job_id -> resources
         self.resource_locks: dict[ResourceType, asyncio.Lock] = {}
 
         # Initialize locks

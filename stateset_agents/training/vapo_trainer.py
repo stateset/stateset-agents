@@ -28,8 +28,8 @@ import torch.nn.functional as F
 
 from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
-from .checkpoint_io import load_checkpoint_file
 from . import rl_losses
+from .checkpoint_io import load_checkpoint_file
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,

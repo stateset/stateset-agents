@@ -112,9 +112,9 @@ def test_preset_symbol_names_exist_on_starter(command: str) -> None:
     preset = CLI_PRESETS[command]
     starter = _import_starter(preset)
     missing = [n for n in _derived_symbol_names(preset) if not hasattr(starter, n)]
-    assert not missing, (
-        f"{preset.starter_module} is missing symbols derived from the preset: {missing}"
-    )
+    assert (
+        not missing
+    ), f"{preset.starter_module} is missing symbols derived from the preset: {missing}"
 
 
 @pytest.mark.parametrize("command", sorted(EXPECTED_COMMANDS))

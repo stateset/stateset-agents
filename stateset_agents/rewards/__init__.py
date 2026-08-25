@@ -43,13 +43,6 @@ try:
 except ImportError:
     LLM_JUDGE_AVAILABLE = False
 
-# NSR verifier — deterministic, proof-backed reward (StateSet NSR)
-from .nsr_verifier import (
-    NSROutcomeReporter,
-    NSRVerifierConfig,
-    NSRVerifierReward,
-)
-
 # LLM Judge training adapters (always available — gracefully degrade)
 from .llm_judge_adapter import (
     LLMJudgeReward,
@@ -57,6 +50,13 @@ from .llm_judge_adapter import (
     LLMJudgeRewardWithFallback,
     create_rlaif_component,
     create_rlaif_reward,
+)
+
+# NSR verifier — deterministic, proof-backed reward (StateSet NSR)
+from .nsr_verifier import (
+    NSROutcomeReporter,
+    NSRVerifierConfig,
+    NSRVerifierReward,
 )
 
 __all__ = [

@@ -7,7 +7,6 @@ scores the policy model on whether its verdict agrees with the verified
 decision. Transport is injectable so tests never hit the network.
 """
 
-
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.nsr_verifier import (
     NSRVerifierConfig,
@@ -175,9 +174,7 @@ class TestNSRVerifierReward:
         client = FakeNSRClient()
         reward = NSRVerifierReward(client=client)
         ctx = {**CONTEXT, "external_ref": "episode-42"}
-        await reward.compute_reward(
-            turns("Refund order #A1?", "Approved."), ctx
-        )
+        await reward.compute_reward(turns("Refund order #A1?", "Approved."), ctx)
         assert client.calls[0]["external_ref"] == "episode-42"
 
 

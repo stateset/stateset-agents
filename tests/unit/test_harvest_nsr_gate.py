@@ -56,7 +56,9 @@ class TestNSRGate:
         assert not h.sample_passes(NSR_SPEC, "Approved: return passed inspection.")
 
     def test_verifier_error_rejects_fail_closed(self, monkeypatch):
-        self._gate(monkeypatch, FakeNSRReward(score=1.0, raise_error=RuntimeError("down")))
+        self._gate(
+            monkeypatch, FakeNSRReward(score=1.0, raise_error=RuntimeError("down"))
+        )
         assert not h.sample_passes(NSR_SPEC, "Approved.")
 
     def test_nsr_error_mode_rejects_even_with_neutral_score(self, monkeypatch):
@@ -70,7 +72,7 @@ class TestNSRGate:
         reward = FakeNSRReward(score=1.0)
         self._gate(monkeypatch, reward)
         h.sample_passes(NSR_SPEC, "Approved.")
-        (turns, context), = reward.calls
+        ((turns, context),) = reward.calls
         assert context["nsr_request"] == NSR_SPEC["nsr"]
         assert turns[0].role == "user"
         assert turns[0].content == "Refund order #A1?"

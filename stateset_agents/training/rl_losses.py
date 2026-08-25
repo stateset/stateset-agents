@@ -3,6 +3,7 @@
 Pure tensor functions. No trainer state, no model calls. torch is fetched
 lazily so importing this module never requires torch.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -73,7 +74,9 @@ def group_advantages(rewards: Any, *, normalize: bool = True, eps: float = 1e-8)
     return adv / (std + eps)
 
 
-def clipped_surrogate(ratio: Any, advantages: Any, *, clip_low: float, clip_high: float) -> Any:
+def clipped_surrogate(
+    ratio: Any, advantages: Any, *, clip_low: float, clip_high: float
+) -> Any:
     """PPO/GSPO/DAPO clipped surrogate *loss* (elementwise, not reduced).
 
     ``-min(r·A, clip(r)·A)``. When the ratio leaves the trust region on the
@@ -90,7 +93,9 @@ def sequence_ratio(logp_cur: Any, logp_old: Any, mask: Any) -> Any:
     """GSPO length-normalised sequence importance ratio, one value per row."""
     torch = _t()
     mask = mask.to(logp_cur.dtype)
-    log_ratio = ((logp_cur - logp_old) * mask).sum(-1) / torch.clamp(mask.sum(-1), min=1.0)
+    log_ratio = ((logp_cur - logp_old) * mask).sum(-1) / torch.clamp(
+        mask.sum(-1), min=1.0
+    )
     return torch.exp(log_ratio)
 
 

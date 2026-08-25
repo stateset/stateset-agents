@@ -653,7 +653,8 @@ class DecisionTransformerTrainer:
 
             for batch_idx in range(num_batches):
                 batch_indices = indices[
-                    batch_idx * self.config.batch_size : (batch_idx + 1)
+                    batch_idx
+                    * self.config.batch_size : (batch_idx + 1)
                     * self.config.batch_size
                 ]
                 batch = [training_data[i] for i in batch_indices]

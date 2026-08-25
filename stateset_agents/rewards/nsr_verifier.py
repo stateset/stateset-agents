@@ -26,9 +26,9 @@ import json
 import logging
 import os
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, cast
-from collections.abc import Callable, Awaitable
 
 from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
 from stateset_agents.core.trajectory import ConversationTurn
@@ -134,7 +134,9 @@ class NSRVerifierReward(RewardFunction):
             decision = await self._get_client()(payload)
         except Exception as exc:  # network-dependent verifier: degrade per config
             logger.warning("NSR verifier call failed: %s", exc)
-            return self._result(self.config.error_score, mode="nsr_error", error=str(exc))
+            return self._result(
+                self.config.error_score, mode="nsr_error", error=str(exc)
+            )
 
         nsr_decision = str(decision.get("decision", "")).lower()
         score = 1.0 if model_verdict == nsr_decision else 0.0
@@ -164,7 +166,10 @@ class NSRVerifierReward(RewardFunction):
         return RewardResult(
             score=score,
             components={"nsr_verifier": score},
-            metadata={"mode": mode, **{k: v for k, v in metadata.items() if v is not None}},
+            metadata={
+                "mode": mode,
+                **{k: v for k, v in metadata.items() if v is not None},
+            },
         )
 
     def _get_client(self) -> NSRClient:
@@ -236,9 +241,7 @@ def predicate(name: str, *args: Any, negated: bool = False) -> dict[str, Any]:
 def _require_grounded(p: dict[str, Any], what: str) -> None:
     for arg in p.get("args", []):
         if isinstance(arg, str) and arg.startswith("?"):
-            raise ValueError(
-                f"{what} must be fully grounded; found variable '{arg}'"
-            )
+            raise ValueError(f"{what} must be fully grounded; found variable '{arg}'")
 
 
 def fact(
