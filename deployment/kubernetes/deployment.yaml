@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: grpo-framework
-        image: grpo-framework:0.37.0
+        image: grpo-framework:0.38.0
         ports:
         - containerPort: 8001
           name: http

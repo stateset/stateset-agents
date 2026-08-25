@@ -154,7 +154,37 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.37.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.38.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **One loss spine, five trainers.** `training/rl_losses.py` now owns the
+  token-logprob gather, group advantages, the k3 KL estimator, the clip
+  gate and masked means; GSPO, GSPO-token, GRPO, DAPO, GEPO and VAPO all
+  call it. Four silent bugs fell out: GSPO's KL penalty had a
+  zero-expectation gradient (no pull toward the reference), GSPO-token had
+  no clip gate, GRPO's `token_level_loss` divided by length twice (1/L²),
+  and DAPO/GEPO produced NaN advantages on groups of one. Property tests
+  pin each: zero advantage ⇒ zero grad, KL ≥ 0 and restoring, out-of-region
+  sequences contribute no gradient.
+- **Checkpoints are untrusted by default.** Every `torch.load` in the
+  package goes through `core/checkpoint_io.load_checkpoint_file` with
+  `weights_only=True`; a pickled-object checkpoint raises a `ModelError`
+  that names the `trusted=True` opt-in. Configs are saved as plain dicts
+  and rebuilt on load. An AST guard keeps it that way.
+- **Torch-free entry points, enforced.** `import stateset_agents`,
+  `.core`, `.training`, `.cli` no longer import torch (`chat --help`
+  3 s → 0.6 s); a committed allowlist + meta-test ratchets every other
+  module. `core` no longer imports `experimental` at module level; the
+  root re-exports of `Planning*` warn.
+- **`cli_train.py` 2851 → 533 lines.** The ten per-model commands are
+  generated from `core/model_presets.py` (moved into the package from
+  `examples/`); `--help` is byte-identical, and tests pin every
+  preset↔starter symbol.
+- **Gates that stay green.** Suite runs under xdist by default (~4 min,
+  4489 tests, coverage 59.6%); `mypy stateset_agents` at zero errors; a
+  README/QUICKSTART snippet test runs every documented CLI command; the
+  litellm/wandb atexit traceback is gone; `sitecustomize.py` is gone.
+
+**v0.37.0:**
 
 - **Distillation breaks walls self-training cannot: 9/12 → 11/12.**
   `flywheel --teacher-base-model/--teacher-adapter` — a FIXED teacher
@@ -632,7 +662,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.37.0)
+pip install stateset-agents          # latest release (v0.38.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1334,7 +1364,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.37.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.38.0`).
 
 Other entry points:
 

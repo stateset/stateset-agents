@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-08-25 — One loss spine, trusted checkpoints, torch-free doors — the hardening release
+
 ### Added
 
 - **Shared RL loss primitives (`training/rl_losses.py`).** One place where
