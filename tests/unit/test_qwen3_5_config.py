@@ -394,12 +394,11 @@ class TestQwen3527BStarterScript:
         assert preview["serving_manifest"]["recommended"]["reasoning_parser"] == "qwen3"
         assert preview["serving_manifest"]["recommended"]["language_model_only"] is True
 
-    @pytest.mark.slow
-    # One real interpreter spawn per file is enough to prove the script is
-    # runnable end to end; that job belongs to this file's kept
-    # test_cli_dry_run_subprocess. This variant only re-checks profile values
-    # the in-process config tests already assert directly, and costs ~9 s of
-    # wall time to do it. Run it with `-m slow`.
+    # One real interpreter spawn per starter SCRIPT (not per file): this file
+    # covers two scripts, so the 27B forwarder keeps its own dry-run spawn.
+    # It is the only test that proves examples/finetune_qwen3_5_27b_gspo.py
+    # is runnable end to end from a fresh interpreter, so it is NOT marked
+    # slow. The duplicate spawns for the 0.8B script above are.
     def test_cli_dry_run_subprocess(self):
         repo_root = Path(__file__).resolve().parents[2]
         output = subprocess.check_output(
