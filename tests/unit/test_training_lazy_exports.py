@@ -126,3 +126,67 @@ def test_all_names_are_reachable() -> None:
 def test_trl_available_resolves_lazily() -> None:
     """``TRL_AVAILABLE`` is computed on first access, not at import time."""
     assert isinstance(training_pkg.TRL_AVAILABLE, bool)
+
+
+def test_table_is_the_registry_module() -> None:
+    """``_OPTIONAL_EXPORTS`` is the data file's dict, not a copy."""
+    from stateset_agents.training import _registry
+
+    assert training_pkg._OPTIONAL_EXPORTS is _registry.OPTIONAL_EXPORTS
+    assert training_pkg.__all__ == list(_registry.PUBLIC_NAMES)
+
+
+#: Names bound eagerly in ``training/__init__.py`` (availability flags), which
+#: therefore need no lazy-table entry.
+EAGER_NAMES = frozenset(
+    {
+        "VLLM_BACKEND_AVAILABLE",
+        "VLLM_AVAILABLE",
+        "TRL_AVAILABLE",
+        "GSPO_AVAILABLE",
+        "GEPO_AVAILABLE",
+        "DAPO_AVAILABLE",
+        "VAPO_AVAILABLE",
+        "PPO_AVAILABLE",
+        "KL_CONTROLLERS_AVAILABLE",
+        "EMA_AVAILABLE",
+        "RLAIF_AVAILABLE",
+        "OFFLINE_RL_AVAILABLE",
+        "BCQ_AVAILABLE",
+        "BEAR_AVAILABLE",
+        "DECISION_TRANSFORMER_AVAILABLE",
+        "SIM_TO_REAL_AVAILABLE",
+        "AUTO_RESEARCH_AVAILABLE",
+    }
+)
+
+
+def test_registry_covers_every_non_eager_public_name() -> None:
+    """``OPTIONAL_EXPORTS`` must serve all of ``__all__`` bar the eager flags.
+
+    This is the anti-drift guard between ``_registry.py`` and ``__init__.py``:
+    adding a name to ``__all__`` without a table entry (or without making it an
+    eager flag) fails here rather than at some user's ``import``.
+    """
+    from stateset_agents.training import _registry
+
+    missing = sorted(
+        set(_registry.PUBLIC_NAMES) - EAGER_NAMES - set(_registry.OPTIONAL_EXPORTS)
+    )
+    assert not missing, f"__all__ names with no lazy-table entry: {missing}"
+
+
+def test_eager_names_are_actually_eager() -> None:
+    """Every name in ``EAGER_NAMES`` is bound in ``__init__``, not in the table.
+
+    Keeps the exemption list above honest: a flag that becomes lazy (or
+    disappears) must be removed from ``EAGER_NAMES`` rather than silently
+    widening the hole in the previous test.
+    """
+    from stateset_agents.training import _registry
+
+    for name in EAGER_NAMES:
+        if name == "TRL_AVAILABLE":  # resolved lazily by design, never a table entry
+            continue
+        assert name in vars(training_pkg), f"{name} is not eagerly bound"
+        assert name not in _registry.OPTIONAL_EXPORTS, f"{name} is now a table entry"

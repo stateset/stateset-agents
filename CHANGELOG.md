@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`stateset_agents/training/__init__.py` shrunk from 1679 to 144 lines** — the
+  ~1200-line lazy-export string map now lives in `stateset_agents/training/_registry.py`
+  as the plain data constants `OPTIONAL_EXPORTS` and `PUBLIC_NAMES`. Public surface,
+  `__all__`, `TRL_AVAILABLE` and the submodule fallback are unchanged; new meta-tests
+  in `tests/unit/test_training_lazy_exports.py` keep the registry and `__all__` from drifting.
+
+- **`stateset_agents/cli.py` shrunk from 1515 to 839 lines** — the 468-line `init`
+  scaffolding wizard and the 208-line `evaluate` command moved into
+  `stateset_agents/cli_init.py` and `stateset_agents/cli_evaluate.py`, following the
+  existing `cli_*.py` sibling pattern. `init`'s ten near-identical per-preset branches
+  are now one `STARTER_PRESETS` table. Command names, flags, help text and every
+  emitted message are unchanged: `init --help`, `evaluate --help` and the root
+  `--help` listing are byte-identical, as is the output of all 12 presets × 2 formats.
+
 ## [0.39.0] - 2026-08-25 — Real trust regions, no silent NaNs, CI that tells the truth
 
 ### Added
