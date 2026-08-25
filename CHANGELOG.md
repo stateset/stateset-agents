@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Two dead modules.** `utils/advanced_dashboard.py` (464 lines) and
+  `api/services/request_batcher.py` (162 lines) had zero references anywhere
+  in the package, tests, or examples — neither was exported, imported, or
+  reachable. Deleted, along with their Sphinx `automodule` stanzas. The
+  supported monitoring surface is `utils/monitoring.py`.
+
 - `GSPOTokenTrainer.mask_prompt_tokens` — the token-level loss now builds its
   response mask inline and hands it to `rl_losses.gather_token_logprobs`, so
   the helper had no production callers. Its shifted-index semantics

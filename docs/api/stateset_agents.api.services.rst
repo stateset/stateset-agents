@@ -36,14 +36,6 @@ stateset\_agents.api.services.inference\_service module
    :undoc-members:
    :show-inheritance:
 
-stateset\_agents.api.services.request\_batcher module
------------------------------------------------------
-
-.. automodule:: stateset_agents.api.services.request_batcher
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 stateset\_agents.api.services.training\_service module
 ------------------------------------------------------
 

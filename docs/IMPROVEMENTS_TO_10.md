@@ -133,79 +133,6 @@ scaler.adapt_scale(target_mean=0.5, target_std=0.2)
 
 ---
 
-### 3. 📊 **Advanced Monitoring Dashboard** (NEW)
-
-**Problem:** Limited real-time visibility into training progress and system health.
-
-**Solution:** Production-grade monitoring with alerts and metrics.
-
-#### New File:
-- `utils/advanced_dashboard.py` (550 lines)
-
-#### Features:
-
-**MetricAggregator:**
-```python
-# Real-time metric aggregation with statistics
-aggregator = MetricAggregator(window_size=10000)
-stats = aggregator.get_stats("train.loss")
-# Returns: mean, std, min, max, p50, p95, p99
-```
-
-**AlertManager:**
-```python
-# Configurable alert thresholds
-alert_manager = AlertManager(alert_callback=send_to_slack)
-
-alert_manager.add_threshold(
-    metric_name="train.loss",
-    severity="warning",
-    threshold=10.0,
-    condition=lambda v, t: v > t
-)
-```
-
-**AdvancedDashboard:**
-```python
-# Complete monitoring solution
-dashboard = create_production_dashboard()
-await dashboard.start_monitoring()
-
-# Real-time metrics
-await dashboard.log_metric("train.loss", 2.45)
-await dashboard.log_metric("train.reward", 0.78)
-
-# Get summary
-summary = dashboard.get_dashboard_summary()
-dashboard.print_dashboard()
-```
-
-#### Metrics Tracked:
-- **Training:** loss, reward, KL divergence, gradient norms
-- **System:** CPU%, memory%, GPU memory, disk I/O
-- **API:** request rate, latency, error rate
-- **Custom:** any user-defined metrics
-
-#### Alert Levels:
-- **Info:** FYI notifications
-- **Warning:** Attention needed
-- **Error:** Action required
-- **Critical:** Immediate intervention
-
-#### Prometheus Integration:
-```python
-# Automatic Prometheus metrics export
-dashboard = AdvancedDashboard(enable_prometheus=True)
-
-# Metrics available at /metrics endpoint:
-# - grpo_train_loss{episode, model}
-# - grpo_train_reward{episode, model}
-# - grpo_kl_divergence{model}
-# - api_requests_total
-# - api_latency_seconds
-```
-
----
 
 ### 4. ✅ **Comprehensive Test Suite** (NEW)
 
@@ -475,28 +402,6 @@ await calibrator.calibrate(training_episodes)
 
 # Get calibrated versions
 calibrated_rewards = calibrator.get_calibrated_functions()
-```
-
-### Advanced Monitoring:
-
-```python
-from stateset_agents.utils.advanced_dashboard import create_production_dashboard
-
-# Create dashboard
-dashboard = create_production_dashboard(enable_alerts=True)
-await dashboard.start_monitoring()
-
-# Log metrics during training
-for episode in range(num_episodes):
-    await dashboard.log_metric("train.loss", loss)
-    await dashboard.log_metric("train.reward", reward)
-
-    # Print dashboard every 10 episodes
-    if episode % 10 == 0:
-        dashboard.print_dashboard()
-
-# Get summary
-summary = dashboard.get_dashboard_summary()
 ```
 
 ---
