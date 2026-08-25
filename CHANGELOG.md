@@ -100,9 +100,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dtype=torch.bfloat16` to get the old memory profile back.
 
 - **The five `Planning*` names moved to
-  `stateset_agents.experimental.long_term_planning`** but were left in
-  `stateset_agents.__all__`: they still import from the top level, now
-  with a `DeprecationWarning`.
+  `stateset_agents.experimental.long_term_planning`** and were removed from
+  `stateset_agents.__all__`, so `from stateset_agents import *` no longer
+  provides them. An explicit `from stateset_agents import PlanningConfig`
+  still works for one release, now with a `DeprecationWarning`.
 
 - **On-disk checkpoint `config` is a plain dict.** Checkpoints no longer
   carry pickled config objects, which is what makes the `weights_only`

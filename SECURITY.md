@@ -9,8 +9,6 @@ We take security seriously and actively maintain security updates for the follow
 | Latest 0.x minor release             | :white_check_mark: |
 | Any older minor release              | :x:                |
 
-Concretely: the latest published minor is currently 0.37.x.
-
 ## Reporting a Vulnerability
 
 If you discover a security vulnerability in StateSet Agents, please help us by reporting it responsibly.

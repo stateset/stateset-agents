@@ -1317,7 +1317,15 @@ def _maybe_import_submodule(name: str) -> ModuleType | None:
     if spec is None:
         return None
 
-    module = importlib.import_module(module_name)
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        # The module exists but its dependencies (usually torch) do not.
+        # Report it as absent so ``hasattr`` stays False instead of raising.
+        logger.debug(
+            "optional training submodule %s is unimportable: %s", module_name, exc
+        )
+        return None
     globals()[name] = module
     return module
 
