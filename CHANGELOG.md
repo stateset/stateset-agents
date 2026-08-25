@@ -7,7 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`num_gradient_updates` on the GEPO and VAPO configs** (default `1`).
+  With the default the on-policy path computes exactly the same formula as
+  before; opting into more than one update per rollout batch genuinely
+  changes the dynamics, because the importance ratios are no longer
+  identically 1.
+
+- **`logprob_dtype` on the DAPO and VAPO configs** (`"bf16"` / `"fp16"` /
+  `"fp32"`, default unchanged) — controls the precision of the log-softmax
+  in the token log-prob gather, which is the memory peak of the step.
+
+- **`response_mask` argument on `VAPOTrainer.compute_token_log_probs`**
+  (default `None` = previous whole-sequence behaviour). Passing the
+  response mask scores only response positions, which is both what the loss
+  wants and materially cheaper on long prompts.
+
+- **`tests/unit/test_docs_version_freshness.py`** — every
+  `stateset_agents-<ver>-py3-none-any.whl` mention under `docs/` and
+  `README.md` must name the current package version. `scripts/release.py`
+  rewrites the files in `PLAIN_FILES` on release; this test is the tripwire
+  for anything that drifts anyway. Lines and files marked
+  `<!-- historical: do not bump -->` are exempt (run logs record the wheel
+  that was actually used).
+
+### Fixed
+
+- **GEPO and VAPO had no trust region at all.** Both trainers recomputed
+  their "old" log-probs from the *current* model inside the same step, so
+  the importance ratio was identically 1 and clipping could never fire.
+  They now snapshot the sampler's log-probs (and VAPO's value estimates) at
+  rollout time and use those as the old policy. Scheduler and `global_step`
+  cadence is now identical across DAPO, GEPO and VAPO.
+
+- **Silent NaN steps from `exp` overflow.** Every per-token and
+  per-sequence importance ratio now goes through
+  `rl_losses.safe_exp_ratio`, which clamps the log-ratio to `±20` (GEPO
+  uses `±30`) before `exp` — `exp(88)` overflows to `inf` in fp32 and one
+  `inf` poisons every gradient in the batch. Note the clamp zeroes the
+  gradient outside its bounds *including on the unclipped branch*; samples
+  that far outside the trust region contribute no signal by design.
+
+- **`0 * inf` in the GSPO-token trust-region gate.** The gate now selects
+  between the two branches with `torch.where` instead of multiplying by a
+  0/1 mask, so a non-finite masked-out branch can no longer produce NaN.
+
+- **`GSPOTrainer.compute_group_advantages` on degenerate groups.** A group
+  with zero reward variance returned NaN advantages; it now returns zeros
+  and reports `std_reward: 0.0`.
+
+- **`rl_losses.gather_token_logprobs` builds its mask in fp32**, so masked
+  token counts are exact rather than accumulated in a low-precision dtype.
+
+- **Benchmarks were silently not running in CI.** `pytest-benchmark` is
+  incompatible with the repo's xdist default and was being skipped
+  wholesale; the benchmark job now runs with `-n0` and collects real
+  numbers again.
+
 ### Changed
+
+- **The PyPI upload is its own `pypi-publish` job.** `docker-publish` and
+  `docs-publish` depend on `publish` (build + twine check) only, so the
+  standing PyPI trusted-publisher misconfiguration can no longer block a
+  Docker or docs release.
+
+- **Coverage floor raised to 61** (`fail_under`, measured 61.62%).
+
+- **bandit skips B614 globally.** Flagging every individual
+  `torch.save`/`torch.load` call site is noise: the real control is
+  `core/checkpoint_io.py` plus the AST guard in
+  `tests/unit/test_checkpoint_trust.py`, which asserts no module bypasses
+  that loader. `pyproject.toml`'s `[tool.bandit]` is the single bandit
+  config (pre-commit and the Makefile both pass `-c pyproject.toml`).
+
+- **`docs/FLYWHEEL_EXPERIMENT.md` is treated as a historical run log** —
+  removed from `release.py`'s `PLAIN_FILES` and exempted from the freshness
+  test, since rewriting the wheel it actually ran on every release would
+  make the record false.
 
 - **The starter-script tests stopped spawning 30 interpreters.** Ten
   `test_script_is_a_forwarder` tests each burned ~9 s proving, via a real
@@ -15,15 +92,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   purely structural. They now read it out of the AST
   (`tests/unit/forwarder_asserts.py`): the script must import the unified
   driver's `main`, print a notice naming itself and its preset to stderr, and
-  end in `sys.exit(main(["--model", <preset>, *sys.argv[1:]]))`. The helper
+  end — as its last top-level statement — in
+  `sys.exit(main(["--model", <preset>, *sys.argv[1:]]))`. The helper
   has its own tests proving it rejects a non-forwarder, a wrong preset, a
   silent shim, and one that swallows the caller's flags.
 
-  The remaining subprocess dry-runs keep exactly one real spawn per test
-  file — enough to catch import-path and argv breakage a fresh process would
-  see — and the duplicates are marked `slow` (deselected by default, run with
-  `-m slow`). Their assertions about profile values were already covered
-  in-process.
+  The remaining subprocess dry-runs keep exactly one real spawn per starter
+  script — enough to catch import-path and argv breakage a fresh process
+  would see — and the duplicates are marked `slow` (deselected by default,
+  run with `-m slow`). Their assertions about profile values were already
+  covered in-process.
 
 ### Removed
 
@@ -33,10 +111,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reachable. Deleted, along with their Sphinx `automodule` stanzas. The
   supported monitoring surface is `utils/monitoring.py`.
 
+- **The two bottom-of-file imports in `core/agent.py`.** The re-exports they
+  fed are now served lazily by a module-level `__getattr__`, so the module
+  no longer depends on import order to load. `test_layering.py` enforces the
+  rule for everything under `core/`, including imports hidden in top-level
+  `if`/`try` bodies.
+
 - `GSPOTokenTrainer.mask_prompt_tokens` — the token-level loss now builds its
   response mask inline and hands it to `rl_losses.gather_token_logprobs`, so
   the helper had no production callers. Its shifted-index semantics
   (first response token at `max(prompt_length - 1, 0)`) are unchanged.
+
+- `docs/IMPROVEMENTS_TO_10.md` — a superseded aspiration list whose items
+  either shipped or were re-scoped; the live roadmap is the changelog.
 
 ## [0.38.0] - 2026-08-25 — One loss spine, trusted checkpoints, torch-free doors — the hardening release
 
