@@ -519,7 +519,8 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
 
         _echo(f"{label} starter run complete.")
 
-    model_command.__name__ = (command_name or "").replace("-", "_")
+    assert command_name is not None
+    model_command.__name__ = command_name.replace("-", "_")
     model_command.__doc__ = f"Preview or run the dedicated {display} GSPO starter path."
     app.command(command_name)(model_command)
 

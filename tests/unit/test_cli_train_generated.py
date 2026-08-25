@@ -9,6 +9,7 @@ generated command must map back to exactly one preset, and each command's
 
 from __future__ import annotations
 
+import importlib
 import re
 
 import pytest
@@ -68,3 +69,57 @@ def test_command_help_mentions_model_id(command: str) -> None:
     assert result.exit_code == 0, result.output
     text = re.sub(r"\s+", " ", result.output)
     assert CLI_PRESETS[command].model_id in text
+
+
+def _derived_symbol_names(preset: ModelPreset) -> list[str]:
+    """Every starter symbol the generated command resolves via ``getattr``."""
+    prefix = preset.cli_symbol_prefix
+    infix = preset.cli_symbol_infix
+    return [
+        f"{prefix}_BASE_MODEL",
+        f"{prefix}_STARTER_PROFILE_CHOICES",
+        f"{prefix}_TASK_CHOICES",
+        f"create_{infix}_preview",
+        f"describe_{infix}_starter_profiles",
+        f"get_{infix}_config",
+        f"load_{infix}_config_file",
+        f"write_{infix}_config_file",
+        preset.cli_run_function or f"run_{infix}_config",
+    ]
+
+
+def _import_starter(preset: ModelPreset) -> object:
+    """Import a preset's starter module, skipping only if training extras are absent.
+
+    A ``ModuleNotFoundError`` naming the starter module itself is a real
+    failure (typo in ``starter_module``); one naming torch/transformers/trl
+    means the optional training extras are not installed here.
+    """
+    assert preset.starter_module is not None
+    module = f"stateset_agents.training.{preset.starter_module}"
+    try:
+        return importlib.import_module(module)
+    except ImportError as exc:
+        missing = getattr(exc, "name", "") or ""
+        text = f"{missing} {exc}"
+        if any(dep in text for dep in ("torch", "transformers", "trl", "peft")):
+            pytest.skip(f"training extras unavailable: {exc}")
+        raise
+
+
+@pytest.mark.parametrize("command", sorted(EXPECTED_COMMANDS))
+def test_preset_symbol_names_exist_on_starter(command: str) -> None:
+    preset = CLI_PRESETS[command]
+    starter = _import_starter(preset)
+    missing = [n for n in _derived_symbol_names(preset) if not hasattr(starter, n)]
+    assert not missing, (
+        f"{preset.starter_module} is missing symbols derived from the preset: {missing}"
+    )
+
+
+@pytest.mark.parametrize("command", sorted(EXPECTED_COMMANDS))
+def test_preset_model_id_matches_starter_base_model(command: str) -> None:
+    preset = CLI_PRESETS[command]
+    starter = _import_starter(preset)
+    base_model = getattr(starter, f"{preset.cli_symbol_prefix}_BASE_MODEL")
+    assert base_model == preset.model_id

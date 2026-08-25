@@ -84,6 +84,28 @@ class ModelPreset:
     cli_default_iterations: int = 16
     """Fallback used by ``--iterations`` coercion when the value is invalid."""
 
+    def __post_init__(self) -> None:
+        if self.cli_command is None:
+            return
+        required = (
+            "cli_display_name",
+            "cli_echo_label",
+            "cli_write_label",
+            "cli_config_stem",
+            "cli_symbol_prefix",
+            "cli_symbol_infix",
+        )
+        missing = [name for name in required if not getattr(self, name)]
+        if missing:
+            raise ValueError(
+                f"Preset with cli_command={self.cli_command!r} is missing "
+                f"required CLI metadata: {', '.join(missing)}."
+            )
+        if self.starter_module is None:
+            raise ValueError(
+                f"Preset with cli_command={self.cli_command!r} must set starter_module."
+            )
+
 
 PRESETS: dict[str, ModelPreset] = {
     "muse-glimmer": ModelPreset(
