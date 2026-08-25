@@ -12,6 +12,9 @@ discrepancies found while consolidating.
 Use :func:`examples.finetune_gspo.main` (``python examples/finetune_gspo.py
 --model <preset> --dry-run``) to exercise a preset without downloading a
 real model.
+
+This registry used to live at ``examples/model_presets.py``; that module is
+now a backwards-compatible re-export shim over this one.
 """
 
 from __future__ import annotations
