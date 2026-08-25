@@ -170,3 +170,30 @@ async def test_gepo_single_update_is_on_policy_by_default(monkeypatch):
     assert len(captured) == 1
     learner, sampler = captured[0]
     assert torch.allclose(learner, sampler, atol=1e-5)
+
+
+@pytest.mark.asyncio
+async def test_gepo_multi_update_cadence_matches_dapo(monkeypatch):
+    """Convention (shared with DAPO/VAPO): the LR scheduler advances once per
+    inner update, global_step counts train_steps, not inner updates."""
+    trainer = _tiny_gepo_trainer(num_gradient_updates=3)
+    responses = _fixed_group_responses()
+
+    async def fake_generate(prompt, group_size):
+        return responses
+
+    monkeypatch.setattr(trainer, "generate_group_responses", fake_generate)
+
+    scheduler_steps = []
+    orig_step = trainer.scheduler.step
+    monkeypatch.setattr(
+        trainer.scheduler,
+        "step",
+        lambda *a, **k: (scheduler_steps.append(1), orig_step())[1],
+    )
+
+    before = trainer.global_step
+    await trainer.train_step(["hello"])
+
+    assert len(scheduler_steps) == 3
+    assert trainer.global_step == before + 1

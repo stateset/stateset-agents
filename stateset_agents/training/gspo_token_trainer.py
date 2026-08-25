@@ -88,24 +88,6 @@ class GSPOTokenTrainer(GSPOTrainer):
 
         return detached_seq_ratio
 
-    def mask_prompt_tokens(
-        self, token_log_probs: torch.Tensor, prompt_length: int
-    ) -> torch.Tensor:
-        """
-        Zero out prompt-position token log probs, keeping response tokens only.
-
-        `token_log_probs` is already shifted (index t corresponds to the
-        token predicted at position t+1), so the first response-token log
-        prob lives at index `max(prompt_length - 1, 0)` — matching the
-        convention used in `gspo_generation._compute_sequence_log_prob` and
-        `GSPOTrainer._compute_group_sequence_log_probs`.
-        """
-        response_start = max(prompt_length - 1, 0)
-        mask = torch.zeros_like(token_log_probs)
-        if response_start < mask.shape[-1]:
-            mask[..., response_start:] = 1.0
-        return token_log_probs * mask
-
     async def train_step_token_level(
         self, queries: list[str], num_groups: int = 1
     ) -> dict[str, float]:
@@ -210,8 +192,9 @@ class GSPOTokenTrainer(GSPOTrainer):
                 # Shared gather (fp32 log-softmax). The response mask is
                 # built on the unshifted axis: position p is a response
                 # token when p >= prompt_length, which after the helper's
-                # shift-by-one is exactly `mask_prompt_tokens` semantics
-                # (first kept index max(prompt_length - 1, 0)).
+                # shift-by-one keeps the first response token at index
+                # max(prompt_length - 1, 0) — the same convention as
+                # gspo_generation._compute_sequence_log_prob.
                 input_ids = inputs["input_ids"]
                 response_mask = torch.zeros_like(input_ids, dtype=torch.float32)
                 if prompt_length < response_mask.shape[-1]:

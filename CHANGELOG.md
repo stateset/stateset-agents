@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- `GSPOTokenTrainer.mask_prompt_tokens` — the token-level loss now builds its
+  response mask inline and hands it to `rl_losses.gather_token_logprobs`, so
+  the helper had no production callers. Its shifted-index semantics
+  (first response token at `max(prompt_length - 1, 0)`) are unchanged.
+
 ## [0.38.0] - 2026-08-25 — One loss spine, trusted checkpoints, torch-free doors — the hardening release
 
 ### Added

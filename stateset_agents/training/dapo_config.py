@@ -37,6 +37,9 @@ class DAPOConfig(TrainingConfig):
     group_size: int = 16
     prompt_batch_size: int = 512
     mini_batch_size: int = 512
+    # Inner gradient updates per rollout (mu). Cadence (shared with GEPO and
+    # VAPO): the LR scheduler advances once per inner update; global_step
+    # counts train_steps, not inner updates.
     num_gradient_updates: int = 16
 
     use_dynamic_sampling: bool = True

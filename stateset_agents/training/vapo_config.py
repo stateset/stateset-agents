@@ -57,6 +57,8 @@ class VAPOConfig(TrainingConfig):
     # Inner gradient updates per rollout (mu). The default of 1 keeps VAPO
     # strictly on-policy; values > 1 reuse each rollout, and the importance
     # ratio is then computed against log probs frozen at rollout time.
+    # Cadence (shared with DAPO and GEPO): the LR schedulers advance once per
+    # inner update; global_step counts train_steps, not inner updates.
     num_gradient_updates: int = 1
 
     # Precision of the per-token log-softmax. None (default) means fp32, the

@@ -311,3 +311,34 @@ def test_vapo_logprob_dtype_config_selects_bf16():
     ids = torch.randint(0, 200, (1, 8))
     am = torch.ones(1, 8, dtype=torch.long)
     assert trainer.compute_token_log_probs(ids, am).dtype == torch.bfloat16
+
+
+@pytest.mark.asyncio
+async def test_vapo_multi_update_cadence_matches_dapo(vapo_trainer_tiny, monkeypatch):
+    """Convention (shared with DAPO/GEPO): the LR schedulers advance once per
+    inner update, global_step counts train_steps, not inner updates."""
+    t = vapo_trainer_tiny
+    t.config.num_gradient_updates = 3
+    monkeypatch.setattr(t, "generate_group_responses", _fake_group_generator())
+
+    actor_steps: list[int] = []
+    critic_steps: list[int] = []
+    orig_actor = t.actor_scheduler.step
+    orig_critic = t.critic_scheduler.step
+    monkeypatch.setattr(
+        t.actor_scheduler,
+        "step",
+        lambda *a, **k: (actor_steps.append(1), orig_actor())[1],
+    )
+    monkeypatch.setattr(
+        t.critic_scheduler,
+        "step",
+        lambda *a, **k: (critic_steps.append(1), orig_critic())[1],
+    )
+
+    before = t.global_step
+    await t.train_step(["prompt one"])
+
+    assert len(actor_steps) == 3
+    assert len(critic_steps) == 3
+    assert t.global_step == before + 1

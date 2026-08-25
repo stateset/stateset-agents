@@ -125,12 +125,7 @@ _vllm_backend_loaded = False
 
 def _load_vllm_backend() -> bool:
     """Lazily load vLLM backend to avoid import-time errors."""
-    global \
-        _vllm_backend_loaded, \
-        VLLMConfig, \
-        VLLMGenerator, \
-        GenerationResult, \
-        VLLM_BACKEND_AVAILABLE
+    global _vllm_backend_loaded, VLLMConfig, VLLMGenerator, GenerationResult, VLLM_BACKEND_AVAILABLE
     if _vllm_backend_loaded:
         return VLLM_BACKEND_AVAILABLE
     try:

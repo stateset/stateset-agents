@@ -121,6 +121,8 @@ class GEPOConfig(TrainingConfig):
     # Inner gradient updates per rollout (mu). The default of 1 keeps GEPO
     # strictly on-policy; values > 1 reuse each rollout, and the sampler
     # (old-policy) log probs are the snapshot taken at rollout time.
+    # Cadence (shared with DAPO and VAPO): the LR scheduler advances once per
+    # inner update; global_step counts train_steps, not inner updates.
     num_gradient_updates: int = 1
 
     @classmethod
@@ -514,8 +516,10 @@ class GEPOTrainer:
 
         # --- Update phase --------------------------------------------------
         # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
-        # against the frozen sampler log probs, exactly like DAPO. The default
-        # of 1 leaves the on-policy behaviour bit-for-bit unchanged.
+        # against the frozen sampler log probs, exactly like DAPO. With the
+        # default of 1 the formula is identical to the previous single-update
+        # path (only dropout RNG ordering differs, since the sampler log probs
+        # are now drawn before the learner ones).
         num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
         final_loss = torch.tensor(0.0, device=self.device)
 
@@ -555,8 +559,11 @@ class GEPOTrainer:
             )
 
             self.optimizer.step()
+            # Cadence convention shared with DAPO/VAPO: the LR scheduler
+            # advances once per inner update, global_step counts train_steps.
             self.scheduler.step()
-            self.global_step += 1
+
+        self.global_step += 1
 
         # Compute metrics
         metrics = {

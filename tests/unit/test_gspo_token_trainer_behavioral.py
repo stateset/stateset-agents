@@ -125,22 +125,6 @@ async def test_reward_computed_via_compute_turn_reward(gspo_token_trainer_tiny):
         assert context == {"user_query": "hello"}
 
 
-def test_loss_excludes_prompt_tokens(gspo_token_trainer_tiny):
-    """Token loss must be masked to response positions."""
-    trainer = gspo_token_trainer_tiny
-    lp = torch.arange(9, dtype=torch.float).unsqueeze(0)
-    masked = trainer.mask_prompt_tokens(lp, prompt_length=4)
-    assert masked[0, :3].sum() == 0  # shifted convention: P-1 leading zeros
-    assert masked[0, 3:].sum() != 0
-
-
-def test_mask_prompt_tokens_handles_zero_length_prompt(gspo_token_trainer_tiny):
-    trainer = gspo_token_trainer_tiny
-    lp = torch.arange(5, dtype=torch.float).unsqueeze(0)
-    masked = trainer.mask_prompt_tokens(lp, prompt_length=0)
-    assert torch.equal(masked, lp)
-
-
 def _set_old_log_probs(trainer, monkeypatch, log_ratios):
     """Point the fake generator at old log probs producing the given
     length-normalised log importance ratios for ("ok", "nope")."""
@@ -265,3 +249,31 @@ async def test_gated_infinite_sequence_ratio_does_not_poison_loss(
     }
     for name, g in grads_gated.items():
         assert torch.allclose(g, grads_finite[name], atol=1e-6), name
+
+
+@pytest.mark.asyncio
+async def test_constant_reward_group_with_overflowing_ratio_is_finite(
+    gspo_token_trainer_tiny, monkeypatch
+):
+    """Constant rewards give advantage exactly 0; an overflowing sequence
+    ratio must still leave the loss and gradients finite."""
+    import math
+
+    trainer = gspo_token_trainer_tiny
+
+    class _ConstantRewardModel:
+        async def compute_turn_reward(
+            self, turn, context=None, conversation_history=None
+        ):
+            return RewardResult(score=1.0, breakdown={}, components={})
+
+    trainer.reward_model = _ConstantRewardModel()
+    # Old log probs far below current -> the raw exp of the length-normalised
+    # log ratio overflows.
+    _set_old_log_probs(trainer, monkeypatch, [300.0, 300.0])
+
+    metrics = await trainer.train_step_token_level(["hello"], num_groups=1)
+    assert math.isfinite(metrics["policy_loss"])
+    grads = [p.grad for p in trainer.model.parameters() if p.grad is not None]
+    assert grads
+    assert all(torch.isfinite(g).all() for g in grads)

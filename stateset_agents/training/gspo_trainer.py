@@ -411,10 +411,10 @@ class GSPOTrainer:
         # Apply length normalization
         normalized_log_ratio = log_ratio_sum / sequence_lengths
 
-        # Convert to ratio via exp
-        importance_ratio = torch.exp(normalized_log_ratio)
-
-        return importance_ratio
+        # Convert to ratio via exp, clamped: an inf ratio multiplied by an
+        # advantage of exactly 0 (which a constant-reward group produces) is
+        # NaN, and that NaN reaches the GSPO-token gate.
+        return rl_losses.safe_exp_ratio(normalized_log_ratio)
 
     def compute_group_advantages(
         self, rewards: Any

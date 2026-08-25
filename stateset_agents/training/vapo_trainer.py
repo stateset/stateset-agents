@@ -910,8 +910,9 @@ class VAPOTrainer:
 
         # --- Update phase ---------------------------------------------------
         # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
-        # against the frozen old log probs/values, exactly like DAPO. The
-        # default of 1 leaves the on-policy behaviour unchanged.
+        # against the frozen old log probs/values, exactly like DAPO. With the
+        # default of 1 the formula is identical to the previous single-update
+        # path (only dropout RNG ordering differs).
         num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
 
         for _ in range(num_updates):
@@ -1003,9 +1004,11 @@ class VAPOTrainer:
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
 
-        # Update schedulers
-        self.actor_scheduler.step()
-        self.critic_scheduler.step()
+            # Cadence convention shared with DAPO/GEPO: the LR schedulers
+            # advance once per inner update, global_step counts train_steps.
+            self.actor_scheduler.step()
+            self.critic_scheduler.step()
+
         self.global_step += 1
 
         # Compute metrics

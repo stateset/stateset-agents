@@ -58,14 +58,16 @@ def gather_token_logprobs(
     torch = _t()
     shift_logits = logits[..., :-1, :]
     shift_labels = input_ids[..., 1:]
-    shifted_mask = response_mask[..., 1:].to(shift_logits.dtype)
+    # The mask is returned to callers that sum it for exact token counts, so
+    # it stays fp32 rather than following a possibly low-precision logits
+    # dtype (bf16 cannot represent integers past 256 exactly).
+    shifted_mask = response_mask[..., 1:].to(torch.float32)
     softmax_dtype = torch.float32 if dtype is None else dtype
     log_probs = torch.log_softmax(shift_logits.to(softmax_dtype), dim=-1)
     token_logprobs = log_probs.gather(-1, shift_labels.unsqueeze(-1)).squeeze(-1)
-    # Cast the mask to the log-prob dtype for the multiply so the result
-    # keeps the requested precision (an fp32 mask would silently promote a
-    # bf16 gather back to fp32); the returned mask keeps the logits dtype so
-    # token counts summed from it stay exact.
+    # Cast the mask to the log-prob dtype for the multiply so the result keeps
+    # the requested precision (an fp32 mask would silently promote a bf16
+    # gather back to fp32); the returned mask stays fp32 for exact counts.
     return token_logprobs * shifted_mask.to(token_logprobs.dtype), shifted_mask
 
 

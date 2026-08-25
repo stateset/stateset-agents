@@ -3,6 +3,8 @@
 import pytest
 import torch
 
+from stateset_agents.training import rl_losses
+
 pytest.importorskip("transformers")
 from transformers import GPT2Config, GPT2LMHeadModel
 
@@ -199,3 +201,21 @@ def test_logprob_dtype_config_selects_bf16(dapo_trainer_factory):
     default = dapo_trainer_factory(tiny_model())
     logp32, _ = default.compute_token_log_probs(ids, am, rm)
     assert logp32.dtype == torch.float32
+
+
+def test_token_counts_exact_with_bf16_logprobs():
+    """Token counts come from the returned mask, so it must never be handed
+    back in a low-precision dtype: bf16 cannot represent integers past 256
+    exactly, and a count is not something to approximate."""
+    # A bf16 model produces bf16 logits; the mask used to be cast to that
+    # dtype, so summing it lost the exact token count.
+    logits = torch.zeros(1, 301, 200, dtype=torch.bfloat16)
+    ids = torch.zeros(1, 301, dtype=torch.long)
+    mask = torch.ones(1, 301)
+
+    logp, shifted_mask = rl_losses.gather_token_logprobs(
+        logits, ids, mask, dtype=torch.bfloat16
+    )
+    assert logp.dtype == torch.bfloat16
+    assert shifted_mask.dtype == torch.float32
+    assert float(shifted_mask.sum()) == 300.0
