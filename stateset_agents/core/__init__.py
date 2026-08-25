@@ -116,20 +116,6 @@ _LAZY_EXPORTS.update(
 )
 _LAZY_EXPORTS.update(
     _export_group(
-        "stateset_agents.experimental.long_term_planning",
-        [
-            "PlanningConfig",
-            "PlanningManager",
-            "Planner",
-            "Plan",
-            "PlanStep",
-            "PlanStatus",
-            "HeuristicPlanner",
-        ],
-    )
-)
-_LAZY_EXPORTS.update(
-    _export_group(
         "stateset_agents.core.reward",
         [
             "RewardFunction",
@@ -246,6 +232,18 @@ _LAZY_EXPORTS.update(
     )
 )
 
+# Planning symbols moved to ``stateset_agents.experimental.long_term_planning``.
+# Re-exported here for one release with a DeprecationWarning.
+_DEPRECATED_PLANNING_EXPORTS = (
+    "PlanningConfig",
+    "PlanningManager",
+    "Planner",
+    "Plan",
+    "PlanStep",
+    "PlanStatus",
+    "HeuristicPlanner",
+)
+
 __all__ = list(_LAZY_EXPORTS)
 
 
@@ -280,6 +278,16 @@ def _maybe_import_submodule(name: str) -> Any | None:
 
 
 def __getattr__(name: str) -> Any:
+    if name in _DEPRECATED_PLANNING_EXPORTS:
+        warnings.warn(
+            f"{name} is deprecated here; "
+            "import from stateset_agents.experimental.long_term_planning",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        module = import_module("stateset_agents.experimental.long_term_planning")
+        return getattr(module, name)
+
     export = _LAZY_EXPORTS.get(name)
     if export is None:
         module = _maybe_import_submodule(name)

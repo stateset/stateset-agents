@@ -5,15 +5,16 @@ This module provides advanced multi-turn conversation capabilities with
 context management, tool usage, and sophisticated dialogue strategies.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from stateset_agents.utils.cache import CacheService
 
-from ..experimental.long_term_planning import PlanningConfig, PlanningManager
 from .agent import Agent
 from .agent_config import AgentConfig
 from .multiturn_analysis import (
@@ -32,6 +33,9 @@ from .multiturn_context import (
 )
 from .reward import RewardFunction
 from .trajectory import ConversationTurn
+
+if TYPE_CHECKING:
+    from ..experimental.long_term_planning import PlanningManager
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +103,11 @@ class MultiTurnAgent(Agent):
             if enable_planning:
                 planning_kwargs = model_config.get("planning_config", {}) or {}
                 try:
+                    from ..experimental.long_term_planning import (
+                        PlanningConfig,
+                        PlanningManager,
+                    )
+
                     if isinstance(planning_kwargs, dict):
                         planning_kwargs = dict(planning_kwargs)
                         planning_kwargs.pop("enabled", None)

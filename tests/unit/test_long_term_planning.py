@@ -2,7 +2,7 @@
 Tests for long-term planning utilities.
 """
 
-from stateset_agents.core.long_term_planning import (
+from stateset_agents.experimental.long_term_planning import (
     HeuristicPlanner,
     PlanningConfig,
     PlanningManager,
