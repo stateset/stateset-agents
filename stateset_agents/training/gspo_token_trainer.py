@@ -12,7 +12,6 @@ from typing import Any
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
@@ -88,24 +87,6 @@ class GSPOTokenTrainer(GSPOTrainer):
         # but gradients will flow through token log probs in the loss computation
 
         return detached_seq_ratio
-
-    def mask_prompt_tokens(
-        self, token_log_probs: torch.Tensor, prompt_length: int
-    ) -> torch.Tensor:
-        """
-        Zero out prompt-position token log probs, keeping response tokens only.
-
-        `token_log_probs` is already shifted (index t corresponds to the
-        token predicted at position t+1), so the first response-token log
-        prob lives at index `max(prompt_length - 1, 0)` — matching the
-        convention used in `gspo_generation._compute_sequence_log_prob` and
-        `GSPOTrainer._compute_group_sequence_log_probs`.
-        """
-        response_start = max(prompt_length - 1, 0)
-        mask = torch.zeros_like(token_log_probs)
-        if response_start < mask.shape[-1]:
-            mask[..., response_start:] = 1.0
-        return token_log_probs * mask
 
     async def train_step_token_level(
         self, queries: list[str], num_groups: int = 1
@@ -208,23 +189,24 @@ class GSPOTokenTrainer(GSPOTrainer):
                 outputs = self.model(**inputs)
                 logits = outputs.logits
 
-                shift_logits = logits[..., :-1, :].contiguous()
-                shift_labels = inputs["input_ids"][..., 1:].contiguous()
+                # Shared gather (fp32 log-softmax). The response mask is
+                # built on the unshifted axis: position p is a response
+                # token when p >= prompt_length, which after the helper's
+                # shift-by-one keeps the first response token at index
+                # max(prompt_length - 1, 0) — the same convention as
+                # gspo_generation._compute_sequence_log_prob.
+                input_ids = inputs["input_ids"]
+                response_mask = torch.zeros_like(input_ids, dtype=torch.float32)
+                if prompt_length < response_mask.shape[-1]:
+                    response_mask[..., prompt_length:] = 1.0
 
-                log_probs = F.log_softmax(shift_logits, dim=-1)
-                token_log_probs = log_probs.gather(
-                    dim=-1, index=shift_labels.unsqueeze(-1)
-                ).squeeze(-1)
-
-                # Mask out prompt positions — only response tokens count
-                # towards the sequence log prob and the loss.
-                masked_token_log_probs = self.mask_prompt_tokens(
-                    token_log_probs, prompt_length
+                masked_token_log_probs, _ = rl_losses.gather_token_logprobs(
+                    logits, input_ids, response_mask
                 )
                 token_log_probs_list.append(masked_token_log_probs)
 
                 response_start = max(prompt_length - 1, 0)
-                response_len = max(token_log_probs.shape[-1] - response_start, 1)
+                response_len = max(masked_token_log_probs.shape[-1] - response_start, 1)
                 sequence_lengths_list.append(float(response_len))
 
             # Keep tensors (not .item()) so gradients survive into the loss.
@@ -274,14 +256,18 @@ class GSPOTokenTrainer(GSPOTrainer):
                 push_out = ((adv > 0) & (seq_ratio > hi)) | (
                     (adv < 0) & (seq_ratio < lo)
                 )
-                gate = (in_region | ~push_out).to(token_log_probs.dtype)
+                gate = in_region | ~push_out
+
+                # Select rather than multiply: a gated-out sequence whose
+                # ratio overflowed to +inf would give `0 * inf == nan` and
+                # poison the whole batch's loss and gradients.
+                gated_ratio = torch.where(gate, seq_ratio, torch.zeros_like(seq_ratio))
 
                 # Normalized by the actual response length (not the full
                 # padded sequence width, which would dilute the loss for
                 # short responses in a padded batch).
                 token_loss = (
-                    -(gate * seq_ratio * adv * token_log_probs).sum()
-                    / sequence_lengths[i]
+                    -(gated_ratio * adv * token_log_probs).sum() / sequence_lengths[i]
                 )
 
                 loss += token_loss / len(responses)

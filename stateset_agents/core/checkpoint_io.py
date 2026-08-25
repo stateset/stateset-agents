@@ -61,9 +61,7 @@ def load_checkpoint_file(
                 "Install the 'training' extra: pip install stateset-agents[training]"
             ) from exc
     try:
-        return torch.load(  # nosec B614 - the one guarded load; weights_only=not trusted, see SECURITY.md
-            path, map_location=map_location, weights_only=not trusted
-        )
+        return torch.load(path, map_location=map_location, weights_only=not trusted)
     except pickle.UnpicklingError as exc:
         if trusted:
             raise

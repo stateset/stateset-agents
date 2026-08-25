@@ -229,3 +229,139 @@ def test_enhanced_gspo_config_is_the_canonical_one(
     monkeypatch.delitem(vars(advanced_rl_algorithms), "GSPOConfig", raising=False)
     with pytest.warns(DeprecationWarning, match="training.gspo_config"):
         assert advanced_rl_algorithms.GSPOConfig is GSPOConfig
+
+
+# --- No bottom-of-file imports under core/ ---------------------------------
+
+
+def _is_type_checking_guard(test: ast.expr) -> bool:
+    """True for ``if TYPE_CHECKING:`` / ``if typing.TYPE_CHECKING:``."""
+    if isinstance(test, ast.Name):
+        return test.id == "TYPE_CHECKING"
+    if isinstance(test, ast.Attribute):
+        return test.attr == "TYPE_CHECKING"
+    return False
+
+
+def _record(path: Path, node: ast.stmt, offenders: list[str]) -> None:
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            offenders.append(f"{path.name}:{node.lineno} import {alias.name}")
+    elif isinstance(node, ast.ImportFrom):
+        dots = "." * node.level
+        offenders.append(f"{path.name}:{node.lineno} from {dots}{node.module or ''}")
+
+
+def _scan_body(path: Path, body: list[ast.stmt], offenders: list[str]) -> None:
+    """Record module-level imports in ``body``, descending into if/try only."""
+    for node in body:
+        if isinstance(node, ast.Import | ast.ImportFrom):
+            _record(path, node, offenders)
+        elif isinstance(node, ast.If):
+            if _is_type_checking_guard(node.test):
+                continue
+            _scan_body(path, node.body, offenders)
+            _scan_body(path, node.orelse, offenders)
+        elif isinstance(node, ast.Try):
+            _scan_body(path, node.body, offenders)
+            for handler in node.handlers:
+                _scan_body(path, handler.body, offenders)
+            _scan_body(path, node.orelse, offenders)
+            _scan_body(path, node.finalbody, offenders)
+
+
+def _imports_after_first_definition(path: Path) -> list[str]:
+    """Return module-level imports that appear after the first def/class.
+
+    A top-level ``import`` placed below the definitions it feeds is a cycle
+    worked around by import order: the module only loads because something
+    else imported it first. Imports inside functions are not module-level and
+    do not count -- but imports nested in a top-level ``if``/``try`` DO
+    execute at import time and are the same cycle one indent down, so those
+    bodies are walked too. ``if TYPE_CHECKING:`` is exempt: it never runs.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    seen_definition = False
+    offenders: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            seen_definition = True
+            continue
+        if not seen_definition:
+            continue
+        _scan_body(path, [node], offenders)
+    return offenders
+
+
+def test_core_has_no_bottom_of_file_imports() -> None:
+    offenders: list[str] = []
+    for path in _core_modules():
+        offenders.extend(_imports_after_first_definition(path))
+    assert offenders == [], (
+        "no module under stateset_agents/core may place a module-level import "
+        "after its first function or class definition: such an import is a "
+        "circular dependency that only resolves by import order. Re-export "
+        "lazily with a module-level __getattr__ instead: " + ", ".join(offenders)
+    )
+
+
+# --- the bottom-of-file import detector itself ------------------------------
+
+
+def _detect(tmp_path: Path, source: str) -> list[str]:
+    path = tmp_path / "probe.py"
+    path.write_text(source, encoding="utf-8")
+    return _imports_after_first_definition(path)
+
+
+def test_detector_finds_a_plain_bottom_import(tmp_path: Path) -> None:
+    assert _detect(tmp_path, "def f():\n    pass\n\nimport os\n")
+
+
+def test_detector_finds_an_import_hidden_in_a_top_level_if(tmp_path: Path) -> None:
+    """`if True: import x` at the bottom is the same cycle, one indent down."""
+    offenders = _detect(
+        tmp_path,
+        "def f():\n    pass\n\nif True:\n    from .other import thing\n",
+    )
+    assert offenders and "other" in offenders[0]
+
+
+def test_detector_finds_an_import_hidden_in_a_top_level_try(tmp_path: Path) -> None:
+    offenders = _detect(
+        tmp_path,
+        "def f():\n    pass\n\ntry:\n    import torch\nexcept ImportError:\n"
+        "    import fallback\n",
+    )
+    assert len(offenders) == 2
+
+
+def test_detector_ignores_if_type_checking(tmp_path: Path) -> None:
+    """TYPE_CHECKING imports never execute, so they cannot form a cycle."""
+    assert (
+        _detect(
+            tmp_path,
+            "from typing import TYPE_CHECKING\n\ndef f():\n    pass\n\n"
+            "if TYPE_CHECKING:\n    from .other import Thing\n",
+        )
+        == []
+    )
+
+
+def test_detector_ignores_typing_dot_type_checking(tmp_path: Path) -> None:
+    assert (
+        _detect(
+            tmp_path,
+            "import typing\n\ndef f():\n    pass\n\n"
+            "if typing.TYPE_CHECKING:\n    from .other import Thing\n",
+        )
+        == []
+    )
+
+
+def test_detector_ignores_imports_inside_functions(tmp_path: Path) -> None:
+    assert _detect(tmp_path, "def f():\n    import os\n    return os\n") == []
+
+
+def test_detector_ignores_imports_above_the_first_definition(tmp_path: Path) -> None:
+    assert _detect(tmp_path, "import os\n\ndef f():\n    return os\n") == []

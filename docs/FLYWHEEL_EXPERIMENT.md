@@ -83,6 +83,7 @@ is itself part of the experiment: does the flywheel degrade the persona?
 
 ## Step 3 — train-remote (real H100, real pipeline)
 
+<!-- historical: do not bump -->
 `RunPodExecutor(wheel=dist/stateset_agents-0.26.0-py3-none-any.whl,
 ready_timeout_s=900)` with a `RemoteJobSpec` matching gen-1's hyperparameters
 exactly, plus assertion-gated eval prompts on three **held-out** order numbers

@@ -4,14 +4,6 @@ stateset\_agents.utils package
 Submodules
 ----------
 
-stateset\_agents.utils.advanced\_dashboard module
--------------------------------------------------
-
-.. automodule:: stateset_agents.utils.advanced_dashboard
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 stateset\_agents.utils.alerts module
 ------------------------------------
 

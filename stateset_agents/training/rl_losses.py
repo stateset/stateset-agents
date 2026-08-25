@@ -15,6 +15,33 @@ def _t() -> Any:
     return get_torch() or require_torch()
 
 
+def resolve_logprob_dtype(name: str | None) -> Any:
+    """Parse a ``logprob_dtype`` config string into a torch dtype.
+
+    ``None`` (the default) means fp32, the most accurate choice; the other
+    names trade numerics for peak memory on large-vocab models. Parse once
+    at trainer construction, not per forward pass.
+    """
+    if name is None:
+        return None
+    torch = _t()
+    key = name.strip().lower()
+    dtypes = {
+        "fp32": torch.float32,
+        "float32": torch.float32,
+        "bf16": torch.bfloat16,
+        "bfloat16": torch.bfloat16,
+        "fp16": torch.float16,
+        "float16": torch.float16,
+        "half": torch.float16,
+    }
+    if key not in dtypes:
+        raise ValueError(
+            f"unknown logprob_dtype {name!r}; expected one of {sorted(dtypes)}"
+        )
+    return dtypes[key]
+
+
 def gather_token_logprobs(
     logits: Any, input_ids: Any, response_mask: Any, *, dtype: Any = None
 ) -> tuple[Any, Any]:
@@ -31,11 +58,33 @@ def gather_token_logprobs(
     torch = _t()
     shift_logits = logits[..., :-1, :]
     shift_labels = input_ids[..., 1:]
-    shifted_mask = response_mask[..., 1:].to(shift_logits.dtype)
+    # The mask is returned to callers that sum it for exact token counts, so
+    # it stays fp32 rather than following a possibly low-precision logits
+    # dtype (bf16 cannot represent integers past 256 exactly).
+    shifted_mask = response_mask[..., 1:].to(torch.float32)
     softmax_dtype = torch.float32 if dtype is None else dtype
     log_probs = torch.log_softmax(shift_logits.to(softmax_dtype), dim=-1)
     token_logprobs = log_probs.gather(-1, shift_labels.unsqueeze(-1)).squeeze(-1)
-    return token_logprobs * shifted_mask, shifted_mask
+    # Cast the mask to the log-prob dtype for the multiply so the result keeps
+    # the requested precision (an fp32 mask would silently promote a bf16
+    # gather back to fp32); the returned mask stays fp32 for exact counts.
+    return token_logprobs * shifted_mask.to(token_logprobs.dtype), shifted_mask
+
+
+def safe_exp_ratio(log_ratio: Any, *, clamp: float = 20.0) -> Any:
+    """``exp(log_ratio)`` with the exponent clamped to ``[-clamp, +clamp]``.
+
+    A raw ``exp`` of a log-ratio overflows to ``inf`` past ~88 in fp32, and an
+    ``inf`` ratio makes the surrogate loss (and every gradient in the batch)
+    non-finite. Early in training, or after a bad update, individual token
+    log-ratios genuinely do reach those magnitudes. Clamping first keeps the
+    ratio finite; the clamped region has zero gradient, which is the right
+    behaviour anyway since such a sample is far outside any trust region.
+    ``exp(±20) ~ 5e8 / 2e-9`` is already several orders of magnitude beyond
+    every clip boundary, so in-region samples are untouched.
+    """
+    torch = _t()
+    return torch.exp(torch.clamp(log_ratio, min=-clamp, max=clamp))
 
 
 def masked_mean(x: Any, mask: Any, *, mode: str = "token") -> Any:

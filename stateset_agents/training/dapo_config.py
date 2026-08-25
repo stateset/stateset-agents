@@ -37,6 +37,9 @@ class DAPOConfig(TrainingConfig):
     group_size: int = 16
     prompt_batch_size: int = 512
     mini_batch_size: int = 512
+    # Inner gradient updates per rollout (mu). Cadence (shared with GEPO and
+    # VAPO): the LR scheduler advances once per inner update; global_step
+    # counts train_steps, not inner updates.
     num_gradient_updates: int = 16
 
     use_dynamic_sampling: bool = True
@@ -50,6 +53,11 @@ class DAPOConfig(TrainingConfig):
     overlong_penalty: float = -1.0
 
     use_token_level_loss: bool = True
+
+    # Precision of the per-token log-softmax. None (default) means fp32, the
+    # most accurate; "bf16"/"fp16" trade numerics for peak memory on
+    # large-vocab models.
+    logprob_dtype: str | None = None
 
     beta: float = 0.0
     use_reference_model: bool = False

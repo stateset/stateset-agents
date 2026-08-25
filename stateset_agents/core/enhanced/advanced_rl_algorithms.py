@@ -8,6 +8,14 @@ This module implements multiple RL algorithms including:
 - Trust Region Policy Optimization (TRPO)
 - Group Sequence Policy Optimization (GSPO)
 - Group Sequence Policy Optimization - Token variant (GSPO-token)
+
+Not the supported training path. ``PPOTrainer`` here is a second, older PPO
+implementation kept for the ``AdvancedRLOrchestrator`` experiments; the
+maintained one is ``stateset_agents.training.ppo_trainer``, which is what the
+CLI, the trainer registry and the shared loss primitives in
+``training/rl_losses.py`` use. Prefer the ``training/`` trainers for anything
+you intend to run; treat the classes below as research scaffolding whose
+numerics are not kept in step with the ``training/`` spine.
 """
 
 from __future__ import annotations

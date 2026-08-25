@@ -173,3 +173,172 @@ async def test_train_step_single_optimizer_step_per_call(
 
     assert len(actor_steps) == 1
     assert len(critic_steps) == 1
+
+
+def _fake_group_generator():
+    async def fake_generate_group_responses(prompt):
+        torch.manual_seed(3)
+        responses = []
+        for _ in range(2):
+            input_ids = torch.randint(0, 200, (10,))
+            attention_mask = torch.ones(10, dtype=torch.long)
+            response_mask = torch.zeros(10)
+            response_mask[4:] = 1.0
+            responses.append(
+                {
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                    "response_mask": response_mask,
+                    "sequence_length": 6,
+                    "prompt_length": 4,
+                    "response": "hello",
+                }
+            )
+        return responses
+
+    return fake_generate_group_responses
+
+
+def _spy_on_losses(trainer, monkeypatch):
+    captured: list[tuple[torch.Tensor, torch.Tensor]] = []
+    orig = trainer.compute_vapo_losses
+
+    def spy(current_log_probs, old_log_probs, *args, **kwargs):
+        captured.append(
+            (current_log_probs.detach().clone(), old_log_probs.detach().clone())
+        )
+        return orig(current_log_probs, old_log_probs, *args, **kwargs)
+
+    monkeypatch.setattr(trainer, "compute_vapo_losses", spy)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_vapo_old_logprobs_frozen_across_gradient_updates(
+    vapo_trainer_tiny, monkeypatch
+):
+    """num_gradient_updates=2 must reuse the rollout-time old log probs, so
+    the second inner update sees a genuinely off-policy ratio."""
+    t = vapo_trainer_tiny
+    t.config.num_gradient_updates = 2
+    t.config.actor_learning_rate = 1e-2
+    for group in t.actor_optimizer.param_groups:
+        group["lr"] = 1e-2
+    monkeypatch.setattr(t, "generate_group_responses", _fake_group_generator())
+    captured = _spy_on_losses(t, monkeypatch)
+
+    await t.train_step(["prompt one"])
+
+    assert len(captured) == 2
+    cur0, old0 = captured[0]
+    assert torch.allclose(cur0, old0, atol=1e-5)  # first update is on-policy
+    cur1, old1 = captured[1]
+    assert torch.allclose(old0, old1, atol=1e-6)  # snapshot unchanged
+    ratio = torch.exp(torch.clamp(cur1 - old1, min=-20.0, max=20.0))
+    assert (ratio - 1.0).abs().mean().item() > 1e-6
+
+
+@pytest.mark.asyncio
+async def test_vapo_default_single_update_is_on_policy(vapo_trainer_tiny, monkeypatch):
+    """The default single-update path is unchanged: exactly one loss call,
+    on-policy."""
+    t = vapo_trainer_tiny
+    monkeypatch.setattr(t, "generate_group_responses", _fake_group_generator())
+    captured = _spy_on_losses(t, monkeypatch)
+
+    await t.train_step(["prompt one"])
+
+    assert len(captured) == 1
+    cur, old = captured[0]
+    assert torch.allclose(cur, old, atol=1e-5)
+
+
+def test_vapo_policy_loss_finite_for_extreme_log_ratio(vapo_trainer_tiny):
+    """An extreme off-policy token must not overflow the importance ratio to
+    inf and take the whole policy loss with it."""
+    t = vapo_trainer_tiny
+    current_log_probs = torch.tensor([[200.0, 0.0]], requires_grad=True)
+    old_log_probs = torch.tensor([[0.0, 0.0]])
+    assert not torch.isfinite(torch.exp(current_log_probs - old_log_probs)).all()
+
+    policy_loss, _, _ = t.compute_vapo_losses(
+        current_log_probs,
+        old_log_probs,
+        torch.tensor([[-1.0, -1.0]]),  # policy advantages: the unclipped
+        # branch wins for a negative advantage, so an inf ratio propagates
+        torch.tensor([[0.0, 0.0]]),  # critic advantages
+        torch.zeros(1, 2),
+        torch.zeros(1, 2),
+        torch.ones(1, 2),
+        torch.zeros(1, 2),
+    )
+    assert torch.isfinite(policy_loss)
+
+
+def test_compute_token_log_probs_masks_prompt_positions(vapo_trainer_tiny):
+    """Passing the real response mask must zero prompt positions; the caller
+    masks anyway, so the losses are unchanged either way."""
+    t = vapo_trainer_tiny
+    torch.manual_seed(5)
+    input_ids = torch.randint(0, 200, (1, 8))
+    attention_mask = torch.ones(1, 8, dtype=torch.long)
+    response_mask = torch.zeros(1, 8)
+    response_mask[:, 4:] = 1.0
+
+    unmasked = t.compute_token_log_probs(input_ids, attention_mask)
+    masked = t.compute_token_log_probs(input_ids, attention_mask, response_mask)
+
+    assert masked.shape == unmasked.shape
+    assert torch.all(masked[:, :3] == 0.0)  # shifted: P-1 leading zeros
+    assert torch.allclose(masked[:, 3:], unmasked[:, 3:])
+
+
+def test_vapo_logprob_dtype_config_selects_bf16():
+    """config.logprob_dtype='bf16' must reach gather_token_logprobs."""
+    config = VAPOConfig(
+        model_name="gpt2",
+        group_size=2,
+        per_device_train_batch_size=2,
+        logprob_dtype="bf16",
+    )
+    trainer = VAPOTrainer(
+        config=config,
+        model=tiny_model(),
+        tokenizer=None,
+        reward_fn=lambda prompt, response: 1.0,
+    )
+    torch.manual_seed(7)
+    ids = torch.randint(0, 200, (1, 8))
+    am = torch.ones(1, 8, dtype=torch.long)
+    assert trainer.compute_token_log_probs(ids, am).dtype == torch.bfloat16
+
+
+@pytest.mark.asyncio
+async def test_vapo_multi_update_cadence_matches_dapo(vapo_trainer_tiny, monkeypatch):
+    """Convention (shared with DAPO/GEPO): the LR schedulers advance once per
+    inner update, global_step counts train_steps, not inner updates."""
+    t = vapo_trainer_tiny
+    t.config.num_gradient_updates = 3
+    monkeypatch.setattr(t, "generate_group_responses", _fake_group_generator())
+
+    actor_steps: list[int] = []
+    critic_steps: list[int] = []
+    orig_actor = t.actor_scheduler.step
+    orig_critic = t.critic_scheduler.step
+    monkeypatch.setattr(
+        t.actor_scheduler,
+        "step",
+        lambda *a, **k: (actor_steps.append(1), orig_actor())[1],
+    )
+    monkeypatch.setattr(
+        t.critic_scheduler,
+        "step",
+        lambda *a, **k: (critic_steps.append(1), orig_critic())[1],
+    )
+
+    before = t.global_step
+    await t.train_step(["prompt one"])
+
+    assert len(actor_steps) == 3
+    assert len(critic_steps) == 3
+    assert t.global_step == before + 1

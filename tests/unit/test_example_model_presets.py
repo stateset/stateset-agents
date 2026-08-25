@@ -100,11 +100,23 @@ def test_list_models_in_process_prints_all_names(capsys):
 
 @pytest.mark.parametrize(
     "preset_name",
-    ["kimi-k3", "glm5.2", "qwen3.5-27b", "mistral"],
+    [
+        # One preset runs by default: a real interpreter spawn costs ~9 s, and
+        # what it proves -- that the driver's import path and argv handling
+        # survive a fresh process -- is a property of the driver, not of the
+        # preset. The rest stay available under `-m slow`.
+        "kimi-k3",
+        pytest.param("glm5.2", marks=pytest.mark.slow),
+        pytest.param("qwen3.5-27b", marks=pytest.mark.slow),
+        pytest.param("mistral", marks=pytest.mark.slow),
+    ],
 )
 def test_dry_run_subprocess_exits_zero(preset_name):
-    """Cover a representative subset via a real subprocess invocation, to
-    guard against import-path/argv issues that in-process calls can mask."""
+    """Cover a representative preset via a real subprocess invocation, to
+    guard against import-path/argv issues that in-process calls can mask.
+
+    Every preset is still exercised through the in-process --dry-run matrix
+    in ``test_dry_run_in_process_exits_zero``."""
     result = subprocess.run(
         [
             sys.executable,
@@ -189,9 +201,20 @@ def test_write_config_round_trips(preset_name, tmp_path):
     assert loaded.model_name == preset.model_id
 
 
-@pytest.mark.parametrize("script_name", FORWARDER_SCRIPTS)
+@pytest.mark.parametrize(
+    "script_name",
+    [
+        FORWARDER_SCRIPTS[0],
+        *(pytest.param(name, marks=pytest.mark.slow) for name in FORWARDER_SCRIPTS[1:]),
+    ],
+)
 def test_forwarder_scripts_exit_zero_under_dry_run(script_name):
-    """Converted forwarder scripts must still work under --dry-run."""
+    """One converted forwarder still works under --dry-run in a real process.
+
+    All four are checked structurally by ``assert_forwards_to_driver`` (see
+    ``tests/unit/forwarder_asserts.py``); this is the single spawn that
+    proves the shim shape actually executes. The other three are available
+    under `-m slow`."""
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "examples" / script_name), "--dry-run"],
         cwd=REPO_ROOT,

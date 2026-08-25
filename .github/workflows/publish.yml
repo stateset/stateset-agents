@@ -26,8 +26,10 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
       contents: read
+    # No id-token here: OIDC trusted publishing happens only in pypi-publish.
+    # `environment` stays because the TestPyPI upload step below reads
+    # secrets.TEST_PYPI_API_TOKEN, which is scoped to the environment.
     environment:
       name: ${{ (github.event_name == 'release' || github.event_name == 'push') && 'pypi' || github.event.inputs.environment }}
 
@@ -83,6 +85,12 @@ jobs:
       run: |
         twine check dist/*
 
+    - name: Upload dist artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
     - name: Install-smoke test built wheel
       run: |
         set -euo pipefail
@@ -118,8 +126,27 @@ jobs:
         skip-existing: true
         password: ${{ secrets.TEST_PYPI_API_TOKEN }}
 
+  # Isolated into its own job so a PyPI failure (e.g. the trusted-publisher
+  # misconfiguration on pypi.org) can't block docker-publish/docs-publish,
+  # which only depend on `publish` (build + twine-check), not on this job.
+  pypi-publish:
+    runs-on: ubuntu-latest
+    needs: publish
+    if: (github.event_name == 'release' || github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'pypi')
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: ${{ (github.event_name == 'release' || github.event_name == 'push') && 'pypi' || github.event.inputs.environment }}
+
+    steps:
+    - name: Download dist artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
     - name: Publish to PyPI (OIDC trusted publishing)
-      if: (github.event_name == 'release' || github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'pypi')
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         skip-existing: true

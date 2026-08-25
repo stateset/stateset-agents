@@ -306,6 +306,10 @@ class DAPOTrainer:
         _load_transformers_dapo()
 
         self.config = config
+        # Parsed once here rather than per forward pass.
+        self._logprob_dtype = rl_losses.resolve_logprob_dtype(
+            getattr(config, "logprob_dtype", None)
+        )
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
@@ -450,7 +454,7 @@ class DAPOTrainer:
         """
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
         masked_log_probs, shift_response_mask = rl_losses.gather_token_logprobs(
-            outputs.logits, input_ids, response_mask
+            outputs.logits, input_ids, response_mask, dtype=self._logprob_dtype
         )
         return masked_log_probs, shift_response_mask.sum(dim=-1)
 
@@ -464,9 +468,12 @@ class DAPOTrainer:
 
         r_t = pi_theta(a_t|s_t) / pi_theta_old(a_t|s_t)
             = exp(log_pi_theta - log_pi_theta_old)
+
+        The log-ratio is clamped before exponentiating (see
+        ``rl_losses.safe_exp_ratio``) so a single wildly off-policy token
+        cannot overflow to inf and make the whole batch's loss non-finite.
         """
-        log_ratio = current_log_probs - old_log_probs
-        return torch.exp(log_ratio)
+        return rl_losses.safe_exp_ratio(current_log_probs - old_log_probs)
 
     def compute_group_advantages(self, rewards: torch.Tensor) -> torch.Tensor:
         """Group-relative advantages for one group of rewards [group_size].

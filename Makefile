@@ -715,12 +715,12 @@ release-prep: ## Final readiness check before publishing — smoke + build + twi
 	@echo "✓ Release-ready. Next: \`make publish\` (or \`make publish-test\` first)."
 
 security-scan: ## Run basic security scanning tools
-	bandit -r stateset_agents || true
+	bandit -c pyproject.toml -r stateset_agents || true
 	safety check || true
 	semgrep --config=auto . || true
 
 security-scan-strict: ## Run stricter security scanning (exit on high severity findings)
-	bandit -r stateset_agents -f json -o bandit-report.json || true
+	bandit -c pyproject.toml -r stateset_agents -f json -o bandit-report.json || true
 	safety check --save-json safety-report.json > /dev/null 2>&1 || true
 	$(PYTHON_BIN) scripts/check_security_findings.py
 
