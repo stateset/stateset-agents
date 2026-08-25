@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-08-25 — Real trust regions, no silent NaNs, CI that tells the truth
+
 ### Added
 
 - **`num_gradient_updates` on the GEPO and VAPO configs** (default `1`).

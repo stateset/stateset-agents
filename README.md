@@ -154,7 +154,45 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.38.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.39.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **GEPO and VAPO get a real trust region.** Both trainers recomputed
+  their "old" log-probs from the current model in the same step, so the
+  importance ratio was identically 1 and clipping never fired. They now
+  snapshot sampler log-probs (and VAPO's values) at rollout and honor a
+  new `num_gradient_updates` (default 1 — the on-policy path is the same
+  formula as before; opting in changes the dynamics, since ratios are no
+  longer identically 1). Scheduler/`global_step` cadence is now the same
+  across DAPO, GEPO and VAPO.
+- **No more silent NaN steps.** The GSPO-token trust-region gate selects
+  with `torch.where` instead of multiplying (`0 * inf` is gone), and every
+  per-token or per-sequence ratio goes through `rl_losses.safe_exp_ratio`,
+  which clamps the log-ratio to `±20` (`±30` for GEPO) before `exp`. Note
+  the clamp also zeroes the gradient beyond its bounds, on the unclipped
+  branch too.
+- **One loss implementation, for real.** `GSPOTrainer.compute_group_advantages`,
+  the GSPO-token gather and `gspo_generation`'s scorer all call
+  `rl_losses`; degenerate groups now return zero advantages and
+  `std_reward: 0.0` instead of NaN; `gather_token_logprobs` builds its mask
+  in fp32; `VAPOTrainer.compute_token_log_probs(..., response_mask=None)`
+  scores only response positions; `logprob_dtype`
+  (`"bf16"`/`"fp16"`/`"fp32"`) on DAPO/VAPO configs controls the
+  log-softmax precision/memory trade-off.
+- **CI that tells the truth.** Benchmarks are collected and run again
+  (serially, `-n0`, under the xdist default — they were silently disabled),
+  the PyPI upload is split into its own `pypi-publish` job so docs/Docker
+  publish regardless, coverage floor 61, bandit's B614 is skipped globally
+  (the real control is the AST guard in `tests/unit/test_checkpoint_trust.py`),
+  and docs version strings self-maintain via `release.py` with a new
+  `test_docs_version_freshness` tripwire.
+- **Leaner package, faster suite.** Zero-reference modules removed
+  (`utils/advanced_dashboard`, `api/services/request_batcher`), and
+  `docs/IMPROVEMENTS_TO_10.md` deleted; the two bottom-of-file import cycles
+  in `core/agent.py` are gone; starter-script tests assert forwarding by AST
+  instead of spawning a ~9 s interpreter each, and duplicate starter spawns
+  are marked `-m slow`, cutting suite wall time substantially.
+
+**v0.38.0:**
 
 - **One loss spine, five trainers.** `training/rl_losses.py` now owns the
   token-logprob gather, group advantages, the k3 KL estimator, the clip
@@ -662,7 +700,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.38.0)
+pip install stateset-agents          # latest release (v0.39.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1364,7 +1402,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.38.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.39.0`).
 
 Other entry points:
 
