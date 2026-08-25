@@ -28,6 +28,7 @@ Generation backends:
 import importlib
 import importlib.util
 import logging
+from types import ModuleType
 from typing import Any
 
 
@@ -1306,7 +1307,23 @@ _OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
 }
 
 
-def __getattr__(name: str) -> Any:  # pragma: no cover
+def _maybe_import_submodule(name: str) -> ModuleType | None:
+    """Import real submodules like ``stateset_agents.training.trainer`` on demand."""
+    module_name = f"{__name__}.{name}"
+    try:
+        spec = importlib.util.find_spec(module_name)
+    except (ImportError, AttributeError, ValueError):
+        spec = None
+
+    if spec is None:
+        return None
+
+    module = importlib.import_module(module_name)
+    globals()[name] = module
+    return module
+
+
+def __getattr__(name: str) -> Any:
     if name == "TRL_AVAILABLE":
         value = _detect_trl()
         globals()[name] = value
@@ -1317,6 +1334,9 @@ def __getattr__(name: str) -> Any:  # pragma: no cover
         value = getattr(module, attr_name)
         globals()[name] = value
         return value
+    submodule = _maybe_import_submodule(name)
+    if submodule is not None:
+        return submodule
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
