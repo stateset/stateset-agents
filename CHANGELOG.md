@@ -7,7 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A behavioural golden over every `RiverExecutor.submit` mode** —
+  `tests/unit/test_river_submit_golden.py` plus `tests/unit/data/river_submit_golden.json`
+  record, for 27 offline scenarios across all five submit paths, the exact SDK call
+  sequence with every keyword argument, the job status, the full log list, the cost,
+  every artifact written, and the ledger line. This closes a real coverage hole: the
+  two multi-turn *episode* paths (`_submit_episode_rl`, `_submit_episode_harvest`)
+  import `river_client.renderers` unconditionally, which no existing test stubbed, so
+  neither had ever been executed by the suite.
+
+### Fixed
+
+- **The two River harvest modes no longer report progress differently.** Four
+  behaviours had drifted apart between `_submit_harvest` and
+  `_submit_episode_harvest`: the episode mode never logged what checkpoint it was
+  sampling from and said nothing at all on a dry run, the single-turn mode computed
+  its greedy eval score and never logged it, and `harvest_summary.json`'s `best_of`
+  was integer-coerced in one mode but written raw in the other (so a spec carrying
+  `best_of: "4"` produced a *string* in the artifact). All four are now aligned; the
+  behavioural golden shows the change.
+
 ### Changed
+
+- **The four River submit paths are now two implementations, not four.**
+  `_submit_rl`/`_submit_episode_rl` share one `_run_rl_rounds`, and
+  `_submit_harvest`/`_submit_episode_harvest` share one `_run_harvest_attempts`;
+  each mode contributes only what actually differs (how to sample and grade a
+  round, how to score the eval set, its labels) through a small `_RlMode` /
+  `_HarvestMode` adapter. The rounds loop, the retry-with-backoff policy, the
+  artifact writes and the failure/ledger handling now exist once each — which is
+  the point, since the four drift bugs fixed above were all caused by them
+  existing twice. Behaviour is unchanged, proven by the golden.
 
 - **`stateset_agents/training/__init__.py` shrunk from 1679 to 144 lines** — the
   ~1200-line lazy-export string map now lives in `stateset_agents/training/_registry.py`
