@@ -417,6 +417,19 @@ def scenario_harvest_from_pointer(tmp_path):
     return spec, RecordingClient(texts=["vpn profile ok"])
 
 
+def scenario_harvest_string_best_of(tmp_path):
+    """`best_of` arriving as a string (it comes from a free-form dict) must
+    still land in the summary as a number, the same as the episode mode."""
+    spec = _spec(
+        tmp_path,
+        dataset=_write(tmp_path / "p.json", SINGLE_TURN_PROMPTS),
+        output_dir=tmp_path / "harvest",
+        job_kind="harvest",
+        harvest={"best_of": "2"},
+    )
+    return spec, RecordingClient(texts=["vpn profile ok"])
+
+
 def scenario_episode_harvest(tmp_path):
     """Multi-turn harvest: whole conversations, episode-level pass."""
     spec = _spec(
@@ -538,6 +551,7 @@ SCENARIOS = {
     "harvest": scenario_harvest,
     "harvest_dry_run": scenario_harvest_dry_run,
     "harvest_from_pointer": scenario_harvest_from_pointer,
+    "harvest_string_best_of": scenario_harvest_string_best_of,
     "episode_harvest": scenario_episode_harvest,
     "episode_harvest_dry_run": scenario_episode_harvest_dry_run,
     "rl": scenario_rl,
@@ -751,6 +765,24 @@ class TestTheGoldenSaysWhatWeThinkItSays:
             files = set(golden[name]["artifacts"])
             assert "harvest/harvest.jsonl" in files, name
             assert "harvest/harvest_summary.json" in files, name
+
+    def test_best_of_is_a_number_in_every_summary(self, golden):
+        for name in ("harvest", "harvest_string_best_of", "episode_harvest"):
+            summary = json.loads(golden[name]["artifacts"]["harvest/harvest_summary.json"])
+            assert isinstance(summary["best_of"], int), name
+
+    def test_both_harvest_modes_report_the_same_progress_lines(self, golden):
+        """The two modes drifted apart: one announced what it sampled from,
+        the other announced its eval score, and only one said anything on a
+        dry run. All three lines now exist in both."""
+        for name in ("harvest", "episode_harvest"):
+            logs = golden[name]["outcome"]["logs"]
+            assert any("via River" in line for line in logs), name
+            assert any("current generation" in line for line in logs), name
+        for name in ("harvest_dry_run", "episode_harvest_dry_run"):
+            assert golden[name]["outcome"]["logs"] == [
+                "dry run: harvest plan only, nothing sampled"
+            ], name
 
     def test_a_previous_generation_pointer_is_resolved_to_its_uri(self, golden):
         created = [

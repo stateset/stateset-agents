@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   import `river_client.renderers` unconditionally, which no existing test stubbed, so
   neither had ever been executed by the suite.
 
+### Fixed
+
+- **The two River harvest modes no longer report progress differently.** Four
+  behaviours had drifted apart between `_submit_harvest` and
+  `_submit_episode_harvest`: the episode mode never logged what checkpoint it was
+  sampling from and said nothing at all on a dry run, the single-turn mode computed
+  its greedy eval score and never logged it, and `harvest_summary.json`'s `best_of`
+  was integer-coerced in one mode but written raw in the other (so a spec carrying
+  `best_of: "4"` produced a *string* in the artifact). All four are now aligned; the
+  behavioural golden shows the change.
+
 ### Changed
 
 - **`stateset_agents/training/__init__.py` shrunk from 1679 to 144 lines** — the

@@ -769,6 +769,7 @@ class RiverExecutor(RemoteExecutor):
             (output_dir / "harvest_summary.json").write_text(
                 json.dumps(summary, indent=2)
             )
+            logs.append("dry run: harvest plan only, nothing sampled")
             job.status = JobStatus.SUCCEEDED
             return handle
 
@@ -787,6 +788,9 @@ class RiverExecutor(RemoteExecutor):
                     model = session.create_model(
                         base_model=spec.base_model,
                         checkpoint=_inference_checkpoint(client, checkpoint),
+                    )
+                    logs.append(
+                        f"sampling from {checkpoint or spec.base_model} via River"
                     )
                     if eval_scripts:
                         greedy = _rollout_episodes(
@@ -925,11 +929,12 @@ class RiverExecutor(RemoteExecutor):
         checkpoint = _checkpoint_from_pointer(knobs.get("adapter_dir"))
         output_dir = Path(spec.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+        best_of = int(knobs.get("best_of", 8))
 
         summary: dict[str, Any] = {
             "base_model": spec.base_model,
             "adapter_dir": knobs.get("adapter_dir"),
-            "best_of": knobs.get("best_of", 8),
+            "best_of": best_of,
             "temperature": knobs.get("temperature", 0.9),
             "prompts": len(harvest_specs),
             "samples": 0,
@@ -994,11 +999,15 @@ class RiverExecutor(RemoteExecutor):
                             "total": len(results),
                             "results": results,
                         }
+                        logs.append(
+                            f"current generation (greedy): "
+                            f"{summary['eval']['passed']}/{summary['eval']['total']}"
+                        )
                     sampled = _sample_texts(
                         model,
                         spec.base_model,
                         [s["prompt"] for s in harvest_specs],
-                        num_samples=int(knobs.get("best_of", 8)),
+                        num_samples=best_of,
                         temperature=float(knobs.get("temperature", 0.9)),
                         top_p=float(knobs.get("top_p", 0.95)),
                         max_tokens=int(knobs.get("max_new_tokens", 300)),

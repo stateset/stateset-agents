@@ -23,6 +23,7 @@
       "cost_usd": null,
       "duration_recorded": true,
       "logs": [
+        "sampling from Qwen/Qwen3.5-9B via River",
         "current generation (episodes, greedy): 1/1",
         "episode harvest: kept 1/2 across 1/1 scripts"
       ],
@@ -97,7 +98,9 @@
     "outcome": {
       "cost_usd": null,
       "duration_recorded": false,
-      "logs": [],
+      "logs": [
+        "dry run: harvest plan only, nothing sampled"
+      ],
       "status": "succeeded"
     },
     "sdk_calls": []
@@ -670,6 +673,7 @@
       "duration_recorded": true,
       "logs": [
         "sampling from Qwen/Qwen3.5-9B via River",
+        "current generation (greedy): 1/1",
         "harvest: kept 2/4 across 1/1 prompts"
       ],
       "status": "succeeded"
@@ -773,6 +777,65 @@
         "base_model": "Qwen/Qwen3.5-9B",
         "call": "create_model",
         "checkpoint": "FakeCheckpoint(path='river://abc/sampler_weights/gen1', step=0, checkpoint_type='inference')",
+        "lora": "None"
+      },
+      {
+        "call": "sample",
+        "max_tokens": 300,
+        "num_samples": 2,
+        "prompt_token_ids": null,
+        "prompts": [
+          "user:fix my vpn"
+        ],
+        "stop": [
+          "<|end|>"
+        ],
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      {
+        "call": "session_close"
+      }
+    ]
+  },
+  "harvest_string_best_of": {
+    "artifacts": {
+      "harvest/harvest.jsonl": "{\"messages\": [{\"role\": \"user\", \"content\": \"fix my vpn\"}, {\"role\": \"assistant\", \"content\": \"vpn profile ok\"}]}\n{\"messages\": [{\"role\": \"user\", \"content\": \"fix my vpn\"}, {\"role\": \"assistant\", \"content\": \"vpn profile ok\"}]}\n",
+      "harvest/harvest_summary.json": "{\n  \"base_model\": \"Qwen/Qwen3.5-9B\",\n  \"adapter_dir\": null,\n  \"best_of\": 2,\n  \"temperature\": 0.9,\n  \"prompts\": 1,\n  \"samples\": 2,\n  \"kept\": 2,\n  \"prompts_with_a_pass\": 1,\n  \"eval\": null,\n  \"dry_run\": false\n}",
+      "p.json": "[{\"prompt\": \"fix my vpn\", \"expect\": [\"vpn profile\"]}]"
+    },
+    "ledger": [
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "cost_per_hr": null,
+        "cost_usd": null,
+        "duration_s": "<duration>",
+        "gpu": "river-managed",
+        "gpu_count": 0,
+        "job_id": "river-1",
+        "provider": "river",
+        "recorded_at": "<timestamp>",
+        "status": "succeeded"
+      }
+    ],
+    "outcome": {
+      "cost_usd": null,
+      "duration_recorded": true,
+      "logs": [
+        "sampling from Qwen/Qwen3.5-9B via River",
+        "harvest: kept 2/2 across 1/1 prompts"
+      ],
+      "status": "succeeded"
+    },
+    "sdk_calls": [
+      {
+        "call": "session",
+        "project": "harvest"
+      },
+      {
+        "base_model": "Qwen/Qwen3.5-9B",
+        "call": "create_model",
+        "checkpoint": "None",
         "lora": "None"
       },
       {
