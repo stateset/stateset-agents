@@ -885,7 +885,7 @@ class MultiTurnGRPOTrainer:
         """Add training callback"""
         self.callbacks.append(callback)
 
-    def load_checkpoint(self, checkpoint_path: Any, trusted: bool = False) -> bool:
+    def load_checkpoint(self, checkpoint_path: Any, *, trusted: bool = False) -> bool:
         """Load model and training state from a checkpoint directory.
 
         Args:

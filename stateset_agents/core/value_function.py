@@ -441,7 +441,7 @@ class ValueFunction:
         )
         logger.info(f"Value function saved to {path}")
 
-    def load(self, path: str, trusted: bool = False):
+    def load(self, path: str, *, trusted: bool = False):
         """Load value function state.
 
         Args:

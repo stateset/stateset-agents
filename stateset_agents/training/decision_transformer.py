@@ -823,7 +823,7 @@ class DecisionTransformerTrainer:
         )
         logger.info(f"Saved Decision Transformer to {path}")
 
-    def load(self, path: str, trusted: bool = False) -> None:
+    def load(self, path: str, *, trusted: bool = False) -> None:
         """Load model checkpoint
 
         Args:

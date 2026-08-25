@@ -578,7 +578,7 @@ class GEPOTrainer:
             config_filename="gepo_config.json",
         )
 
-    def load_checkpoint(self, checkpoint_dir: str, trusted: bool = False) -> None:
+    def load_checkpoint(self, checkpoint_dir: str, *, trusted: bool = False) -> None:
         """Load model checkpoint.
 
         Args:

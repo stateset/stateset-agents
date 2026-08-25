@@ -775,7 +775,7 @@ class TransformerRewardTrainer:
 
         logger.info(f"Checkpoint saved to {path}")
 
-    def load_checkpoint(self, path: str, trusted: bool = False):
+    def load_checkpoint(self, path: str, *, trusted: bool = False):
         """Load model checkpoint.
 
         Args:

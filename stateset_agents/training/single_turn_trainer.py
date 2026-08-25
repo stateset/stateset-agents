@@ -695,7 +695,7 @@ class SingleTurnGRPOTrainer:
         self.callbacks.append(callback)
 
     def load_checkpoint(
-        self, checkpoint_path: str | Path, trusted: bool = False
+        self, checkpoint_path: str | Path, *, trusted: bool = False
     ) -> bool:
         """Load model and training state from a checkpoint directory.
 

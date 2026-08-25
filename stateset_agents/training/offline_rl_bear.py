@@ -761,7 +761,7 @@ class ConversationalBEAR:
         )
         logger.info(f"Saved BEAR model to {path}")
 
-    def load(self, path: str, trusted: bool = False) -> None:
+    def load(self, path: str, *, trusted: bool = False) -> None:
         """Load model checkpoint
 
         Args:

@@ -1013,7 +1013,7 @@ class VAPOTrainer:
             config_filename="vapo_config.json",
         )
 
-    def load_checkpoint(self, checkpoint_dir: str, trusted: bool = False) -> None:
+    def load_checkpoint(self, checkpoint_dir: str, *, trusted: bool = False) -> None:
         """Load checkpoint.
 
         Args:

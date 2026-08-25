@@ -790,7 +790,7 @@ class SimToRealTransfer:
         )
         logger.info(f"Saved sim-to-real transfer state to {path}")
 
-    def load(self, path: str, trusted: bool = False) -> None:
+    def load(self, path: str, *, trusted: bool = False) -> None:
         """Load transfer state
 
         Args:

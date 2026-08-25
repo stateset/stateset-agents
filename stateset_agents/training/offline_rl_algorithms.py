@@ -757,7 +757,7 @@ class OfflineRLTrainer:
         )
         logger.info(f"Saved {self.algorithm.upper()} model to {path}")
 
-    def load(self, path: str, trusted: bool = False) -> None:
+    def load(self, path: str, *, trusted: bool = False) -> None:
         """Load trained model
 
         Args:

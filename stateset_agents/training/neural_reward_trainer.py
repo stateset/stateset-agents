@@ -500,7 +500,7 @@ class NeuralRewardTrainer:
             path,
         )
 
-    def load_model(self, path: str, trusted: bool = False):
+    def load_model(self, path: str, *, trusted: bool = False):
         """Load model checkpoint
 
         Args:

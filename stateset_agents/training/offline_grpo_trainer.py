@@ -749,7 +749,7 @@ class OfflineGRPOTrainer:
         )
         logger.info(f"Saved Offline GRPO trainer to {path}")
 
-    def load(self, path: str, trusted: bool = False) -> None:
+    def load(self, path: str, *, trusted: bool = False) -> None:
         """Load model checkpoint
 
         Args:

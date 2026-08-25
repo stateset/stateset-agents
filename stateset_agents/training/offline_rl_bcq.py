@@ -706,7 +706,7 @@ class BatchConstrainedQLearning:
         )
         logger.info(f"Saved BCQ model to {path}")
 
-    def load(self, path: str, trusted: bool = False) -> None:
+    def load(self, path: str, *, trusted: bool = False) -> None:
         """Load model checkpoint
 
         Args:
