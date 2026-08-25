@@ -10,12 +10,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from ..experimental.long_term_planning import PlanningConfig, PlanningManager
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
 from .trajectory import ConversationTurn
+
+if TYPE_CHECKING:
+    from ..experimental.long_term_planning import PlanningManager
 
 try:
     import torch
@@ -536,6 +538,11 @@ class MultiTurnAgent(Agent):
         if planning_manager is None and getattr(config, "enable_planning", False):
             planning_kwargs = getattr(config, "planning_config", None) or {}
             try:
+                from ..experimental.long_term_planning import (
+                    PlanningConfig,
+                    PlanningManager,
+                )
+
                 if isinstance(planning_kwargs, dict):
                     planning_kwargs = dict(planning_kwargs)
                     planning_kwargs.pop("enabled", None)

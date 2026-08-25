@@ -39,7 +39,10 @@ _SCRIPTS_DIR = str(Path(__file__).resolve().parents[1] / "scripts")
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
-KNOWN_REWARDS = ("gsm8k", "customer_support", "tool_calling")
+# "nsr" is network-backed but deterministic and rule-based (a symbolic
+# verifier, not an LLM judge), so it is allowed where judge rewards are
+# refused; it runs fail-closed (unreachable verifier scores 0.0).
+KNOWN_REWARDS = ("gsm8k", "customer_support", "tool_calling", "nsr")
 JUDGE_REWARD_HINTS = ("judge", "llm", "gpt", "claude", "openai", "anthropic", "ruler")
 
 SUMMARY_FILENAME = "improve_summary.json"

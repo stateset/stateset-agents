@@ -5,6 +5,7 @@ Tests cover GSPO configuration, model management, sequence-level optimization,
 and training components.
 """
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -650,3 +651,95 @@ class TestGSPOMetrics:
 
         assert mean_kl.dim() == 0
         assert max_kl.dim() == 0
+
+
+class TestGSPOKLPenaltyEstimator:
+    """The KL penalty must use Schulman's k3 estimator.
+
+    The old ``(log pi - log pi_ref)`` estimator is the k1 estimator: it can be
+    negative, and its gradient has zero expectation, so it does not actually
+    pull the policy toward the reference.
+    """
+
+    @staticmethod
+    def _build_trainer(ref_seed):
+        transformers = pytest.importorskip("transformers")
+        from stateset_agents.training.gspo_config import GSPOConfig
+        from stateset_agents.training.gspo_trainer import GSPOTrainer
+
+        def _tiny(seed):
+            torch.manual_seed(seed)
+            return transformers.GPT2LMHeadModel(
+                transformers.GPT2Config(
+                    n_embd=32,
+                    n_layer=2,
+                    n_head=2,
+                    vocab_size=50257,
+                    n_positions=64,
+                    resid_pdrop=0.0,
+                    embd_pdrop=0.0,
+                    attn_pdrop=0.0,
+                )
+            )
+
+        tokenizer = transformers.GPT2Tokenizer.from_pretrained("gpt2")
+        tokenizer.pad_token = tokenizer.eos_token
+
+        model = _tiny(0)
+        ref_model = _tiny(ref_seed)
+
+        class _Reward:
+            async def compute_reward(self, turns, context=None):
+                score = 1.0 if turns[0].content == "ok" else 0.0
+                return SimpleNamespace(total_reward=score)
+
+        trainer = GSPOTrainer(
+            config=GSPOConfig(
+                model_name="gpt2",
+                num_generations=2,
+                num_outer_iterations=1,
+                num_iterations=1,
+                max_prompt_length=32,
+                max_completion_length=32,
+                beta=0.1,
+            ),
+            model=model,
+            tokenizer=tokenizer,
+            agent=None,
+            environment=None,
+            reward_model=_Reward(),
+            ref_model=ref_model,
+        )
+
+        async def fake_generate_group_responses(prompt, num_responses):
+            return [("ok", -5.0), ("nope", -5.0)]
+
+        trainer.generator.generate_group_responses = fake_generate_group_responses
+        return trainer
+
+    def _run_and_capture_kl(self, monkeypatch, trainer):
+        from stateset_agents.training import rl_losses
+
+        seen = {}
+        real = rl_losses.k3_kl
+
+        def spy(*args, **kwargs):
+            out = real(*args, **kwargs)
+            seen["v"] = float(out.item())
+            return out
+
+        monkeypatch.setattr(rl_losses, "k3_kl", spy)
+        asyncio.run(trainer.train_step(["hello"], num_groups=1))
+        assert "v" in seen, "k3_kl was not used for the KL penalty"
+        return seen["v"]
+
+    def test_kl_penalty_is_non_negative(self, monkeypatch):
+        trainer = self._build_trainer(ref_seed=0)  # ref == policy
+        assert self._run_and_capture_kl(monkeypatch, trainer) >= 0.0
+
+    def test_wider_gap_gives_larger_penalty(self, monkeypatch):
+        same = self._run_and_capture_kl(monkeypatch, self._build_trainer(ref_seed=0))
+        apart = self._run_and_capture_kl(
+            monkeypatch, self._build_trainer(ref_seed=1234)
+        )
+        assert apart > same >= 0.0

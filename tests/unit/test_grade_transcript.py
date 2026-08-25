@@ -78,9 +78,20 @@ class TestGetReward:
         r = grader.get_reward("tool_calling")
         assert r.name == "tool_call_composite"
 
+    def test_nsr_is_fail_closed(self) -> None:
+        r = grader.get_reward("nsr")
+        assert r.name == "NSRVerifierReward"
+        # Curation must be fail-closed: an unreachable verifier scores 0.0,
+        # never a neutral pass.
+        assert r.config.error_score == 0.0
+
     def test_unknown_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown reward"):
             grader.get_reward("not-a-real-reward")
+
+    def test_persona_rejected_for_nsr(self) -> None:
+        with pytest.raises(ValueError, match="persona"):
+            grader.get_reward("nsr", persona={"opener": ["hi"]})
 
 
 class TestGradeTranscript:

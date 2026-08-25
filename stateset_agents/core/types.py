@@ -7,9 +7,10 @@ type safety across the framework.
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
-import torch
+if TYPE_CHECKING:  # pragma: no cover - annotations only
+    import torch
 
 # Generic type variables
 T = TypeVar("T")
@@ -47,45 +48,6 @@ class ModelConfig:
     peft_config: ConfigDict | None = None
     enable_planning: bool = False
     planning_config: ConfigDict | None = None
-
-
-@dataclass
-class TrainingConfig:
-    """Configuration for training."""
-
-    num_episodes: int = 1000
-    max_steps_per_episode: int = 100
-    learning_rate: float = 1e-5
-    batch_size: int = 8
-    gradient_accumulation_steps: int = 1
-    max_grad_norm: float = 1.0
-    warmup_steps: int = 100
-    weight_decay: float = 0.01
-    save_steps: int = 500
-    eval_steps: int = 100
-    logging_steps: int = 10
-    output_dir: str = "./outputs"
-    use_wandb: bool = False
-    wandb_project: str = "stateset-agents"
-    seed: int = 42
-    max_examples: int | None = None
-    eval_split_size: float = 0.1
-    stratify_by_task: bool = True
-    data_format: str = "jsonl"
-    continual_strategy: str = "none"
-    replay_buffer_size: int = 2000
-    replay_ratio: float = 0.5
-    replay_min_size: int = 100
-    replay_sampling: str = "uniform"
-    replay_storage: str = "reservoir"
-    continual_kl_beta: float = 0.0
-    ewc_lambda: float = 0.0
-    ewc_num_samples: int = 64
-    ewc_decay: float = 0.9
-    task_id_key: str = "task_id"
-    task_schedule: list[str] | None = None
-    task_switch_steps: int = 0
-    resume_from_checkpoint: str | None = None
 
 
 @dataclass
@@ -199,7 +161,7 @@ class TokenizerProtocol(Protocol):
 class ModelProtocol(Protocol):
     """Protocol for model implementations."""
 
-    def generate(self, input_ids: torch.Tensor, **kwargs) -> torch.Tensor:
+    def generate(self, input_ids: "torch.Tensor", **kwargs) -> "torch.Tensor":
         """Generate tokens from input."""
         ...
 
@@ -263,3 +225,19 @@ class ConfigurationError(FrameworkError):
     """Error related to configuration."""
 
     pass
+
+
+def __getattr__(name: str) -> Any:
+    """Deprecation shim for names that moved out of this module."""
+    if name == "TrainingConfig":
+        import warnings
+
+        warnings.warn(
+            "import TrainingConfig from stateset_agents.training.config",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        from stateset_agents.training.config import TrainingConfig
+
+        return TrainingConfig
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

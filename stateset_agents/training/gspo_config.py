@@ -7,13 +7,11 @@ from __future__ import annotations
 import importlib.util
 from dataclasses import dataclass
 
-import torch
-
 from stateset_agents.exceptions import (
     IMPORT_EXCEPTIONS as BITSANDBYTES_IMPORT_EXCEPTIONS,
 )
 
-from .config import TrainingConfig
+from .config import TrainingConfig, cuda_is_available
 
 
 @dataclass
@@ -86,7 +84,7 @@ class GSPOConfig(TrainingConfig):
             )
 
         if self.use_4bit or self.use_8bit:
-            if not torch.cuda.is_available():
+            if not cuda_is_available():
                 warnings.append(
                     "4-bit/8-bit quantization requires CUDA; disable `use_4bit/use_8bit` "
                     "or run on a CUDA-enabled machine."

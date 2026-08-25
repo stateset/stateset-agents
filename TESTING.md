@@ -106,3 +106,27 @@ python -m pytest tests/unit/test_agent.py -v
 # With coverage
 python -m pytest tests/ --cov=stateset_agents --cov-report=term-missing
 ```
+
+### Parallel execution (default)
+
+`pytest.ini` sets `-n auto --dist loadfile`, so the suite runs under
+[pytest-xdist](https://pytest-xdist.readthedocs.io/) across all available
+cores by default (full suite: ~4 minutes on 8 cores). `--dist loadfile`
+keeps every test in a file on the same worker, which preserves module-scoped
+fixtures and module-level state.
+
+Parallel output interleaves and breakpoints do not work, so disable xdist when
+debugging a single test:
+
+```bash
+# Run serially — required for pdb/breakpoints and readable live output
+python -m pytest tests/unit/test_agent.py -v -n0
+
+# Fully disabling the plugin also means dropping the `-n auto` in addopts,
+# otherwise pytest rejects the now-unknown option
+python -m pytest tests/unit/test_agent.py -v -p no:xdist -o addopts="-ra"
+```
+
+Tests must therefore be parallel-safe: use the `tmp_path` fixture rather than
+shared paths under `/tmp`, reset any global registries in a fixture, and bind
+servers to an ephemeral port (`port=0`) instead of a hard-coded one.

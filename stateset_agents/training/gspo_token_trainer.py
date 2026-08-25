@@ -21,6 +21,7 @@ from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction as MultiObjectiveReward,
 )
 
+from . import rl_losses
 from .gspo_generation import (
     _get_model_device,
     build_scoring_text,
@@ -257,29 +258,30 @@ class GSPOTokenTrainer(GSPOTrainer):
             # For each response, we compute token-level weighted loss
 
             loss = torch.tensor(0.0, device=model_device)
+            lo = 1 - self.config.clip_range_left
+            hi = 1 + self.config.clip_range_right
             for i, token_log_probs in enumerate(token_log_probs_list):
-                seq_len = token_log_probs.shape[1]
+                seq_ratio = importance_ratios[i]  # already detached
+                adv = advantages[i].detach()
 
-                # Create token-level advantages (in this demo, we use sequence advantage)
-                # In practice, you could assign different advantages per token
-                # For multi-turn: assign advantages based on which turn each token belongs to
-                token_advantages = advantages[i].unsqueeze(0).expand(seq_len).detach()
+                # GSPO-token: the gradient flows through the token log probs,
+                # weighted by the stop-grad sequence ratio. Gate the sample to
+                # zero when the clipped branch of min(r*A, clip(r)*A) is
+                # active — clamp has no gradient there, so a sample outside
+                # the trust region on the side its advantage pushes must
+                # contribute nothing.
+                in_region = (seq_ratio >= lo) & (seq_ratio <= hi)
+                push_out = ((adv > 0) & (seq_ratio > hi)) | (
+                    (adv < 0) & (seq_ratio < lo)
+                )
+                gate = (in_region | ~push_out).to(token_log_probs.dtype)
 
-                # Detached sequence ratio for clipping (no gradients)
-                detached_seq_ratio = clipped_ratios[i].detach()
-
-                # GSPO-token objective:
-                # The gradient will flow through token log probs, weighted by:
-                # - Detached sequence ratio (for clipping)
-                # - Token-level advantages
-
-                # Token-level loss, normalized by the actual response length
-                # (not the full padded sequence width, which would dilute
-                # the loss for short responses in a padded batch).
-                response_len = sequence_lengths[i]
+                # Normalized by the actual response length (not the full
+                # padded sequence width, which would dilute the loss for
+                # short responses in a padded batch).
                 token_loss = (
-                    -(detached_seq_ratio * token_advantages * token_log_probs).sum()
-                    / response_len
+                    -(gate * seq_ratio * adv * token_log_probs).sum()
+                    / sequence_lengths[i]
                 )
 
                 loss += token_loss / len(responses)
@@ -295,8 +297,13 @@ class GSPOTokenTrainer(GSPOTrainer):
                     ref_log_prob_values, dtype=torch.float32, device=model_device
                 )
 
-                kl_div = (current_log_probs - ref_log_probs) / sequence_lengths
-                kl_penalty = self.config.beta * kl_div.mean()
+                # k3 on the length-normalised sequence log-probs (one value
+                # per response): non-negative, with the correct gradient.
+                kl_div = rl_losses.k3_kl(
+                    current_log_probs / sequence_lengths,
+                    ref_log_probs / sequence_lengths,
+                )
+                kl_penalty = self.config.beta * kl_div
 
                 loss += kl_penalty
 

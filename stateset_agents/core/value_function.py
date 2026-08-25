@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .checkpoint_io import load_checkpoint_file
+
 logger = logging.getLogger(__name__)
 
 # Lazy imports for optional dependencies
@@ -439,10 +441,17 @@ class ValueFunction:
         )
         logger.info(f"Value function saved to {path}")
 
-    def load(self, path: str):
-        """Load value function state"""
+    def load(self, path: str, *, trusted: bool = False):
+        """Load value function state.
+
+        Args:
+            path: Checkpoint written by :meth:`save`.
+            trusted: When ``False`` (the default) the checkpoint is unpickled
+                with ``weights_only=True`` so it cannot execute code.  Pass
+                ``True`` only for checkpoints from a source you control.
+        """
         _require_torch()
-        checkpoint = torch.load(path)  # nosec: B614
+        checkpoint = load_checkpoint_file(path, trusted=trusted, torch_module=torch)
         self.value_head.load_state_dict(checkpoint["value_head_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.gamma = checkpoint["gamma"]

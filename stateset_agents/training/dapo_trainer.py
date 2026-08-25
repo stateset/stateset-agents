@@ -20,8 +20,8 @@ from typing import Any, cast
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
+from . import rl_losses
 from .dapo_config import DAPOConfig
 from .trainer_runtime import (
     SharedModelManager,
@@ -449,28 +449,10 @@ class DAPOTrainer:
             token_counts: Number of response tokens per sequence [batch]
         """
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-        logits = outputs.logits
-
-        # Shift for next-token prediction
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = input_ids[:, 1:].contiguous()
-        shift_response_mask = response_mask[:, 1:].contiguous()
-
-        # Compute log probs
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-
-        # Gather log probs for actual tokens
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
-        # Mask non-response tokens
-        masked_log_probs = token_log_probs * shift_response_mask
-
-        # Count response tokens
-        token_counts = shift_response_mask.sum(dim=-1)
-
-        return masked_log_probs, token_counts
+        masked_log_probs, shift_response_mask = rl_losses.gather_token_logprobs(
+            outputs.logits, input_ids, response_mask
+        )
+        return masked_log_probs, shift_response_mask.sum(dim=-1)
 
     def compute_importance_ratio(
         self,
@@ -485,6 +467,13 @@ class DAPOTrainer:
         """
         log_ratio = current_log_probs - old_log_probs
         return torch.exp(log_ratio)
+
+    def compute_group_advantages(self, rewards: torch.Tensor) -> torch.Tensor:
+        """Group-relative advantages for one group of rewards [group_size].
+
+        Groups of size 1 (or constant rewards) yield zeros rather than NaN.
+        """
+        return rl_losses.group_advantages(rewards)
 
     def compute_dapo_loss(
         self,
@@ -501,35 +490,21 @@ class DAPOTrainer:
         - Asymmetric clipping (eps_low != eps_high)
         - Normalize by total token count, not sample count
         """
-        # Apply asymmetric clipping (Clip-Higher)
-        clipped_ratios = torch.clamp(
+        # clipped_surrogate is already a loss (negated), so no extra sign flip.
+        surrogate_loss = rl_losses.clipped_surrogate(
             importance_ratios,
-            1.0 - self.config.clip_eps_low,
-            1.0 + self.config.clip_eps_high,
+            advantages,
+            clip_low=self.config.clip_eps_low,
+            clip_high=self.config.clip_eps_high,
         )
-
-        # Compute surrogate objectives
-        unclipped_obj = importance_ratios * advantages
-        clipped_obj = clipped_ratios * advantages
-
-        # Take minimum (pessimistic bound)
-        surrogate = torch.min(unclipped_obj, clipped_obj)
-
-        # Apply response mask
-        masked_surrogate = surrogate * response_mask
-
-        if self.config.use_token_level_loss:
-            # Token-level normalization: divide by total response tokens
-            total_tokens = response_mask.sum()
-            if total_tokens > 0:
-                loss = -masked_surrogate.sum() / total_tokens
-            else:
-                loss = torch.tensor(0.0, device=self.device)
-        else:
-            # Sample-level normalization (standard)
-            loss = -masked_surrogate.sum(dim=-1).mean()
-
-        return loss
+        # "token": one mean over every response token in the batch (DAPO's
+        # token-level normalization). "seq": per-sequence mean, then mean over
+        # sequences (standard sample-level normalization).
+        return rl_losses.masked_mean(
+            surrogate_loss,
+            response_mask,
+            mode="token" if self.config.use_token_level_loss else "seq",
+        )
 
     async def generate_group_responses(
         self,
@@ -688,11 +663,7 @@ class DAPOTrainer:
             rewards_tensor = torch.tensor(rewards, device=self.device)
 
             # Group-relative advantages
-            mean_reward = rewards_tensor.mean()
-            std_reward = rewards_tensor.std()
-            if std_reward < 1e-8:
-                std_reward = torch.tensor(1.0, device=self.device)
-            advantages = (rewards_tensor - mean_reward) / std_reward
+            advantages = self.compute_group_advantages(rewards_tensor)
 
             # Freeze old-policy log probs at rollout time (before any inner updates
             # mutate the model), so importance ratios are computed against the

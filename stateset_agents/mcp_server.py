@@ -6,7 +6,7 @@ tools so any MCP client (Claude Code/Desktop, other agents) can drive it.
 Every tool here is a thin wrapper: it validates inputs, calls the existing,
 already-tested module functions (``stateset_agents.cli_improve``,
 ``stateset_agents.data.trajectory_ingest``, ``scripts/grade_transcript.py``,
-``examples/model_presets.py``, ``examples/finetune_gspo.py``), and returns a
+``stateset_agents/core/model_presets.py``, ``examples/finetune_gspo.py``), and returns a
 structured dict. No grading/curation/training logic is reimplemented here.
 
 v1 scope: no tool starts real GPU training. ``dry_run_finetune`` only ever
@@ -252,7 +252,7 @@ def improve_status(output_dir: str) -> dict[str, Any]:
 def list_model_presets() -> dict[str, Any]:
     """List model preset names + key hyperparameter fields."""
     try:
-        from examples.model_presets import PRESETS, list_preset_names
+        from stateset_agents.core.model_presets import PRESETS, list_preset_names
 
         presets = []
         for name in list_preset_names():
@@ -284,7 +284,7 @@ def dry_run_finetune(model_preset: str) -> dict[str, Any]:
     training) — this tool never starts GPU training.
     """
     try:
-        from examples.model_presets import list_preset_names
+        from stateset_agents.core.model_presets import list_preset_names
 
         if model_preset not in list_preset_names():
             available = ", ".join(list_preset_names())

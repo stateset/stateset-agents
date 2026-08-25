@@ -11,10 +11,12 @@ Bootstrapping Error Reduction" (NeurIPS 2019)
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
 
 import numpy as np
+
+from .checkpoint_io import load_checkpoint_file
 
 try:
     import torch as _torch
@@ -746,16 +748,31 @@ class ConversationalBEAR:
                 "q1_target_state_dict": self.q1_target.state_dict(),
                 "q2_target_state_dict": self.q2_target.state_dict(),
                 "log_alpha": self.log_alpha,
-                "config": self.config,
+                # Persist the config as plain data so checkpoints stay
+                # loadable under torch.load(weights_only=True).
+                "config": (
+                    asdict(self.config)
+                    if is_dataclass(self.config) and not isinstance(self.config, type)
+                    else dict(getattr(self.config, "__dict__", {}))
+                ),
                 "training_step": self.training_step,
             },
             path,
         )
         logger.info(f"Saved BEAR model to {path}")
 
-    def load(self, path: str) -> None:
-        """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
+    def load(self, path: str, *, trusted: bool = False) -> None:
+        """Load model checkpoint
+
+        Args:
+            path: Checkpoint written by :meth:`save`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
+        checkpoint = load_checkpoint_file(
+            path, map_location=self.device, trusted=trusted
+        )
 
         self.actor.load_state_dict(checkpoint["actor_state_dict"])
         self.q1.load_state_dict(checkpoint["q1_state_dict"])
@@ -764,6 +781,14 @@ class ConversationalBEAR:
         self.q2_target.load_state_dict(checkpoint["q2_target_state_dict"])
         self.log_alpha = checkpoint["log_alpha"]
         self.training_step = checkpoint.get("training_step", 0)
+
+        # Checkpoints store the config as a plain dict (see save()); rebuild it.
+        config_payload = checkpoint.get("config")
+        if isinstance(config_payload, dict):
+            try:
+                self.config = BEARConfig(**config_payload)
+            except (TypeError, ValueError) as exc:
+                logger.warning("Failed to restore config from checkpoint: %s", exc)
 
         logger.info(f"Loaded BEAR model from {path}")
 

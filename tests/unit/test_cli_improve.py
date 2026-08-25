@@ -312,6 +312,13 @@ class TestImproveRun:
         )
         assert result.exit_code != 0
 
+    def test_nsr_reward_is_accepted_by_name_resolution(self) -> None:
+        # NSR is deterministic and rule-based, so it qualifies where LLM-judge
+        # rewards are refused; _resolve_reward_name must not exit for it.
+        from stateset_agents.cli_improve import _resolve_reward_name
+
+        _resolve_reward_name("nsr")  # must not raise typer.Exit
+
     def test_unknown_reward_errors_clearly(self, tmp_path: Path) -> None:
         transcripts_dir = _make_transcripts_dir(tmp_path)
         result = runner.invoke(

@@ -4,11 +4,10 @@
 
 We take security seriously and actively maintain security updates for the following versions:
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.3.x   | :white_check_mark: |
-| 0.2.x   | :x:                |
-| < 0.2   | :x:                |
+| Version                              | Supported          |
+| ------------------------------------ | ------------------ |
+| Latest 0.x minor release             | :white_check_mark: |
+| Any older minor release              | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -71,6 +70,24 @@ We use multiple security scanning tools:
 - **Safety**: Dependency vulnerability scanner  
 - **Trivy**: Container vulnerability scanning
 - **Snyk**: Code and dependency analysis
+
+## Trust boundaries
+
+These are the places where StateSet Agents deliberately hands trust to the caller. Know them before you deploy.
+
+### Checkpoint loading
+
+`stateset_agents.core.checkpoint_io.load_checkpoint_file(path, *, map_location, trusted=False)` is the single entry point for loading checkpoints, and it defaults to `torch.load(..., weights_only=True)`. Loading a checkpoint that contains pickled Python objects (rather than plain tensors/dicts) with the default `trusted=False` raises `ModelError`, telling you to pass `trusted=True`.
+
+Checkpoints saved by the offline_rl, decision_transformer, and sim_to_real trainers **before** this safeguard shipped stored a pickled config dataclass alongside the weights, so loading them requires `trusted=True`. Checkpoints saved after the safeguard store a plain dict and load fine with the safe default. Only pass `trusted=True` for a checkpoint file you produced yourself or otherwise fully trust — a malicious pickle payload in an untrusted checkpoint can execute arbitrary code on load.
+
+### Redis-backed caches
+
+`core/enhanced_state_cache.py` and `api/distributed_cache.py` use `pickle.loads` to deserialize cached values read back from Redis. Only point these caches at a Redis instance you control; anyone who can write to that Redis instance can achieve arbitrary code execution in your process via a crafted pickle payload.
+
+### API authentication
+
+`API_REQUIRE_AUTH` (`api/config.py`) gates whether the API layer enforces authentication on incoming requests. It must stay `true` in any production deployment — running with it disabled is a development-only convenience, not a supported production configuration.
 
 ## Secure Coding Guidelines
 
@@ -250,16 +267,11 @@ def test_authentication_security():
 ### Contact Information
 
 - **Security Team**: security@stateset.ai
-- **Emergency**: +1-555-0123 (24/7 emergency line)
-- **PGP Key**: Available at https://stateset.ai/security/pgp.txt
+- **GitHub Security Advisories**: Use this repository's private vulnerability reporting (Security tab → "Report a vulnerability") to report an issue and to track published advisories.
 
 ## Security Updates
 
-We recommend subscribing to our security mailing list for important security updates:
-
-- **Mailing List**: security-announce@stateset.ai
-- **RSS Feed**: https://stateset.ai/security/rss.xml
-- **Advisories**: https://stateset.ai/security/advisories/
+Published fixes and disclosures are announced via GitHub Security Advisories on this repository. Watch the repository (or its Security Advisories page) to be notified of new advisories.
 
 ## Acknowledgments
 

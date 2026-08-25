@@ -8,6 +8,7 @@ type-safe interfaces for all framework components.
 import inspect
 import json
 import logging
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from enum import Enum
@@ -116,7 +117,7 @@ class ModelConfig(TypedDict, total=False):
     planning_config: NotRequired[dict[str, Any] | None]
 
 
-class TrainingConfig(TypedDict, total=False):
+class TrainingConfigDict(TypedDict, total=False):
     """Type-safe training configuration"""
 
     model_name: NotRequired[str]
@@ -215,7 +216,7 @@ class TrainingConfig(TypedDict, total=False):
     gradient_checkpointing: NotRequired[bool]
 
 
-TypedTrainingConfig = TrainingConfig
+TypedTrainingConfig = TrainingConfigDict
 
 
 class ConversationTurn(TypedDict):
@@ -518,8 +519,8 @@ class ConfigValidator:
         self.errors.clear()
         self.warnings.clear()
 
-        # Validate against TrainingConfig TypedDict
-        type_errors = TypeValidator.validate_config(config, TrainingConfig)
+        # Validate against TrainingConfigDict TypedDict
+        type_errors = TypeValidator.validate_config(config, TrainingConfigDict)
         self.errors.extend(type_errors)
 
         # Custom validation rules
@@ -565,7 +566,7 @@ def create_typed_config(config_type: type, **kwargs) -> dict[str, Any]:
     if config_type == ModelConfig:
         if not validator.validate_model_config(config):
             raise ValueError(f"Invalid model config: {validator.errors}")
-    elif config_type == TrainingConfig:
+    elif config_type == TrainingConfigDict:
         if not validator.validate_training_config(config):
             raise ValueError(f"Invalid training config: {validator.errors}")
 
@@ -709,7 +710,7 @@ __all__ = [
     "TrainingStage",
     # TypedDicts
     "ModelConfig",
-    "TrainingConfig",
+    "TrainingConfigDict",
     "TypedTrainingConfig",
     "ConversationTurn",
     "TrajectoryData",
@@ -732,3 +733,15 @@ __all__ = [
     "ensure_type_safety",
     "ensure_async_type_safety",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Serve the renamed ``TrainingConfig`` TypedDict under its old name."""
+    if name == "TrainingConfig":
+        warnings.warn(
+            "use TrainingConfigDict",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return TrainingConfigDict
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

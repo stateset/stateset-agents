@@ -51,6 +51,8 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "pytest-benchmark>=4.0.0",
+    # pytest.ini addopts hard-requires this (-n auto --dist loadfile).
+    "pytest-xdist>=3.5",
     "hypothesis>=6.0.0",
     "black>=23.0.0",
     "isort>=5.12.0",
@@ -187,6 +189,15 @@ remote = [
     # needs the training stack the job itself uses.
     "stateset-agents[training]",
 ]
+fireworks = [
+    # Fireworks provider for `train-remote --provider fireworks`. Not a core
+    # dependency, for the same reason as modal: the framework imports and
+    # lists the provider without it, and only errors — naming this extra —
+    # at submit time.
+    # 1.x is the Stainless-generated typed client this adapter is written
+    # against; 0.x exposed a different `fireworks.client` surface entirely.
+    "fireworks-ai>=1.2",
+]
 modal = [
     # Modal provider for `train-remote --provider modal`. Not a core
     # dependency: the framework imports and lists the provider without it,
@@ -317,3 +328,4 @@ ignore = [
 "stateset_agents/utils/wandb_integration.py" = ["E402"]
 "tests/**/*" = ["B011"]  # assert false
 "tests/unit/test_trl_grpo_trainer.py" = ["E402"]
+"tests/unit/test_rl_losses.py" = ["E402"]

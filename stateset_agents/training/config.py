@@ -106,6 +106,11 @@ class TrainingConfig:
     clip_ratio: float = (
         0.2  # PPO ratio clipping when old log probs are available; else advantage clamp
     )
+    # The GRPO importance ratio is a per-token-MEAN (length-normalised) sequence
+    # ratio, so it sits within ~1e-3 of 1.0 and the classic +/-0.2 token-level
+    # PPO clip (`clip_ratio`) is meaningless for it — it never triggers. GSPO
+    # clips this quantity at ~3e-4/4e-4 instead; see `gspo_config.py`.
+    seq_clip_ratio: float = 3e-4  # Sequence-mean ratio clip (GSPO scale)
     value_clip: float = 0.2  # Value function clipping
     entropy_coef: float = 0.01  # Entropy bonus coefficient
 
@@ -563,3 +568,17 @@ def example_config_usage():
 
 if __name__ == "__main__":
     example_config_usage()
+
+
+def cuda_is_available() -> bool:
+    """Return whether a CUDA device is usable, without importing torch eagerly.
+
+    ``torch`` is an optional heavy dependency and configuration modules must
+    stay importable without it (see ``tests/unit/test_torch_import_policy.py``),
+    so the import happens inside this helper rather than at module level.
+    """
+    try:
+        import torch
+    except ImportError:  # pragma: no cover - torch is installed in CI
+        return False
+    return bool(torch.cuda.is_available())

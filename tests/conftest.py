@@ -1,6 +1,7 @@
 """Shared test configuration and fixtures for all test modules."""
 
 import asyncio
+import atexit
 import inspect
 import logging
 import os
@@ -394,3 +395,77 @@ def stub_backend():
         pad_token_id=0,
         eos_token_id=0,
     )
+
+
+# ---------------------------------------------------------------------------
+# Clean interpreter shutdown (silence litellm/wandb atexit tracebacks)
+# ---------------------------------------------------------------------------
+#
+# At interpreter exit litellm's own atexit hook (registered by
+# ``litellm.llms.custom_httpx.async_client_cleanup``) calls
+# ``asyncio.get_event_loop()``; if pytest-asyncio has left no usable loop it
+# falls back to ``asyncio.new_event_loop()``, which emits a DEBUG record
+# ("Using selector: EpollSelector"). Tests that exercise the API logging setup
+# leave a root ``StreamHandler`` bound to pytest's captured stdout, which is
+# closed by then — and wandb's console capture may still be wrapping the same
+# stream — so the record surfaces as a "--- Logging error ---" traceback after
+# the test summary.
+#
+# ``atexit`` runs LIFO, so a hook registered at session finish (i.e. after
+# litellm was imported) runs *before* litellm's. We use that window to drain
+# litellm's async clients, install a fresh event loop so litellm's hook takes
+# the quiet path, restore the real stdio, and drop logging handlers whose
+# stream is already closed.
+
+
+def _quiet_interpreter_shutdown() -> None:
+    """Best-effort teardown that runs before litellm's own atexit hook."""
+    # 1. Drop logging handlers whose stream is already closed (pytest's
+    #    captured stdout), which is what turns a stray DEBUG record into a
+    #    "--- Logging error ---" traceback. This must happen first: the steps
+    #    below can themselves emit DEBUG records.
+    manager = logging.Logger.manager
+    loggers: list[logging.Logger] = [logging.getLogger()]
+    loggers.extend(
+        logger
+        for logger in manager.loggerDict.values()
+        if isinstance(logger, logging.Logger)
+    )
+    for logger in loggers:
+        for handler in list(getattr(logger, "handlers", [])):
+            stream = getattr(handler, "stream", None)
+            if stream is not None and getattr(stream, "closed", False):
+                try:
+                    logger.removeHandler(handler)
+                except Exception:  # pragma: no cover - defensive teardown
+                    pass
+
+    # 2. Undo wandb's console capture / any stdio replacement so writes during
+    #    shutdown go to the real streams rather than a wrapped, closed one.
+    for name, real in (("stdout", sys.__stdout__), ("stderr", sys.__stderr__)):
+        try:
+            if real is not None and getattr(real, "closed", False) is False:
+                setattr(sys, name, real)
+        except Exception:  # pragma: no cover - defensive teardown
+            pass
+
+    # 3. Drain litellm's cached async clients and leave a usable event loop
+    #    behind so litellm's cleanup_wrapper never calls new_event_loop().
+    if "litellm" in sys.modules:
+        try:
+            from litellm.llms.custom_httpx.async_client_cleanup import (
+                close_litellm_async_clients,
+            )
+
+            asyncio.run(close_litellm_async_clients())
+        except Exception:  # pragma: no cover - defensive teardown
+            pass
+        try:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+        except Exception:  # pragma: no cover - defensive teardown
+            pass
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Register the shutdown cleanup so it runs before litellm's atexit hook."""
+    atexit.register(_quiet_interpreter_shutdown)

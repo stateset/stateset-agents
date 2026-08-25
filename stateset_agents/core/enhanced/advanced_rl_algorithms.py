@@ -13,8 +13,9 @@ This module implements multiple RL algorithms including:
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass
-from typing import Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
 import torch
@@ -26,6 +27,9 @@ from torch.distributions import Categorical
 from ..environment import Environment
 from ..trajectory import ConversationTurn, MultiTurnTrajectory
 from .enhanced_agent import EnhancedMultiTurnAgent
+
+if TYPE_CHECKING:
+    from ...training.gspo_config import GSPOConfig
 
 logger = logging.getLogger(__name__)
 
@@ -112,20 +116,6 @@ class A2CConfig:
     gamma: float = 0.99
     gae_lambda: float = 0.95
     n_steps: int = 5
-
-
-@dataclass
-class GSPOConfig:
-    """Configuration for GSPO training"""
-
-    learning_rate: float = 1e-5
-    num_generations: int = 4  # Group size (G)
-    clip_range_left: float = 3e-4  # Sequence-level clipping
-    clip_range_right: float = 4e-4
-    beta: float = 0.0  # KL penalty coefficient
-    max_grad_norm: float = 1.0
-    gamma: float = 0.99
-    use_gspo_token: bool = False  # Use token-level variant
 
 
 class ActorCriticNetwork(nn.Module):
@@ -878,12 +868,18 @@ class GSPOTrainerStub:
     """
     Stub for GSPO trainer integration.
 
-    For full GSPO training, use training.gspo_trainer.GSPOTrainer
-    This stub provides a consistent interface for the RL orchestrator.
+    The real implementation is
+    :class:`stateset_agents.training.gspo_trainer.GSPOTrainer`; this stub only
+    provides a consistent interface for :class:`AdvancedRLOrchestrator` and is
+    configured with the canonical
+    :class:`stateset_agents.training.gspo_config.GSPOConfig`.
     """
 
     def __init__(
-        self, agent: EnhancedMultiTurnAgent, config: GSPOConfig, device: str = "auto"
+        self,
+        agent: EnhancedMultiTurnAgent,
+        config: GSPOConfig,
+        device: str = "auto",
     ):
         self.agent = agent
         self.config = config
@@ -914,6 +910,8 @@ def create_gspo_trainer(agent: EnhancedMultiTurnAgent, **kwargs) -> GSPOTrainerS
         from stateset_agents.training.gspo_trainer import train_with_gspo
         await train_with_gspo(config, agent, environment, reward_model)
     """
+    from ...training.gspo_config import GSPOConfig
+
     config = GSPOConfig(**kwargs)
     return GSPOTrainerStub(agent, config)
 
@@ -931,3 +929,17 @@ def create_advanced_rl_orchestrator(
     orchestrator.add_algorithm("gspo", create_gspo_trainer(agent))
 
     return orchestrator
+
+
+def __getattr__(name: str) -> Any:
+    """Serve the removed duplicate ``GSPOConfig`` from its canonical home."""
+    if name == "GSPOConfig":
+        warnings.warn(
+            "import GSPOConfig from stateset_agents.training.gspo_config",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        from ...training.gspo_config import GSPOConfig
+
+        return GSPOConfig
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -103,8 +103,22 @@ def get_reward(reward_name: str, persona: dict[str, Any] | None = None) -> Any:
         from stateset_agents.data.tool_calling_bench import ToolCallReward
 
         return ToolCallReward()
+    if reward_name == "nsr":
+        # Deterministic proof-backed verifier (StateSet NSR). Fail-closed for
+        # grading/curation: an unreachable verifier scores 0.0, never a
+        # neutral pass. Context rows supply the decision question via
+        # {"nsr_request": {...}} (see docs/NSR_INTEGRATION.md).
+        from stateset_agents.rewards.nsr_verifier import (
+            NSRVerifierConfig,
+            NSRVerifierReward,
+        )
+
+        config = NSRVerifierConfig.from_env()
+        config.error_score = 0.0
+        return NSRVerifierReward(config=config)
     raise ValueError(
-        f"Unknown reward: {reward_name!r}. Choose: gsm8k, customer_support, tool_calling."
+        f"Unknown reward: {reward_name!r}. Choose: gsm8k, customer_support, "
+        "tool_calling, nsr."
     )
 
 
@@ -266,7 +280,9 @@ def main() -> int:
         help="JSONL transcript from `chat --history`.",
     )
     parser.add_argument(
-        "--reward", choices=["gsm8k", "customer_support", "tool_calling"], required=True
+        "--reward",
+        choices=["gsm8k", "customer_support", "tool_calling", "nsr"],
+        required=True,
     )
     parser.add_argument(
         "--context-file",

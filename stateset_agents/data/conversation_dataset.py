@@ -11,7 +11,7 @@ import logging
 import random
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
@@ -22,10 +22,23 @@ except ImportError:
     torch = None
     TorchDataset = object
 
-try:
+if TYPE_CHECKING:  # pragma: no cover - typing only
     from sentence_transformers import SentenceTransformer
-except ImportError:
-    SentenceTransformer = None
+
+
+def _load_sentence_transformer_cls() -> Any:
+    """Import ``SentenceTransformer`` lazily.
+
+    The import costs over a second (it pulls in torch, datasets and sklearn),
+    so it must not happen at module import time -- this module is reachable
+    from the CLI import chain.
+    """
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError:
+        return None
+    return SentenceTransformer
+
 
 logger = logging.getLogger(__name__)
 
@@ -805,7 +818,7 @@ class EmbeddingCache:
         cache_size: int = 100000,
         device: str | None = None,
     ):
-        if SentenceTransformer is None:
+        if _load_sentence_transformer_cls() is None:
             raise ImportError(
                 "sentence-transformers required for embedding cache. "
                 "Install: pip install sentence-transformers"
@@ -821,10 +834,10 @@ class EmbeddingCache:
         self._device = device
 
     @property
-    def model(self) -> SentenceTransformer:
+    def model(self) -> "SentenceTransformer":
         """Lazy load the embedding model"""
         if self._model is None:
-            self._model = SentenceTransformer(self.model_name)
+            self._model = _load_sentence_transformer_cls()(self.model_name)
             if self._device:
                 self._model = self._model.to(self._device)
         return self._model

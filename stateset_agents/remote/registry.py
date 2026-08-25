@@ -15,6 +15,12 @@ from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 __all__ = ["available_providers", "get_executor"]
 
 
+def _load_fireworks() -> RemoteExecutor:
+    from stateset_agents.remote.fireworks import FireworksExecutor
+
+    return FireworksExecutor()
+
+
 def _load_local() -> RemoteExecutor:
     from stateset_agents.remote.local import LocalExecutor
 
@@ -40,6 +46,7 @@ def _load_river() -> RemoteExecutor:
 
 
 _PROVIDERS: dict[str, Callable[[], RemoteExecutor]] = {
+    "fireworks": _load_fireworks,
     "local": _load_local,
     "modal": _load_modal,
     "river": _load_river,

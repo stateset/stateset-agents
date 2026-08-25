@@ -11,10 +11,12 @@ without Exploration" (ICML 2019)
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
 
 import numpy as np
+
+from .checkpoint_io import load_checkpoint_file
 
 try:
     import torch as _torch
@@ -691,16 +693,31 @@ class BatchConstrainedQLearning:
                 "q2_state_dict": self.q2.state_dict(),
                 "q1_target_state_dict": self.q1_target.state_dict(),
                 "q2_target_state_dict": self.q2_target.state_dict(),
-                "config": self.config,
+                # Persist the config as plain data so checkpoints stay
+                # loadable under torch.load(weights_only=True).
+                "config": (
+                    asdict(self.config)
+                    if is_dataclass(self.config) and not isinstance(self.config, type)
+                    else dict(getattr(self.config, "__dict__", {}))
+                ),
                 "training_step": self.training_step,
             },
             path,
         )
         logger.info(f"Saved BCQ model to {path}")
 
-    def load(self, path: str) -> None:
-        """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
+    def load(self, path: str, *, trusted: bool = False) -> None:
+        """Load model checkpoint
+
+        Args:
+            path: Checkpoint written by :meth:`save`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
+        checkpoint = load_checkpoint_file(
+            path, map_location=self.device, trusted=trusted
+        )
 
         self.vae.load_state_dict(checkpoint["vae_state_dict"])
         self.perturbation.load_state_dict(checkpoint["perturbation_state_dict"])
@@ -709,6 +726,14 @@ class BatchConstrainedQLearning:
         self.q1_target.load_state_dict(checkpoint["q1_target_state_dict"])
         self.q2_target.load_state_dict(checkpoint["q2_target_state_dict"])
         self.training_step = checkpoint.get("training_step", 0)
+
+        # Checkpoints store the config as a plain dict (see save()); rebuild it.
+        config_payload = checkpoint.get("config")
+        if isinstance(config_payload, dict):
+            try:
+                self.config = BCQConfig(**config_payload)
+            except (TypeError, ValueError) as exc:
+                logger.warning("Failed to restore config from checkpoint: %s", exc)
 
         logger.info(f"Loaded BCQ model from {path}")
 

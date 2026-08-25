@@ -18,6 +18,7 @@ from typing import Any, cast
 
 from stateset_agents.core.reward import RewardFunction, RewardResult
 from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.training.checkpoint_io import load_checkpoint_file
 
 try:
     import torch
@@ -774,22 +775,18 @@ class TransformerRewardTrainer:
 
         logger.info(f"Checkpoint saved to {path}")
 
-    def load_checkpoint(self, path: str):
-        """Load model checkpoint"""
-        try:
-            checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
-        except REWARD_MODEL_EXCEPTIONS as e:
-            if "weights_only" in str(e):
-                try:
-                    checkpoint = torch.load(  # nosec: B614
-                        path, map_location=self.device, weights_only=False
-                    )
-                except TypeError:
-                    checkpoint = torch.load(  # nosec: B614
-                        path, map_location=self.device
-                    )
-            else:
-                raise
+    def load_checkpoint(self, path: str, *, trusted: bool = False):
+        """Load model checkpoint.
+
+        Args:
+            path: Checkpoint written by :meth:`save_checkpoint`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
+        checkpoint = load_checkpoint_file(
+            path, map_location=self.device, trusted=trusted
+        )
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
 

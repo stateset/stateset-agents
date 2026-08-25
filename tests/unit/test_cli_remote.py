@@ -394,3 +394,82 @@ class TestEvalPromptsOption:
         assert "does not exist" in result.output
         assert "absent.txt" in result.output
         assert "spec" not in captured
+
+
+class TestFireworksOptions:
+    """`--deploy` rents hardware, so it is opt-in and separately flagged."""
+
+    def _params(self):
+        import inspect
+
+        command = next(c for c in app.registered_commands if c.name == "train-remote")
+        return inspect.signature(command.callback).parameters
+
+    def test_deploy_is_off_by_default(self):
+        assert self._params()["deploy"].default.default is False
+
+    def test_deploy_accelerator_can_be_chosen(self):
+        assert "deploy_accelerator" in self._params()
+
+    def test_fireworks_is_offered_as_a_provider(self):
+        result = invoke_help("train-remote")
+
+        assert "fireworks" in result.output
+
+
+class TestUndeployCommand:
+    """`undeploy` tears down a provider-managed deployment."""
+
+    def test_undeploy_delegates_to_the_executor(self, monkeypatch):
+        import stateset_agents.cli_remote as cli_remote
+
+        recorded = {}
+
+        class StubExecutor:
+            name = "fireworks"
+
+            def undeploy(self, deployment):
+                recorded["deployment"] = deployment
+
+        monkeypatch.setattr(cli_remote, "get_executor", lambda provider: StubExecutor())
+
+        result = runner.invoke(
+            app, ["undeploy", "--deployment", "dep-1"], env=_WIDE_TERMINAL
+        )
+
+        assert result.exit_code == 0, result.output
+        assert recorded["deployment"] == "dep-1"
+        assert "dep-1" in result.output
+
+    def test_undeploy_on_a_provider_without_deployments_exits_nonzero(
+        self, monkeypatch
+    ):
+        import stateset_agents.cli_remote as cli_remote
+        from stateset_agents.remote.executor import RemoteExecutor
+
+        class BareExecutor(RemoteExecutor):
+            name = "bare"
+
+            def submit(self, spec):
+                raise NotImplementedError
+
+            def status(self, handle):
+                raise NotImplementedError
+
+            def logs(self, handle):
+                raise NotImplementedError
+
+            def fetch(self, handle, dest=None):
+                raise NotImplementedError
+
+            def cancel(self, handle):
+                raise NotImplementedError
+
+        monkeypatch.setattr(cli_remote, "get_executor", lambda provider: BareExecutor())
+
+        result = runner.invoke(
+            app, ["undeploy", "--deployment", "dep-1"], env=_WIDE_TERMINAL
+        )
+
+        assert result.exit_code == 1
+        assert "BareExecutor" in result.output

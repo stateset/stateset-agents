@@ -118,9 +118,11 @@ stateset-agents/
 │   │   ├── value_function.py      # GAE and value estimation
 │   │   ├── computational_engine.py # Parallel trajectory generation
 │   │   ├── agent_backends.py      # StubModel/StubTokenizer for CI
+│   │   ├── checkpoint_io.py       # Checkpoint loading (weights_only by default)
 │   │   └── rust_accelerator.py    # Optional Rust GAE (falls back to NumPy)
 │   │
 │   ├── experimental/              # Research modules — NO API stability
+│   │                              # may NOT be imported by core/ at module level
 │   │   ├── long_term_planning.py  # Planning manager (opt-in via AgentConfig)
 │   │   ├── neural_architecture_search.py
 │   │   ├── multimodal_processing.py
@@ -130,6 +132,7 @@ stateset-agents/
 │   │   └── multi_agent_coordination.py
 │   │
 │   ├── training/                  # Trainers (~29K lines, 58 modules)
+│   │   ├── rl_losses.py           # Shared loss primitives (all algorithms)
 │   │   ├── trl_grpo_trainer.py    # GRPO via Hugging Face TRL
 │   │   ├── gspo_trainer.py        # Sequence-level GSPO (852 LOC)
 │   │   ├── dapo_trainer.py        # Decoupled clip + dynamic sampling
@@ -628,16 +631,37 @@ Where:
 - `π_ref`: Reference model (frozen)
 - `KL`: KL divergence
 
+The KL term is Schulman's **k3 estimator**, `exp(r) - r - 1` with
+`r = log π_ref - log π_cur` (`training/rl_losses.py::k3_kl`). It is
+non-negative and its gradient's expectation is the true KL gradient, unlike
+the naive `log π_cur - log π_ref` difference.
+
 #### 4. PPO-Style Clipping (Optional)
 
 ```
-L_clip = max(A * loss, clip(A, -ε, +ε) * loss)
+L_clip = -min(r * A, clip(r, 1-ε_low, 1+ε_high) * A)
 ```
 
 Where:
-- `ε`: Clip ratio (typically 0.2)
+- `r`: Importance ratio `π(a|s) / π_old(a|s)` — per token for GRPO/DAPO,
+  length-normalised per *sequence* for GSPO (`rl_losses.py::sequence_ratio`)
+- `ε`: Clip ratio (typically 0.2; DAPO decouples low and high)
 
-### Implementation in `training/trainer.py`
+The clip is a **gate**, not a rescale: when the ratio leaves the trust region
+on the side the advantage would push it, the clamped branch is selected and
+contributes zero gradient. That is what bounds the policy step, so the clip
+must be applied to the same quantity the ratio is computed on — sequence-level
+for GSPO, token-level for GSPO-token.
+
+### Implementation
+
+`training/trainer.py` is a facade. The maths above lives in
+`training/rl_losses.py` (masked mean, token log-prob gather, sequence ratio,
+clipped surrogate, clip fraction, k3 KL, NaN-safe group advantages) and is
+assembled per algorithm in `training/loss_computation.py` and the individual
+`*_trainer.py` modules. Change a loss primitive in one place and every
+algorithm sees it — which is the point.
+
 
 ```python
 class MultiTurnGRPOTrainer:

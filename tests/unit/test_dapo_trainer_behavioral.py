@@ -157,3 +157,11 @@ async def test_old_log_probs_captured_at_collection(dapo_trainer_factory, monkey
     assert not torch.allclose(
         seen_ratios[1], torch.ones_like(seen_ratios[1]), atol=1e-5
     )
+
+
+def test_group_of_one_advantage_is_finite(dapo_trainer_factory):
+    """A group of size 1 has zero variance: advantages must be 0, never NaN."""
+    trainer = dapo_trainer_factory(tiny_model())
+    adv = trainer.compute_group_advantages(torch.tensor([0.3]))
+    assert torch.isfinite(adv).all()
+    assert adv.item() == 0.0

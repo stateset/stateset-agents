@@ -7,8 +7,10 @@ Group Relative Policy Optimization (GRPO).
 
 from __future__ import annotations
 
+import warnings
 from importlib import import_module
 from importlib.util import find_spec
+from types import ModuleType
 from typing import Any
 
 __version__ = "0.37.0"
@@ -48,12 +50,6 @@ _LAZY_EXPORTS.update(
     _export_group(
         "stateset_agents.core.environment",
         ["Environment", "ConversationEnvironment", "TaskEnvironment"],
-    )
-)
-_LAZY_EXPORTS.update(
-    _export_group(
-        "stateset_agents.experimental.long_term_planning",
-        ["PlanningConfig", "PlanningManager", "Plan", "PlanStep", "PlanStatus"],
     )
 )
 _LAZY_EXPORTS.update(
@@ -232,6 +228,16 @@ _LAZY_EXPORTS.update(
     )
 )
 
+# Planning symbols moved to ``stateset_agents.experimental.long_term_planning``.
+# Re-exported here for one release with a DeprecationWarning.
+_DEPRECATED_PLANNING_EXPORTS = (
+    "PlanningConfig",
+    "PlanningManager",
+    "Plan",
+    "PlanStep",
+    "PlanStatus",
+)
+
 __all__ = list(_LAZY_EXPORTS)
 
 
@@ -249,7 +255,7 @@ def _build_import_error(
     return message
 
 
-def _maybe_import_submodule(name: str) -> Any | None:
+def _maybe_import_submodule(name: str) -> ModuleType | None:
     """Import real subpackages like ``stateset_agents.training`` on demand."""
     module_name = f"{__name__}.{name}"
     try:
@@ -266,11 +272,21 @@ def _maybe_import_submodule(name: str) -> Any | None:
 
 
 def __getattr__(name: str) -> Any:
+    if name in _DEPRECATED_PLANNING_EXPORTS:
+        warnings.warn(
+            f"{name} is deprecated here; "
+            "import from stateset_agents.experimental.long_term_planning",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        module = import_module("stateset_agents.experimental.long_term_planning")
+        return getattr(module, name)
+
     export = _LAZY_EXPORTS.get(name)
     if export is None:
-        module = _maybe_import_submodule(name)
-        if module is not None:
-            return module
+        submodule = _maybe_import_submodule(name)
+        if submodule is not None:
+            return submodule
         raise AttributeError(f"module 'stateset_agents' has no attribute {name!r}")
 
     module_name, attr_name, install_hint = export

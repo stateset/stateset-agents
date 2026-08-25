@@ -7,6 +7,157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Shared RL loss primitives (`training/rl_losses.py`).** One place where
+  the policy-gradient maths lives: masked mean, per-token log-prob gather,
+  sequence ratios, the clipped surrogate, clip fraction, the k3 KL
+  estimator, and NaN-safe group advantages. GSPO, GRPO, DAPO, GEPO and
+  VAPO now call into it instead of each re-deriving the same expressions
+  slightly differently — which is how the four bugs below were found.
+
+- **NSR verifier reward (`rewards/nsr_verifier.py`).** Grade a response by
+  whether a neuro-symbolic verifier can actually *prove* it, not by whether
+  it reads well. Registered as an improve-loop reward, so
+  `stateset-agents improve run --reward nsr` curates on machine-checkable
+  correctness.
+
+- **`python -m stateset_agents` runs the CLI.** A `__main__.py` mirroring
+  the console-script entry point, for environments where the script isn't
+  on `PATH`.
+
+- **The README's own commands are now tested.** Every
+  `stateset-agents ...` snippet in `README.md` and `QUICKSTART.md` is
+  executed as `--help` against the real parser, and each flag it uses must
+  exist — including a check that boolean toggles aren't handed a value.
+  It caught one broken example on its first run.
+
+- **The suite runs in parallel by default** (`pytest-xdist`, `-n auto`),
+  with a regression guard that a plain `pytest` still exits cleanly.
+
+
+- **Fireworks AI provider (`train-remote --provider fireworks`).** A fifth
+  compute provider, and the first managed fine-tuning service with a
+  genuinely asynchronous job: upload dataset -> create supervised
+  fine-tuning job -> poll -> the tuned LoRA addon lives on Fireworks, with
+  the weights downloaded locally when the account allows it (the pointer's
+  `weights_downloaded` says which happened, so no run claims a
+  `serve --checkpoint` that would fail). `--deploy` additionally rents
+  on-demand hardware and loads the addon onto it, printing an
+  OpenAI-compatible base URL; `stateset-agents undeploy` tears it down,
+  because it bills until deleted. Machine-shaped spec fields are ignored
+  with a log line rather than rejected, so the same spec still runs
+  anywhere. Costs come from Fireworks' own `estimatedCost` or are recorded
+  as `null` — never a guessed zero. Written against the real `fireworks-ai`
+  1.x SDK but **not yet live-verified**; the assumptions most likely to be
+  wrong, each with its symptom, are in `docs/FIREWORKS_PROVIDER.md`.
+
+- **Multi-turn RL, live — and the wall confirmed from the second
+  direction.** Episode-level RL (rollouts capturing per-turn prompt ids
+  and sampler logprobs; shaped episode rewards; group-relative advantages
+  broadcast across every assistant turn; clipped-IS training) ran its
+  first real campaign at the rung-5 wall: flat 9/12 across four rounds,
+  mean reward pinned at 1.70/2.0, most groups zero-variance. Where
+  imitation REGRESSED at this difficulty (9→7, auto-discarded), RL held
+  stable; neither climbed. Verdict: a genuine 9B capability ceiling at
+  five-turn/60%-refusal difficulty, now mapped by both methods — the
+  honest boundary of this model on this ladder.
+
+- **The curriculum curve, complete — including its wall.** Rung 5
+  (five turns, 60% refusals): the rung-4 adapter still transferred
+  (9/12 baseline) but with an 83% harvest rate the trained gen-2 scored
+  7/12 and the plateau stop kept rung 4 — the correct call, made
+  autonomously. Four rungs now pin the flywheel's operating regime with
+  unusual precision: it lifts when harvest rates sit near ~60% with
+  greedy headroom (rungs 3, 4 → both 12/12), and stalls when temperature
+  success is too common to carry information (rungs 2, 5). Total cost of
+  the entire five-rung curriculum study: API tokens only.
+
+- **The ladder is a curriculum — proven by climbing it.** The
+  rung-3-trained adapter transferred UPWARD: 11/12 at rung 4 (four
+  turns, 50% refusals, final-turn summary of three prior actions) —
+  above the untrained model's score at the easier rung 3 — and one more
+  wheel-turn reached 12/12. Two rungs, two perfect scores, one
+  transferable skill: train → transfer → top off → repeat, zero machines
+  rented throughout.
+
+### Changed
+
+- **DAPO/VAPO `use_token_level_loss=False` is a per-row mean, not a sum.**
+  Summing made the loss scale with sequence length, so long rollouts
+  dominated the gradient for reasons unrelated to their quality.
+
+- **Group advantages use the population standard deviation everywhere.**
+  Some paths used the sample std and some the population std, which made
+  otherwise-identical algorithms disagree about advantage magnitude.
+  **Behaviour change:** paths that previously used the sample std (DAPO,
+  GEPO) now produce advantages larger by √(G/(G−1)) — about 15% at a
+  group size of 4 — which is an effective learning-rate change.
+
+- **`gather_token_logprobs` computes its log-softmax in fp32.** Better
+  numerics than a bf16 softmax, at the cost of a full-vocab fp32 tensor:
+  peak memory rises for large-vocab bf16 models in DAPO/VAPO. Pass
+  `dtype=torch.bfloat16` to get the old memory profile back.
+
+- **The five `Planning*` names moved to
+  `stateset_agents.experimental.long_term_planning`** and were removed from
+  `stateset_agents.__all__`, so `from stateset_agents import *` no longer
+  provides them. An explicit `from stateset_agents import PlanningConfig`
+  still works for one release, now with a `DeprecationWarning`.
+
+- **On-disk checkpoint `config` is a plain dict.** Checkpoints no longer
+  carry pickled config objects, which is what makes the `weights_only`
+  load below possible without losing information.
+
+- `create_gspo_trainer(**kwargs)` now builds the canonical `GSPOConfig`
+  (no `gamma`).
+- `stateset_agents.core.TrainingConfig` now resolves to
+  `training.config.TrainingConfig`.
+
+### Fixed
+
+- **GSPO: the k3 KL penalty and the clip gate for GSPO-token.**
+  (`training/gspo_trainer.py`) The KL term used a naive estimator and
+  GSPO-token clipped on the wrong quantity, so the trust region wasn't the
+  one the algorithm describes.
+
+- **GRPO: removed a 1/L² length bias, and the clip now actually binds.**
+  (`training/loss_computation.py`) Normalising twice by length quietly
+  penalised long completions. The clip is now taken on the per-token-mean
+  *sequence* ratio against `seq_clip_ratio` — a fixed ±3e-4 bound that does
+  **not** scale with sequence length. **Behaviour change:** for GRPO runs
+  that supply `log_probs`, the clip was previously never active and now
+  binds, so effective step sizes shrink; retune the learning rate.
+  `clip_ratio` no longer sets the GRPO bound — its value is only an
+  on/off switch for whether clipping happens at all.
+
+- **DAPO/GEPO produced NaN on a group of size 1.** (`training/dapo_trainer.py`,
+  `training/gepo_trainer.py`, `training/vapo_trainer.py`) A zero-variance group divided by zero;
+  advantages are now NaN-safe.
+
+- **`DistributedGRPOTrainer` was a 0.0-loss placeholder.**
+  (`training/distributed_trainer.py`) It computed a real GRPO loss for a
+  release, then was deprecated rather than left to look like working
+  distributed training — and it no longer fabricates training data.
+
+- **`stateset-agents chat --help` takes ~0.6 s instead of ~3 s.**
+  (`stateset_agents/cli.py`) `stateset_agents.data` and
+  `sentence_transformers` are imported lazily, so asking the CLI a
+  question no longer loads an embedding stack.
+
+### Security
+
+- **Checkpoint loads are `weights_only=True`, with `trusted=True` as the
+  explicit opt-in** (`core/checkpoint_io.py`). Loading a checkpoint used to
+  mean executing whatever it contained; the shared helper now refuses
+  arbitrary pickles by default, and a trusted load is a deliberate,
+  greppable choice. An AST guard keeps new `torch.load` calls from
+  regressing past it.
+
+- **`SECURITY.md` states the real trust boundaries** — which inputs are
+  assumed hostile (checkpoints, datasets, transcripts) and which are not —
+  alongside an accurate supported-versions table.
+
 ## [0.37.0] - 2026-08-19 — Rent wisdom, deploy cheap — distillation, the rarity thermostat, and verified tool use
 
 ### Added

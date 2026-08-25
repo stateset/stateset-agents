@@ -28,17 +28,8 @@ Generation backends:
 import importlib
 import importlib.util
 import logging
+from types import ModuleType
 from typing import Any
-
-from .config import TrainingConfig, TrainingProfile, get_config_for_task
-from .continual_learning import (
-    ContinualLearningConfig,
-    ContinualLearningManager,
-    TrajectoryReplayBuffer,
-)
-from .evaluation import EvaluationConfig, evaluate_agent
-from .train import TrainingMode, train
-from .trainer import GRPOTrainer, MultiTurnGRPOTrainer, SingleTurnGRPOTrainer
 
 logger = logging.getLogger(__name__)
 
@@ -62,23 +53,28 @@ def _has_spec(module_name: str) -> bool:
     return importlib.util.find_spec(module_name) is not None
 
 
-# Lightweight dependency checks
-try:  # pragma: no cover
-    import trl
+# Lightweight dependency checks.
+#
+# ``TRL_AVAILABLE`` is resolved lazily (see ``__getattr__``) because importing
+# ``trl`` pulls in ``torch``, and importing this package must stay torch-free.
+def _detect_trl() -> bool:  # pragma: no cover - depends on the environment
+    try:
+        import trl
+    except ImportError:
+        return False
 
     # `hasattr` only swallows AttributeError. trl's own lazy-module loader
     # (trl._lazy_module) wraps *any* failure while resolving an attribute
     # -- including a transitively optional, environment-dependent one like
     # an unusable/absent vllm integration -- in a bare RuntimeError, not
     # AttributeError. A plain `hasattr(trl, "GRPOConfig")` would let that
-    # RuntimeError escape and crash this module's import instead of
-    # falling back to TRL_AVAILABLE = False as intended.
+    # RuntimeError escape and crash this call instead of falling back to
+    # False as intended.
     try:
-        TRL_AVAILABLE = hasattr(trl, "GRPOConfig")
-    except Exception:  # noqa: BLE001 — trl's lazy-attr errors are not typed
-        TRL_AVAILABLE = False
-except ImportError:  # pragma: no cover
-    TRL_AVAILABLE = False
+        return hasattr(trl, "GRPOConfig")
+    except Exception:  # noqa: BLE001 - trl's lazy-attr errors are not typed
+        return False
+
 
 _TORCH_AVAILABLE = _has_spec("torch")
 GSPO_AVAILABLE = _TORCH_AVAILABLE
@@ -101,6 +97,30 @@ SIM_TO_REAL_AVAILABLE = _TORCH_AVAILABLE
 AUTO_RESEARCH_AVAILABLE = True
 
 _OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
+    # Core training surface (lazy so that importing this package stays
+    # torch-free; every one of these modules imports torch transitively).
+    "TrainingConfig": (f"{__name__}.config", "TrainingConfig"),
+    "TrainingProfile": (f"{__name__}.config", "TrainingProfile"),
+    "get_config_for_task": (f"{__name__}.config", "get_config_for_task"),
+    "ContinualLearningConfig": (
+        f"{__name__}.continual_learning",
+        "ContinualLearningConfig",
+    ),
+    "ContinualLearningManager": (
+        f"{__name__}.continual_learning",
+        "ContinualLearningManager",
+    ),
+    "TrajectoryReplayBuffer": (
+        f"{__name__}.continual_learning",
+        "TrajectoryReplayBuffer",
+    ),
+    "EvaluationConfig": (f"{__name__}.evaluation", "EvaluationConfig"),
+    "evaluate_agent": (f"{__name__}.evaluation", "evaluate_agent"),
+    "TrainingMode": (f"{__name__}.train", "TrainingMode"),
+    "train": (f"{__name__}.train", "train"),
+    "GRPOTrainer": (f"{__name__}.trainer", "GRPOTrainer"),
+    "MultiTurnGRPOTrainer": (f"{__name__}.trainer", "MultiTurnGRPOTrainer"),
+    "SingleTurnGRPOTrainer": (f"{__name__}.trainer", "SingleTurnGRPOTrainer"),
     # Auto-Research Loop
     "AutoResearchConfig": (f"{__name__}.auto_research.config", "AutoResearchConfig"),
     "AutoResearchLoop": (
@@ -1286,13 +1306,44 @@ _OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
 }
 
 
-def __getattr__(name: str) -> Any:  # pragma: no cover
+def _maybe_import_submodule(name: str) -> ModuleType | None:
+    """Import real submodules like ``stateset_agents.training.trainer`` on demand."""
+    module_name = f"{__name__}.{name}"
+    try:
+        spec = importlib.util.find_spec(module_name)
+    except (ImportError, AttributeError, ValueError):
+        spec = None
+
+    if spec is None:
+        return None
+
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        # The module exists but its dependencies (usually torch) do not.
+        # Report it as absent so ``hasattr`` stays False instead of raising.
+        logger.debug(
+            "optional training submodule %s is unimportable: %s", module_name, exc
+        )
+        return None
+    globals()[name] = module
+    return module
+
+
+def __getattr__(name: str) -> Any:
+    if name == "TRL_AVAILABLE":
+        value = _detect_trl()
+        globals()[name] = value
+        return value
     if name in _OPTIONAL_EXPORTS:
         module_name, attr_name = _OPTIONAL_EXPORTS[name]
         module = importlib.import_module(module_name)
         value = getattr(module, attr_name)
         globals()[name] = value
         return value
+    submodule = _maybe_import_submodule(name)
+    if submodule is not None:
+        return submodule
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

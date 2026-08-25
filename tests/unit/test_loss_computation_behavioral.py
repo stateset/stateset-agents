@@ -2,7 +2,9 @@
 and narrow exception handling around the forward pass."""
 
 import math
+from types import SimpleNamespace
 
+import pytest
 import torch
 
 from stateset_agents.training import loss_computation as lc
@@ -62,3 +64,147 @@ def test_loss_exceptions_matches_canonical_tuple():
     from stateset_agents.exceptions import LOSS_EXCEPTIONS as canonical
 
     assert lc.LOSS_EXCEPTIONS == canonical
+
+
+# --- GRPO loss defect regressions (task 1.7) -------------------------------
+
+
+class _FixedLossModel(torch.nn.Module):
+    """Model returning a constant per-token mean NLL that depends on a param."""
+
+    def __init__(self, nll_value: float = 0.5, vocab: int = 7):
+        super().__init__()
+        self.p = torch.nn.Parameter(torch.tensor(float(nll_value)))
+        self.vocab = vocab
+        self.device = torch.device("cpu")
+
+    def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
+        seq = input_ids.shape[1]
+        logits = torch.zeros(1, seq, self.vocab) + self.p
+        return SimpleNamespace(loss=self.p * 1.0, logits=logits)
+
+
+class _MaskTokenizer:
+    """Chat tokenizer emitting `n_assistant` assistant tokens out of `n_total`."""
+
+    def __init__(self, n_total: int, n_assistant: int):
+        self.n_total = n_total
+        self.n_assistant = n_assistant
+
+    def apply_chat_template(
+        self,
+        messages,
+        *,
+        return_dict: bool = False,
+        return_assistant_tokens_mask: bool = False,
+        **kwargs,
+    ):
+        n, a = self.n_total, self.n_assistant
+        input_ids = torch.arange(1, n + 1).unsqueeze(0)
+        attention_mask = torch.ones(1, n, dtype=torch.long)
+        assistant = torch.tensor([[0] * (n - a) + [1] * a])
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "assistant_tokens_mask": assistant,
+        }
+
+
+def _make_group(n_total: int, n_assistant: int, log_probs=None):
+    traj = SimpleNamespace(
+        turns=[
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ],
+        total_reward=1.0,
+        metadata={},
+    )
+    if log_probs is not None:
+        traj.log_probs = log_probs
+    return SimpleNamespace(trajectories=[traj])
+
+
+def _make_agent(n_total: int, n_assistant: int, nll_value: float = 0.5):
+    return SimpleNamespace(
+        tokenizer=_MaskTokenizer(n_total, n_assistant),
+        model=_FixedLossModel(nll_value),
+    )
+
+
+def _config(**overrides):
+    base = {
+        "max_prompt_length": 64,
+        "max_completion_length": 64,
+        "token_level_loss": False,
+        "clip_ratio": 0.0,
+    }
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def test_token_level_loss_not_double_normalised():
+    """Identical per-token NLL must give identical loss regardless of length.
+
+    `outputs.loss` is already the per-token mean, so dividing by the token
+    count again introduced a 1/L^2 bias (short responses weighted 2x here).
+    """
+    cfg = _config(token_level_loss=True)
+    advantages = torch.tensor([1.0])
+
+    short_loss, _ = lc._compute_group_policy_loss(
+        _make_group(8, 4), advantages, cfg, _make_agent(8, 4)
+    )
+    long_loss, _ = lc._compute_group_policy_loss(
+        _make_group(12, 8), advantages, cfg, _make_agent(12, 8)
+    )
+
+    assert short_loss.item() == pytest.approx(long_loss.item(), rel=1e-6)
+
+
+def _grad_norm_for_ratio(per_token_drift: float, seq_clip_ratio: float) -> float:
+    """Run one clipped-surrogate step where ratio == exp(per_token_drift)."""
+    n_assistant, nll_value = 4, 0.5
+    agent = _make_agent(8, n_assistant, nll_value)
+    # ratio = exp((new - old)/T); new = -(nll*T) => old = -(nll + drift)*T
+    old = -(nll_value + per_token_drift) * n_assistant
+    group = _make_group(8, n_assistant, log_probs=old)
+    cfg = _config(clip_ratio=0.2, seq_clip_ratio=seq_clip_ratio)
+
+    loss, _ = lc._compute_group_policy_loss(group, torch.tensor([1.0]), cfg, agent)
+    loss.backward()
+    grad = agent.model.p.grad
+    return 0.0 if grad is None else float(grad.abs().sum())
+
+
+def test_sequence_ratio_clip_is_active():
+    """A GSPO-scale clip must actually bite on the sequence-mean ratio."""
+    # ratio ~ 1.001 > 1 + 3e-4 with A > 0 -> clipped branch -> no gradient.
+    assert _grad_norm_for_ratio(1e-3, 3e-4) == pytest.approx(0.0, abs=1e-9)
+    # ratio ~ 1.0001 stays inside the trust region -> gradient flows.
+    assert _grad_norm_for_ratio(1e-4, 3e-4) > 1e-6
+
+
+def test_ppo_clip_uses_seq_clip_ratio(monkeypatch):
+    """The ratio clip must be read from `seq_clip_ratio`, not `clip_ratio`."""
+    recorded = {}
+    real = lc.rl_losses.clipped_surrogate
+
+    def spy(ratio, advantages, *, clip_low, clip_high):
+        recorded["clip_low"] = clip_low
+        recorded["clip_high"] = clip_high
+        return real(ratio, advantages, clip_low=clip_low, clip_high=clip_high)
+
+    monkeypatch.setattr(lc.rl_losses, "clipped_surrogate", spy)
+
+    agent = _make_agent(8, 4)
+    group = _make_group(8, 4, log_probs=-2.0)
+    cfg = _config(clip_ratio=0.2, seq_clip_ratio=7e-4)
+    lc._compute_group_policy_loss(group, torch.tensor([1.0]), cfg, agent)
+
+    assert recorded == {"clip_low": 7e-4, "clip_high": 7e-4}
+
+
+def test_seq_clip_ratio_default_is_gspo_scale():
+    from stateset_agents.training.config import TrainingConfig
+
+    assert TrainingConfig().seq_clip_ratio == 3e-4

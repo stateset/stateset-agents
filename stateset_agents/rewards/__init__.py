@@ -52,6 +52,13 @@ from .llm_judge_adapter import (
     create_rlaif_reward,
 )
 
+# NSR verifier — deterministic, proof-backed reward (StateSet NSR)
+from .nsr_verifier import (
+    NSROutcomeReporter,
+    NSRVerifierConfig,
+    NSRVerifierReward,
+)
+
 __all__ = [
     "LLMRewardFunction",
     "RewardResult",
@@ -92,5 +99,8 @@ __all__.extend(
         "LLMJudgeRewardWithFallback",
         "create_rlaif_reward",
         "create_rlaif_component",
+        "NSROutcomeReporter",
+        "NSRVerifierConfig",
+        "NSRVerifierReward",
     ]
 )

@@ -8,7 +8,7 @@ uses those value estimates as baselines for GRPO training.
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from typing import Any, cast
 
@@ -28,6 +28,7 @@ except ImportError:
     AdamW = cast(Any, None)
 
 from .base_trainer import BaseTrainerConfig
+from .checkpoint_io import load_checkpoint_file
 
 logger = logging.getLogger(__name__)
 
@@ -733,7 +734,13 @@ class OfflineGRPOTrainer:
                 "value_target_state_dict": self.value_target.state_dict(),
                 "value_optimizer_state_dict": self.value_optimizer.state_dict(),
                 "q_optimizer_state_dict": self.q_optimizer.state_dict(),
-                "config": self.config,
+                # Persist the config as plain data so checkpoints stay
+                # loadable under torch.load(weights_only=True).
+                "config": (
+                    asdict(self.config)
+                    if is_dataclass(self.config) and not isinstance(self.config, type)
+                    else dict(getattr(self.config, "__dict__", {}))
+                ),
                 "training_step": self.training_step,
                 "value_pretrained": self.value_pretrained,
                 "training_metrics": self.training_metrics,
@@ -742,9 +749,18 @@ class OfflineGRPOTrainer:
         )
         logger.info(f"Saved Offline GRPO trainer to {path}")
 
-    def load(self, path: str) -> None:
-        """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)  # nosec: B614
+    def load(self, path: str, *, trusted: bool = False) -> None:
+        """Load model checkpoint
+
+        Args:
+            path: Checkpoint written by :meth:`save`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
+        checkpoint = load_checkpoint_file(
+            path, map_location=self.device, trusted=trusted
+        )
 
         self.value_net.load_state_dict(checkpoint["value_net_state_dict"])
         self.q_net.load_state_dict(checkpoint["q_net_state_dict"])
@@ -754,5 +770,13 @@ class OfflineGRPOTrainer:
         self.training_step = checkpoint.get("training_step", 0)
         self.value_pretrained = checkpoint.get("value_pretrained", False)
         self.training_metrics = checkpoint.get("training_metrics", [])
+
+        # Checkpoints store the config as a plain dict (see save()); rebuild it.
+        config_payload = checkpoint.get("config")
+        if isinstance(config_payload, dict):
+            try:
+                self.config = OfflineGRPOConfig(**config_payload)
+            except (TypeError, ValueError) as exc:
+                logger.warning("Failed to restore config from checkpoint: %s", exc)
 
         logger.info(f"Loaded Offline GRPO trainer from {path}")

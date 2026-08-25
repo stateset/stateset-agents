@@ -62,8 +62,8 @@ from .advanced_training_models import (
     ResourceRequirement,
     ResourceType,
     SchedulingStrategy,
-    TrainingConfig,
     TrainingJob,
+    TrainingJobSpec,
     TrainingStatus,
     deserialize_training_job,
     serialize_training_job,
@@ -587,12 +587,12 @@ class TrainingWorker:
         logger.info(f"Creating new model for job {job.job_id}")
         return {"type": "placeholder_model", "config": job.config.model_config}
 
-    def _create_optimizer(self, model, config: TrainingConfig):
+    def _create_optimizer(self, model, config: TrainingJobSpec):
         """Create optimizer"""
         # Placeholder implementation
         return {"type": config.optimizer, "lr": config.learning_rate}
 
-    def _create_scheduler(self, optimizer, config: TrainingConfig):
+    def _create_scheduler(self, optimizer, config: TrainingJobSpec):
         """Create learning rate scheduler"""
         # Placeholder implementation
         return {"type": config.scheduler}
@@ -749,7 +749,7 @@ class AdvancedTrainingOrchestrator:
         self._monitoring_task = loop.create_task(self._monitoring_loop())
 
     async def submit_training_job(
-        self, config: TrainingConfig, priority: int = 1, user_id: str | None = None
+        self, config: TrainingJobSpec, priority: int = 1, user_id: str | None = None
     ) -> str:
         """Submit a new training job"""
         self._start_background_tasks()
@@ -985,7 +985,7 @@ if __name__ == "__main__":
         orchestrator = AdvancedTrainingOrchestrator()
 
         # Create training configuration
-        config = TrainingConfig(
+        config = TrainingJobSpec(
             experiment_name="test_grpo_training",
             agent_type="MultiTurnAgent",
             model_config={"model_type": "gpt2", "model_name": "gpt2"},

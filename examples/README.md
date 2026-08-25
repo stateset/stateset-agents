@@ -456,6 +456,13 @@ python examples/backend_switch_demo.py
 
 Miscellaneous standalone scripts not covered above:
 
+- `examples/nsr_verified_reward.py` — the NSR neuro-symbolic verifier reward end to end: builds a decision request with rules/facts, scores a trajectory with `NSRVerifierReward`, and reports the outcome. Runs offline against an injected fake verifier by default:
+
+```bash
+python examples/nsr_verified_reward.py            # offline, no server or keys
+python examples/nsr_verified_reward.py --live     # against a real NSR API
+```
+
 - `examples/model_presets.py` — the model-preset registry (`PRESETS`) backing `examples/finetune_gspo.py`; import `get_preset`/`list_preset_names` to reuse the hyperparameters in your own scripts.
 - `examples/advanced_features_demo.py` — end-to-end demo of curriculum learning, multi-agent coordination, offline RL (CQL/IQL), Bayesian uncertainty, and few-shot adaptation.
 - `examples/auto_research.py` — the autonomous hyperparameter-optimization research loop.

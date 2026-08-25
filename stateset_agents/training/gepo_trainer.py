@@ -23,6 +23,8 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
+from . import rl_losses
+from .checkpoint_io import load_checkpoint_file
 from .config import TrainingConfig
 from .trainer_runtime import (
     SharedModelManager,
@@ -354,18 +356,12 @@ class GEPOTrainer:
             advantages: Normalized advantages [group_size]
             stats: Reward statistics
         """
-        mean_reward = rewards.mean()
-        std_reward = rewards.std()
+        advantages = rl_losses.group_advantages(rewards)
 
-        # Avoid division by zero
-        if std_reward < 1e-8:
-            std_reward = torch.tensor(1.0, device=rewards.device)
-
-        advantages = (rewards - mean_reward) / std_reward
-
+        std_reward = rewards.float().std(correction=0) if rewards.numel() > 1 else 0.0
         stats = {
-            "mean_reward": mean_reward.item(),
-            "std_reward": std_reward.item(),
+            "mean_reward": rewards.mean().item(),
+            "std_reward": float(std_reward),
             "max_reward": rewards.max().item(),
             "min_reward": rewards.min().item(),
         }
@@ -582,11 +578,20 @@ class GEPOTrainer:
             config_filename="gepo_config.json",
         )
 
-    def load_checkpoint(self, checkpoint_dir: str) -> None:
-        """Load model checkpoint"""
+    def load_checkpoint(self, checkpoint_dir: str, *, trusted: bool = False) -> None:
+        """Load model checkpoint.
+
+        Args:
+            checkpoint_dir: Directory written by :meth:`save_checkpoint`.
+            trusted: Pass ``True`` only for checkpoints from a source you
+                control; the default unpickles with ``weights_only=True`` so a
+                malicious checkpoint cannot execute code.
+        """
         state_path = os.path.join(checkpoint_dir, "training_state.pt")
         if os.path.exists(state_path):
-            state = torch.load(state_path, map_location=self.device)  # nosec: B614
+            state = load_checkpoint_file(
+                state_path, map_location=self.device, trusted=trusted
+            )
             self.global_step = state["global_step"]
             self.optimizer.load_state_dict(state["optimizer_state_dict"])
             self.scheduler.load_state_dict(state["scheduler_state_dict"])

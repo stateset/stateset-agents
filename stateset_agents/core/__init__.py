@@ -12,6 +12,7 @@ import os
 import warnings
 from importlib import import_module
 from importlib.util import find_spec
+from types import ModuleType
 from typing import Any
 
 # Optional deprecation warning for legacy imports.
@@ -116,20 +117,6 @@ _LAZY_EXPORTS.update(
 )
 _LAZY_EXPORTS.update(
     _export_group(
-        "stateset_agents.experimental.long_term_planning",
-        [
-            "PlanningConfig",
-            "PlanningManager",
-            "Planner",
-            "Plan",
-            "PlanStep",
-            "PlanStatus",
-            "HeuristicPlanner",
-        ],
-    )
-)
-_LAZY_EXPORTS.update(
-    _export_group(
         "stateset_agents.core.reward",
         [
             "RewardFunction",
@@ -205,7 +192,7 @@ _LAZY_EXPORTS.update(
             "ensure_type_safety",
             "ensure_async_type_safety",
             "ModelConfig",
-            "TrainingConfig",
+            "TrainingConfigDict",
             "TypedTrainingConfig",
             "TrajectoryData",
             "RewardMetrics",
@@ -214,6 +201,14 @@ _LAZY_EXPORTS.update(
             "TrainingStage",
         ],
     )
+)
+# ``TrainingConfig`` is canonically the training-layer dataclass; keep the
+# name importable from ``core`` as a lazy string path so no core->training
+# module-level import edge is created.
+_LAZY_EXPORTS["TrainingConfig"] = (
+    "stateset_agents.training.config",
+    "TrainingConfig",
+    _TRAINING_INSTALL_HINT,
 )
 _LAZY_EXPORTS["TypedConversationTurn"] = (
     "stateset_agents.core.type_system",
@@ -246,6 +241,18 @@ _LAZY_EXPORTS.update(
     )
 )
 
+# Planning symbols moved to ``stateset_agents.experimental.long_term_planning``.
+# Re-exported here for one release with a DeprecationWarning.
+_DEPRECATED_PLANNING_EXPORTS = (
+    "PlanningConfig",
+    "PlanningManager",
+    "Planner",
+    "Plan",
+    "PlanStep",
+    "PlanStatus",
+    "HeuristicPlanner",
+)
+
 __all__ = list(_LAZY_EXPORTS)
 
 
@@ -263,7 +270,7 @@ def _build_import_error(
     return message
 
 
-def _maybe_import_submodule(name: str) -> Any | None:
+def _maybe_import_submodule(name: str) -> ModuleType | None:
     """Import real submodules like ``stateset_agents.core.enhanced_state_management``."""
     module_name = f"{__name__}.{name}"
     try:
@@ -280,11 +287,21 @@ def _maybe_import_submodule(name: str) -> Any | None:
 
 
 def __getattr__(name: str) -> Any:
+    if name in _DEPRECATED_PLANNING_EXPORTS:
+        warnings.warn(
+            f"{name} is deprecated here; "
+            "import from stateset_agents.experimental.long_term_planning",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        module = import_module("stateset_agents.experimental.long_term_planning")
+        return getattr(module, name)
+
     export = _LAZY_EXPORTS.get(name)
     if export is None:
-        module = _maybe_import_submodule(name)
-        if module is not None:
-            return module
+        submodule = _maybe_import_submodule(name)
+        if submodule is not None:
+            return submodule
         raise AttributeError(f"module 'stateset_agents.core' has no attribute {name!r}")
 
     module_name, attr_name, install_hint = export
