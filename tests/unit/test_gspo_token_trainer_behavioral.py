@@ -209,3 +209,59 @@ async def test_gspo_token_out_of_region_sequence_gets_no_gradient(
     assert set(grads_gated) == set(grads_removed)
     for name, g in grads_gated.items():
         assert torch.allclose(g, grads_removed[name], atol=1e-6), name
+
+
+@pytest.mark.asyncio
+async def test_gated_infinite_sequence_ratio_does_not_poison_loss(
+    gspo_token_trainer_tiny, monkeypatch
+):
+    """A gated-out response whose sequence ratio overflowed to +inf must not
+    turn the loss (and every gradient) into NaN.
+
+    ``gate * seq_ratio`` is ``0 * inf == nan``; the gate has to *select*, not
+    multiply. The gated run must match a run where that response's advantage
+    is zero, i.e. it contributes nothing.
+    """
+    import copy
+    import math
+
+    trainer = gspo_token_trainer_tiny
+    baseline_state = copy.deepcopy(trainer.model.state_dict())
+
+    real_ratio = trainer.compute_sequence_importance_ratio
+
+    def inf_first_ratio(current, old, lengths):
+        ratio = real_ratio(current, old, lengths).clone()
+        ratio[0] = float("inf")  # gated out: adv > 0 and ratio > hi
+        return ratio
+
+    monkeypatch.setattr(trainer, "compute_sequence_importance_ratio", inf_first_ratio)
+    metrics = await trainer.train_step_token_level(["hello"], num_groups=1)
+    assert math.isfinite(metrics["policy_loss"])
+    grads_gated = {
+        n: p.grad.detach().clone()
+        for n, p in trainer.model.named_parameters()
+        if p.grad is not None
+    }
+    assert grads_gated
+    assert all(torch.isfinite(g).all() for g in grads_gated.values())
+
+    # Reference: identical run with a large but *finite* out-of-region ratio
+    # for response 0. It is gated out there too, so the gradients must match
+    # exactly -- the +inf must be neutralised, not propagated.
+    trainer.model.load_state_dict(baseline_state)
+
+    def big_first_ratio(current, old, lengths):
+        ratio = real_ratio(current, old, lengths).clone()
+        ratio[0] = 1e6
+        return ratio
+
+    monkeypatch.setattr(trainer, "compute_sequence_importance_ratio", big_first_ratio)
+    await trainer.train_step_token_level(["hello"], num_groups=1)
+    grads_finite = {
+        n: p.grad.detach().clone()
+        for n, p in trainer.model.named_parameters()
+        if p.grad is not None
+    }
+    for name, g in grads_gated.items():
+        assert torch.allclose(g, grads_finite[name], atol=1e-6), name

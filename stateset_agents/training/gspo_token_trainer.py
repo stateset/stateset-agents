@@ -274,14 +274,18 @@ class GSPOTokenTrainer(GSPOTrainer):
                 push_out = ((adv > 0) & (seq_ratio > hi)) | (
                     (adv < 0) & (seq_ratio < lo)
                 )
-                gate = (in_region | ~push_out).to(token_log_probs.dtype)
+                gate = in_region | ~push_out
+
+                # Select rather than multiply: a gated-out sequence whose
+                # ratio overflowed to +inf would give `0 * inf == nan` and
+                # poison the whole batch's loss and gradients.
+                gated_ratio = torch.where(gate, seq_ratio, torch.zeros_like(seq_ratio))
 
                 # Normalized by the actual response length (not the full
                 # padded sequence width, which would dilute the loss for
                 # short responses in a padded batch).
                 token_loss = (
-                    -(gate * seq_ratio * adv * token_log_probs).sum()
-                    / sequence_lengths[i]
+                    -(gated_ratio * adv * token_log_probs).sum() / sequence_lengths[i]
                 )
 
                 loss += token_loss / len(responses)
