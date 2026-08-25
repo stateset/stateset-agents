@@ -7,9 +7,10 @@ type safety across the framework.
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
-import torch
+if TYPE_CHECKING:  # pragma: no cover - annotations only
+    import torch
 
 # Generic type variables
 T = TypeVar("T")
@@ -160,7 +161,7 @@ class TokenizerProtocol(Protocol):
 class ModelProtocol(Protocol):
     """Protocol for model implementations."""
 
-    def generate(self, input_ids: torch.Tensor, **kwargs) -> torch.Tensor:
+    def generate(self, input_ids: "torch.Tensor", **kwargs) -> "torch.Tensor":
         """Generate tokens from input."""
         ...
 

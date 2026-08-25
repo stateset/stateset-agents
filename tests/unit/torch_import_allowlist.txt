@@ -1,0 +1,29 @@
+# Modules allowed to import ``torch`` unguarded at module level.
+#
+# One ``path  # reason`` per line, relative to the repository root. These are
+# modules that cannot do anything at all without torch — trainers, tensor
+# backends and RL algorithm implementations — and that are only ever reached
+# through a lazy import from a public package, so they never make an entry
+# point pay for torch.
+#
+# The policy tests also reject STALE entries: a listed path must still exist
+# and still contain an unguarded module-level torch import. The list can
+# therefore only shrink deliberately. Do not add configuration modules, type
+# modules, or anything under a torch-free entry point here — fix those instead.
+
+stateset_agents/core/enhanced/advanced_rl_algorithms.py  # torch RL algorithm implementations (nn.Module subclasses); reached only via a lazy import
+stateset_agents/training/base_trainer.py  # trainer base class built on torch optimizers/autograd
+stateset_agents/training/dapo_trainer.py  # DAPO trainer; torch tensors throughout
+stateset_agents/training/distributed.py  # torch.distributed / DDP wrappers
+stateset_agents/training/distributed_trainer.py  # torch.distributed trainer
+stateset_agents/training/ema.py  # EMA over torch module parameters
+stateset_agents/training/gepo_trainer.py  # GEPO trainer; torch tensors throughout
+stateset_agents/training/gspo_generation.py  # torch generation/log-prob helpers
+stateset_agents/training/gspo_token_trainer.py  # token-level GSPO trainer; torch tensors throughout
+stateset_agents/training/gspo_trainer.py  # GSPO trainer; torch tensors throughout
+stateset_agents/training/ppo_trainer.py  # PPO trainer and value head (nn.Module)
+stateset_agents/training/rlaif_trainer.py  # RLAIF trainer; torch tensors throughout
+stateset_agents/training/trainer_runtime.py  # shared trainer runtime spine (device/dtype/optimizer plumbing)
+stateset_agents/training/trl_grpo_trainer.py  # TRL GRPO wrapper; TRL itself requires torch
+stateset_agents/training/vapo_trainer.py  # VAPO trainer and value head (nn.Module)
+stateset_agents/training/vllm_backend.py  # vLLM generation backend; vLLM itself requires torch

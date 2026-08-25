@@ -24,6 +24,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     "make_support_scenarios": "customer_support_bench",
     "GSM8KExample": "gsm8k",
     "GSM8KReward": "gsm8k",
+    "PartialCreditGSM8KReward": "gsm8k",
     "extract_gold_answer": "gsm8k",
     "extract_predicted_answer": "gsm8k",
     "load_gsm8k": "gsm8k",

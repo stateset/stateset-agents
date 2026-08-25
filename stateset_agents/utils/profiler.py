@@ -5,6 +5,8 @@ This module provides decorators and utilities for profiling function performance
 memory usage, and generating performance reports.
 """
 
+from __future__ import annotations
+
 import cProfile
 import io
 import logging
@@ -12,9 +14,9 @@ import pstats
 import time
 from collections.abc import Callable
 from functools import wraps
+from typing import Any
 
 import psutil
-import torch
 
 from .performance_monitor import (
     monitor_operation,
@@ -23,6 +25,19 @@ from .performance_monitor import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _torch_cuda() -> Any | None:
+    """Return ``torch.cuda`` if torch is importable, else ``None``.
+
+    ``torch`` is an optional heavy dependency and profiling is useful without
+    it, so the import is deferred to the call sites that need GPU counters.
+    """
+    try:
+        import torch
+    except ImportError:
+        return None
+    return torch.cuda
 
 
 def profiled(func: Callable) -> Callable:
@@ -158,9 +173,10 @@ class PerformanceReport:
         """Start performance monitoring."""
         self.start_memory = self.process.memory_info().rss / 1024 / 1024  # MB
 
-        if torch.cuda.is_available():
-            torch.cuda.reset_peak_memory_stats()
-            self.start_gpu_memory = torch.cuda.memory_allocated() / 1024 / 1024  # MB
+        cuda = _torch_cuda()
+        if cuda is not None and cuda.is_available():
+            cuda.reset_peak_memory_stats()
+            self.start_gpu_memory = cuda.memory_allocated() / 1024 / 1024  # MB
 
     def generate_report(self, operation_name: str) -> dict:
         """Generate a performance report."""
@@ -179,9 +195,10 @@ class PerformanceReport:
             },
         }
 
-        if torch.cuda.is_available():
-            current_gpu_memory = torch.cuda.memory_allocated() / 1024 / 1024
-            peak_gpu_memory = torch.cuda.max_memory_allocated() / 1024 / 1024
+        cuda = _torch_cuda()
+        if cuda is not None and cuda.is_available():
+            current_gpu_memory = cuda.memory_allocated() / 1024 / 1024
+            peak_gpu_memory = cuda.max_memory_allocated() / 1024 / 1024
 
             report["gpu_memory"] = {
                 "start_mb": self.start_gpu_memory,
