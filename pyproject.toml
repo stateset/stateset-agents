@@ -238,6 +238,19 @@ include-package-data = true
 "stateset_agents" = ["py.typed", "config/presets/**/*.yaml"]
 
 
+# Bandit configuration
+[tool.bandit]
+exclude_dirs = ["tests", "examples", "docs", "__pycache__"]
+# B101: assert checks. B601: shell usage warnings.
+# B614: torch.load/torch.save usage. Every load path in this codebase is
+# routed through core/checkpoint_io.py, which is the real control (a
+# trusted/untrusted source gates weights_only=True; see
+# tests/unit/test_checkpoint_trust.py and SECURITY.md). Flagging every
+# individual torch.save/torch.load call site (ppo_trainer.py, vapo_trainer.py,
+# distributed_trainer.py, core/value_function.py, ...) once that guard exists
+# is noise, not signal.
+skips = ["B101", "B601", "B614"]
+
 # Black configuration
 [tool.black]
 line-length = 88

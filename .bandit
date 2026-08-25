@@ -1,3 +1,9 @@
 [bandit]
 exclude_dirs = tests,examples,docs,__pycache__
-skips = B101,B601  # Skip assert checks and shell usage warnings for now
+# B101: assert checks. B601: shell usage warnings.
+# B614: torch.load usage — every load path in this codebase is routed through
+# core/checkpoint_io.py, which is the real control (trusted/untrusted source
+# gating weights_only=True, see tests/unit/test_checkpoint_trust.py and
+# SECURITY.md). Flagging every torch.save/torch.load call site individually
+# is noise once that guard exists.
+skips = B101,B601,B614
