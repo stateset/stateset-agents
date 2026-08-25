@@ -90,6 +90,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Group advantages use the population standard deviation everywhere.**
   Some paths used the sample std and some the population std, which made
   otherwise-identical algorithms disagree about advantage magnitude.
+  **Behaviour change:** paths that previously used the sample std (DAPO,
+  GEPO) now produce advantages larger by √(G/(G−1)) — about 15% at a
+  group size of 4 — which is an effective learning-rate change.
+
+- **`gather_token_logprobs` computes its log-softmax in fp32.** Better
+  numerics than a bf16 softmax, at the cost of a full-vocab fp32 tensor:
+  peak memory rises for large-vocab bf16 models in DAPO/VAPO. Pass
+  `dtype=torch.bfloat16` to get the old memory profile back.
+
+- **The five `Planning*` names moved to
+  `stateset_agents.experimental.long_term_planning`** but were left in
+  `stateset_agents.__all__`: they still import from the top level, now
+  with a `DeprecationWarning`.
 
 - **On-disk checkpoint `config` is a plain dict.** Checkpoints no longer
   carry pickled config objects, which is what makes the `weights_only`
@@ -107,10 +120,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GSPO-token clipped on the wrong quantity, so the trust region wasn't the
   one the algorithm describes.
 
-- **GRPO: removed a 1/L² length bias; the clip is sequence-scaled.**
-  (`training/loss_computation.py`) Normalising twice by length quietly penalised
-  long completions; `seq_clip_ratio` now scales the clip range with
-  sequence length as intended.
+- **GRPO: removed a 1/L² length bias, and the clip now actually binds.**
+  (`training/loss_computation.py`) Normalising twice by length quietly
+  penalised long completions. The clip is now taken on the per-token-mean
+  *sequence* ratio against `seq_clip_ratio` — a fixed ±3e-4 bound that does
+  **not** scale with sequence length. **Behaviour change:** for GRPO runs
+  that supply `log_probs`, the clip was previously never active and now
+  binds, so effective step sizes shrink; retune the learning rate.
+  `clip_ratio` no longer sets the GRPO bound — its value is only an
+  on/off switch for whether clipping happens at all.
 
 - **DAPO/GEPO produced NaN on a group of size 1.** (`training/dapo_trainer.py`,
   `training/gepo_trainer.py`, `training/vapo_trainer.py`) A zero-variance group divided by zero;
