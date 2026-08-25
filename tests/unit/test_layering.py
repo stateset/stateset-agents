@@ -72,6 +72,43 @@ def _experimental_module_level_imports(path: Path) -> list[str]:
     return offenders
 
 
+def _is_warnings_warn_call(node: ast.stmt) -> bool:
+    """True for a bare ``warnings.warn(...)`` expression statement."""
+    if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
+        return False
+    func = node.value.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "warn"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "warnings"
+    )
+
+
+def _non_shim_statements(path: Path) -> list[str]:
+    """Return descriptions of statements a deprecation shim may not contain.
+
+    A shim may only hold: a module docstring, imports, plain assignments
+    (re-exports, ``__all__``), and a ``warnings.warn(...)`` call.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    bad: list[str] = []
+    for index, node in enumerate(tree.body):
+        if isinstance(node, ast.Import | ast.ImportFrom | ast.Assign | ast.AnnAssign):
+            continue
+        if (
+            index == 0
+            and isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            continue  # module docstring
+        if _is_warnings_warn_call(node):
+            continue
+        bad.append(f"{path.name}:{node.lineno} {type(node).__name__}")
+    return bad
+
+
 def test_core_does_not_import_experimental_at_module_level() -> None:
     offenders: list[str] = []
     for path in _core_modules():
@@ -95,17 +132,23 @@ def test_deprecation_shims_stay_tiny() -> None:
             f"<= {MAX_SHIM_LINES} lines so the layering exemption cannot hide "
             "real code"
         )
+        bad = _non_shim_statements(path)
+        assert bad == [], (
+            f"{name} is exempted from the layering rule because it is a pure "
+            "deprecation shim, but it contains statements a shim may not have "
+            "(only a docstring, imports, assignments and warnings.warn are "
+            "allowed): " + ", ".join(bad)
+        )
 
 
 @pytest.mark.parametrize("name", DEPRECATED_ROOT_PLANNING_NAMES)
-def test_root_planning_exports_warn(name: str) -> None:
+def test_root_planning_exports_warn(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
     import stateset_agents
 
-    # Drop any cached value so __getattr__ runs again.
-    vars(stateset_agents).pop(name, None)
+    # Drop any cached value so __getattr__ runs again; monkeypatch restores it.
+    monkeypatch.delitem(vars(stateset_agents), name, raising=False)
     with pytest.warns(DeprecationWarning, match="experimental.long_term_planning"):
         assert getattr(stateset_agents, name) is not None
-    vars(stateset_agents).pop(name, None)
 
 
 def test_experimental_import_path_does_not_warn() -> None:
