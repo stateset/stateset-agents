@@ -26,8 +26,10 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
       contents: read
+    # No id-token here: OIDC trusted publishing happens only in pypi-publish.
+    # `environment` stays because the TestPyPI upload step below reads
+    # secrets.TEST_PYPI_API_TOKEN, which is scoped to the environment.
     environment:
       name: ${{ (github.event_name == 'release' || github.event_name == 'push') && 'pypi' || github.event.inputs.environment }}
 
