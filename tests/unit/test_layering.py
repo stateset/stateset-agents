@@ -157,3 +157,52 @@ def test_experimental_import_path_does_not_warn() -> None:
         from stateset_agents.experimental.long_term_planning import (  # noqa: F401
             PlanningConfig,
         )
+
+
+# --- Task 5.3/5.4: core must not depend on training; one TrainingConfig -----
+
+PACKAGE_DIR = CORE_DIR.parent
+
+
+def _training_module_level_imports(path: Path) -> list[str]:
+    """Return module-level imports of the training layer in ``path``."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    offenders: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("stateset_agents.training"):
+                    offenders.append(f"{path.name}:{node.lineno} import {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            absolute = node.level == 0 and module.startswith("stateset_agents.training")
+            relative = node.level > 0 and (
+                module == "training" or module.startswith("training.")
+            )
+            if absolute or relative:
+                dots = "." * node.level
+                offenders.append(f"{path.name}:{node.lineno} from {dots}{module}")
+    return offenders
+
+
+def test_core_does_not_import_training_at_module_level() -> None:
+    offenders: list[str] = []
+    for path in _core_modules():
+        offenders.extend(_training_module_level_imports(path))
+    assert offenders == [], (
+        "stateset_agents.core must not import stateset_agents.training at "
+        "module level (move the import into the function that uses it): "
+        + ", ".join(offenders)
+    )
+
+
+def test_enhanced_gspo_config_is_the_canonical_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("torch")
+    from stateset_agents.core.enhanced import advanced_rl_algorithms
+    from stateset_agents.training.gspo_config import GSPOConfig
+
+    monkeypatch.delitem(vars(advanced_rl_algorithms), "GSPOConfig", raising=False)
+    with pytest.warns(DeprecationWarning, match="training.gspo_config"):
+        assert advanced_rl_algorithms.GSPOConfig is GSPOConfig
