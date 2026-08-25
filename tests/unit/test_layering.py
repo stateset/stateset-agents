@@ -211,7 +211,8 @@ def test_core_does_not_import_training_at_module_level() -> None:
 
 def test_exactly_one_training_config_class() -> None:
     found = _training_config_class_definitions()
-    assert found == ["training/config.py:26"], (
+    paths = [entry.split(":")[0] for entry in found]
+    assert paths == ["training/config.py"], (
         "exactly one class named TrainingConfig may be defined under "
         "stateset_agents/ and it must live in training/config.py; found: "
         + ", ".join(found)
