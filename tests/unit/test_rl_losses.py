@@ -23,6 +23,17 @@ def test_gather_matches_naive_loop():
     torch.testing.assert_close(got_mask, want_mask)
 
 
+def test_gather_dtype_kwarg_controls_softmax_precision():
+    logits = torch.randn(2, 5, 7, dtype=torch.bfloat16)
+    ids = torch.randint(0, 7, (2, 5))
+    mask = torch.ones(2, 5)
+    fp32, _ = L.gather_token_logprobs(logits, ids, mask)
+    bf16, _ = L.gather_token_logprobs(logits, ids, mask, dtype=torch.bfloat16)
+    assert fp32.dtype == torch.float32
+    assert bf16.dtype == torch.bfloat16
+    torch.testing.assert_close(bf16.float(), fp32, rtol=1e-1, atol=1e-1)
+
+
 def test_masked_mean_token_and_seq():
     x = torch.tensor([[1.0, 2.0, 3.0], [4.0, 0.0, 0.0]])
     m = torch.tensor([[1.0, 1.0, 1.0], [1.0, 0.0, 0.0]])

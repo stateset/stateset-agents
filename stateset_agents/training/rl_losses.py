@@ -14,17 +14,25 @@ def _t() -> Any:
     return get_torch() or require_torch()
 
 
-def gather_token_logprobs(logits: Any, input_ids: Any, response_mask: Any) -> tuple[Any, Any]:
+def gather_token_logprobs(
+    logits: Any, input_ids: Any, response_mask: Any, *, dtype: Any = None
+) -> tuple[Any, Any]:
     """Shift-by-one gather of per-token log-probs, masked to response tokens.
 
     Returns ``(token_logprobs, shifted_mask)`` both of shape ``[B, T-1]``.
     ``token_logprobs`` is already multiplied by ``shifted_mask``.
+
+    ``dtype`` selects the precision of the log-softmax; ``None`` means fp32,
+    which is the most accurate but allocates a full-vocab fp32 tensor.  Pass
+    e.g. ``torch.bfloat16`` to trade numerics for peak memory on large-vocab
+    models.
     """
     torch = _t()
     shift_logits = logits[..., :-1, :]
     shift_labels = input_ids[..., 1:]
     shifted_mask = response_mask[..., 1:].to(shift_logits.dtype)
-    log_probs = torch.log_softmax(shift_logits.float(), dim=-1)
+    softmax_dtype = torch.float32 if dtype is None else dtype
+    log_probs = torch.log_softmax(shift_logits.to(softmax_dtype), dim=-1)
     token_logprobs = log_probs.gather(-1, shift_labels.unsqueeze(-1)).squeeze(-1)
     return token_logprobs * shifted_mask, shifted_mask
 
