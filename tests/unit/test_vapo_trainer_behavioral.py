@@ -291,3 +291,23 @@ def test_compute_token_log_probs_masks_prompt_positions(vapo_trainer_tiny):
     assert masked.shape == unmasked.shape
     assert torch.all(masked[:, :3] == 0.0)  # shifted: P-1 leading zeros
     assert torch.allclose(masked[:, 3:], unmasked[:, 3:])
+
+
+def test_vapo_logprob_dtype_config_selects_bf16():
+    """config.logprob_dtype='bf16' must reach gather_token_logprobs."""
+    config = VAPOConfig(
+        model_name="gpt2",
+        group_size=2,
+        per_device_train_batch_size=2,
+        logprob_dtype="bf16",
+    )
+    trainer = VAPOTrainer(
+        config=config,
+        model=tiny_model(),
+        tokenizer=None,
+        reward_fn=lambda prompt, response: 1.0,
+    )
+    torch.manual_seed(7)
+    ids = torch.randint(0, 200, (1, 8))
+    am = torch.ones(1, 8, dtype=torch.long)
+    assert trainer.compute_token_log_probs(ids, am).dtype == torch.bfloat16

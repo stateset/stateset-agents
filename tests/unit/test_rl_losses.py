@@ -161,3 +161,24 @@ def test_safe_exp_ratio_keeps_gradients_inside_the_clamp():
     L.safe_exp_ratio(log_ratio).backward()
     assert log_ratio.grad is not None
     assert log_ratio.grad.item() == pytest.approx(math.exp(0.25))
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        (None, None),
+        ("fp32", torch.float32),
+        ("float32", torch.float32),
+        ("bf16", torch.bfloat16),
+        ("bfloat16", torch.bfloat16),
+        ("fp16", torch.float16),
+        ("FP16", torch.float16),
+    ],
+)
+def test_resolve_logprob_dtype(name, expected):
+    assert L.resolve_logprob_dtype(name) is expected
+
+
+def test_resolve_logprob_dtype_rejects_unknown_names():
+    with pytest.raises(ValueError, match="logprob_dtype"):
+        L.resolve_logprob_dtype("int8")

@@ -311,6 +311,10 @@ class DAPOTrainer:
         _load_transformers_dapo()
 
         self.config = config
+        # Parsed once here rather than per forward pass.
+        self._logprob_dtype = rl_losses.resolve_logprob_dtype(
+            getattr(config, "logprob_dtype", None)
+        )
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
@@ -455,7 +459,7 @@ class DAPOTrainer:
         """
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
         masked_log_probs, shift_response_mask = rl_losses.gather_token_logprobs(
-            outputs.logits, input_ids, response_mask
+            outputs.logits, input_ids, response_mask, dtype=self._logprob_dtype
         )
         return masked_log_probs, shift_response_mask.sum(dim=-1)
 

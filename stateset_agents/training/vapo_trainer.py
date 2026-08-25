@@ -392,6 +392,10 @@ class VAPOTrainer:
         _load_transformers_vapo()
 
         self.config = config
+        # Parsed once here rather than per forward pass.
+        self._logprob_dtype = rl_losses.resolve_logprob_dtype(
+            getattr(config, "logprob_dtype", None)
+        )
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
@@ -528,7 +532,7 @@ class VAPOTrainer:
         if response_mask is None:
             response_mask = torch.ones_like(input_ids)
         token_log_probs, _ = rl_losses.gather_token_logprobs(
-            outputs.logits, input_ids, response_mask
+            outputs.logits, input_ids, response_mask, dtype=self._logprob_dtype
         )
         return token_log_probs
 

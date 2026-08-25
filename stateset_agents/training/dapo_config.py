@@ -51,6 +51,11 @@ class DAPOConfig(TrainingConfig):
 
     use_token_level_loss: bool = True
 
+    # Precision of the per-token log-softmax. None (default) means fp32, the
+    # most accurate; "bf16"/"fp16" trade numerics for peak memory on
+    # large-vocab models.
+    logprob_dtype: str | None = None
+
     beta: float = 0.0
     use_reference_model: bool = False
 

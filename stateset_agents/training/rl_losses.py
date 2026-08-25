@@ -15,6 +15,33 @@ def _t() -> Any:
     return get_torch() or require_torch()
 
 
+def resolve_logprob_dtype(name: str | None) -> Any:
+    """Parse a ``logprob_dtype`` config string into a torch dtype.
+
+    ``None`` (the default) means fp32, the most accurate choice; the other
+    names trade numerics for peak memory on large-vocab models. Parse once
+    at trainer construction, not per forward pass.
+    """
+    if name is None:
+        return None
+    torch = _t()
+    key = name.strip().lower()
+    dtypes = {
+        "fp32": torch.float32,
+        "float32": torch.float32,
+        "bf16": torch.bfloat16,
+        "bfloat16": torch.bfloat16,
+        "fp16": torch.float16,
+        "float16": torch.float16,
+        "half": torch.float16,
+    }
+    if key not in dtypes:
+        raise ValueError(
+            f"unknown logprob_dtype {name!r}; expected one of {sorted(dtypes)}"
+        )
+    return dtypes[key]
+
+
 def gather_token_logprobs(
     logits: Any, input_ids: Any, response_mask: Any, *, dtype: Any = None
 ) -> tuple[Any, Any]:
@@ -35,7 +62,11 @@ def gather_token_logprobs(
     softmax_dtype = torch.float32 if dtype is None else dtype
     log_probs = torch.log_softmax(shift_logits.to(softmax_dtype), dim=-1)
     token_logprobs = log_probs.gather(-1, shift_labels.unsqueeze(-1)).squeeze(-1)
-    return token_logprobs * shifted_mask, shifted_mask
+    # Cast the mask to the log-prob dtype for the multiply so the result
+    # keeps the requested precision (an fp32 mask would silently promote a
+    # bf16 gather back to fp32); the returned mask keeps the logits dtype so
+    # token counts summed from it stay exact.
+    return token_logprobs * shifted_mask.to(token_logprobs.dtype), shifted_mask
 
 
 def safe_exp_ratio(log_ratio: Any, *, clamp: float = 20.0) -> Any:

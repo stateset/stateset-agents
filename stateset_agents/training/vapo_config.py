@@ -59,6 +59,11 @@ class VAPOConfig(TrainingConfig):
     # ratio is then computed against log probs frozen at rollout time.
     num_gradient_updates: int = 1
 
+    # Precision of the per-token log-softmax. None (default) means fp32, the
+    # most accurate; "bf16"/"fp16" trade numerics for peak memory on
+    # large-vocab models.
+    logprob_dtype: str | None = None
+
     value_loss_coef: float = 0.5
     entropy_coef: float = 0.0
 

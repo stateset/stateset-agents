@@ -183,3 +183,19 @@ def test_importance_ratio_finite_for_extreme_log_ratio(dapo_trainer_factory):
         ratio, torch.tensor([[1.0, 1.0, 1.0]]), torch.tensor([[1.0, 1.0, 1.0]])
     )
     assert torch.isfinite(loss).all()
+
+
+def test_logprob_dtype_config_selects_bf16(dapo_trainer_factory):
+    """config.logprob_dtype='bf16' must reach gather_token_logprobs."""
+    trainer = dapo_trainer_factory(tiny_model(), logprob_dtype="bf16")
+    torch.manual_seed(7)
+    ids = torch.randint(0, 200, (1, 8))
+    am = torch.ones(1, 8, dtype=torch.long)
+    rm = torch.zeros(1, 8)
+    rm[:, 4:] = 1.0
+    logp, _ = trainer.compute_token_log_probs(ids, am, rm)
+    assert logp.dtype == torch.bfloat16
+
+    default = dapo_trainer_factory(tiny_model())
+    logp32, _ = default.compute_token_log_probs(ids, am, rm)
+    assert logp32.dtype == torch.float32
