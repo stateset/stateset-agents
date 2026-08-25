@@ -103,9 +103,9 @@ def test_previously_eager_names_still_resolve() -> None:
         "train",
     )
     for name in formerly_eager:
-        assert name in training_pkg._OPTIONAL_EXPORTS, (
-            f"{name} was an eager export and must stay reachable via the lazy table"
-        )
+        assert (
+            name in training_pkg._OPTIONAL_EXPORTS
+        ), f"{name} was an eager export and must stay reachable via the lazy table"
         assert getattr(training_pkg, name) is not None
 
 
@@ -118,9 +118,9 @@ def test_all_names_are_reachable() -> None:
         and name not in vars(training_pkg)
         and name != "TRL_AVAILABLE"
     ]
-    assert not unreachable, (
-        f"names in __all__ with no eager binding and no lazy entry: {unreachable}"
-    )
+    assert (
+        not unreachable
+    ), f"names in __all__ with no eager binding and no lazy entry: {unreachable}"
 
 
 def test_trl_available_resolves_lazily() -> None:
