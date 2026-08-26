@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Provider canaries run automatically for release tags as well as weekly and
   manual schedules, retaining River, RunPod, and Fireworks evidence with the
   exact tagged revision.
+- Release evidence now records the exact source revision, default-suite result,
+  live provider canaries, bounded GPU jobs, cleanup result, and external
+  publication blockers without promoting partial checks into success claims.
 
 ## [0.42.1] - 2026-08-26 — Reliability and verification hardening
 

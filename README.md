@@ -1458,6 +1458,8 @@ For complex runs prefer the Python API and the examples folder.
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.1`).
+- [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
+  provider, GPU, cleanup, and publication claims for the current release.
 
 Other entry points:
 
