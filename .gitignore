@@ -172,6 +172,19 @@ benchmark_results/*
 !benchmark_results/SCHEMA.md
 !benchmark_results/README.md
 !benchmark_results/benchmark_summary.json
+!benchmark_results/framework_comparison/
+benchmark_results/framework_comparison/*
+!benchmark_results/framework_comparison/SCHEMA.md
+!benchmark_results/framework_comparison/MANIFEST.md
+!benchmark_results/algorithm_comparison/
+benchmark_results/algorithm_comparison/*
+!benchmark_results/algorithm_comparison/README.md
+!benchmark_results/scaling/
+benchmark_results/scaling/*
+!benchmark_results/scaling/README.md
+!benchmark_results/reliability/
+benchmark_results/reliability/*
+!benchmark_results/reliability/README.md
 hpo_results/
 
 # Python package/typing artifacts

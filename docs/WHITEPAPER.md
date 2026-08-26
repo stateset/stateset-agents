@@ -892,8 +892,14 @@ Keyboard shortcuts (`Cmd+N`, `D`, `P`, `L`, `C`) navigate views; the dashboard i
 The repository ships a benchmark suite under `benchmarks/` whose output is the basis for any performance claim we make. Rather than publish numbers that will go stale with the next driver, model release, or kernel update, this whitepaper publishes the *methodology* and points to the suite:
 
 - `benchmarks/performance_benchmarks.py` (1128 LOC) — end-to-end training and inference latency, throughput, memory footprint.
-- `benchmarks/algorithm_comparison.py` (569 LOC) — head-to-head GRPO vs. GSPO vs. DAPO on a fixed environment and reward.
-- `benchmarks/framework_comparison.py` (526 LOC) — StateSet Agents vs. baseline TRL on matched configurations.
+- `benchmarks/algorithm_comparison.py` — measured-only aggregation for matched
+  GRPO/GSPO/DAPO/VAPO/GEPO runs with at least three seeds per algorithm. The
+  old synthetic reward-curve generator was removed and cannot emit results.
+- `benchmarks/framework_comparison.py` — provenance-enforced aggregation of
+  real, matched StateSet/competitor runs. It rejects simulated measurements,
+  mismatched protocols or hardware, incomplete provenance, duplicate seeds,
+  and comparisons with fewer than three seeds per framework. The evidence
+  contract lives in `benchmark_results/framework_comparison/SCHEMA.md`.
 - `benchmarks/real_performance_benchmarks.py` (443 LOC) — vLLM vs. plain HF generation, measured at multiple batch sizes.
 
 The shared `BenchmarkResult` dataclass captures: name, iterations, avg / min / max / p50 / p95 / p99 latency (ms), std_dev, throughput (ops/sec), memory_mb. Results land in `benchmark_results/` as JSON and (optionally) HTML reports via `--report html`. We recommend practitioners run the relevant slice on their target hardware before committing to a configuration — the headline multipliers vary too much across deployments to publish a single canonical number.

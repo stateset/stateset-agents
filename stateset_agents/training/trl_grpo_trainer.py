@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import inspect
 import logging
 import random
 from collections.abc import Callable
@@ -173,8 +174,22 @@ def _require_trl_grpo() -> None:
         raise ImportError(
             "TRL GRPO training requires trl with GRPO support. "
             "Install a compatible version with `pip install stateset-agents[trl]` or "
-            "`pip install 'trl>=0.7,<0.10'`."
+            "`pip install 'trl>=0.14,<2'`."
         )
+
+
+def _supported_kwargs(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return only keyword arguments supported by a versioned dependency API."""
+    try:
+        parameters = inspect.signature(callable_obj).parameters
+    except (TypeError, ValueError):
+        return kwargs
+    if any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    ):
+        return kwargs
+    return {name: value for name, value in kwargs.items() if name in parameters}
 
 
 def _enable_input_require_grads(model: Any) -> None:
@@ -273,6 +288,7 @@ class TrajectoryGenerator:
         try:
             self.vllm_engine = LLM(
                 model=self.config.model_name,
+                revision=self.config.model_revision,
                 trust_remote_code=True,
                 dtype="float16" if self.config.fp16 else "bfloat16",
                 gpu_memory_utilization=0.6,  # Reserve memory for training
@@ -417,6 +433,7 @@ class ModelManager:
                 self.config.model_name,
                 trust_remote_code=True,
                 padding_side="left",  # Important for generation
+                revision=self.config.model_revision,
             )
             tokenizer: Any = self.tokenizer
             if tokenizer.pad_token is None:
@@ -431,6 +448,7 @@ class ModelManager:
                 ),
                 "device_map": "auto" if torch.cuda.is_available() else None,
                 "trust_remote_code": True,
+                "revision": self.config.model_revision,
             }
 
             # Add quantization if specified
@@ -522,6 +540,7 @@ class ModelManager:
                 logger.info("Loading reference model for KL penalty...")
                 ref_model = model_cls.from_pretrained(
                     self.config.model_name,
+                    revision=self.config.model_revision,
                     torch_dtype=model_kwargs["torch_dtype"],
                     device_map="auto" if torch.cuda.device_count() > 1 else None,
                 )
@@ -573,6 +592,9 @@ class TRLGRPODatasetBuilder:
 
         formatted_data = []
         for conv in conversations:
+            if isinstance(conv.get("prompt"), str):
+                formatted_data.append(dict(conv))
+                continue
             messages = conv.get("messages", [])
 
             # Find user-assistant pairs
@@ -611,22 +633,44 @@ class TRLGRPORewardFunction:
         """Compute rewards for generated completions"""
 
         rewards = []
-        for prompt, completion in zip(prompts, completions, strict=False):
+        scenario_indices = kwargs.get("scenario_index")
+        for position, (prompt, completion) in enumerate(
+            zip(prompts, completions, strict=False)
+        ):
             # Parse the prompt to extract the user query
             user_query = self._extract_user_query(prompt)
 
             # Create a conversation turn
+            if isinstance(completion, list) and completion:
+                last = completion[-1]
+                completion = last.get("content", "") if isinstance(last, dict) else last
             turn = ConversationTurn(
-                role="assistant", content=completion, metadata={"generated": True}
+                role="assistant", content=str(completion), metadata={"generated": True}
             )
 
             # Compute reward using the framework's reward model.
             # Uses the canonical RewardFunction.compute_reward(turns, context) API
             # documented in §4.1 of the whitepaper, so any RewardFunction subclass
             # (not just MultiObjectiveRewardFunction) works.
+            context: dict[str, Any] = {"user_query": user_query}
+            if isinstance(scenario_indices, list) and position < len(scenario_indices):
+                scenario_index = int(scenario_indices[position])
+                if 0 <= scenario_index < len(self.environment.scenarios):
+                    context.update(self.environment.scenarios[scenario_index])
+            else:
+                matching = next(
+                    (
+                        scenario
+                        for scenario in self.environment.scenarios
+                        if scenario.get("user_query") == user_query
+                    ),
+                    None,
+                )
+                if matching is not None:
+                    context.update(matching)
             reward_info = await self.reward_model.compute_reward(
                 turns=[turn],
-                context={"user_query": user_query},
+                context=context,
             )
 
             rewards.append(reward_info.total_reward)
@@ -670,54 +714,65 @@ class TRLGRPOTrainerWrapper:
         trainer_cls = TRLGRPOTrainer
         if trainer_cls is None:
             raise ImportError("TRL GRPO trainer is unavailable")
-        self.trainer = trainer_cls(
-            model=self.model,
-            ref_model=self.ref_model,
-            args=self.grpo_config,
-            train_dataset=self.train_dataset,
-            reward_funcs=self.reward_function,
-            tokenizer=self.tokenizer,
-        )
+        trainer_kwargs = {
+            "model": self.model,
+            "args": self.grpo_config,
+            "train_dataset": self.train_dataset,
+            "reward_funcs": self.reward_function,
+            # TRL renamed ``tokenizer`` to ``processing_class`` before GRPO's
+            # stable API. Keep the fallback solely for compatible older builds.
+            "processing_class": self.tokenizer,
+        }
+        trainer_parameters = inspect.signature(trainer_cls).parameters
+        if (
+            "processing_class" not in trainer_parameters
+            and "tokenizer" in trainer_parameters
+        ):
+            trainer_kwargs["tokenizer"] = trainer_kwargs.pop("processing_class")
+        if self.ref_model is not None and "ref_model" in trainer_parameters:
+            trainer_kwargs["ref_model"] = self.ref_model
+        self.trainer = trainer_cls(**_supported_kwargs(trainer_cls, trainer_kwargs))
 
     def _create_grpo_config(self) -> Any:
         """Create GRPOConfig from our training config"""
         grpo_config_cls = GRPOConfig
         if grpo_config_cls is None:
             raise ImportError("TRL GRPO config is unavailable")
-        return grpo_config_cls(
-            output_dir=self.config.output_dir,
-            per_device_train_batch_size=self.config.per_device_train_batch_size,
-            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
-            learning_rate=self.config.learning_rate,
-            num_train_epochs=self.config.num_epochs,
-            max_grad_norm=self.config.max_grad_norm,
-            warmup_steps=self.config.get_warmup_steps(),
-            fp16=self.config.fp16,
-            bf16=self.config.bf16,
-            logging_steps=self.config.logging_steps,
-            save_steps=self.config.save_steps,
-            eval_steps=self.config.eval_steps,
-            report_to=(
+        config_kwargs = {
+            "output_dir": self.config.output_dir,
+            "per_device_train_batch_size": self.config.per_device_train_batch_size,
+            "gradient_accumulation_steps": self.config.gradient_accumulation_steps,
+            "learning_rate": self.config.learning_rate,
+            "num_train_epochs": self.config.num_epochs,
+            "max_grad_norm": self.config.max_grad_norm,
+            "warmup_steps": self.config.get_warmup_steps(),
+            "fp16": self.config.fp16,
+            "bf16": self.config.bf16,
+            "logging_steps": self.config.logging_steps,
+            "save_steps": self.config.save_steps,
+            "eval_steps": self.config.eval_steps,
+            "report_to": (
                 self.config.report_to.split(",")
                 if self.config.report_to != "none"
                 else []
             ),
-            remove_unused_columns=False,
+            "remove_unused_columns": False,
             # GRPO specific parameters
-            beta=self.config.beta,
-            num_generations=self.config.num_generations,
-            num_iterations=self.config.num_iterations,
-            mini_batch_size=self.config.mini_batch_size,
+            "beta": self.config.beta,
+            "num_generations": self.config.num_generations,
+            "num_iterations": self.config.num_iterations,
+            "max_steps": self.config.max_steps,
             # Generation parameters
-            max_prompt_length=self.config.max_prompt_length,
-            max_completion_length=self.config.max_completion_length,
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
+            "max_prompt_length": self.config.max_prompt_length,
+            "max_completion_length": self.config.max_completion_length,
+            "temperature": self.config.temperature,
+            "top_p": self.config.top_p,
             # Additional optimization
-            dataloader_num_workers=self.config.dataloader_num_workers,
-            ddp_find_unused_parameters=False,
-            gradient_checkpointing=self.config.gradient_checkpointing,
-        )
+            "dataloader_num_workers": self.config.dataloader_num_workers,
+            "ddp_find_unused_parameters": False,
+            "gradient_checkpointing": self.config.gradient_checkpointing,
+        }
+        return grpo_config_cls(**_supported_kwargs(grpo_config_cls, config_kwargs))
 
     def train(self) -> None:
         """Run training"""

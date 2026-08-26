@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Hardened benchmark provenance and TRL interoperability: Phase 0 publication
+  gates now reject synthetic evidence, unpinned source/model revisions,
+  incomplete hardware/stability measurements, duplicate-seed inflation, and
+  empty result sets; whitepaper packaging is strict by default; TRL GRPO now
+  requires a version that actually exposes GRPO and adapts safely to its current
+  `processing_class` API.
+- Added an independent upstream-TRL GRPO shootout adapter, immutable GSM8K
+  dataset revision support, canonical shared-config attestation, exact runtime
+  framework-version checks, and a ready-to-fill three-seed shootout manifest.
+
+### Fixed
+
+- Publication-facing algorithm and framework comparisons no longer generate
+  simulated competitor timings, reward curves, memory figures, or subjective
+  winner scores. They now fail closed unless supplied with real, matched,
+  provenance-complete evidence from at least three seeds per implementation.
+- Benchmark documentation no longer presents unsupported GPU scaling,
+  framework-performance, or total-cost figures as measured results.
+
+### Added
+
+- Measured comparison schemas and validators enforce immutable model/data and
+  algorithm revisions, exact hardware matching, artifact SHA-256 provenance,
+  unique seeds, and explicit interpretation boundaries.
+- A distributed scaling validator requires matching 1/2/4/8-GPU topology
+  matrices and reports measured speedup and scaling efficiency against the
+  single-GPU baseline.
+- A framework-neutral shootout orchestrator rotates implementation order,
+  measures wall time outside adapters, retains failure logs, hashes artifacts,
+  and emits strict evidence from a shared multi-seed manifest.
+- Trainer and agent configs can pin `model_revision`; the same revision now
+  reaches tokenizer, policy, reference-model, vLLM rollout, and evaluation
+  loading. Phase-0 can emit the neutral measured adapter result directly.
+- A fault-injection evidence gate requires matching worker-exit,
+  controller-restart, and network-interruption runs with exact checkpoint
+  replay, no duplicate updates, bounded lost work, completion, and cleanup.
+- Benchmark-smoke CI and policy tests prevent synthetic comparison claims from
+  returning to publication-facing entry points.
+
+### Changed
+
+- Tag, release, TestPyPI, and PyPI workflows now require the complete publish
+  readiness suite and retain its coverage/security reports; readiness is no
+  longer an optional non-blocking manual-dispatch step.
+
 ## [0.42.2] - 2026-08-26 — Live release evidence
 
 ### Fixed

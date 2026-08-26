@@ -39,7 +39,16 @@ from typing import Any
 logger = logging.getLogger("aggregate_phase0")
 
 
-REQUIRED_TOP_FIELDS = ["trainer", "model", "seed", "commit", "timestamp", "metrics"]
+REQUIRED_TOP_FIELDS = [
+    "trainer",
+    "model",
+    "model_revision",
+    "seed",
+    "commit",
+    "timestamp",
+    "evidence_class",
+    "metrics",
+]
 REQUIRED_METRIC_FIELDS = ["eval_pass_at_1"]
 
 # Publication gates from benchmark_results/SCHEMA.md
@@ -48,7 +57,9 @@ MAX_STD_PASS_AT_1 = 0.10
 MIN_IMPROVEMENT = 0.03
 
 
-def load_runs(results_dir: Path) -> list[dict[str, Any]]:
+def load_runs(
+    results_dir: Path, *, allow_synthetic: bool = False
+) -> list[dict[str, Any]]:
     """Load and minimally validate every JSON file in ``results_dir``."""
     if not results_dir.exists():
         logger.warning("Results directory %s does not exist", results_dir)
@@ -67,12 +78,49 @@ def load_runs(results_dir: Path) -> list[dict[str, Any]]:
             logger.warning("Skipping %s: missing fields %s", path.name, missing)
             continue
 
+        invalid_strings = [
+            field
+            for field in (
+                "trainer",
+                "model",
+                "model_revision",
+                "commit",
+                "timestamp",
+                "evidence_class",
+            )
+            if not isinstance(data.get(field), str) or not data[field].strip()
+        ]
+        seed = data.get("seed")
+        if invalid_strings or isinstance(seed, bool) or not isinstance(seed, int):
+            logger.warning(
+                "Skipping %s: invalid identity fields %s",
+                path.name,
+                invalid_strings or ["seed"],
+            )
+            continue
+
         missing_metrics = [
             f for f in REQUIRED_METRIC_FIELDS if f not in data.get("metrics", {})
         ]
         if missing_metrics:
             logger.warning(
                 "Skipping %s: missing metric fields %s", path.name, missing_metrics
+            )
+            continue
+        metric = data["metrics"]["eval_pass_at_1"]
+        if (
+            isinstance(metric, bool)
+            or not isinstance(metric, (int, float))
+            or not math.isfinite(float(metric))
+        ):
+            logger.warning("Skipping %s: eval_pass_at_1 must be finite", path.name)
+            continue
+
+        if data["evidence_class"] != "measured" and not allow_synthetic:
+            logger.warning(
+                "Skipping %s: evidence_class=%r is not measured",
+                path.name,
+                data["evidence_class"],
             )
             continue
 
@@ -125,6 +173,23 @@ def summarize_group(group_runs: list[dict[str, Any]]) -> dict[str, Any]:
         "wall_clock_seconds": _stats(wall),
         "seeds": sorted({r["seed"] for r in group_runs}),
         "commits": sorted({r["commit"] for r in group_runs}),
+        "model_revisions": sorted({r["model_revision"] for r in group_runs}),
+        "evidence_classes": sorted({r["evidence_class"] for r in group_runs}),
+        "statuses": sorted({r["metrics"].get("status") for r in group_runs}),
+        "hardware_complete": all(
+            bool(r.get("hardware", {}).get("gpu"))
+            and r["metrics"].get("peak_vram_mb", 0) > 0
+            and r["metrics"].get("wall_clock_seconds", 0) > 0
+            for r in group_runs
+        ),
+        "max_wall_clock_seconds": max(
+            (r["metrics"].get("wall_clock_seconds", math.inf) for r in group_runs),
+            default=math.inf,
+        ),
+        "max_grad_norm_ratio": max(
+            (r["metrics"].get("max_grad_norm_ratio", math.inf) for r in group_runs),
+            default=math.inf,
+        ),
     }
 
     pass_stats = summary["pass_at_1"]
@@ -140,7 +205,7 @@ def check_gates(summary: dict[str, Any]) -> tuple[bool, list[str]]:
     """Apply the publication gates from SCHEMA.md."""
     failures: list[str] = []
 
-    n_seeds = summary["pass_at_1"]["n"]
+    n_seeds = len(summary["seeds"])
     if n_seeds < MIN_SEEDS_PER_GROUP:
         failures.append(f"Only {n_seeds} seeds, need ≥{MIN_SEEDS_PER_GROUP}")
 
@@ -149,7 +214,9 @@ def check_gates(summary: dict[str, Any]) -> tuple[bool, list[str]]:
         failures.append(f"std={std:.3f} exceeds gate of {MAX_STD_PASS_AT_1}")
 
     improvement = summary["improvement"]
-    if not math.isnan(improvement) and improvement < MIN_IMPROVEMENT:
+    if math.isnan(improvement):
+        failures.append("baseline evidence is required to calculate improvement")
+    elif improvement < MIN_IMPROVEMENT:
         failures.append(
             f"improvement={improvement:+.3f} below gate of {MIN_IMPROVEMENT:+.3f}"
         )
@@ -159,6 +226,23 @@ def check_gates(summary: dict[str, Any]) -> tuple[bool, list[str]]:
         failures.append(
             f"runs span {n_commits} commits ({summary['commits']}); should be 1"
         )
+
+    if summary["evidence_classes"] != ["measured"]:
+        failures.append(
+            "synthetic or non-measured evidence cannot pass publication gates"
+        )
+    if summary["statuses"] != ["trained"]:
+        failures.append(f"all runs must have status=trained, got {summary['statuses']}")
+    if not summary["hardware_complete"]:
+        failures.append("hardware, peak VRAM, and wall-clock evidence are required")
+    if summary["max_wall_clock_seconds"] >= 4 * 60 * 60:
+        failures.append("one or more runs exceeded the 4-hour wall-clock gate")
+    if summary["max_grad_norm_ratio"] > 10:
+        failures.append("missing stability evidence or grad-norm spike exceeded 10x")
+    if len(summary["model_revisions"]) != 1 or len(summary["model_revisions"][0]) != 40:
+        failures.append("all runs must share one full 40-character model revision")
+    if any(len(commit) != 40 for commit in summary["commits"]):
+        failures.append("all runs must record the full 40-character git commit")
 
     return (len(failures) == 0), failures
 
@@ -281,6 +365,11 @@ def main() -> int:
         help="Defaults to --results-dir.",
     )
     parser.add_argument(
+        "--allow-synthetic",
+        action="store_true",
+        help="Include demo/test evidence in reports; it can never pass gates.",
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="Exit non-zero if any group fails its gates.",
@@ -293,7 +382,7 @@ def main() -> int:
     output_dir = args.output_dir or args.results_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    runs = load_runs(args.results_dir)
+    runs = load_runs(args.results_dir, allow_synthetic=args.allow_synthetic)
     grouped = group_runs(runs)
     grouped_summary = {key: summarize_group(group) for key, group in grouped.items()}
     gate_results = {
@@ -327,7 +416,9 @@ def main() -> int:
     )
     logger.info("Wrote %s", gates_path)
 
-    all_passed = all(passed for passed, _ in gate_results.values())
+    all_passed = bool(gate_results) and all(
+        passed for passed, _ in gate_results.values()
+    )
     if not all_passed:
         logger.warning("Some (trainer, model) groups failed their publication gates.")
         if args.strict:

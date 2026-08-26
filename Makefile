@@ -310,8 +310,8 @@ benchmark-publish: benchmark-aggregate benchmark-plot ## Produce summary.md + fi
 release-whitepaper-v1: ## One-shot v1.0 whitepaper release packaging (aggregate + plot + §11.7 + manifest)
 	python scripts/release_v1_whitepaper.py
 
-release-whitepaper-v1-strict: ## Same but fails the build if benchmark gates aren't met
-	python scripts/release_v1_whitepaper.py --strict
+release-whitepaper-v1-strict: ## Compatibility alias; release packaging is strict by default
+	python scripts/release_v1_whitepaper.py
 
 # Closing the loop: train → serve
 starter-test: ## Materialize every starter template into /tmp and validate generated configs
@@ -673,14 +673,14 @@ demo: ## End-to-end demo: scaffold + smoke + synthetic-aggregate + plot + releas
 	@for trainer in gspo grpo dapo; do \
 		case $$trainer in gspo) FINAL=0.42 ;; grpo) FINAL=0.38 ;; dapo) FINAL=0.45 ;; esac; \
 		for seed in 42 1337 2026; do \
-			printf '{"trainer":"%s","task":"gsm8k","model":"Qwen/Qwen3.5-0.8B","seed":%s,"commit":"demo","timestamp":"2026-05-14T12:00:00Z","config":{"learning_rate":5e-6},"metrics":{"eval_pass_at_1":%s,"eval_pass_at_1_baseline":0.32,"wall_clock_seconds":2700,"peak_vram_mb":24317}}' \
+			printf '{"trainer":"%s","task":"gsm8k","model":"Qwen/Qwen3.5-0.8B","model_revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","seed":%s,"commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","evidence_class":"synthetic","timestamp":"2026-05-14T12:00:00Z","config":{"learning_rate":5e-6},"metrics":{"eval_pass_at_1":%s,"eval_pass_at_1_baseline":0.32,"wall_clock_seconds":2700,"peak_vram_mb":24317,"status":"trained"},"hardware":{"gpu":"demo synthetic GPU"}}' \
 				$$trainer $$seed $$FINAL > /tmp/stateset_demo/benchmark_results/whitepaper_v1/$${trainer}_seed$${seed}.json; \
 		done; \
 	done
 	@echo "  Wrote 9 JSON files."
 	@echo ""
 	@echo "▶ Step 4/5: Aggregate + plot"
-	@python scripts/aggregate_phase0_results.py --results-dir /tmp/stateset_demo/benchmark_results/whitepaper_v1 2>&1 | tail -3 | sed 's/^/  /'
+	@python scripts/aggregate_phase0_results.py --results-dir /tmp/stateset_demo/benchmark_results/whitepaper_v1 --allow-synthetic 2>&1 | tail -3 | sed 's/^/  /'
 	@python scripts/plot_phase0_results.py --results-dir /tmp/stateset_demo/benchmark_results/whitepaper_v1 --no-matplotlib 2>&1 | tail -1 | sed 's/^/  /'
 	@echo ""
 	@echo "▶ Step 5/5: Aggregated summary table"

@@ -107,6 +107,7 @@ class SharedModelManager:
             self.config.model_name,
             trust_remote_code=True,
             padding_side="left",
+            revision=getattr(self.config, "model_revision", None),
         )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -120,6 +121,7 @@ class SharedModelManager:
             ),
             "device_map": "auto" if torch.cuda.is_available() else None,
             "trust_remote_code": True,
+            "revision": getattr(self.config, "model_revision", None),
         }
         self._prepare_model_kwargs(model_kwargs)
 

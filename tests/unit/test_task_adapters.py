@@ -220,6 +220,42 @@ class TestTaskRegistry:
         assert isinstance(commit, str)
         assert len(commit) > 0
 
+    def test_rollout_sample_estimate_is_protocol_derived(self) -> None:
+        assert (
+            runner.estimate_rollout_samples("gspo", 200, {"num_generations": 4}) == 160
+        )
+        assert runner.estimate_rollout_samples("dapo", 200, {"group_size": 8}) == 80
+
+    def test_trainer_config_retains_model_revision(self) -> None:
+        revision = "a" * 40
+        config = runner.build_trainer_config(
+            "gspo", model_name="example/model", model_revision=revision
+        )
+        assert config["model_revision"] == revision
+
+    def test_trained_evaluation_is_greedy_and_restores_agent_config(self) -> None:
+        from stateset_agents.data.gsm8k import GSM8KExample
+
+        class RecordingAgent:
+            def __init__(self) -> None:
+                self.config = type(
+                    "Config", (), {"temperature": 0.7, "do_sample": True}
+                )()
+
+            async def generate_response(self, prompt: str) -> str:
+                assert self.config.temperature == 0.0
+                assert self.config.do_sample is False
+                return "The answer is 1"
+
+        agent = RecordingAgent()
+        example = GSM8KExample("Q?", "#### 1", 1.0)
+        result = runner._evaluate_with_agent(
+            "unused", runner.GSM8KAdapter(), [example], trained_agent=agent
+        )
+        assert result["pass_at_1"] == 1.0
+        assert agent.config.temperature == 0.7
+        assert agent.config.do_sample is True
+
 
 class TestBuildEnvReward:
     """Verify the internal helper that wires task → env+reward for training."""

@@ -1175,7 +1175,7 @@ This closes the **human-in-the-loop curation cycle**: train → eval → chat �
 
 ## Benchmark your fine‑tune
 
-After training, you usually want a defensible number: *did this actually improve over the base model, by how much, and is it reproducible?* The framework ships a Phase‑0 benchmark pipeline that produces publication‑grade results across **three tasks** (GSM8K, the bundled customer‑support corpus, and the tool‑calling corpus).
+After training, you usually want a defensible number: *did this actually improve over the base model, by how much, and is it reproducible?* The framework ships a Phase‑0 benchmark pipeline across **three tasks** (GSM8K, the bundled customer‑support corpus, and the tool‑calling corpus). Results become publication-grade only after the strict provenance and replication gates below pass.
 
 **Quick path:** open one of the bundled Colab notebooks. The whitepaper §11.7 canonical result was produced by `customer_support_3seed_judge.ipynb` — judge improvement **+0.079** with three-seed agreement on Qwen2.5-0.5B-Instruct ([artifact](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json)).
 
@@ -1208,11 +1208,12 @@ make release-whitepaper-v1
 
 The pipeline:
 
-- **Reproducibility.** `set_all_seeds()` covers Python random, NumPy, PyTorch (CPU + CUDA), and Transformers in one call. Every result JSON carries the git commit hash.
+- **Reproducibility.** `set_all_seeds()` covers Python random, NumPy, PyTorch (CPU + CUDA), and Transformers in one call. Publication evidence carries full source, model, and dataset commits.
 - **Schema.** Each run produces a single JSON conforming to `benchmark_results/SCHEMA.md`. Every published number traces back to a file.
-- **Publication gates.** 3 seeds, σ < 0.10, +0.03 improvement, single commit. Use `make benchmark-aggregate-strict` in CI to enforce.
+- **Publication gates.** Three unique seeds, σ ≤ 0.10, +0.03 improvement, one full source/model revision, real hardware/VRAM/wall-clock evidence, and bounded gradient stability. Synthetic demo rows are excluded by default and can never pass.
 - **Figures.** `make benchmark-plot` produces two whitepaper‑ready PNGs (pass@1 per trainer, improvement ranking) plus a matplotlib‑free text fallback.
-- **One‑shot release.** `make release-whitepaper-v1` aggregates → plots → generates the whitepaper §11.7 markdown snippet → copies figures into `docs/figures/` → writes a release manifest. Six artifacts in one command.
+- **One‑shot release.** `make release-whitepaper-v1` now fails closed unless every gate passes, then aggregates → plots → generates the whitepaper §11.7 markdown snippet → copies figures into `docs/figures/` → writes a release manifest.
+- **Neutral comparison.** `benchmarks/shootout.py` executes StateSet and a direct upstream-TRL adapter from one attested configuration, with three rotated seeds and artifact hashing. See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 See `benchmark_results/README.md` for the full pipeline reference.
 

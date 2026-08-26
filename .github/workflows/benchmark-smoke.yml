@@ -18,9 +18,21 @@ on:
       - 'scripts/aggregate_phase0_results.py'
       - 'scripts/plot_phase0_results.py'
       - 'scripts/release_v1_whitepaper.py'
+      - 'benchmarks/framework_comparison.py'
+      - 'benchmarks/algorithm_comparison.py'
+      - 'benchmarks/scaling_comparison.py'
+      - 'benchmarks/reliability_evidence.py'
+      - 'benchmarks/shootout.py'
       - 'tests/unit/test_gsm8k.py'
       - 'tests/unit/test_reproducibility.py'
       - 'tests/unit/test_aggregate_phase0_results.py'
+      - 'tests/unit/test_framework_comparison.py'
+      - 'tests/unit/test_algorithm_comparison.py'
+      - 'tests/unit/test_benchmark_evidence_policy.py'
+      - 'tests/unit/test_scaling_comparison.py'
+      - 'tests/unit/test_reliability_evidence.py'
+      - 'tests/unit/test_shootout.py'
+      - 'tests/unit/test_trl_shootout_adapter.py'
       - 'tests/unit/test_customer_support_bench.py'
       - 'tests/unit/test_task_adapters.py'
       - 'tests/unit/test_scaffolding.py'
@@ -39,9 +51,21 @@ on:
       - 'scripts/aggregate_phase0_results.py'
       - 'scripts/plot_phase0_results.py'
       - 'scripts/release_v1_whitepaper.py'
+      - 'benchmarks/framework_comparison.py'
+      - 'benchmarks/algorithm_comparison.py'
+      - 'benchmarks/scaling_comparison.py'
+      - 'benchmarks/reliability_evidence.py'
+      - 'benchmarks/shootout.py'
       - 'tests/unit/test_gsm8k.py'
       - 'tests/unit/test_reproducibility.py'
       - 'tests/unit/test_aggregate_phase0_results.py'
+      - 'tests/unit/test_framework_comparison.py'
+      - 'tests/unit/test_algorithm_comparison.py'
+      - 'tests/unit/test_benchmark_evidence_policy.py'
+      - 'tests/unit/test_scaling_comparison.py'
+      - 'tests/unit/test_reliability_evidence.py'
+      - 'tests/unit/test_shootout.py'
+      - 'tests/unit/test_trl_shootout_adapter.py'
       - 'tests/unit/test_customer_support_bench.py'
       - 'tests/unit/test_task_adapters.py'
       - 'tests/unit/test_scaffolding.py'
@@ -77,6 +101,13 @@ jobs:
           pytest tests/unit/test_gsm8k.py \
                  tests/unit/test_reproducibility.py \
                  tests/unit/test_aggregate_phase0_results.py \
+                 tests/unit/test_framework_comparison.py \
+                 tests/unit/test_algorithm_comparison.py \
+                 tests/unit/test_benchmark_evidence_policy.py \
+                 tests/unit/test_scaling_comparison.py \
+                 tests/unit/test_reliability_evidence.py \
+                 tests/unit/test_shootout.py \
+                 tests/unit/test_trl_shootout_adapter.py \
                  tests/unit/test_customer_support_bench.py \
                  tests/unit/test_task_adapters.py \
                  tests/unit/test_scaffolding.py \
@@ -107,22 +138,28 @@ jobs:
           {
             "trainer": "${trainer}",
             "model": "Qwen/Qwen3.5-0.8B",
+            "model_revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "seed": ${seed},
-            "commit": "ci-smoke",
+            "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "evidence_class": "synthetic",
             "timestamp": "2026-05-13T00:00:00Z",
             "config": {},
             "metrics": {
               "eval_pass_at_1": 0.40,
               "eval_pass_at_1_baseline": 0.32,
               "wall_clock_seconds": 2700
-            }
+              ,"peak_vram_mb": 24317
+              ,"status": "trained"
+            },
+            "hardware": {"gpu": "CI synthetic GPU"}
           }
           EOF
             done
           done
           python scripts/aggregate_phase0_results.py \
             --results-dir /tmp/fake_results \
-            --output-dir /tmp/fake_results
+            --output-dir /tmp/fake_results \
+            --allow-synthetic
           cat /tmp/fake_results/summary.md
 
       - name: Validate all bundled notebooks (JSON + foot-gun lint)

@@ -39,6 +39,8 @@ from stateset_agents.training.trl_grpo_trainer import (  # noqa: E402
     ModelManager,
     TrajectoryGenerator,
     TRLGRPOConfig,
+    TRLGRPODatasetBuilder,
+    TRLGRPORewardFunction,
 )
 
 
@@ -239,6 +241,44 @@ class TestTrajectoryGenerator:
         assert all(isinstance(t, MultiTurnTrajectory) for t in trajectories)
 
 
+class TestTRLTaskProvenance:
+    @pytest.mark.asyncio
+    async def test_reward_uses_indexed_scenario_context(self):
+        agent = MultiTurnAgent(AgentConfig(model_name="gpt2", use_stub_model=True))
+        environment = ConversationEnvironment(
+            scenarios=[
+                {"user_query": "first", "gold_answer": 1.0},
+                {"user_query": "second", "gold_answer": 2.0},
+            ]
+        )
+        reward = MagicMock()
+        reward.compute_reward = AsyncMock(
+            side_effect=lambda turns, context: MagicMock(
+                total_reward=context["gold_answer"]
+            )
+        )
+        wrapper = TRLGRPORewardFunction(reward, agent, environment)
+
+        scores = await wrapper.compute_rewards(
+            completions=[[{"role": "assistant", "content": "answer"}]],
+            prompts=["arbitrary prompt"],
+            scenario_index=[1],
+        )
+
+        assert scores == [2.0]
+
+    def test_dataset_builder_preserves_direct_prompt_provenance(self):
+        config = TRLGRPOConfig(model_name="gpt2")
+        dataset_type = MagicMock()
+        dataset_type.from_list.side_effect = lambda rows: rows
+        with patch("stateset_agents.training.trl_grpo_trainer.Dataset", dataset_type):
+            builder = TRLGRPODatasetBuilder(MagicMock(), config)
+            rows = builder.build_from_conversations(
+                [{"prompt": "exact prompt", "scenario_index": 7}]
+            )
+        assert rows == [{"prompt": "exact prompt", "scenario_index": 7}]
+
+
 class TestModelManager:
     """Test model loading and management"""
 
@@ -382,6 +422,72 @@ class TestTRLGRPOTrainerWrapper:
 
         # Verify _create_grpo_config was called
         assert wrapper.grpo_config is not None
+
+    @patch("stateset_agents.training.trl_grpo_trainer.GRPOConfig")
+    def test_wrapper_uses_current_trl_processing_class_api(self, mock_config_cls):
+        """Current TRL receives processing_class and no removed ref_model argument."""
+
+        captured = {}
+
+        class CurrentTrainer:
+            def __init__(
+                self,
+                model,
+                reward_funcs,
+                args=None,
+                train_dataset=None,
+                processing_class=None,
+            ):
+                captured.update(locals())
+
+        config = TRLGRPOConfig(model_name="gpt2", num_episodes=10)
+        tokenizer = MagicMock()
+        mock_config_cls.return_value = MagicMock()
+        with patch(
+            "stateset_agents.training.trl_grpo_trainer.TRLGRPOTrainer",
+            CurrentTrainer,
+        ):
+            from stateset_agents.training.trl_grpo_trainer import TRLGRPOTrainerWrapper
+
+            TRLGRPOTrainerWrapper(
+                config=config,
+                model=MagicMock(),
+                tokenizer=tokenizer,
+                train_dataset=MagicMock(),
+                reward_function=MagicMock(),
+                ref_model=MagicMock(),
+            )
+
+        assert captured["processing_class"] is tokenizer
+        assert "ref_model" not in captured
+
+    @patch("stateset_agents.training.trl_grpo_trainer.TRLGRPOTrainer")
+    def test_config_filters_removed_trl_options(self, mock_trainer_cls):
+        """Compatibility filtering prevents removed config options from crashing."""
+
+        captured = {}
+
+        class CurrentConfig:
+            def __init__(self, output_dir, num_generations, gradient_checkpointing):
+                captured.update(locals())
+
+        config = TRLGRPOConfig(model_name="gpt2", num_episodes=10)
+        mock_trainer_cls.return_value = MagicMock()
+        with patch(
+            "stateset_agents.training.trl_grpo_trainer.GRPOConfig", CurrentConfig
+        ):
+            from stateset_agents.training.trl_grpo_trainer import TRLGRPOTrainerWrapper
+
+            TRLGRPOTrainerWrapper(
+                config=config,
+                model=MagicMock(),
+                tokenizer=MagicMock(),
+                train_dataset=MagicMock(),
+                reward_function=MagicMock(),
+            )
+
+        assert captured["num_generations"] == config.num_generations
+        assert "mini_batch_size" not in captured
 
 
 class TestTrainingWorkflow:

@@ -27,3 +27,15 @@ def test_provider_canaries_run_for_release_tags() -> None:
     assert "- 'v*'" in workflow
     for provider in ("river", "runpod", "fireworks"):
         assert f"--provider {provider} --strict" in workflow
+
+
+def test_publish_requires_readiness_before_build_or_upload() -> None:
+    workflow = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
+
+    readiness = workflow.index("Run mandatory publish readiness gate")
+    build = workflow.index("Build distribution")
+    test_pypi = workflow.index("Publish to TestPyPI")
+    assert readiness < build < test_pypi
+    assert "continue-on-error: true" not in workflow
+    assert "run_readiness_gate" not in workflow
+    assert "publish-readiness-${{ github.sha }}" in workflow

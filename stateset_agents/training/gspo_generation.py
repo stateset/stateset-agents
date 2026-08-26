@@ -161,6 +161,7 @@ class GSPOTrajectoryGenerator:
 
         vllm_config = vllm_config_cls(
             model_name=self.config.model_name,
+            revision=getattr(self.config, "model_revision", None),
             gpu_memory_utilization=getattr(
                 self.config, "vllm_gpu_memory_utilization", 0.85
             ),

@@ -403,6 +403,7 @@ class DAPOTrainer:
 
         vllm_config = vllm_config_cls(
             model_name=self.config.model_name,
+            revision=getattr(self.config, "model_revision", None),
             gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
             tensor_parallel_size=self.config.vllm_tensor_parallel_size,
             enable_prefix_caching=self.config.vllm_enable_prefix_caching,

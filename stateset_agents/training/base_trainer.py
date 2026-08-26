@@ -188,6 +188,7 @@ class BaseTrainerConfig:
 
     # Model identification
     model_name: str = "gpt2"
+    model_revision: str | None = None
 
     # Generation parameters
     max_prompt_length: int = 256
@@ -293,6 +294,7 @@ class BaseModelManager:
             self.config.model_name,
             trust_remote_code=True,
             padding_side="left",
+            revision=self.config.model_revision,
         )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -350,6 +352,7 @@ class BaseModelManager:
             "torch_dtype": self._get_dtype(),
             "device_map": "auto" if torch.cuda.is_available() else None,
             "trust_remote_code": True,
+            "revision": self.config.model_revision,
         }
 
         if self.config.use_8bit:
@@ -456,6 +459,7 @@ class BaseTrajectoryGenerator:
 
         vllm_config = vllm_config_cls(
             model_name=self.config.model_name,
+            revision=self.config.model_revision,
             gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
             tensor_parallel_size=self.config.vllm_tensor_parallel_size,
             enable_prefix_caching=self.config.vllm_enable_prefix_caching,

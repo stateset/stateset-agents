@@ -21,21 +21,28 @@ def _make_run(
     pass_at_1: float,
     baseline: float = 0.32,
     wall: float = 2700.0,
-    commit: str = "14c0e65",
+    commit: str = "a" * 40,
     model: str = "Qwen/Qwen3.5-0.8B",
+    evidence_class: str = "measured",
 ) -> dict:
     return {
         "trainer": trainer,
         "model": model,
+        "model_revision": "b" * 40,
         "seed": seed,
         "commit": commit,
+        "evidence_class": evidence_class,
         "timestamp": f"2026-05-13T11:{seed:02d}:00Z",
         "config": {},
         "metrics": {
             "eval_pass_at_1": pass_at_1,
             "eval_pass_at_1_baseline": baseline,
             "wall_clock_seconds": wall,
+            "peak_vram_mb": 24000,
+            "status": "trained",
+            "max_grad_norm_ratio": 1.2,
         },
+        "hardware": {"gpu": "NVIDIA A100-SXM4-80GB"},
     }
 
 
@@ -77,8 +84,27 @@ class TestLoadRuns:
         loaded = agg.load_runs(tmp_path)
         assert len(loaded) == 0
 
+    def test_skips_invalid_identity_types_and_nonfinite_scores(
+        self, tmp_path: Path
+    ) -> None:
+        invalid_revision = _make_run("gspo", 42, 0.4)
+        invalid_revision["model_revision"] = None
+        (tmp_path / "invalid-revision.json").write_text(json.dumps(invalid_revision))
+        invalid_score = _make_run("gspo", 1337, 0.4)
+        invalid_score["metrics"]["eval_pass_at_1"] = float("nan")
+        (tmp_path / "invalid-score.json").write_text(json.dumps(invalid_score))
+        assert agg.load_runs(tmp_path) == []
+
     def test_empty_dir(self, tmp_path: Path) -> None:
         assert agg.load_runs(tmp_path) == []
+
+    def test_synthetic_evidence_requires_explicit_preview_flag(
+        self, tmp_path: Path
+    ) -> None:
+        run = _make_run("gspo", 42, 0.4, evidence_class="synthetic")
+        (tmp_path / "synthetic.json").write_text(json.dumps(run))
+        assert agg.load_runs(tmp_path) == []
+        assert len(agg.load_runs(tmp_path, allow_synthetic=True)) == 1
 
 
 class TestSummarize:
@@ -147,13 +173,22 @@ class TestGates:
 
     def test_fail_mixed_commits(self) -> None:
         runs = [
-            _make_run("gspo", 42, 0.41, baseline=0.32, commit="aaa"),
-            _make_run("gspo", 1337, 0.43, baseline=0.31, commit="bbb"),
-            _make_run("gspo", 2026, 0.39, baseline=0.33, commit="ccc"),
+            _make_run("gspo", 42, 0.41, baseline=0.32, commit="a" * 40),
+            _make_run("gspo", 1337, 0.43, baseline=0.31, commit="b" * 40),
+            _make_run("gspo", 2026, 0.39, baseline=0.33, commit="c" * 40),
         ]
         passed, failures = agg.check_gates(agg.summarize_group(runs))
         assert not passed
         assert any("commit" in f for f in failures)
+
+    def test_synthetic_results_never_pass(self) -> None:
+        runs = [
+            _make_run("gspo", seed, 0.42, evidence_class="synthetic")
+            for seed in (42, 1337, 2026)
+        ]
+        passed, failures = agg.check_gates(agg.summarize_group(runs))
+        assert not passed
+        assert any("non-measured" in failure for failure in failures)
 
 
 class TestRenderMarkdown:

@@ -342,7 +342,9 @@ class Agent:
             if self._tokenizer_loader:
                 self.tokenizer = self._tokenizer_loader(self.config)
             else:
-                tokenizer_kwargs = self.config.tokenizer_kwargs or {}
+                tokenizer_kwargs = dict(self.config.tokenizer_kwargs or {})
+                if self.config.model_revision is not None:
+                    tokenizer_kwargs.setdefault("revision", self.config.model_revision)
                 if AutoTokenizer is None:
                     raise ImportError(
                         "transformers is required to initialize non-stub agents. "
@@ -387,6 +389,8 @@ class Agent:
                 model_kwargs: dict[str, Any] = {
                     "trust_remote_code": self.config.trust_remote_code
                 }
+                if self.config.model_revision is not None:
+                    model_kwargs["revision"] = self.config.model_revision
                 if self.config.torch_dtype == "bfloat16":
                     model_kwargs["torch_dtype"] = torch.bfloat16
                 elif self.config.torch_dtype == "float16":
