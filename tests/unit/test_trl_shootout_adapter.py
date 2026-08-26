@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from benchmarks.adapters.trl_grpo import (
+    GSM8KTask,
     canonical_digest,
     completion_text,
     supported_kwargs,
@@ -40,6 +41,23 @@ def test_completion_text_supports_current_trl_shapes() -> None:
     assert completion_text([{"role": "assistant", "content": "answer"}]) == "answer"
     with pytest.raises(TypeError, match="unsupported TRL completion"):
         completion_text({"content": "answer"})
+
+
+def test_gsm8k_task_is_self_contained_and_scores_answers() -> None:
+    from stateset_agents.data.gsm8k import GSM8KExample
+
+    example = GSM8KExample(
+        question="What is one plus one?",
+        answer_text="One plus one is two. #### 2",
+        gold_answer=2.0,
+    )
+    task = GSM8KTask()
+
+    assert task.format_prompt(example) == (
+        "Solve this step by step.\n\nWhat is one plus one?\n\nAnswer:"
+    )
+    assert task.score_response(example, "The answer is 2") == (1.0, True)
+    assert task.score_response(example, "I do not know") == (0.0, False)
 
 
 def test_declared_and_locked_trl_versions_support_grpo() -> None:

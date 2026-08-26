@@ -28,6 +28,36 @@ CONFIG_FIELDS = {
 }
 
 
+class GSM8KTask:
+    """Minimal GSM8K protocol shared only through packaged data primitives."""
+
+    @staticmethod
+    def load(
+        n_train: int, n_eval: int, dataset_revision: str
+    ) -> tuple[list[Any], list[Any]]:
+        """Load the pinned train and test subsets."""
+        from stateset_agents.data.gsm8k import load_gsm8k
+
+        train, test = load_gsm8k(limit=max(n_train, n_eval), revision=dataset_revision)
+        return train[:n_train], test[:n_eval]
+
+    @staticmethod
+    def format_prompt(example: Any) -> str:
+        """Render the benchmark's fixed prompt template."""
+        return f"Solve this step by step.\n\n{example.question}\n\nAnswer:"
+
+    @staticmethod
+    def score_response(example: Any, response: str) -> tuple[float, bool]:
+        """Score exact numeric agreement with the pinned example answer."""
+        from stateset_agents.data.gsm8k import extract_predicted_answer
+
+        predicted = extract_predicted_answer(response)
+        if predicted is None:
+            return 0.0, False
+        correct = abs(predicted - example.gold_answer) < 1e-3
+        return (1.0 if correct else 0.0), True
+
+
 def canonical_digest(config: dict[str, Any]) -> str:
     """Return the shootout protocol's canonical config digest."""
     payload = json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
@@ -101,19 +131,18 @@ def main() -> int:
         parser.error("--config-json has an unsupported schema")
 
     import torch
+    import trl
     from datasets import Dataset
     from peft import LoraConfig
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    import trl
     from trl import GRPOConfig, GRPOTrainer
 
-    from scripts.run_phase0_benchmark import GSM8KAdapter
     from stateset_agents.utils.reproducibility import set_all_seeds
 
     if not torch.cuda.is_available():
         parser.error("the measured TRL adapter requires CUDA")
     set_all_seeds(args.seed)
-    adapter = GSM8KAdapter()
+    adapter = GSM8KTask()
     train_examples, eval_examples = adapter.load(
         int(config["num_train_examples"]),
         int(config["num_eval_examples"]),
