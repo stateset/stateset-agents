@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scheduled and manually dispatched GPU verification now fails when the
   RunPod credential is absent instead of producing a false-green run in which
   every live step was skipped.
+- The SFT and RL GPU lanes run serially so they do not race each other for the
+  same scarce low-cost Community Cloud capacity.
 
 ### Changed
 

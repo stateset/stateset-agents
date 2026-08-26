@@ -14,6 +14,7 @@ def test_gpu_verification_cannot_pass_by_skipping_for_missing_key() -> None:
     assert workflow.count("exit 1") >= 2
     assert "skipping GPU verification" not in workflow
     assert "skipping RL GPU verification" not in workflow
+    assert "needs: sft-live-smoke" in workflow
 
 
 def test_provider_canaries_run_for_release_tags() -> None:
