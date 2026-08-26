@@ -27,7 +27,7 @@ true over time. The categories are strict:
 | Pods terminate on every exit path, incl. client death | Live-verified + unit-pinned | self-destruct fired with the client force-killed (v0.26.0); armed-first ordering tested |
 | Multi-adapter serving + SSE streaming over the proxy | Live-verified (2026‑08‑18), mechanics only | `/v1/models` listed both adapters; SSE chunks flowed; **see LoRA caveat below** |
 | **vLLM applies hybrid-Qwen3.5 LoRA adapters** | **DISPROVEN (2026‑08‑18)** | Greedy adapter output byte-identical to base on training-format prompts; vLLM logs 'Loaded' with no error. Upstream limitation: the hybrid `linear_attn` target names never match. `chat-remote` (transformers+peft) remains the verified way to talk to these fine-tunes; earlier 'adapter answers differed' observations were temperature noise |
-| River AI provider | **Live-verified** (2026‑08‑18) | `train-remote --provider river` trained Qwen3.5‑9B for real (session → LoRA model → train step → `river://` checkpoint, lineage manifest written) and the training EFFECT is proven: 140 TechNest rows × 3 epochs (210 steps), then **3/3 held-out tickets** answered from the checkpoint with the canonical resolutions, persona signature, and echoed ticket numbers. Their SDK landed on PyPI 2026‑08‑17; Python ≥3.12 (separate venv — the repo runs 3.10) |
+| River AI provider | **Live-verified** (2026‑08‑18); scheduled canary ready | `train-remote --provider river` trained Qwen3.5‑9B for real (session → LoRA model → train step → `river://` checkpoint, lineage manifest written) and the training EFFECT is proven: 140 TechNest rows × 3 epochs (210 steps), then **3/3 held-out tickets** answered from the checkpoint with the canonical resolutions, persona signature, and echoed ticket numbers. [`provider-canary.yml`](../.github/workflows/provider-canary.yml) rechecks health/capabilities when `RIVER_API_KEY` is configured. |
 | `serve-remote --merge` serves hybrid fine-tunes for real | **Live-verified** (2026‑08‑18, sixth attempt) | Merged Qwen3.5-0.8B + TechNest adapter answered greedy training-format tickets in full persona over the proxy; on-pod pre/post-merge probe enforced the effect. The path there: composite architecture must be loaded as itself, text-trained adapter keys remapped (probe delta 0.0 before, real deltas after), processor artifacts saved, merge in an isolated venv |
 | RL reward hacking is detectable and fixable in-platform | Live-observed + fixed (2026‑08‑18) | Energy domain: v1 reward Goodharted (reward ↑ 0.67→0.84, eval ↓ 6→4/12, exploit = dropped resolutions); completeness bonus restored monotone-ish improvement to 7/12 on the A/B rerun. Objective and eval are separate by design — that separation is what caught it |
 | **Distillation breaks walls self-training cannot** | Live-verified (2026‑08‑19) | The 9B that walled at 9/12 self-harvesting (SFT regressed, RL flat) reached **11/12 in one generation** trained on the 35B teacher's harvest (93/96 kept, 97%); gen-2 (9/12) honestly discarded by the plateau stop. Rent wisdom, deploy cheap — through River, zero machines |
@@ -48,7 +48,8 @@ same applies to `publish.yml`: PyPI trusted publishing rejects the current
 configuration (`invalid-publisher`), so every release on PyPI so far was a
 manual token upload. Both fixes are five-minute owner-side actions:
 
-1. GitHub → repo Settings → Secrets → add `RUNPOD_API_KEY`.
+1. GitHub → repo Settings → Secrets → add `RUNPOD_API_KEY`, `RIVER_API_KEY`,
+   `FIREWORKS_API_KEY`, and `FIREWORKS_ACCOUNT_ID`.
 2. PyPI → project settings → trusted publisher: owner `stateset`, repo
    `stateset-agents`, workflow `publish.yml`, environment `pypi`.
 

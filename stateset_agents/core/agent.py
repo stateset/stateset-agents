@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
 from .trajectory import ConversationTurn
+from .transformers_compat import load_generation_model
 
 if TYPE_CHECKING:
     from ..experimental.long_term_planning import PlanningManager
@@ -402,8 +403,10 @@ class Agent:
                 if self.config.model_kwargs:
                     model_kwargs.update(self.config.model_kwargs)
 
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    self.config.model_name, **model_kwargs
+                self.model, _ = load_generation_model(
+                    AutoModelForCausalLM,
+                    self.config.model_name,
+                    model_kwargs,
                 )
 
         # Setup generation config

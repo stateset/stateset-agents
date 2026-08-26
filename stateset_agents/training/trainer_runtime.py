@@ -33,6 +33,8 @@ from typing import Any
 
 import torch
 
+from stateset_agents.core.transformers_compat import load_generation_model
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,7 +124,11 @@ class SharedModelManager:
         self._prepare_model_kwargs(model_kwargs)
 
         # Load base model
-        base_model = model_cls.from_pretrained(self.config.model_name, **model_kwargs)
+        base_model, resolved_model_cls = load_generation_model(
+            model_cls,
+            self.config.model_name,
+            model_kwargs,
+        )
         base_model = self._prepare_base_model(base_model)
 
         # Add LoRA adapters if configured
@@ -132,7 +138,7 @@ class SharedModelManager:
             self.model = base_model
 
         # Optionally load a frozen reference model
-        self._load_reference_model(model_cls, model_kwargs)
+        self._load_reference_model(resolved_model_cls, model_kwargs)
 
         logger.info(self._loaded_message.format(device=self.device))
         return self.model, self.tokenizer

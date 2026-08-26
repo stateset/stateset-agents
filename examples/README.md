@@ -213,8 +213,8 @@ python examples/finetune_gspo.py --model kimi-k3 --dry-run
 python examples/finetune_gspo.py --model glm5.1 --task customer_service --no-dry-run
 ```
 
-Use it for a quick preview of any supported preset (`muse-glimmer`, `nemotron-3-5`, `qwen3.8-27b`, `qwen3-coder`, `gpt-oss`, `deepseek-v4`, `kimi-k3`, `kimi-k2.5`,
-`kimi-k2.6`, `glm5.1`, `glm5.2`, `qwen3`, `qwen3.5-0.8b`, `qwen3.5-27b`,
+Use it for a quick preview of any supported preset (`muse-glimmer`, `nemotron-3-5`, `qwen3.8-27b`, `qwen3.8-flash-next`, `qwen3-coder`, `gpt-oss`, `deepseek-v4`, `kimi-k3`, `kimi-k2.5`,
+`kimi-k2.6`, `glm5.1`, `glm5.2`, `glm5.3-flash`, `qwen3`, `qwen3.5-0.8b`, `qwen3.5-27b`,
 `gemma3`, `gemma4-31b`, `llama3`, `mistral`), or a full real run. `--dry-run`
 defaults to `True`; pass `--no-dry-run` to actually invoke the training
 entry point (the packaged starter's `run_<name>_config` for starter-backed

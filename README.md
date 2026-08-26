@@ -154,7 +154,21 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.40.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.41.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Day-one GLM-5.3-Flash and Qwen3.8-Flash-Next support.** Both native
+  multimodal composite checkpoints have architecture-verified LoRA targets,
+  dedicated dependency extras, safe text-only RL paths, and explicit
+  multimodal serving guidance.
+- **Composite model loading is shared across agents and RL.** Native
+  conditional-generation repositories now fall back from
+  `AutoModelForCausalLM` to Transformers' multimodal auto classes in the core
+  agent, SFT, GSPO, DAPO, GEPO, and VAPO paths.
+- **Provider evidence now stays fresh.** Read-only River, RunPod, and Fireworks
+  canaries emit schema-versioned JSON, fail strict CI on missing credentials or
+  leaked canary resources, and run alongside a bounded weekly slow/E2E lane.
+
+**v0.40.0:**
 
 - **Remote execution is now explicit and restart-safe.** Provider capability
   discovery prevents unsupported job submissions, Fireworks jobs reconnect
@@ -709,7 +723,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.40.0)
+pip install stateset-agents          # latest release (v0.41.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -751,7 +765,7 @@ trains until you ask:
 
 ```bash
 pip install "stateset-agents[training,trl]"
-python examples/finetune_gspo.py --list-models              # 12 presets
+python examples/finetune_gspo.py --list-models              # 20 presets
 python examples/finetune_gspo.py --model qwen3.5-0.8b       # dry run: show the resolved config
 python examples/finetune_gspo.py --model qwen3.5-0.8b --no-dry-run   # actually train
 ```
@@ -761,15 +775,18 @@ uses 4‑bit quantization and smaller context/group sizes), `--use-lora/--no-lor
 `--use-4bit/--use-8bit`, `--use-vllm`, `--wandb`, `--export-merged`,
 `--write-config PATH`.
 
-Twelve models ship a dedicated starter with tuned defaults; the ✅ column marks
-what has actually been fine-tuned on rented hardware, not merely wired up:
+Twelve models ship a dedicated starter with tuned defaults, and two newly
+released composite models have architecture-aware unified presets. The ✅
+column marks what has actually been fine-tuned on rented hardware, not merely
+wired up:
 
-| Model | Dedicated entry point | Live-verified | Notes |
+| Model | Training entry point | Live-verified | Notes |
 |---|---|---|---|
 | `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
 | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
 | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
 | `Qwen/Qwen3.8-27B` | `stateset-agents qwen3-8-27b` | ✅ | Hybrid linear/standard attention, multimodal, 256K ctx, Apache‑2.0 — ~56GB BF16 |
+| `Qwen/Qwen3.8-Flash-Next` | `python examples/finetune_gspo.py --model qwen3.8-flash-next` | | Qwen4 architecture preview; 125B main / 6B active + 51B n-gram embeddings; native multimodal, 262K ctx |
 | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents qwen3-coder` | | 128 experts / 8 active, 256K ctx, Apache‑2.0 |
 | `openai/gpt-oss-20b` | `stateset-agents gpt-oss` | | 32 experts / 4 active, 128K ctx, Apache‑2.0 |
 | `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents deepseek-v4` | | MLA attention, 256 experts, 1M ctx, MIT — QLoRA + vLLM |
@@ -778,6 +795,7 @@ what has actually been fine-tuned on rented hardware, not merely wired up:
 | `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` | | **Provisional** — HF weights unpublished as of 2026‑07‑16 |
 | `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
 | `zai-org/GLM-5.2` | `python examples/finetune_glm5_2_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
+| `zai-org/GLM-5.3-Flash` | `python examples/finetune_gspo.py --model glm5.3-flash` | | 320B / 18B active, native multimodal, FP8, 1M ctx |
 
 Every CLI starter accepts the same flags: `--json-output`, `--list-profiles`,
 `--starter-profile NAME`, `--write-config PATH`, `--config PATH --no-dry-run`.
@@ -786,7 +804,7 @@ import get_glm5_2_config, run_glm5_2_config`), as are the others.
 
 ### Supported models
 
-First-class starters ship for **Qwen 3.5 0.8B**, **Muse Glimmer 30B**, **Nemotron 3.5 Lightning**, **Qwen3.8 27B**, **Qwen3-Coder 30B**, **gpt-oss 20B**, **DeepSeek V4 Flash**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
+First-class starters ship for **Qwen 3.5 0.8B**, **Muse Glimmer 30B**, **Nemotron 3.5 Lightning**, **Qwen3.8 27B**, **Qwen3-Coder 30B**, **gpt-oss 20B**, **DeepSeek V4 Flash**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Architecture-aware unified presets additionally cover **GLM-5.3-Flash** and **Qwen3.8-Flash-Next**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Compatible Hugging Face causal LMs work through the generic flow; native multimodal conditional-generation repositories use StateSet's composite-loader fallback for text-only RL.
 
 See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
 
@@ -1411,12 +1429,12 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.40.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.41.0`).
 
 Other entry points:
 
 - **[`examples/getting_started/`](examples/getting_started/)** — **start here after `pip install`**: five small examples (stub hello, custom reward, first GSPO fine-tune, LLM-judge eval, serve via FastAPI). All target the published PyPI version; the GPU-free three smoke-test the install end-to-end. Run `make getting-started-smoke` to verify all three at once.
-- `examples/finetune_gspo.py` – **unified finetune driver**: `--model <preset>` over the 12-model registry (`--list-models`), safe `--dry-run` by default, `--no-dry-run` to train
+- `examples/finetune_gspo.py` – **unified finetune driver**: `--model <preset>` over the 20-model registry (`--list-models`), safe `--dry-run` by default, `--no-dry-run` to train
 - `examples/hello_world.py` – stub mode walkthrough
 - `examples/quick_start.py` – stub-backed onboarding example with training + smoke test
 - `examples/complete_grpo_training.py` – end‑to‑end GRPO training

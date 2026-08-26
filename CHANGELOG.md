@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-08-26 — Next-model and provider evidence
+
+### Added
+
+- **Day-one Qwen3.8-Flash-Next support.** The unified GSPO registry now
+  includes `Qwen/Qwen3.8-Flash-Next` with Gated DeltaNet and Qwen Sparse
+  Attention LoRA targets verified against the official weight index, a
+  `qwen38next` dependency extra, and explicit text-RL/multimodal boundaries.
+- **Day-one GLM-5.3-Flash support.** The unified GSPO registry now includes
+  `zai-org/GLM-5.3-Flash` with LoRA targets verified against the official
+  hybrid linear/sparse-attention weight map. Shared agent, SFT, and flagship
+  RL loaders recognize native multimodal conditional-generation checkpoints,
+  the `glm53` extra pins the required Transformers 5.16 generation, and the
+  docs keep text-only RL distinct from native image/video inference.
+- **Credential-aware River, RunPod, and Fireworks canaries** plus scheduled
+  provider and bounded slow/E2E workflows. Strict CI fails on missing secrets,
+  provider errors, or leaked `stateset-canary-*` resources while creating no
+  billable resources itself.
+
 ## [0.40.0] - 2026-08-26 — Durable remote execution and provider safety
 
 ### Added

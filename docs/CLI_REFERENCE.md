@@ -4,6 +4,21 @@ Use `stateset-agents --help` to see the current runtime command list.
 
 ## Commands
 
+### `stateset-agents provider-canary`
+
+Run read-only live authentication, SDK compatibility, and cleanup checks for
+River, RunPod, and Fireworks. No training job, pod, or deployment is created.
+
+```bash
+stateset-agents provider-canary --provider runpod --strict
+stateset-agents provider-canary --provider river --provider fireworks \
+    --strict --output provider-canary.json
+```
+
+Without `--strict`, missing credentials are reported as `skipped`. Scheduled
+CI uses `--strict`, so absent credentials or leaked `stateset-canary-*`
+resources fail the job. See `docs/PROVIDER_CANARIES.md`.
+
 ### `stateset-agents version`
 
 Show the installed version and runtime details.
@@ -239,7 +254,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.40.0-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.41.0-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`

@@ -41,6 +41,8 @@ exposed as `*_starter.py` modules with profile presets.
 
 | Model | HuggingFace ID | Surface |
 |---|---|---|
+| **GLM 5.3 Flash** | `zai-org/GLM-5.3-Flash` (320B MoE / 18B active) | `python examples/finetune_gspo.py --model glm5.3-flash --dry-run`; install `stateset-agents[glm53]`. Native multimodal `glm5_next`, FP8, 1M context; hybrid linear/sparse attention LoRA targets verified from the official weight index. StateSet text-only RL loads the composite model automatically; use `AutoProcessor`, vLLM, or SGLang for image/video inference. See [GLM5_3_FLASH.md](GLM5_3_FLASH.md). |
+| **Qwen3.8 Flash Next** | `Qwen/Qwen3.8-Flash-Next` (125B MoE / 6B active + 51B n-gram embeddings) | `python examples/finetune_gspo.py --model qwen3.8-flash-next --dry-run`; install `stateset-agents[qwen38next]`. Native multimodal `qwen4_exp`, 262K native context; Gated DeltaNet/Qwen Sparse Attention LoRA targets verified from the official weight index. Text-only RL uses the composite loader; use `AutoProcessor`, vLLM, SGLang, or TokenSpeed for multimodal inference. See [QWEN3_8_FLASH_NEXT.md](QWEN3_8_FLASH_NEXT.md). |
 | **Qwen 3.5 27B** | `Qwen/Qwen3.5-27B` | `examples/finetune_qwen3_5_27b_gspo.py`, `deployment/kubernetes/qwen3-5-27b-training-job.yaml`, `docs/QWEN3_5_27B_MINIMAL_HOSTING_PLAN.md` |
 | **Qwen 3** (general) | Qwen 3 family | `examples/finetune_qwen3_gspo.py`, `docs/QWEN3_FINETUNING_GUIDE.md` |
 | **Qwen 2.5 3B Instruct** | `Qwen/Qwen2.5-3B-Instruct` | Offline GRPO example in `training/offline_grpo_trainer.py` |

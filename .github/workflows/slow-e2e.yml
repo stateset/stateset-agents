@@ -1,0 +1,37 @@
+name: Slow and E2E
+
+on:
+  schedule:
+    - cron: "0 5 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slow-e2e
+  cancel-in-progress: true
+
+jobs:
+  slow-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install test dependencies
+        run: pip install -e ".[dev,api,mcp,fireworks]"
+      - name: Run bounded slow and end-to-end suite
+        run: >-
+          pytest -m "slow and not gpu" -n 0 --timeout=600
+          --durations=30 --junitxml=slow-e2e-junit.xml
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slow-e2e-results
+          path: slow-e2e-junit.xml
+          if-no-files-found: warn
+          retention-days: 30

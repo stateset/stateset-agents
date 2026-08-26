@@ -211,6 +211,42 @@ PRESETS: dict[str, ModelPreset] = {
         cli_symbol_prefix="QWEN38_27B",
         cli_symbol_infix="qwen3_8",
     ),
+    "qwen3.8-flash-next": ModelPreset(
+        model_id="Qwen/Qwen3.8-Flash-Next",
+        tokenizer_id="Qwen/Qwen3.8-Flash-Next",
+        lora_target_modules=(
+            # Gated DeltaNet layers.
+            "in_proj_qkv",
+            "in_proj_z",
+            "in_proj_a",
+            "in_proj_b",
+            "out_proj",
+            # Qwen Sparse Attention layers and lightweight indexer.
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "index_qk_proj",
+        ),
+        max_prompt_length=8192,
+        max_completion_length=2048,
+        learning_rate=2e-6,
+        num_generations=4,
+        bf16=True,
+        use_4bit=True,
+        use_8bit=False,
+        notes=(
+            "Official qwen4_exp native-multimodal checkpoint (125B main MoE / "
+            "6B active, plus 51B n-gram embeddings and 4B MTP; 262K native "
+            "context). LoRA targets were verified against the official weight "
+            "index on 2026-08-26 and cover Gated DeltaNet plus Qwen Sparse "
+            "Attention while excluding the 512-expert MoE and vision tensors. "
+            "The full-attention leaf names also match the single MTP layer. "
+            "StateSet's RL path is text-only; use AutoProcessor or a supported "
+            "serving engine for image/video inference. The FP8 repository is "
+            "intended for inference rather than adapter training."
+        ),
+    ),
     "qwen3-coder": ModelPreset(
         model_id="Qwen/Qwen3-Coder-30B-A3B-Instruct",
         tokenizer_id="Qwen/Qwen3-Coder-30B-A3B-Instruct",
@@ -463,6 +499,42 @@ PRESETS: dict[str, ModelPreset] = {
             "exposes GLM5_2_FP8_MODEL as an alternate checkpoint."
         ),
         starter_module="glm5_2_starter",
+    ),
+    "glm5.3-flash": ModelPreset(
+        model_id="zai-org/GLM-5.3-Flash",
+        tokenizer_id="zai-org/GLM-5.3-Flash",
+        lora_target_modules=(
+            # Linear-attention layers.
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "f_a_proj",
+            "f_b_proj",
+            "g_a_proj",
+            "g_b_proj",
+            "b_proj",
+            # DeepSeek sparse-attention layers.
+            "q_a_proj",
+            "q_b_proj",
+            "kv_a_proj_with_mqa",
+            "kv_b_proj",
+        ),
+        max_prompt_length=8192,
+        max_completion_length=2048,
+        learning_rate=2e-6,
+        num_generations=4,
+        bf16=True,
+        use_4bit=False,
+        use_8bit=False,
+        notes=(
+            "Official native-multimodal FP8 checkpoint (320B total / 18B active, "
+            "1M context, glm5_next architecture). LoRA targets were verified "
+            "against the official weight index on 2026-08-26 and cover both "
+            "linear- and sparse-attention text layers while excluding the vision "
+            "tower and 288-expert MoE tensors. StateSet's RL path is text-only; "
+            "native image/video inference uses AutoProcessor or vLLM/SGLang."
+        ),
     ),
     "qwen3": ModelPreset(
         model_id="Qwen/Qwen2.5-7B",

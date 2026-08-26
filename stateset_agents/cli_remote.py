@@ -808,6 +808,54 @@ def remote_providers(
         )
 
 
+@app.command("provider-canary")
+def provider_canary(
+    provider: list[str] = typer.Option(
+        [],
+        "--provider",
+        help="Provider to probe (repeatable). Default: river, runpod, fireworks.",
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", help="Optional path for the JSON evidence report."
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Exit non-zero when a provider fails or credentials are missing.",
+    ),
+) -> None:
+    """Run non-billable live authentication and cleanup canaries."""
+    import json
+
+    from stateset_agents.remote.canary import run_canary_matrix
+
+    selected = provider or ["river", "runpod", "fireworks"]
+    try:
+        results = run_canary_matrix(selected)
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    payload = {
+        "schema_version": 1,
+        "billable_resources_created": 0,
+        "results": [result.to_dict() for result in results],
+    }
+    rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    if output is not None:
+        try:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(rendered, encoding="utf-8")
+        except OSError as exc:
+            _echo(f"Could not write canary report: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+        _echo(f"Canary report: {output}", err=True)
+    _echo(rendered.rstrip())
+
+    if strict and any(not result.ok for result in results):
+        raise typer.Exit(code=1)
+
+
 @app.command("runpod-orphans")
 def runpod_orphans(
     terminate: bool = typer.Option(

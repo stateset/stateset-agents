@@ -42,3 +42,21 @@ def test_dev_extra_is_superset_of_training_and_api() -> None:
             "Add them to [dev] in pyproject.toml (see the NOTE at the top of "
             "the dev extra for why they are duplicated) and run `make lock`."
         )
+
+
+def test_glm53_extra_pins_required_transformers_generation() -> None:
+    extras = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"][
+        "optional-dependencies"
+    ]
+
+    assert "stateset-agents[training]" in extras["glm53"]
+    assert "transformers>=5.16.0" in extras["glm53"]
+
+
+def test_qwen38next_extra_pins_required_transformers_generation() -> None:
+    extras = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"][
+        "optional-dependencies"
+    ]
+
+    assert "stateset-agents[training]" in extras["qwen38next"]
+    assert "transformers>=5.8.0" in extras["qwen38next"]

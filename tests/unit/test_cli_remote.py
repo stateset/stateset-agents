@@ -530,6 +530,70 @@ class TestRunPodOrphansCommand:
         assert "Read-only" in result.output
 
 
+class TestProviderCanaryCommand:
+    def test_writes_machine_readable_evidence(self, monkeypatch, tmp_path):
+        import stateset_agents.remote.canary as canary
+        from stateset_agents.remote.canary import ProviderCanaryResult
+
+        monkeypatch.setattr(
+            canary,
+            "run_canary_matrix",
+            lambda providers: [
+                ProviderCanaryResult(
+                    provider=providers[0],
+                    status="passed",
+                    checked_at="2026-08-26T00:00:00+00:00",
+                    duration_ms=12,
+                    checks={"billable_resources_created": 0},
+                    cleanup_verified=True,
+                )
+            ],
+        )
+        output = tmp_path / "canary.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "provider-canary",
+                "--provider",
+                "runpod",
+                "--output",
+                str(output),
+                "--strict",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        assert payload["schema_version"] == 1
+        assert payload["billable_resources_created"] == 0
+        assert payload["results"][0]["cleanup_verified"] is True
+
+    def test_strict_mode_fails_on_skipped_provider(self, monkeypatch):
+        import stateset_agents.remote.canary as canary
+        from stateset_agents.remote.canary import ProviderCanaryResult
+
+        monkeypatch.setattr(
+            canary,
+            "run_canary_matrix",
+            lambda providers: [
+                ProviderCanaryResult(
+                    provider=providers[0],
+                    status="skipped",
+                    checked_at="2026-08-26T00:00:00+00:00",
+                    duration_ms=0,
+                    error="missing credentials",
+                )
+            ],
+        )
+
+        result = runner.invoke(
+            app, ["provider-canary", "--provider", "river", "--strict"]
+        )
+
+        assert result.exit_code == 1
+
+
 class TestUndeployCommand:
     """`undeploy` tears down a provider-managed deployment."""
 

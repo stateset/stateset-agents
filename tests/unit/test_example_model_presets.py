@@ -37,6 +37,7 @@ def test_presets_registry_has_expected_models():
         "muse-glimmer",
         "nemotron-3-5",
         "qwen3.8-27b",
+        "qwen3.8-flash-next",
         "qwen3-coder",
         "gpt-oss",
         "deepseek-v4",
@@ -45,6 +46,7 @@ def test_presets_registry_has_expected_models():
         "kimi-k2.6",
         "glm5.1",
         "glm5.2",
+        "glm5.3-flash",
         "qwen3",
         "qwen3.5-0.8b",
         "qwen3.5-27b",
@@ -153,8 +155,42 @@ def test_starter_module_field_set_for_packaged_starters():
         assert get_preset(name).starter_module == module
 
     # Presets without a packaged starter must leave the field unset.
-    for name in ("kimi-k2.5", "qwen3", "qwen3.5-27b", "gemma3", "llama3", "mistral"):
+    for name in (
+        "kimi-k2.5",
+        "glm5.3-flash",
+        "qwen3.8-flash-next",
+        "qwen3",
+        "qwen3.5-27b",
+        "gemma3",
+        "llama3",
+        "mistral",
+    ):
         assert get_preset(name).starter_module is None
+
+
+def test_glm5_3_flash_preset_matches_official_hybrid_architecture():
+    preset = get_preset("glm5.3-flash")
+
+    assert preset.model_id == "zai-org/GLM-5.3-Flash"
+    assert {"q_proj", "f_a_proj", "q_a_proj", "kv_b_proj"} <= set(
+        preset.lora_target_modules
+    )
+    assert "gate_proj" not in preset.lora_target_modules
+    assert preset.use_4bit is False
+    assert "vision tower" in preset.notes
+
+
+def test_qwen3_8_flash_next_preset_matches_official_hybrid_architecture():
+    preset = get_preset("qwen3.8-flash-next")
+
+    assert preset.model_id == "Qwen/Qwen3.8-Flash-Next"
+    assert {"in_proj_qkv", "in_proj_a", "q_proj", "index_qk_proj"} <= set(
+        preset.lora_target_modules
+    )
+    assert "gate_up_proj" not in preset.lora_target_modules
+    assert "down_proj" not in preset.lora_target_modules
+    assert preset.use_4bit is True
+    assert "512-expert" in preset.notes
 
 
 def test_starter_profile_matches_packaged_starter_config(capsys):
