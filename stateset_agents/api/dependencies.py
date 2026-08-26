@@ -264,13 +264,15 @@ async def get_security_monitor() -> SecurityMonitor:
     return security_monitor
 
 
-def get_inference_service(request: Request):
+async def get_inference_service(request: Request):
     """Get the InferenceService from app state.
 
     The service is created during lifespan in ``main.py`` and stored on
     ``app.state.inference_service``.  If it hasn't been created yet (e.g.
     during isolated tests), a fresh instance is created from environment
-    variables.
+    variables. This dependency is async because FastAPI otherwise dispatches
+    the trivial lookup through AnyIO's worker pool, which can deadlock with
+    embedded ASGI transports and consumes a thread on every request.
     """
     from .services.inference_service import InferenceConfig, InferenceService
 
@@ -281,7 +283,7 @@ def get_inference_service(request: Request):
     return service
 
 
-def get_agent_service(request: Request):
+async def get_agent_service(request: Request):
     """Get the AgentService from app state.
 
     Created during lifespan in ``main.py`` and stored on
@@ -296,7 +298,7 @@ def get_agent_service(request: Request):
     return service
 
 
-def get_training_service(request: Request):
+async def get_training_service(request: Request):
     """Get the TrainingService from app state.
 
     Created during lifespan in ``main.py`` and stored on

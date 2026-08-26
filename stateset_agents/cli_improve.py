@@ -342,7 +342,7 @@ class ImproveDataError(ValueError):
     """Raised by :func:`run_improve` for data problems (CLI exit code 1)."""
 
 
-def run_improve(
+async def run_improve_async(
     *,
     transcripts: str,
     reward: str,
@@ -436,7 +436,7 @@ def run_improve(
     import grade_transcript as gt  # local import: sys.path was patched above
 
     reward_fn = _build_reward(reward, persona_config, llm_judge, _log)
-    per_transcript = asyncio.run(_grade_all(transcript_files, reward_fn))
+    per_transcript = await _grade_all(transcript_files, reward_fn)
     total_turns = sum(len(e["rows"]) for e in per_transcript)
     if total_turns == 0:
         raise ImproveDataError("No assistant turns found across the given transcripts.")
@@ -476,6 +476,32 @@ def run_improve(
     summary["summary_path"] = str(summary_path)
     summary["next_steps_path"] = str(next_steps_path)
     return summary
+
+
+def run_improve(
+    *,
+    transcripts: str,
+    reward: str,
+    output: str,
+    threshold: float = 0.7,
+    format: str = "transcripts",
+    persona: str | None = None,
+    llm_judge: bool = False,
+    echo: Any = None,
+) -> dict[str, Any]:
+    """Synchronous CLI wrapper around :func:`run_improve_async`."""
+    return asyncio.run(
+        run_improve_async(
+            transcripts=transcripts,
+            reward=reward,
+            output=output,
+            threshold=threshold,
+            format=format,
+            persona=persona,
+            llm_judge=llm_judge,
+            echo=echo,
+        )
+    )
 
 
 def get_improve_status(output: str) -> dict[str, Any]:

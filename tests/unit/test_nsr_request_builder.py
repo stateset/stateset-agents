@@ -7,12 +7,7 @@ rules use "if"/"then" condition lists, and variables are "?x" strings.
 
 import pytest
 
-from stateset_agents.rewards.nsr_verifier import (
-    decision_request,
-    fact,
-    predicate,
-    rule,
-)
+from stateset_agents.rewards.nsr_verifier import decision_request, fact, predicate, rule
 
 
 class TestPredicate:

@@ -483,8 +483,9 @@ def train_remote(
             "'river' is River AI's remote autograd service: it trains without "
             "renting a machine, so the GPU/disk/cloud-type options are "
             "ignored, and the result is a river:// checkpoint pointer rather "
-            "than local adapter weights (NOT live-verified — see "
-            "docs/RIVER_PROVIDER.md). 'fireworks' is Fireworks AI's managed "
+            "than local adapter weights (live-verified; see "
+            "docs/GETTING_STARTED_RIVER.md). 'fireworks' is Fireworks AI's "
+            "managed "
             "fine-tuning service: it also picks its own training hardware, "
             "so the GPU/disk/cloud-type options are ignored, and the tuned "
             "LoRA addon lives on Fireworks — add --deploy to serve it (see "
@@ -732,6 +733,116 @@ def _fireworks_done(executor, handle, result, deploy: bool, accelerator: str | N
         "It bills until deleted: stateset-agents undeploy --deployment "
         f"{deployment['deployment']}"
     )
+
+
+@app.command("remote-job")
+def remote_job(
+    job_id: str = typer.Option(..., "--job-id", help="Provider job id to resume."),
+    provider: str = typer.Option(
+        "fireworks",
+        "--provider",
+        help="Provider that owns the job. Durable reconnect is currently Fireworks.",
+    ),
+    wait: bool = typer.Option(
+        False, "--wait", help="Poll to a terminal state and fetch its artifacts."
+    ),
+    fetch: bool = typer.Option(
+        False, "--fetch", help="Fetch artifacts now; the job must be complete."
+    ),
+    output_dir: Path | None = typer.Option(
+        None, "--output-dir", help="Override the persisted artifact destination."
+    ),
+) -> None:
+    """Reconnect to an asynchronous remote job after the original CLI exits."""
+    from stateset_agents.remote.job import JobHandle
+
+    try:
+        executor = get_executor(provider)
+        handle = JobHandle(provider=executor.name, job_id=job_id)
+        if wait:
+            result = executor.wait(handle)
+            for line in result.logs:
+                _echo(line)
+            _echo(f"Job {job_id}: {result.status.value}")
+            if result.output_dir is not None:
+                _echo(f"Artifacts: {result.output_dir}")
+            if not result.succeeded:
+                raise typer.Exit(code=1)
+            return
+
+        status = executor.status(handle)
+        for line in executor.logs(handle):
+            _echo(line)
+        _echo(f"Job {job_id}: {status.value}")
+        if fetch:
+            destination = executor.fetch(handle, output_dir)
+            _echo(f"Artifacts: {destination}")
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("remote-providers")
+def remote_providers(
+    json_output: bool = typer.Option(
+        False, "--json", "--json-output", help="Emit machine-readable JSON."
+    ),
+) -> None:
+    """List provider capabilities without loading SDKs or credentials."""
+    import json
+
+    rows = [get_executor(name).capabilities() for name in available_providers()]
+    if json_output:
+        _echo(json.dumps(rows, indent=2, sort_keys=True))
+        return
+    for row in rows:
+        flags = []
+        if row["durable_handles"]:
+            flags.append("durable")
+        if row["managed_deployments"]:
+            flags.append("deployments")
+        suffix = f"; {', '.join(flags)}" if flags else ""
+        _echo(
+            f"{row['provider']}: {', '.join(row['job_kinds'])}; "
+            f"result={row['result_kind']}{suffix}"
+        )
+
+
+@app.command("runpod-orphans")
+def runpod_orphans(
+    terminate: bool = typer.Option(
+        False,
+        "--terminate",
+        help="Terminate every leased pod. Without this flag the command is read-only.",
+    ),
+) -> None:
+    """Find training pods left behind when their submitting process crashed."""
+    from stateset_agents.remote.runpod import RunPodExecutor
+
+    executor = get_executor("runpod")
+    if not isinstance(
+        executor, RunPodExecutor
+    ):  # pragma: no cover - registry invariant
+        raise typer.Exit(code=1)
+    leases = executor.orphaned_leases()
+    if not leases:
+        _echo("No locally recorded RunPod orphans.")
+        return
+    for lease in leases:
+        _echo(
+            f"{lease.get('pod_id')}: job={lease.get('job_id')} "
+            f"model={lease.get('base_model')} gpu={lease.get('gpu')}"
+        )
+    if not terminate:
+        _echo("Read-only. Re-run with --terminate after checking active jobs.")
+        return
+    try:
+        terminated = executor.cleanup_orphans()
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    for pod_id in terminated:
+        _echo(f"Terminated {pod_id}; cleanup lease removed.")
 
 
 @app.command("undeploy")

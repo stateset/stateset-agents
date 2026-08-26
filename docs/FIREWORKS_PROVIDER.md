@@ -136,11 +136,12 @@ explicit teardown instruction.
 
 ## Limits
 
-- **`fetch()` needs the submitting process.** `status()`, `logs()`, `cancel()`
-  and `undeploy()` work from any process with the job id, but `fetch()` needs
-  the training spec (for the manifest) and that lives only in the process that
-  submitted. Fetching from a later session errors with that explanation rather
-  than writing a manifest full of guesses.
+- **Jobs are restart-safe on the submitting machine.** The non-secret training
+  spec and Fireworks resource ids are written atomically under the StateSet
+  cache directory. A later CLI process can poll or fetch the job with
+  `stateset-agents remote-job --job-id <id> [--wait|--fetch]`. Moving to
+  another machine still requires moving that metadata file or downloading the
+  addon from the Fireworks console.
 - **`logs()` are progress events, not trainer stdout.** The fine-tuning API
   exposes state and percent-complete, not the training log. Lines look like
   `fireworks job running - 40% - epoch 1 - 12403 tokens`.

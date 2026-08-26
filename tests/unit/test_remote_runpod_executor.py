@@ -147,7 +147,7 @@ class FakeSsh:
 
 
 @pytest.fixture
-def make_executor():
+def make_executor(tmp_path):
     from stateset_agents.remote.runpod import RunPodExecutor
 
     def build(api=None, ssh=None, **kwargs):
@@ -156,6 +156,7 @@ def make_executor():
         # running it happens to have a keypair. (It does locally; the Windows
         # CI runner does not, which is how this was found.)
         kwargs.setdefault("public_key", "ssh-rsa AAAATESTKEY")
+        kwargs.setdefault("lease_dir", tmp_path / "runpod-leases")
         return RunPodExecutor(
             api=api or FakePodApi(),
             ssh=ssh or FakeSsh(),
@@ -227,6 +228,51 @@ class TestJobExecution:
         assert (
             spec.output_dir / "adapter_model.safetensors"
         ).read_bytes() == b"WEIGHTS"
+
+
+class TestCrashRecoveryLeases:
+    def test_pod_has_a_lease_until_termination_is_confirmed(
+        self, make_executor, spec, tmp_path
+    ):
+        api = FakePodApi()
+        executor = make_executor(api=api, lease_dir=tmp_path / "leases")
+        observed = []
+        original_terminate = api.terminate_pod
+
+        def observe_then_terminate(pod_id):
+            observed.append(executor._lease_path(pod_id).exists())
+            original_terminate(pod_id)
+
+        api.terminate_pod = observe_then_terminate
+
+        executor.submit(spec)
+
+        assert observed == [True]
+        assert executor.orphaned_leases() == []
+
+    def test_later_process_can_terminate_a_crash_lease(self, spec, tmp_path):
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        lease_dir = tmp_path / "leases"
+        first = RunPodExecutor(
+            api=FakePodApi(),
+            ssh=FakeSsh(),
+            public_key="ssh-rsa AAAATESTKEY",
+            lease_dir=lease_dir,
+        )
+        first._write_lease("pod-orphan", "job-1", spec, 123.0)
+
+        api = FakePodApi()
+        restarted = RunPodExecutor(
+            api=api,
+            ssh=FakeSsh(),
+            public_key="ssh-rsa AAAATESTKEY",
+            lease_dir=lease_dir,
+        )
+
+        assert restarted.cleanup_orphans() == ["pod-orphan"]
+        assert api.terminated == ["pod-orphan"]
+        assert restarted.orphaned_leases() == []
 
 
 class TestPodTermination:

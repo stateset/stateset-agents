@@ -10,12 +10,18 @@ import json
 
 import pytest
 
+from stateset_agents.remote.executor import RemoteExecutionError
+from stateset_agents.remote.fireworks import FireworksExecutor
 from stateset_agents.remote.job import (
     JobHandle,
     JobStatus,
     RemoteJobResult,
     RemoteJobSpec,
 )
+from stateset_agents.remote.local import LocalExecutor
+from stateset_agents.remote.modal import ModalExecutor
+from stateset_agents.remote.river import RiverExecutor
+from stateset_agents.remote.runpod import RunPodExecutor
 
 
 @pytest.fixture
@@ -58,6 +64,22 @@ class TestRemoteJobSpecDefaults:
 
 
 class TestRemoteJobSpecValidation:
+    def test_rejects_unknown_job_kind(self, dataset):
+        with pytest.raises(ValueError, match="job_kind"):
+            RemoteJobSpec(
+                dataset=dataset,
+                base_model="Qwen/Qwen3.5-0.8B",
+                job_kind="grpo_typo",
+            )
+
+    def test_normalizes_job_kind(self, dataset):
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            job_kind=" HARVEST ",
+        )
+        assert spec.job_kind == "harvest"
+
     def test_rejects_missing_dataset(self, tmp_path):
         with pytest.raises(ValueError, match="does not exist"):
             RemoteJobSpec(
@@ -141,6 +163,51 @@ class TestRemoteJobSpecValidation:
         spec = RemoteJobSpec(dataset=dataset, base_model="Qwen/Qwen3.5-0.8B")
         assert spec.cloud_type == "SECURE"
         assert spec.resume is False
+
+
+class TestProviderJobKindCapabilities:
+    @pytest.mark.parametrize(
+        "executor_cls",
+        [LocalExecutor, RunPodExecutor],
+    )
+    def test_machine_executors_reject_remote_autograd_rl(self, dataset, executor_cls):
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            job_kind="rl",
+        )
+        with pytest.raises(RemoteExecutionError, match="does not support.*rl"):
+            executor_cls().submit(spec)
+
+    @pytest.mark.parametrize("executor_cls", [ModalExecutor, FireworksExecutor])
+    def test_sft_only_executors_reject_harvest(self, dataset, executor_cls):
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            job_kind="harvest",
+        )
+        with pytest.raises(RemoteExecutionError, match="does not support.*harvest"):
+            executor_cls().submit(spec)
+
+    @pytest.mark.parametrize("job_kind", ["sft", "harvest", "rl"])
+    def test_river_declares_every_remote_mode(self, dataset, job_kind):
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            job_kind=job_kind,
+        )
+        RiverExecutor().validate_spec(spec)
+
+    def test_capabilities_are_machine_readable(self):
+        capabilities = FireworksExecutor().capabilities()
+
+        assert capabilities == {
+            "provider": "fireworks",
+            "job_kinds": ["sft"],
+            "durable_handles": True,
+            "managed_deployments": True,
+            "result_kind": "hosted_pointer_or_local_artifacts",
+        }
 
 
 class TestResumeAndCloudTypeCliArgs:

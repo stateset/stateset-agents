@@ -400,11 +400,41 @@ def test_fetch_keeps_the_pointer_when_the_download_fails(tmp_path, spec, monkeyp
     assert pointer["weights_downloaded"] is False
 
 
-def test_fetch_of_a_job_this_process_did_not_submit_is_refused(executor, client):
+def test_fetch_without_durable_job_metadata_is_refused(executor, client):
     client.supervised_fine_tuning_jobs.states = ["JOB_STATE_COMPLETED"]
 
-    with pytest.raises(RemoteExecutionError, match="submitted by this process"):
+    with pytest.raises(RemoteExecutionError, match="no local durable metadata"):
         executor.fetch(JobHandle("fireworks", "sftj-unseen"))
+
+
+def test_fetch_resumes_from_durable_metadata_after_process_restart(
+    executor, client, spec
+):
+    handle = executor.submit(spec)
+    client.supervised_fine_tuning_jobs.states = ["JOB_STATE_COMPLETED"]
+
+    restarted = FireworksExecutor(
+        client=client,
+        account_id="acct",
+        ledger_path=executor.ledger_path,
+        state_dir=executor.state_dir,
+    )
+    out = restarted.fetch(handle)
+
+    pointer = json.loads((out / CHECKPOINT_POINTER_NAME).read_text())
+    assert pointer["model"] == "accounts/acct/models/sft-abc"
+    assert restarted.job_cost(handle)[1] == pytest.approx(3.25)
+    assert any("completed" in line for line in restarted.logs(handle))
+
+
+def test_corrupt_durable_metadata_fails_closed(executor, client):
+    handle = JobHandle("fireworks", "sftj-corrupt")
+    path = executor._state_path(handle.job_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(RemoteExecutionError, match="metadata.*invalid"):
+        executor.fetch(handle)
 
 
 # --- cancel / deploy ----------------------------------------------------

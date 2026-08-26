@@ -1,10 +1,9 @@
 """Provider-agnostic description of a remote fine-tune job.
 
-``RemoteJobSpec`` mirrors ``scripts/sft_from_curated.py``'s argparse surface
-exactly. That script is the frozen job contract: if a capability is missing,
-the fix is a change to the script, not a new field here. Keeping the two in
-lockstep is what lets every executor shell out to the same entrypoint instead
-of reimplementing training.
+For SFT, ``RemoteJobSpec`` mirrors ``stateset_agents.training.sft``'s argparse
+surface. Harvest and RL reuse the same transport/resource envelope, while
+providers declare which modes they can execute. That capability check keeps a
+mode from silently changing meaning on a different provider.
 
 Secrets are deliberately absent. ``HF_TOKEN`` and provider credentials are
 read from the environment at submit time and never serialized.
@@ -19,6 +18,11 @@ from pathlib import Path
 from typing import Any
 
 __all__ = ["JobHandle", "JobStatus", "RemoteJobResult", "RemoteJobSpec"]
+
+#: Execution modes understood by the remote job contract. Providers support
+#: different subsets; :class:`RemoteExecutor` checks that boundary before any
+#: dataset upload or compute allocation happens.
+JOB_KINDS = frozenset({"sft", "harvest", "rl"})
 
 #: Fields that configure the *provider*, not the training script. These are
 #: excluded from ``to_cli_args()``.
@@ -73,11 +77,11 @@ class JobStatus(enum.Enum):
 class JobHandle:
     """Opaque pointer to a submitted job.
 
-    Serializable, but note the current limit: both shipped executors run the
-    job synchronously inside ``submit()`` and keep outcomes in memory, so a
-    handle is only meaningful to the process that created it. Reconnecting to
-    a job from a later process needs asynchronous submission (Modal's
-    ``Function.spawn`` + ``FunctionCall.from_id``), which is not implemented.
+    Serializable, although handle durability is provider-specific. Fireworks
+    job ids can be polled from a later process; the local, Modal, River, and
+    RunPod executors retain some or all job metadata in memory and therefore
+    require the submitting process for parts of the lifecycle (especially
+    artifact fetching).
     """
 
     provider: str
@@ -180,6 +184,13 @@ class RemoteJobSpec:
     def __post_init__(self) -> None:
         self.dataset = Path(self.dataset)
         self.output_dir = Path(self.output_dir)
+
+        self.job_kind = str(self.job_kind).strip().lower()
+        if self.job_kind not in JOB_KINDS:
+            raise ValueError(
+                f"job_kind must be one of {sorted(JOB_KINDS)}, "
+                f"got {self.job_kind!r}"
+            )
 
         if not self.dataset.exists():
             raise ValueError(f"dataset does not exist: {self.dataset}")

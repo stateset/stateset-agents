@@ -80,6 +80,10 @@ class TaskAdapter:
     def load(self, n_train: int, n_eval: int) -> tuple[list, list]:
         raise NotImplementedError
 
+    def load_smoke(self) -> tuple[list, list]:
+        """Return a tiny sample suitable for an offline pipeline smoke test."""
+        return self.load(3, 1)
+
     def format_prompt(self, example: Any) -> str:
         raise NotImplementedError
 
@@ -97,6 +101,29 @@ class GSM8KAdapter(TaskAdapter):
 
         train, test = load_gsm8k(limit=max(n_train, n_eval))
         return train[:n_train], test[:n_eval]
+
+    def load_smoke(self) -> tuple[list, list]:
+        """Return deterministic examples without contacting Hugging Face."""
+        from stateset_agents.data.gsm8k import GSM8KExample
+
+        examples = [
+            GSM8KExample(
+                question="A box has 3 rows of 4 apples. How many apples are there?",
+                answer_text="Three groups of four make twelve. #### 12",
+                gold_answer=12.0,
+            ),
+            GSM8KExample(
+                question="Mia has 10 marbles and gives away 3. How many remain?",
+                answer_text="Ten minus three is seven. #### 7",
+                gold_answer=7.0,
+            ),
+            GSM8KExample(
+                question="A book costs $6. What do two books cost?",
+                answer_text="Two times six is twelve. #### 12",
+                gold_answer=12.0,
+            ),
+        ]
+        return examples, examples[:1]
 
     def format_prompt(self, example: Any) -> str:
         return f"Solve this step by step.\n\n{example.question}\n\nAnswer:"
@@ -560,9 +587,12 @@ def main() -> int:
     # Step 2: pick the task and load data.
     adapter = TASKS[args.task]()
     logger.info("Task: %s", adapter.name)
-    train_examples, eval_examples = adapter.load(
-        args.num_train_examples, args.num_eval_examples
-    )
+    if args.smoke_test:
+        train_examples, eval_examples = adapter.load_smoke()
+    else:
+        train_examples, eval_examples = adapter.load(
+            args.num_train_examples, args.num_eval_examples
+        )
     logger.info(
         "Train: %d examples, Eval: %d examples",
         len(train_examples),

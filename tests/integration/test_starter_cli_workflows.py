@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.integration
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("preset", "command_name", "model_name", "task", "starter_profile"),
     [

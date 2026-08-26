@@ -152,8 +152,18 @@ def flywheel(
         _echo(str(exc))
         raise typer.Exit(code=1) from exc
 
+    provider_name = provider.strip().lower()
+    requested_kind = "rl" if algorithm != "sft" else "harvest"
+    if not executor.supports(requested_kind):
+        supported = ", ".join(sorted(executor.supported_job_kinds))
+        _echo(
+            f"Provider {provider_name!r} cannot run the {algorithm} flywheel "
+            f"({requested_kind} jobs); supported modes: {supported}."
+        )
+        raise typer.Exit(code=2)
+
     if algorithm != "sft":
-        if provider != "river":
+        if provider_name != "river":
             _echo("--algorithm requires --provider river (zero-infra RL).")
             raise typer.Exit(code=2)
         from stateset_agents.remote.job import RemoteJobSpec

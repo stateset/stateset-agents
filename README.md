@@ -154,7 +154,16 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.39.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.40.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Remote execution is now explicit and restart-safe.** Provider capability
+  discovery prevents unsupported job submissions, Fireworks jobs reconnect
+  across process restarts, and RunPod leases make orphan cleanup auditable.
+- **API and smoke-test reliability improved.** Redis connections are bounded,
+  FastAPI dependencies avoid worker-pool deadlocks, and benchmark smoke mode
+  is deterministic and fully offline.
+
+**v0.39.0:**
 
 - **GEPO and VAPO get a real trust region.** Both trainers recomputed
   their "old" log-probs from the current model in the same step, so the
@@ -700,7 +709,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.39.0)
+pip install stateset-agents          # latest release (v0.40.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1402,7 +1411,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.39.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.40.0`).
 
 Other entry points:
 

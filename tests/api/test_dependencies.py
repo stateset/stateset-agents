@@ -118,7 +118,7 @@ class TestGetInferenceService:
         app.state.inference_service = expected
 
         @app.get("/test")
-        def endpoint(svc=Depends(get_inference_service)):
+        async def endpoint(svc=Depends(get_inference_service)):
             return {"is_stub": svc.is_stub, "same": svc is expected}
 
         with SyncASGIClient(app) as client:
@@ -130,7 +130,7 @@ class TestGetInferenceService:
         app = FastAPI()
 
         @app.get("/test")
-        def endpoint(svc=Depends(get_inference_service)):
+        async def endpoint(svc=Depends(get_inference_service)):
             return {"ok": True}
 
         with SyncASGIClient(app) as client:
@@ -155,7 +155,7 @@ class TestGetAgentService:
         app.state.agent_service = expected
 
         @app.get("/test")
-        def endpoint(svc=Depends(get_agent_service)):
+        async def endpoint(svc=Depends(get_agent_service)):
             return {"has_agents": isinstance(svc.agents, dict)}
 
         with SyncASGIClient(app) as client:
@@ -167,7 +167,7 @@ class TestGetAgentService:
         app = FastAPI()
 
         @app.get("/test")
-        def endpoint(svc=Depends(get_agent_service)):
+        async def endpoint(svc=Depends(get_agent_service)):
             return {"has_agents": isinstance(svc.agents, dict)}
 
         with SyncASGIClient(app) as client:

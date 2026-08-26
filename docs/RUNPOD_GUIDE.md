@@ -51,9 +51,23 @@ stateset-agents train-remote --provider runpod \
 
 What happens, in order: a pod is created, your dataset is copied to it, the
 published package is installed, training runs, the adapter is copied back to
-`outputs/`, and **the pod is terminated** — on success, on failure, on timeout,
-and even if your laptop dies mid-run (the pod's own watchdog handles that last
-case for `serve-remote`; for training the executor terminates in a `finally`).
+`outputs/`, and **the pod is terminated** — on success, on failure, and on
+timeout. Training cleanup runs in a `finally`, so a hard kill of the caller or
+a laptop power loss can bypass it; check the RunPod console after that kind of
+failure and terminate any orphan. (`serve-remote` separately arms an in-pod
+watchdog.)
+
+Training now writes a local cleanup lease immediately after each pod is
+created. After a caller crash, inspect those leases without touching remote
+state, then explicitly terminate them:
+
+```bash
+stateset-agents runpod-orphans
+stateset-agents runpod-orphans --terminate
+```
+
+Leases are removed only after the RunPod API confirms termination. The command
+never deletes network volumes.
 
 Check what it cost:
 

@@ -62,7 +62,11 @@ def app(mock_auth):
 
     app.dependency_overrides[get_current_user] = mock_auth
     _training_svc = TrainingService()
-    app.dependency_overrides[get_training_service] = lambda: _training_svc
+
+    async def override_training_service():
+        return _training_svc
+
+    app.dependency_overrides[get_training_service] = override_training_service
 
     return app
 

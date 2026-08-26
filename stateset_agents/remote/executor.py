@@ -1,9 +1,9 @@
 """The executor contract every compute provider implements.
 
-Deliberately stateless and poll-based: a job is submitted, polled, and its
-artifacts fetched. There is no retry logic and no in-memory job registry —
-a failed job is rerun by the user. That keeps executors thin and avoids
-silently burning GPU budget on retries nobody asked for.
+Deliberately poll-based: a job is submitted, polled, and its artifacts
+fetched. State durability and retry policy are provider-specific: Fireworks
+owns a durable asynchronous job, while machine executors keep local metadata
+and RunPod may retry an interrupted pod within the caller's budget.
 """
 
 from __future__ import annotations
@@ -55,6 +55,39 @@ class RemoteExecutor(abc.ABC):
 
     #: Provider name, as used by the registry and stamped onto handles.
     name: str = "unknown"
+
+    #: Job modes this provider can execute without changing their meaning.
+    #: SFT is the safe default for third-party executors; providers opt into
+    #: harvesting and remote-autograd RL explicitly.
+    supported_job_kinds: frozenset[str] = frozenset({"sft"})
+    durable_handles: bool = False
+    managed_deployments: bool = False
+    result_kind: str = "local_artifacts"
+
+    def supports(self, job_kind: str) -> bool:
+        """Whether this provider preserves the requested job mode's meaning."""
+        return job_kind.strip().lower() in self.supported_job_kinds
+
+    def capabilities(self) -> dict[str, Any]:
+        """Machine-readable provider features for CLIs and orchestrators."""
+        return {
+            "provider": self.name,
+            "job_kinds": sorted(self.supported_job_kinds),
+            "durable_handles": self.durable_handles,
+            "managed_deployments": self.managed_deployments,
+            "result_kind": self.result_kind,
+        }
+
+    def validate_spec(self, spec: RemoteJobSpec) -> None:
+        """Reject unsupported modes before an upload or compute allocation."""
+        if not self.supports(spec.job_kind):
+            supported = ", ".join(sorted(self.supported_job_kinds))
+            raise RemoteExecutionError(
+                f"provider {self.name!r} does not support job_kind "
+                f"{spec.job_kind!r}; supported: {supported}",
+                provider=self.name,
+                job_kind=spec.job_kind,
+            )
 
     @abc.abstractmethod
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
