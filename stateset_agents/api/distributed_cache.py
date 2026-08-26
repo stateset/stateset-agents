@@ -446,14 +446,19 @@ class RedisCache(CacheInterface):
 
     async def connect(self) -> bool:
         """Connect to Redis."""
+        # HYBRID without an explicit Redis URL means memory-only fallback.
+        # Probing localhost here is surprising in production and, when no
+        # server exists, redis-py's connection pool can leave native cleanup
+        # blocked after the event loop closes. Opting into Redis therefore
+        # requires an address; the default remains deterministic and offline.
+        if not self.config.redis_url:
+            logger.info("No Redis URL configured; skipping Redis connection")
+            return False
         try:
             import redis.asyncio as redis
 
             self._client = redis.from_url(
-                # Numeric loopback avoids leaving a DNS resolver thread behind
-                # when the optional local Redis service is absent. Such a
-                # thread makes asyncio's executor shutdown wait indefinitely.
-                self.config.redis_url or "redis://127.0.0.1:6379",
+                self.config.redis_url,
                 password=self.config.redis_password,
                 db=self.config.redis_db,
                 decode_responses=False,

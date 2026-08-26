@@ -1,5 +1,6 @@
 """Tests for identity-keyed rate limiting and the optional Redis backend."""
 
+import asyncio
 import hashlib
 import time
 
@@ -135,7 +136,9 @@ async def test_redis_backend_falls_back_to_memory_when_unavailable(
             requests_per_minute=5,
             enabled=True,
             backend="redis",
-            redis_url="redis://this-host-does-not-exist.invalid:6379",
+            # Numeric loopback avoids platform-dependent DNS resolver hangs
+            # while still exercising a guaranteed unavailable Redis endpoint.
+            redis_url="redis://127.0.0.1:1",
         )
     )
 
@@ -144,6 +147,47 @@ async def test_redis_backend_falls_back_to_memory_when_unavailable(
 
     # Must not crash; falls back to the in-memory limiter.
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_redis_limiter_bounds_pipeline_and_releases_failed_client():
+    limiter = RedisSlidingWindowLimiter(
+        "redis://placeholder:6379", operation_timeout_seconds=0.01
+    )
+
+    class SlowPipeline:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def incr(self, key):
+            return None
+
+        def expire(self, key, seconds, nx=False):
+            return None
+
+        async def execute(self):
+            await asyncio.sleep(10)
+
+    class FakeClient:
+        closed = False
+
+        def pipeline(self, transaction=True):
+            return SlowPipeline()
+
+        async def aclose(self):
+            self.closed = True
+
+    client = FakeClient()
+    limiter._client = client
+
+    with pytest.raises(asyncio.TimeoutError):
+        await limiter.is_allowed("key", 1)
+
+    await limiter.close()
+    assert client.closed is True
 
 
 def test_redis_limiter_uses_lazy_import(preserve_api_config):

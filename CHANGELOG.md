@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.1] - 2026-08-26 — Reliability and verification hardening
+
+### Added
+
+- `stateset-agents model-support` reports the verification level, result, and
+  evidence for each newly supported model/provider path in human-readable or
+  JSON form.
+
+### Fixed
+
+- Redis cache and rate-limit startup now fails fast when Redis is absent or
+  unreachable, uses bounded operation timeouts, and closes failed connection
+  pools before falling back to in-memory enforcement.
+- API authentication regression tests no longer depend on blocking portal
+  threads, and unauthenticated training WebSockets close portably with code
+  4401 after accepting the connection.
+- Synchronous health checks use an isolated executor so event-loop teardown
+  cannot stall the test process.
+- Release image tags and wheel examples are consistent across Helm,
+  Kubernetes, and deployment documentation.
+
+### Changed
+
+- CI uses four deterministic pytest workers, per-test timeouts, and 30-minute
+  job ceilings to prevent silent hangs from consuming the full runner window.
+
 ## [0.42.0] - 2026-08-26 — Bounded multi-GPU RunPod serving
 
 ### Added

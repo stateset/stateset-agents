@@ -150,11 +150,26 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 `improve_run`, `improve_status`, `list_model_presets`, `dry_run_finetune`) — see
 [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
 
+Check what has actually been proven—not merely registered—with
+`stateset-agents model-support`. Its schema-versioned output separates unit
+coverage, live hardware attempts, and successful inference by provider.
+
 ---
 
 ## What's new
 
-**v0.42.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.42.1 (latest release):**
+
+- **Deterministic release validation.** The 4,613-test default suite now uses
+  bounded parallelism, per-test timeouts, and CI job ceilings, while Redis and
+  synchronous health checks fail fast instead of stalling teardown.
+- **Auditable model evidence.** `stateset-agents model-support` distinguishes
+  framework unit coverage, hardware attempts, and verified inference in
+  stable human-readable and JSON output.
+- **Consistent deployment artifacts.** Package, Helm, Kubernetes, wheel, and
+  documentation version surfaces advance together and are regression-tested.
+
+**v0.42.0:**
 
 - **Bounded multi-GPU RunPod serving.** Day-zero vLLM images support explicit
   GPU counts, tensor parallelism, cost ceilings, readiness deadlines, and an
@@ -736,7 +751,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.42.0)
+pip install stateset-agents          # latest release (v0.42.1)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1442,7 +1457,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.1`).
 
 Other entry points:
 

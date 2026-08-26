@@ -865,6 +865,29 @@ def remote_providers(
         )
 
 
+@app.command("model-support")
+def model_support(
+    json_output: bool = typer.Option(
+        False, "--json", "--json-output", help="Emit machine-readable JSON."
+    ),
+) -> None:
+    """Show model/provider proof levels without overstating live support."""
+    import json
+
+    from stateset_agents.remote.model_evidence import model_provider_evidence
+
+    rows = model_provider_evidence()
+    if json_output:
+        _echo(json.dumps({"schema_version": 1, "evidence": rows}, indent=2))
+        return
+    for row in rows:
+        checked = f" ({row['checked_at']})" if row["checked_at"] else ""
+        _echo(
+            f"{row['model']} @ {row['provider']}: {row['level']}/"
+            f"{row['outcome']}{checked}\n  {row['evidence']}"
+        )
+
+
 @app.command("provider-canary")
 def provider_canary(
     provider: list[str] = typer.Option(

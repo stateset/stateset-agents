@@ -13,6 +13,7 @@ import time
 import uuid
 from collections import defaultdict, deque
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -158,14 +159,22 @@ class HealthCheck:
         start_time = time.time()
 
         try:
-            loop = asyncio.get_running_loop()
             if asyncio.iscoroutinefunction(self.check_func):
                 result = await asyncio.wait_for(self.check_func(), timeout=self.timeout)
             else:
-                result = await asyncio.wait_for(
-                    loop.run_in_executor(None, self.check_func),
-                    timeout=self.timeout,
-                )
+                # Do not use the event loop's default executor here. Its worker
+                # lifetime is tied to loop teardown, which can make short-lived
+                # loops wait indefinitely after an otherwise completed check.
+                executor = ThreadPoolExecutor(max_workers=1)
+                try:
+                    result = await asyncio.wait_for(
+                        asyncio.get_running_loop().run_in_executor(
+                            executor, self.check_func
+                        ),
+                        timeout=self.timeout,
+                    )
+                finally:
+                    executor.shutdown(wait=False, cancel_futures=True)
 
             duration = time.time() - start_time
 
