@@ -253,7 +253,7 @@ def _evaluate_with_agent(
     model_revision: str | None = None,
 ) -> dict[str, float]:
     """Run eval either with a fresh base-model agent or with a passed-in trained agent."""
-    from stateset_agents.core.agent import Agent
+    from stateset_agents.core.agent import MultiTurnAgent
     from stateset_agents.core.agent_config import AgentConfig
 
     if trained_agent is None:
@@ -264,7 +264,7 @@ def _evaluate_with_agent(
             temperature=0.0,
             do_sample=False,
         )
-        agent = Agent(config=config)
+        agent = MultiTurnAgent(config=config)
     else:
         agent = trained_agent
 

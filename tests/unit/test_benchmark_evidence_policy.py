@@ -35,3 +35,10 @@ def test_framework_schema_requires_measured_matched_runs() -> None:
     assert '"measured": true' in contents
     assert '"algorithm_revision"' in contents
     assert "at least three unique seeds" in contents
+
+
+def test_phase0_uses_a_concrete_agent_for_real_baseline_generation() -> None:
+    source = (ROOT / "scripts/run_phase0_benchmark.py").read_text(encoding="utf-8")
+    assert "from stateset_agents.core.agent import MultiTurnAgent" in source
+    assert "agent = MultiTurnAgent(config=config)" in source
+    assert "agent = Agent(config=config)" not in source

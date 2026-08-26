@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built-in PyTorch SDPA after the clean RunPod shootout exposed a default model
   load failure on images without the `flash-attn` wheel; FlashAttention remains
   available as an explicit optimization.
+- Fixed the real Phase-0 baseline path to instantiate `MultiTurnAgent` instead
+  of the abstract `Agent` base class, as exposed by the clean RunPod shootout.
 
 ### Fixed
 
