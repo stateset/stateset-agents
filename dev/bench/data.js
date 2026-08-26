@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787688965238,
+  "lastUpdate": 1787731063016,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -128,6 +128,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.9100135320049245e-8",
             "extra": "mean: 444.7649571952252 nsec\nrounds: 106417"
+          }
+        ]
+      }
+    ],
+    "Python Benchmark (nightly)": [
+      {
+        "commit": {
+          "author": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "committer": {
+            "name": "domsteil",
+            "email": "team@stateset.ai"
+          },
+          "id": "0a79e41d57d3905622abaf0fa2e8f2134a4a9347",
+          "message": "Merge feat/polish-3: river behavioural golden, drift fixes, submit-family fold\n\n27-scenario offline golden over all five River submit modes (both episode paths\nhad zero coverage); four drift bugs it made visible; each submit family folded\ninto one implementation behind a closure-carrying mode adapter.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01JsBFXmpa8URWHqS2irLChd",
+          "timestamp": "2026-08-25T19:44:44Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/0a79e41d57d3905622abaf0fa2e8f2134a4a9347"
+        },
+        "date": 1787731062213,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5955.5352705472615,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001966036723416306",
+            "extra": "mean: 167.91101967701198 usec\nrounds: 1982"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6051.266709768301,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000032907079226614556",
+            "extra": "mean: 165.25465625002826 usec\nrounds: 1920"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4932.013102895031,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000021899256051614354",
+            "extra": "mean: 202.75696336106898 usec\nrounds: 3439"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 744.2662267847755,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000033025239806714135",
+            "extra": "mean: 1.3436052369593505 msec\nrounds: 671"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 180.00734405812403,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00008391585257928919",
+            "extra": "mean: 5.555328896342707 msec\nrounds: 164"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2239569.097270928,
+            "unit": "iter/sec",
+            "range": "stddev: 4.9062454897270695e-8",
+            "extra": "mean: 446.51446620627615 nsec\nrounds: 104516"
           }
         ]
       }
