@@ -13,7 +13,7 @@ from importlib.util import find_spec
 from types import ModuleType
 from typing import Any
 
-__version__ = "0.42.1"
+__version__ = "0.42.2"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
 

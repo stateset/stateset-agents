@@ -158,7 +158,18 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.42.1 (latest release; PyPI publication pending):**
+**v0.42.2 (latest release; PyPI publication pending):**
+
+- **Real GPU proof.** The packaged RunPod path completed QLoRA SFT with 2/2
+  held-out checks and CUDA GSPO with verified target-probability improvement.
+- **Honest verification.** Missing credentials now fail live workflows,
+  provider canaries run for release tags, and retained evidence distinguishes
+  unit, authentication, hardware, training, inference, and publication claims.
+- **Current RunPod provisioning.** Pod requests use explicit GPU compute and
+  availability priority, while low-cost SFT/RL lanes run serially to avoid
+  competing for scarce Community Cloud capacity.
+
+**v0.42.1:**
 
 - **Deterministic release validation.** The 4,613-test default suite now uses
   bounded parallelism, per-test timeouts, and CI job ceilings, while Redis and
@@ -751,7 +762,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.42.1)
+pip install stateset-agents          # latest version currently available on PyPI
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.42.2"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1457,7 +1469,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.1`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.2`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

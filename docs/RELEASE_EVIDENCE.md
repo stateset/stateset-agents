@@ -4,9 +4,9 @@ This page records what was actually exercised for the current release line.
 Registration, authentication, hardware allocation, training, inference, and
 publication are separate claims.
 
-## v0.42.1 and post-release hardening
+## v0.42.2 release evidence
 
-Source revision: `f1edd3176b7f76d85e527a13cf18be049c16baf7`
+Live verification revision: `f1edd3176b7f76d85e527a13cf18be049c16baf7`
 
 | Surface | Result | Evidence |
 |---|---|---|
