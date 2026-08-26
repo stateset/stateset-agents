@@ -145,8 +145,10 @@ class RunPodApi:
         payload: dict[str, Any] = {
             "name": name,
             "imageName": image,
+            "computeType": "GPU",
             "gpuTypeIds": [gpu_type_id],
             "gpuCount": gpu_count,
+            "gpuTypePriority": "availability",
             "cloudType": cloud_type,
             # Without this, a COMMUNITY pod "might not have a public IP
             # address" (RunPod's words) — it starts, reports RUNNING, and

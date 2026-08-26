@@ -158,7 +158,7 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.42.1 (latest release):**
+**v0.42.1 (latest release; PyPI publication pending):**
 
 - **Deterministic release validation.** The 4,613-test default suite now uses
   bounded parallelism, per-test timeouts, and CI job ceilings, while Redis and

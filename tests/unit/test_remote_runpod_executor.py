@@ -623,6 +623,8 @@ class TestGpuCount:
         )
         assert captured["json"]["gpuCount"] == 2
         assert captured["json"]["gpuTypeIds"] == ["g"]
+        assert captured["json"]["computeType"] == "GPU"
+        assert captured["json"]["gpuTypePriority"] == "availability"
 
     def test_real_api_defaults_gpucount_to_one(self, monkeypatch):
         from stateset_agents.remote.runpod import RunPodApi

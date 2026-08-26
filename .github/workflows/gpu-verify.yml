@@ -10,8 +10,9 @@ name: GPU Verify
 # terminates the pod on every exit path, so a failed run does not keep
 # billing. Cost per run is a few cents (RTX A4000, ~5-10 minutes).
 #
-# Requires the RUNPOD_API_KEY repository secret; without it the job reports
-# itself as skipped rather than failing, so forks stay green.
+# Requires the RUNPOD_API_KEY repository secret. Scheduled and manually
+# dispatched verification must fail when it is absent: a green job in which
+# every GPU step was skipped is false evidence, not a successful canary.
 
 on:
   schedule:
@@ -43,7 +44,8 @@ jobs:
           echo "present=true" >> "$GITHUB_OUTPUT"
         else
           echo "present=false" >> "$GITHUB_OUTPUT"
-          echo "::notice::RUNPOD_API_KEY secret not set — skipping GPU verification."
+          echo "::error::RUNPOD_API_KEY secret not set — live GPU verification cannot run."
+          exit 1
         fi
 
     - name: Set up Python
@@ -114,6 +116,7 @@ jobs:
             num_epochs=1,
             lora_r=8,
             gpu=gpu,
+            cloud_type="COMMUNITY",
             timeout_s=1800,
             # Held-out prompts with expect-specs: the job returns
             # eval_results.json with base-vs-finetuned completions AND
@@ -189,7 +192,8 @@ jobs:
           echo "present=true" >> "$GITHUB_OUTPUT"
         else
           echo "present=false" >> "$GITHUB_OUTPUT"
-          echo "::notice::RUNPOD_API_KEY secret not set — skipping RL GPU verification."
+          echo "::error::RUNPOD_API_KEY secret not set — live RL GPU verification cannot run."
+          exit 1
         fi
 
     - name: Set up Python
@@ -246,6 +250,7 @@ jobs:
             name=f"gpu-verify-rl-{job_id}",
             image=executor.image,
             gpu_type_id=gpu,
+            cloud_type="COMMUNITY",
             ports=["22/tcp"],
             env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
         )

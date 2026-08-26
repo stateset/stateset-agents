@@ -1,6 +1,9 @@
 name: Provider Canary
 
 on:
+  push:
+    tags:
+      - 'v*'
   schedule:
     - cron: "30 6 * * 1"
   workflow_dispatch:

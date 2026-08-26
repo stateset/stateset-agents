@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Scheduled and manually dispatched GPU verification now fails when the
+  RunPod credential is absent instead of producing a false-green run in which
+  every live step was skipped.
+
+### Changed
+
+- Provider canaries run automatically for release tags as well as weekly and
+  manual schedules, retaining River, RunPod, and Fireworks evidence with the
+  exact tagged revision.
+
 ## [0.42.1] - 2026-08-26 — Reliability and verification hardening
 
 ### Added
