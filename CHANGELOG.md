@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-08-26 — Bounded multi-GPU RunPod serving
+
+### Added
+
+- **Multi-GPU day-zero serving on RunPod.** `serve-remote` can start a
+  provider/model-specific prebuilt vLLM image directly with `--vllm-image`,
+  attach `--gpu-count N`, pass repeatable `--vllm-arg` values, and enforce a
+  `--max-cost` ceiling. Direct-image pods use RunPod's injected pod-scoped key
+  for their independent self-destruct; the user's account key is not copied.
+- **Persistent direct-image model cache.** `serve-remote
+  --network-volume-id` attaches an existing datacenter-scoped RunPod volume at
+  `/workspace` and directs the Hugging Face cache there. StateSet deliberately
+  does not create or delete the independently billed volume.
+- **Authenticated startup diagnostics.** Direct-image pods expose a separate
+  Bearer-protected endpoint containing only the final 64 KiB of the vLLM log.
+  Startup failures include its token-redacted tail before pod cleanup, turning
+  an opaque proxy 502 into actionable evidence.
+- Direct-image watchdog and diagnostics use `python3`, the executable
+  guaranteed by dedicated inference images, instead of assuming a `python`
+  compatibility symlink.
+- `serve-remote --ready-timeout` independently bounds model startup and log
+  collection; it can be set below the on-pod `--max-hours` watchdog.
+
+### Fixed
+
+- RunPod provisioning failures are translated into sanitized StateSet errors;
+  the CLI no longer renders a framework traceback whose locals can contain an
+  ephemeral serving token.
+- RunPod `costPerHr` is now treated as the effective whole-Pod rate instead of
+  being multiplied by `gpu_count` a second time. A live 4x H100 run reported
+  `$13.16/hr` total and confirmed the provider's field semantics.
+- Base-only `serve-remote` examples now address the base model rather than the
+  nonexistent `adapter` model.
+
+### Live evidence
+
+- A bounded Qwen3.8-Flash-Next-FP8 cold-start used the official dedicated
+  vLLM image on 4x H100. The 172.78 GiB checkpoint did not become ready within
+  the 25-minute SLO (HTTP 502), so no inference claim is made. StateSet
+  terminated the pod immediately, verified zero remaining serve pods, and
+  recorded `$5.52` spend.
+- A follow-up 8-minute diagnostic run recorded `$1.77` and returned proxy 502
+  before its container-side log endpoint became reachable. Two controls with
+  a 0.5B model in the same image returned RunPod-level 404 for both ports after
+  three minutes (`$0.04`) and ten minutes (`$0.12`), isolating image
+  pull/container startup as the first unresolved bottleneck. Every cleanup
+  check found zero remaining StateSet serve pods.
+
 ## [0.41.0] - 2026-08-26 — Next-model and provider evidence
 
 ### Added

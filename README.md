@@ -154,7 +154,20 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 
 ## What's new
 
-**v0.41.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.42.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+
+- **Bounded multi-GPU RunPod serving.** Day-zero vLLM images support explicit
+  GPU counts, tensor parallelism, cost ceilings, readiness deadlines, and an
+  independent pod-side watchdog.
+- **Persistent caches and safer diagnostics.** Existing network volumes can
+  retain Hugging Face weights, while authenticated startup-log tails and
+  sanitized provisioning errors improve failure evidence without leaking
+  serving tokens.
+- **Live evidence stays honest.** Bounded Qwen3.8 and small-model control runs
+  cleaned up every pod and isolated dedicated-image/container startup as the
+  remaining RunPod bottleneck; no successful-inference claim is made.
+
+**v0.41.0:**
 
 - **Day-one GLM-5.3-Flash and Qwen3.8-Flash-Next support.** Both native
   multimodal composite checkpoints have architecture-verified LoRA targets,
@@ -723,7 +736,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.41.0)
+pip install stateset-agents          # latest release (v0.42.0)
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1429,7 +1442,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.41.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.0`).
 
 Other entry points:
 

@@ -212,18 +212,58 @@ def serve_remote(
         help="RunPod GPU type, in RunPod's own vocabulary. The default's "
         "16 GB VRAM fits ~7B fp16 models; go bigger for bigger models.",
     ),
+    gpu_count: int = typer.Option(
+        1,
+        "--gpu-count",
+        min=1,
+        help="Number of identical GPUs to attach to the serving pod.",
+    ),
+    vllm_image: str | None = typer.Option(
+        None,
+        "--vllm-image",
+        help="Prebuilt vLLM image for day-zero models. Starts directly "
+        "without SSH or an in-pod PyPI installation.",
+    ),
+    vllm_arg: list[str] = typer.Option(
+        [],
+        "--vllm-arg",
+        help="One additional argument for `vllm serve` in a prebuilt image; "
+        "repeat this option for flags and values.",
+    ),
     container_disk_gb: int = typer.Option(
         60,
         "--container-disk-gb",
         help="Container disk in GB — must fit the vLLM install (~10 GB) plus "
         "roughly 2.5x the model checkpoint.",
     ),
+    ready_timeout_s: int = typer.Option(
+        1800,
+        "--ready-timeout",
+        min=1,
+        help="Seconds to wait for vLLM readiness before collecting startup "
+        "diagnostics and terminating the pod.",
+    ),
     max_hours: float = typer.Option(
         1.0,
         "--max-hours",
         help="Cost control: a self-destruct armed ON THE POD terminates it "
         "after this many hours, even if this machine goes away. The RunPod "
-        "API key is copied to the pod (chmod 600) to make that possible.",
+        "API key is copied to SSH-managed pods; direct images use RunPod's "
+        "automatically injected pod-scoped key.",
+    ),
+    max_cost_usd: float | None = typer.Option(
+        None,
+        "--max-cost",
+        min=0.0,
+        help="Refuse a direct-image serve when price × max-hours exceeds "
+        "this dollar ceiling.",
+    ),
+    network_volume_id: str | None = typer.Option(
+        None,
+        "--network-volume-id",
+        help="Attach an existing RunPod network volume at /workspace and "
+        "cache Hugging Face weights there. The volume is not created or "
+        "deleted by StateSet and keeps billing after the pod stops.",
     ),
     strict: bool = typer.Option(
         False,
@@ -307,8 +347,22 @@ def serve_remote(
         _echo("--max-hours must be positive.", err=True)
         raise typer.Exit(code=2)
 
-    session = serve_session.RemoteServeSession(container_disk_gb=container_disk_gb)
-    _echo(f"Renting a {gpu} pod and serving {base_model} with vLLM…")
+    if vllm_image is not None:
+        session = serve_session.RemoteServeSession(
+            container_disk_gb=container_disk_gb,
+            ready_timeout_s=ready_timeout_s,
+            direct_vllm_image=True,
+            vllm_args=vllm_arg,
+            image=vllm_image,
+        )
+    else:
+        session = serve_session.RemoteServeSession(
+            container_disk_gb=container_disk_gb,
+            ready_timeout_s=ready_timeout_s,
+            direct_vllm_image=False,
+            vllm_args=vllm_arg,
+        )
+    _echo(f"Renting {gpu_count}× {gpu} and serving {base_model} with vLLM…")
     for name, directory in adapters.items():
         _echo(f"With adapter: {directory} (served-model name: {name})")
     if merge:
@@ -322,12 +376,15 @@ def serve_remote(
             max_hours=max_hours,
             merge=merge,
             strict_effect=strict,
+            gpu_count=gpu_count,
+            max_cost_usd=max_cost_usd,
+            network_volume_id=network_volume_id,
         )
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    model_name = "adapter" if adapter is not None else base_model
+    model_name = "adapter" if adapters else base_model
     for warning in getattr(session, "effect_warnings", []):
         _echo(f"WARNING: {warning}", err=True)
     _echo("")

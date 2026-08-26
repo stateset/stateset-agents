@@ -35,6 +35,62 @@ That is the whole setup. There is no RunPod SDK dependency, no daemon, and no
 account linking — the executor talks to RunPod's REST API and moves files with
 `scp`.
 
+### Day-zero serving images and multiple GPUs
+
+New architectures can appear in a dedicated vLLM image before their support is
+available from PyPI. `serve-remote` can start such an image directly, without
+SSH or an in-pod package installation:
+
+```bash
+stateset-agents serve-remote \
+  --base-model Qwen/Qwen3.8-Flash-Next-FP8 \
+  --gpu "NVIDIA H100 80GB HBM3" --gpu-count 4 \
+  --vllm-image vllm/vllm-openai:qwen38-flash-next \
+  --vllm-arg=--tensor-parallel-size --vllm-arg=4 \
+  --vllm-arg=--max-model-len --vllm-arg=8192 \
+  --container-disk-gb 250 --ready-timeout 1500 \
+  --max-hours 0.5 --max-cost 6.58
+```
+
+Each `--vllm-arg` is one argument; repeat it for both a flag and its value.
+When tensor parallelism is omitted, StateSet defaults it to `--gpu-count`.
+Direct-image serving currently supports base checkpoints only. Its watchdog
+uses RunPod's automatically injected pod-scoped key, while startup exceptions
+and timeouts terminate the pod locally as well. A second, Bearer-protected
+endpoint exposes only the last 64 KiB of the startup log when readiness fails;
+StateSet includes that redacted tail in the error before deleting the pod.
+`--ready-timeout` makes that diagnostic deadline independently configurable;
+keep it shorter than `--max-hours` so logs can be collected before the
+on-pod watchdog fires.
+
+For repeated starts, attach an **existing** network volume so the large model
+download survives pod deletion:
+
+```bash
+stateset-agents serve-remote \
+  --base-model Qwen/Qwen3.8-Flash-Next-FP8 \
+  --gpu "NVIDIA H100 80GB HBM3" --gpu-count 4 \
+  --vllm-image vllm/vllm-openai:qwen38-flash-next \
+  --network-volume-id YOUR_VOLUME_ID \
+  --container-disk-gb 40 --max-hours 0.5 --max-cost 6.58
+```
+
+StateSet resolves the volume's datacenter before renting and pins the pod to
+it, mounts it at `/workspace`, and stores `HF_HOME` under that mount. It never
+creates or deletes the volume: RunPod network volumes continue billing after
+the pod stops, so lifecycle remains an explicit account-owner decision.
+
+Cold-start evidence matters: on 2026-08-26 the Qwen command above rented 4x
+H100 at `$13.16/hr`, but the 172.78 GiB checkpoint did not become ready within
+the 25-minute SLO. StateSet deleted the pod, verified zero leftovers, and
+recorded `$5.52`; no successful-inference claim is made from that run. A later
+8-minute diagnostic run recorded another `$1.77` and still returned proxy 502
+before the protected log endpoint became reachable. Controls using a 0.5B
+model in the same dedicated image also never exposed either container port in
+three minutes (`$0.04`) or ten minutes (`$0.12`), returning RunPod-level 404s.
+That isolates image pull/container startup—not checkpoint size—as the first
+unresolved bottleneck, so StateSet did not spend more on another H100 attempt.
+
 ---
 
 ## 2. Your first run (about $0.30)

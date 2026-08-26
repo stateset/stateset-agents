@@ -137,6 +137,8 @@ class RunPodApi:
         network_volume_id: str | None = None,
         volume_mount_path: str | None = None,
         data_center_id: str | None = None,
+        docker_entrypoint: list[str] | None = None,
+        docker_start_cmd: list[str] | None = None,
     ) -> dict[str, Any]:
         import requests
 
@@ -154,6 +156,10 @@ class RunPodApi:
             "ports": ports,
             "env": env,
         }
+        if docker_entrypoint is not None:
+            payload["dockerEntrypoint"] = docker_entrypoint
+        if docker_start_cmd is not None:
+            payload["dockerStartCmd"] = docker_start_cmd
         if network_volume_id:
             # Field names verified against the live REST API: the pod payload
             # takes ``networkVolumeId`` + ``volumeMountPath``, and datacenter
@@ -164,14 +170,22 @@ class RunPodApi:
             payload["volumeMountPath"] = volume_mount_path or _REMOTE_WORKDIR
             if data_center_id:
                 payload["dataCenterIds"] = [data_center_id]
-        response = self._send(
-            lambda: requests.post(
-                f"{self.root}/pods",
-                headers=self._headers(),
-                json=payload,
-                timeout=60,
+        try:
+            response = self._send(
+                lambda: requests.post(
+                    f"{self.root}/pods",
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=60,
+                )
             )
-        )
+        except requests.RequestException as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            detail = f" (HTTP {status})" if status is not None else ""
+            raise RemoteExecutionError(
+                "RunPod pod creation failed after retries" + detail,
+                provider="runpod",
+            ) from exc
         return dict(response.json())
 
     def get_pod(self, pod_id: str) -> dict[str, Any]:
@@ -814,7 +828,10 @@ class RunPodExecutor(RemoteExecutor):
                 cost_per_hr,
                 spec.timeout_s,
                 spec.max_cost_usd,
-                gpu_count=spec.gpu_count,
+                # RunPod reports the effective price for the entire Pod,
+                # not a per-GPU rate. Confirmed against a live 4x H100 Pod
+                # on 2026-08-26 ($13.16/hr total).
+                gpu_count=1,
             )
         except BudgetExceeded as exc:
             try:
@@ -939,14 +956,7 @@ class RunPodExecutor(RemoteExecutor):
             # Bookkeeping last: the money was spent whether or not the job
             # worked, so the ledger records failures too.
             self._last_duration_s = time.time() - pod_started_at
-            self._last_cost_usd = estimate_cost_usd(
-                (
-                    (cost_per_hr * max(1, spec.gpu_count))
-                    if cost_per_hr is not None
-                    else None
-                ),
-                self._last_duration_s,
-            )
+            self._last_cost_usd = estimate_cost_usd(cost_per_hr, self._last_duration_s)
             logs.append(
                 f"pod {pod_id} ran {self._last_duration_s:.0f}s"
                 + (

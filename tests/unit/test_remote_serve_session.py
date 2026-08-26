@@ -27,6 +27,7 @@ class FakeApi:
         self.created: list[dict] = []
         self.terminated: list[str] = []
         self._pods = pods or []
+        self.volumes = {"vol-1": {"id": "vol-1", "dataCenterId": "EUR-IS-1"}}
         self.pod_state = {
             "id": "pod-1",
             "desiredStatus": "RUNNING",
@@ -43,6 +44,9 @@ class FakeApi:
 
     def terminate_pod(self, pod_id):
         self.terminated.append(pod_id)
+
+    def get_network_volume(self, volume_id):
+        return dict(self.volumes[volume_id])
 
     def list_pods(self):
         return list(self._pods)
@@ -78,7 +82,14 @@ class FakeSsh:
         return 0, "ok"
 
 
-def make_session(api=None, ssh=None, http_statuses=(200,), completions=None, **kwargs):
+def make_session(
+    api=None,
+    ssh=None,
+    http_statuses=(200,),
+    completions=None,
+    log_response=(200, "startup log"),
+    **kwargs,
+):
     statuses = list(http_statuses)
     calls: list[tuple[str, dict]] = []
     post_calls: list[dict] = []
@@ -96,12 +107,17 @@ def make_session(api=None, ssh=None, http_statuses=(200,), completions=None, **k
         text = completions.get(model, f"completion from {model}")
         return {"choices": [{"message": {"content": text}}]}
 
+    def http_get_text(url, headers):
+        calls.append((url, dict(headers)))
+        return log_response
+
     session = RemoteServeSession(
         api or FakeApi(),
         ssh or FakeSsh(),
         public_key="ssh-ed25519 AAA test",
         poll_interval_s=0.0,
         http_get=http_get,
+        http_get_text=http_get_text,
         http_post_json=http_post_json,
         **kwargs,
     )
@@ -164,6 +180,166 @@ class TestStartHappyPath:
         assert "Qwen/Qwen3.5-0.8B" in launch
         assert "--api-key tok-abc" in launch
         assert "--enable-lora" not in launch
+
+    def test_multi_gpu_ssh_serve_sets_tensor_parallel_size(self):
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh)
+
+        session.start("model", gpu_count=4)
+
+        launch = next(c for c in ssh.commands if "vllm serve" in c)
+        assert "--tensor-parallel-size 4" in launch
+
+    def test_cost_ceiling_also_protects_ssh_managed_serves(self):
+        class PricedApi(FakeApi):
+            def create_pod(self, **kwargs):
+                self.created.append(kwargs)
+                return {"id": "pod-1", "costPerHr": 20.0}
+
+        api = PricedApi()
+        session = make_session(api)
+
+        with pytest.raises(RemoteExecutionError, match="above.*max-cost"):
+            session.start("model", max_hours=0.5, max_cost_usd=5.0)
+
+        assert api.terminated == ["pod-1"]
+
+
+class TestDirectVllmImage:
+    def test_embedded_log_server_is_valid_python(self):
+        session = make_session(direct_vllm_image=True, image="image")
+
+        compile(session._direct_log_server_source(), "<log-server>", "exec")
+
+    def test_multi_gpu_prebuilt_image_skips_ssh_and_arms_watchdog(self):
+        api, ssh = FakeApi(), FakeSsh()
+        session = make_session(
+            api,
+            ssh,
+            direct_vllm_image=True,
+            image="vllm/vllm-openai:qwen38-flash-next",
+            vllm_args=["--tensor-parallel-size", "4"],
+            token="tok-direct",
+        )
+
+        session.start("Qwen/Qwen3.8-Flash-Next-FP8", gpu_count=4, max_hours=0.5)
+
+        created = api.created[0]
+        assert created["gpu_count"] == 4
+        assert created["ports"] == ["8000/http", "8001/http"]
+        assert created["docker_entrypoint"] == ["/bin/bash", "-lc"]
+        command = created["docker_start_cmd"][0]
+        assert "Qwen/Qwen3.8-Flash-Next-FP8" in command
+        assert "--tensor-parallel-size 4" in command
+        assert "RUNPOD_POD_ID" in command
+        assert "RUNPOD_API_KEY" in command
+        assert "rp-test-key" not in command
+        assert command.count("python3 -c") == 2
+        assert "stateset-vllm.log" in command
+        assert "Authorization" in command
+        assert ssh.commands == []
+        assert api.terminated == []
+
+    def test_existing_volume_pins_datacenter_and_hosts_hf_cache(self):
+        api = FakeApi()
+        session = make_session(api, direct_vllm_image=True, image="image")
+
+        session.start("model", network_volume_id="vol-1")
+
+        created = api.created[0]
+        assert created["network_volume_id"] == "vol-1"
+        assert created["volume_mount_path"] == "/workspace"
+        assert created["data_center_id"] == "EUR-IS-1"
+        assert created["env"]["HF_HOME"] == "/workspace/huggingface"
+        assert created["env"]["HF_HUB_CACHE"] == "/workspace/huggingface/hub"
+
+    def test_volume_without_datacenter_is_refused_before_renting(self):
+        api = FakeApi()
+        api.volumes["bad"] = {"id": "bad"}
+        session = make_session(api, direct_vllm_image=True, image="image")
+
+        with pytest.raises(RemoteExecutionError, match="dataCenterId"):
+            session.start("model", network_volume_id="bad")
+
+        assert api.created == []
+
+    def test_timeout_includes_authenticated_redacted_startup_log(self):
+        api = FakeApi()
+        session = make_session(
+            api,
+            direct_vllm_image=True,
+            image="image",
+            token="secret-token",
+            http_statuses=(502,),
+            log_response=(200, "failed with secret-token: out of memory"),
+        )
+        session.ready_timeout_s = 0
+
+        with pytest.raises(RemoteExecutionError) as caught:
+            session.start("model")
+
+        message = str(caught.value)
+        assert "out of memory" in message
+        assert "secret-token" not in message
+        assert "[REDACTED]" in message
+        log_url, headers = session._http_calls[-1]
+        assert log_url == "https://pod-1-8001.proxy.runpod.net/logs"
+        assert headers["Authorization"] == "Bearer secret-token"
+        assert api.terminated == ["pod-1"]
+
+    def test_timeout_preserves_non_200_diagnostic_body_without_token(self):
+        api = FakeApi()
+        session = make_session(
+            api,
+            direct_vllm_image=True,
+            image="image",
+            token="secret-token",
+            http_statuses=(502,),
+            log_response=(404, "proxy says secret-token is unavailable"),
+        )
+        session.ready_timeout_s = 0
+
+        with pytest.raises(RemoteExecutionError) as caught:
+            session.start("model")
+
+        message = str(caught.value)
+        assert "endpoint returned HTTP 404" in message
+        assert "proxy says [REDACTED] is unavailable" in message
+        assert "secret-token" not in message
+
+    def test_tensor_parallel_defaults_to_gpu_count(self):
+        api = FakeApi()
+        session = make_session(api, direct_vllm_image=True, image="image")
+
+        session.start("model", gpu_count=4)
+
+        command = api.created[0]["docker_start_cmd"][0]
+        assert "--tensor-parallel-size 4" in command
+
+    def test_direct_image_cost_ceiling_terminates_immediately(self):
+        class PricedApi(FakeApi):
+            def create_pod(self, **kwargs):
+                self.created.append(kwargs)
+                return {"id": "pod-1", "costPerHr": 20.0}
+
+        api = PricedApi()
+        session = make_session(api, direct_vllm_image=True, image="image")
+
+        with pytest.raises(RemoteExecutionError, match="above.*max-cost"):
+            session.start("model", max_hours=0.5, max_cost_usd=5.0)
+
+        assert api.terminated == ["pod-1"]
+
+    def test_direct_image_refuses_adapters_before_renting(self, tmp_path):
+        api = FakeApi()
+        adapter = tmp_path / "adapter"
+        adapter.mkdir()
+        session = make_session(api, direct_vllm_image=True, image="image")
+
+        with pytest.raises(RemoteExecutionError, match="base checkpoints only"):
+            session.start("model", adapter_dir=adapter)
+
+        assert api.created == []
 
     def test_flashinfer_annotation_patch_runs_between_install_and_launch(self):
         """flashinfer's `array.array[int]` annotation is a TypeError at import

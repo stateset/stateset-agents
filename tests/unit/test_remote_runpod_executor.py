@@ -56,19 +56,30 @@ def spec(dataset, tmp_path):
 class FakePodApi:
     """Models the RunPod pod lifecycle, including ports appearing late."""
 
-    def __init__(self, *, ready_after: int = 2, never_ready: bool = False):
+    def __init__(
+        self,
+        *,
+        ready_after: int = 2,
+        never_ready: bool = False,
+        cost_per_hr: float | None = None,
+    ):
         self.created: list[dict] = []
         self.terminated: list[str] = []
         self.polls = 0
         self.ready_after = ready_after
         self.never_ready = never_ready
+        self.cost_per_hr = cost_per_hr
 
     def create_pod(self, **kwargs):
         self.created.append(kwargs)
         # First pod keeps the historical id; retries get distinct ids so a
         # test can tell WHICH pod was terminated.
         pod_id = "pod-abc" if len(self.created) == 1 else f"pod-abc{len(self.created)}"
-        return {"id": pod_id, "desiredStatus": "RUNNING"}
+        return {
+            "id": pod_id,
+            "desiredStatus": "RUNNING",
+            "costPerHr": self.cost_per_hr,
+        }
 
     def get_pod(self, pod_id):
         self.polls += 1
@@ -568,6 +579,21 @@ class TestGpuCount:
         make_executor(api=api).submit(spec)
         assert api.created[0]["gpu_count"] == 2
 
+    def test_runpod_whole_pod_price_is_not_multiplied_in_budget(
+        self, make_executor, spec
+    ):
+        api = FakePodApi(cost_per_hr=13.16)
+        spec.gpu_count = 4
+        spec.timeout_s = 3600
+        spec.max_cost_usd = 14.0
+        executor = make_executor(api=api)
+
+        handle = executor.submit(spec)
+
+        # $13.16/hr for one hour is below the $14 ceiling. The old code
+        # multiplied this whole-Pod price by four and rejected the run.
+        assert executor.status(handle) is JobStatus.SUCCEEDED
+
     def test_real_api_sends_gpucount_in_the_payload(self, monkeypatch):
         from stateset_agents.remote.runpod import RunPodApi
 
@@ -621,6 +647,57 @@ class TestGpuCount:
             name="n", image="img", gpu_type_id="g", ports=["22/tcp"], env={}
         )
         assert captured["json"]["gpuCount"] == 1
+
+    def test_real_api_sends_direct_image_command_fields(self, monkeypatch):
+        from stateset_agents.remote.runpod import RunPodApi
+
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"id": "p"}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            captured["json"] = json
+            return FakeResponse()
+
+        import requests
+
+        monkeypatch.setattr(requests, "post", fake_post)
+        RunPodApi("key").create_pod(
+            name="n",
+            image="img",
+            gpu_type_id="g",
+            ports=["8000/http"],
+            env={},
+            docker_entrypoint=["/bin/bash", "-lc"],
+            docker_start_cmd=["exec vllm serve m"],
+        )
+        assert captured["json"]["dockerEntrypoint"] == ["/bin/bash", "-lc"]
+        assert captured["json"]["dockerStartCmd"] == ["exec vllm serve m"]
+
+    def test_create_failure_is_sanitized_as_remote_error(self, monkeypatch):
+        import requests
+
+        from stateset_agents.remote.runpod import RunPodApi
+
+        response = requests.Response()
+        response.status_code = 500
+
+        def fail_send(request):
+            raise requests.HTTPError("provider details", response=response)
+
+        monkeypatch.setattr(RunPodApi, "_send", staticmethod(fail_send))
+
+        with pytest.raises(RemoteExecutionError, match="failed.*HTTP 500") as caught:
+            RunPodApi("secret-key").create_pod(
+                name="n", image="img", gpu_type_id="g", ports=[], env={}
+            )
+
+        assert "secret-key" not in str(caught.value)
 
 
 class TestCloudType:

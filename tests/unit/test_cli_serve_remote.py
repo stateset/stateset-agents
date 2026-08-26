@@ -41,6 +41,9 @@ class FakeSession:
         adapters=None,
         merge=False,
         strict_effect=False,
+        gpu_count=1,
+        max_cost_usd=None,
+        network_volume_id=None,
     ):
         if FakeSession.start_raises is not None:
             raise FakeSession.start_raises
@@ -50,6 +53,9 @@ class FakeSession:
             "adapters": adapters,
             "gpu": gpu,
             "max_hours": max_hours,
+            "gpu_count": gpu_count,
+            "max_cost_usd": max_cost_usd,
+            "network_volume_id": network_volume_id,
         }
         self.endpoint_url = "http://1.2.3.4:18000"
         self.pod_id = "pod-1"
@@ -100,6 +106,7 @@ class TestServe:
         assert "curl http://1.2.3.4:18000/v1/chat/completions" in result.output
         assert "Bearer tok-test" in result.output
         assert "--stop stateset-serve-abc" in result.output
+        assert '"model": "Qwen/Qwen3.5-0.8B"' in result.output
 
     def test_options_reach_start(self, tmp_path):
         adapter = tmp_path / "adapter"
@@ -114,22 +121,53 @@ class TestServe:
             "NVIDIA H100 80GB HBM3",
             "--container-disk-gb",
             "120",
+            "--ready-timeout",
+            "900",
             "--max-hours",
             "2.5",
+            "--gpu-count",
+            "4",
+            "--max-cost",
+            "7",
+            "--network-volume-id",
+            "vol-1",
         )
 
         assert result.exit_code == 0, result.output
         session = FakeSession.instances[0]
         assert session.kwargs["container_disk_gb"] == 120
+        assert session.kwargs["ready_timeout_s"] == 900
         assert session.started_with == {
             "base_model": "m",
             "adapter_dir": None,
             "adapters": {"adapter": adapter},
             "gpu": "NVIDIA H100 80GB HBM3",
             "max_hours": 2.5,
+            "gpu_count": 4,
+            "max_cost_usd": 7.0,
+            "network_volume_id": "vol-1",
         }
         # With an adapter, the curl example targets the served adapter model.
         assert '"model": "adapter"' in result.output
+
+    def test_prebuilt_vllm_image_and_args_reach_session(self):
+        result = invoke(
+            "--base-model",
+            "Qwen/Qwen3.8-Flash-Next-FP8",
+            "--gpu-count",
+            "4",
+            "--vllm-image",
+            "vllm/vllm-openai:qwen38-flash-next",
+            "--vllm-arg=--tensor-parallel-size",
+            "--vllm-arg=4",
+        )
+
+        assert result.exit_code == 0, result.output
+        session = FakeSession.instances[0]
+        assert session.kwargs["direct_vllm_image"] is True
+        assert session.kwargs["image"] == "vllm/vllm-openai:qwen38-flash-next"
+        assert session.kwargs["vllm_args"] == ["--tensor-parallel-size", "4"]
+        assert session.started_with["gpu_count"] == 4
 
     def test_start_failure_exits_1(self):
         FakeSession.start_raises = RemoteExecutionError("no GPUs", provider="runpod")
