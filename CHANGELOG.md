@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available as an explicit optimization.
 - Fixed the real Phase-0 baseline path to instantiate `MultiTurnAgent` instead
   of the abstract `Agent` base class, as exposed by the clean RunPod shootout.
+- Fixed TRL's synchronous reward callback inside async StateSet training by
+  executing reward coroutines in a worker thread when an event loop is already
+  active; this removes the live `Cannot run the event loop while another loop
+  is running` failure.
 
 ### Fixed
 
