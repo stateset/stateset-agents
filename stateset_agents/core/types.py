@@ -42,7 +42,7 @@ class ModelConfig:
     system_prompt: str | None = None
     use_chat_template: bool = True
     torch_dtype: str = "bfloat16"
-    attn_implementation: str | None = "flash_attention_2"
+    attn_implementation: str | None = "sdpa"
     device_map: str | None = "auto"
     use_peft: bool = False
     peft_config: ConfigDict | None = None

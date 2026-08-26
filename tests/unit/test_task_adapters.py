@@ -192,6 +192,11 @@ class TestToolCallingAdapter:
 
 
 class TestTaskRegistry:
+    def test_default_agent_attention_has_no_optional_flash_dependency(self) -> None:
+        from stateset_agents.core.agent_config import AgentConfig
+
+        assert AgentConfig(model_name="stub://test").attn_implementation == "sdpa"
+
     def test_registry_has_all_three_tasks(self) -> None:
         assert "gsm8k" in runner.TASKS
         assert "customer_support" in runner.TASKS

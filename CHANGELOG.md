@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an independent upstream-TRL GRPO shootout adapter, immutable GSM8K
   dataset revision support, canonical shared-config attestation, exact runtime
   framework-version checks, and a ready-to-fill three-seed shootout manifest.
+- Changed the default attention backend from optional `flash_attention_2` to
+  built-in PyTorch SDPA after the clean RunPod shootout exposed a default model
+  load failure on images without the `flash-attn` wheel; FlashAttention remains
+  available as an explicit optimization.
 
 ### Fixed
 

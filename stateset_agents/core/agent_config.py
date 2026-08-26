@@ -48,7 +48,10 @@ class AgentConfig:
 
     # HuggingFace model configuration
     torch_dtype: str = "bfloat16"
-    attn_implementation: str | None = "flash_attention_2"
+    # SDPA ships with PyTorch. FlashAttention remains an explicit opt-in
+    # because setting it without the optional flash-attn wheel makes model
+    # loading fail before training starts.
+    attn_implementation: str | None = "sdpa"
     device_map: str | None = "auto"
     trust_remote_code: bool = False
     model_kwargs: dict[str, Any] | None = None
