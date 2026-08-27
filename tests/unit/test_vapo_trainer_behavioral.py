@@ -193,6 +193,31 @@ async def test_train_step_single_optimizer_step_per_call(
     assert len(critic_steps) == 1
 
 
+@pytest.mark.asyncio
+async def test_train_step_releases_each_prompt_graph_before_next_forward(
+    vapo_trainer_tiny, monkeypatch
+):
+    """Prompt graphs are backpropagated sequentially to bound CUDA memory."""
+    t = vapo_trainer_tiny
+    monkeypatch.setattr(t, "generate_group_responses", _fake_group_generator())
+    original = t.compute_vapo_losses
+    prior_losses: list[torch.Tensor] = []
+
+    def observe_backward(*args, **kwargs):
+        if prior_losses:
+            assert prior_losses[-1].grad is not None
+        losses = original(*args, **kwargs)
+        losses[0].retain_grad()
+        prior_losses.append(losses[0])
+        return losses
+
+    monkeypatch.setattr(t, "compute_vapo_losses", observe_backward)
+    await t.train_step(["prompt one", "prompt two"])
+
+    assert len(prior_losses) == 2
+    assert all(loss.grad is not None for loss in prior_losses)
+
+
 def _fake_group_generator():
     async def fake_generate_group_responses(prompt):
         torch.manual_seed(3)

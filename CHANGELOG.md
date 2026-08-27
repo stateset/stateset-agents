@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The first retained five-algorithm CUDA preflight also fixed VAPO mixed-dtype
   value-head execution and removed GEPO's unconditional W&B dependency when
   experiment logging is disabled.
+- A complete three-seed CUDA attempt exposed deterministic VAPO graph-retention
+  OOMs at the matched batch shape. VAPO now accumulates the same mean gradient
+  prompt by prompt, releasing each forward graph before the next while keeping
+  one actor/critic optimizer step per update.
 
 ## [0.42.4] - 2026-08-27 — Validated scaling and release evidence
 
