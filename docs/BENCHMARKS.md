@@ -171,6 +171,29 @@ Run all prescribed seeds; negative and null results must be retained. See
 
 ### Measured algorithm comparison
 
+Execute the complete rotated three-seed matrix from the checked-in manifest:
+
+```bash
+python benchmarks/algorithm_shootout.py \
+  benchmarks/algorithm_shootout_manifest.example.json \
+  --output-dir benchmark_results/algorithm_comparison/evidence \
+  --required-algorithm grpo \
+  --required-algorithm gspo \
+  --required-algorithm dapo \
+  --required-algorithm vapo \
+  --required-algorithm gepo
+```
+
+The orchestrator verifies exact CUDA/GPU identity, shared-protocol and
+algorithm-config SHA-256 attestations, external wall time, actual generated
+completion counts, normalized policy artifacts, and immutable model/dataset
+revisions. DAPO counts groups even when dynamic sampling later rejects them;
+VAPO counts value-warmup generations. It currently requires gradient
+accumulation `1`, because the five native objectives do not yet expose
+identical accumulation semantics and the harness will not imply otherwise.
+
+Aggregate only after all 15 evidence documents exist:
+
 ```bash
 python benchmarks/algorithm_comparison.py \
   benchmark_results/algorithm_comparison/evidence \
@@ -182,8 +205,8 @@ python benchmarks/algorithm_comparison.py \
   --output-dir benchmark_results/algorithm_comparison/report
 ```
 
-The command fails closed unless at least two algorithms have three unique,
-matched seeds each. Evidence uses the schema documented in
+The aggregation command fails closed unless every required algorithm has three
+unique, exactly matched seeds. Evidence uses the schema documented in
 [`benchmark_results/algorithm_comparison/README.md`](../benchmark_results/algorithm_comparison/README.md).
 
 ### Measured framework comparison

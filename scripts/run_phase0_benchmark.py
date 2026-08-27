@@ -370,6 +370,126 @@ def _build_env_reward(
     return env, reward_fn, scenarios
 
 
+def build_algorithm_config(
+    trainer: str, protocol_config: dict[str, Any]
+) -> dict[str, Any]:
+    """Resolve the algorithm-specific knobs applied to a shared protocol.
+
+    The shared shootout protocol fixes the training budget, optimizer, model,
+    generation, and LoRA settings.  This attestation records the objective
+    details that intentionally differ between algorithms, so an algorithm
+    comparison never claims that an opaque set of defaults was used.
+    """
+    shared = {
+        "max_steps": int(protocol_config.get("max_steps", 4)),
+        "num_generations": int(protocol_config.get("num_generations", 4)),
+        "num_iterations": int(protocol_config.get("num_iterations", 1)),
+        "per_device_train_batch_size": int(
+            protocol_config.get("per_device_train_batch_size", 4)
+        ),
+        "gradient_accumulation_steps": int(
+            protocol_config.get("gradient_accumulation_steps", 1)
+        ),
+        "learning_rate": float(protocol_config.get("learning_rate", 5e-6)),
+        "max_prompt_length": int(protocol_config.get("max_prompt_length", 512)),
+        "max_completion_length": int(protocol_config.get("max_completion_length", 256)),
+        "temperature": float(protocol_config.get("temperature", 0.7)),
+        "top_p": float(protocol_config.get("top_p", 0.9)),
+        "beta": float(protocol_config.get("beta", 0.0)),
+    }
+    if trainer == "grpo":
+        return {**shared, "objective": "trl-grpo", "clip_ratio": 0.2}
+    if trainer == "gspo":
+        return {
+            **shared,
+            "objective": "gspo-sequence",
+            "clip_range_left": 3e-4,
+            "clip_range_right": 4e-4,
+        }
+    if trainer == "dapo":
+        return {
+            **shared,
+            "objective": "dapo-token",
+            "clip_eps_low": 0.2,
+            "clip_eps_high": 0.28,
+            "use_dynamic_sampling": True,
+            "use_overlong_shaping": False,
+            "use_token_level_loss": True,
+        }
+    if trainer == "vapo":
+        return {
+            **shared,
+            "objective": "vapo-value-augmented",
+            "clip_eps_low": 0.2,
+            "clip_eps_high": 0.28,
+            "value_warmup_steps": 1,
+            "critic_learning_rate": 2.0 * shared["learning_rate"],
+            "use_token_level_loss": True,
+            "use_positive_lm_loss": True,
+        }
+    if trainer == "gepo":
+        return {
+            **shared,
+            "objective": "gepo-group-expectation",
+            "clip_eps": 0.2,
+            "use_group_baseline": True,
+            "use_reference_model": False,
+        }
+    raise ValueError(f"Unknown trainer: {trainer}")
+
+
+def _prompt_reward(
+    adapter: TaskAdapter, train_examples: list, train_prompts: list[str]
+) -> Any:
+    """Build the prompt/response reward callback used by native trainers."""
+    if not train_examples:
+        raise ValueError("training requires at least one example")
+    prompt_examples = dict(zip(train_prompts, train_examples, strict=True))
+
+    def reward(prompt: str, response: str) -> float:
+        example = prompt_examples.get(prompt, train_examples[0])
+        score, _ = adapter.score_response(example, response)
+        return score
+
+    return reward
+
+
+def _attach_phase0_metadata(
+    agent: Any, metrics: dict[str, list[float]], algorithm_config: dict[str, Any]
+) -> Any:
+    """Attach measured trainer metadata without changing the public Agent API."""
+    samples = metrics.get("rollout_samples_total", [])
+    if samples:
+        agent._phase0_samples_processed = int(samples[-1])
+    agent._phase0_algorithm_config = algorithm_config
+    if getattr(agent, "generation_config", None) is None and callable(
+        getattr(agent, "_build_generation_config", None)
+    ):
+        agent.generation_config = agent._build_generation_config()
+    return agent
+
+
+def save_normalized_policy_artifact(agent: Any, artifact_path: Path) -> None:
+    """Save the trained policy and tokenizer under one benchmark contract.
+
+    Native trainers retain their richer checkpoints (for example VAPO's value
+    head) in their own ``final`` directory.  Comparison evidence hashes this
+    normalized policy artifact so every algorithm exposes the same portable
+    policy/tokenizer surface.
+    """
+    model = getattr(agent, "model", None)
+    tokenizer = getattr(agent, "tokenizer", None)
+    if model is None or not callable(getattr(model, "save_pretrained", None)):
+        raise RuntimeError("trained agent has no save_pretrained-capable model")
+    if tokenizer is None or not callable(getattr(tokenizer, "save_pretrained", None)):
+        raise RuntimeError("trained agent has no save_pretrained-capable tokenizer")
+    artifact_path.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(artifact_path)
+    tokenizer.save_pretrained(artifact_path)
+    if not any(path.is_file() for path in artifact_path.rglob("*")):
+        raise RuntimeError(f"normalized policy artifact is empty: {artifact_path}")
+
+
 def train_with_trainer(
     trainer: str,
     model_name: str,
@@ -385,8 +505,7 @@ def train_with_trainer(
 
     Returns ``(trained_agent_or_None, wall_clock_seconds, error_message_or_None)``.
 
-    The trainer entry points (`train_with_gspo`, `train_with_dapo`,
-    `train_with_trl_grpo`) load their own model + tokenizer via the trainer's
+    The trainer entry points load their own model + tokenizer via the trainer's
     model manager, so we pass an *un-initialized* agent and let the trainer
     handle everything.
 
@@ -397,7 +516,14 @@ def train_with_trainer(
 
     t0 = time.time()
     protocol = protocol_config or {}
+    if trainer not in {"grpo", "gspo", "dapo", "vapo", "gepo"}:
+        return (
+            None,
+            time.time() - t0,
+            f"trainer={trainer!r} not recognized. Use grpo, gspo, dapo, vapo, or gepo.",
+        )
     try:
+        algorithm_config = build_algorithm_config(trainer, protocol)
         from stateset_agents.core.agent import MultiTurnAgent
         from stateset_agents.core.agent_config import AgentConfig
         from stateset_agents.core.tool_agent import ToolAgent
@@ -433,19 +559,45 @@ def train_with_trainer(
                 model_revision=model_revision,
                 output_dir=output_dir,
                 report_to="none",
-                num_outer_iterations=int(protocol.get("max_steps", 4)),
-                num_iterations=1,
-                num_generations=int(protocol.get("num_generations", 4)),
-                generations_per_iteration=len(train_examples),
-                clip_range_left=3e-4,
-                clip_range_right=4e-4,
-                learning_rate=float(protocol.get("learning_rate", 5e-6)),
-                use_lora=True,
+                num_outer_iterations=algorithm_config["max_steps"],
+                num_iterations=algorithm_config["num_iterations"],
+                num_generations=algorithm_config["num_generations"],
+                generations_per_iteration=(
+                    algorithm_config["per_device_train_batch_size"]
+                    * algorithm_config["gradient_accumulation_steps"]
+                ),
+                mini_batch_size=algorithm_config["per_device_train_batch_size"],
+                per_device_train_batch_size=algorithm_config[
+                    "per_device_train_batch_size"
+                ],
+                gradient_accumulation_steps=algorithm_config[
+                    "gradient_accumulation_steps"
+                ],
+                clip_range_left=algorithm_config["clip_range_left"],
+                clip_range_right=algorithm_config["clip_range_right"],
+                learning_rate=algorithm_config["learning_rate"],
+                adam_beta1=float(protocol.get("adam_beta1", 0.9)),
+                adam_beta2=float(protocol.get("adam_beta2", 0.99)),
+                weight_decay=float(protocol.get("weight_decay", 0.01)),
+                max_grad_norm=float(protocol.get("max_grad_norm", 1.0)),
+                warmup_ratio=float(protocol.get("warmup_ratio", 0.1)),
+                lr_scheduler_type=str(protocol.get("lr_scheduler_type", "cosine")),
+                num_epochs=int(protocol.get("num_train_epochs", 1)),
+                max_prompt_length=algorithm_config["max_prompt_length"],
+                max_completion_length=algorithm_config["max_completion_length"],
+                temperature=algorithm_config["temperature"],
+                top_p=algorithm_config["top_p"],
+                beta=algorithm_config["beta"],
+                use_lora=bool(protocol.get("use_lora", True)),
                 lora_r=int(protocol.get("lora_r", 16)),
                 lora_alpha=int(protocol.get("lora_alpha", 32)),
-                gradient_checkpointing=True,
-                bf16=True,
-                warmup_ratio=0.1,
+                lora_dropout=float(protocol.get("lora_dropout", 0.05)),
+                lora_target_modules=protocol.get("lora_target_modules"),
+                gradient_checkpointing=bool(
+                    protocol.get("gradient_checkpointing", True)
+                ),
+                bf16=bool(protocol.get("bf16", True)),
+                seed=seed,
                 use_vllm=use_vllm,
             )
             trained = asyncio.run(
@@ -455,6 +607,16 @@ def train_with_trainer(
                     environment=env,
                     reward_model=reward_fn,
                 )
+            )
+            trained._phase0_algorithm_config = algorithm_config
+            trained._phase0_samples_processed = (
+                algorithm_config["max_steps"]
+                * min(
+                    len(train_examples),
+                    algorithm_config["per_device_train_batch_size"]
+                    * algorithm_config["gradient_accumulation_steps"],
+                )
+                * algorithm_config["num_generations"]
             )
             return trained, time.time() - t0, None
 
@@ -517,6 +679,13 @@ def train_with_trainer(
                     ],
                 )
             )
+            trained._phase0_algorithm_config = algorithm_config
+            trained._phase0_samples_processed = (
+                algorithm_config["max_steps"]
+                * algorithm_config["per_device_train_batch_size"]
+                * algorithm_config["gradient_accumulation_steps"]
+                * algorithm_config["num_generations"]
+            )
             return trained, time.time() - t0, None
 
         if trainer == "dapo":
@@ -529,49 +698,210 @@ def train_with_trainer(
                 model_name=model_name,
                 model_revision=model_revision,
                 output_dir=output_dir,
-                num_gradient_updates=4,
-                group_size=8,
-                clip_eps_low=0.2,
-                clip_eps_high=0.28,
-                use_dynamic_sampling=True,
-                use_overlong_shaping=False,
-                max_generation_length=adapter.max_new_tokens,
-                use_lora=True,
-                lora_r=16,
-                lora_alpha=32,
-                gradient_checkpointing=True,
+                num_episodes=algorithm_config["max_steps"],
+                num_epochs=int(protocol.get("num_train_epochs", 1)),
+                num_gradient_updates=algorithm_config["num_iterations"],
+                group_size=algorithm_config["num_generations"],
+                num_generations=algorithm_config["num_generations"],
+                per_device_train_batch_size=algorithm_config[
+                    "per_device_train_batch_size"
+                ],
+                gradient_accumulation_steps=algorithm_config[
+                    "gradient_accumulation_steps"
+                ],
+                mini_batch_size=algorithm_config["per_device_train_batch_size"],
+                learning_rate=algorithm_config["learning_rate"],
+                adam_beta1=float(protocol.get("adam_beta1", 0.9)),
+                adam_beta2=float(protocol.get("adam_beta2", 0.99)),
+                weight_decay=float(protocol.get("weight_decay", 0.01)),
+                max_grad_norm=float(protocol.get("max_grad_norm", 1.0)),
+                max_prompt_length=algorithm_config["max_prompt_length"],
+                max_completion_length=algorithm_config["max_completion_length"],
+                max_generation_length=algorithm_config["max_completion_length"],
+                temperature=algorithm_config["temperature"],
+                top_p=algorithm_config["top_p"],
+                beta=algorithm_config["beta"],
+                clip_eps_low=algorithm_config["clip_eps_low"],
+                clip_eps_high=algorithm_config["clip_eps_high"],
+                use_dynamic_sampling=algorithm_config["use_dynamic_sampling"],
+                use_overlong_shaping=algorithm_config["use_overlong_shaping"],
+                use_token_level_loss=algorithm_config["use_token_level_loss"],
+                use_lora=bool(protocol.get("use_lora", True)),
+                lora_r=int(protocol.get("lora_r", 16)),
+                lora_alpha=int(protocol.get("lora_alpha", 32)),
+                lora_dropout=float(protocol.get("lora_dropout", 0.05)),
+                lora_target_modules=protocol.get("lora_target_modules"),
+                gradient_checkpointing=bool(
+                    protocol.get("gradient_checkpointing", True)
+                ),
+                bf16=bool(protocol.get("bf16", True)),
+                seed=seed,
                 use_vllm=use_vllm,
             )
             train_prompts = [adapter.format_prompt(ex) for ex in train_examples]
-
-            # DAPO's reward signature: (prompt, response) -> float
-            def _reward_callable(prompt: str, response: str) -> float:
-                # Map prompt back to the example to score against ground truth.
-                # In the verifiable-reward case (gsm8k, tool_calling) we need
-                # the original example for context.
-                idx = train_prompts.index(prompt) if prompt in train_prompts else 0
-                example = train_examples[idx]
-                score, _ = adapter.score_response(example, response)
-                return score
-
-            model, tokenizer, _metrics = asyncio.run(
+            reward_callable = _prompt_reward(adapter, train_examples, train_prompts)
+            model, tokenizer, metrics = asyncio.run(
                 train_with_dapo(
                     model_name=model_name,
-                    reward_fn=_reward_callable,
+                    reward_fn=reward_callable,
                     train_prompts=train_prompts,
                     config=cfg,
                     output_dir=output_dir,
+                    verifier_fn=lambda prompt, response: reward_callable(
+                        prompt, response
+                    )
+                    > 0.5,
                 )
             )
             # Wrap model+tokenizer into an Agent for the re-eval step.
             trainer_agent.model = model
             trainer_agent.tokenizer = tokenizer
-            return trainer_agent, time.time() - t0, None
+            return (
+                _attach_phase0_metadata(trainer_agent, metrics, algorithm_config),
+                time.time() - t0,
+                None,
+            )
+
+        if trainer == "vapo":
+            if use_vllm:
+                raise ValueError("VAPO does not currently implement vLLM rollouts")
+            from stateset_agents.training import VAPOConfig, train_with_vapo
+
+            cfg = VAPOConfig(
+                model_name=model_name,
+                model_revision=model_revision,
+                output_dir=output_dir,
+                # The first VAPO call performs value warmup only. Add one
+                # episode so max_steps still denotes policy-update steps.
+                num_episodes=algorithm_config["max_steps"] + 1,
+                num_epochs=int(protocol.get("num_train_epochs", 1)),
+                num_gradient_updates=algorithm_config["num_iterations"],
+                group_size=algorithm_config["num_generations"],
+                num_generations=algorithm_config["num_generations"],
+                per_device_train_batch_size=algorithm_config[
+                    "per_device_train_batch_size"
+                ],
+                gradient_accumulation_steps=algorithm_config[
+                    "gradient_accumulation_steps"
+                ],
+                actor_learning_rate=algorithm_config["learning_rate"],
+                critic_learning_rate=algorithm_config["critic_learning_rate"],
+                learning_rate=algorithm_config["learning_rate"],
+                adam_beta1=float(protocol.get("adam_beta1", 0.9)),
+                adam_beta2=float(protocol.get("adam_beta2", 0.99)),
+                weight_decay=float(protocol.get("weight_decay", 0.01)),
+                max_grad_norm=float(protocol.get("max_grad_norm", 1.0)),
+                warmup_ratio=float(protocol.get("warmup_ratio", 0.1)),
+                max_prompt_length=algorithm_config["max_prompt_length"],
+                max_completion_length=algorithm_config["max_completion_length"],
+                temperature=algorithm_config["temperature"],
+                top_p=algorithm_config["top_p"],
+                value_warmup_steps=algorithm_config["value_warmup_steps"],
+                clip_eps_low=algorithm_config["clip_eps_low"],
+                clip_eps_high=algorithm_config["clip_eps_high"],
+                use_token_level_loss=algorithm_config["use_token_level_loss"],
+                use_positive_lm_loss=algorithm_config["use_positive_lm_loss"],
+                use_lora=bool(protocol.get("use_lora", True)),
+                lora_r=int(protocol.get("lora_r", 16)),
+                lora_alpha=int(protocol.get("lora_alpha", 32)),
+                lora_dropout=float(protocol.get("lora_dropout", 0.05)),
+                lora_target_modules=protocol.get("lora_target_modules"),
+                gradient_checkpointing=bool(
+                    protocol.get("gradient_checkpointing", True)
+                ),
+                bf16=bool(protocol.get("bf16", True)),
+                seed=seed,
+            )
+            train_prompts = [adapter.format_prompt(ex) for ex in train_examples]
+            reward_callable = _prompt_reward(adapter, train_examples, train_prompts)
+            model, tokenizer, metrics = asyncio.run(
+                train_with_vapo(
+                    model_name=model_name,
+                    reward_fn=reward_callable,
+                    train_prompts=train_prompts,
+                    config=cfg,
+                    output_dir=output_dir,
+                    verifier_fn=lambda prompt, response: reward_callable(
+                        prompt, response
+                    )
+                    > 0.5,
+                )
+            )
+            trainer_agent.model = model
+            trainer_agent.tokenizer = tokenizer
+            return (
+                _attach_phase0_metadata(trainer_agent, metrics, algorithm_config),
+                time.time() - t0,
+                None,
+            )
+
+        if trainer == "gepo":
+            if use_vllm:
+                raise ValueError("GEPO does not currently implement vLLM rollouts")
+            from stateset_agents.training import GEPOConfig, train_with_gepo
+
+            cfg = GEPOConfig(
+                model_name=model_name,
+                model_revision=model_revision,
+                output_dir=output_dir,
+                num_episodes=algorithm_config["max_steps"],
+                num_epochs=int(protocol.get("num_train_epochs", 1)),
+                num_gradient_updates=algorithm_config["num_iterations"],
+                group_size=algorithm_config["num_generations"],
+                num_generations=algorithm_config["num_generations"],
+                per_device_train_batch_size=algorithm_config[
+                    "per_device_train_batch_size"
+                ],
+                gradient_accumulation_steps=algorithm_config[
+                    "gradient_accumulation_steps"
+                ],
+                learning_rate=algorithm_config["learning_rate"],
+                adam_beta1=float(protocol.get("adam_beta1", 0.9)),
+                adam_beta2=float(protocol.get("adam_beta2", 0.99)),
+                weight_decay=float(protocol.get("weight_decay", 0.01)),
+                max_grad_norm=float(protocol.get("max_grad_norm", 1.0)),
+                warmup_ratio=float(protocol.get("warmup_ratio", 0.1)),
+                max_prompt_length=algorithm_config["max_prompt_length"],
+                max_completion_length=algorithm_config["max_completion_length"],
+                temperature=algorithm_config["temperature"],
+                top_p=algorithm_config["top_p"],
+                beta=algorithm_config["beta"],
+                clip_eps=algorithm_config["clip_eps"],
+                use_group_baseline=algorithm_config["use_group_baseline"],
+                use_reference_model=algorithm_config["use_reference_model"],
+                use_lora=bool(protocol.get("use_lora", True)),
+                lora_r=int(protocol.get("lora_r", 16)),
+                lora_alpha=int(protocol.get("lora_alpha", 32)),
+                lora_dropout=float(protocol.get("lora_dropout", 0.05)),
+                lora_target_modules=protocol.get("lora_target_modules"),
+                gradient_checkpointing=bool(
+                    protocol.get("gradient_checkpointing", True)
+                ),
+                bf16=bool(protocol.get("bf16", True)),
+                seed=seed,
+            )
+            train_prompts = [adapter.format_prompt(ex) for ex in train_examples]
+            model, tokenizer, metrics = asyncio.run(
+                train_with_gepo(
+                    model_name=model_name,
+                    reward_fn=_prompt_reward(adapter, train_examples, train_prompts),
+                    train_prompts=train_prompts,
+                    config=cfg,
+                    output_dir=output_dir,
+                )
+            )
+            trainer_agent.model = model
+            trainer_agent.tokenizer = tokenizer
+            return (
+                _attach_phase0_metadata(trainer_agent, metrics, algorithm_config),
+                time.time() - t0,
+                None,
+            )
 
         return (
             None,
             time.time() - t0,
-            f"trainer={trainer!r} not recognized. Use gspo, grpo, or dapo.",
+            f"trainer={trainer!r} not recognized. Use grpo, gspo, dapo, vapo, or gepo.",
         )
     except ImportError as e:
         return (
@@ -624,6 +954,26 @@ def build_trainer_config(trainer: str, **overrides: Any) -> dict[str, Any]:
                 "max_generation_length": 256,
             }
         )
+    elif trainer == "vapo":
+        base.update(
+            {
+                "group_size": 4,
+                "value_warmup_steps": 1,
+                "clip_eps_low": 0.2,
+                "clip_eps_high": 0.28,
+                "actor_learning_rate": 5e-6,
+                "critic_learning_rate": 1e-5,
+            }
+        )
+    elif trainer == "gepo":
+        base.update(
+            {
+                "group_size": 4,
+                "clip_eps": 0.2,
+                "use_group_baseline": True,
+                "use_reference_model": False,
+            }
+        )
     else:
         raise ValueError(f"Unknown trainer: {trainer}")
 
@@ -638,8 +988,14 @@ def estimate_rollout_samples(
     prompts = min(train_examples, 10)
     if trainer in {"gspo", "grpo"}:
         return 4 * prompts * int(config.get("num_generations", 4))
-    if trainer == "dapo":
+    if trainer in {"dapo", "gepo"}:
         return prompts * int(config.get("group_size", 8))
+    if trainer == "vapo":
+        policy = prompts * int(config.get("group_size", 4))
+        warmup = int(config.get("value_warmup_steps", 1)) * int(
+            config.get("group_size", 4)
+        )
+        return policy + warmup
     raise ValueError(f"Unknown trainer: {trainer}")
 
 
@@ -650,7 +1006,11 @@ def estimate_rollout_samples(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--trainer", choices=["grpo", "gspo", "dapo"], required=True)
+    parser.add_argument(
+        "--trainer",
+        choices=["grpo", "gspo", "dapo", "vapo", "gepo"],
+        required=True,
+    )
     parser.add_argument(
         "--task",
         choices=sorted(TASKS),
@@ -811,6 +1171,7 @@ def main() -> int:
         ):
             parser.error("shootout example counts do not match command arguments")
         config = shootout_config
+    algorithm_config = build_algorithm_config(args.trainer, config)
     result: dict[str, Any] = {
         "trainer": args.trainer,
         "task": args.task,
@@ -821,6 +1182,7 @@ def main() -> int:
         "commit": get_git_commit(),
         "evidence_class": "measured",
         "config": config,
+        "algorithm_config": algorithm_config,
         "metrics": {
             "train_examples": len(train_examples),
             "eval_examples": len(eval_examples),
@@ -949,19 +1311,39 @@ def main() -> int:
                     import torch
 
                     artifact_path = Path(args.output_dir) / "final_model"
-                    if not artifact_path.is_dir() or not any(
-                        path.is_file() for path in artifact_path.rglob("*")
-                    ):
+                    try:
+                        save_normalized_policy_artifact(trained_agent, artifact_path)
+                    except Exception as exc:  # noqa: BLE001 - evidence must fail closed
                         logger.error(
-                            "Trainer produced no final artifact at %s", artifact_path
+                            "Could not normalize final policy artifact at %s: %s",
+                            artifact_path,
+                            exc,
                         )
                     else:
                         from stateset_agents import __version__
 
+                        measured_samples = getattr(
+                            trained_agent, "_phase0_samples_processed", None
+                        )
+                        if measured_samples is None:
+                            measured_samples = (
+                                int(config["max_steps"])
+                                * int(config["per_device_train_batch_size"])
+                                * int(config["gradient_accumulation_steps"])
+                                * int(config["num_generations"])
+                                if args.shootout_config_json is not None
+                                else estimate_rollout_samples(
+                                    args.trainer, len(train_examples), config
+                                )
+                            )
                         adapter_result = {
                             "status": "completed",
                             "measured": True,
                             "config_sha256": canonical_config_digest(config),
+                            "algorithm_config": algorithm_config,
+                            "algorithm_config_sha256": canonical_config_digest(
+                                algorithm_config
+                            ),
                             "framework_version": __version__,
                             "artifact_path": str(artifact_path.resolve()),
                             "hardware": {
@@ -970,16 +1352,7 @@ def main() -> int:
                                 "cuda": str(torch.version.cuda),
                             },
                             "metrics": {
-                                "samples_processed": (
-                                    int(config["max_steps"])
-                                    * int(config["per_device_train_batch_size"])
-                                    * int(config["gradient_accumulation_steps"])
-                                    * int(config["num_generations"])
-                                    if args.shootout_config_json is not None
-                                    else estimate_rollout_samples(
-                                        args.trainer, len(train_examples), config
-                                    )
-                                ),
+                                "samples_processed": int(measured_samples),
                                 "peak_vram_mb": torch.cuda.max_memory_allocated(0)
                                 / (1024 * 1024),
                                 "eval_score_baseline": result["metrics"][

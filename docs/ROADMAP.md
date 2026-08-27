@@ -59,13 +59,14 @@ defensible A+ rating.
 
 ## Next implementation sequence
 
-1. Execute the three-seed StateSet/upstream-TRL manifest, then extend the same
-   neutral adapter contract to verl, NeMo RL, and OpenRLHF.
-2. Execute the existing scaling and recovery matrices and retain partial and
-   failed runs as auditable evidence.
+1. Execute the checked-in rotated GRPO/GSPO/DAPO/VAPO/GEPO manifest and retain
+   all 15 measured runs, including failures.
+2. Extend the neutral framework adapter contract from StateSet/TRL to verl,
+   NeMo RL, and OpenRLHF, then run the matched three-seed roster.
 3. Configure PyPI trusted publishing and Fireworks credentials externally;
    rerun the existing release/provider workflows without code-side exceptions.
-4. Promote only gates backed by retained evidence into release claims.
+4. Run the 8B multi-turn and multi-node protocols, then obtain an independent
+   reproduction before promoting the A+ claim.
 
 ## Contribution policy
 

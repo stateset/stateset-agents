@@ -209,7 +209,7 @@ class TestSmokePathForAllAdaptersAndTrainers:
     """Cartesian product of (trainer, task) — every combination should run the
     smoke path without errors. Catches regressions in the registry / dispatch."""
 
-    @pytest.mark.parametrize("trainer", ["gspo", "grpo", "dapo"])
+    @pytest.mark.parametrize("trainer", ["gspo", "grpo", "dapo", "vapo", "gepo"])
     @pytest.mark.parametrize("task", ["gsm8k", "customer_support", "tool_calling"])
     def test_smoke(self, tmp_path: Path, trainer: str, task: str) -> None:
         out = tmp_path / f"{trainer}_{task}.json"

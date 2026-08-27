@@ -227,6 +227,7 @@ class GEPOTrainer:
         }
 
         self.global_step = 0
+        self.rollout_samples_total = 0
 
     @staticmethod
     def build_response_mask(
@@ -435,6 +436,7 @@ class GEPOTrainer:
                 )
 
         self.model.train()
+        self.rollout_samples_total += len(responses)
         return responses
 
     async def train_step(
@@ -591,6 +593,7 @@ class GEPOTrainer:
             output_dir,
             training_state={
                 "global_step": self.global_step,
+                "rollout_samples_total": self.rollout_samples_total,
                 "optimizer_state_dict": self.optimizer.state_dict(),
                 "scheduler_state_dict": self.scheduler.state_dict(),
                 "metrics_history": self.metrics_history,
@@ -614,6 +617,9 @@ class GEPOTrainer:
                 state_path, map_location=self.device, trusted=trusted
             )
             self.global_step = state["global_step"]
+            self.rollout_samples_total = int(
+                state.get("rollout_samples_total", self.rollout_samples_total)
+            )
             self.optimizer.load_state_dict(state["optimizer_state_dict"])
             self.scheduler.load_state_dict(state["scheduler_state_dict"])
             self.metrics_history = state.get("metrics_history", self.metrics_history)
@@ -714,6 +720,9 @@ async def train_with_gepo(
     # Save final model
     final_dir = os.path.join(output_dir, "final")
     trainer.save_checkpoint(final_dir)
+    trainer.metrics_history["rollout_samples_total"] = [
+        float(trainer.rollout_samples_total)
+    ]
 
     if use_wandb:
         wandb.finish()

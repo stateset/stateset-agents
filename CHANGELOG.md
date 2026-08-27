@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a fail-closed five-algorithm shootout orchestrator and ready-to-run
+  GRPO/GSPO/DAPO/VAPO/GEPO manifest with rotated seed order, shared and
+  objective-specific config attestations, exact completion counting, external
+  wall time, normalized policy hashing, and strict hardware provenance.
+
+### Fixed
+
+- Phase-0 now executes VAPO and GEPO, applies the declared shared protocol to
+  DAPO and GSPO, supplies DAPO/VAPO correctness verifiers, preserves native
+  checkpoints while emitting one normalized policy artifact, and counts DAPO
+  filtered groups plus VAPO warmup generations instead of estimating work.
+
 ## [0.42.4] - 2026-08-27 — Validated scaling and release evidence
 
 ### Added

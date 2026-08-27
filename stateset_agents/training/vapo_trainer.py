@@ -481,6 +481,7 @@ class VAPOTrainer:
 
         self.global_step = 0
         self.value_warmup_complete = False
+        self.rollout_samples_total = 0
 
     async def _compute_reward(self, prompt: str, response: str) -> float:
         """Resolve sync or async reward callbacks to a float."""
@@ -549,6 +550,7 @@ class VAPOTrainer:
             prompt,
             self.config.group_size,
         )
+        self.rollout_samples_total += len(responses)
         return responses
 
     async def warmup_value_network(
@@ -1056,6 +1058,7 @@ class VAPOTrainer:
             output_dir,
             training_state={
                 "global_step": self.global_step,
+                "rollout_samples_total": self.rollout_samples_total,
                 "value_warmup_complete": self.value_warmup_complete,
                 "actor_optimizer_state_dict": self.actor_optimizer.state_dict(),
                 "critic_optimizer_state_dict": self.critic_optimizer.state_dict(),
@@ -1092,6 +1095,9 @@ class VAPOTrainer:
                 state_path, map_location=self.device, trusted=trusted
             )
             self.global_step = state["global_step"]
+            self.rollout_samples_total = int(
+                state.get("rollout_samples_total", self.rollout_samples_total)
+            )
             self.value_warmup_complete = state.get("value_warmup_complete", True)
             self.actor_optimizer.load_state_dict(state["actor_optimizer_state_dict"])
             self.critic_optimizer.load_state_dict(state["critic_optimizer_state_dict"])
