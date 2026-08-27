@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.5] - 2026-08-27 — Five-algorithm live evidence
+
 ### Added
 
 - Added a fail-closed five-algorithm shootout orchestrator and ready-to-run

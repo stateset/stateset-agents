@@ -22,9 +22,15 @@ are independently attested by the adapter before the orchestrator accepts a
 run. The manifest deliberately rejects gradient accumulation above one until
 all five implementations apply equivalent accumulation semantics.
 
-Live preflight diagnostics are retained under [`diagnostics/`](diagnostics/).
-They are deliberately excluded from the publication evidence directory and
-cannot satisfy the three-seed gate.
+The complete live matrix is published in [`evidence/`](evidence/) with its
+strictly validated [descriptive report](report/comparison.md): 15 measured
+runs, three seeds each for GRPO, GSPO, DAPO, VAPO, and GEPO on one RTX 5080.
+The matrix uses pinned Qwen2.5-0.5B-Instruct and GSM8K revisions and contains
+hashed normalized policies for every run.
+
+Live preflights and rejected attempts are retained under
+[`diagnostics/`](diagnostics/). They are deliberately excluded from the
+publication evidence directory and cannot satisfy the three-seed gate.
 
 ```bash
 python benchmarks/algorithm_comparison.py \

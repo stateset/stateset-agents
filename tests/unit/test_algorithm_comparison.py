@@ -93,8 +93,16 @@ def test_report_has_no_synthetic_rankings(tmp_path: Path) -> None:
     output = tmp_path / "report"
     algorithm_comparison.write_algorithm_report(runs, output)
     markdown = (output / "comparison.md").read_text(encoding="utf-8")
+    report = json.loads((output / "comparison.json").read_text(encoding="utf-8"))
     assert "Measured algorithm comparison" in markdown
+    assert "| Algorithm |" in markdown
+    assert "| Framework |" not in markdown
     assert "Winner" not in markdown
+    assert set(report["algorithms"]) == {"grpo", "gspo"}
+    assert "frameworks" not in report
+    assert report["comparison"]["algorithms"] == ["grpo", "gspo"]
+    assert "algorithm" not in report["comparison"]
+    assert len(report["evidence_sha256"]) == 64
 
 
 def test_requires_identical_seed_sets(tmp_path: Path) -> None:

@@ -158,7 +158,22 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.42.4 (latest release; PyPI publication pending):**
+**v0.42.5 (latest release; PyPI publication pending):**
+
+- **Five native RL objectives, one measured protocol.** A complete 15-run
+  RTX 5080/CUDA 12.9 matrix compares GRPO, GSPO, DAPO, VAPO, and GEPO over
+  three rotated seeds with pinned Qwen2.5-0.5B-Instruct/GSM8K revisions,
+  external wall time, actual completion counts, peak VRAM, held-out scores,
+  exact config attestations, and hashed normalized policies. The strict
+  [descriptive report](benchmark_results/algorithm_comparison/report/comparison.md)
+  accepts all 15 runs; rejected attempts remain published separately.
+- **VAPO now fits the matched 16 GB workload.** The first full attempt exposed
+  deterministic graph-retention OOMs at 15.28/15.47 GiB. Prompt-normalized
+  gradient accumulation preserves one optimizer step and the same mean
+  objective while releasing each forward graph before the next. The corrected
+  three-seed VAPO runs average 6,078 MiB peak VRAM and all complete.
+
+**v0.42.4:**
 
 - **Publication-grade comparison gates.** Framework, algorithm, scaling, and
   fault-recovery reports now fail closed on synthetic data, unpinned revisions,
@@ -816,7 +831,7 @@ asyncio.run(main())
 
 ```bash
 pip install stateset-agents          # latest version currently available on PyPI
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.42.4"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.42.5"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1523,7 +1538,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.4`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.5`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

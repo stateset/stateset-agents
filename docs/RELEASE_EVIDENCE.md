@@ -4,6 +4,28 @@ This page records what was actually exercised for the current release line.
 Registration, authentication, hardware allocation, training, inference, and
 publication are separate claims.
 
+## v0.42.5 release evidence
+
+Five-algorithm execution revision:
+`062a420b6cbdb4b532115a6c6500041ac1c68aa2`.
+
+| Surface | Result | Evidence |
+|---|---|---|
+| Default suite | Passed | 4,729 passed, 6 skipped, 0 failed |
+| Static typing | Passed | 304 source files, 0 issues |
+| Lint, format, hygiene | Passed | Ruff, Black (720 files), isort, and repository hygiene |
+| Distribution | Passed | Wheel and sdist built; Twine metadata passed; isolated wheel import reported 0.42.5 and CLI help passed |
+| Five-algorithm matrix | Passed | [15 measured CUDA runs](../benchmark_results/algorithm_comparison/report/comparison.md): GRPO, GSPO, DAPO, VAPO, and GEPO across seeds 42, 1337, and 2026 |
+| Benchmark provenance | Passed | Pinned model/data, exact shared/objective configs, RTX 5080/CUDA 12.9, external timers, actual completion counts, and 15 normalized-policy hashes |
+| Rejected diagnostic | Retained | [First full attempt](../benchmark_results/algorithm_comparison/diagnostics/d883f8a-full-attempt1/README.md) preserved three deterministic VAPO OOM failures |
+| VAPO memory correction | Passed | Three full-shape runs completed at 6,078 MiB mean peak VRAM after the rejected attempt reached 15.28/15.47 GiB |
+| RunPod cleanup | Passed | Every validation/matrix pod terminated after retrieval; final account inventory contained zero pods |
+
+The five-algorithm report is descriptive and scoped to its four-step,
+0.5B-model protocol. It closes the matched native-algorithm execution gate; it
+does not establish 8B performance, multi-node scaling, comparison with verl,
+NeMo RL, or OpenRLHF, independent reproduction, or broader ecosystem maturity.
+
 ## v0.42.3 release evidence
 
 Release readiness revision: `dbf4efe3b90d507aac0a4a9051f8ba939922a826`

@@ -20,6 +20,7 @@ from framework_comparison import (
     EvidenceError,
     RunEvidence,
     discover_inputs,
+    evidence_digest,
     render_markdown,
     summarize,
     validate_document,
@@ -135,12 +136,24 @@ def write_algorithm_report(runs: Sequence[RunEvidence], output_dir: Path) -> Non
     """Write measured algorithm comparison artifacts."""
     result = summarize(as_algorithm_runs(runs))
     result["report_kind"] = "measured-algorithm-comparison"
+    result["evidence_sha256"] = evidence_digest(runs)
+    algorithm_names = sorted({str(run.data["algorithm"]) for run in runs})
+    comparison = result["comparison"]
+    comparison.pop("algorithm", None)
+    comparison.pop("algorithm_revision", None)
+    comparison["algorithms"] = algorithm_names
+
     output_dir.mkdir(parents=True, exist_ok=True)
+    markdown = (
+        render_markdown(result)
+        .replace(
+            "# Measured framework comparison", "# Measured algorithm comparison", 1
+        )
+        .replace("| Framework |", "| Algorithm |", 1)
+    )
+    result["algorithms"] = result.pop("frameworks")
     (output_dir / "comparison.json").write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    markdown = render_markdown(result).replace(
-        "# Measured framework comparison", "# Measured algorithm comparison", 1
     )
     (output_dir / "comparison.md").write_text(markdown, encoding="utf-8")
 

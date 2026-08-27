@@ -254,7 +254,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.42.4-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.42.5-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`

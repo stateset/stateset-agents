@@ -1,0 +1,60 @@
+2026-08-27 18:50:52,405 INFO Seeds set to 42
+2026-08-27 18:50:52,405 INFO Task: gsm8k
+2026-08-27 18:50:53,513 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 404 Not Found"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-27 18:50:53,513 WARNING Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-27 18:50:54,440 INFO HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:50:54,691 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/740312add88f781978c0658806c59bc2815b9866 "HTTP/1.1 200 OK"
+2026-08-27 18:50:54,963 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-08-27 18:50:55,237 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:50:55,499 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866?recursive=false&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:50:55,733 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 404 Not Found"
+2026-08-27 18:50:55,941 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:50:56,182 INFO HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:50:56,439 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-08-27 18:50:56,742 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 404 Not Found"
+2026-08-27 18:50:56,746 INFO Train: 32 examples, Eval: 16 examples
+2026-08-27 18:50:56,747 INFO Evaluating baseline (un-fine-tuned) on 16 examples…
+2026-08-27 18:50:57,019 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-08-27 18:50:57,355 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:50:57,840 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct "HTTP/1.1 200 OK"
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 290/290 [00:00<00:00, 19569.28it/s]
+2026-08-27 18:51:27,531 INFO Baseline pass@1: 0.062 (parse rate 1.000)
+2026-08-27 18:51:27,532 INFO Invoking dapo trainer with 32 train examples…
+2026-08-27 18:51:27,553 INFO ============================================================
+2026-08-27 18:51:27,553 INFO DAPO Training - Decoupled Clip and Dynamic Sampling
+2026-08-27 18:51:27,553 INFO ============================================================
+2026-08-27 18:51:27,553 INFO Key techniques: Clip-Higher, Dynamic Sampling, Token-Level Loss, Overlong Shaping
+2026-08-27 18:51:27,553 INFO Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2026-08-27 18:51:27,553 INFO Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2026-08-27 18:51:28,033 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-08-27 18:51:28,258 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:51:28,681 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct "HTTP/1.1 200 OK"
+
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 290/290 [00:00<00:00, 3355.57it/s]
+2026-08-27 18:51:29,161 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/custom_generate/generate.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:51:29,194 INFO Model loaded on cuda
+2026-08-27 18:51:29,195 INFO Starting training with 32 prompts
+2026-08-27 18:51:29,195 INFO Group size: 4
+2026-08-27 18:51:29,195 INFO Clip range: [0.80, 1.28]
+2026-08-27 18:51:29,195 INFO Dynamic sampling: True
+2026-08-27 18:52:08,888 INFO Iter 0/4 | Loss: 0.0441 | Reward: 0.2500 | Acc: 25.00% | Filtered: 75.0%
+2026-08-27 18:54:13,212 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-27 18:54:13,226 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-0.5B-Instruct/7ae557604adf67be50417f59c2c2f167def9a775/config.json "HTTP/1.1 200 OK"
+2026-08-27 18:54:13,345 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-27 18:54:13,359 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-0.5B-Instruct/7ae557604adf67be50417f59c2c2f167def9a775/config.json "HTTP/1.1 200 OK"
+2026-08-27 18:54:13,430 INFO Checkpoint saved to /workspace/algorithm-full/runs/dapo-seed42/artifact/final
+2026-08-27 18:54:13,430 INFO ============================================================
+2026-08-27 18:54:13,430 INFO DAPO Training Complete!
+2026-08-27 18:54:13,430 INFO ============================================================
+2026-08-27 18:54:13,431 INFO Training complete in 166s. Re-evaluating…
+2026-08-27 18:54:52,261 INFO Post-train pass@1: 0.125
+2026-08-27 18:54:52,438 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-27 18:54:52,453 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-0.5B-Instruct/7ae557604adf67be50417f59c2c2f167def9a775/config.json "HTTP/1.1 200 OK"
+2026-08-27 18:54:52,573 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-27 18:54:52,587 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-0.5B-Instruct/7ae557604adf67be50417f59c2c2f167def9a775/config.json "HTTP/1.1 200 OK"
+2026-08-27 18:54:52,638 INFO Wrote result to /workspace/algorithm-full/runs/dapo-seed42/phase0-result.json

@@ -185,6 +185,14 @@ benchmark_results/framework_comparison/*
 !benchmark_results/algorithm_comparison/
 benchmark_results/algorithm_comparison/*
 !benchmark_results/algorithm_comparison/README.md
+!benchmark_results/algorithm_comparison/manifest.json
+!benchmark_results/algorithm_comparison/evidence/
+!benchmark_results/algorithm_comparison/evidence/*.json
+!benchmark_results/algorithm_comparison/report/
+!benchmark_results/algorithm_comparison/report/*.json
+!benchmark_results/algorithm_comparison/report/*.md
+!benchmark_results/algorithm_comparison/diagnostics/
+!benchmark_results/algorithm_comparison/diagnostics/**
 !benchmark_results/scaling/
 benchmark_results/scaling/*
 !benchmark_results/scaling/README.md
