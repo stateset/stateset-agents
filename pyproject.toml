@@ -295,6 +295,7 @@ multi_line_output = 3
 line_length = 88
 known_first_party = ["stateset_agents"]
 known_third_party = ["torch", "transformers", "datasets", "numpy", "wandb"]
+extend_skip = [".claude"]
 
 # Coverage configuration
 [tool.coverage.run]
