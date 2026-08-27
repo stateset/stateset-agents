@@ -86,6 +86,8 @@ def _run_help(path: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
         [sys.executable, "-m", "stateset_agents", *path, "--help"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=ROOT,
         env=env,
     )
