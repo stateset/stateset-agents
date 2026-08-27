@@ -765,8 +765,13 @@ class WandBIntegration:
             logger.info("Finished W&B run")
 
 
-class WandBMonitoringService(MonitoringService):
-    """Monitoring service that logs to W&B"""
+class WandBMonitoringService:
+    """Lightweight monitoring adapter that logs events to W&B.
+
+    This adapter intentionally does not inherit :class:`MonitoringService`:
+    that class owns collectors and a background monitoring thread, while this
+    adapter only forwards metrics to an existing W&B integration.
+    """
 
     def __init__(self, wandb_integration: WandBIntegration):
         self.wandb = wandb_integration

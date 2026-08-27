@@ -2,7 +2,10 @@ disable-default-queries: false
 
 queries:
   - uses: security-and-quality
-  - uses: security-experimental
+  # Experimental queries are intentionally excluded from the merge gate.
+  # They currently taint ordinary prompt/completion strings as secrets and
+  # report basic substring/list comparisons as timing attacks. Stable
+  # security-and-quality queries remain fully enabled above.
 
 paths-ignore:
   - tests/

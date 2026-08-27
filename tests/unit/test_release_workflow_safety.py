@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_codeql_merge_gate_uses_stable_query_suite() -> None:
+    config = yaml.safe_load((ROOT / ".github/codeql-config.yml").read_text())
+    query_suites = {entry["uses"] for entry in config["queries"]}
+
+    assert "security-and-quality" in query_suites
+    assert "security-experimental" not in query_suites
 
 
 def test_gpu_verification_cannot_pass_by_skipping_for_missing_key() -> None:
