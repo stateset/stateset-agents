@@ -194,7 +194,7 @@ CURRENT_STEP="tests_with_coverage"
 # Gate value lives in pyproject.toml's [tool.coverage.report] fail_under and
 # is honored automatically by pytest-cov. Avoid passing --cov-fail-under here
 # so the gate has a single source of truth (see v0.15.3 ratchet correction).
-pytest --cov=stateset_agents --cov-report=xml
+"$PYTHON_BIN" -m pytest --cov=stateset_agents --cov-report=xml
 
 printf "\n[4/8] Running security scans...\n"
 CURRENT_STEP="security_scans"

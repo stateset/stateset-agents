@@ -125,7 +125,7 @@ def main() -> int:
     from transformers import AutoModelForCausalLM, AutoTokenizer
     from trl import GRPOConfig, GRPOTrainer
 
-    from benchmarks.framework_protocol import evaluate_causal_lm
+    from stateset_agents.evaluation.framework_protocol import evaluate_causal_lm
     from stateset_agents.utils.reproducibility import set_all_seeds
 
     if not torch.cuda.is_available():

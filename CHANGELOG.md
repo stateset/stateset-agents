@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added one shared raw-model evaluation protocol for both shootout adapters,
   preventing chat templating and stopping criteria from changing only the
   StateSet side of a framework comparison.
+- Release readiness now excludes unrelated hidden agent worktrees from import
+  sorting and runs pytest through the same selected Python interpreter used by
+  typing and builds.
 
 ### Fixed
 

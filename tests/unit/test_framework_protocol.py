@@ -7,7 +7,7 @@ from typing import Any
 
 import torch
 
-from benchmarks.framework_protocol import evaluate_causal_lm
+from stateset_agents.evaluation.framework_protocol import evaluate_causal_lm
 
 
 class _Tokenizer:

@@ -255,7 +255,7 @@ def evaluate_shootout_baseline(
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    from benchmarks.framework_protocol import evaluate_causal_lm
+    from stateset_agents.evaluation.framework_protocol import evaluate_causal_lm
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_name, revision=model_revision, padding_side="left"
@@ -912,7 +912,9 @@ def main() -> int:
                 logger.info("Training complete in %.0fs. Re-evaluating…", train_seconds)
                 t0 = time.time()
                 if args.adapter_output is not None:
-                    from benchmarks.framework_protocol import evaluate_causal_lm
+                    from stateset_agents.evaluation.framework_protocol import (
+                        evaluate_causal_lm,
+                    )
 
                     post = evaluate_causal_lm(
                         trained_agent.model,
