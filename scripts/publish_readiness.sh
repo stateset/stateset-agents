@@ -201,7 +201,7 @@ CURRENT_STEP="tests_with_coverage"
 
 printf "\n[4/8] Running security scans...\n"
 CURRENT_STEP="security_scans"
-bandit -r stateset_agents -f json -o "$BANDIT_REPORT_PATH" || true
+bandit -c pyproject.toml -r stateset_agents -f json -o "$BANDIT_REPORT_PATH" || true
 # --save-json writes the JSON straight to a file; piping `--json` stdout to
 # a file (the previous form here) captures safety's banner/deprecation
 # notice ahead of the payload too, corrupting a naive json.loads() the same
