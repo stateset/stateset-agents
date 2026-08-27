@@ -431,6 +431,7 @@ pyjwt[crypto]==2.13.0
     # via
     #   mcp
     #   semgrep
+    #   stateset-agents (pyproject.toml)
 pyproject-hooks==1.2.0
     # via
     #   build

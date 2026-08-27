@@ -57,6 +57,26 @@ def test_dev_extra_and_lock_include_required_pytest_plugins() -> None:
     assert re.search(r"^pytest-xdist==", lock, re.MULTILINE)
 
 
+def test_api_extra_declares_jwt_runtime_dependency() -> None:
+    extras = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"][
+        "optional-dependencies"
+    ]
+
+    assert "pyjwt" in _package_names(extras["api"])
+    assert "pyjwt" in _package_names(extras["dev"])
+
+
+def test_ci_formatter_version_is_pinned() -> None:
+    extras = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"][
+        "optional-dependencies"
+    ]
+
+    isort_requirements = [
+        req for req in extras["dev"] if req.lower().startswith("isort")
+    ]
+    assert isort_requirements == ["isort==8.0.1"]
+
+
 def test_glm53_extra_pins_required_transformers_generation() -> None:
     extras = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"][
         "optional-dependencies"

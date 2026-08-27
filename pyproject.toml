@@ -57,7 +57,9 @@ dev = [
     "pytest-timeout>=2.4.0,<3.0.0",
     "hypothesis>=6.0.0",
     "black>=23.0.0",
-    "isort>=5.12.0",
+    # CI runs this formatter directly, so pin it like mypy instead of letting
+    # a new major version redefine the merge gate without review.
+    "isort==8.0.1",
     "flake8>=6.0.0",
     # Pinned exactly (not a floor): CI installs unpinned via
     # `pip install -e ".[dev,api]"`, so a bare floor here means every
@@ -109,6 +111,7 @@ dev = [
     "httpx>=0.25.0,<0.28.0",
     "requests>=2.31.0",
     "redis>=4.5.0",
+    "PyJWT>=2.8.0,<3.0.0",
 ]
 training = [
     "torch>=2.0.0",
@@ -149,6 +152,7 @@ api = [
     # back to the in-memory limiter/cache if redis is not installed or
     # unreachable.
     "redis>=4.5.0",
+    "PyJWT>=2.8.0,<3.0.0",
 ]
 examples = [
     "openai>=1.0.0",
