@@ -113,15 +113,19 @@ CURRENT_STEP="preflight"
 READINESS_FAILURE_DETAIL=""
 
 if [ -z "${PYTHON_BIN}" ]; then
-  if command -v python3 >/dev/null 2>&1; then
-    PYTHON_BIN="python3"
-  elif command -v python >/dev/null 2>&1; then
-    PYTHON_BIN="python"
-  else
-    READINESS_FAILURE_DETAIL="missing python interpreter (python3 or python)"
-    echo "ERROR: Neither python3 nor python is available on PATH."
-    exit 1
-  fi
+  for candidate in python python3; do
+    if command -v "$candidate" >/dev/null 2>&1 && \
+      "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
+      PYTHON_BIN="$candidate"
+      break
+    fi
+  done
+fi
+if [ -z "${PYTHON_BIN}" ] || ! "$PYTHON_BIN" -c \
+  'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
+  READINESS_FAILURE_DETAIL="missing supported Python interpreter (requires >=3.10)"
+  echo "ERROR: Python 3.10 or newer is required."
+  exit 1
 fi
 
 REQUIRED_COMMANDS=(
@@ -131,7 +135,6 @@ REQUIRED_COMMANDS=(
   "black"
   "isort"
   "mypy"
-  "pytest"
   "bandit"
   "safety"
 )
@@ -151,10 +154,10 @@ if [ "${#MISSING_COMMANDS[@]}" -ne 0 ]; then
   exit 1
 fi
 
-if ! "$PYTHON_BIN" -c "import build, twine" >/dev/null 2>&1; then
-  READINESS_FAILURE_DETAIL="missing_python_modules: build or twine"
-  echo "ERROR: Required Python modules are missing: build, twine"
-  echo "Install dependencies and retry: pip install build twine"
+if ! "$PYTHON_BIN" -c "import build, pytest, twine" >/dev/null 2>&1; then
+  READINESS_FAILURE_DETAIL="missing_python_modules: build, pytest, or twine"
+  echo "ERROR: Required Python modules are missing: build, pytest, or twine"
+  echo "Install dependencies and retry: pip install build pytest twine"
   exit 1
 fi
 
