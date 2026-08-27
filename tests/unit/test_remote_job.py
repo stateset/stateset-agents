@@ -139,6 +139,14 @@ class TestRemoteJobSpecValidation:
                 dataset=dataset, base_model="Qwen/Qwen3.5-0.8B", network_volume_id="  "
             )
 
+    def test_rejects_non_positive_cost_ceiling(self, dataset):
+        with pytest.raises(ValueError, match="max_cost_usd"):
+            RemoteJobSpec(
+                dataset=dataset,
+                base_model="Qwen/Qwen3.5-0.8B",
+                max_cost_usd=0,
+            )
+
     def test_network_volume_id_never_reaches_the_training_script(self, dataset):
         spec = RemoteJobSpec(
             dataset=dataset,
@@ -316,6 +324,30 @@ class TestRemoteJobSpecSerialization:
         assert "--eval-prompts-json" in args
         blob = args[args.index("--eval-prompts-json") + 1]
         assert json.loads(blob) == prompts
+
+    def test_harvest_eval_prompts_travel_as_json(self, dataset):
+        prompts = [{"prompt": "hello", "expect": ["hi"]}]
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            job_kind="harvest",
+            eval_prompts=prompts,
+        )
+
+        args = spec.harvest_cli_args()
+        blob = args[args.index("--eval-prompts-json") + 1]
+        assert json.loads(blob) == prompts
+
+    def test_parent_adapter_reaches_sft_cli(self, dataset, tmp_path):
+        adapter = tmp_path / "adapter"
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="Qwen/Qwen3.5-0.8B",
+            parent_adapter=adapter,
+        )
+
+        args = spec.to_cli_args()
+        assert args[args.index("--parent-adapter") + 1] == str(adapter)
 
     def test_eval_spec_dicts_travel_as_json_too(self, dataset):
         """Prompt-spec entries (expect/forbid/judge) ride the same JSON blob."""

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib
 import re
+from dataclasses import replace
 
 import pytest
 from typer.testing import CliRunner
@@ -50,6 +51,20 @@ def test_expected_commands_have_presets() -> None:
 def test_cli_command_names_are_unique() -> None:
     names = [p.cli_command for p in PRESETS.values() if p.cli_command is not None]
     assert len(names) == len(set(names))
+
+
+def test_cli_preset_requires_complete_display_metadata() -> None:
+    preset = next(iter(CLI_PRESETS.values()))
+
+    with pytest.raises(ValueError, match="cli_display_name"):
+        replace(preset, cli_command="broken", cli_display_name="")
+
+
+def test_cli_preset_requires_a_starter_module() -> None:
+    preset = next(iter(CLI_PRESETS.values()))
+
+    with pytest.raises(ValueError, match="must set starter_module"):
+        replace(preset, cli_command="broken", starter_module=None)
 
 
 @pytest.mark.parametrize("command", sorted(EXPECTED_COMMANDS))
