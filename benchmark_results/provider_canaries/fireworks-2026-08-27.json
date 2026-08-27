@@ -1,0 +1,20 @@
+{
+  "billable_resources_created": 0,
+  "results": [
+    {
+      "checked_at": "2026-08-27T02:55:11.939830+00:00",
+      "checks": {
+        "missing_credentials": [
+          "FIREWORKS_API_KEY",
+          "FIREWORKS_ACCOUNT_ID"
+        ]
+      },
+      "cleanup_verified": false,
+      "duration_ms": 0,
+      "error": "missing credential variables: FIREWORKS_API_KEY, FIREWORKS_ACCOUNT_ID",
+      "provider": "fireworks",
+      "status": "skipped"
+    }
+  ],
+  "schema_version": 1
+}

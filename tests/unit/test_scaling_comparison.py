@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 BENCHMARKS = Path(__file__).resolve().parents[2] / "benchmarks"
+ROOT = BENCHMARKS.parent
 sys.path.insert(0, str(BENCHMARKS))
 SPEC = importlib.util.spec_from_file_location(
     "scaling_comparison", BENCHMARKS / "scaling_comparison.py"
@@ -143,6 +144,39 @@ def test_rejects_invalid_workload_digest(tmp_path: Path) -> None:
     )
     with pytest.raises(EvidenceError, match="64 hex"):
         scaling_comparison.load_scaling_evidence([path])
+
+
+def test_retained_weak_scaling_matrix_passes_publication_gate() -> None:
+    runs = scaling_comparison.load_scaling_evidence(
+        [ROOT / "benchmark_results" / "scaling" / "evidence"]
+    )
+    scaling_comparison.validate_scaling_comparison(runs)
+    summary = scaling_comparison.summarize_scaling(runs)
+    scaling_comparison.validate_scaling_performance(summary)
+    assert summary["scaling_mode"] == "weak"
+    assert summary["topologies"]["8"]["speedup_vs_1_gpu"] > 8.0
+
+
+def test_retained_strong_scaling_failure_stays_negative() -> None:
+    runs = scaling_comparison.load_scaling_evidence(
+        [
+            ROOT
+            / "benchmark_results"
+            / "scaling"
+            / "diagnostics"
+            / "f6e7478-strong"
+            / "evidence"
+        ]
+    )
+    scaling_comparison.validate_scaling_comparison(runs)
+    summary = scaling_comparison.summarize_scaling(runs)
+    with pytest.raises(EvidenceError, match="requires scaling_mode"):
+        scaling_comparison.validate_scaling_performance(summary)
+    assert (
+        summary["topologies"]["2"]["samples_per_second_mean"]
+        < summary["topologies"]["1"]["samples_per_second_mean"]
+    )
+    assert summary["topologies"]["8"]["scaling_efficiency"] < 0.03
 
 
 def test_rejects_digest_that_does_not_bind_retained_config(tmp_path: Path) -> None:

@@ -8,6 +8,10 @@ publication are separate claims.
 
 Release readiness revision: `dbf4efe3b90d507aac0a4a9051f8ba939922a826`
 
+Post-tag scaling/recovery evidence revisions:
+`722f7e9fdafceec48723dc4392a212418cba9f2b` and
+`52df33fa00d7eac4b2973fdeb4a5446f6278a8b1`.
+
 | Surface | Result | Evidence |
 |---|---|---|
 | Default and coverage suite | Passed | 4,677 passed, 6 skipped; 62.71% coverage against 61% floor |
@@ -17,13 +21,18 @@ Release readiness revision: `dbf4efe3b90d507aac0a4a9051f8ba939922a826`
 | Distribution | Passed | Wheel and sdist built; Twine metadata passed; package smoke reported 0.42.3 |
 | StateSet vs direct TRL | Passed | [Three seeds on one NVIDIA A40](../benchmark_results/framework_comparison/report/comparison.md); equivalent throughput, wall time, and VRAM for the exact four-step protocol, with all quality outcomes retained |
 | Benchmark provenance | Passed | Harness commit `4173eee7be7187c0583390953b8ad79b55fb954f`; pinned model/data; exact config digest; six artifact hashes |
-| RunPod cleanup | Passed | Final pod `d70u41s8a6hx5t` terminated after evidence retrieval |
-| 1/2/4/8-GPU scaling | Not run | Validator exists; no release claim is made |
-| Fault-injection matrix | Not run | Validator exists; no release claim is made |
-| Fireworks live canary | Not run | Credentials are unavailable |
+| RunPod cleanup | Passed | Every benchmark pod terminated after evidence retrieval; final read-only canary observed 0 pods and 0 cleanup leases |
+| 1/2/4/8-GPU weak scaling | Passed | [Three seeds per topology](../benchmark_results/scaling/report/scaling.md); 8.080× throughput at 8 GPUs and 101.0% weak-scaling efficiency |
+| Fixed-global-batch strong scaling | Failed | [Negative matrix retained](../benchmark_results/scaling/diagnostics/f6e7478-strong/report/scaling.md); 8-GPU efficiency was 2.9%, so no strong-scaling claim is made |
+| Fault-injection matrix | Passed | [Nine CUDA runs](../benchmark_results/reliability/report.json); exact replay, zero lost/duplicate updates, completion, cleanup |
+| River live canary | Passed | 2026-08-27 read-only health/capabilities; 0 billable resources |
+| RunPod live canary | Passed | 2026-08-27 read-only inventory/cleanup; 0 billable resources |
+| Fireworks live canary | Skipped | `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID` are unavailable; [skipped result retained](../benchmark_results/provider_canaries/fireworks-2026-08-27.json) |
 
 The four-step shootout is an orchestration-parity test, not evidence that four
 steps improve GSM8K quality. Its null/negative quality deltas are retained.
+The scaling result is explicitly weak scaling; it does not supersede the
+failed strong-scaling diagnostic or establish multi-node performance.
 
 ## v0.42.2 release evidence
 

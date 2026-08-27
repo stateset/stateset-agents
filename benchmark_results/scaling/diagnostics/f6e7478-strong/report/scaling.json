@@ -1,0 +1,60 @@
+{
+  "gpu": "NVIDIA GeForce RTX 5080",
+  "report_kind": "measured-scaling-comparison",
+  "schema_version": 1,
+  "topologies": {
+    "1": {
+      "peak_vram_mb_mean": 595.22802734375,
+      "samples_per_second_mean": 261437.0136534797,
+      "samples_per_second_std": 3858.402384024241,
+      "scaling_efficiency": 1.0,
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "speedup_vs_1_gpu": 1.0,
+      "wall_clock_seconds_mean": 0.18803449968496957
+    },
+    "2": {
+      "peak_vram_mb_mean": 442.44775390625,
+      "samples_per_second_mean": 149113.01925671202,
+      "samples_per_second_std": 1151.6285338823755,
+      "scaling_efficiency": 0.2851796254342797,
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "speedup_vs_1_gpu": 0.5703592508685594,
+      "wall_clock_seconds_mean": 0.32964232563972473
+    },
+    "4": {
+      "peak_vram_mb_mean": 477.70263671875,
+      "samples_per_second_mean": 111463.75141500817,
+      "samples_per_second_std": 531.5389810041213,
+      "scaling_efficiency": 0.10658757711594274,
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "speedup_vs_1_gpu": 0.426350308463771,
+      "wall_clock_seconds_mean": 0.440975159406662
+    },
+    "8": {
+      "peak_vram_mb_mean": 477.81005859375,
+      "samples_per_second_mean": 59862.32944851342,
+      "samples_per_second_std": 894.5264038481492,
+      "scaling_efficiency": 0.02862177423347638,
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "speedup_vs_1_gpu": 0.22897419386781104,
+      "wall_clock_seconds_mean": 0.8212069869041443
+    }
+  },
+  "workload_config_sha256": "57c3cf032f31fee46619ee646b826260e7719aebd09cc189c6778a529f5b9ba1"
+}

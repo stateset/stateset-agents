@@ -1,0 +1,2 @@
+GPU 0: NVIDIA GeForce RTX 5080 (UUID: GPU-b312a389-45d6-bd06-6731-8e8e3bf2cf54)
+{"cuda": "12.9", "gpu_count": 1, "python": "3.12.13", "torch": "2.8.0+cu129"}

@@ -1,0 +1,22 @@
+{
+  "billable_resources_created": 0,
+  "results": [
+    {
+      "checked_at": "2026-08-27T02:54:58.460855+00:00",
+      "checks": {
+        "billable_resources_created": 0,
+        "capabilities": [
+          "Qwen/Qwen3.6-35B-A3B-FP8",
+          "Qwen/Qwen3.5-9B"
+        ],
+        "health": true
+      },
+      "cleanup_verified": true,
+      "duration_ms": 7617,
+      "error": null,
+      "provider": "river",
+      "status": "passed"
+    }
+  ],
+  "schema_version": 1
+}

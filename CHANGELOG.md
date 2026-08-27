@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added executable, provenance-complete scaling and recovery harnesses. The
+  scaling publication gate requires monotonic 1/2/4/8-GPU throughput and at
+  least 50% efficiency; recovery injects worker exit, controller SIGKILL, and
+  a live TCP control-plane interruption with fail-safe cleanup.
+- Retained a passing three-seed 1/2/4/8-GPU weak-scaling matrix on eight RTX
+  5080s (`8.080×` throughput and `101.0%` efficiency at 8 GPUs) and a nine-run
+  CUDA recovery matrix with zero lost or duplicate updates.
+- Retained the failed fixed-global-batch strong-scaling matrix (`2.9%`
+  efficiency at 8 GPUs) and scope weak-scaling claims separately.
+- Refreshed non-billable River and RunPod authentication/cleanup canaries;
+  Fireworks remains explicitly skipped because credentials are unavailable.
+
 ## [0.42.3] - 2026-08-26 — Publication-grade RL evidence
 
 - Hardened benchmark provenance and TRL interoperability: Phase 0 publication

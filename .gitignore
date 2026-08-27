@@ -188,9 +188,25 @@ benchmark_results/algorithm_comparison/*
 !benchmark_results/scaling/
 benchmark_results/scaling/*
 !benchmark_results/scaling/README.md
+!benchmark_results/scaling/evidence/
+!benchmark_results/scaling/evidence/*.json
+!benchmark_results/scaling/report/
+!benchmark_results/scaling/report/*.json
+!benchmark_results/scaling/report/*.md
+!benchmark_results/scaling/system-info.txt
+!benchmark_results/scaling/diagnostics/
+!benchmark_results/scaling/diagnostics/**
 !benchmark_results/reliability/
 benchmark_results/reliability/*
 !benchmark_results/reliability/README.md
+!benchmark_results/reliability/evidence/
+!benchmark_results/reliability/evidence/*.json
+!benchmark_results/reliability/report.json
+!benchmark_results/reliability/system-info.txt
+!benchmark_results/provider_canaries/
+benchmark_results/provider_canaries/*
+!benchmark_results/provider_canaries/*.json
+!benchmark_results/provider_canaries/README.md
 hpo_results/
 
 # Python package/typing artifacts

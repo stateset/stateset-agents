@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 MODULE = Path(__file__).resolve().parents[2] / "benchmarks" / "reliability_evidence.py"
+ROOT = MODULE.parents[1]
 SPEC = importlib.util.spec_from_file_location("reliability_evidence", MODULE)
 assert SPEC is not None and SPEC.loader is not None
 reliability = importlib.util.module_from_spec(SPEC)
@@ -143,3 +144,16 @@ def test_rejects_mixed_hardware() -> None:
     runs[-1]["hardware"] = {"accelerator": "NVIDIA A100", "cuda": "12.8"}
     with pytest.raises(EvidenceError, match="hardware.accelerator"):
         reliability.validate_matrix(runs)
+
+
+def test_retained_cuda_recovery_matrix_passes() -> None:
+    runs = reliability.load_runs(
+        [ROOT / "benchmark_results" / "reliability" / "evidence"]
+    )
+    reliability.validate_matrix(runs, max_data_loss_steps=0)
+    report = reliability.summarize(runs)
+    assert report["passed"] is True
+    assert all(
+        result["duplicate_updates"] == 0 and result["resources_remaining"] == 0
+        for result in report["faults"].values()
+    )

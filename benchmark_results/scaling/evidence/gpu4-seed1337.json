@@ -1,0 +1,54 @@
+{
+  "algorithm": "group-policy-gradient",
+  "algorithm_revision": "stateset-group-policy-gradient-v1",
+  "artifact_sha256": "f4e41a729807a1a0943d9826b1012d830e9e7789688fc3a6cbe06535399bd8ab",
+  "cache_policy": "generated-on-device-indexed-v1",
+  "command": "CUDA_VISIBLE_DEVICES=0-3 python -m torch.distributed.run --standalone --nproc-per-node=4 benchmarks/distributed_scaling_workload.py --gpu-count=4 --seed=1337",
+  "config": {
+    "depth": 8,
+    "entropy_coef": 0.001,
+    "eval_examples": 2048,
+    "feature_dim": 512,
+    "gradient_accumulation_steps": 96,
+    "group_size": 4,
+    "hidden_dim": 512,
+    "learning_rate": 0.0002,
+    "measured_steps": 6,
+    "num_actions": 256,
+    "per_device_batch_size": 2048,
+    "precision": "bf16",
+    "scaling_mode": "weak",
+    "warmup_steps": 1
+  },
+  "dataset_revision": "c6b0e2d7df0af60de20113cc3e11249cf9f63c48",
+  "framework": "stateset-agents",
+  "framework_version": "0.42.3",
+  "hardware": {
+    "cuda": "12.9",
+    "gpu": "NVIDIA GeForce RTX 5080",
+    "gpu_count": 4,
+    "topology": "\u001b[4mGPU0\tGPU1\tGPU2\tGPU3\tGPU4\tGPU5\tGPU6\tGPU7\tCPU Affinity\tNUMA Affinity\tGPU NUMA ID\u001b[0m\nGPU0\t X \tNODE\tNODE\tNODE\tNODE\tNODE\tNODE\tNODE\t0-63\t0\t\tN/A\nGPU1\tNODE\t X \tPHB\tNODE\tNODE\tNODE\tNODE\tNODE\t0-63\t0\t\tN/A\nGPU2\tNODE\tPHB\t X \tNODE\tNODE\tNODE\tNODE\tNODE\t0-63\t0\t\tN/A\nGPU3\tNODE\tNODE\tNODE\t X \tPHB\tPHB\tNODE\tNODE\t0-63\t0\t\tN/A\nGPU4\tNODE\tNODE\tNODE\tPHB\t X \tPHB\tNODE\tNODE\t0-63\t0\t\tN/A\nGPU5\tNODE\tNODE\tNODE\tPHB\tPHB\t X \tNODE\tNODE\t0-63\t0\t\tN/A\nGPU6\tNODE\tNODE\tNODE\tNODE\tNODE\tNODE\t X \tPHB\t0-63\t0\t\tN/A\nGPU7\tNODE\tNODE\tNODE\tNODE\tNODE\tNODE\tPHB\t X \t0-63\t0\t\tN/A\n\nLegend:\n\n  X    = Self\n  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)\n  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node\n  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)\n  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)\n  PIX  = Connection traversing at most a single PCIe bridge\n  NV#  = Connection traversing a bonded set of # NVLinks"
+  },
+  "harness_commit": "722f7e9fdafceec48723dc4392a212418cba9f2b",
+  "measured": true,
+  "metrics": {
+    "eval_score_baseline": 0.003938965033739805,
+    "eval_score_final": 0.003943324089050293,
+    "peak_vram_mb": 589.83251953125,
+    "samples_per_second": 1281932.0547550393,
+    "wall_clock_seconds": 3.6808440685272217
+  },
+  "model": "stateset/synthetic-residual-policy-v1",
+  "model_revision": "26c133bd08c620ac8e1f195dabc76bad7f4656c2",
+  "protocol": "stateset-ddp-policy-weak-scaling-v2",
+  "schema_version": 1,
+  "seed": 1337,
+  "software": {
+    "nccl": "2.27.3",
+    "python": "3.12.13",
+    "torch": "2.8.0+cu129"
+  },
+  "task": "synthetic-group-policy-optimization-v1",
+  "timestamp": "2026-08-27T02:41:55.064994+00:00",
+  "workload_config_sha256": "e6e9a653604b1503776687dd431c2df65e55dda83e06a9f08f1520d49a55fd78"
+}

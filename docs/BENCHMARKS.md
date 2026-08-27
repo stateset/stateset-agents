@@ -63,6 +63,41 @@ GRPO orchestration preserves upstream behavior without material overhead.
 - [Six per-seed evidence documents](../benchmark_results/framework_comparison/evidence/)
 - Harness commit: `4173eee7be7187c0583390953b8ad79b55fb954f`
 
+### Single-node DDP weak scaling
+
+Three matched seeds on one RunPod host with eight identical NVIDIA RTX 5080
+GPUs passed the predeclared monotonic-throughput and 50%-efficiency gate:
+
+| GPUs | Samples/s | Speedup | Weak-scaling efficiency | Peak VRAM/GPU |
+|---:|---:|---:|---:|---:|
+| 1 | 322,574 ± 7,286 | 1.000× | 100.0% | 589.8 MiB |
+| 2 | 672,581 ± 1,309 | 2.085× | 104.3% | 589.8 MiB |
+| 4 | 1,291,535 ± 12,911 | 4.004× | 100.1% | 589.8 MiB |
+| 8 | 2,606,530 ± 45,377 | 8.080× | 101.0% | 589.8 MiB |
+
+The workload holds the per-device batch constant, so this is weak scaling.
+The >100% observations reflect utilization/cache effects and are not a claim
+of superlinear strong scaling. The earlier fixed-global-batch matrix failed
+(`28.5%`, `10.7%`, and `2.9%` efficiency) and remains retained as a negative
+diagnostic.
+
+- [Passing weak-scaling report](../benchmark_results/scaling/report/scaling.md)
+- [Twelve per-seed/topology evidence documents](../benchmark_results/scaling/evidence/)
+- [Failed strong-scaling diagnostic](../benchmark_results/scaling/diagnostics/f6e7478-strong/report/scaling.md)
+- Harness commit: `722f7e9fdafceec48723dc4392a212418cba9f2b`
+
+### Checkpoint fault recovery
+
+Nine CUDA runs (three seeds for each of worker exit, controller SIGKILL, and
+live TCP heartbeat interruption) resumed from atomic model/optimizer
+checkpoints. Every run reached step 12 with zero data-loss steps, duplicate
+updates, or remaining child processes/sockets. Maximum measured recovery time
+was `2.569` seconds.
+
+- [Validated recovery report](../benchmark_results/reliability/report.json)
+- [Nine raw evidence documents](../benchmark_results/reliability/evidence/)
+- Harness commit: `52df33fa00d7eac4b2973fdeb4a5446f6278a8b1`
+
 ### Rust-core microbenchmarks
 
 Rust-versus-Python results measure isolated advantage/ratio kernels only.
@@ -78,13 +113,13 @@ The repository does **not** currently claim:
 
 - faster training or lower memory than TRL, verl, NeMo RL, or OpenRLHF;
 - broad superiority over TRL beyond the exact parity result above;
-- multi-node or 2/4/8-GPU scaling efficiency;
+- multi-node or strong 2/4/8-GPU scaling efficiency;
 - a measured GRPO/GSPO/DAPO/VAPO/GEPO winner on a shared protocol;
 - Fireworks live training or serving success; or
 - a completed 8B flagship result.
 
-Those remain A+ evidence gates. Protocols and validators exist so results can
-be added without weakening the standard.
+Those remain evidence gates. Protocols and validators exist so results can be
+added without weakening the standard.
 
 ## Run the benchmark pipelines
 

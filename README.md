@@ -176,6 +176,22 @@ coverage, live hardware attempts, and successful inference by provider.
   agents immediately usable for inference. A rejected diagnostic shootout also
   exposed and fixed seed propagation, short-run warmup, and asymmetric
   evaluation before any comparison result could be published.
+- **Measured 1/2/4/8-GPU weak scaling.** Three matched seeds on eight identical
+  RTX 5080s reached `2.085×`, `4.004×`, and `8.080×` throughput at 2, 4, and 8
+  GPUs (`104.3%`, `100.1%`, and `101.0%` weak-scaling efficiency), with a fixed
+  per-device policy workload and `589.8 MiB` peak VRAM per GPU. The
+  [validated report](benchmark_results/scaling/report/scaling.md) labels this
+  as weak scaling; the failed fixed-global-batch
+  [strong-scaling diagnostic](benchmark_results/scaling/diagnostics/f6e7478-strong/report/scaling.md)
+  is retained rather than hidden.
+- **Measured recovery matrix.** Nine CUDA runs injected worker exit, controller
+  SIGKILL, and live TCP control-plane interruption across three seeds. Every
+  run resumed from its atomic optimizer checkpoint, reached the final step,
+  recorded zero lost or duplicate updates, and left zero child resources; see
+  the [retained report](benchmark_results/reliability/report.json).
+- **Fresh provider authentication.** Read-only River and RunPod canaries passed
+  on 2026-08-27 with zero billable resources and verified cleanup. Fireworks is
+  explicitly retained as skipped because its key and account id are absent.
 
 **v0.42.2:**
 
