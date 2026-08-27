@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -45,6 +46,34 @@ def validate_run(data: Mapping[str, Any], source: Path) -> dict[str, Any]:
     seed = data.get("seed")
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise ReliabilityEvidenceError(f"{source}: seed must be non-negative integer")
+
+    config = data.get("config")
+    if not isinstance(config, Mapping) or not config:
+        raise ReliabilityEvidenceError(f"{source}: config must be a non-empty object")
+    config_digest = data.get("config_sha256")
+    if not isinstance(config_digest, str) or len(config_digest) != 64:
+        raise ReliabilityEvidenceError(f"{source}: config_sha256 must be 64 hex chars")
+    try:
+        bytes.fromhex(config_digest)
+    except ValueError as exc:
+        raise ReliabilityEvidenceError(
+            f"{source}: config_sha256 is not hexadecimal"
+        ) from exc
+    canonical = json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
+    if hashlib.sha256(canonical).hexdigest() != config_digest:
+        raise ReliabilityEvidenceError(
+            f"{source}: config_sha256 does not match canonical config"
+        )
+
+    for section, fields in (
+        ("hardware", ("accelerator", "cuda")),
+        ("software", ("python", "torch")),
+    ):
+        values = data.get(section)
+        if not isinstance(values, Mapping):
+            raise ReliabilityEvidenceError(f"{source}: {section} must be an object")
+        for field in fields:
+            _nonempty(values, field, source)
 
     fault = data.get("fault")
     if not isinstance(fault, Mapping):
@@ -169,10 +198,18 @@ def validate_matrix(
         "protocol",
         "model",
         "model_revision",
+        "config_sha256",
     )
     first = runs[0]
     for run in runs[1:]:
         changed = [field for field in match_fields if run[field] != first[field]]
+        for section, field in (
+            ("hardware", "accelerator"),
+            ("hardware", "cuda"),
+            ("software", "torch"),
+        ):
+            if run[section][field] != first[section][field]:
+                changed.append(f"{section}.{field}")
         if changed:
             raise ReliabilityEvidenceError(f"run matrix mixes {', '.join(changed)}")
     expected_seeds: set[int] | None = None

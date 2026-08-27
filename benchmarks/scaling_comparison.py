@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import statistics
 import sys
@@ -55,6 +56,15 @@ def load_scaling_evidence(inputs: Sequence[Path]) -> list[RunEvidence]:
             raise EvidenceError(
                 f"{path}: workload_config_sha256 is not hexadecimal"
             ) from exc
+        config = raw.get("config")
+        if not isinstance(config, Mapping) or not config:
+            raise EvidenceError(f"{path}: config must be a non-empty object")
+        canonical = json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
+        computed = hashlib.sha256(canonical).hexdigest()
+        if digest != computed:
+            raise EvidenceError(
+                f"{path}: workload_config_sha256 does not match canonical config"
+            )
         runs.append(validate_document(raw, path))
     return runs
 
@@ -163,6 +173,11 @@ def validate_scaling_performance(
     """Apply the predeclared publication threshold to measured means."""
     if not 0 < min_efficiency <= 1:
         raise EvidenceError("min_efficiency must be in (0, 1]")
+    mode = summary.get("scaling_mode")
+    if mode not in {"strong", "weak"}:
+        raise EvidenceError(
+            "publication performance requires scaling_mode='strong' or 'weak'"
+        )
     topologies = summary["topologies"]
     ordered = sorted((int(count), values) for count, values in topologies.items())
     if require_monotonic:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import sys
@@ -24,6 +25,7 @@ EvidenceError = scaling_comparison.EvidenceError
 
 
 def _document(gpu_count: int, seed: int, **overrides: Any) -> dict[str, Any]:
+    config = {"global_batch_size": 32, "scaling_mode": "strong", "steps": 100}
     document: dict[str, Any] = {
         "schema_version": 1,
         "measured": True,
@@ -38,11 +40,13 @@ def _document(gpu_count: int, seed: int, **overrides: Any) -> dict[str, Any]:
         "model_revision": "b" * 40,
         "task": "customer-support-multiturn-v1",
         "dataset_revision": "c" * 40,
-        "workload_config_sha256": "e" * 64,
+        "workload_config_sha256": hashlib.sha256(
+            json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
         "seed": seed,
         "timestamp": "2026-08-26T21:00:00Z",
         "command": f"torchrun --nproc-per-node {gpu_count} train.py --seed {seed}",
-        "config": {"global_batch_size": 32, "steps": 100},
+        "config": config,
         "hardware": {"gpu": "NVIDIA H100", "gpu_count": gpu_count, "cuda": "12.8"},
         "metrics": {
             "samples_per_second": gpu_count * 10.0,
@@ -73,7 +77,7 @@ def test_complete_matrix_reports_efficiency(tmp_path: Path) -> None:
     summary = scaling_comparison.summarize_scaling(runs)
     assert summary["topologies"]["8"]["speedup_vs_1_gpu"] == pytest.approx(8.0)
     assert summary["topologies"]["8"]["scaling_efficiency"] == pytest.approx(1.0)
-    assert summary["scaling_mode"] == "unspecified"
+    assert summary["scaling_mode"] == "strong"
     scaling_comparison.validate_scaling_performance(summary)
 
 
@@ -139,3 +143,22 @@ def test_rejects_invalid_workload_digest(tmp_path: Path) -> None:
     )
     with pytest.raises(EvidenceError, match="64 hex"):
         scaling_comparison.load_scaling_evidence([path])
+
+
+def test_rejects_digest_that_does_not_bind_retained_config(tmp_path: Path) -> None:
+    path = tmp_path / "bad-binding.json"
+    path.write_text(
+        json.dumps(_document(1, 42, workload_config_sha256="e" * 64)),
+        encoding="utf-8",
+    )
+    with pytest.raises(EvidenceError, match="does not match canonical config"):
+        scaling_comparison.load_scaling_evidence([path])
+
+
+def test_performance_gate_requires_explicit_scaling_mode(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    summary = scaling_comparison.summarize_scaling(runs)
+    summary["scaling_mode"] = "unspecified"
+
+    with pytest.raises(EvidenceError, match="requires scaling_mode"):
+        scaling_comparison.validate_scaling_performance(summary)

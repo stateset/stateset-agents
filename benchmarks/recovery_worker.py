@@ -89,7 +89,7 @@ def run(args: argparse.Namespace) -> None:
 
     torch.manual_seed(args.seed)
     model = RecoveryPolicy(args.width).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
     start_step = 0
     applied_steps: list[int] = []
     if args.phase == "resume":
@@ -167,6 +167,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--final-step", type=int, default=12)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--width", type=int, default=128)
+    parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--heartbeat-port", type=int, default=0)
     parser.add_argument("--coordination-timeout", type=float, default=30.0)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,6 +22,11 @@ EvidenceError = reliability.ReliabilityEvidenceError
 
 
 def _run(fault: str, seed: int, **overrides: Any) -> dict[str, Any]:
+    config = {
+        "batch_size": 32,
+        "checkpoint_interval_steps": 10,
+        "final_step": 100,
+    }
     run: dict[str, Any] = {
         "schema_version": 1,
         "measured": True,
@@ -32,6 +39,12 @@ def _run(fault: str, seed: int, **overrides: Any) -> dict[str, Any]:
         "seed": seed,
         "timestamp": "2026-08-26T21:00:00Z",
         "command": f"inject-fault --type {fault} --seed {seed}",
+        "config": config,
+        "config_sha256": hashlib.sha256(
+            json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        "hardware": {"accelerator": "NVIDIA H100", "cuda": "12.8"},
+        "software": {"python": "3.12.12", "torch": "2.8.0"},
         "fault": {"type": fault, "injected_at_step": 51, "target": "worker-0"},
         "recovery": {
             "resumed": True,
@@ -115,4 +128,18 @@ def test_rejects_excessive_checkpoint_gap() -> None:
             run["fault"]["injected_at_step"] = 70
             run["recovery"]["data_loss_steps"] = 20
     with pytest.raises(EvidenceError, match="exceeds 10 steps"):
+        reliability.validate_matrix(runs)
+
+
+def test_rejects_config_digest_mismatch(tmp_path: Path) -> None:
+    run = _run("worker_exit", 42)
+    run["config"]["batch_size"] = 64
+    with pytest.raises(EvidenceError, match="does not match canonical config"):
+        reliability.validate_run(run, tmp_path / "run.json")
+
+
+def test_rejects_mixed_hardware() -> None:
+    runs = _matrix()
+    runs[-1]["hardware"] = {"accelerator": "NVIDIA A100", "cuda": "12.8"}
+    with pytest.raises(EvidenceError, match="hardware.accelerator"):
         reliability.validate_matrix(runs)

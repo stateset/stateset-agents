@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import signal
 import socket
 import subprocess
@@ -119,6 +120,12 @@ def _worker_command(
         str(args.injected_at_step),
         "--final-step",
         str(args.final_step),
+        "--batch-size",
+        str(args.batch_size),
+        "--width",
+        str(args.width),
+        "--learning-rate",
+        str(args.learning_rate),
         "--device",
         args.device,
         "--heartbeat-port",
@@ -216,6 +223,17 @@ def run_fault(
         if args.device == "cuda"
         else {"accelerator": "CPU", "cuda": "none"}
     )
+    config = {
+        "batch_size": args.batch_size,
+        "checkpoint_interval_steps": 1,
+        "final_step": args.final_step,
+        "injected_at_step": args.injected_at_step,
+        "learning_rate": args.learning_rate,
+        "width": args.width,
+    }
+    canonical_config = json.dumps(
+        config, sort_keys=True, separators=(",", ":")
+    ).encode()
     return {
         "schema_version": 1,
         "measured": True,
@@ -228,7 +246,13 @@ def run_fault(
         "seed": seed,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "command": " ".join(inject_command) + " && " + " ".join(resume_command),
+        "config": config,
+        "config_sha256": hashlib.sha256(canonical_config).hexdigest(),
         "hardware": hardware,
+        "software": {
+            "python": platform.python_version(),
+            "torch": torch.__version__,
+        },
         "fault": {
             "type": fault,
             "injected_at_step": args.injected_at_step,
@@ -288,6 +312,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--final-step", type=int, default=12)
     parser.add_argument("--max-data-loss-steps", type=int, default=0)
     parser.add_argument("--coordination-timeout", type=float, default=60.0)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--width", type=int, default=128)
+    parser.add_argument("--learning-rate", type=float, default=3e-4)
     return parser.parse_args(argv)
 
 
