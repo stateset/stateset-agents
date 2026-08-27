@@ -48,7 +48,7 @@ def _logical_lines(text: str) -> list[tuple[int, str]]:
 def _snippets() -> list[tuple[str, int, str]]:
     found: list[tuple[str, int, str]] = []
     for name in DOCS:
-        for lineno, line in _logical_lines((ROOT / name).read_text()):
+        for lineno, line in _logical_lines((ROOT / name).read_text(encoding="utf-8")):
             m = SNIPPET.match(line)
             if not m:
                 continue

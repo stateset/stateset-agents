@@ -27,6 +27,20 @@ from stateset_agents.cli import app  # noqa: E402
 runner = CliRunner()
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# Windows CI spawns processes and imports the (heavy) reward stack far more
+# slowly than Linux, and the live-protocol session pays that cost inside a
+# single tool call. A 60s budget was enough until the reward registry grew;
+# it then started timing out on the Windows runners only (e.g. run
+# https://github.com/stateset/stateset-agents/actions/runs/32886471767).
+# Scale the budget instead of skipping, so the protocol stays covered there.
+_TIMEOUT_SCALE = 4 if sys.platform == "win32" else 1
+
+
+def _timeout(seconds: float) -> float:
+    """Per-request budget, widened on slow platforms."""
+    return seconds * _TIMEOUT_SCALE
+
+
 BAD_TURN = "idk"
 
 
@@ -321,7 +335,7 @@ class TestMissingDependency:
             capture_output=True,
             text=True,
             encoding="utf-8",
-            timeout=60,
+            timeout=_timeout(60),
             check=False,
             env=env,
         )
@@ -381,10 +395,14 @@ class TestLiveProtocolSession:
         # copier can otherwise block the stdio protocol under capture.
         async with stdio_client(server_params, errlog=sys.__stderr__) as (read, write):
             async with ClientSession(read, write) as session:
-                init_result = await asyncio.wait_for(session.initialize(), timeout=30)
+                init_result = await asyncio.wait_for(
+                    session.initialize(), timeout=_timeout(30)
+                )
                 assert init_result.serverInfo.name == "stateset-agents"
 
-                tools_result = await asyncio.wait_for(session.list_tools(), timeout=30)
+                tools_result = await asyncio.wait_for(
+                    session.list_tools(), timeout=_timeout(30)
+                )
                 tool_names = {tool.name for tool in tools_result.tools}
                 assert tool_names == {
                     "list_rewards",
@@ -398,7 +416,7 @@ class TestLiveProtocolSession:
                 assert len(tools_result.tools) == 7
 
                 rewards_result = await asyncio.wait_for(
-                    session.call_tool("list_rewards", {}), timeout=30
+                    session.call_tool("list_rewards", {}), timeout=_timeout(30)
                 )
                 assert rewards_result.isError is not True
                 assert rewards_result.structuredContent is not None
@@ -417,7 +435,7 @@ class TestLiveProtocolSession:
                             "reward": "customer_support",
                         },
                     ),
-                    timeout=60,
+                    timeout=_timeout(60),
                 )
                 assert grade_result.isError is not True, grade_result
                 assert grade_result.structuredContent is not None

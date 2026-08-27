@@ -32,18 +32,12 @@ TESTS_DIR = REPO_ROOT / "tests"
 # DEBUG with a StreamHandler bound to pytest's captured stdout, and an async
 # test leaves no usable event loop behind. litellm's atexit hook then falls
 # back to asyncio.new_event_loop(), whose DEBUG record hits the closed stream.
-PROBE_SOURCE = """
+PROBE_TEMPLATE = """
 import asyncio
 import logging
 import sys
 
-import pytest
-
-pytest.importorskip("litellm")
-try:
-    import wandb  # noqa: F401
-except Exception:
-    pass
+{imports}
 
 
 def test_leaves_hostile_shutdown_state():
@@ -54,20 +48,22 @@ def test_leaves_hostile_shutdown_state():
 """
 
 
-def _have_litellm_or_wandb() -> bool:
+def _importable(name: str) -> bool:
     from importlib.util import find_spec
 
-    for name in ("litellm", "wandb"):
-        try:
-            if find_spec(name) is not None:
-                return True
-        except Exception:  # pragma: no cover - broken/partial install
-            continue
-    return False
+    try:
+        return find_spec(name) is not None
+    except Exception:  # pragma: no cover - broken/partial install
+        return False
+
+
+def _available_shutdown_deps() -> list[str]:
+    """Which of the atexit-hook-installing deps this interpreter actually has."""
+    return [name for name in ("litellm", "wandb") if _importable(name)]
 
 
 @pytest.mark.skipif(
-    not _have_litellm_or_wandb(),
+    not _available_shutdown_deps(),
     reason="neither litellm nor wandb is installed; nothing to trigger the traceback",
 )
 @pytest.mark.slow
@@ -75,7 +71,14 @@ def test_pytest_session_exits_without_logging_error(tmp_path: Path) -> None:
     probe_dir = TESTS_DIR / f".shutdown_probe_{os.getpid()}"
     probe_dir.mkdir(parents=True, exist_ok=True)
     probe = probe_dir / "test_clean_exit_probe.py"
-    probe.write_text(PROBE_SOURCE)
+    # Import only what is actually installed: an ``importorskip`` on a missing
+    # dep would make the probe skip, and a probe that never runs proves nothing.
+    deps = _available_shutdown_deps()
+    probe.write_text(
+        PROBE_TEMPLATE.format(
+            imports="\n".join(f"import {name}  # noqa: F401" for name in deps)
+        )
+    )
 
     try:
         result = subprocess.run(
@@ -104,7 +107,13 @@ def test_pytest_session_exits_without_logging_error(tmp_path: Path) -> None:
         shutil.rmtree(probe_dir, ignore_errors=True)
 
     output = result.stdout + result.stderr
-    assert result.returncode == 0, f"probe session failed:\n{output}"
+    # 0 = the probe ran and passed. 5 = "no tests ran", which cannot happen now
+    # that the probe imports only installed deps, but is accepted anyway: this
+    # guard is about the shutdown traceback, not about collection.
+    assert result.returncode in (0, 5), f"probe session failed:\n{output}"
+    assert (
+        "1 skipped" not in output
+    ), f"the probe skipped instead of running; it proves nothing:\n{output}"
     assert "Logging error" not in output, (
         "pytest exited with a logging traceback — the atexit cleanup in "
         f"tests/conftest.py regressed:\n{output}"
