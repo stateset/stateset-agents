@@ -1,0 +1,107 @@
+{
+  "comparison": {
+    "algorithm": "grpo",
+    "algorithm_revision": "deepseekmath-grpo-v1",
+    "cache_policy": "prewarmed-model-and-dataset-v1",
+    "dataset_revision": "740312add88f781978c0658806c59bc2815b9866",
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "protocol": "stateset-trl-grpo-shootout-v1",
+    "task": "gsm8k"
+  },
+  "evidence_sha256": "cdc5e9446fab56d0e2bd3573209e679dcfa2427fca87891930e32b5e57b67d32",
+  "frameworks": {
+    "stateset-agents": {
+      "eval_score_baseline": {
+        "mean": 0.1875,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.16666666666666666,
+        "n": 3,
+        "std": 0.07216878364870322
+      },
+      "evidence": [
+        "stateset-agents-seed1337.json",
+        "stateset-agents-seed2026.json",
+        "stateset-agents-seed42.json"
+      ],
+      "improvement": {
+        "mean": -0.020833333333333332,
+        "n": 3,
+        "std": 0.07216878364870322
+      },
+      "peak_vram_mb": {
+        "mean": 3436.6943359375,
+        "n": 3,
+        "std": 7.091590300513785
+      },
+      "samples_per_second": {
+        "mean": 0.3261220138940963,
+        "n": 3,
+        "std": 0.010347250273013827
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "0.42.3",
+      "wall_clock_seconds": {
+        "mean": 196.37535422543684,
+        "n": 3,
+        "std": 6.136130203843136
+      }
+    },
+    "trl": {
+      "eval_score_baseline": {
+        "mean": 0.1875,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.1875,
+        "n": 3,
+        "std": 0.10825317547305482
+      },
+      "evidence": [
+        "trl-seed1337.json",
+        "trl-seed2026.json",
+        "trl-seed42.json"
+      ],
+      "improvement": {
+        "mean": 0.0,
+        "n": 3,
+        "std": 0.10825317547305482
+      },
+      "peak_vram_mb": {
+        "mean": 3437.0319010416665,
+        "n": 3,
+        "std": 7.529076358849597
+      },
+      "samples_per_second": {
+        "mean": 0.3266607041405607,
+        "n": 3,
+        "std": 0.006499664035380625
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "1.9.1",
+      "wall_clock_seconds": {
+        "mean": 195.97420875976482,
+        "n": 3,
+        "std": 3.940181919577519
+      }
+    }
+  },
+  "hardware": {
+    "cuda": "12.9",
+    "gpu": "NVIDIA A40",
+    "gpu_count": 1
+  },
+  "schema_version": 1
+}

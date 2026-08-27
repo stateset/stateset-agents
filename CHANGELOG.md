@@ -71,6 +71,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replay, no duplicate updates, bounded lost work, completion, and cleanup.
 - Benchmark-smoke CI and policy tests prevent synthetic comparison claims from
   returning to publication-facing entry points.
+- Retained a validated three-seed StateSet 0.42.3 versus direct TRL 1.9.1
+  RunPod comparison on one NVIDIA A40. The exact four-step protocol shows
+  semantic and resource parity, while its null/negative GSM8K deltas are
+  explicitly retained as unsuitable for a learning-quality claim.
 
 ### Changed
 

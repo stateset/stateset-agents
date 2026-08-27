@@ -74,6 +74,16 @@ def test_valid_matched_three_seed_comparison(tmp_path: Path) -> None:
     assert summary["frameworks"]["stateset-agents"]["improvement"][
         "mean"
     ] == pytest.approx(0.1)
+    assert summary["frameworks"]["stateset-agents"]["evidence"] == [
+        "stateset-agents-42.json",
+        "stateset-agents-1337.json",
+        "stateset-agents-2026.json",
+    ]
+    assert all(
+        not Path(source).is_absolute()
+        for values in summary["frameworks"].values()
+        for source in values["evidence"]
+    )
 
 
 def test_rejects_simulated_evidence(tmp_path: Path) -> None:

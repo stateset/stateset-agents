@@ -280,7 +280,7 @@ def summarize(runs: Sequence[RunEvidence]) -> dict[str, Any]:
                 run.metrics["eval_score_final"] - run.metrics["eval_score_baseline"]
                 for run in framework_runs
             ),
-            "evidence": [str(run.source) for run in framework_runs],
+            "evidence": [run.source.name for run in framework_runs],
         }
     return result
 

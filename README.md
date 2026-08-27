@@ -165,7 +165,11 @@ coverage, live hardware attempts, and successful inference by provider.
   mismatched hardware/configuration, duplicate seeds, or missing artifacts.
 - **Neutral StateSet-versus-TRL execution.** A framework-neutral shootout
   rotates three matched seeds, measures wall time outside each adapter, hashes
-  saved models, and independently invokes upstream TRL GRPO.
+  saved models, and independently invokes upstream TRL GRPO. On the exact
+  four-step Qwen2.5-0.5B/GSM8K A40 protocol, StateSet and TRL measured the same
+  throughput within noise (`0.326` vs `0.327` samples/s), wall time (`196.4s`
+  vs `196.0s`), and VRAM (`3436.7` vs `3437.0` MiB); see the
+  [three-seed report](benchmark_results/framework_comparison/report/comparison.md).
 - **Live-discovered GRPO fixes.** RunPod execution replaced the optional
   FlashAttention default with SDPA, corrected Phase-0 agent construction,
   bridged TRL's sync reward callback to async rewards, and made returned trained

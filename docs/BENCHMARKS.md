@@ -45,6 +45,24 @@ were terminated and the cleanup canary found no remaining resources.
 
 This is not a throughput comparison or a broad quality benchmark.
 
+### StateSet orchestration parity with direct TRL GRPO
+
+A three-seed RunPod shootout on one NVIDIA A40 used the same pinned
+Qwen2.5-0.5B-Instruct revision, GSM8K revision, raw-model evaluator, optimizer,
+scheduler, LoRA, precision, generation configuration, and four training steps.
+StateSet 0.42.3 and direct TRL 1.9.1 were effectively identical on throughput
+(`0.326 ± 0.010` vs `0.327 ± 0.006` samples/s), wall time (`196.4 ± 6.1` vs
+`196.0 ± 3.9` seconds), and peak VRAM (`3436.7 ± 7.1` vs `3437.0 ± 7.5` MiB).
+
+Both tiny runs started at `0.1875` GSM8K pass@1. StateSet ended at `0.1667 ±
+0.0722`; TRL ended at `0.1875 ± 0.1083`. The protocol is too short and small
+to support a learning-quality claim; it establishes that StateSet's TRL-backed
+GRPO orchestration preserves upstream behavior without material overhead.
+
+- [Validated report](../benchmark_results/framework_comparison/report/comparison.md)
+- [Six per-seed evidence documents](../benchmark_results/framework_comparison/evidence/)
+- Harness commit: `4173eee7be7187c0583390953b8ad79b55fb954f`
+
 ### Rust-core microbenchmarks
 
 Rust-versus-Python results measure isolated advantage/ratio kernels only.
@@ -58,7 +76,8 @@ kernel speedups must not be described as end-to-end framework speedups.
 
 The repository does **not** currently claim:
 
-- faster training or lower memory than TRL, verl, NeMo RL, or OpenRLHF;
+- faster training or lower memory than verl, NeMo RL, or OpenRLHF, or broad
+  superiority over TRL beyond the exact parity result above;
 - multi-node or 2/4/8-GPU scaling efficiency;
 - a measured GRPO/GSPO/DAPO/VAPO/GEPO winner on a shared protocol;
 - Fireworks live training or serving success; or

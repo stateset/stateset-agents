@@ -176,6 +176,12 @@ benchmark_results/*
 benchmark_results/framework_comparison/*
 !benchmark_results/framework_comparison/SCHEMA.md
 !benchmark_results/framework_comparison/MANIFEST.md
+!benchmark_results/framework_comparison/manifest.json
+!benchmark_results/framework_comparison/evidence/
+!benchmark_results/framework_comparison/evidence/*.json
+!benchmark_results/framework_comparison/report/
+!benchmark_results/framework_comparison/report/*.json
+!benchmark_results/framework_comparison/report/*.md
 !benchmark_results/algorithm_comparison/
 benchmark_results/algorithm_comparison/*
 !benchmark_results/algorithm_comparison/README.md
