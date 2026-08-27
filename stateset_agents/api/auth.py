@@ -16,6 +16,8 @@ from fastapi import Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
+from stateset_agents.utils.credentials import credential_fingerprint
+
 from .config import get_config
 from .errors import ForbiddenError, UnauthorizedError
 
@@ -213,8 +215,7 @@ def generate_api_key() -> str:
 
 def _derive_api_user_id(api_key: str) -> str:
     """Derive a stable user id from API key material."""
-    digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
-    return f"api_key:{digest}"
+    return f"api_key:{credential_fingerprint(api_key)}"
 
 
 def _extract_bearer_token(request: Request) -> str | None:
@@ -234,13 +235,6 @@ def _extract_api_key(request: Request) -> str | None:
 
     # Fall back to Authorization header
     return _extract_bearer_token(request)
-
-
-def _mask_api_key(api_key: str) -> str:
-    """Mask API key for logging (show first 8 and last 4 chars)."""
-    if len(api_key) <= 12:
-        return "***"
-    return f"{api_key[:8]}...{api_key[-4:]}"
 
 
 def authenticate_request(request: Request) -> AuthenticatedUser:
@@ -294,7 +288,6 @@ def authenticate_request(request: Request) -> AuthenticatedUser:
                 "Authenticated via API key",
                 extra={
                     "user_id": user_id,
-                    "api_key": _mask_api_key(api_key),
                     "roles": roles,
                 },
             )
@@ -302,7 +295,7 @@ def authenticate_request(request: Request) -> AuthenticatedUser:
             return AuthenticatedUser(
                 user_id=user_id,
                 roles=roles,
-                api_key=_mask_api_key(api_key),
+                api_key=credential_fingerprint(api_key),
                 auth_method="api_key",
             )
 

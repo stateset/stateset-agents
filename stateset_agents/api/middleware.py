@@ -5,7 +5,6 @@ Centralized middleware for security, observability, and request handling.
 """
 
 import asyncio
-import hashlib
 import hmac
 import inspect
 import logging
@@ -21,6 +20,8 @@ from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+
+from stateset_agents.utils.credentials import credential_fingerprint
 
 from .auth import get_jwt_handler
 from .config import get_config
@@ -278,7 +279,7 @@ def _hash_credential(value: str) -> str:
     (``_derive_api_user_id``) so raw credentials never end up in rate-limit
     state or logs.
     """
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    return credential_fingerprint(value)
 
 
 def _validate_credential(credential: str, config: Any) -> bool:

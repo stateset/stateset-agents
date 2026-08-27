@@ -4,11 +4,11 @@ API Dependencies Module
 Dependency injection for authentication, authorization, and common services.
 """
 
-import hashlib
 import time
 
 from fastapi import Depends, HTTPException, Request
 
+from stateset_agents.utils.credentials import credential_fingerprint
 from stateset_agents.utils.security import SecurityMonitor
 
 from .auth import AuthenticatedUser, authenticate_request
@@ -48,8 +48,7 @@ def _get_lockout_key(request: Request) -> str:
             raw_key = ""
 
     if raw_key:
-        digest = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()[:16]
-        return f"cred:{client_ip}:{digest}"
+        return f"cred:{client_ip}:{credential_fingerprint(raw_key)}"
 
     # Fall back to IP for unauthenticated requests.
     return f"ip:{client_ip}"

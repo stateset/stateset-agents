@@ -319,6 +319,29 @@ class SshTransport:
     def upload(self, local: Path, remote: str) -> None:
         self._scp(str(local), f"{self.user}@{self._host}:{remote}")
 
+    def upload_secret(self, secret: str, remote: str) -> None:
+        """Stream a secret to a root-only remote file without local storage."""
+        command = f"umask 077; cat > {shlex.quote(remote)}"
+        result = subprocess.run(
+            [
+                "ssh",
+                *self._base_opts(),
+                "-p",
+                str(self._port),
+                f"{self.user}@{self._host}",
+                command,
+            ],
+            input=secret,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RemoteExecutionError(
+                f"secret upload failed: {(result.stderr or '').strip()}",
+                provider="runpod",
+            )
+
     def download_dir(self, remote_dir: str, local_dir: Path) -> list[Path]:
         """Copy a remote directory's contents into ``local_dir``.
 

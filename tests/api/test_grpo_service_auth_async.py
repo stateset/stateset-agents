@@ -1,13 +1,12 @@
 """Async transport coverage for GRPO service auth and ownership routing."""
 
-import hashlib
-
 import pytest
 from fastapi import Depends, FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from stateset_agents.api.grpo.config import reset_config
 from stateset_agents.api.grpo.service import create_app, verify_request
+from stateset_agents.utils.credentials import credential_fingerprint
 
 
 @pytest.fixture(autouse=True)
@@ -23,8 +22,7 @@ def _grpo_api_key_auth(monkeypatch):
 
 
 def _expected_api_user_id(api_key: str) -> str:
-    digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
-    return f"api_key:{digest}"
+    return f"api_key:{credential_fingerprint(api_key)}"
 
 
 @pytest.mark.asyncio

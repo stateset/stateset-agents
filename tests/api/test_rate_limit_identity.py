@@ -1,7 +1,6 @@
 """Tests for identity-keyed rate limiting and the optional Redis backend."""
 
 import asyncio
-import hashlib
 import time
 
 import httpx
@@ -15,6 +14,7 @@ from stateset_agents.api.middleware import (
     RateLimitMiddleware,
     RedisSlidingWindowLimiter,
 )
+from stateset_agents.utils.credentials import credential_fingerprint
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ def _client(app: FastAPI, client_ip: str = "1.2.3.4") -> httpx.AsyncClient:
 
 
 def _expected_key(api_key: str) -> str:
-    return f"key:{hashlib.sha256(api_key.encode('utf-8')).hexdigest()[:16]}"
+    return f"key:{credential_fingerprint(api_key)}"
 
 
 @pytest.mark.asyncio

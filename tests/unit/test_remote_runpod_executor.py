@@ -496,6 +496,33 @@ class TestScpCommandForm:
         joined = " ".join(captured["cmd"])
         assert "/." not in joined, f"dot-form path is rejected by OpenSSH 9: {joined}"
 
+    def test_secret_upload_streams_to_root_only_remote_file(self, monkeypatch):
+        from stateset_agents.remote.runpod import SshTransport
+
+        captured = {}
+        transport = SshTransport()
+        transport._host, transport._port = "1.2.3.4", 22
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["kwargs"] = kwargs
+
+            class R:
+                returncode = 0
+                stderr = ""
+
+            return R()
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        transport.upload_secret("rp-secret-value", "/workspace/.runpod_key")
+
+        joined = " ".join(captured["cmd"])
+        assert "umask 077; cat > /workspace/.runpod_key" in joined
+        assert "rp-secret-value" not in joined
+        assert captured["kwargs"]["input"] == "rp-secret-value"
+        assert captured["kwargs"]["text"] is True
+
 
 class TestPublicKeyDiscovery:
     """Key discovery reads the host's ~/.ssh, so it is tested against a

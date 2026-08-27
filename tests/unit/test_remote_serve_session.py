@@ -56,6 +56,7 @@ class FakeSsh:
     def __init__(self):
         self.commands: list[str] = []
         self.uploads: list[tuple[str, str]] = []
+        self.secret_uploads: list[tuple[str, str]] = []
         self.fail_on: str | None = None
         #: Arm a detached step (by label) to report a non-zero exit code.
         self.fail_detached: str | None = None
@@ -65,6 +66,9 @@ class FakeSsh:
 
     def upload(self, local, remote):
         self.uploads.append((str(local), remote))
+
+    def upload_secret(self, secret, remote):
+        self.secret_uploads.append((secret, remote))
 
     def run(self, command):
         self.commands.append(command)
@@ -438,7 +442,9 @@ class TestSelfDestruct:
         assert "DELETE" in script
         assert "https://rest.runpod.io/v1/pods/pod-9" in script
         # The key is read at fire time, never embedded in the script.
-        assert "$(cat /workspace/.runpod_key)" in script
+        assert "api_key=$(cat /workspace/.runpod_key)" in script
+        assert "rm -f /workspace/.runpod_key" in script
+        assert "Authorization: Bearer $api_key" in script
         assert "rp-test-key" not in script
 
     def test_start_uploads_key_and_script_and_arms_before_vllm_install(self):
@@ -448,7 +454,7 @@ class TestSelfDestruct:
         session.start("m", max_hours=2.0)
 
         remotes = [r for _, r in ssh.uploads]
-        assert "/workspace/.runpod_key" in remotes
+        assert ssh.secret_uploads == [("rp-test-key", "/workspace/.runpod_key")]
         assert "/workspace/self_destruct.sh" in remotes
         arm = next(i for i, c in enumerate(ssh.commands) if "self_destruct.sh" in c)
         install = next(i for i, c in enumerate(ssh.commands) if "pip install" in c)

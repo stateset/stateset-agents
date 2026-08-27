@@ -144,8 +144,11 @@ def self_destruct_script(
         f"# after {max_hours} hour(s), whatever happens to the laptop that\n"
         "# started it.\n"
         f"sleep {seconds}\n"
+        f"api_key=$(cat {_REMOTE_KEY_FILE})\n"
+        f"rm -f {_REMOTE_KEY_FILE}\n"
         f'curl -s -X DELETE "{api_root}/pods/{pod_id}" '
-        f'-H "Authorization: Bearer $(cat {_REMOTE_KEY_FILE})"\n'
+        f'-H "Authorization: Bearer $api_key"\n'
+        "unset api_key\n"
     )
 
 
@@ -475,10 +478,8 @@ class RemoteServeSession:
 
     def _arm_self_destruct(self, ssh: Any, api: Any, max_hours: float) -> None:
         """Install and start the remote self-destruct (see module docstring)."""
+        ssh.upload_secret(str(api.api_key), _REMOTE_KEY_FILE)
         with tempfile.TemporaryDirectory() as staging:
-            key_file = Path(staging) / "runpod_key"
-            key_file.write_text(str(api.api_key))
-            ssh.upload(key_file, _REMOTE_KEY_FILE)
             script_file = Path(staging) / "self_destruct.sh"
             script_file.write_text(
                 self_destruct_script(str(self.pod_id), max_hours, api.root)

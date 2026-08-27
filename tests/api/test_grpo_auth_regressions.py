@@ -1,12 +1,11 @@
 """Regression tests for GRPO service authentication identity handling."""
 
-import hashlib
-
 import pytest
 from fastapi import Depends, FastAPI
 
 from stateset_agents.api.grpo.config import reset_config
 from stateset_agents.api.grpo.service import create_app, verify_request
+from stateset_agents.utils.credentials import credential_fingerprint
 from tests.api.asgi_client import SyncASGIClient
 
 
@@ -36,8 +35,7 @@ def _build_probe_app() -> FastAPI:
 
 
 def _expected_api_user_id(api_key: str) -> str:
-    digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
-    return f"api_key:{digest}"
+    return f"api_key:{credential_fingerprint(api_key)}"
 
 
 def _request(app: FastAPI, method: str, path: str, **kwargs):
