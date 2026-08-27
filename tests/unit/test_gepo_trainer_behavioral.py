@@ -3,7 +3,14 @@ import math
 import pytest
 import torch
 
+from stateset_agents.training import gepo_trainer
 from stateset_agents.training.gepo_trainer import GEPOTrainer
+
+
+def test_wandb_is_required_only_when_logging_is_requested(monkeypatch):
+    monkeypatch.setattr(gepo_trainer, "wandb", None)
+    with pytest.raises(ImportError, match="GEPO logging"):
+        gepo_trainer._require_wandb()
 
 
 def test_gepo_coefficient_no_underflow_long_sequences():

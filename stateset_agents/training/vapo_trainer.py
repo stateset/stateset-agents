@@ -513,7 +513,12 @@ class VAPOTrainer:
     ) -> torch.Tensor:
         """Compute values for a sequence"""
         hidden_states = self.get_hidden_states(input_ids, attention_mask)
-        values = self.value_head(hidden_states)
+        # Keep the critic in fp32 for stable regression while allowing the
+        # policy backbone to run in bf16/fp16.  Linear layers require matching
+        # dtypes; an explicit differentiable cast avoids the live CUDA
+        # ``BFloat16 and Float`` matmul failure without severing actor grads.
+        value_dtype = next(self.value_head.parameters()).dtype
+        values = self.value_head(hidden_states.to(dtype=value_dtype))
         return values.squeeze(-1)
 
     def compute_token_log_probs(
@@ -607,7 +612,8 @@ class VAPOTrainer:
                     batch_input_ids, batch_attention_mask
                 )
 
-            values = self.value_head(hidden_states).squeeze(-1)
+            value_dtype = next(self.value_head.parameters()).dtype
+            values = self.value_head(hidden_states.to(dtype=value_dtype)).squeeze(-1)
 
             # Value loss (MSE)
             value_loss = F.mse_loss(

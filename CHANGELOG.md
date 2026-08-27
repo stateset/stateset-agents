@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DAPO and GSPO, supplies DAPO/VAPO correctness verifiers, preserves native
   checkpoints while emitting one normalized policy artifact, and counts DAPO
   filtered groups plus VAPO warmup generations instead of estimating work.
+- The first retained five-algorithm CUDA preflight also fixed VAPO mixed-dtype
+  value-head execution and removed GEPO's unconditional W&B dependency when
+  experiment logging is disabled.
 
 ## [0.42.4] - 2026-08-27 — Validated scaling and release evidence
 

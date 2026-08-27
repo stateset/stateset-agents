@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -39,13 +40,24 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 try:
-    import numpy as np
-    import wandb
-    from peft import LoraConfig, TaskType, get_peft_model
-except ImportError as e:
-    logger.error(f"Missing required dependency: {e}")
-    logger.error("Please install: pip install peft datasets wandb")
-    raise
+    import wandb as _wandb
+
+    wandb: Any = _wandb
+except ImportError:  # pragma: no cover - optional dependency
+    wandb = None
+
+try:
+    from peft import LoraConfig as _LoraConfig
+    from peft import TaskType as _TaskType
+    from peft import get_peft_model as _get_peft_model
+
+    LoraConfig: Any = _LoraConfig
+    TaskType: Any = _TaskType
+    get_peft_model: Any = _get_peft_model
+except ImportError:  # pragma: no cover - optional dependency
+    LoraConfig = None
+    TaskType = None
+    get_peft_model = None
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_gepo_loaded = False
@@ -73,6 +85,24 @@ def _load_transformers_gepo() -> bool:
     except (ImportError, RuntimeError) as e:
         logger.warning(f"Failed to load transformers: {e}")
         return False
+
+
+def _require_peft() -> None:
+    """Require PEFT only when LoRA model loading actually needs it."""
+    if get_peft_model is None or LoraConfig is None or TaskType is None:
+        raise ImportError(
+            "PEFT is required for GEPO LoRA training. "
+            "Install with `pip install stateset-agents[training]` or `pip install peft`."
+        )
+
+
+def _require_wandb() -> None:
+    """Require W&B only when experiment logging is enabled."""
+    if wandb is None:
+        raise ImportError(
+            "wandb is required for GEPO logging. "
+            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
+        )
 
 
 @dataclass
@@ -155,6 +185,7 @@ class GEPOModelManager(SharedModelManager):
         return AutoTokenizer, AutoModelForCausalLM
 
     def _peft_components(self) -> tuple[Any, Any, Any]:
+        _require_peft()
         return LoraConfig, TaskType, get_peft_model
 
 
@@ -663,6 +694,7 @@ async def train_with_gepo(
 
     # Initialize W&B
     if use_wandb and wandb_project:
+        _require_wandb()
         wandb.init(
             project=wandb_project,
             name=f"gepo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
