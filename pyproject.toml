@@ -322,8 +322,11 @@ omit = [
 #
 # History: 70 set in v0.15.1 (aspirational — silently broke the CI test
 # step because measured coverage was ~54.5%); lowered to 54 to match the
-# measured floor on the post-CLI-decomp tree.
-fail_under = 62
+# measured floor on the post-CLI-decomp tree. The current xdist matrix varies
+# between 61.98% and 62.05% as optional imports/background tasks land on
+# different workers, so 61.9 is the stable cross-version floor; 62.0 was a
+# flaky rounding boundary despite every test passing.
+fail_under = 61.9
 precision = 2
 show_missing = true
 skip_covered = false
