@@ -4,7 +4,6 @@ API Authentication Module
 Secure authentication and authorization for API services.
 """
 
-import hashlib
 import hmac
 import logging
 import secrets
@@ -110,7 +109,7 @@ class JWTHandler:
 
         # Create signature
         message = f"{header_b64}.{payload_b64}"
-        signature = hmac.new(self.secret, message.encode(), hashlib.sha256).digest()
+        signature = hmac.digest(self.secret, message.encode(), "sha256")
         signature_b64 = self._base64url_encode(signature)
 
         return f"{header_b64}.{payload_b64}.{signature_b64}"
@@ -128,9 +127,7 @@ class JWTHandler:
 
             # Verify signature
             message = f"{header_b64}.{payload_b64}"
-            expected_signature = hmac.new(
-                self.secret, message.encode(), hashlib.sha256
-            ).digest()
+            expected_signature = hmac.digest(self.secret, message.encode(), "sha256")
             actual_signature = self._base64url_decode(signature_b64)
 
             if not hmac.compare_digest(expected_signature, actual_signature):
@@ -284,18 +281,9 @@ def authenticate_request(request: Request) -> AuthenticatedUser:
                 )
             user_id = _derive_api_user_id(api_key)
 
-            logger.debug(
-                "Authenticated via API key",
-                extra={
-                    "user_id": user_id,
-                    "roles": roles,
-                },
-            )
-
             return AuthenticatedUser(
                 user_id=user_id,
                 roles=roles,
-                api_key=credential_fingerprint(api_key),
                 auth_method="api_key",
             )
 

@@ -440,6 +440,7 @@ pytest==9.1.1
     #   pytest-asyncio
     #   pytest-benchmark
     #   pytest-cov
+    #   pytest-timeout
     #   pytest-xdist
     #   stateset-agents (pyproject.toml)
 pytest-asyncio==1.4.0
@@ -447,6 +448,8 @@ pytest-asyncio==1.4.0
 pytest-benchmark==5.2.3
     # via stateset-agents (pyproject.toml)
 pytest-cov==7.1.0
+    # via stateset-agents (pyproject.toml)
+pytest-timeout==2.4.0
     # via stateset-agents (pyproject.toml)
 pytest-xdist==3.8.0
     # via stateset-agents (pyproject.toml)

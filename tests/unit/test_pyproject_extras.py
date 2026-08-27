@@ -19,6 +19,7 @@ except ImportError:  # pragma: no cover - Python 3.10
     import tomli as tomllib  # type: ignore[no-redef]
 
 PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
+DEV_LOCK = PYPROJECT.with_name("requirements-dev-lock.txt")
 
 
 def _package_names(requirements: list[str]) -> set[str]:
@@ -42,6 +43,18 @@ def test_dev_extra_is_superset_of_training_and_api() -> None:
             "Add them to [dev] in pyproject.toml (see the NOTE at the top of "
             "the dev extra for why they are duplicated) and run `make lock`."
         )
+
+
+def test_dev_extra_and_lock_include_required_pytest_plugins() -> None:
+    extras = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"][
+        "optional-dependencies"
+    ]
+    dev = _package_names(extras["dev"])
+    assert {"pytest-timeout", "pytest-xdist"} <= dev
+
+    lock = DEV_LOCK.read_text(encoding="utf-8")
+    assert re.search(r"^pytest-timeout==", lock, re.MULTILINE)
+    assert re.search(r"^pytest-xdist==", lock, re.MULTILINE)
 
 
 def test_glm53_extra_pins_required_transformers_generation() -> None:

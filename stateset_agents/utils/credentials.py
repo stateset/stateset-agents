@@ -7,15 +7,11 @@ credential.
 
 from __future__ import annotations
 
-import hashlib
+import hmac
 
 _FINGERPRINT_DOMAIN = b"stateset-cred-v1"
 
 
 def credential_fingerprint(value: str) -> str:
     """Return a stable, domain-separated opaque credential identifier."""
-    return hashlib.blake2b(
-        value.encode("utf-8"),
-        digest_size=8,
-        person=_FINGERPRINT_DOMAIN,
-    ).hexdigest()
+    return hmac.digest(_FINGERPRINT_DOMAIN, value.encode("utf-8"), "sha256").hex()[:16]
