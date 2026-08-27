@@ -18,13 +18,26 @@ CONFIG_FIELDS = {
     "per_device_train_batch_size",
     "gradient_accumulation_steps",
     "learning_rate",
+    "adam_beta1",
+    "adam_beta2",
+    "weight_decay",
+    "max_grad_norm",
+    "warmup_ratio",
+    "lr_scheduler_type",
+    "num_train_epochs",
     "num_generations",
+    "num_iterations",
     "max_prompt_length",
     "max_completion_length",
     "temperature",
+    "top_p",
     "beta",
     "lora_r",
     "lora_alpha",
+    "lora_dropout",
+    "lora_target_modules",
+    "gradient_checkpointing",
+    "bf16",
 }
 
 
@@ -83,31 +96,6 @@ def completion_text(completion: Any) -> str:
     raise TypeError(f"unsupported TRL completion shape: {type(completion).__name__}")
 
 
-def evaluate(
-    model: Any, tokenizer: Any, adapter: Any, examples: list[Any], max_tokens: int
-) -> float:
-    """Measure deterministic greedy task score for one model state."""
-    import torch
-
-    model.eval()
-    scores: list[float] = []
-    for example in examples:
-        encoded = tokenizer(adapter.format_prompt(example), return_tensors="pt")
-        encoded = {key: value.to(model.device) for key, value in encoded.items()}
-        with torch.inference_mode():
-            output = model.generate(
-                **encoded,
-                do_sample=False,
-                max_new_tokens=max_tokens,
-                pad_token_id=tokenizer.pad_token_id,
-            )
-        prompt_length = encoded["input_ids"].shape[-1]
-        response = tokenizer.decode(output[0, prompt_length:], skip_special_tokens=True)
-        score, _ = adapter.score_response(example, response)
-        scores.append(float(score))
-    return sum(scores) / max(len(scores), 1)
-
-
 def main() -> int:
     """Train upstream TRL directly and emit a neutral measured result."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -137,6 +125,7 @@ def main() -> int:
     from transformers import AutoModelForCausalLM, AutoTokenizer
     from trl import GRPOConfig, GRPOTrainer
 
+    from benchmarks.framework_protocol import evaluate_causal_lm
     from stateset_agents.utils.reproducibility import set_all_seeds
 
     if not torch.cuda.is_available():
@@ -159,13 +148,14 @@ def main() -> int:
         torch_dtype=torch.bfloat16,
     )
     model.to("cuda")
-    baseline = evaluate(
+    baseline = evaluate_causal_lm(
         model,
         tokenizer,
-        adapter,
         eval_examples,
-        int(config["max_completion_length"]),
-    )
+        format_prompt=adapter.format_prompt,
+        score_response=adapter.score_response,
+        max_tokens=int(config["max_completion_length"]),
+    )["pass_at_1"]
     dataset = Dataset.from_dict(
         {
             "prompt": [adapter.format_prompt(example) for example in train_examples],
@@ -198,12 +188,25 @@ def main() -> int:
                     config["gradient_accumulation_steps"]
                 ),
                 "learning_rate": float(config["learning_rate"]),
+                "adam_beta1": float(config["adam_beta1"]),
+                "adam_beta2": float(config["adam_beta2"]),
+                "weight_decay": float(config["weight_decay"]),
+                "max_grad_norm": float(config["max_grad_norm"]),
+                "warmup_steps": int(
+                    int(config["max_steps"]) * float(config["warmup_ratio"])
+                ),
+                "lr_scheduler_type": str(config["lr_scheduler_type"]),
+                "num_train_epochs": int(config["num_train_epochs"]),
                 "num_generations": int(config["num_generations"]),
+                "num_iterations": int(config["num_iterations"]),
                 "max_prompt_length": int(config["max_prompt_length"]),
                 "max_completion_length": int(config["max_completion_length"]),
                 "temperature": float(config["temperature"]),
+                "top_p": float(config["top_p"]),
                 "beta": float(config["beta"]),
-                "bf16": True,
+                "seed": args.seed,
+                "bf16": bool(config["bf16"]),
+                "gradient_checkpointing": bool(config["gradient_checkpointing"]),
                 "report_to": [],
                 "save_strategy": "no",
             },
@@ -212,6 +215,8 @@ def main() -> int:
     peft_config = LoraConfig(
         r=int(config["lora_r"]),
         lora_alpha=int(config["lora_alpha"]),
+        lora_dropout=float(config["lora_dropout"]),
+        target_modules=list(config["lora_target_modules"]),
         task_type="CAUSAL_LM",
     )
     trainer = GRPOTrainer(
@@ -229,13 +234,14 @@ def main() -> int:
     )
     torch.cuda.reset_peak_memory_stats()
     trainer.train()
-    final_score = evaluate(
+    final_score = evaluate_causal_lm(
         trainer.model,
         tokenizer,
-        adapter,
         eval_examples,
-        int(config["max_completion_length"]),
-    )
+        format_prompt=adapter.format_prompt,
+        score_response=adapter.score_response,
+        max_tokens=int(config["max_completion_length"]),
+    )["pass_at_1"]
     args.artifact_dir.mkdir(parents=True, exist_ok=True)
     trainer.save_model(str(args.artifact_dir))
     tokenizer.save_pretrained(args.artifact_dir)

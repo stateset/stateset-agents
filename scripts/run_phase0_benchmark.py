@@ -245,6 +245,37 @@ def evaluate_baseline(
     )
 
 
+def evaluate_shootout_baseline(
+    model_name: str,
+    model_revision: str,
+    adapter: TaskAdapter,
+    eval_examples: list[Any],
+) -> dict[str, float]:
+    """Evaluate the base model with the framework-neutral shootout protocol."""
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    from benchmarks.framework_protocol import evaluate_causal_lm
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name, revision=model_revision, padding_side="left"
+    )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name, revision=model_revision, torch_dtype=torch.bfloat16
+    )
+    model.to("cuda")
+    return evaluate_causal_lm(
+        model,
+        tokenizer,
+        eval_examples,
+        format_prompt=adapter.format_prompt,
+        score_response=adapter.score_response,
+        max_tokens=adapter.max_new_tokens,
+    )
+
+
 def _evaluate_with_agent(
     model_name: str,
     adapter: TaskAdapter,
@@ -435,15 +466,24 @@ def train_with_trainer(
                 model_revision=model_revision,
                 output_dir=output_dir,
                 report_to="none",
-                num_iterations=1,
+                num_iterations=int(protocol.get("num_iterations", 1)),
                 num_outer_iterations=int(protocol.get("max_steps", 4)),
                 max_steps=int(protocol.get("max_steps", 4)),
                 num_generations=int(protocol.get("num_generations", 4)),
                 generations_per_iteration=len(train_examples),
                 learning_rate=float(protocol.get("learning_rate", 5e-6)),
+                adam_beta1=float(protocol.get("adam_beta1", 0.9)),
+                adam_beta2=float(protocol.get("adam_beta2", 0.99)),
+                weight_decay=float(protocol.get("weight_decay", 0.01)),
+                max_grad_norm=float(protocol.get("max_grad_norm", 1.0)),
+                warmup_ratio=float(protocol.get("warmup_ratio", 0.1)),
+                lr_scheduler_type=str(protocol.get("lr_scheduler_type", "cosine")),
+                num_epochs=int(protocol.get("num_train_epochs", 1)),
                 use_lora=True,
                 lora_r=int(protocol.get("lora_r", 16)),
                 lora_alpha=int(protocol.get("lora_alpha", 32)),
+                lora_dropout=float(protocol.get("lora_dropout", 0.05)),
+                lora_target_modules=protocol.get("lora_target_modules"),
                 per_device_train_batch_size=int(
                     protocol.get("per_device_train_batch_size", 4)
                 ),
@@ -453,9 +493,13 @@ def train_with_trainer(
                 max_prompt_length=int(protocol.get("max_prompt_length", 512)),
                 max_completion_length=int(protocol.get("max_completion_length", 256)),
                 temperature=float(protocol.get("temperature", 0.7)),
+                top_p=float(protocol.get("top_p", 0.9)),
                 beta=float(protocol.get("beta", 0.0)),
-                gradient_checkpointing=True,
-                bf16=True,
+                seed=seed,
+                gradient_checkpointing=bool(
+                    protocol.get("gradient_checkpointing", True)
+                ),
+                bf16=bool(protocol.get("bf16", True)),
                 use_vllm=use_vllm,
             )
             trained = asyncio.run(
@@ -738,13 +782,26 @@ def main() -> int:
             "per_device_train_batch_size",
             "gradient_accumulation_steps",
             "learning_rate",
+            "adam_beta1",
+            "adam_beta2",
+            "weight_decay",
+            "max_grad_norm",
+            "warmup_ratio",
+            "lr_scheduler_type",
+            "num_train_epochs",
             "num_generations",
+            "num_iterations",
             "max_prompt_length",
             "max_completion_length",
             "temperature",
+            "top_p",
             "beta",
             "lora_r",
             "lora_alpha",
+            "lora_dropout",
+            "lora_target_modules",
+            "gradient_checkpointing",
+            "bf16",
         }
         if not isinstance(shootout_config, dict) or set(shootout_config) != required:
             parser.error("--shootout-config-json has an unsupported schema")
@@ -779,12 +836,17 @@ def main() -> int:
             "Evaluating baseline (un-fine-tuned) on %d examples…", len(eval_examples)
         )
         t0 = time.time()
-        baseline = evaluate_baseline(
-            args.model,
-            adapter,
-            eval_examples,
-            model_revision=args.model_revision,
-        )
+        if args.adapter_output is not None:
+            baseline = evaluate_shootout_baseline(
+                args.model, args.model_revision, adapter, eval_examples
+            )
+        else:
+            baseline = evaluate_baseline(
+                args.model,
+                adapter,
+                eval_examples,
+                model_revision=args.model_revision,
+            )
         result["metrics"]["baseline_eval_seconds"] = time.time() - t0
         result["metrics"]["eval_pass_at_1_baseline"] = baseline["pass_at_1"]
         result["metrics"]["eval_parse_rate_baseline"] = baseline["parse_rate"]
@@ -849,9 +911,21 @@ def main() -> int:
                 result["metrics"]["status"] = "trained"
                 logger.info("Training complete in %.0fs. Re-evaluating…", train_seconds)
                 t0 = time.time()
-                post = _evaluate_with_agent(
-                    args.model, adapter, eval_examples, trained_agent=trained_agent
-                )
+                if args.adapter_output is not None:
+                    from benchmarks.framework_protocol import evaluate_causal_lm
+
+                    post = evaluate_causal_lm(
+                        trained_agent.model,
+                        trained_agent.tokenizer,
+                        eval_examples,
+                        format_prompt=adapter.format_prompt,
+                        score_response=adapter.score_response,
+                        max_tokens=adapter.max_new_tokens,
+                    )
+                else:
+                    post = _evaluate_with_agent(
+                        args.model, adapter, eval_examples, trained_agent=trained_agent
+                    )
                 result["metrics"]["post_eval_seconds"] = time.time() - t0
                 result["metrics"]["eval_pass_at_1"] = post["pass_at_1"]
                 result["metrics"]["eval_parse_rate"] = post["parse_rate"]

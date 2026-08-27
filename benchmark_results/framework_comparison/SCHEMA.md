@@ -11,7 +11,7 @@ Each JSON file represents one seed from one framework:
   "schema_version": 1,
   "measured": true,
   "framework": "stateset-agents",
-  "framework_version": "0.42.2",
+  "framework_version": "0.42.3",
   "harness_commit": "025787625165fad81c0212733070c9dcbe6bc62d",
   "protocol": "agent-rl-shootout-v1",
   "cache_policy": "prewarmed-model-and-dataset-cache-v1",

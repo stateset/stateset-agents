@@ -38,7 +38,7 @@ def _manifest(**overrides: Any) -> dict[str, Any]:
         "implementations": [
             {
                 "name": "stateset-agents",
-                "version": "0.42.2",
+                "version": "0.42.3",
                 "command": [
                     "one",
                     "{seed}",
@@ -114,7 +114,7 @@ def test_adapter_result_requires_measured_matching_hardware(tmp_path: Path) -> N
         "status": "completed",
         "measured": True,
         "config_sha256": shootout.canonical_digest(_manifest()["config"]),
-        "framework_version": "0.42.2",
+        "framework_version": "0.42.3",
         "artifact_path": "/tmp/artifact",
         "hardware": {"gpu": "NVIDIA H100", "gpu_count": 1, "cuda": "12.8"},
         "metrics": {
@@ -128,7 +128,7 @@ def test_adapter_result_requires_measured_matching_hardware(tmp_path: Path) -> N
         raw,
         {"gpu": "NVIDIA H100", "gpu_count": 1},
         shootout.canonical_digest(_manifest()["config"]),
-        "0.42.2",
+        "0.42.3",
         tmp_path / "result.json",
     )
     raw["measured"] = False
@@ -137,7 +137,7 @@ def test_adapter_result_requires_measured_matching_hardware(tmp_path: Path) -> N
             raw,
             {"gpu": "NVIDIA H100", "gpu_count": 1},
             shootout.canonical_digest(_manifest()["config"]),
-            "0.42.2",
+            "0.42.3",
             tmp_path / "result.json",
         )
 
@@ -155,11 +155,11 @@ def test_run_implementation_emits_valid_evidence(
         "'artifact_path':str(artifact),'hardware':{'gpu':'NVIDIA H100',"
         "'gpu_count':1,'cuda':'12.8'},'metrics':{'samples_processed':10,"
         "'peak_vram_mb':100,'eval_score_baseline':0.2,'eval_score_final':0.3},"
-        "'config_sha256':sys.argv[3],'framework_version':'0.42.2'}))"
+        "'config_sha256':sys.argv[3],'framework_version':'0.42.3'}))"
     )
     implementation = {
         "name": "stateset-agents",
-        "version": "0.42.2",
+        "version": "0.42.3",
         "command": [
             sys.executable,
             "-c",

@@ -24,7 +24,7 @@ def _run(fault: str, seed: int, **overrides: Any) -> dict[str, Any]:
         "schema_version": 1,
         "measured": True,
         "run_id": f"{fault}-{seed}",
-        "framework_version": "0.42.2",
+        "framework_version": "0.42.3",
         "harness_commit": "a" * 40,
         "protocol": "fault-recovery-v1",
         "model": "Qwen/Qwen3.5-0.8B",

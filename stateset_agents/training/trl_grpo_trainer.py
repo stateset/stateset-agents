@@ -628,7 +628,7 @@ class TRLGRPORewardFunction:
         self.environment = environment
 
     async def compute_rewards(
-        self, completions: list[str], prompts: list[str], **kwargs: Any
+        self, completions: list[Any], prompts: list[str], **kwargs: Any
     ) -> list[float]:
         """Compute rewards for generated completions"""
 
@@ -743,9 +743,15 @@ class TRLGRPOTrainerWrapper:
             "per_device_train_batch_size": self.config.per_device_train_batch_size,
             "gradient_accumulation_steps": self.config.gradient_accumulation_steps,
             "learning_rate": self.config.learning_rate,
+            "adam_beta1": self.config.adam_beta1,
+            "adam_beta2": self.config.adam_beta2,
+            "weight_decay": self.config.weight_decay,
+            "lr_scheduler_type": self.config.lr_scheduler_type,
             "num_train_epochs": self.config.num_epochs,
             "max_grad_norm": self.config.max_grad_norm,
-            "warmup_steps": self.config.get_warmup_steps(),
+            "warmup_steps": self.config.get_warmup_steps(
+                self.config.max_steps if self.config.max_steps > 0 else None
+            ),
             "fp16": self.config.fp16,
             "bf16": self.config.bf16,
             "logging_steps": self.config.logging_steps,
@@ -771,6 +777,7 @@ class TRLGRPOTrainerWrapper:
             "dataloader_num_workers": self.config.dataloader_num_workers,
             "ddp_find_unused_parameters": False,
             "gradient_checkpointing": self.config.gradient_checkpointing,
+            "seed": self.config.seed,
         }
         return grpo_config_cls(**_supported_kwargs(grpo_config_cls, config_kwargs))
 

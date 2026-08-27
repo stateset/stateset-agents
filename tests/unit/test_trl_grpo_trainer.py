@@ -405,6 +405,8 @@ class TestTRLGRPOTrainerWrapper:
             beta=0.1,
             num_generations=8,
             learning_rate=1e-5,
+            max_steps=4,
+            seed=1337,
         )
 
         mock_grpo_config_cls.return_value = MagicMock()
@@ -422,6 +424,13 @@ class TestTRLGRPOTrainerWrapper:
 
         # Verify _create_grpo_config was called
         assert wrapper.grpo_config is not None
+        forwarded = mock_grpo_config_cls.call_args.kwargs
+        assert forwarded["seed"] == 1337
+        assert forwarded["warmup_steps"] == 0
+        assert forwarded["adam_beta1"] == config.adam_beta1
+        assert forwarded["adam_beta2"] == config.adam_beta2
+        assert forwarded["weight_decay"] == config.weight_decay
+        assert forwarded["lr_scheduler_type"] == config.lr_scheduler_type
 
     @patch("stateset_agents.training.trl_grpo_trainer.GRPOConfig")
     def test_wrapper_uses_current_trl_processing_class_api(self, mock_config_cls):

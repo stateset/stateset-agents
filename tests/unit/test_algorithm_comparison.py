@@ -28,7 +28,7 @@ def _document(algorithm: str, seed: int, **overrides: Any) -> dict[str, Any]:
         "schema_version": 1,
         "measured": True,
         "framework": "stateset-agents",
-        "framework_version": "0.42.2",
+        "framework_version": "0.42.3",
         "harness_commit": "a" * 40,
         "protocol": "agent-rl-algorithms-v1",
         "cache_policy": "prewarmed-v1",

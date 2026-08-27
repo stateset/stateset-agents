@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.3] - 2026-08-26 — Publication-grade RL evidence
+
 - Hardened benchmark provenance and TRL interoperability: Phase 0 publication
   gates now reject synthetic evidence, unpinned source/model revisions,
   incomplete hardware/stability measurements, duplicate-seed inflation, and
@@ -26,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   executing reward coroutines in a worker thread when an event loop is already
   active; this removes the live `Cannot run the event loop while another loop
   is running` failure.
+- Fixed the trained-agent lifecycle so TRL-produced models receive a tokenizer
+  and generation configuration before post-training inference.
+- Removed the upstream TRL adapter's dependency on the non-packaged `scripts`
+  module, keeping the comparison path runnable from an isolated checkout.
+- Fixed TRL seed propagation, short-run warmup calculation, and forwarding of
+  optimizer/scheduler settings. Measured framework runs now use the declared
+  seed instead of silently retaining 42 and warm up against `max_steps` rather
+  than the unrelated episode-derived estimate.
+- Added one shared raw-model evaluation protocol for both shootout adapters,
+  preventing chat templating and stopping criteria from changing only the
+  StateSet side of a framework comparison.
 
 ### Fixed
 
