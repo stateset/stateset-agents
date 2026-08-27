@@ -41,6 +41,8 @@ from ..core.trajectory import ConversationTurn
 
 # The canonical GSM8K answer format ends with "#### <number>" on its own line.
 _GOLD_ANSWER_RE = re.compile(r"####\s*([\-+]?[\d,\.]+)")
+_IMMUTABLE_HF_REVISION_RE = re.compile(r"[0-9a-fA-F]{40}")
+GSM8K_DATASET_REVISION = "740312add88f781978c0658806c59bc2815b9866"
 
 # Generated answer extraction — try several patterns in priority order.
 _ANSWER_PATTERNS = [
@@ -124,12 +126,17 @@ def load_gsm8k(
         cache_dir: Optional Hugging Face cache directory.
         limit: If set, return at most this many examples per split. Useful for
             smoke tests on Colab.
-        revision: Optional immutable Hugging Face dataset revision.
+        revision: Immutable Hugging Face dataset revision. Defaults to the
+            repository's validated GSM8K commit.
 
     Returns:
         A list of ``GSM8KExample`` if ``split`` is named, otherwise a
         ``(train, test)`` tuple.
     """
+    resolved_revision = revision or GSM8K_DATASET_REVISION
+    if _IMMUTABLE_HF_REVISION_RE.fullmatch(resolved_revision) is None:
+        raise ValueError("revision must be a full 40-character hexadecimal commit")
+
     try:
         from datasets import load_dataset
     except ImportError as e:
@@ -155,15 +162,18 @@ def load_gsm8k(
                 break
         return examples
 
-    load_kwargs = {"cache_dir": cache_dir}
-    if revision is not None:
-        load_kwargs["revision"] = revision
+    load_kwargs = {"cache_dir": cache_dir, "revision": resolved_revision}
+
+    def _load_split(name: str) -> Any:
+        # The resolved revision is restricted above to an immutable commit.
+        return load_dataset("openai/gsm8k", "main", split=name, **load_kwargs)  # nosec
+
     if split is not None:
-        ds = load_dataset("openai/gsm8k", "main", split=split, **load_kwargs)
+        ds = _load_split(split)
         return _to_examples(ds)
 
-    train = load_dataset("openai/gsm8k", "main", split="train", **load_kwargs)
-    test = load_dataset("openai/gsm8k", "main", split="test", **load_kwargs)
+    train = _load_split("train")
+    test = _load_split("test")
     return _to_examples(train), _to_examples(test)
 
 
