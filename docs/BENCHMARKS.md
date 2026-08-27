@@ -191,8 +191,10 @@ pass the three-seed publication gate.
 The orchestrator verifies exact CUDA/GPU identity, shared-protocol and
 algorithm-config SHA-256 attestations, external wall time, actual generated
 completion counts, normalized policy artifacts, and immutable model/dataset
-revisions. DAPO counts groups even when dynamic sampling later rejects them;
-VAPO counts value-warmup generations. It currently requires gradient
+revisions. A failed run is retained and does not prevent the remaining roster
+from executing; the overall command returns nonzero after every attempt. DAPO
+counts groups even when dynamic sampling later rejects them; VAPO counts
+value-warmup generations. It currently requires gradient
 accumulation `1`, because the five native objectives do not yet expose
 identical accumulation semantics and the harness will not imply otherwise.
 

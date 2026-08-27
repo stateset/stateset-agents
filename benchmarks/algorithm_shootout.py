@@ -384,18 +384,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         args.output_dir.mkdir(parents=True, exist_ok=True)
         produced: list[Path] = []
+        failures: list[str] = []
         for index, seed in enumerate(seeds):
             for algorithm in execution_order(manifest["algorithms"], index):
-                produced.append(
-                    run_algorithm(
-                        manifest,
-                        algorithm,
-                        seed,
-                        args.output_dir,
-                        args.root,
-                        args.timeout_seconds,
+                try:
+                    produced.append(
+                        run_algorithm(
+                            manifest,
+                            algorithm,
+                            seed,
+                            args.output_dir,
+                            args.root,
+                            args.timeout_seconds,
+                        )
                     )
-                )
+                except (ShootoutError, EvidenceError) as exc:
+                    failure = f"{algorithm['name']} seed {seed}: {exc}"
+                    failures.append(failure)
+                    print(f"algorithm run failed: {failure}", file=sys.stderr)
+        if failures:
+            raise ShootoutError(
+                f"{len(failures)} of {len(produced) + len(failures)} runs failed; "
+                "all attempted runs and failure logs were retained"
+            )
     except (ShootoutError, EvidenceError) as exc:
         print(f"algorithm shootout rejected: {exc}", file=sys.stderr)
         return 2

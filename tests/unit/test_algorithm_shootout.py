@@ -225,3 +225,28 @@ def test_preflight_dry_run_uses_one_seed_for_every_algorithm(
     assert result == 0
     lines = capsys.readouterr().out.splitlines()
     assert lines == ["seed=42 algorithm=grpo", "seed=42 algorithm=gspo"]
+
+
+def test_matrix_continues_after_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    attempted: list[tuple[str, int]] = []
+
+    def fake_run(manifest, algorithm, seed, output_dir, root, timeout_seconds):
+        attempted.append((algorithm["name"], seed))
+        if algorithm["name"] == "grpo":
+            raise ShootoutError("diagnostic failure")
+        return output_dir / f"{algorithm['name']}-{seed}.json"
+
+    monkeypatch.setattr(algorithm_shootout, "run_algorithm", fake_run)
+    result = algorithm_shootout.main(
+        [
+            str(_write_manifest(tmp_path, _manifest())),
+            "--output-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+    assert result == 2
+    assert len(attempted) == 6
+    assert {seed for _, seed in attempted} == {42, 1337, 2026}
+    assert "3 of 6 runs failed" in capsys.readouterr().err
