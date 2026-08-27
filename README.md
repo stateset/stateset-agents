@@ -158,7 +158,7 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.42.3 (latest release; PyPI publication pending):**
+**v0.42.4 (latest release; PyPI publication pending):**
 
 - **Publication-grade comparison gates.** Framework, algorithm, scaling, and
   fault-recovery reports now fail closed on synthetic data, unpinned revisions,
@@ -198,6 +198,18 @@ coverage, live hardware attempts, and successful inference by provider.
 - **Fresh provider authentication.** Read-only River and RunPod canaries passed
   on 2026-08-27 with zero billable resources and verified cleanup. Fireworks is
   explicitly retained as skipped because its key and account id are absent.
+
+**v0.42.3:**
+
+- **Neutral StateSet-versus-TRL evidence.** Three matched A40 seeds compare the
+  same pinned Qwen2.5-0.5B/GSM8K GRPO protocol, including external wall time,
+  peak VRAM, and hashed model artifacts.
+- **Fail-closed publication evidence.** Comparison reports reject synthetic or
+  incomplete inputs, mismatched configurations, duplicate seeds, and unpinned
+  model, dataset, algorithm, or framework revisions.
+- **RunPod-discovered training fixes.** The release corrected attention
+  defaults, Phase-0 construction, asynchronous reward bridging, seed and
+  warmup propagation, symmetric evaluation, and trained-agent inference.
 
 **v0.42.2:**
 
@@ -804,7 +816,7 @@ asyncio.run(main())
 
 ```bash
 pip install stateset-agents          # latest version currently available on PyPI
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.42.3"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.42.4"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1511,7 +1523,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.3`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.4`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
