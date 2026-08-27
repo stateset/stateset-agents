@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Measured fixed-workload DDP scaling benchmark for StateSet Agents.
+"""Measured weak- and strong-scaling DDP benchmark for StateSet Agents.
 
 This is a synthetic policy-optimization workload, not an LLM quality
 benchmark.  It exercises real CUDA forward/backward passes, group-relative
-advantages, optimizer updates, and PyTorch DDP gradient synchronization while
-holding the per-device workload constant across process counts.
+advantages, optimizer updates, and PyTorch DDP gradient synchronization. Weak
+scaling holds per-device work constant; strong scaling partitions one fixed
+effective global batch across process counts.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 from stateset_agents import __version__  # noqa: E402
 
-PROTOCOL = "stateset-ddp-policy-weak-scaling-v2"
+PROTOCOL_VERSION = 3
 MODEL_NAME = "stateset/synthetic-residual-policy-v1"
 MODEL_REVISION = hashlib.sha1(
     b"stateset-residual-policy-v1", usedforsecurity=False
@@ -65,6 +66,40 @@ def canonical_digest(config: Mapping[str, Any]) -> str:
     """Return the workload identity shared by every measured topology."""
     encoded = json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def execution_shape(config: Mapping[str, Any], world_size: int) -> tuple[int, int, int]:
+    """Return local batch, local accumulation, and effective global batch.
+
+    The configured accumulation count is the one-GPU reference. In strong
+    mode, ranks partition that fixed amount of work; in weak mode every rank
+    executes the full reference workload. Requiring exact divisibility keeps
+    every topology sample-identical instead of silently rounding work.
+    """
+    if world_size < 1:
+        raise ValueError("world_size must be >= 1")
+    local_batch = int(config["per_device_batch_size"])
+    reference_accumulation = int(config["gradient_accumulation_steps"])
+    if local_batch < 1:
+        raise ValueError("per_device_batch_size must be >= 1")
+    if reference_accumulation < 1:
+        raise ValueError("gradient_accumulation_steps must be >= 1")
+
+    mode = config.get("scaling_mode")
+    if mode == "weak":
+        local_accumulation = reference_accumulation
+    elif mode == "strong":
+        if reference_accumulation % world_size:
+            raise ValueError(
+                "strong scaling requires gradient_accumulation_steps to divide "
+                "evenly by world_size"
+            )
+        local_accumulation = reference_accumulation // world_size
+    else:
+        raise ValueError("scaling_mode must be 'weak' or 'strong'")
+
+    effective_global_batch = local_batch * world_size * local_accumulation
+    return local_batch, local_accumulation, effective_global_batch
 
 
 class ResidualPolicy(nn.Module):
@@ -218,10 +253,11 @@ def run(args: argparse.Namespace) -> None:
     try:
         config = dict(DEFAULT_WORKLOAD)
         config.update(json.loads(args.config_json))
-        if config["scaling_mode"] != "weak":
-            raise ValueError("this workload currently publishes weak scaling only")
-        local_batch = int(config["per_device_batch_size"])
-        global_batch = local_batch * world_size
+        scaling_mode = str(config["scaling_mode"])
+        local_batch, accumulation_steps, effective_global_batch = execution_shape(
+            config, world_size
+        )
+        global_microbatch = local_batch * world_size
         group_size = int(config["group_size"])
         if local_batch % group_size:
             raise ValueError(
@@ -253,9 +289,6 @@ def run(args: argparse.Namespace) -> None:
                 model.parameters(), lr=float(config["learning_rate"])
             )
 
-        accumulation_steps = int(config["gradient_accumulation_steps"])
-        if accumulation_steps < 1:
-            raise ValueError("gradient_accumulation_steps must be >= 1")
         optimizer = new_optimizer()
 
         def step_once(step: int) -> None:
@@ -267,7 +300,7 @@ def run(args: argparse.Namespace) -> None:
                     seed=args.seed,
                     rank=rank,
                     local_batch_size=local_batch,
-                    global_batch_size=global_batch,
+                    global_batch_size=global_microbatch,
                     feature_dim=int(config["feature_dim"]),
                     num_actions=int(config["num_actions"]),
                     device=device,
@@ -330,14 +363,17 @@ def run(args: argparse.Namespace) -> None:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             artifact_sha256 = _artifact_digest(model, args.output)
             seconds = float(elapsed.item())
-            samples = global_batch * accumulation_steps * int(config["measured_steps"])
+            samples = effective_global_batch * int(config["measured_steps"])
             evidence = {
                 "schema_version": 1,
                 "measured": True,
                 "framework": "stateset-agents",
                 "framework_version": __version__,
                 "harness_commit": args.harness_commit,
-                "protocol": PROTOCOL,
+                "protocol": (
+                    f"stateset-ddp-policy-{scaling_mode}-scaling-"
+                    f"v{PROTOCOL_VERSION}"
+                ),
                 "cache_policy": "generated-on-device-indexed-v1",
                 "algorithm": "group-policy-gradient",
                 "algorithm_revision": ALGORITHM_REVISION,
@@ -350,6 +386,11 @@ def run(args: argparse.Namespace) -> None:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "command": args.command_label,
                 "config": config,
+                "execution": {
+                    "local_microbatch_size": local_batch,
+                    "local_accumulation_steps": accumulation_steps,
+                    "effective_global_batch_size": effective_global_batch,
+                },
                 "hardware": {
                     "gpu": torch.cuda.get_device_name(0),
                     "gpu_count": world_size,

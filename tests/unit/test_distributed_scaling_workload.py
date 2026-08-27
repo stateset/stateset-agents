@@ -6,6 +6,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
 import torch
 
 MODULE_PATH = (
@@ -26,6 +27,37 @@ def test_workload_digest_is_order_independent_and_sensitive() -> None:
     first = workload.canonical_digest({"batch": 32, "depth": 4})
     assert first == workload.canonical_digest({"depth": 4, "batch": 32})
     assert first != workload.canonical_digest({"batch": 64, "depth": 4})
+
+
+def test_weak_scaling_execution_shape_grows_global_work() -> None:
+    config = {
+        "scaling_mode": "weak",
+        "per_device_batch_size": 128,
+        "gradient_accumulation_steps": 16,
+    }
+    assert workload.execution_shape(config, 1) == (128, 16, 2048)
+    assert workload.execution_shape(config, 8) == (128, 16, 16384)
+
+
+def test_strong_scaling_execution_shape_preserves_global_work() -> None:
+    config = {
+        "scaling_mode": "strong",
+        "per_device_batch_size": 128,
+        "gradient_accumulation_steps": 16,
+    }
+    assert workload.execution_shape(config, 1) == (128, 16, 2048)
+    assert workload.execution_shape(config, 2) == (128, 8, 2048)
+    assert workload.execution_shape(config, 8) == (128, 2, 2048)
+
+
+def test_strong_scaling_rejects_inexact_partition() -> None:
+    config = {
+        "scaling_mode": "strong",
+        "per_device_batch_size": 128,
+        "gradient_accumulation_steps": 10,
+    }
+    with pytest.raises(ValueError, match="divide evenly"):
+        workload.execution_shape(config, 4)
 
 
 def test_indexed_batch_is_topology_invariant() -> None:
