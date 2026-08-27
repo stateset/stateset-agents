@@ -2,7 +2,7 @@
   "billable_resources_created": 0,
   "results": [
     {
-      "checked_at": "2026-08-27T12:22:02.200259+00:00",
+      "checked_at": "2026-08-27T12:45:43.350707+00:00",
       "checks": {
         "billable_resources_created": 0,
         "canary_leftovers": [],
@@ -10,7 +10,7 @@
         "pods_observed": 0
       },
       "cleanup_verified": true,
-      "duration_ms": 495,
+      "duration_ms": 570,
       "error": null,
       "provider": "runpod",
       "status": "passed"

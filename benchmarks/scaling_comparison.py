@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import statistics
 import sys
 from collections.abc import Mapping, Sequence
@@ -33,6 +34,90 @@ MATCH_FIELDS = (
     "dataset_revision",
     "workload_config_sha256",
 )
+
+
+def _required_positive_int(value: Any, field: str, source: Path) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise EvidenceError(f"{source}: {field} must be a positive integer")
+    return value
+
+
+def validate_execution_contract(run: RunEvidence) -> None:
+    """Bind v3 throughput to the exact weak/strong work partition."""
+    protocol = str(run.data["protocol"])
+    if not protocol.endswith("-scaling-v3"):
+        return
+
+    config = run.data["config"]
+    mode = config.get("scaling_mode")
+    expected_protocol = f"stateset-ddp-policy-{mode}-scaling-v3"
+    if mode not in {"weak", "strong"} or protocol != expected_protocol:
+        raise EvidenceError(
+            f"{run.source}: protocol does not match config.scaling_mode"
+        )
+    execution = run.data.get("execution")
+    if not isinstance(execution, Mapping):
+        raise EvidenceError(f"{run.source}: v3 evidence requires execution metadata")
+
+    local_batch = _required_positive_int(
+        execution.get("local_microbatch_size"),
+        "execution.local_microbatch_size",
+        run.source,
+    )
+    local_accumulation = _required_positive_int(
+        execution.get("local_accumulation_steps"),
+        "execution.local_accumulation_steps",
+        run.source,
+    )
+    effective_global_batch = _required_positive_int(
+        execution.get("effective_global_batch_size"),
+        "execution.effective_global_batch_size",
+        run.source,
+    )
+    configured_batch = _required_positive_int(
+        config.get("per_device_batch_size"),
+        "config.per_device_batch_size",
+        run.source,
+    )
+    reference_accumulation = _required_positive_int(
+        config.get("gradient_accumulation_steps"),
+        "config.gradient_accumulation_steps",
+        run.source,
+    )
+    measured_steps = _required_positive_int(
+        config.get("measured_steps"), "config.measured_steps", run.source
+    )
+    gpu_count = int(run.data["hardware"]["gpu_count"])
+    if local_batch != configured_batch:
+        raise EvidenceError(
+            f"{run.source}: execution local batch does not match config"
+        )
+    if mode == "strong":
+        if reference_accumulation % gpu_count:
+            raise EvidenceError(
+                f"{run.source}: strong work cannot divide exactly across topology"
+            )
+        expected_accumulation = reference_accumulation // gpu_count
+    else:
+        expected_accumulation = reference_accumulation
+    if local_accumulation != expected_accumulation:
+        raise EvidenceError(
+            f"{run.source}: execution accumulation does not match {mode} partition"
+        )
+    expected_global_batch = local_batch * gpu_count * local_accumulation
+    if effective_global_batch != expected_global_batch:
+        raise EvidenceError(
+            f"{run.source}: effective global batch does not match execution shape"
+        )
+
+    measured_samples = float(run.metrics["samples_per_second"]) * float(
+        run.metrics["wall_clock_seconds"]
+    )
+    expected_samples = effective_global_batch * measured_steps
+    if not math.isclose(measured_samples, expected_samples, rel_tol=1e-6):
+        raise EvidenceError(
+            f"{run.source}: throughput does not match measured work and wall clock"
+        )
 
 
 def load_scaling_evidence(inputs: Sequence[Path]) -> list[RunEvidence]:
@@ -65,7 +150,9 @@ def load_scaling_evidence(inputs: Sequence[Path]) -> list[RunEvidence]:
             raise EvidenceError(
                 f"{path}: workload_config_sha256 does not match canonical config"
             )
-        runs.append(validate_document(raw, path))
+        run = validate_document(raw, path)
+        validate_execution_contract(run)
+        runs.append(run)
     return runs
 
 

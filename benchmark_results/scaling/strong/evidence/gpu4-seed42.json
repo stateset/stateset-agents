@@ -1,0 +1,59 @@
+{
+  "algorithm": "group-policy-gradient",
+  "algorithm_revision": "stateset-group-policy-gradient-v1",
+  "artifact_sha256": "18e6e9628cb9420467a897954001ee5669601b8fcdec66b6b812cbb948be67c0",
+  "cache_policy": "generated-on-device-indexed-v1",
+  "command": "CUDA_VISIBLE_DEVICES=0-3 python -m torch.distributed.run --standalone --nproc-per-node=4 benchmarks/distributed_scaling_workload.py --gpu-count=4 --seed=42",
+  "config": {
+    "depth": 8,
+    "entropy_coef": 0.001,
+    "eval_examples": 2048,
+    "feature_dim": 512,
+    "gradient_accumulation_steps": 96,
+    "group_size": 4,
+    "hidden_dim": 512,
+    "learning_rate": 0.0002,
+    "measured_steps": 6,
+    "num_actions": 256,
+    "per_device_batch_size": 2048,
+    "precision": "bf16",
+    "scaling_mode": "strong",
+    "warmup_steps": 1
+  },
+  "dataset_revision": "c6b0e2d7df0af60de20113cc3e11249cf9f63c48",
+  "execution": {
+    "effective_global_batch_size": 196608,
+    "local_accumulation_steps": 24,
+    "local_microbatch_size": 2048
+  },
+  "framework": "stateset-agents",
+  "framework_version": "0.42.3",
+  "hardware": {
+    "cuda": "12.9",
+    "gpu": "NVIDIA GeForce RTX 5080",
+    "gpu_count": 4,
+    "topology": "\u001b[4mGPU0\tGPU1\tGPU2\tGPU3\tGPU4\tGPU5\tGPU6\tGPU7\tCPU Affinity\tNUMA Affinity\tGPU NUMA ID\u001b[0m\nGPU0\t X \tNODE\tNODE\tNODE\tNODE\tNODE\tNODE\tNODE\t0-63\t0\t\tN/A\nGPU1\tNODE\t X \tPHB\tNODE\tNODE\tNODE\tNODE\tNODE\t0-63\t0\t\tN/A\nGPU2\tNODE\tPHB\t X \tNODE\tNODE\tNODE\tNODE\tNODE\t0-63\t0\t\tN/A\nGPU3\tNODE\tNODE\tNODE\t X \tPHB\tPHB\tNODE\tNODE\t0-63\t0\t\tN/A\nGPU4\tNODE\tNODE\tNODE\tPHB\t X \tPHB\tNODE\tNODE\t0-63\t0\t\tN/A\nGPU5\tNODE\tNODE\tNODE\tPHB\tPHB\t X \tNODE\tNODE\t0-63\t0\t\tN/A\nGPU6\tNODE\tNODE\tNODE\tNODE\tNODE\tNODE\t X \tPHB\t0-63\t0\t\tN/A\nGPU7\tNODE\tNODE\tNODE\tNODE\tNODE\tNODE\tPHB\t X \t0-63\t0\t\tN/A\n\nLegend:\n\n  X    = Self\n  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)\n  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node\n  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)\n  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)\n  PIX  = Connection traversing at most a single PCIe bridge\n  NV#  = Connection traversing a bonded set of # NVLinks"
+  },
+  "harness_commit": "f0b90809b1dd5d75d2249a1237a371e87ff6a81b",
+  "measured": true,
+  "metrics": {
+    "eval_score_baseline": 0.003990481607615948,
+    "eval_score_final": 0.004113196395337582,
+    "peak_vram_mb": 589.83251953125,
+    "samples_per_second": 1262432.867582201,
+    "wall_clock_seconds": 0.9344243407249451
+  },
+  "model": "stateset/synthetic-residual-policy-v1",
+  "model_revision": "26c133bd08c620ac8e1f195dabc76bad7f4656c2",
+  "protocol": "stateset-ddp-policy-strong-scaling-v3",
+  "schema_version": 1,
+  "seed": 42,
+  "software": {
+    "nccl": "2.27.3",
+    "python": "3.12.13",
+    "torch": "2.8.0+cu129"
+  },
+  "task": "synthetic-group-policy-optimization-v1",
+  "timestamp": "2026-08-27T12:39:49.428653+00:00",
+  "workload_config_sha256": "28b356d44d75ca5c824b60354cea30177fe488fd96ffea33c6c49d394ab7443b"
+}

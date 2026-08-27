@@ -38,15 +38,15 @@ defensible A+ rating.
 - [ ] Complete the 8B, three-seed flagship multi-turn benchmark
 - [ ] Run matched StateSet versus TRL, verl, NeMo RL, and OpenRLHF comparisons
 - [ ] Complete matched GRPO/GSPO/DAPO/VAPO/GEPO comparisons
-- [ ] Publish negative/null runs alongside positive results
+- [x] Publish negative/null runs alongside positive results
 - [ ] Obtain at least one independent reproduction outside StateSet
 
 ### Scale and reliability
 
-- [ ] Measure 1/2/4/8-GPU throughput, utilization, memory, and scaling efficiency
+- [x] Measure 1/2/4/8-GPU throughput, memory, and weak/strong scaling efficiency
 - [ ] Verify multi-node training on a retained, reproducible configuration
 - [x] Add a measured-evidence gate for worker, network, and controller recovery
-- [ ] Execute and retain the complete three-seed fault-injection matrix
+- [x] Execute and retain the complete three-seed fault-injection matrix
 - [ ] Report cost per rollout, training step, and measured eval improvement
 - [ ] Add soak tests for long-running remote training and serving sessions
 
@@ -74,4 +74,4 @@ an integration or live-evidence path. Performance changes need before/after raw
 artifacts on identical configurations. Feature requests and RFCs belong in the
 GitHub issue tracker.
 
-Last updated: 2026-08-26.
+Last updated: 2026-08-27.

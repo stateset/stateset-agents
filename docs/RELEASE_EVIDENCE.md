@@ -10,7 +10,8 @@ Release readiness revision: `dbf4efe3b90d507aac0a4a9051f8ba939922a826`
 
 Post-tag scaling/recovery evidence revisions:
 `722f7e9fdafceec48723dc4392a212418cba9f2b` and
-`52df33fa00d7eac4b2973fdeb4a5446f6278a8b1`.
+`52df33fa00d7eac4b2973fdeb4a5446f6278a8b1`. The corrected strong-scaling
+harness revision is `f0b90809b1dd5d75d2249a1237a371e87ff6a81b`.
 
 | Surface | Result | Evidence |
 |---|---|---|
@@ -23,7 +24,8 @@ Post-tag scaling/recovery evidence revisions:
 | Benchmark provenance | Passed | Harness commit `4173eee7be7187c0583390953b8ad79b55fb954f`; pinned model/data; exact config digest; six artifact hashes |
 | RunPod cleanup | Passed | Every benchmark pod terminated after evidence retrieval; final read-only canary observed 0 pods and 0 cleanup leases |
 | 1/2/4/8-GPU weak scaling | Passed | [Three seeds per topology](../benchmark_results/scaling/report/scaling.md); 8.080× throughput at 8 GPUs and 101.0% weak-scaling efficiency |
-| Fixed-global-batch strong scaling | Failed | [Negative matrix retained](../benchmark_results/scaling/diagnostics/f6e7478-strong/report/scaling.md); 8-GPU efficiency was 2.9%, so no strong-scaling claim is made |
+| 1/2/4/8-GPU strong scaling | Passed | [Three seeds per topology](../benchmark_results/scaling/strong/report/scaling.md); fixed 196,608-sample effective batch, 6.642× throughput and 83.0% efficiency at 8 GPUs |
+| Short-work strong-scaling diagnostic | Failed | [Negative matrix retained](../benchmark_results/scaling/diagnostics/f6e7478-strong/report/scaling.md); the 2,048-sample workload measured only 0.188s at one GPU and reached 2.9% 8-GPU efficiency |
 | Fault-injection matrix | Passed | [Nine CUDA runs](../benchmark_results/reliability/report.json); exact replay, zero lost/duplicate updates, completion, cleanup |
 | River live canary | Passed | 2026-08-27 read-only health/capabilities; 0 billable resources |
 | RunPod live canary | Passed | 2026-08-27 read-only inventory/cleanup; 0 billable resources |
@@ -31,8 +33,9 @@ Post-tag scaling/recovery evidence revisions:
 
 The four-step shootout is an orchestration-parity test, not evidence that four
 steps improve GSM8K quality. Its null/negative quality deltas are retained.
-The scaling result is explicitly weak scaling; it does not supersede the
-failed strong-scaling diagnostic or establish multi-node performance.
+Weak- and strong-scaling claims are reported separately. The corrected strong
+protocol holds total work fixed and does not erase the failed short-work
+diagnostic. Neither single-host matrix establishes multi-node performance.
 
 ## v0.42.2 release evidence
 

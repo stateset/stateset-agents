@@ -24,9 +24,10 @@ def test_benchmark_docs_state_unproven_claims_explicitly() -> None:
     contents = (ROOT / "docs/BENCHMARKS.md").read_text(encoding="utf-8")
     assert "does **not** currently claim" in contents
     assert "faster training or lower memory than TRL" in contents
-    assert "multi-node or strong 2/4/8-GPU scaling efficiency" in contents
+    assert "multi-node scaling efficiency" in contents
     assert "weak-scaling" in contents
     assert "Failed strong-scaling diagnostic" in contents
+    assert "Passing strong-scaling report" in contents
     assert "Synthetic and stub outputs must never" in contents
 
 

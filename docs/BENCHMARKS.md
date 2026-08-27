@@ -63,7 +63,7 @@ GRPO orchestration preserves upstream behavior without material overhead.
 - [Six per-seed evidence documents](../benchmark_results/framework_comparison/evidence/)
 - Harness commit: `4173eee7be7187c0583390953b8ad79b55fb954f`
 
-### Single-node DDP weak scaling
+### Single-node DDP weak and strong scaling
 
 Three matched seeds on one RunPod host with eight identical NVIDIA RTX 5080
 GPUs passed the predeclared monotonic-throughput and 50%-efficiency gate:
@@ -85,6 +85,27 @@ diagnostic.
 - [Twelve per-seed/topology evidence documents](../benchmark_results/scaling/evidence/)
 - [Failed strong-scaling diagnostic](../benchmark_results/scaling/diagnostics/f6e7478-strong/report/scaling.md)
 - Harness commit: `722f7e9fdafceec48723dc4392a212418cba9f2b`
+
+The corrected fixed-work strong-scaling protocol holds the effective global
+batch at `196,608` samples and divides the 96 one-GPU microbatches exactly
+across ranks. The same host and GPU class passed the same three-seed,
+monotonic-throughput, 50%-efficiency gate:
+
+| GPUs | Samples/s | Speedup | Strong-scaling efficiency | Peak VRAM/GPU |
+|---:|---:|---:|---:|---:|
+| 1 | 336,512 ± 5,187 | 1.000× | 100.0% | 589.8 MiB |
+| 2 | 664,104 ± 1,044 | 1.973× | 98.7% | 589.8 MiB |
+| 4 | 1,237,060 ± 24,605 | 3.676× | 91.9% | 589.8 MiB |
+| 8 | 2,235,220 ± 9,516 | 6.642× | 83.0% | 589.8 MiB |
+
+- [Passing strong-scaling report](../benchmark_results/scaling/strong/report/scaling.md)
+- [Twelve strong-scaling evidence documents](../benchmark_results/scaling/strong/evidence/)
+- Harness commit: `f0b90809b1dd5d75d2249a1237a371e87ff6a81b`
+
+The earlier `2,048`-sample fixed-global-batch diagnostic remains retained. It
+timed only `0.188` seconds at one GPU and failed at every distributed topology;
+it is negative evidence that communication-dominated toy timings cannot support
+a scaling claim, not a substitute for the corrected fixed-work protocol.
 
 ### Checkpoint fault recovery
 
@@ -113,7 +134,7 @@ The repository does **not** currently claim:
 
 - faster training or lower memory than TRL, verl, NeMo RL, or OpenRLHF;
 - broad superiority over TRL beyond the exact parity result above;
-- multi-node or strong 2/4/8-GPU scaling efficiency;
+- multi-node scaling efficiency;
 - a measured GRPO/GSPO/DAPO/VAPO/GEPO winner on a shared protocol;
 - Fireworks live training or serving success; or
 - a completed 8B flagship result.
@@ -231,6 +252,10 @@ synchronization as a weak-scaling test with a fixed per-device batch. It
 measures the single-node training path, not strong scaling, LLM quality, or
 multi-node rollout serving. See
 [`benchmark_results/scaling/README.md`](../benchmark_results/scaling/README.md).
+Set `--config-json '{"scaling_mode":"strong"}'` and use a separate output
+directory to hold total effective work fixed. V3 evidence is rejected unless
+its execution shape and `samples/s × wall time` reproduce the declared sample
+count exactly.
 
 ### Measured fault recovery
 

@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CUDA recovery matrix with zero lost or duplicate updates.
 - Retained the failed fixed-global-batch strong-scaling matrix (`2.9%`
   efficiency at 8 GPUs) and scope weak-scaling claims separately.
+- Added a corrected fixed-work strong-scaling mode that partitions one
+  `196,608`-sample effective batch exactly across ranks. Its retained
+  three-seed matrix reached `6.642×` throughput and `83.0%` efficiency at eight
+  RTX 5080s; the validator recomputes work from execution shape and wall time.
 - Refreshed non-billable River and RunPod authentication/cleanup canaries;
   Fireworks remains explicitly skipped because credentials are unavailable.
 

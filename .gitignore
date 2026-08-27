@@ -196,6 +196,14 @@ benchmark_results/scaling/*
 !benchmark_results/scaling/system-info.txt
 !benchmark_results/scaling/diagnostics/
 !benchmark_results/scaling/diagnostics/**
+!benchmark_results/scaling/strong/
+!benchmark_results/scaling/strong/README.md
+!benchmark_results/scaling/strong/evidence/
+!benchmark_results/scaling/strong/evidence/*.json
+!benchmark_results/scaling/strong/report/
+!benchmark_results/scaling/strong/report/*.json
+!benchmark_results/scaling/strong/report/*.md
+!benchmark_results/scaling/strong/system-info.txt
 !benchmark_results/reliability/
 benchmark_results/reliability/*
 !benchmark_results/reliability/README.md

@@ -179,6 +179,20 @@ def test_retained_strong_scaling_failure_stays_negative() -> None:
     assert summary["topologies"]["8"]["scaling_efficiency"] < 0.03
 
 
+def test_retained_fixed_work_strong_scaling_passes_publication_gate() -> None:
+    runs = scaling_comparison.load_scaling_evidence(
+        [ROOT / "benchmark_results" / "scaling" / "strong" / "evidence"]
+    )
+    scaling_comparison.validate_scaling_comparison(runs)
+    summary = scaling_comparison.summarize_scaling(runs)
+    scaling_comparison.validate_scaling_performance(summary)
+    assert summary["scaling_mode"] == "strong"
+    assert summary["topologies"]["8"]["scaling_efficiency"] > 0.8
+    assert {run.data["execution"]["effective_global_batch_size"] for run in runs} == {
+        196608
+    }
+
+
 def test_rejects_digest_that_does_not_bind_retained_config(tmp_path: Path) -> None:
     path = tmp_path / "bad-binding.json"
     path.write_text(
@@ -196,3 +210,51 @@ def test_performance_gate_requires_explicit_scaling_mode(tmp_path: Path) -> None
 
     with pytest.raises(EvidenceError, match="requires scaling_mode"):
         scaling_comparison.validate_scaling_performance(summary)
+
+
+def _v3_document(gpu_count: int = 8) -> dict[str, Any]:
+    document = _document(gpu_count, 42)
+    document["protocol"] = "stateset-ddp-policy-strong-scaling-v3"
+    document["config"] = {
+        "scaling_mode": "strong",
+        "per_device_batch_size": 128,
+        "gradient_accumulation_steps": 16,
+        "measured_steps": 4,
+    }
+    document["workload_config_sha256"] = hashlib.sha256(
+        json.dumps(document["config"], sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    document["execution"] = {
+        "local_microbatch_size": 128,
+        "local_accumulation_steps": 2,
+        "effective_global_batch_size": 2048,
+    }
+    document["metrics"] = dict(
+        document["metrics"], samples_per_second=81.92, wall_clock_seconds=100.0
+    )
+    return document
+
+
+def test_v3_execution_contract_binds_fixed_work(tmp_path: Path) -> None:
+    path = tmp_path / "v3.json"
+    path.write_text(json.dumps(_v3_document()), encoding="utf-8")
+    runs = scaling_comparison.load_scaling_evidence([path])
+    assert runs[0].data["execution"]["effective_global_batch_size"] == 2048
+
+
+def test_v3_execution_contract_rejects_false_accumulation(tmp_path: Path) -> None:
+    document = _v3_document()
+    document["execution"]["local_accumulation_steps"] = 3
+    path = tmp_path / "bad-v3.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(EvidenceError, match="accumulation does not match"):
+        scaling_comparison.load_scaling_evidence([path])
+
+
+def test_v3_execution_contract_rejects_unbound_throughput(tmp_path: Path) -> None:
+    document = _v3_document()
+    document["metrics"]["samples_per_second"] = 1000.0
+    path = tmp_path / "bad-throughput.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(EvidenceError, match="throughput does not match"):
+        scaling_comparison.load_scaling_evidence([path])

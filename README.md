@@ -184,6 +184,12 @@ coverage, live hardware attempts, and successful inference by provider.
   as weak scaling; the failed fixed-global-batch
   [strong-scaling diagnostic](benchmark_results/scaling/diagnostics/f6e7478-strong/report/scaling.md)
   is retained rather than hidden.
+- **Measured 1/2/4/8-GPU strong scaling.** A corrected fixed-work protocol holds
+  the effective global batch at `196,608` samples and divides its 96 reference
+  microbatches exactly across ranks. Three matched seeds reached `1.973×`,
+  `3.676×`, and `6.642×` throughput at 2, 4, and 8 GPUs (`98.7%`, `91.9%`, and
+  `83.0%` strong-scaling efficiency); the [validated strong-scaling report](benchmark_results/scaling/strong/report/scaling.md)
+  binds every throughput value to measured work and wall time.
 - **Measured recovery matrix.** Nine CUDA runs injected worker exit, controller
   SIGKILL, and live TCP control-plane interruption across three seeds. Every
   run resumed from its atomic optimizer checkpoint, reached the final step,

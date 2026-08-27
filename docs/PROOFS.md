@@ -21,6 +21,7 @@ true over time. The categories are strict:
 | `serve-remote` answers authenticated HTTPS requests | Live-verified (2026‑08‑17, twice: hand-driven + shipped CLI with adapter) | CHANGELOG v0.31.0; flashinfer patch + arm-precedence fix pinned by tests |
 | The RL core learns on real hardware (GSPO 2.8e‑05 → 0.125) | Re-proved weekly* | [`gpu-verify.yml`](../.github/workflows/gpu-verify.yml) `rl-live-smoke` |
 | Multi-GPU sharding (`--gpu-count`) | Live-verified (63GB across 2×48GB) | CHANGELOG v0.28.0 — device-map log `0=24 module(s), 1=36 module(s)` |
+| Single-host DDP strong scaling | Live-verified (2026-08-27, three seeds) | [`BENCHMARKS.md`](BENCHMARKS.md#single-node-ddp-weak-and-strong-scaling); fixed 196,608-sample work, 6.642× at 8× RTX 5080, 83.0% efficiency; 12 raw evidence rows retained |
 | Curation precision/recall 1.000/1.000 | Re-proved on every CI run | `make benchmark-loop`, floors ratcheted at 0.95 |
 | A failed eval gate preserves its adapter | Unit-pinned (from a live incident) | `test_failed_job_still_attempts_fetch` — docstring cites the lost 10/12 adapter |
 | Unknown cost is refused, never treated as $0 | Unit-pinned | `tests/unit/test_remote_ledger.py` budget tests |
