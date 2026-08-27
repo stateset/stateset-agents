@@ -76,8 +76,8 @@ kernel speedups must not be described as end-to-end framework speedups.
 
 The repository does **not** currently claim:
 
-- faster training or lower memory than verl, NeMo RL, or OpenRLHF, or broad
-  superiority over TRL beyond the exact parity result above;
+- faster training or lower memory than TRL, verl, NeMo RL, or OpenRLHF;
+- broad superiority over TRL beyond the exact parity result above;
 - multi-node or 2/4/8-GPU scaling efficiency;
 - a measured GRPO/GSPO/DAPO/VAPO/GEPO winner on a shared protocol;
 - Fireworks live training or serving success; or
