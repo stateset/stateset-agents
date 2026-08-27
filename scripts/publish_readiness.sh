@@ -207,7 +207,8 @@ bandit -c pyproject.toml -r stateset_agents -f json -o "$BANDIT_REPORT_PATH" || 
 # notice ahead of the payload too, corrupting a naive json.loads() the same
 # way `make security-scan-strict` hit before it was fixed. Match the
 # Makefile's invocation exactly so both paths behave identically.
-safety check --save-json "$SAFETY_REPORT_PATH" > /dev/null 2>&1 || true
+safety check -r requirements-dev-lock.txt --save-json "$SAFETY_REPORT_PATH" \
+  --no-prompt > /dev/null 2>&1 || true
 # Route both reports through check_security_findings.py's lenient parser
 # (raw_decode from the first '{', ignoring any surrounding banner text)
 # instead of a second, stricter inline copy of this same parsing logic --
