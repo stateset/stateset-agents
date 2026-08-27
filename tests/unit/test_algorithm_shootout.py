@@ -208,3 +208,20 @@ def test_required_roster_fails_closed(tmp_path: Path, capsys: Any) -> None:
     )
     assert result == 2
     assert "missing required algorithms: vapo" in capsys.readouterr().err
+
+
+def test_preflight_dry_run_uses_one_seed_for_every_algorithm(
+    tmp_path: Path, capsys: Any
+) -> None:
+    result = algorithm_shootout.main(
+        [
+            str(_write_manifest(tmp_path, _manifest())),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--preflight",
+            "--dry-run",
+        ]
+    )
+    assert result == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == ["seed=42 algorithm=grpo", "seed=42 algorithm=gspo"]

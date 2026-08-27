@@ -184,6 +184,10 @@ python benchmarks/algorithm_shootout.py \
   --required-algorithm gepo
 ```
 
+Before incurring the full 15-run cost, add `--preflight` to execute the first
+seed once for every algorithm. Preflight outputs are diagnostics and cannot
+pass the three-seed publication gate.
+
 The orchestrator verifies exact CUDA/GPU identity, shared-protocol and
 algorithm-config SHA-256 attestations, external wall time, actual generated
 completion counts, normalized policy artifacts, and immutable model/dataset

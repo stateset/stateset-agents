@@ -359,6 +359,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=[],
         help="Algorithm required in the manifest (repeatable).",
     )
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Run only the first seed across every algorithm as non-publishable diagnostics.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -371,14 +376,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ShootoutError(
                 "manifest is missing required algorithms: " + ", ".join(missing)
             )
+        seeds = manifest["seeds"][:1] if args.preflight else manifest["seeds"]
         if args.dry_run:
-            for index, seed in enumerate(manifest["seeds"]):
+            for index, seed in enumerate(seeds):
                 for algorithm in execution_order(manifest["algorithms"], index):
                     print(f"seed={seed} algorithm={algorithm['name']}")
             return 0
         args.output_dir.mkdir(parents=True, exist_ok=True)
         produced: list[Path] = []
-        for index, seed in enumerate(manifest["seeds"]):
+        for index, seed in enumerate(seeds):
             for algorithm in execution_order(manifest["algorithms"], index):
                 produced.append(
                     run_algorithm(
