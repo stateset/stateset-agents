@@ -11,11 +11,13 @@ Release readiness revision: `dbf4efe3b90d507aac0a4a9051f8ba939922a826`
 Post-tag scaling/recovery evidence revisions:
 `722f7e9fdafceec48723dc4392a212418cba9f2b` and
 `52df33fa00d7eac4b2973fdeb4a5446f6278a8b1`. The corrected strong-scaling
-harness revision is `f0b90809b1dd5d75d2249a1237a371e87ff6a81b`.
+harness revision is `f0b90809b1dd5d75d2249a1237a371e87ff6a81b`; evidence retention and
+execution-contract validation landed in `75367e2`, and the full competitive
+roster gate landed in `5743704`.
 
 | Surface | Result | Evidence |
 |---|---|---|
-| Default and coverage suite | Passed | 4,677 passed, 6 skipped; 62.71% coverage against 61% floor |
+| Default and coverage suite | Passed | 4,711 passed, 6 skipped; 62.71% coverage against 61% floor |
 | Static typing | Passed | 304 source files, 0 issues |
 | Lint, format, repository hygiene | Passed | Ruff, Black, isort, and `scripts/check_repo_hygiene.py` |
 | Security | Passed | Bandit policy passed; Safety found 0 vulnerabilities in `requirements-dev-lock.txt` |
