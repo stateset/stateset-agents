@@ -24,10 +24,13 @@ python benchmarks/run_scaling_matrix.py \
 
 The executable workload performs real BF16 forward/backward passes, computes
 group-relative policy advantages, updates the policy, and synchronizes its
-gradients through DDP. It uses a deterministic generated policy task so every
-topology consumes the same global rows without model or dataset downloads.
-This measures StateSet's single-node DDP training path; it is not LLM quality,
-rollout-serving, multi-node, or end-to-end agent throughput evidence.
+gradients through DDP. Its fixed gradient-accumulation window uses DDP
+`no_sync` for intermediate microbatches and one synchronized update at the end,
+matching StateSet's intended large-effective-batch execution. It uses a
+deterministic generated policy task so every topology consumes the same global
+rows without model or dataset downloads. This measures StateSet's single-node
+DDP training path; it is not LLM quality, rollout-serving, multi-node, or
+end-to-end agent throughput evidence.
 
 ```bash
 python benchmarks/scaling_comparison.py \

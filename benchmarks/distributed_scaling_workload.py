@@ -10,6 +10,7 @@ holding the global workload constant across process counts.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -49,8 +50,9 @@ DEFAULT_WORKLOAD: dict[str, Any] = {
     "num_actions": 256,
     "group_size": 4,
     "global_batch_size": 2048,
-    "warmup_steps": 3,
-    "measured_steps": 24,
+    "gradient_accumulation_steps": 96,
+    "warmup_steps": 1,
+    "measured_steps": 6,
     "eval_examples": 2048,
     "learning_rate": 2e-4,
     "entropy_coef": 1e-3,
@@ -244,30 +246,41 @@ def run(args: argparse.Namespace) -> None:
             )
 
         local_batch = global_batch // world_size
+        accumulation_steps = int(config["gradient_accumulation_steps"])
+        if accumulation_steps < 1:
+            raise ValueError("gradient_accumulation_steps must be >= 1")
         optimizer = new_optimizer()
 
         def step_once(step: int) -> None:
-            features, targets, exploration = indexed_batch(
-                step=step,
-                seed=args.seed,
-                rank=rank,
-                local_batch_size=local_batch,
-                global_batch_size=global_batch,
-                feature_dim=int(config["feature_dim"]),
-                num_actions=int(config["num_actions"]),
-                device=device,
-            )
             optimizer.zero_grad(set_to_none=True)
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                logits = model(features)
-                loss = policy_loss(
-                    logits,
-                    targets,
-                    exploration,
-                    group_size=group_size,
-                    entropy_coef=float(config["entropy_coef"]),
+            for micro_step in range(accumulation_steps):
+                batch_step = step * accumulation_steps + micro_step
+                features, targets, exploration = indexed_batch(
+                    step=batch_step,
+                    seed=args.seed,
+                    rank=rank,
+                    local_batch_size=local_batch,
+                    global_batch_size=global_batch,
+                    feature_dim=int(config["feature_dim"]),
+                    num_actions=int(config["num_actions"]),
+                    device=device,
                 )
-            loss.backward()
+                sync_context = (
+                    model.no_sync()
+                    if micro_step < accumulation_steps - 1
+                    else contextlib.nullcontext()
+                )
+                with sync_context:
+                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                        logits = model(features)
+                        loss = policy_loss(
+                            logits,
+                            targets,
+                            exploration,
+                            group_size=group_size,
+                            entropy_coef=float(config["entropy_coef"]),
+                        )
+                    (loss / accumulation_steps).backward()
             optimizer.step()
 
         for step in range(int(config["warmup_steps"])):
@@ -310,7 +323,7 @@ def run(args: argparse.Namespace) -> None:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             artifact_sha256 = _artifact_digest(model, args.output)
             seconds = float(elapsed.item())
-            samples = global_batch * int(config["measured_steps"])
+            samples = global_batch * accumulation_steps * int(config["measured_steps"])
             evidence = {
                 "schema_version": 1,
                 "measured": True,

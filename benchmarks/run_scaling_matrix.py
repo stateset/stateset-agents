@@ -85,7 +85,7 @@ def run_matrix(args: argparse.Namespace) -> None:
             ]
             env = dict(os.environ)
             env["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, range(gpu_count)))
-            env.setdefault("NCCL_ASYNC_ERROR_HANDLING", "1")
+            env.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
             subprocess.run(command, check=True, env=env, timeout=args.timeout_seconds)
 
     runs = load_scaling_evidence([evidence_dir])
