@@ -192,8 +192,9 @@ python benchmarks/scaling_comparison.py \
 The default gate requires the same three seeds and workload digest at every
 topology, monotonic mean throughput, and at least 50% scaling efficiency. The
 generated policy workload executes real BF16 optimization and DDP gradient
-synchronization while holding the global rows constant. It measures the
-single-node training path, not LLM quality or multi-node rollout serving. See
+synchronization as a weak-scaling test with a fixed per-device batch. It
+measures the single-node training path, not strong scaling, LLM quality, or
+multi-node rollout serving. See
 [`benchmark_results/scaling/README.md`](../benchmark_results/scaling/README.md).
 
 ### Measured fault recovery

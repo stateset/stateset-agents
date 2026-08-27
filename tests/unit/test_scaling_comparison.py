@@ -73,6 +73,7 @@ def test_complete_matrix_reports_efficiency(tmp_path: Path) -> None:
     summary = scaling_comparison.summarize_scaling(runs)
     assert summary["topologies"]["8"]["speedup_vs_1_gpu"] == pytest.approx(8.0)
     assert summary["topologies"]["8"]["scaling_efficiency"] == pytest.approx(1.0)
+    assert summary["scaling_mode"] == "unspecified"
     scaling_comparison.validate_scaling_performance(summary)
 
 

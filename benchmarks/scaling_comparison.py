@@ -147,6 +147,7 @@ def summarize_scaling(runs: Sequence[RunEvidence]) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "report_kind": "measured-scaling-comparison",
+        "scaling_mode": runs[0].data["config"].get("scaling_mode", "unspecified"),
         "workload_config_sha256": runs[0].data["workload_config_sha256"],
         "gpu": runs[0].data["hardware"]["gpu"],
         "topologies": topologies,
@@ -196,6 +197,7 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
         "",
         f"Workload digest: `{summary['workload_config_sha256']}`",
         f"GPU: {summary['gpu']}",
+        f"Scaling mode: {summary['scaling_mode']}",
         "Default publication gate: monotonic throughput and at least 50% efficiency",
         "",
         "| GPUs | Seeds | Samples/s | Speedup | Scaling efficiency | Wall clock (s) | Peak VRAM/GPU (MiB) |",

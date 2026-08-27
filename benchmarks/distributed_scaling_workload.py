@@ -4,7 +4,7 @@
 This is a synthetic policy-optimization workload, not an LLM quality
 benchmark.  It exercises real CUDA forward/backward passes, group-relative
 advantages, optimizer updates, and PyTorch DDP gradient synchronization while
-holding the global workload constant across process counts.
+holding the per-device workload constant across process counts.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 from stateset_agents import __version__  # noqa: E402
 
-PROTOCOL = "stateset-ddp-policy-scaling-v1"
+PROTOCOL = "stateset-ddp-policy-weak-scaling-v2"
 MODEL_NAME = "stateset/synthetic-residual-policy-v1"
 MODEL_REVISION = hashlib.sha1(
     b"stateset-residual-policy-v1", usedforsecurity=False
@@ -49,7 +49,8 @@ DEFAULT_WORKLOAD: dict[str, Any] = {
     "depth": 8,
     "num_actions": 256,
     "group_size": 4,
-    "global_batch_size": 2048,
+    "scaling_mode": "weak",
+    "per_device_batch_size": 2048,
     "gradient_accumulation_steps": 96,
     "warmup_steps": 1,
     "measured_steps": 6,
@@ -217,11 +218,14 @@ def run(args: argparse.Namespace) -> None:
     try:
         config = dict(DEFAULT_WORKLOAD)
         config.update(json.loads(args.config_json))
-        global_batch = int(config["global_batch_size"])
+        if config["scaling_mode"] != "weak":
+            raise ValueError("this workload currently publishes weak scaling only")
+        local_batch = int(config["per_device_batch_size"])
+        global_batch = local_batch * world_size
         group_size = int(config["group_size"])
-        if global_batch % world_size or (global_batch // world_size) % group_size:
+        if local_batch % group_size:
             raise ValueError(
-                "global_batch_size must divide evenly into topology and policy groups"
+                "per_device_batch_size must divide evenly into policy groups"
             )
         if int(config["eval_examples"]) % world_size:
             raise ValueError("eval_examples must divide evenly into topology")
@@ -249,7 +253,6 @@ def run(args: argparse.Namespace) -> None:
                 model.parameters(), lr=float(config["learning_rate"])
             )
 
-        local_batch = global_batch // world_size
         accumulation_steps = int(config["gradient_accumulation_steps"])
         if accumulation_steps < 1:
             raise ValueError("gradient_accumulation_steps must be >= 1")
