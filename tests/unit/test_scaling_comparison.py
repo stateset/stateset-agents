@@ -73,6 +73,35 @@ def test_complete_matrix_reports_efficiency(tmp_path: Path) -> None:
     summary = scaling_comparison.summarize_scaling(runs)
     assert summary["topologies"]["8"]["speedup_vs_1_gpu"] == pytest.approx(8.0)
     assert summary["topologies"]["8"]["scaling_efficiency"] == pytest.approx(1.0)
+    scaling_comparison.validate_scaling_performance(summary)
+
+
+def test_performance_gate_rejects_low_efficiency(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    for index, run in enumerate(runs):
+        if run.data["hardware"]["gpu_count"] == 8:
+            changed = dict(run.data)
+            changed["metrics"] = dict(run.metrics, samples_per_second=20.0)
+            runs[index] = scaling_comparison.RunEvidence(run.source, changed)
+    summary = scaling_comparison.summarize_scaling(runs)
+
+    with pytest.raises(EvidenceError, match="below 50.0%"):
+        scaling_comparison.validate_scaling_performance(
+            summary, require_monotonic=False
+        )
+
+
+def test_performance_gate_rejects_non_monotonic_throughput(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    for index, run in enumerate(runs):
+        if run.data["hardware"]["gpu_count"] == 4:
+            changed = dict(run.data)
+            changed["metrics"] = dict(run.metrics, samples_per_second=15.0)
+            runs[index] = scaling_comparison.RunEvidence(run.source, changed)
+    summary = scaling_comparison.summarize_scaling(runs)
+
+    with pytest.raises(EvidenceError, match="not monotonic"):
+        scaling_comparison.validate_scaling_performance(summary)
 
 
 def test_rejects_missing_topology(tmp_path: Path) -> None:

@@ -178,6 +178,11 @@ These guard local regressions. They do not compare model-training frameworks.
 ### Measured distributed scaling
 
 ```bash
+python benchmarks/run_scaling_matrix.py \
+  --gpu-counts 1 2 4 8 \
+  --seeds 42 1337 2026 \
+  --output-dir benchmark_results/scaling
+
 python benchmarks/scaling_comparison.py \
   benchmark_results/scaling/evidence \
   --gpu-counts 1 2 4 8 \
@@ -185,11 +190,20 @@ python benchmarks/scaling_comparison.py \
 ```
 
 The default gate requires the same three seeds and workload digest at every
-topology. See [`benchmark_results/scaling/README.md`](../benchmark_results/scaling/README.md).
+topology, monotonic mean throughput, and at least 50% scaling efficiency. The
+generated policy workload executes real BF16 optimization and DDP gradient
+synchronization while holding the global rows constant. It measures the
+single-node training path, not LLM quality or multi-node rollout serving. See
+[`benchmark_results/scaling/README.md`](../benchmark_results/scaling/README.md).
 
 ### Measured fault recovery
 
 ```bash
+python benchmarks/run_reliability_matrix.py \
+  --device cuda \
+  --seeds 42 1337 2026 \
+  --output-dir benchmark_results/reliability
+
 python benchmarks/reliability_evidence.py \
   benchmark_results/reliability/evidence \
   --max-data-loss-steps 10 \
@@ -200,6 +214,8 @@ The gate requires worker-exit, controller-restart, and network-interruption
 evidence with exact checkpoint replay, no duplicate updates, bounded lost work,
 successful completion, and zero leaked resources. See the
 [`reliability evidence contract`](../benchmark_results/reliability/README.md).
+The network case interrupts a real local TCP control-plane heartbeat; it is not
+a claim of multi-node partition tolerance.
 
 ## Publication gates
 

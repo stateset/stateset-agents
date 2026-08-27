@@ -16,3 +16,24 @@ python benchmarks/reliability_evidence.py \
 ```
 
 The validator only accepts `measured: true`. It does not simulate failures.
+
+Generate the full matrix on CUDA (or use `--device cpu` for a local smoke
+test):
+
+```bash
+python benchmarks/run_reliability_matrix.py \
+  --device cuda \
+  --seeds 42 1337 2026 \
+  --output-dir benchmark_results/reliability
+```
+
+The harness applies three distinct faults after an atomic optimizer
+checkpoint: the worker exits itself, the supervising process sends SIGKILL to
+the training controller, and a live TCP control-plane listener is closed
+before the worker's next heartbeat. Each run launches a new process, reloads
+model and optimizer state, reaches the expected final step, and verifies the
+complete update ledger. Cleanup is fail-safe: child processes and listener
+sockets are stopped even when the harness itself raises.
+
+The TCP test is a single-host control-plane interruption. It does not establish
+multi-node partition tolerance.

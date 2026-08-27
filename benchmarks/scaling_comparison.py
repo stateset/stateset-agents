@@ -136,7 +136,9 @@ def summarize_scaling(runs: Sequence[RunEvidence]) -> dict[str, Any]:
         topologies[str(gpu_count)] = {
             "seeds": sorted(run.seed for run in topology_runs),
             "samples_per_second_mean": mean_throughput,
-            "samples_per_second_std": statistics.stdev(throughput),
+            "samples_per_second_std": (
+                statistics.stdev(throughput) if len(throughput) > 1 else 0.0
+            ),
             "wall_clock_seconds_mean": statistics.mean(wall_clock),
             "peak_vram_mb_mean": statistics.mean(peak_vram),
             "speedup_vs_1_gpu": speedup,
@@ -151,13 +153,50 @@ def summarize_scaling(runs: Sequence[RunEvidence]) -> dict[str, Any]:
     }
 
 
+def validate_scaling_performance(
+    summary: Mapping[str, Any],
+    *,
+    min_efficiency: float = 0.5,
+    require_monotonic: bool = True,
+) -> None:
+    """Apply the predeclared publication threshold to measured means."""
+    if not 0 < min_efficiency <= 1:
+        raise EvidenceError("min_efficiency must be in (0, 1]")
+    topologies = summary["topologies"]
+    ordered = sorted((int(count), values) for count, values in topologies.items())
+    if require_monotonic:
+        for (previous_count, previous), (count, current) in zip(
+            ordered, ordered[1:], strict=False
+        ):
+            if (
+                current["samples_per_second_mean"]
+                <= previous["samples_per_second_mean"]
+            ):
+                raise EvidenceError(
+                    f"throughput is not monotonic from {previous_count} to {count} GPUs"
+                )
+    failures = [
+        (count, float(values["scaling_efficiency"]))
+        for count, values in ordered
+        if count > 1 and float(values["scaling_efficiency"]) < min_efficiency
+    ]
+    if failures:
+        rendered = ", ".join(
+            f"{count} GPU={efficiency:.1%}" for count, efficiency in failures
+        )
+        raise EvidenceError(
+            f"scaling efficiency below {min_efficiency:.1%}: {rendered}"
+        )
+
+
 def render_markdown(summary: Mapping[str, Any]) -> str:
-    """Render scale results without applying an arbitrary pass threshold."""
+    """Render scale results and the predeclared publication gate."""
     lines = [
         "# Measured distributed-scaling comparison",
         "",
         f"Workload digest: `{summary['workload_config_sha256']}`",
         f"GPU: {summary['gpu']}",
+        "Default publication gate: monotonic throughput and at least 50% efficiency",
         "",
         "| GPUs | Seeds | Samples/s | Speedup | Scaling efficiency | Wall clock (s) | Peak VRAM/GPU (MiB) |",
         "|---:|---:|---:|---:|---:|---:|---:|",
@@ -189,6 +228,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("inputs", nargs="+", type=Path)
     parser.add_argument("--gpu-counts", nargs="+", type=int, default=[1, 2, 4, 8])
     parser.add_argument("--min-seeds", type=int, default=3)
+    parser.add_argument("--min-efficiency", type=float, default=0.5)
+    parser.add_argument(
+        "--allow-non-monotonic",
+        action="store_true",
+        help="Do not require mean throughput to increase at every topology.",
+    )
+    parser.add_argument(
+        "--no-performance-gate",
+        action="store_true",
+        help="Validate provenance/completeness without enforcing scale performance.",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -199,8 +249,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         runs = load_scaling_evidence(args.inputs)
         validate_scaling_comparison(runs, args.gpu_counts, args.min_seeds)
+        result = summarize_scaling(runs)
+        if not args.no_performance_gate:
+            validate_scaling_performance(
+                result,
+                min_efficiency=args.min_efficiency,
+                require_monotonic=not args.allow_non_monotonic,
+            )
         if not args.validate_only:
-            result = summarize_scaling(runs)
             args.output_dir.mkdir(parents=True, exist_ok=True)
             (args.output_dir / "scaling.json").write_text(
                 json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
