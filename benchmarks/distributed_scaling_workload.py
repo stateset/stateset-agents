@@ -234,7 +234,11 @@ def run(args: argparse.Namespace) -> None:
             int(config["depth"]),
             int(config["num_actions"]),
         ).to(device)
-        model = DDP(model, device_ids=[local_rank], static_graph=True)
+        # ``static_graph=True`` is incompatible with repeated ``no_sync``
+        # accumulation in PyTorch 2.8's reducer (it trips an internal
+        # expect_autograd_hooks assertion). The normal reducer supports this
+        # exact accumulation pattern and still caches bucket construction.
+        model = DDP(model, device_ids=[local_rank])
         initial_state = {
             key: value.detach().cpu().clone()
             for key, value in model.module.state_dict().items()
