@@ -95,3 +95,30 @@ def test_report_has_no_synthetic_rankings(tmp_path: Path) -> None:
     markdown = (output / "comparison.md").read_text(encoding="utf-8")
     assert "Measured algorithm comparison" in markdown
     assert "Winner" not in markdown
+
+
+def test_requires_identical_seed_sets(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    changed = dict(runs[-1].data)
+    changed["seed"] = 7
+    runs[-1] = algorithm_comparison.RunEvidence(runs[-1].source, changed)
+    with pytest.raises(EvidenceError, match="seed set"):
+        algorithm_comparison.validate_algorithm_comparison(runs)
+
+
+def test_rejects_mismatched_cuda(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    changed = dict(runs[-1].data)
+    changed["hardware"] = dict(changed["hardware"], cuda="12.9")
+    runs[-1] = algorithm_comparison.RunEvidence(runs[-1].source, changed)
+    with pytest.raises(EvidenceError, match="hardware.cuda"):
+        algorithm_comparison.validate_algorithm_comparison(runs)
+
+
+def test_required_algorithm_roster_fails_closed(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    with pytest.raises(EvidenceError, match="dapo, gepo, vapo"):
+        algorithm_comparison.validate_algorithm_comparison(
+            runs,
+            required_algorithms=("grpo", "gspo", "dapo", "vapo", "gepo"),
+        )

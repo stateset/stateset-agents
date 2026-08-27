@@ -84,8 +84,10 @@ class RunEvidence:
     def comparison_key(self) -> tuple[Any, ...]:
         hardware = self.data["hardware"]
         return tuple(self.data[field] for field in MATCH_FIELDS) + (
+            json.dumps(self.data["config"], sort_keys=True, separators=(",", ":")),
             hardware["gpu"],
             hardware["gpu_count"],
+            hardware["cuda"],
         )
 
 
@@ -202,14 +204,24 @@ def load_evidence(inputs: Sequence[Path]) -> list[RunEvidence]:
     return runs
 
 
-def validate_comparison(runs: Sequence[RunEvidence], min_seeds: int = 3) -> None:
+def validate_comparison(
+    runs: Sequence[RunEvidence],
+    min_seeds: int = 3,
+    required_frameworks: Sequence[str] = (),
+) -> None:
     """Require matched protocols, unique seeds, and adequate replication."""
     if min_seeds < 1:
         raise EvidenceError("min_seeds must be >= 1")
     keys = {run.comparison_key for run in runs}
     if len(keys) != 1:
         differing: list[str] = []
-        fields = (*MATCH_FIELDS, "hardware.gpu", "hardware.gpu_count")
+        fields = (
+            *MATCH_FIELDS,
+            "config",
+            "hardware.gpu",
+            "hardware.gpu_count",
+            "hardware.cuda",
+        )
         for field_index, field in enumerate(fields):
             values = {key[field_index] for key in keys}
             if len(values) > 1:
@@ -222,6 +234,19 @@ def validate_comparison(runs: Sequence[RunEvidence], min_seeds: int = 3) -> None
     if len(by_framework) < 2:
         raise EvidenceError("comparison requires evidence from at least two frameworks")
 
+    required = tuple(required_frameworks)
+    if any(not name.strip() for name in required):
+        raise EvidenceError("required_frameworks must contain non-empty names")
+    if len(required) != len(set(required)):
+        raise EvidenceError("required_frameworks must not contain duplicates")
+    missing_frameworks = sorted(set(required) - set(by_framework))
+    if missing_frameworks:
+        raise EvidenceError(
+            "comparison is missing required frameworks: "
+            + ", ".join(missing_frameworks)
+        )
+
+    expected_seeds: set[int] | None = None
     for framework, framework_runs in sorted(by_framework.items()):
         seeds = [run.seed for run in framework_runs]
         if len(seeds) != len(set(seeds)):
@@ -229,6 +254,14 @@ def validate_comparison(runs: Sequence[RunEvidence], min_seeds: int = 3) -> None
         if len(seeds) < min_seeds:
             raise EvidenceError(
                 f"{framework}: only {len(seeds)} seeds; at least {min_seeds} required"
+            )
+        seed_set = set(seeds)
+        if expected_seeds is None:
+            expected_seeds = seed_set
+        elif seed_set != expected_seeds:
+            raise EvidenceError(
+                f"{framework}: seed set {sorted(seed_set)} does not match "
+                f"{sorted(expected_seeds)}"
             )
         versions = {run.data["framework_version"] for run in framework_runs}
         if len(versions) != 1:
@@ -364,11 +397,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=Path("benchmark_results/framework_comparison/report"),
     )
     parser.add_argument("--min-seeds", type=int, default=3)
+    parser.add_argument(
+        "--required-framework",
+        action="append",
+        default=[],
+        help="Framework required in the comparison (repeatable).",
+    )
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args(argv)
     try:
         runs = load_evidence(args.inputs)
-        validate_comparison(runs, min_seeds=args.min_seeds)
+        validate_comparison(
+            runs,
+            min_seeds=args.min_seeds,
+            required_frameworks=args.required_framework,
+        )
         if not args.validate_only:
             write_report(runs, args.output_dir)
     except EvidenceError as exc:

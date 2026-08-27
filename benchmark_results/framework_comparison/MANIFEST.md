@@ -38,3 +38,15 @@ cannot produce an accepted evidence document.
 Copy `benchmarks/shootout_manifest.example.json`, replace every revision,
 hardware, and installed-version marker with observed immutable values, then run
 the orchestrator from a clean committed worktree.
+
+After execution, validate the complete competitive roster explicitly:
+
+```bash
+python benchmarks/framework_comparison.py EVIDENCE \
+  --required-framework stateset-agents \
+  --required-framework trl \
+  --required-framework verl \
+  --required-framework nemo-rl \
+  --required-framework openrlhf \
+  --validate-only
+```

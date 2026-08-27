@@ -44,12 +44,18 @@ Each JSON file represents one seed from one framework:
 `benchmarks/framework_comparison.py` fails closed unless:
 
 - every document explicitly says `measured: true` and carries complete provenance;
-- protocol, cache policy, algorithm revision, model revision, dataset revision, task, GPU
-  model, and GPU count match;
-- each framework uses one version and has at least three unique seeds;
+- protocol, cache policy, algorithm revision, model revision, dataset revision,
+  task, canonical config, GPU model/count, and CUDA version match;
+- each framework uses one version, has at least three unique seeds, and uses
+  the identical seed set;
 - every required metric is finite, with throughput, wall time, and VRAM
   strictly positive; and
 - at least two frameworks are present.
+
+Publication profiles should also pass each expected implementation with the
+repeatable `--required-framework` option. The A+ profile requires
+`stateset-agents`, `trl`, `verl`, `nemo-rl`, and `openrlhf`; a smaller roster
+remains valid evidence for its exact participants but cannot satisfy that gate.
 
 The output is descriptive. It does not declare an overall winner or turn
 subjective features into numbers.

@@ -120,6 +120,69 @@ def test_rejects_mismatched_hardware(tmp_path: Path) -> None:
         framework_comparison.validate_comparison(runs)
 
 
+def test_rejects_mismatched_cuda(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    mismatched = dict(runs[-1].data)
+    mismatched["hardware"] = dict(mismatched["hardware"], cuda="12.9")
+    runs[-1] = framework_comparison.RunEvidence(runs[-1].source, mismatched)
+
+    with pytest.raises(EvidenceError, match="hardware.cuda"):
+        framework_comparison.validate_comparison(runs)
+
+
+def test_rejects_mismatched_config(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    mismatched = dict(runs[-1].data)
+    mismatched["config"] = dict(mismatched["config"], learning_rate=9e-5)
+    runs[-1] = framework_comparison.RunEvidence(runs[-1].source, mismatched)
+
+    with pytest.raises(EvidenceError, match="config"):
+        framework_comparison.validate_comparison(runs)
+
+
+def test_requires_identical_seed_sets(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    changed = dict(runs[-1].data)
+    changed["seed"] = 7
+    runs[-1] = framework_comparison.RunEvidence(runs[-1].source, changed)
+
+    with pytest.raises(EvidenceError, match="seed set"):
+        framework_comparison.validate_comparison(runs)
+
+
+def test_required_framework_roster_fails_closed(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    with pytest.raises(EvidenceError, match="nemo-rl, openrlhf, verl"):
+        framework_comparison.validate_comparison(
+            runs,
+            required_frameworks=(
+                "stateset-agents",
+                "trl",
+                "verl",
+                "nemo-rl",
+                "openrlhf",
+            ),
+        )
+
+
+def test_retained_pair_does_not_satisfy_full_competitive_roster() -> None:
+    root = MODULE_PATH.parents[1]
+    runs = framework_comparison.load_evidence(
+        [root / "benchmark_results" / "framework_comparison" / "evidence"]
+    )
+    with pytest.raises(EvidenceError, match="nemo-rl, openrlhf, verl"):
+        framework_comparison.validate_comparison(
+            runs,
+            required_frameworks=(
+                "stateset-agents",
+                "trl",
+                "verl",
+                "nemo-rl",
+                "openrlhf",
+            ),
+        )
+
+
 def test_rejects_duplicate_or_insufficient_seeds(tmp_path: Path) -> None:
     runs = _runs(tmp_path)
     duplicate = framework_comparison.RunEvidence(runs[0].source, dict(runs[0].data))

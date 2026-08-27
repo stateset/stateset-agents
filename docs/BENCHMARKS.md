@@ -174,6 +174,11 @@ Run all prescribed seeds; negative and null results must be retained. See
 ```bash
 python benchmarks/algorithm_comparison.py \
   benchmark_results/algorithm_comparison/evidence \
+  --required-algorithm grpo \
+  --required-algorithm gspo \
+  --required-algorithm dapo \
+  --required-algorithm vapo \
+  --required-algorithm gepo \
   --output-dir benchmark_results/algorithm_comparison/report
 ```
 
@@ -186,12 +191,19 @@ matched seeds each. Evidence uses the schema documented in
 ```bash
 python benchmarks/framework_comparison.py \
   benchmark_results/framework_comparison/evidence \
+  --required-framework stateset-agents \
+  --required-framework trl \
+  --required-framework verl \
+  --required-framework nemo-rl \
+  --required-framework openrlhf \
   --output-dir benchmark_results/framework_comparison/report
 ```
 
 The validator rejects simulated or estimated evidence, mismatched algorithm,
-model, dataset or hardware revisions, duplicate seeds, mixed framework
-versions, missing artifact digests, and fewer than three seeds per framework.
+model, dataset, canonical config, GPU/CUDA environment, non-identical seed sets,
+mixed framework versions, missing artifact digests, and fewer than three seeds
+per framework. Required-roster flags prevent a partial comparison from passing
+the full competitive gate.
 See the [`framework comparison schema`](../benchmark_results/framework_comparison/SCHEMA.md).
 
 Use [`benchmarks/shootout.py`](../benchmarks/shootout.py) and the ready-to-fill

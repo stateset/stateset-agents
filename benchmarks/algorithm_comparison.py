@@ -53,7 +53,9 @@ def load_algorithm_evidence(inputs: Sequence[Path]) -> list[RunEvidence]:
 
 
 def validate_algorithm_comparison(
-    runs: Sequence[RunEvidence], min_seeds: int = 3
+    runs: Sequence[RunEvidence],
+    min_seeds: int = 3,
+    required_algorithms: Sequence[str] = (),
 ) -> None:
     """Reject mixed protocols and under-replicated algorithm comparisons."""
     if min_seeds < 1:
@@ -68,7 +70,7 @@ def validate_algorithm_comparison(
             field for field in MATCH_FIELDS if run.data[field] != first.data[field]
         ]
         hardware = run.data["hardware"]
-        for field in ("gpu", "gpu_count"):
+        for field in ("gpu", "gpu_count", "cuda"):
             if hardware[field] != first_hardware[field]:
                 differences.append(f"hardware.{field}")
         if differences:
@@ -82,6 +84,19 @@ def validate_algorithm_comparison(
     if len(grouped) < 2:
         raise EvidenceError("comparison requires at least two algorithms")
 
+    required = tuple(required_algorithms)
+    if any(not name.strip() for name in required):
+        raise EvidenceError("required_algorithms must contain non-empty names")
+    if len(required) != len(set(required)):
+        raise EvidenceError("required_algorithms must not contain duplicates")
+    missing_algorithms = sorted(set(required) - set(grouped))
+    if missing_algorithms:
+        raise EvidenceError(
+            "comparison is missing required algorithms: "
+            + ", ".join(missing_algorithms)
+        )
+
+    expected_seeds: set[int] | None = None
     for algorithm, algorithm_runs in sorted(grouped.items()):
         seeds = [run.seed for run in algorithm_runs]
         if len(seeds) != len(set(seeds)):
@@ -89,6 +104,14 @@ def validate_algorithm_comparison(
         if len(seeds) < min_seeds:
             raise EvidenceError(
                 f"{algorithm}: only {len(seeds)} seeds; at least {min_seeds} required"
+            )
+        seed_set = set(seeds)
+        if expected_seeds is None:
+            expected_seeds = seed_set
+        elif seed_set != expected_seeds:
+            raise EvidenceError(
+                f"{algorithm}: seed set {sorted(seed_set)} does not match "
+                f"{sorted(expected_seeds)}"
             )
         revisions = {run.data["algorithm_revision"] for run in algorithm_runs}
         if len(revisions) != 1:
@@ -133,11 +156,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=Path("benchmark_results/algorithm_comparison/report"),
     )
     parser.add_argument("--min-seeds", type=int, default=3)
+    parser.add_argument(
+        "--required-algorithm",
+        action="append",
+        default=[],
+        help="Algorithm required in the comparison (repeatable).",
+    )
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args(argv)
     try:
         runs = load_algorithm_evidence(args.inputs)
-        validate_algorithm_comparison(runs, args.min_seeds)
+        validate_algorithm_comparison(
+            runs,
+            args.min_seeds,
+            required_algorithms=args.required_algorithm,
+        )
         if not args.validate_only:
             write_algorithm_report(runs, args.output_dir)
     except EvidenceError as exc:

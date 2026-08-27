@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `196,608`-sample effective batch exactly across ranks. Its retained
   three-seed matrix reached `6.642×` throughput and `83.0%` efficiency at eight
   RTX 5080s; the validator recomputes work from execution shape and wall time.
+- Hardened competitive framework and algorithm gates to require identical seed
+  sets and CUDA environments. Framework comparisons additionally bind the
+  canonical config, while repeatable required-roster flags fail closed when
+  verl, NeMo RL, OpenRLHF, TRL, StateSet, or a prescribed algorithm is absent.
 - Refreshed non-billable River and RunPod authentication/cleanup canaries;
   Fireworks remains explicitly skipped because credentials are unavailable.
 
