@@ -22,7 +22,11 @@ import torch
 from recovery_worker import NETWORK_EXIT_CODE, WORKER_EXIT_CODE
 from reliability_evidence import load_runs, summarize, validate_matrix
 
-from stateset_agents import __version__
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from stateset_agents import __version__  # noqa: E402
 
 FAULTS = ("worker_exit", "controller_restart", "network_interruption")
 PROTOCOL = "stateset-checkpoint-fault-recovery-v1"

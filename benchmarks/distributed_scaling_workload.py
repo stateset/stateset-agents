@@ -26,7 +26,11 @@ import torch.distributed as dist
 from torch import nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from stateset_agents import __version__
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from stateset_agents import __version__  # noqa: E402
 
 PROTOCOL = "stateset-ddp-policy-scaling-v1"
 MODEL_NAME = "stateset/synthetic-residual-policy-v1"
