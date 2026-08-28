@@ -23,7 +23,7 @@ import sys
 import time
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from stateset_agents.training import TrainingExperiment
@@ -192,6 +192,34 @@ def hash_artifact(path: Path) -> str:
     return digest.hexdigest()
 
 
+def validate_artifact_uri(value: Any) -> str:
+    """Require an evidence-relative, portable artifact location."""
+    if not isinstance(value, str) or not value.strip():
+        raise ConformanceError("evidence artifact_uri must be non-empty")
+    if "\\" in value:
+        raise ConformanceError("evidence artifact_uri must use POSIX separators")
+    relative = PurePosixPath(value)
+    if (
+        relative.is_absolute()
+        or relative == PurePosixPath(".")
+        or ".." in relative.parts
+    ):
+        raise ConformanceError(
+            "evidence artifact_uri must be a safe path relative to the evidence file"
+        )
+    return relative.as_posix()
+
+
+def resolve_evidence_artifact(evidence_path: Path, artifact_uri: Any) -> Path:
+    """Resolve an evidence artifact without allowing directory traversal."""
+    relative = validate_artifact_uri(artifact_uri)
+    root = evidence_path.resolve().parent
+    artifact = (root / relative).resolve()
+    if not artifact.is_relative_to(root):  # defensive against unusual path semantics
+        raise ConformanceError("evidence artifact escaped its evidence directory")
+    return artifact
+
+
 def collect_nvidia_hardware() -> dict[str, Any]:
     """Collect exact NVIDIA identities and fail when no live GPU is visible."""
     command = [
@@ -320,9 +348,15 @@ def validate_evidence(evidence: Mapping[str, Any], manifest: Mapping[str, Any]) 
             r"[0-9a-f]{64}", str(evidence[field])
         ):
             raise ConformanceError(f"evidence {field} must be a SHA-256 digest")
-    for field in ("stateset_agents_version", "artifact_uri"):
-        if not isinstance(evidence.get(field), str) or not str(evidence[field]).strip():
-            raise ConformanceError(f"evidence {field} must be non-empty")
+    expected_experiment_digest = build_experiment(manifest, Path(".")).sha256
+    if evidence.get("experiment_sha256") != expected_experiment_digest:
+        raise ConformanceError("evidence experiment digest does not match manifest")
+    if (
+        not isinstance(evidence.get("stateset_agents_version"), str)
+        or not str(evidence["stateset_agents_version"]).strip()
+    ):
+        raise ConformanceError("evidence stateset_agents_version must be non-empty")
+    validate_artifact_uri(evidence.get("artifact_uri"))
     duration = evidence.get("wall_time_seconds")
     if (
         isinstance(duration, bool)
@@ -400,7 +434,7 @@ def load_evidence(path: Path, *, verify_artifact: bool = True) -> dict[str, Any]
     manifest = validate_manifest(raw.get("manifest"))
     validate_evidence(raw, manifest)
     if verify_artifact:
-        artifact = Path(str(raw["artifact_uri"]))
+        artifact = resolve_evidence_artifact(path, raw["artifact_uri"])
         if hash_artifact(artifact) != raw["artifact_sha256"]:
             raise ConformanceError("evidence artifact digest does not match bytes")
     return dict(raw)
@@ -427,9 +461,11 @@ def run_conformance(
         time.monotonic() - started,
         time.get_clock_info("monotonic").resolution,
     )
+    output_root = output_dir.resolve()
     artifact = Path(result.artifact_uri).resolve()
-    if not artifact.is_relative_to((output_dir / "run").resolve()):
+    if not artifact.is_relative_to((output_root / "run").resolve()):
         raise ConformanceError("backend artifact escaped the conformance run directory")
+    artifact_uri = artifact.relative_to(output_root).as_posix()
     evidence = {
         "schema_version": 1,
         "kind": "stateset-external-backend-conformance",
@@ -450,7 +486,7 @@ def run_conformance(
             "python": platform.python_version(),
             "platform": platform.platform(),
         },
-        "artifact_uri": result.artifact_uri,
+        "artifact_uri": artifact_uri,
         "artifact_sha256": hash_artifact(artifact),
         "backend_metrics": dict(result.metrics),
         "backend_metadata": dict(result.metadata),

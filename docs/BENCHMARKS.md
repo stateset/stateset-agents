@@ -19,6 +19,12 @@ retained in this repository or a linked immutable CI artifact.
 Synthetic and stub outputs must never be presented as model quality, training
 throughput, framework superiority, GPU scaling, or production capacity.
 
+External-backend conformance is a live proof rather than a measured comparison.
+Each engine-specific output directory contains portable evidence plus its
+checkpoint bytes. `benchmarks/backend_conformance_suite.py` revalidates the
+complete NeMo RL/OpenRLHF/verl roster and rejects semantic drift, but the gate
+does not support quality or throughput claims.
+
 ## Currently supported claims
 
 ### Multi-turn customer-support improvement

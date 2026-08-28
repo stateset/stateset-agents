@@ -17,17 +17,30 @@ python benchmarks/backend_conformance.py backend-conformance.json \
 # Revalidate the self-contained record and checkpoint bytes later.
 python benchmarks/backend_conformance.py \
   --validate-evidence benchmark_results/backend_conformance/nemo-rl/conformance.json
+
+# After collecting all three engine-specific directories, gate the roster.
+python benchmarks/backend_conformance_suite.py \
+  benchmark_results/backend_conformance \
+  --output benchmark_results/backend_conformance/suite.json
 ```
 
 The runner invokes the public StateSet backend protocol, requires a visible
 NVIDIA GPU, records every GPU UUID/size/driver, verifies exact engine and
 StateSet versions, rejects a dirty or mismatched harness checkout, embeds and
 hashes the immutable manifest, experiment, and resulting artifact, and writes either
-`conformance.json` or `failure.json` without overwriting a prior attempt. The
-manifest contains no credentials; provide
+`conformance.json` or `failure.json` without overwriting a prior attempt. Artifact
+locations are evidence-relative, so copying the complete backend directory preserves
+independent byte-level validation. The manifest contains no credentials; provide
 Hub/provider credentials through the process environment. A provider wrapper
 must additionally enforce a wall-clock and monetary ceiling before renting
 hardware.
+
+The suite gate recursively discovers only `conformance.json` records, rehashes
+every colocated checkpoint, and requires exactly one NeMo RL, OpenRLHF, and verl
+record. It rejects duplicate or missing engines, mixed StateSet/harness versions,
+and drift in the algorithm, model revision, seed, or semantic task. Its summary
+is bound to the exact input documents and does not turn conformance into a
+performance claim.
 
 Conformance proves that an adapter can complete a real GPU training step and
 emit a reusable checkpoint. It does not establish quality, throughput parity,

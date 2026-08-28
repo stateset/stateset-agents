@@ -219,18 +219,24 @@ def test_run_conformance_binds_hardware_experiment_and_artifact(
     monkeypatch.setattr(
         backend_conformance.importlib.metadata, "version", lambda _: "0.42.6"
     )
+    evidence_dir = tmp_path / "evidence"
     evidence = backend_conformance.run_conformance(
-        _manifest(), tmp_path / "evidence", timeout_seconds=60, root=tmp_path
+        _manifest(), evidence_dir, timeout_seconds=60, root=tmp_path
     )
     assert evidence["status"] == "completed"
     assert evidence["hardware"] == hardware
     assert evidence["experiment_sha256"] == captured["experiment"].sha256
     assert len(evidence["artifact_sha256"]) == 64
     assert evidence["backend_metrics"]["completed"] == 1.0
-    evidence_path = tmp_path / "conformance.json"
+    evidence_path = evidence_dir / "conformance.json"
     evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
     assert backend_conformance.load_evidence(evidence_path)["status"] == "completed"
-    Path(evidence["artifact_uri"]).joinpath("weights.bin").write_bytes(b"changed")
+    assert evidence["artifact_uri"] == "run/artifact"
+    moved = tmp_path / "moved"
+    evidence_dir.rename(moved)
+    evidence_path = moved / "conformance.json"
+    assert backend_conformance.load_evidence(evidence_path)["status"] == "completed"
+    (moved / evidence["artifact_uri"] / "weights.bin").write_bytes(b"changed")
     with pytest.raises(ConformanceError, match="artifact digest"):
         backend_conformance.load_evidence(evidence_path)
 
@@ -282,6 +288,10 @@ def test_evidence_validator_rejects_digest_gpu_and_completion_drift(
     with pytest.raises(ConformanceError, match="manifest digest"):
         backend_conformance.validate_evidence(changed, manifest)
     changed = dict(evidence)
+    changed["experiment_sha256"] = "0" * 64
+    with pytest.raises(ConformanceError, match="experiment digest"):
+        backend_conformance.validate_evidence(changed, manifest)
+    changed = dict(evidence)
     changed["manifest"] = {**manifest, "backend_version": "different"}
     with pytest.raises(ConformanceError, match="embedded evidence manifest"):
         backend_conformance.validate_evidence(changed, manifest)
@@ -293,6 +303,11 @@ def test_evidence_validator_rejects_digest_gpu_and_completion_drift(
     changed["backend_metrics"] = {"completed": 0.0, "wall_time_seconds": 0.1}
     with pytest.raises(ConformanceError, match="completed=1.0"):
         backend_conformance.validate_evidence(changed, manifest)
+    for artifact_uri in ("/tmp/artifact", "../artifact", r"run\artifact"):
+        changed = dict(evidence)
+        changed["artifact_uri"] = artifact_uri
+        with pytest.raises(ConformanceError, match="artifact_uri"):
+            backend_conformance.validate_evidence(changed, manifest)
 
 
 def test_run_conformance_uses_clock_resolution_for_a_zero_tick_duration(
