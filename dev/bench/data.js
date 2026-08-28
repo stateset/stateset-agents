@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787915110227,
+  "lastUpdate": 1787916060142,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -508,6 +508,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.57104389025308e-8",
             "extra": "mean: 335.382165856659 nsec\nrounds: 142858"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "committer": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "id": "e6d592e2ef6170fc38c8b320346e063e4580eee0",
+          "message": "feat: add NeMo RL backend adapter",
+          "timestamp": "2026-08-28T11:05:06Z",
+          "url": "https://github.com/stateset/stateset-agents/pull/38/commits/e6d592e2ef6170fc38c8b320346e063e4580eee0"
+        },
+        "date": 1787916059314,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6056.0908158887705,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001938131973853286",
+            "extra": "mean: 165.1230191886156 usec\nrounds: 1824"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6493.319691147605,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000019479751745761212",
+            "extra": "mean: 154.00443033219327 usec\nrounds: 2110"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4985.579754925263,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002422255396485367",
+            "extra": "mean: 200.5784781623638 usec\nrounds: 2221"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 746.7913325924686,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004096668496271042",
+            "extra": "mean: 1.339062140060629 msec\nrounds: 664"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 181.3599012461807,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005872308393554086",
+            "extra": "mean: 5.513898017856685 msec\nrounds: 168"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2151625.3244688823,
+            "unit": "iter/sec",
+            "range": "stddev: 5.108106837013868e-8",
+            "extra": "mean: 464.7649331078797 nsec\nrounds: 101958"
           }
         ]
       }
