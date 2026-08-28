@@ -121,6 +121,14 @@ An engine adapter is complete only after it:
 The benchmark-specific evidence schema remains stricter than this execution
 contract; see [`BENCHMARKS.md`](BENCHMARKS.md).
 
+For a real-GPU execution check, use the strict
+[`backend_conformance.py`](../benchmarks/backend_conformance.py) runner with a
+completed copy of
+[`backend_conformance_manifest.example.json`](../benchmarks/backend_conformance_manifest.example.json).
+It binds the backend result to the manifest and experiment digests, exact GPU
+identities, runtime, wall time, and artifact hash. Success is adapter
+conformance only; it is not comparative performance evidence.
+
 ## OpenRLHF adapter
 
 StateSet includes an executable, version-pinned adapter for OpenRLHF's current

@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an executable, version-pinned NeMo RL adapter for distributed math GRPO
   with verified JSON/JSONL data, immutable models, exact built-in reward and
   environment semantics, strict Hydra overrides, and forced checkpoints.
+- Added a strict live-GPU backend conformance runner that records immutable
+  manifest/experiment/artifact digests, exact NVIDIA hardware identity,
+  runtime and backend versions, wall time, and non-overwriting success or
+  failure evidence.
 - Added full-roster enforcement, one-seed preflight mode, and machine-readable
   attempt accounting to the neutral cross-framework benchmark runner.
 - Added GitHub artifact attestations for tag-built Python distributions and

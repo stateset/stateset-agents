@@ -28,6 +28,9 @@ has retained tests or live evidence; an unchecked box is not a product claim.
 - [x] Fail-closed NeMo RL GRPO adapter with immutable inputs, an exact built-in
   math reward contract, pinned source/version checks, and forced checkpoint
   output (live GPU conformance remains open)
+- [x] Strict external-backend conformance runner with immutable manifests,
+  exact GPU identity, artifact hashing, retained failures, and non-overwriting
+  evidence output
 
 See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 
