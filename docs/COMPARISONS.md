@@ -32,10 +32,12 @@ results; measured claims are limited to [`BENCHMARKS.md`](BENCHMARKS.md).
 | Current StateSet evidence | — | Three-seed single-A40 parity | Not measured | Not measured | Not measured |
 | Best current fit | Production-agent improvement lifecycle | Direct post-training scripts | Maximum distributed flexibility/throughput | NVIDIA multi-node/model scale | Ray-centric distributed RLHF |
 
-The intended architecture is compositional: StateSet owns the stable trace,
-environment, reward, evaluation, and lineage contracts while training may run
-through the StateSet reference implementation or a specialized backend. That
-backend interface is roadmap work; it is not presented as complete today.
+The architecture is compositional: StateSet owns the stable trace, environment,
+reward, evaluation, and lineage contracts while training may run through the
+StateSet reference implementation or a specialized backend. The versioned
+[backend protocol](TRAINING_BACKENDS.md) now enforces semantic digests and
+capabilities; executable verl, NeMo RL, and OpenRLHF adapters remain roadmap
+work and are not presented as complete today.
 
 ---
 

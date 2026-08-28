@@ -18,6 +18,8 @@ has retained tests or live evidence; an unchecked box is not a product claim.
 - [x] Provenance-enforced measured algorithm/framework comparison schemas
 - [x] Neutral StateSet/upstream-TRL runner with config attestation and artifact hashing
 - [x] Strict 1/2/4/8-GPU scaling and three-scenario recovery validators
+- [x] Versioned training-backend protocol with semantic digests, capability
+  checks, secret-free requests, and shell-free external adapter execution
 
 See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 
@@ -89,9 +91,9 @@ estimated targets in marketing material.
    now enforces a required roster and accounts for every attempt after errors.
 2. Run the 8B multi-turn flagship and report quality, throughput, memory, and
    cost per successful held-out episode.
-3. Define a versioned training-backend protocol so StateSet environments,
-   rewards, evals, and lineage can target native, TRL, verl, NeMo RL, or
-   OpenRLHF execution without semantic drift.
+3. Implement native and external engine adapters on the versioned backend
+   protocol so StateSet environments, rewards, evals, and lineage target TRL,
+   verl, NeMo RL, or OpenRLHF execution without semantic drift.
 4. Prove multi-node asynchronous rollout/training, weight synchronization,
    staleness bounds, checkpoint recovery, and a long-running soak.
 5. Add reproducible tool-use and long-horizon agent suites (starting with

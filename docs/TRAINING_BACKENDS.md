@@ -1,0 +1,122 @@
+# Training backend protocol
+
+StateSet's backend protocol separates **experiment meaning** from **engine
+execution**. An experiment fixes the algorithm, model and dataset revisions,
+seed, environment, reward, requirements, and algorithm configuration. A
+backend may translate those fields into its native configuration, but it must
+return the same canonical experiment digest.
+
+This is the foundation for delegating StateSet experiments to specialized
+engines such as TRL, verl, NeMo RL, and OpenRLHF without silently changing the
+task or reward. The protocol is production-ready; engine-specific adapters
+beyond StateSet's existing TRL path are still roadmap items and must not be
+described as available until their live conformance runs pass.
+
+## Contract
+
+```python
+from pathlib import Path
+
+from stateset_agents.training import (
+    BackendCapabilities,
+    CommandTrainingBackend,
+    TrainingExperiment,
+)
+
+experiment = TrainingExperiment(
+    algorithm="grpo",
+    model="Qwen/Qwen3.5-0.8B",
+    model_revision="IMMUTABLE_MODEL_REVISION",
+    dataset_uri="s3://bucket/train.jsonl",
+    dataset_sha256="...64 lowercase hexadecimal characters...",
+    output_dir=Path("outputs/verl-run"),
+    seed=42,
+    task="customer-support-v1",
+    config={"learning_rate": 5e-6, "max_steps": 100},
+    environment={"name": "customer-support", "version": 1},
+    reward={"name": "composite", "version": 3},
+    requirements=frozenset({"distributed", "multi_turn", "tool_use"}),
+)
+
+backend = CommandTrainingBackend(
+    name="verl",
+    version="PINNED_INSTALLED_VERSION",
+    capabilities=BackendCapabilities(
+        algorithms=frozenset({"grpo", "gspo", "dapo"}),
+        features=frozenset(
+            {"distributed", "multi_turn", "tool_use", "async_rollouts"}
+        ),
+    ),
+    command=[
+        "python",
+        "my_verl_adapter.py",
+        "--request",
+        "{request}",
+        "--result",
+        "{result}",
+        "--output-dir",
+        "{output_dir}",
+    ],
+)
+
+result = backend.run(experiment)
+```
+
+Command arguments are passed directly to `subprocess` without a shell. The
+three placeholders must each be a complete argument. Credentials belong in
+the process environment; request/config/metadata mappings reject common secret
+field names before files are written.
+
+## Adapter result
+
+The adapter must write this JSON object to `{result}`:
+
+```json
+{
+  "protocol_version": 1,
+  "backend": "verl",
+  "backend_version": "PINNED_INSTALLED_VERSION",
+  "experiment_sha256": "DIGEST_FROM_REQUEST",
+  "artifact_uri": "/absolute/path/inside/output-dir/artifact",
+  "metrics": {
+    "samples_per_second": 1.5,
+    "eval_score_final": 0.4,
+    "cost_usd": 2.3
+  },
+  "metadata": {}
+}
+```
+
+StateSet rejects mismatched engine identity/version, non-finite metrics,
+experiment digest drift, missing artifacts, empty artifact directories, and
+local artifacts outside `output_dir`. Remote artifact URIs are allowed for
+engines whose durable checkpoint lives in object or provider storage.
+
+## Capability safety
+
+An experiment declares semantic requirements from:
+
+- `async_rollouts`
+- `distributed`
+- `multi_turn`
+- `multimodal`
+- `tool_use`
+
+Execution is rejected before launch if the selected backend does not declare
+every requirement or the requested algorithm. This prevents a multi-turn run
+from quietly becoming a single-turn approximation merely because a backend
+cannot represent its environment.
+
+## Adapter acceptance gate
+
+An engine adapter is complete only after it:
+
+1. applies every canonical field or rejects the experiment;
+2. proves its installed version and experiment digest in the result;
+3. emits a non-empty, reusable policy artifact;
+4. passes a one-seed conformance preflight on real GPU hardware;
+5. passes the matched three-seed framework comparison;
+6. retains failures and costs alongside successes.
+
+The benchmark-specific evidence schema remains stricter than this execution
+contract; see [`BENCHMARKS.md`](BENCHMARKS.md).

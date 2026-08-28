@@ -32,6 +32,21 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
     "GRPOTrainer": (f"{_PKG}.trainer", "GRPOTrainer"),
     "MultiTurnGRPOTrainer": (f"{_PKG}.trainer", "MultiTurnGRPOTrainer"),
     "SingleTurnGRPOTrainer": (f"{_PKG}.trainer", "SingleTurnGRPOTrainer"),
+    # Framework-neutral training-engine contract (lightweight, lazy for a
+    # uniform public export policy).
+    "BACKEND_PROTOCOL": (f"{_PKG}.backends", "BACKEND_PROTOCOL"),
+    "BACKEND_PROTOCOL_VERSION": (
+        f"{_PKG}.backends",
+        "BACKEND_PROTOCOL_VERSION",
+    ),
+    "BackendCapabilities": (f"{_PKG}.backends", "BackendCapabilities"),
+    "BackendError": (f"{_PKG}.backends", "BackendError"),
+    "BackendExecutionError": (f"{_PKG}.backends", "BackendExecutionError"),
+    "BackendRegistry": (f"{_PKG}.backends", "BackendRegistry"),
+    "BackendResult": (f"{_PKG}.backends", "BackendResult"),
+    "CommandTrainingBackend": (f"{_PKG}.backends", "CommandTrainingBackend"),
+    "TrainingBackend": (f"{_PKG}.backends", "TrainingBackend"),
+    "TrainingExperiment": (f"{_PKG}.backends", "TrainingExperiment"),
     # Auto-Research Loop
     "AutoResearchConfig": (f"{_PKG}.auto_research.config", "AutoResearchConfig"),
     "AutoResearchLoop": (
@@ -1234,6 +1249,16 @@ PUBLIC_NAMES: tuple[str, ...] = (
     "TrajectoryReplayBuffer",
     "EvaluationConfig",
     "evaluate_agent",
+    "BACKEND_PROTOCOL",
+    "BACKEND_PROTOCOL_VERSION",
+    "BackendCapabilities",
+    "BackendError",
+    "BackendExecutionError",
+    "BackendRegistry",
+    "BackendResult",
+    "CommandTrainingBackend",
+    "TrainingBackend",
+    "TrainingExperiment",
     "VLLM_BACKEND_AVAILABLE",
     "TRL_AVAILABLE",
     "GSPO_AVAILABLE",

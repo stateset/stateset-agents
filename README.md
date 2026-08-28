@@ -25,6 +25,9 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).
 - An **MCP server** so Claude Code/Desktop — or any MCP client — can drive the loop conversationally.
 - Optional **performance layers** (vLLM generation, Rust acceleration, distributed training, HPO, FastAPI service).
+- A versioned, capability-checked [training backend protocol](docs/TRAINING_BACKENDS.md)
+  for delegating the same experiment to specialized engines without silently
+  changing its model, data, environment, reward, or algorithm configuration.
 
 StateSet's focus is the complete improvement loop: preserve the agent's
 multi-turn production traces, turn them into reproducible rewards and
