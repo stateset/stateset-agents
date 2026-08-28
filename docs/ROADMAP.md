@@ -33,6 +33,10 @@ defensible A+ rating.
 - [ ] Keep tag-triggered River, RunPod, and Fireworks canaries green
 - [ ] Publish signed/SLSA provenance for Python and container artifacts
 
+The tag pipeline now generates GitHub build attestations for Python artifacts
+and requests maximal provenance plus SBOMs for both container images. This gate
+remains unchecked until a tagged run retains and verifies those attestations.
+
 ### Comparative evidence
 
 - [ ] Complete the 8B, three-seed flagship multi-turn benchmark
@@ -73,4 +77,4 @@ an integration or live-evidence path. Performance changes need before/after raw
 artifacts on identical configurations. Feature requests and RFCs belong in the
 GitHub issue tracker.
 
-Last updated: 2026-08-27.
+Last updated: 2026-08-28.

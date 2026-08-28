@@ -31,7 +31,7 @@ jobs:
       RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Check for RunPod credentials
       id: creds
@@ -45,7 +45,7 @@ jobs:
 
     - name: Set up Python
       if: steps.creds.outputs.present == 'true'
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: '3.10'
 

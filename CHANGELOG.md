@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added GitHub artifact attestations for tag-built Python distributions and
+  automatic GitHub Releases sourced from the already verified wheel and sdist.
+- Enabled maximal build provenance and SBOM generation for both published
+  container images.
+
+### Changed
+
+- Upgraded GitHub-maintained workflow actions to their current Node-runtime
+  majors and added regression coverage preventing deprecated action pins from
+  returning.
+- Made tag pushes the single production publication event so publishing the
+  generated GitHub Release cannot launch a duplicate package release.
+
 ## [0.42.6] - 2026-08-27 — Cross-platform release hardening
 
 ### Changed

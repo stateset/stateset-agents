@@ -35,7 +35,7 @@ jobs:
       RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Check for RunPod credentials
       id: creds
@@ -50,7 +50,7 @@ jobs:
 
     - name: Set up Python
       if: steps.creds.outputs.present == 'true'
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: "3.11"
 
@@ -166,7 +166,7 @@ jobs:
 
     - name: Upload adapter artifact
       if: steps.creds.outputs.present == 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: gpu-verify-adapter
         path: outputs/gpu_verify
@@ -186,7 +186,7 @@ jobs:
       RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Check for RunPod credentials
       id: creds
@@ -201,7 +201,7 @@ jobs:
 
     - name: Set up Python
       if: steps.creds.outputs.present == 'true'
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: "3.11"
 

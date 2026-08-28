@@ -50,3 +50,43 @@ def test_publish_requires_readiness_before_build_or_upload() -> None:
     assert "continue-on-error: true" not in workflow
     assert "run_readiness_gate" not in workflow
     assert "publish-readiness-${{ github.sha }}" in workflow
+
+
+def test_workflows_use_current_action_runtimes() -> None:
+    workflows = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
+    )
+
+    deprecated = {
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/cache@v4",
+        "actions/upload-artifact@v4",
+        "actions/download-artifact@v4",
+        "actions/dependency-review-action@v4",
+        "azure/setup-helm@v4",
+        "codecov/codecov-action@v5",
+        "docker/build-push-action@v5",
+        "docker/login-action@v3",
+        "docker/metadata-action@v5",
+        "docker/setup-buildx-action@v3",
+        "github/codeql-action/analyze@v3",
+        "github/codeql-action/autobuild@v3",
+        "github/codeql-action/init@v3",
+        "peaceiris/actions-gh-pages@v3",
+    }
+
+    assert not (deprecated & set(workflows.split()))
+
+
+def test_tag_publish_attests_and_releases_verified_artifacts_once() -> None:
+    workflow = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
+
+    assert "release:\n    types: [published]" not in workflow
+    assert "actions/attest-build-provenance@v4" in workflow
+    assert "attestations: write" in workflow
+    assert "github-release:" in workflow
+    assert 'gh release create "${GITHUB_REF_NAME}" dist/*' in workflow
+    assert workflow.count("provenance: mode=max") == 2
+    assert workflow.count("sbom: true") == 2
