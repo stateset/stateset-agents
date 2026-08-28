@@ -187,3 +187,103 @@ def test_run_implementation_emits_valid_evidence(
 def test_unknown_placeholder_fails_closed() -> None:
     with pytest.raises(ShootoutError, match="unknown command placeholder"):
         shootout._format_command(["{secret}"], {"seed": 42})
+
+
+def test_required_framework_roster_fails_before_execution() -> None:
+    manifest = _manifest()
+    shootout.validate_required_frameworks(manifest, ["stateset-agents", "trl"])
+    with pytest.raises(ShootoutError, match="nemo-rl, openrlhf, verl"):
+        shootout.validate_required_frameworks(
+            manifest,
+            ["stateset-agents", "trl", "verl", "nemo-rl", "openrlhf"],
+        )
+
+
+def test_main_attempts_full_matrix_and_accounts_for_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(_manifest()), encoding="utf-8")
+    output = tmp_path / "evidence"
+    calls: list[tuple[str, int]] = []
+
+    def fake_run(
+        manifest: dict[str, Any],
+        implementation: dict[str, Any],
+        seed: int,
+        output_dir: Path,
+        root: Path,
+        timeout_seconds: int,
+    ) -> Path:
+        del manifest, root, timeout_seconds
+        framework = implementation["name"]
+        calls.append((framework, seed))
+        if framework == "stateset-agents" and seed == 42:
+            raise ShootoutError("deliberate failure")
+        return output_dir / f"{framework}-seed{seed}.json"
+
+    monkeypatch.setattr(shootout, "run_implementation", fake_run)
+    assert (
+        shootout.main(
+            [str(manifest_path), "--output-dir", str(output), "--root", str(tmp_path)]
+        )
+        == 2
+    )
+    assert len(calls) == 6
+    summary = json.loads((output / "_accounting" / "shootout-summary.json").read_text())
+    assert summary["attempted"] == 6
+    assert summary["completed"] == 5
+    assert summary["failed"] == 1
+    assert summary["attempts"][0]["error"] == "deliberate failure"
+
+
+def test_preflight_runs_every_framework_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(_manifest()), encoding="utf-8")
+    output = tmp_path / "preflight"
+    calls: list[tuple[str, int]] = []
+
+    def fake_run(
+        manifest: dict[str, Any],
+        implementation: dict[str, Any],
+        seed: int,
+        output_dir: Path,
+        root: Path,
+        timeout_seconds: int,
+    ) -> Path:
+        del manifest, root, timeout_seconds
+        framework = implementation["name"]
+        calls.append((framework, seed))
+        return output_dir / f"{framework}-seed{seed}.json"
+
+    monkeypatch.setattr(shootout, "run_implementation", fake_run)
+    assert (
+        shootout.main(
+            [
+                str(manifest_path),
+                "--output-dir",
+                str(output),
+                "--root",
+                str(tmp_path),
+                "--preflight",
+            ]
+        )
+        == 0
+    )
+    assert calls == [("stateset-agents", 42), ("trl", 42)]
+    summary = json.loads((output / "_accounting" / "shootout-summary.json").read_text())
+    assert summary["mode"] == "preflight"
+    assert summary["attempted"] == 2
+
+
+def test_accounting_is_not_an_evidence_candidate(tmp_path: Path) -> None:
+    shootout.write_run_summary(
+        tmp_path,
+        mode="measured",
+        manifest=tmp_path / "manifest.json",
+        attempts=[],
+    )
+    assert list(tmp_path.glob("*.json")) == []
+    assert (tmp_path / "_accounting" / "shootout-summary.json").is_file()

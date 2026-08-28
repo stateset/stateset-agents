@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a public, versioned training-backend protocol with canonical experiment
+  digests, capability negotiation, a registry, secret-free serialization, and
+  a shell-free command adapter for external training engines.
+- Added full-roster enforcement, one-seed preflight mode, and machine-readable
+  attempt accounting to the neutral cross-framework benchmark runner.
 - Added GitHub artifact attestations for tag-built Python distributions and
   automatic GitHub Releases sourced from the already verified wheel and sdist.
 - Enabled maximal build provenance and SBOM generation for both published
@@ -16,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The framework shootout now continues after individual adapter failures,
+  retains every outcome, and returns failure only after attempting the
+  remaining framework/seed matrix.
+- Updated competitive positioning to reflect current multi-turn and tool-use
+  support in TRL, verl, NeMo RL, and OpenRLHF without claiming unmeasured wins.
 - Upgraded GitHub-maintained workflow actions to their current Node-runtime
   majors and added regression coverage preventing deprecated action pins from
   returning.

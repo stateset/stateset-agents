@@ -18,6 +18,8 @@ has retained tests or live evidence; an unchecked box is not a product claim.
 - [x] Provenance-enforced measured algorithm/framework comparison schemas
 - [x] Neutral StateSet/upstream-TRL runner with config attestation and artifact hashing
 - [x] Strict 1/2/4/8-GPU scaling and three-scenario recovery validators
+- [x] Versioned training-backend protocol with semantic digests, capability
+  checks, secret-free requests, and shell-free external adapter execution
 
 See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 
@@ -25,6 +27,11 @@ See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 
 These are the blockers between the current strong beta and an independently
 defensible A+ rating.
+
+StateSet is not pursuing "most algorithms" as the definition of leadership.
+The target is the best trace-to-policy control plane for deployed agents, with
+specialized engines interchangeable behind stable trajectory, reward,
+evaluation, and lineage contracts.
 
 ### Release and provider completion
 
@@ -61,14 +68,38 @@ remains unchecked until a tagged run retains and verifies those attestations.
 - [ ] Complete standard agent benchmarks for tool use, long horizon, and SWE tasks
 - [ ] Establish public security response SLAs and third-party review
 
+## Leadership scorecard
+
+The project may describe itself as a leading agent-RL framework only when the
+following measurements are retained and reproducible. These are gates, not
+estimated targets in marketing material.
+
+| Dimension | Acceptance gate |
+|---|---|
+| Agent quality | Statistically supported held-out improvement at equal compute on the 8B flagship |
+| Competitive efficiency | Throughput within 10% of the fastest matched framework and complete cost accounting |
+| Distributed scale | At least 70% efficiency on a retained multi-node configuration |
+| Reliability | No lost or duplicate optimizer updates across the declared recovery matrix and soak test |
+| Agent capability | Reproducible long-horizon, tool-use, and SWE benchmark integrations |
+| Portability | One StateSet experiment contract can execute through native and external training backends |
+| Trust | Signed provenance, stable v1 compatibility policy, public security process, independent reproduction |
+
 ## Next implementation sequence
 
-1. Extend the neutral framework adapter contract from StateSet/TRL to verl,
-   NeMo RL, and OpenRLHF, then run the matched three-seed roster.
-2. Configure PyPI trusted publishing and Fireworks credentials externally;
+1. Implement executable verl, NeMo RL, and OpenRLHF adapters. Preflight all
+   five frameworks, then run the matched three-seed roster. The orchestrator
+   now enforces a required roster and accounts for every attempt after errors.
+2. Run the 8B multi-turn flagship and report quality, throughput, memory, and
+   cost per successful held-out episode.
+3. Implement native and external engine adapters on the versioned backend
+   protocol so StateSet environments, rewards, evals, and lineage target TRL,
+   verl, NeMo RL, or OpenRLHF execution without semantic drift.
+4. Prove multi-node asynchronous rollout/training, weight synchronization,
+   staleness bounds, checkpoint recovery, and a long-running soak.
+5. Add reproducible tool-use and long-horizon agent suites (starting with
+   tau-bench/BFCL and a SWE task) and obtain an independent reproduction.
+6. Configure PyPI trusted publishing and Fireworks credentials externally;
    rerun the existing release/provider workflows without code-side exceptions.
-3. Run the 8B multi-turn and multi-node protocols, then obtain an independent
-   reproduction before promoting the A+ claim.
 
 ## Contribution policy
 

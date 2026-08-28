@@ -23,6 +23,10 @@ Sim-to-Real Transfer:
 Generation backends:
 - vLLM: 5-20x faster generation with automatic log probability extraction
 - HuggingFace: Standard generation fallback
+
+Training engines:
+- Versioned backend-neutral experiment and result contracts
+- Capability-checked, shell-free external command adapters
 """
 
 import importlib

@@ -2,7 +2,7 @@
 
 # StateSet Agents
 
-**Reinforcement‑learning framework for multi‑turn conversational AI agents.**
+**The RL improvement control plane for deployed AI agents.**
 
 [![PyPI version](https://img.shields.io/pypi/v/stateset-agents.svg)](https://pypi.org/project/stateset-agents/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -25,8 +25,16 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).
 - An **MCP server** so Claude Code/Desktop — or any MCP client — can drive the loop conversationally.
 - Optional **performance layers** (vLLM generation, Rust acceleration, distributed training, HPO, FastAPI service).
+- A versioned, capability-checked [training backend protocol](docs/TRAINING_BACKENDS.md)
+  for delegating the same experiment to specialized engines without silently
+  changing its model, data, environment, reward, or algorithm configuration.
 
-If you want a framework that treats conversations as first‑class RL episodes (rather than single turns), this is it.
+StateSet's focus is the complete improvement loop: preserve the agent's
+multi-turn production traces, turn them into reproducible rewards and
+evaluations, train through the most appropriate backend, and deploy the result
+with lineage. Multi-turn generation is now available in several trainer
+libraries; the differentiator here is keeping that whole loop coherent and
+measurable.
 
 ---
 
@@ -1298,7 +1306,12 @@ The pipeline:
 - **Publication gates.** Three unique seeds, σ ≤ 0.10, +0.03 improvement, one full source/model revision, real hardware/VRAM/wall-clock evidence, and bounded gradient stability. Synthetic demo rows are excluded by default and can never pass.
 - **Figures.** `make benchmark-plot` produces two whitepaper‑ready PNGs (pass@1 per trainer, improvement ranking) plus a matplotlib‑free text fallback.
 - **One‑shot release.** `make release-whitepaper-v1` now fails closed unless every gate passes, then aggregates → plots → generates the whitepaper §11.7 markdown snippet → copies figures into `docs/figures/` → writes a release manifest.
-- **Neutral comparison.** `benchmarks/shootout.py` executes StateSet and a direct upstream-TRL adapter from one attested configuration, with three rotated seeds and artifact hashing. See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+- **Neutral comparison.** `benchmarks/shootout.py` executes framework adapters
+  from one attested configuration, rotates run order, attempts the entire
+  matrix even after individual failures, and writes complete attempt
+  accounting. StateSet-versus-TRL evidence is retained today; verl, NeMo RL,
+  and OpenRLHF remain required evidence gates rather than implied wins. See
+  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 See `benchmark_results/README.md` for the full pipeline reference.
 

@@ -1,43 +1,61 @@
 # StateSet Agents Comparisons
 
-These documents explain how StateSet Agents relates to other reinforcement‑learning and LLM agent frameworks. The goal is clarity about scope, workflows, and trade‑offs (not to claim universal benchmarks).
+This page explains how StateSet Agents relates to other reinforcement-learning
+and LLM-agent frameworks. Feature statements were reviewed against upstream
+documentation on **2026-08-28**. They are positioning context, not benchmark
+results; measured claims are limited to [`BENCHMARKS.md`](BENCHMARKS.md).
 
 ## Quick positioning
 
-- **StateSet Agents** is a production‑oriented RL framework for **multi‑turn conversational LLM agents**. It includes group‑based policy‑optimization algorithms (GRPO, GSPO, GEPO, DAPO, VAPO), composable reward modeling (including neural/LLM rewards), async‑first trainers, observability, and deployment templates.
+- **StateSet Agents** is an improvement control plane for deployed agents:
+  production traces, multi-turn environments, composable rewards, training,
+  evaluation, lineage, remote execution, and serving are one workflow.
+- **TRL** now supports tools, stateful per-rollout environments, and
+  asynchronous GRPO in addition to its broad post-training trainer surface.
+- **verl** targets high-throughput distributed post-training with FSDP/FSDP2,
+  Megatron, vLLM/SGLang, multi-turn tool use, multimodality, and very large
+  model/cluster configurations.
+- **NeMo RL** targets scalable NVIDIA post-training with Ray, FSDP2/Megatron,
+  FP8, asynchronous RL, multimodality, and multi-node recipes.
+- **OpenRLHF** targets distributed agentic RLHF through Ray, vLLM, and
+  DeepSpeed, including multi-turn and multimodal workflows.
 - **Traditional RL frameworks** (Ray RLlib, Stable‑Baselines3, CleanRL, Acme, TorchRL) are **general MDP toolkits** for games/robotics/control. They can be adapted to LLM agents but usually require extra scaffolding for dialogue state, trajectory grouping, and reward modeling.
-- **Hugging Face TRL** is a **low‑level RLHF/LLM optimization library**. StateSet integrates with TRL for GRPO training while providing higher‑level agent/environment abstractions.
 - **LLM orchestration frameworks** (LangChain, LlamaIndex, DSPy) focus on **tool/RAG/flow composition** and evaluation. They do not provide gradient‑based RL training loops; StateSet provides the training layer.
 
 ## Comparison matrix (high‑level)
 
-| Dimension | StateSet Agents | TRL | RLlib | SB3 / CleanRL | LangChain / LlamaIndex / DSPy |
+| Dimension | StateSet | TRL | verl | NeMo RL | OpenRLHF |
 |---|---|---|---|---|---|
-| Primary focus | Multi‑turn conversational agents + RLHF‑style training | Transformer RLHF trainers | Generic RL at scale | Research‑grade RL algorithms | Agent/tool/RAG orchestration |
-| Typical tasks | Dialogue policy improvement, reasoning RL, multi‑objective business RL | Prompt→response RLHF, preference fine‑tuning | Simulators, multi‑agent MDPs | Gym‑style environments | Building agent workflows |
-| Algorithms shipped | GRPO, GSPO, GEPO, DAPO, VAPO, PPO, DPO, A2C, TRPO | PPO, DPO/ORPO‑style methods, GRPO variants | Wide algorithm zoo (PPO, IMPALA, SAC, etc.) | PPO/A2C/SAC/TD3/etc. | None (training is external) |
-| Environment model | Conversation + task environments; multi‑turn trajectories | Dataset‑driven RLHF loops | Gym/RL‑Env abstractions | Gym/RL‑Env abstractions | Tool/RAG graphs |
-| Multi‑turn support | Native | Limited / user‑built | User‑built | User‑built | Native (runtime only) |
-| Reward modeling | Composable rewards, neural/LLM rewards, multi‑objective | Reward models as callouts | Reward from env step | Reward from env step | Heuristics/eval scores |
-| Distributed training | Built‑in async + Accelerate; HPO extras | Accelerate/DeepSpeed integrations | Strong distributed story | Limited (single‑node focus) | N/A |
-| Production serving | FastAPI services, deployment templates | Not a serving framework | Ray Serve optional | Not a serving framework | Runtime serving integrations |
-| Best when | You need RL for real multi‑turn agents, end‑to‑end | You want a lightweight RLHF trainer | You already live in Ray/sim RL | You want minimal RL baselines | You want orchestration, not RL |
+| Primary focus | Trace-to-policy agent improvement loop | Accessible model post-training | Flexible, high-throughput distributed RL | NVIDIA-scale post-training | Ray/vLLM/DeepSpeed RLHF |
+| Multi-turn/tools | Native trajectory and environment model | Tools and stateful rollout environments | Multi-turn tool calling | Multi-turn and environment isolation | Multi-turn agent workflows |
+| Distinctive strength | Rewards, evals, lineage, remote execution, and serving together | Hugging Face ecosystem and trainer UX | Placement, resharding, backend breadth, scale | Megatron/FSDP2/FP8 and large-model recipes | Colocated/hybrid distributed execution |
+| Current StateSet evidence | — | Three-seed single-A40 parity | Not measured | Not measured | Not measured |
+| Best current fit | Production-agent improvement lifecycle | Direct post-training scripts | Maximum distributed flexibility/throughput | NVIDIA multi-node/model scale | Ray-centric distributed RLHF |
 
-If you want a comparison to another specific framework, open an issue or PR and we can add it here.
+The architecture is compositional: StateSet owns the stable trace, environment,
+reward, evaluation, and lineage contracts while training may run through the
+StateSet reference implementation or a specialized backend. The versioned
+[backend protocol](TRAINING_BACKENDS.md) now enforces semantic digests and
+capabilities; executable verl, NeMo RL, and OpenRLHF adapters remain roadmap
+work and are not presented as complete today.
 
 ---
 
 ## StateSet Agents vs Hugging Face TRL
 
-This section compares StateSet Agents to Hugging Face TRL (Transformer Reinforcement Learning). Both are used for training LLMs with reinforcement learning, but they sit at different layers of the stack.
+Both projects train language models with reinforcement learning, but StateSet
+spans more of the operational lifecycle. TRL is no longer accurately described
+as single-turn only.
 
 ### What TRL is best at
 
 TRL provides reusable, low‑level trainers and utilities for RLHF‑style optimization of transformer models (e.g., PPO/DPO/GRPO‑family). It is a good fit when you want:
 
 - A lightweight library focused on the **optimizer/trainer layer**.
-- Dataset‑driven **prompt→response** RLHF loops.
+- Direct dataset-driven and agent/environment GRPO workflows.
 - Tight integration with Hugging Face `transformers`, `accelerate`, and PEFT/LoRA.
+- An experimental asynchronous GRPO trainer that decouples vLLM generation
+  from optimization.
 
 ### What StateSet Agents is best at
 
@@ -53,11 +71,11 @@ StateSet Agents is a higher‑level framework focused on **multi‑turn agent le
 
 | Capability | StateSet Agents | TRL |
 |---|---|---|
-| Multi‑turn agent runtime | Yes (`core/multiturn_agent.py`) | No (user‑built) |
-| Conversation/task environments | Yes (`core/environment.py`) | No (dataset + sampler) |
+| Multi‑turn agent runtime | Yes (`core/multiturn_agent.py`) | Yes in GRPO tool/environment workflows |
+| Conversation/task environments | Yes (`core/environment.py`) | Stateful per-rollout environment factory |
 | Group‑based RL algorithms | Yes (GRPO/GSPO/GEPO/DAPO/VAPO) | Partial (GRPO/PPO/DPO‑family) |
 | Reward composition | Yes (`rewards/`, `core/reward.py`) | Minimal (reward fn/model hook) |
-| Distributed/async rollouts | Yes (`training/distributed_trainer.py`) | Via Accelerate/DeepSpeed |
+| Distributed/async rollouts | Yes (`training/distributed_trainer.py`) | Accelerate/DeepSpeed plus experimental async GRPO |
 | Production serving | Yes (`api/`) | No |
 | HPO support | Built‑in (`training/hpo/`, Optuna/Ray/W&B extras) | External |
 
@@ -65,7 +83,7 @@ StateSet Agents is a higher‑level framework focused on **multi‑turn agent le
 
 Choose **TRL** if:
 
-- You are doing a **single‑turn RLHF** pipeline and want to stay close to Hugging Face primitives.
+- You want to stay close to Hugging Face primitives and trainer APIs.
 - You already have custom rollout and reward infrastructure.
 - You want the smallest possible dependency surface.
 
@@ -74,6 +92,13 @@ Choose **StateSet Agents** if:
 - Your agent needs to learn across **multi‑turn dialogues or tool‑using workflows**.
 - You want built‑in reward modeling, evaluation, monitoring, and serving.
 - You need GRPO/GSPO‑style group training as a first‑class workflow.
+
+### What the benchmark establishes
+
+On the retained four-step Qwen2.5-0.5B/GSM8K A40 protocol, StateSet and direct
+TRL have equivalent throughput, wall time, and peak VRAM within run-to-run
+noise. The small, short experiment does not establish a learning-quality
+winner. See the [validated report](../benchmark_results/framework_comparison/report/comparison.md).
 
 ### Using them together
 
