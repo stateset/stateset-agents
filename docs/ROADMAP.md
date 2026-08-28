@@ -31,6 +31,9 @@ has retained tests or live evidence; an unchecked box is not a product claim.
 - [x] Strict external-backend conformance runner with immutable manifests,
   exact GPU identity, artifact hashing, retained failures, and non-overwriting
   evidence output
+- [x] Portable conformance artifacts and a full-roster gate that revalidates
+  checkpoint bytes and rejects missing, duplicate, or semantically drifted
+  NeMo RL, verl, and OpenRLHF evidence
 
 See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 

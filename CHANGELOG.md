@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manifest/experiment/artifact digests, exact NVIDIA hardware identity,
   runtime and backend versions, wall time, and non-overwriting success or
   failure evidence.
+- Added a full external-backend conformance suite gate that rehashes every
+  checkpoint, requires exactly one NeMo RL, OpenRLHF, and verl record, and
+  rejects mixed harnesses, versions, seeds, models, algorithms, or tasks.
 - Added full-roster enforcement, one-seed preflight mode, and machine-readable
   attempt accounting to the neutral cross-framework benchmark runner.
 - Added GitHub artifact attestations for tag-built Python distributions and
@@ -34,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Made conformance artifact references evidence-relative and independently
+  movable, and bound saved experiment digests back to their embedded manifest
+  instead of validating only their hexadecimal shape.
 - The framework shootout now continues after individual adapter failures,
   retains every outcome, and returns failure only after attempting the
   remaining framework/seed matrix.

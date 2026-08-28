@@ -129,6 +129,14 @@ It binds the backend result to the manifest and experiment digests, exact GPU
 identities, runtime, wall time, and artifact hash. Success is adapter
 conformance only; it is not comparative performance evidence.
 
+Conformance artifacts use paths relative to their evidence document. A complete
+backend output directory can therefore be moved off the worker and revalidated
+without preserving the worker's absolute filesystem layout. Once all engines
+have run, `benchmarks/backend_conformance_suite.py` fails closed unless exactly
+one artifact-valid NeMo RL, OpenRLHF, and verl record shares the same harness,
+StateSet version, algorithm, model revision, seed, and task. The suite report
+hashes the exact evidence documents; it does not claim benchmark parity.
+
 ## OpenRLHF adapter
 
 StateSet includes an executable, version-pinned adapter for OpenRLHF's current

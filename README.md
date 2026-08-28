@@ -36,6 +36,9 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - A fail-closed NeMo RL adapter for version-pinned, distributed math GRPO from
   a pinned source checkout, with immutable model/data inputs and forced
   reusable checkpoints; live GPU conformance remains an explicit evidence gate.
+- A portable external-backend conformance gate that rehashes copied checkpoint
+  bytes and requires one semantically aligned NeMo RL, OpenRLHF, and verl record
+  before the adapter roster can be called complete.
 
 StateSet's focus is the complete improvement loop: preserve the agent's
 multi-turn production traces, turn them into reproducible rewards and
