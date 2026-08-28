@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.6] - 2026-08-27 — Cross-platform release hardening
+
+### Changed
+
+- Raised the enforced coverage floor from 61% to a stable 61.9% cross-version
+  baseline and added targeted coverage for remote jobs, ledgers, generated CLI
+  presets, release policy, and River submission artifacts.
+- Pinned the GSM8K loader to its validated immutable dataset revision and
+  rejected mutable or malformed revision identifiers.
+- Stabilized the development and API dependency surfaces with explicit
+  pytest-timeout, PyJWT, and isort constraints.
+
+### Fixed
+
+- Made the full test suite portable across Linux and Windows, including path
+  normalization, UTF-8 subprocess capture, MCP timeout handling, executable-bit
+  expectations, and a training-router test that could repeatedly kill and
+  recycle Windows workers by starting a real background training job.
+- Stabilized CodeQL, W&B-optional imports, security scanning, publish readiness,
+  and the Windows CI job ceiling. The final pull-request matrix passed on Python
+  3.10–3.13 and Windows 3.10/3.13 with every security and release gate green.
+
+### Security
+
+- Replaced raw API-key identifiers in rate-limit state with domain-separated
+  fingerprints and constant-time WebSocket credential comparisons.
+- Streamed RunPod self-destruct credentials directly into root-only remote
+  files, removed them before teardown requests, and avoided plaintext local
+  staging files.
+
 ## [0.42.5] - 2026-08-27 — Five-algorithm live evidence
 
 ### Added
