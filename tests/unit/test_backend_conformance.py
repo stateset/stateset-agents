@@ -295,6 +295,57 @@ def test_evidence_validator_rejects_digest_gpu_and_completion_drift(
         backend_conformance.validate_evidence(changed, manifest)
 
 
+def test_run_conformance_uses_clock_resolution_for_a_zero_tick_duration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = _manifest()
+    monkeypatch.setattr(
+        backend_conformance,
+        "collect_nvidia_hardware",
+        lambda: {
+            "gpu_count": 1,
+            "gpus": [
+                {
+                    "name": "NVIDIA H100",
+                    "uuid": "GPU-one",
+                    "memory_total_mb": 81559,
+                    "driver_version": "580.65.06",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(backend_conformance, "verify_harness_revision", lambda *_: None)
+    ticks = iter((42.0, 42.0))
+    monkeypatch.setattr(backend_conformance.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(
+        backend_conformance.importlib.metadata, "version", lambda _: "0.42.6"
+    )
+
+    class FakeBackend:
+        def run(self, experiment: Any) -> BackendResult:
+            artifact = experiment.output_dir / "artifact"
+            artifact.mkdir(parents=True)
+            (artifact / "weights").write_bytes(b"x")
+            return BackendResult(
+                backend="nemo-rl",
+                backend_version="0.6.0+abcdef0",
+                experiment_sha256=experiment.sha256,
+                artifact_uri=str(artifact),
+                metrics={"completed": 1.0, "wall_time_seconds": 0.0},
+            )
+
+    monkeypatch.setitem(
+        backend_conformance._BACKEND_FACTORIES,
+        "nemo-rl",
+        lambda **_: FakeBackend(),
+    )
+    evidence = backend_conformance.run_conformance(manifest, tmp_path, 60, tmp_path)
+    assert (
+        evidence["wall_time_seconds"]
+        == backend_conformance.time.get_clock_info("monotonic").resolution
+    )
+
+
 def test_main_retains_failure_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

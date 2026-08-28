@@ -423,7 +423,10 @@ def run_conformance(
     started_at = datetime.now(timezone.utc).isoformat()
     started = time.monotonic()
     result = backend.run(experiment)
-    duration = time.monotonic() - started
+    duration = max(
+        time.monotonic() - started,
+        time.get_clock_info("monotonic").resolution,
+    )
     artifact = Path(result.artifact_uri).resolve()
     if not artifact.is_relative_to((output_dir / "run").resolve()):
         raise ConformanceError("backend artifact escaped the conformance run directory")
