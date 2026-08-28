@@ -72,7 +72,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install RunPod canary dependencies
-        run: pip install -e .
+        run: pip install -e ".[remote]"
       - name: Probe RunPod account and cleanup leases
         run: stateset-agents provider-canary --provider runpod --strict --output canary-runpod.json
       - if: always()

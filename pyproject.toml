@@ -206,6 +206,9 @@ remote = [
     # another machine. The base extra covers the local provider, which only
     # needs the training stack the job itself uses.
     "stateset-agents[training]",
+    # RunPod's REST adapter is intentionally lightweight and talks directly
+    # to the provider API rather than depending on a provider SDK.
+    "requests>=2.31.0",
 ]
 fireworks = [
     # Fireworks provider for `train-remote --provider fireworks`. Not a core

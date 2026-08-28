@@ -37,6 +37,7 @@ def test_provider_canaries_run_for_release_tags() -> None:
     assert "- 'v*'" in workflow
     for provider in ("river", "runpod", "fireworks"):
         assert f"--provider {provider} --strict" in workflow
+    assert 'pip install -e ".[remote]"' in workflow
 
 
 def test_publish_requires_readiness_before_build_or_upload() -> None:
