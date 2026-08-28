@@ -59,6 +59,15 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
     "VerlConfigError": (f"{_PKG}.adapters.verl", "VerlConfigError"),
     "build_verl_command": (f"{_PKG}.adapters.verl", "build_verl_command"),
     "verl_backend": (f"{_PKG}.adapters.verl", "verl_backend"),
+    "NemoRLConfigError": (
+        f"{_PKG}.adapters.nemo_rl",
+        "NemoRLConfigError",
+    ),
+    "build_nemo_rl_command": (
+        f"{_PKG}.adapters.nemo_rl",
+        "build_nemo_rl_command",
+    ),
+    "nemo_rl_backend": (f"{_PKG}.adapters.nemo_rl", "nemo_rl_backend"),
     # Auto-Research Loop
     "AutoResearchConfig": (f"{_PKG}.auto_research.config", "AutoResearchConfig"),
     "AutoResearchLoop": (
