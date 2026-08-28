@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an executable, version-pinned verl adapter for PPO and GRPO with strict
   Hydra translation, verified Parquet/reward inputs, cross-worker seed
   propagation, explicit topology/rollout selection, and forced checkpoints.
+- Added an executable, version-pinned NeMo RL adapter for distributed math GRPO
+  with verified JSON/JSONL data, immutable models, exact built-in reward and
+  environment semantics, strict Hydra overrides, and forced checkpoints.
 - Added full-roster enforcement, one-seed preflight mode, and machine-readable
   attempt accounting to the neutral cross-framework benchmark runner.
 - Added GitHub artifact attestations for tag-built Python distributions and

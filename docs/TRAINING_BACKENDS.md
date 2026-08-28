@@ -193,3 +193,55 @@ Multi-turn, tool-use, and asynchronous verl modes remain rejected until their
 tool/agent-loop configuration files and staleness semantics are represented in
 the backend protocol. Live GPU conformance and matched three-seed evidence also
 remain open gates.
+
+## NeMo RL adapter
+
+The executable NeMo RL adapter targets NVIDIA's official Hydra-style
+`examples/run_grpo.py` launcher:
+
+```python
+from stateset_agents.training import nemo_rl_backend
+
+backend = nemo_rl_backend(version="PINNED_INSTALLED_VERSION")
+result = backend.run(experiment)
+```
+
+NeMo RL is optional and is not imported while listing StateSet backends. The
+engine environment must use NeMo RL's supported Python version and retain the
+source checkout associated with the installed `nemo-rl` distribution because
+the official launcher and recipe live under `examples/`. The exact installed
+version is checked before execution.
+
+The initial surface is deliberately narrow: GRPO, local JSON/JSONL response
+data, the built-in single-turn `math` environment, the `hf_math_verify` reward,
+vLLM generation, and optional distributed execution. A canonical request must
+declare these exact semantics:
+
+```python
+environment={"type": "single_turn", "name": "math"}
+reward={
+    "type": "nemo_builtin",
+    "name": "math",
+    "implementation": "hf_math_verify",
+}
+```
+
+Supported canonical config keys are:
+
+- `learning_rate`, `train_global_batch_size`, `train_micro_batch_size`
+- `num_prompts_per_step`, `num_generations_per_prompt`
+- `max_num_steps`, `max_num_epochs`, `max_total_sequence_length`
+- `num_nodes`, `gpus_per_node`, `tensor_parallel_size`
+- `gpu_memory_utilization`, `temperature`, `top_p`, `top_k`, `precision`
+- `input_key`, `output_key`, `environment_workers`, `generation_backend`
+- `activation_checkpointing`, `colocated`, `shuffle`
+
+The adapter verifies dataset bytes, resolves models at immutable revisions,
+disables validation and external loggers, pins the seed for GRPO and dataset
+splitting, forces checkpoint creation inside the result artifact, and rejects
+unknown fields. `generation_backend`, `num_generations_per_prompt`, and the
+cost-bounding `max_num_steps` must be explicit. PPO, custom
+rewards/environments, multi-turn, multimodal, and
+asynchronous modes remain fail-closed until their complete semantics are
+represented and tested. Live GPU conformance and matched three-seed evidence
+remain open gates.

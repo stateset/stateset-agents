@@ -25,6 +25,9 @@ has retained tests or live evidence; an unchecked box is not a product claim.
 - [x] Fail-closed verl PPO/GRPO adapter with immutable inputs, pinned reward
   code, explicit Hydra overrides, and forced checkpoint output (live GPU
   conformance remains open)
+- [x] Fail-closed NeMo RL GRPO adapter with immutable inputs, an exact built-in
+  math reward contract, pinned source/version checks, and forced checkpoint
+  output (live GPU conformance remains open)
 
 See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 
@@ -91,8 +94,8 @@ estimated targets in marketing material.
 
 ## Next implementation sequence
 
-1. Implement the executable NeMo RL adapter, then live-preflight it plus the
-   implemented verl and OpenRLHF adapters. Run the matched three-seed roster.
+1. Live-preflight the implemented NeMo RL, verl, and OpenRLHF adapters, then run
+   the matched three-seed roster.
    The orchestrator enforces a required roster and accounts for every attempt
    after errors.
 2. Run the 8B multi-turn flagship and report quality, throughput, memory, and
