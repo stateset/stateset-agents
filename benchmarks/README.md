@@ -4,6 +4,35 @@ This directory separates measured evidence from smoke tests and synthetic
 component tests. Only the strict evidence tools below may support comparative
 performance claims.
 
+## External backend conformance
+
+Run each external engine in its own dependency-compatible GPU image using a
+completed copy of `backend_conformance_manifest.example.json`:
+
+```bash
+python benchmarks/backend_conformance.py backend-conformance.json \
+  --output-dir benchmark_results/backend_conformance/nemo-rl \
+  --timeout-seconds 1800
+
+# Revalidate the self-contained record and checkpoint bytes later.
+python benchmarks/backend_conformance.py \
+  --validate-evidence benchmark_results/backend_conformance/nemo-rl/conformance.json
+```
+
+The runner invokes the public StateSet backend protocol, requires a visible
+NVIDIA GPU, records every GPU UUID/size/driver, verifies exact engine and
+StateSet versions, rejects a dirty or mismatched harness checkout, embeds and
+hashes the immutable manifest, experiment, and resulting artifact, and writes either
+`conformance.json` or `failure.json` without overwriting a prior attempt. The
+manifest contains no credentials; provide
+Hub/provider credentials through the process environment. A provider wrapper
+must additionally enforce a wall-clock and monetary ceiling before renting
+hardware.
+
+Conformance proves that an adapter can complete a real GPU training step and
+emit a reusable checkpoint. It does not establish quality, throughput parity,
+or the three-seed comparative evidence required below.
+
 ## Measured framework shootout
 
 Copy `shootout_manifest.example.json`, verify/update the pinned Hugging Face

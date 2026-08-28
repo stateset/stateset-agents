@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "backend": "nemo-rl",
+  "backend_version": "0.6.0+REPLACE_WITH_SOURCE_SHA",
+  "harness_revision": "REPLACE_WITH_40_CHARACTER_STATESET_COMMIT",
+  "experiment": {
+    "algorithm": "grpo",
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "dataset_uri": "/workspace/conformance/gsm8k.jsonl",
+    "dataset_sha256": "REPLACE_WITH_64_CHARACTER_DATASET_SHA256",
+    "seed": 42,
+    "task": "gsm8k-conformance",
+    "config": {
+      "generation_backend": "vllm",
+      "max_num_steps": 1,
+      "num_generations_per_prompt": 2,
+      "num_prompts_per_step": 1,
+      "train_global_batch_size": 2,
+      "train_micro_batch_size": 1,
+      "max_total_sequence_length": 256,
+      "num_nodes": 1,
+      "gpus_per_node": 1,
+      "tensor_parallel_size": 1,
+      "input_key": "question",
+      "output_key": "answer"
+    },
+    "environment": {"type": "single_turn", "name": "math"},
+    "reward": {
+      "type": "nemo_builtin",
+      "name": "math",
+      "implementation": "hf_math_verify"
+    },
+    "requirements": ["distributed"]
+  }
+}
