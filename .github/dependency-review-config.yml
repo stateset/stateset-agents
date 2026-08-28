@@ -3,6 +3,7 @@ fail_on_severity: moderate
 # the stricter of the two, so it is the one kept.
 allow_licenses:
   - Apache-2.0
+  - Apache-2.0 WITH LLVM-exception
   - MIT
   - BSD-2-Clause
   - BSD-3-Clause

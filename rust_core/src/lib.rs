@@ -81,7 +81,7 @@ fn compute_group_advantages<'py>(
         all_advantages.extend(group);
     }
 
-    Ok(Array1::from_vec(all_advantages).to_pyarray_bound(py))
+    Ok(Array1::from_vec(all_advantages).to_pyarray(py))
 }
 
 /// Compute Generalized Advantage Estimation (GAE) for a trajectory
@@ -110,7 +110,7 @@ fn compute_gae<'py>(
 
     let advantages = gae::compute_gae_internal(rewards, values, gamma, gae_lambda);
 
-    Ok(Array1::from_vec(advantages).to_pyarray_bound(py))
+    Ok(Array1::from_vec(advantages).to_pyarray(py))
 }
 
 /// Batch compute GAE for multiple trajectories in parallel
@@ -153,7 +153,7 @@ fn batch_compute_gae<'py>(
 
     Ok(results
         .into_iter()
-        .map(|v| Array1::from_vec(v).to_pyarray_bound(py))
+        .map(|v| Array1::from_vec(v).to_pyarray(py))
         .collect())
 }
 
@@ -185,7 +185,7 @@ fn normalize_rewards<'py>(
     let (normalized, new_mean, new_var, new_count) =
         rewards::normalize_with_running_stats(rewards, running_mean, running_var, count, epsilon);
 
-    Ok((Array1::from_vec(normalized).to_pyarray_bound(py), new_mean, new_var, new_count))
+    Ok((Array1::from_vec(normalized).to_pyarray(py), new_mean, new_var, new_count))
 }
 
 /// Clip rewards to a specified range
@@ -203,7 +203,7 @@ fn clip_rewards_py<'py>(
         .map(|&r| r.clamp(min_val, max_val))
         .collect();
 
-    Ok(Array1::from_vec(clipped).to_pyarray_bound(py))
+    Ok(Array1::from_vec(clipped).to_pyarray(py))
 }
 
 /// Compute GSPO sequence-level importance ratios
@@ -243,7 +243,7 @@ fn compute_gspo_importance_ratios<'py>(
         })
         .collect();
 
-    Ok(Array1::from_vec(ratios).to_pyarray_bound(py))
+    Ok(Array1::from_vec(ratios).to_pyarray(py))
 }
 
 /// Apply GSPO clipping to importance ratios
@@ -283,7 +283,7 @@ fn apply_gspo_clipping<'py>(
         })
         .collect();
 
-    Ok(Array1::from_vec(clipped).to_pyarray_bound(py))
+    Ok(Array1::from_vec(clipped).to_pyarray(py))
 }
 
 /// Compute PPO clipped surrogate objective
@@ -308,7 +308,7 @@ fn compute_ppo_surrogate<'py>(
         })
         .collect();
 
-    Ok(Array1::from_vec(objectives).to_pyarray_bound(py))
+    Ok(Array1::from_vec(objectives).to_pyarray(py))
 }
 
 /// Compute reward statistics for a batch of trajectories

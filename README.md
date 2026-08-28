@@ -158,7 +158,21 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.42.5 (latest release; PyPI publication pending):**
+**v0.42.6 (latest release; PyPI publication pending):**
+
+- **Cross-platform release confidence.** The complete PR gate now passes on
+  Python 3.10–3.13 plus Windows 3.10/3.13, with deterministic API router tests,
+  normalized paths, UTF-8 subprocess handling, bounded test timeouts, and a
+  stable 61.9% coverage floor.
+- **Credential-safe remote execution.** API-key identities use
+  domain-separated fingerprints and constant-time WebSocket comparisons, while
+  RunPod self-destruct keys stream directly to root-only remote files instead
+  of touching plaintext local staging files. Python and Rust security locks
+  were refreshed; both RustSec workspace audits report zero vulnerabilities.
+- **Reproducible evaluation inputs.** GSM8K downloads default to the validated
+  immutable dataset commit, and mutable revision identifiers fail closed.
+
+**v0.42.5:**
 
 - **Five native RL objectives, one measured protocol.** A complete 15-run
   RTX 5080/CUDA 12.9 matrix compares GRPO, GSPO, DAPO, VAPO, and GEPO over
@@ -831,7 +845,7 @@ asyncio.run(main())
 
 ```bash
 pip install stateset-agents          # latest version currently available on PyPI
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.42.5"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.42.6"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1538,7 +1552,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.5`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.6`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

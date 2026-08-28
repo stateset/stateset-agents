@@ -4,6 +4,26 @@ This page records what was actually exercised for the current release line.
 Registration, authentication, hardware allocation, training, inference, and
 publication are separate claims.
 
+## v0.42.6 release evidence
+
+Merged release baseline: `91c9c2c2459c93bd29e99a48e3b047af0596fccb`.
+
+| Surface | Result | Evidence |
+|---|---|---|
+| Pull-request matrix | Passed | Python 3.10–3.13 on Linux, Python 3.10/3.13 on Windows, docs, Helm, publish readiness, security, CodeQL, dependency review, secrets detection, benchmarks, and Phase-0 smoke all passed |
+| Merged-master matrix | Passed | The same ten-job CI matrix passed against merge commit `91c9c2c` |
+| Release smoke | Passed | 164 benchmark/scaffolding tests, 56 example-pattern tests, offline benchmark smoke, all four starter templates, and all 14 bundled notebooks |
+| Version and hygiene | Passed | Changelog, repository hygiene, lock synchronization, and 18 release/version documentation guards |
+| Distribution | Passed | `stateset_agents-0.42.6` wheel and sdist built successfully; both passed Twine metadata validation |
+| Coverage gate | Passed | Stable 61.9% floor across the Python matrix, with the one-point self-moving ratchet retained |
+| Credential hardening | Passed | Constant-time WebSocket key comparison, opaque rate-limit fingerprints, and no local plaintext staging for RunPod teardown credentials |
+| Dependency security | Passed | `cryptography` 50.0.1 and patched Rust locks; RustSec scanned 341 root and 74 accelerator dependencies with zero vulnerabilities |
+| Dataset provenance | Passed | GSM8K defaults to a validated 40-character immutable dataset revision and rejects mutable identifiers |
+
+This patch release hardens the existing provider and algorithm surfaces. It
+does not add a new live GLM-5.3-Flash or Qwen3.8-Flash-Next inference claim;
+their bounded RunPod attempts and provider evidence remain labeled separately.
+
 ## v0.42.5 release evidence
 
 Five-algorithm execution revision:
