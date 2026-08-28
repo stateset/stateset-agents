@@ -31,13 +31,26 @@ suite = _load_module(
 
 
 def _manifest(
-    backend: str, *, seed: int = 42, harness: str = "a" * 40
+    backend: str,
+    *,
+    seed: int = 42,
+    harness: str = "a" * 40,
+    max_cost_usd: float = 1.0,
 ) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "backend": backend,
         "backend_version": f"{backend}-version",
         "harness_revision": harness,
+        "execution": {
+            "provider": "runpod",
+            "provider_tier": "SECURE",
+            "container_image": f"registry.example/{backend}@sha256:" + "d" * 64,
+            "gpu_name": "NVIDIA H100",
+            "gpu_count": 1,
+            "timeout_seconds": 60,
+            "max_cost_usd": max_cost_usd,
+        },
         "experiment": {
             "algorithm": "grpo",
             "model": "Qwen/example",
@@ -58,14 +71,15 @@ def _write_evidence(
     label: str | None = None,
     seed: int = 42,
     harness: str = "a" * 40,
+    max_cost_usd: float = 1.0,
 ) -> Path:
     directory = root / (label or backend)
     artifact = directory / "run" / "artifact"
     artifact.mkdir(parents=True)
     (artifact / "weights.bin").write_bytes(backend.encode())
-    manifest = _manifest(backend, seed=seed, harness=harness)
+    manifest = _manifest(backend, seed=seed, harness=harness, max_cost_usd=max_cost_usd)
     evidence = {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "stateset-external-backend-conformance",
         "status": "completed",
         "measured": True,
@@ -73,6 +87,7 @@ def _write_evidence(
         "backend_version": manifest["backend_version"],
         "stateset_agents_version": "0.42.6",
         "harness_revision": harness,
+        "execution": manifest["execution"],
         "manifest": manifest,
         "manifest_sha256": backend_conformance.canonical_digest(manifest),
         "experiment_sha256": backend_conformance.build_experiment(
@@ -121,6 +136,9 @@ def test_complete_suite_revalidates_artifacts_and_writes_bound_report(
     assert {entry["backend"] for entry in report["backends"]} == set(
         suite.REQUIRED_BACKENDS
     )
+    assert all(
+        entry["execution"]["max_cost_usd"] == 1.0 for entry in report["backends"]
+    )
 
 
 def test_suite_rejects_missing_duplicate_and_unexpected_backends(
@@ -144,6 +162,7 @@ def test_suite_rejects_missing_duplicate_and_unexpected_backends(
     [
         ("seed", 7, "experiment.seed"),
         ("harness", "d" * 40, "harness_revision"),
+        ("max_cost_usd", 2.0, "execution.max_cost_usd"),
     ],
 )
 def test_suite_rejects_cross_backend_semantic_drift(

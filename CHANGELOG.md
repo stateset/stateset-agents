@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a full external-backend conformance suite gate that rehashes every
   checkpoint, requires exactly one NeMo RL, OpenRLHF, and verl record, and
   rejects mixed harnesses, versions, seeds, models, algorithms, or tasks.
+- Added schema-v2 conformance execution envelopes for digest-pinned images,
+  exact provider/GPU topology, workload timeouts, positive spend ceilings, and
+  manifest-bound failure accounting.
 - Added full-roster enforcement, one-seed preflight mode, and machine-readable
   attempt accounting to the neutral cross-framework benchmark runner.
 - Added GitHub artifact attestations for tag-built Python distributions and
@@ -40,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made conformance artifact references evidence-relative and independently
   movable, and bound saved experiment digests back to their embedded manifest
   instead of validating only their hexadecimal shape.
+- Made conformance runs reject GPU topology and CLI/manifest timeout drift
+  before invoking an external engine, while keeping live provider price
+  enforcement an explicit launcher responsibility.
 - The framework shootout now continues after individual adapter failures,
   retains every outcome, and returns failure only after attempting the
   remaining framework/seed matrix.

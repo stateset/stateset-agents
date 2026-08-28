@@ -34,6 +34,8 @@ has retained tests or live evidence; an unchecked box is not a product claim.
 - [x] Portable conformance artifacts and a full-roster gate that revalidates
   checkpoint bytes and rejects missing, duplicate, or semantically drifted
   NeMo RL, verl, and OpenRLHF evidence
+- [x] Immutable conformance execution envelopes with digest-pinned images,
+  exact GPU topology, workload timeouts, spend ceilings, and failure accounting
 
 See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 

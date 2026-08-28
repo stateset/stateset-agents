@@ -39,6 +39,9 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - A portable external-backend conformance gate that rehashes copied checkpoint
   bytes and requires one semantically aligned NeMo RL, OpenRLHF, and verl record
   before the adapter roster can be called complete.
+- Immutable conformance execution envelopes that bind provider tier,
+  digest-pinned images, exact GPU topology, workload timeouts, and spend
+  ceilings without treating an unevaluated ceiling as provider enforcement.
 
 StateSet's focus is the complete improvement loop: preserve the agent's
 multi-turn production traces, turn them into reproducible rewards and
