@@ -1,8 +1,17 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "backend": "nemo-rl",
   "backend_version": "0.6.0+REPLACE_WITH_SOURCE_SHA",
   "harness_revision": "REPLACE_WITH_40_CHARACTER_STATESET_COMMIT",
+  "execution": {
+    "provider": "runpod",
+    "provider_tier": "SECURE",
+    "container_image": "REPLACE_WITH_IMAGE@sha256:REPLACE_WITH_64_CHARACTER_DIGEST",
+    "gpu_name": "NVIDIA A40",
+    "gpu_count": 1,
+    "timeout_seconds": 1800,
+    "max_cost_usd": 1.0
+  },
   "experiment": {
     "algorithm": "grpo",
     "model": "Qwen/Qwen2.5-0.5B-Instruct",

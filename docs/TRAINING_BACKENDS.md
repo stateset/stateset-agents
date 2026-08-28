@@ -129,12 +129,20 @@ It binds the backend result to the manifest and experiment digests, exact GPU
 identities, runtime, wall time, and artifact hash. Success is adapter
 conformance only; it is not comparative performance evidence.
 
+Manifest schema v2 makes the execution envelope part of that immutable input:
+provider and tier, digest-pinned container image, exact GPU name/count, workload
+timeout, and a finite positive dollar ceiling. The local runner refuses GPU or
+timeout drift before invoking an engine. The provider wrapper remains
+responsible for checking its live quote against the declared dollar ceiling
+before it creates a billable resource.
+
 Conformance artifacts use paths relative to their evidence document. A complete
 backend output directory can therefore be moved off the worker and revalidated
 without preserving the worker's absolute filesystem layout. Once all engines
 have run, `benchmarks/backend_conformance_suite.py` fails closed unless exactly
 one artifact-valid NeMo RL, OpenRLHF, and verl record shares the same harness,
-StateSet version, algorithm, model revision, seed, and task. The suite report
+StateSet version, provider/GPU/time/cost envelope, algorithm, model revision,
+seed, and task. The suite report
 hashes the exact evidence documents; it does not claim benchmark parity.
 
 ## OpenRLHF adapter

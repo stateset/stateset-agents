@@ -27,10 +27,19 @@ ConformanceError = backend_conformance.ConformanceError
 
 def _manifest(**updates: Any) -> dict[str, Any]:
     value: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "backend": "nemo-rl",
         "backend_version": "0.6.0+abcdef0",
         "harness_revision": "a" * 40,
+        "execution": {
+            "provider": "runpod",
+            "provider_tier": "SECURE",
+            "container_image": "registry.example/nemo@sha256:" + "d" * 64,
+            "gpu_name": "NVIDIA H100 80GB HBM3",
+            "gpu_count": 1,
+            "timeout_seconds": 60,
+            "max_cost_usd": 1.0,
+        },
         "experiment": {
             "algorithm": "grpo",
             "model": "Qwen/example",
@@ -79,6 +88,10 @@ def test_manifest_requires_known_backend_pins_and_exact_schema(tmp_path: Path) -
     with pytest.raises(ConformanceError, match="unknown manifest fields"):
         backend_conformance.load_manifest(path)
 
+    path.write_text(json.dumps(_manifest(schema_version=1)), encoding="utf-8")
+    with pytest.raises(ConformanceError, match="schema_version=2"):
+        backend_conformance.load_manifest(path)
+
 
 def test_manifest_rejects_unknown_and_missing_experiment_fields(tmp_path: Path) -> None:
     unknown = _manifest()
@@ -92,6 +105,35 @@ def test_manifest_rejects_unknown_and_missing_experiment_fields(tmp_path: Path) 
     path.write_text(json.dumps(missing), encoding="utf-8")
     with pytest.raises(ConformanceError, match="missing experiment fields"):
         backend_conformance.load_manifest(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("container_image", "registry.example/nemo:latest", "immutable"),
+        ("gpu_count", 0, "positive integer"),
+        ("timeout_seconds", True, "positive integer"),
+        ("max_cost_usd", float("inf"), "finite and positive"),
+    ],
+)
+def test_manifest_rejects_unbounded_execution_contract(
+    tmp_path: Path, field: str, value: Any, message: str
+) -> None:
+    manifest = _manifest()
+    manifest["execution"][field] = value
+    with pytest.raises(ConformanceError, match=message):
+        backend_conformance.load_manifest(_write_manifest(tmp_path, manifest))
+
+
+def test_manifest_requires_exact_execution_schema(tmp_path: Path) -> None:
+    manifest = _manifest()
+    del manifest["execution"]["max_cost_usd"]
+    with pytest.raises(ConformanceError, match="missing execution fields"):
+        backend_conformance.load_manifest(_write_manifest(tmp_path, manifest))
+    manifest = _manifest()
+    manifest["execution"]["api_key"] = "secret"
+    with pytest.raises(ConformanceError, match="unknown execution fields"):
+        backend_conformance.load_manifest(_write_manifest(tmp_path, manifest))
 
 
 def test_build_experiment_keeps_output_out_of_semantic_digest(tmp_path: Path) -> None:
@@ -221,10 +263,11 @@ def test_run_conformance_binds_hardware_experiment_and_artifact(
     )
     evidence_dir = tmp_path / "evidence"
     evidence = backend_conformance.run_conformance(
-        _manifest(), evidence_dir, timeout_seconds=60, root=tmp_path
+        _manifest(), evidence_dir, timeout_seconds=None, root=tmp_path
     )
     assert evidence["status"] == "completed"
     assert evidence["hardware"] == hardware
+    assert evidence["execution"] == _manifest()["execution"]
     assert evidence["experiment_sha256"] == captured["experiment"].sha256
     assert len(evidence["artifact_sha256"]) == 64
     assert evidence["backend_metrics"]["completed"] == 1.0
@@ -249,7 +292,7 @@ def test_evidence_validator_rejects_digest_gpu_and_completion_drift(
         "gpu_count": 1,
         "gpus": [
             {
-                "name": "NVIDIA H100",
+                "name": "NVIDIA H100 80GB HBM3",
                 "uuid": "GPU-one",
                 "memory_total_mb": 81559,
                 "driver_version": "580.65.06",
@@ -288,6 +331,10 @@ def test_evidence_validator_rejects_digest_gpu_and_completion_drift(
     with pytest.raises(ConformanceError, match="manifest digest"):
         backend_conformance.validate_evidence(changed, manifest)
     changed = dict(evidence)
+    changed["execution"] = {**manifest["execution"], "gpu_count": 2}
+    with pytest.raises(ConformanceError, match="execution does not match"):
+        backend_conformance.validate_evidence(changed, manifest)
+    changed = dict(evidence)
     changed["experiment_sha256"] = "0" * 64
     with pytest.raises(ConformanceError, match="experiment digest"):
         backend_conformance.validate_evidence(changed, manifest)
@@ -321,7 +368,7 @@ def test_run_conformance_uses_clock_resolution_for_a_zero_tick_duration(
             "gpu_count": 1,
             "gpus": [
                 {
-                    "name": "NVIDIA H100",
+                    "name": "NVIDIA H100 80GB HBM3",
                     "uuid": "GPU-one",
                     "memory_total_mb": 81559,
                     "driver_version": "580.65.06",
@@ -361,6 +408,33 @@ def test_run_conformance_uses_clock_resolution_for_a_zero_tick_duration(
     )
 
 
+def test_run_conformance_rejects_timeout_and_hardware_contract_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = _manifest()
+    with pytest.raises(ConformanceError, match="CLI timeout_seconds"):
+        backend_conformance.run_conformance(manifest, tmp_path, 59, tmp_path)
+
+    monkeypatch.setattr(backend_conformance, "verify_harness_revision", lambda *_: None)
+    monkeypatch.setattr(
+        backend_conformance,
+        "collect_nvidia_hardware",
+        lambda: {
+            "gpu_count": 1,
+            "gpus": [
+                {
+                    "name": "NVIDIA A40",
+                    "uuid": "GPU-one",
+                    "memory_total_mb": 46068,
+                    "driver_version": "580.65.06",
+                }
+            ],
+        },
+    )
+    with pytest.raises(ConformanceError, match="GPU name"):
+        backend_conformance.run_conformance(manifest, tmp_path, 60, tmp_path)
+
+
 def test_main_retains_failure_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -383,6 +457,11 @@ def test_main_retains_failure_record(
     assert failure["status"] == "failed"
     assert failure["error_type"] == "ConformanceError"
     assert failure["error"] == "GPU unavailable"
+    assert failure["backend"] == "nemo-rl"
+    assert failure["execution"] == _manifest()["execution"]
+    assert failure["manifest_sha256"] == backend_conformance.canonical_digest(
+        _manifest()
+    )
 
 
 def test_evidence_writer_never_overwrites(tmp_path: Path) -> None:

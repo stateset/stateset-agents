@@ -25,6 +25,11 @@ checkpoint bytes. `benchmarks/backend_conformance_suite.py` revalidates the
 complete NeMo RL/OpenRLHF/verl roster and rejects semantic drift, but the gate
 does not support quality or throughput claims.
 
+The v2 conformance manifest also fixes the provider tier, immutable image
+digest, GPU name/count, timeout, and cost ceiling. GPU and timeout drift fail
+locally; a provider launcher must independently reject a live quote above the
+ceiling before allocating hardware.
+
 ## Currently supported claims
 
 ### Multi-turn customer-support improvement

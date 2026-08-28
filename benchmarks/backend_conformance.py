@@ -3,8 +3,8 @@
 
 This is an execution-compatibility gate, not a performance comparison.  Each
 backend may run in its own dependency-compatible image while producing the
-same evidence schema.  Paid runners should wrap this command with an external
-time and cost ceiling.
+same evidence schema.  The manifest binds the workload timeout; paid provider
+wrappers must additionally reject quotes above its cost ceiling before rental.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import math
 import platform
 import re
 import shutil
@@ -51,6 +52,18 @@ _EXPERIMENT_FIELDS = frozenset(
         "requirements",
     }
 )
+_EXECUTION_FIELDS = frozenset(
+    {
+        "provider",
+        "provider_tier",
+        "container_image",
+        "gpu_name",
+        "gpu_count",
+        "timeout_seconds",
+        "max_cost_usd",
+    }
+)
+_IMAGE_DIGEST = re.compile(r"[^\s@]+@sha256:[0-9a-f]{64}")
 
 
 class ConformanceError(ValueError):
@@ -78,13 +91,14 @@ def canonical_digest(value: Mapping[str, Any]) -> str:
 
 def validate_manifest(raw: Any) -> dict[str, Any]:
     """Validate and normalize one external-backend conformance manifest."""
-    if not isinstance(raw, Mapping) or raw.get("schema_version") != 1:
-        raise ConformanceError("manifest must be an object with schema_version=1")
+    if not isinstance(raw, Mapping) or raw.get("schema_version") != 2:
+        raise ConformanceError("manifest must be an object with schema_version=2")
     allowed = {
         "schema_version",
         "backend",
         "backend_version",
         "harness_revision",
+        "execution",
         "experiment",
     }
     unknown = sorted(set(raw) - allowed)
@@ -101,6 +115,45 @@ def validate_manifest(raw: Any) -> dict[str, Any]:
     revision = raw.get("harness_revision")
     if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ConformanceError("harness_revision must be a full lowercase git commit")
+    execution = raw.get("execution")
+    if not isinstance(execution, Mapping):
+        raise ConformanceError("execution must be an object")
+    execution_unknown = sorted(set(execution) - _EXECUTION_FIELDS)
+    execution_missing = sorted(_EXECUTION_FIELDS - set(execution))
+    if execution_unknown:
+        raise ConformanceError(
+            "unknown execution fields: " + ", ".join(execution_unknown)
+        )
+    if execution_missing:
+        raise ConformanceError(
+            "missing execution fields: " + ", ".join(execution_missing)
+        )
+    provider = execution.get("provider")
+    if not isinstance(provider, str) or not re.fullmatch(
+        r"[a-z0-9][a-z0-9-]{0,63}", provider
+    ):
+        raise ConformanceError("execution.provider must be a lowercase provider id")
+    for field in ("provider_tier", "gpu_name"):
+        value = execution.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ConformanceError(f"execution.{field} must be a non-empty string")
+    image = execution.get("container_image")
+    if not isinstance(image, str) or _IMAGE_DIGEST.fullmatch(image) is None:
+        raise ConformanceError(
+            "execution.container_image must use an immutable @sha256 digest"
+        )
+    for field in ("gpu_count", "timeout_seconds"):
+        value = execution.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ConformanceError(f"execution.{field} must be a positive integer")
+    max_cost = execution.get("max_cost_usd")
+    if (
+        isinstance(max_cost, bool)
+        or not isinstance(max_cost, (int, float))
+        or not math.isfinite(float(max_cost))
+        or max_cost <= 0
+    ):
+        raise ConformanceError("execution.max_cost_usd must be finite and positive")
     experiment = raw.get("experiment")
     if not isinstance(experiment, Mapping):
         raise ConformanceError("experiment must be an object")
@@ -257,6 +310,20 @@ def collect_nvidia_hardware() -> dict[str, Any]:
     return {"gpu_count": len(gpus), "gpus": gpus}
 
 
+def validate_hardware_contract(
+    hardware: Mapping[str, Any], execution: Mapping[str, Any]
+) -> None:
+    """Fail before training when visible accelerators differ from the manifest."""
+    gpus = hardware.get("gpus")
+    if hardware.get("gpu_count") != execution["gpu_count"]:
+        raise ConformanceError("visible GPU count does not match execution contract")
+    if not isinstance(gpus, list) or any(
+        not isinstance(gpu, Mapping) or gpu.get("name") != execution["gpu_name"]
+        for gpu in gpus
+    ):
+        raise ConformanceError("visible GPU name does not match execution contract")
+
+
 def verify_harness_revision(expected: str, root: Path) -> None:
     """Require the running checkout to be clean and at the declared commit."""
     resolved = root.resolve()
@@ -297,6 +364,7 @@ def write_json_once(path: Path, value: Mapping[str, Any]) -> None:
 
 def validate_evidence(evidence: Mapping[str, Any], manifest: Mapping[str, Any]) -> None:
     """Reject incomplete or self-inconsistent conformance evidence."""
+    manifest = validate_manifest(manifest)
     required = {
         "schema_version",
         "kind",
@@ -318,6 +386,7 @@ def validate_evidence(evidence: Mapping[str, Any], manifest: Mapping[str, Any]) 
         "artifact_sha256",
         "backend_metrics",
         "backend_metadata",
+        "execution",
     }
     if set(evidence) != required:
         missing = sorted(required - set(evidence))
@@ -326,7 +395,7 @@ def validate_evidence(evidence: Mapping[str, Any], manifest: Mapping[str, Any]) 
             f"evidence schema mismatch; missing={missing}, unknown={unknown}"
         )
     if (
-        evidence.get("schema_version") != 1
+        evidence.get("schema_version") != 2
         or evidence.get("kind") != "stateset-external-backend-conformance"
         or evidence.get("status") != "completed"
         or evidence.get("measured") is not True
@@ -335,6 +404,8 @@ def validate_evidence(evidence: Mapping[str, Any], manifest: Mapping[str, Any]) 
     for field in ("backend", "backend_version", "harness_revision"):
         if evidence.get(field) != manifest.get(field):
             raise ConformanceError(f"evidence {field} does not match manifest")
+    if evidence.get("execution") != manifest.get("execution"):
+        raise ConformanceError("evidence execution does not match manifest")
     embedded_manifest = evidence.get("manifest")
     if not isinstance(embedded_manifest, Mapping):
         raise ConformanceError("evidence manifest must be an object")
@@ -404,6 +475,7 @@ def validate_evidence(evidence: Mapping[str, Any], manifest: Mapping[str, Any]) 
         uuids.append(str(gpu["uuid"]))
     if len(uuids) != len(set(uuids)):
         raise ConformanceError("evidence GPU UUIDs must be unique")
+    validate_hardware_contract(hardware, manifest["execution"])
     runtime = evidence.get("runtime")
     if not isinstance(runtime, Mapping) or set(runtime) != {"python", "platform"}:
         raise ConformanceError("evidence runtime schema is invalid")
@@ -441,13 +513,22 @@ def load_evidence(path: Path, *, verify_artifact: bool = True) -> dict[str, Any]
 
 
 def run_conformance(
-    manifest: Mapping[str, Any], output_dir: Path, timeout_seconds: int, root: Path
+    manifest: Mapping[str, Any],
+    output_dir: Path,
+    timeout_seconds: int | None,
+    root: Path,
 ) -> dict[str, Any]:
     """Execute one backend and return completed, artifact-bound evidence."""
-    if timeout_seconds < 1:
-        raise ConformanceError("timeout_seconds must be positive")
+    manifest = validate_manifest(manifest)
+    declared_timeout = int(manifest["execution"]["timeout_seconds"])
+    if timeout_seconds is not None and timeout_seconds != declared_timeout:
+        raise ConformanceError(
+            "CLI timeout_seconds must equal execution.timeout_seconds"
+        )
+    timeout_seconds = declared_timeout
     verify_harness_revision(str(manifest["harness_revision"]), root)
     hardware = collect_nvidia_hardware()
+    validate_hardware_contract(hardware, manifest["execution"])
     backend_name = str(manifest["backend"])
     backend_version = str(manifest["backend_version"])
     backend = _BACKEND_FACTORIES[backend_name](
@@ -467,7 +548,7 @@ def run_conformance(
         raise ConformanceError("backend artifact escaped the conformance run directory")
     artifact_uri = artifact.relative_to(output_root).as_posix()
     evidence = {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "stateset-external-backend-conformance",
         "status": "completed",
         "measured": True,
@@ -475,6 +556,7 @@ def run_conformance(
         "backend_version": backend_version,
         "stateset_agents_version": importlib.metadata.version("stateset-agents"),
         "harness_revision": manifest["harness_revision"],
+        "execution": dict(manifest["execution"]),
         "manifest": dict(manifest),
         "manifest_sha256": canonical_digest(manifest),
         "experiment_sha256": experiment.sha256,
@@ -501,7 +583,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("manifest", type=Path, nargs="?")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--timeout-seconds", type=int, default=14400)
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        help="must equal the immutable manifest execution timeout when supplied",
+    )
     parser.add_argument(
         "--validate-evidence",
         type=Path,
@@ -520,6 +606,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.manifest is None or args.output_dir is None:
         parser.error("a manifest and --output-dir are required for a run")
+    manifest: dict[str, Any] | None = None
     try:
         manifest = load_manifest(args.manifest)
         args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -529,7 +616,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_json_once(args.output_dir / "conformance.json", evidence)
     except Exception as exc:
         failure = {
-            "schema_version": 1,
+            "schema_version": 2,
             "kind": "stateset-external-backend-conformance",
             "status": "failed",
             "measured": True,
@@ -537,6 +624,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             "error_type": type(exc).__name__,
             "error": str(exc),
         }
+        if manifest is not None:
+            failure.update(
+                {
+                    "backend": manifest["backend"],
+                    "backend_version": manifest["backend_version"],
+                    "harness_revision": manifest["harness_revision"],
+                    "execution": manifest["execution"],
+                    "manifest_sha256": canonical_digest(manifest),
+                }
+            )
         try:
             write_json_once(args.output_dir / "failure.json", failure)
         except (ConformanceError, OSError):

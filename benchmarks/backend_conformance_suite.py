@@ -22,6 +22,14 @@ MATCHED_EXPERIMENT_FIELDS = (
     "seed",
     "task",
 )
+MATCHED_EXECUTION_FIELDS = (
+    "provider",
+    "provider_tier",
+    "gpu_name",
+    "gpu_count",
+    "timeout_seconds",
+    "max_cost_usd",
+)
 
 
 class ConformanceSuiteError(ValueError):
@@ -127,6 +135,9 @@ def validate_suite(
                 first, field
             ):
                 changed.append(f"experiment.{field}")
+        for field in MATCHED_EXECUTION_FIELDS:
+            if record.evidence["execution"][field] != first["execution"][field]:
+                changed.append(f"execution.{field}")
         if changed:
             raise ConformanceSuiteError(
                 f"{record.backend}: conformance roster mixes {', '.join(changed)}"
@@ -153,6 +164,7 @@ def summarize(records: Sequence[ConformanceRecord]) -> dict[str, Any]:
                 "artifact_sha256": evidence["artifact_sha256"],
                 "wall_time_seconds": evidence["wall_time_seconds"],
                 "hardware": evidence["hardware"],
+                "execution": evidence["execution"],
             }
         )
     suite_digest = hashlib.sha256(
