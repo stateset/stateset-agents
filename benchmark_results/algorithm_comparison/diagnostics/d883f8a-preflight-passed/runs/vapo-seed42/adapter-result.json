@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "measured": true,
+  "config_sha256": "260a4edb0459be860b0d3ce9ba30379853f49e8ffb3e3d79943dc1756b78feba",
+  "algorithm_config": {
+    "max_steps": 1,
+    "num_generations": 2,
+    "num_iterations": 1,
+    "per_device_train_batch_size": 2,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 5e-06,
+    "max_prompt_length": 128,
+    "max_completion_length": 64,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "beta": 0.0,
+    "objective": "vapo-value-augmented",
+    "clip_eps_low": 0.2,
+    "clip_eps_high": 0.28,
+    "value_warmup_steps": 1,
+    "critic_learning_rate": 1e-05,
+    "use_token_level_loss": true,
+    "use_positive_lm_loss": true
+  },
+  "algorithm_config_sha256": "d3d4f9414a7675f863ad9078c288e98ef731be5d8257f9ff79d8f79c9e4c326a",
+  "framework_version": "0.42.4",
+  "artifact_path": "/workspace/algorithm-preflight/runs/vapo-seed42/artifact/final_model",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 5080",
+    "gpu_count": 1,
+    "cuda": "12.9"
+  },
+  "metrics": {
+    "samples_processed": 6,
+    "peak_vram_mb": 2434.49560546875,
+    "eval_score_baseline": 0.0,
+    "eval_score_final": 0.0
+  }
+}

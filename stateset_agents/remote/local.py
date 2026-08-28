@@ -44,6 +44,7 @@ class LocalExecutor(RemoteExecutor):
     """Executes the job synchronously in a subprocess on the local machine."""
 
     name = "local"
+    supported_job_kinds = frozenset({"sft", "harvest"})
 
     def __init__(self) -> None:
         self._jobs: dict[str, _LocalJob] = {}
@@ -65,6 +66,7 @@ class LocalExecutor(RemoteExecutor):
             ) from None
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        self.validate_spec(spec)
         self._counter += 1
         job_id = str(self._counter)
         handle = JobHandle(provider=self.name, job_id=job_id)

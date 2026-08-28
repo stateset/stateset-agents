@@ -8,14 +8,10 @@ drive the training loop yourself, call by call —
 ``save_weights``. So this executor does not shell out to the training script;
 it *is* the training loop, with the tensor math happening elsewhere.
 
-.. warning::
-
-   **NOT LIVE-VERIFIED.** This adapter was written against River's published
-   documentation. No River API key was available and ``river-client`` could
-   not be installed, so every call sequence, keyword name, and response shape
-   below is an informed guess. It is exercised only against fakes. Treat the
-   first real run as an integration test, and see ``docs/RIVER_PROVIDER.md``
-   for the specific assumptions most likely to bite.
+This integration is live-verified (SFT, rejection-sampling flywheels, and
+clipped-importance-sampling RL) and its provider call shapes are pinned by an
+injectable-client test suite. See ``docs/GETTING_STARTED_RIVER.md`` and
+``docs/PROOFS.md`` for dated evidence and remaining operational limits.
 
 Two structural consequences worth knowing before you use it:
 
@@ -168,6 +164,8 @@ class RiverExecutor(RemoteExecutor):
     """
 
     name = "river"
+    supported_job_kinds = frozenset({"sft", "harvest", "rl"})
+    result_kind = "hosted_pointer"
 
     #: River's default loss for supervised data.
     SFT_LOSS_FN = "cross_entropy"
@@ -289,6 +287,7 @@ class RiverExecutor(RemoteExecutor):
         return None
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        self.validate_spec(spec)
         self._counter += 1
         job_id = f"river-{self._counter}"
         handle = JobHandle(provider=self.name, job_id=job_id)
@@ -602,10 +601,7 @@ class RiverExecutor(RemoteExecutor):
         from the echoed tokenization, and the datum layout is their
         pre-shifted RL contract (see ``build_group_rl_datums``).
         """
-        from stateset_agents.training.sft import (
-            evaluate_checks,
-            normalize_eval_prompts,
-        )
+        from stateset_agents.training.sft import evaluate_checks, normalize_eval_prompts
 
         raw_prompts = json.loads(Path(spec.dataset).read_text())
         if (

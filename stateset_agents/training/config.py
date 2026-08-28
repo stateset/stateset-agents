@@ -30,6 +30,10 @@ class TrainingConfig:
 
     # Basic training parameters
     model_name: str = "gpt2"
+    # Immutable Hugging Face commit/tag used for tokenizer, policy, reference
+    # model, and rollout backend. Leave unset for normal exploratory use;
+    # publication-grade benchmarks should always pin a full commit SHA.
+    model_revision: str | None = None
     num_episodes: int = 1000
     num_epochs: int = 1
     learning_rate: float = 5e-6

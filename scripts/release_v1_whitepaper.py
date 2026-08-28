@@ -11,10 +11,10 @@ Usage:
 
     python scripts/release_v1_whitepaper.py
     python scripts/release_v1_whitepaper.py --dry-run
-    python scripts/release_v1_whitepaper.py --strict   # fail if gates not met
+    python scripts/release_v1_whitepaper.py            # fails if gates are not met
 
-The script always exits 0 unless ``--strict`` is set and gates fail. The
-generated artifacts are reported on stdout so CI can grep / archive them.
+The release path is strict by default. ``--allow-incomplete`` is intended only
+for local report previews and never makes incomplete evidence publishable.
 """
 
 from __future__ import annotations
@@ -165,9 +165,9 @@ def main() -> int:
         "--dry-run", action="store_true", help="Print steps without writing."
     )
     parser.add_argument(
-        "--strict",
+        "--allow-incomplete",
         action="store_true",
-        help="Exit non-zero if benchmark gates aren't met.",
+        help="Preview artifacts even if benchmark gates are not met.",
     )
     parser.add_argument(
         "--skip-figures",
@@ -196,7 +196,7 @@ def main() -> int:
             "No benchmark runs found in %s. Run `make benchmark-phase0-all` first.",
             RESULTS_DIR,
         )
-        if args.strict:
+        if not args.allow_incomplete and not args.dry_run:
             return 1
 
     # Step 2: aggregate.
@@ -206,10 +206,10 @@ def main() -> int:
         "--results-dir",
         str(RESULTS_DIR),
     ]
-    if args.strict:
+    if not args.allow_incomplete:
         aggregate_cmd.append("--strict")
     rc = run_step("Aggregate benchmark results", aggregate_cmd, dry_run=args.dry_run)
-    if rc != 0 and args.strict:
+    if rc != 0 and not args.allow_incomplete:
         return rc
 
     # Step 3: plot.

@@ -4,6 +4,21 @@ Use `stateset-agents --help` to see the current runtime command list.
 
 ## Commands
 
+### `stateset-agents provider-canary`
+
+Run read-only live authentication, SDK compatibility, and cleanup checks for
+River, RunPod, and Fireworks. No training job, pod, or deployment is created.
+
+```bash
+stateset-agents provider-canary --provider runpod --strict
+stateset-agents provider-canary --provider river --provider fireworks \
+    --strict --output provider-canary.json
+```
+
+Without `--strict`, missing credentials are reported as `skipped`. Scheduled
+CI uses `--strict`, so absent credentials or leaked `stateset-canary-*`
+resources fail the job. See `docs/PROVIDER_CANARIES.md`.
+
 ### `stateset-agents version`
 
 Show the installed version and runtime details.
@@ -239,7 +254,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.39.0-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.42.5-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`
@@ -876,6 +891,59 @@ stateset-agents deploy --dataset improved/curated.jsonl \
 - `--max-cost FLOAT`: Ceiling for the TRAINING job.
 - `--max-hours FLOAT`: Endpoint self-destruct, armed on the serving pod
   (default 1.0).
+
+### `stateset-agents remote-job`
+
+Reconnect to a durable asynchronous provider job after the submitting CLI has
+exited. Fireworks currently supports durable reconnects.
+
+```bash
+stateset-agents remote-job --provider fireworks --job-id JOB_ID --wait
+```
+
+- `--job-id TEXT` (required): Provider-owned job identifier.
+- `--provider TEXT`: Provider that owns the job (default `fireworks`).
+- `--wait`: Poll to a terminal state and fetch artifacts.
+- `--fetch`: Fetch artifacts immediately; the job must already be complete.
+- `--output-dir PATH`: Override the persisted artifact destination.
+
+### `stateset-agents remote-providers`
+
+List each remote executor's capabilities without loading provider SDKs or
+requiring credentials.
+
+```bash
+stateset-agents remote-providers --json
+```
+
+- `--json`, `--json-output`: Emit machine-readable JSON.
+
+### `stateset-agents runpod-orphans`
+
+Inspect locally recorded cleanup leases for RunPod training pods whose
+submitting process exited before cleanup. The default is read-only.
+
+```bash
+stateset-agents runpod-orphans
+stateset-agents runpod-orphans --terminate
+```
+
+- `--terminate`: Terminate every leased pod and remove a lease only after the
+  provider confirms deletion. Review the read-only output first.
+
+### `stateset-agents model-support`
+
+Show the auditable verification level for each model/provider claim. The
+output distinguishes unit-tested framework registration, a live hardware
+attempt, and successful inference; failed attempts are never promoted to
+inference verification.
+
+```bash
+stateset-agents model-support
+stateset-agents model-support --json
+```
+
+- `--json`, `--json-output`: Emit schema-versioned machine-readable evidence.
 
 ### `stateset-agents flywheel`
 

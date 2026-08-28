@@ -53,11 +53,7 @@ from .llm_judge_adapter import (
 )
 
 # NSR verifier — deterministic, proof-backed reward (StateSet NSR)
-from .nsr_verifier import (
-    NSROutcomeReporter,
-    NSRVerifierConfig,
-    NSRVerifierReward,
-)
+from .nsr_verifier import NSROutcomeReporter, NSRVerifierConfig, NSRVerifierReward
 
 __all__ = [
     "LLMRewardFunction",

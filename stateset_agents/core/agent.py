@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
 from .trajectory import ConversationTurn
+from .transformers_compat import load_generation_model
 
 if TYPE_CHECKING:
     from ..experimental.long_term_planning import PlanningManager
@@ -341,7 +342,9 @@ class Agent:
             if self._tokenizer_loader:
                 self.tokenizer = self._tokenizer_loader(self.config)
             else:
-                tokenizer_kwargs = self.config.tokenizer_kwargs or {}
+                tokenizer_kwargs = dict(self.config.tokenizer_kwargs or {})
+                if self.config.model_revision is not None:
+                    tokenizer_kwargs.setdefault("revision", self.config.model_revision)
                 if AutoTokenizer is None:
                     raise ImportError(
                         "transformers is required to initialize non-stub agents. "
@@ -386,6 +389,8 @@ class Agent:
                 model_kwargs: dict[str, Any] = {
                     "trust_remote_code": self.config.trust_remote_code
                 }
+                if self.config.model_revision is not None:
+                    model_kwargs["revision"] = self.config.model_revision
                 if self.config.torch_dtype == "bfloat16":
                     model_kwargs["torch_dtype"] = torch.bfloat16
                 elif self.config.torch_dtype == "float16":
@@ -402,8 +407,10 @@ class Agent:
                 if self.config.model_kwargs:
                     model_kwargs.update(self.config.model_kwargs)
 
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    self.config.model_name, **model_kwargs
+                self.model, _ = load_generation_model(
+                    AutoModelForCausalLM,
+                    self.config.model_name,
+                    model_kwargs,
                 )
 
         # Setup generation config

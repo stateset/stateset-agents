@@ -50,8 +50,8 @@ jobs:
 
     - name: Run Safety dependency check
       run: |
-        safety check --save-json safety-report.json > /dev/null 2>&1 || true
-        safety check > safety-report.txt || true
+        safety check -r requirements-dev-lock.txt --save-json safety-report.json --no-prompt > /dev/null 2>&1 || true
+        safety check -r requirements-dev-lock.txt --no-prompt > safety-report.txt || true
 
     - name: Run Semgrep security analysis
       run: |

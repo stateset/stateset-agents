@@ -1,0 +1,49 @@
+{
+  "artifact_sha256": "f08b10f0aa8d81af89c345ec1d6a3699e2856df9365f302f2b345eb7b799e1d3",
+  "command": "/usr/local/bin/python /workspace/stateset-agents/benchmarks/recovery_worker.py --run-dir /workspace/reliability-evidence/runs/worker_exit-seed1337 --fault worker_exit --phase inject --seed 1337 --injected-at-step 7 --final-step 12 --batch-size 256 --width 128 --learning-rate 0.0003 --device cuda --heartbeat-port 0 && /usr/local/bin/python /workspace/stateset-agents/benchmarks/recovery_worker.py --run-dir /workspace/reliability-evidence/runs/worker_exit-seed1337 --fault worker_exit --phase resume --seed 1337 --injected-at-step 7 --final-step 12 --batch-size 256 --width 128 --learning-rate 0.0003 --device cuda --heartbeat-port 0",
+  "config": {
+    "batch_size": 256,
+    "checkpoint_interval_steps": 1,
+    "final_step": 12,
+    "injected_at_step": 7,
+    "learning_rate": 0.0003,
+    "width": 128
+  },
+  "config_sha256": "6cd040cca7030b726cc1fb2d55f72562f4a4e8439f58f774e924e0ddeef98a07",
+  "fault": {
+    "injected_at_step": 7,
+    "observed_exit_code": 86,
+    "type": "worker_exit"
+  },
+  "framework_version": "0.42.3",
+  "hardware": {
+    "accelerator": "NVIDIA GeForce RTX 5080",
+    "cuda": "12.9"
+  },
+  "harness_commit": "52df33fa00d7eac4b2973fdeb4a5446f6278a8b1",
+  "measured": true,
+  "model": "stateset/recovery-policy-v1",
+  "model_revision": "e0ebb393265b3de3f0ce66114d4847d2ff5e32d3",
+  "protocol": "stateset-checkpoint-fault-recovery-v1",
+  "recovery": {
+    "checkpoint_step": 7,
+    "cleanup_scope": "child processes and TCP control-plane sockets",
+    "completed": true,
+    "data_loss_steps": 0,
+    "duplicate_updates": 0,
+    "expected_final_step": 12,
+    "final_step": 12,
+    "recovery_seconds": 2.4183484819950536,
+    "resources_remaining": 0,
+    "resumed": true,
+    "resumed_step": 7
+  },
+  "run_id": "worker_exit-seed1337",
+  "schema_version": 1,
+  "seed": 1337,
+  "software": {
+    "python": "3.12.13",
+    "torch": "2.8.0+cu129"
+  },
+  "timestamp": "2026-08-27T12:18:59.790433+00:00"
+}

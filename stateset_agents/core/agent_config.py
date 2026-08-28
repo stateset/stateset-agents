@@ -34,6 +34,7 @@ class AgentConfig:
     """
 
     model_name: str
+    model_revision: str | None = None
     max_new_tokens: int = 512
     temperature: float = 0.8
     top_p: float = 0.9
@@ -47,7 +48,10 @@ class AgentConfig:
 
     # HuggingFace model configuration
     torch_dtype: str = "bfloat16"
-    attn_implementation: str | None = "flash_attention_2"
+    # SDPA ships with PyTorch. FlashAttention remains an explicit opt-in
+    # because setting it without the optional flash-attn wheel makes model
+    # loading fail before training starts.
+    attn_implementation: str | None = "sdpa"
     device_map: str | None = "auto"
     trust_remote_code: bool = False
     model_kwargs: dict[str, Any] | None = None
@@ -80,6 +84,15 @@ class AgentConfig:
                 self.model_name,
                 "must be a non-empty string",
                 ["meta-llama/Llama-2-7b-chat-hf", "gpt2", "stub://test"],
+            )
+        if self.model_revision is not None and (
+            not isinstance(self.model_revision, str) or not self.model_revision.strip()
+        ):
+            raise ConfigValidationError(
+                "model_revision",
+                self.model_revision,
+                "must be a non-empty tag or immutable commit when provided",
+                ["Pin the full Hugging Face commit SHA for benchmark runs"],
             )
 
         if not isinstance(self.max_new_tokens, int) or self.max_new_tokens < 1:

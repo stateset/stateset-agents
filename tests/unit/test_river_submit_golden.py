@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import types
 from dataclasses import dataclass, field
@@ -645,8 +646,27 @@ def _scrub(value: Any, tmp_root: str) -> Any:
     if isinstance(value, list):
         return [_scrub(v, tmp_root) for v in value]
     if isinstance(value, str):
-        return value.replace(tmp_root, TMPDIR)
+        # Paths appear both as plain strings and inside JSON artifact text.
+        # The latter escapes every Windows separator, so replace both forms
+        # before canonicalising the separator after the placeholder.
+        scrubbed = value.replace(tmp_root.replace("\\", "\\\\"), TMPDIR)
+        scrubbed = scrubbed.replace(tmp_root, TMPDIR)
+        return re.sub(rf"{re.escape(TMPDIR)}\\+", f"{TMPDIR}/", scrubbed)
     return value
+
+
+def test_scrub_canonicalizes_windows_temp_paths() -> None:
+    """Golden output must be identical on POSIX and Windows runners."""
+    root = r"C:\Users\runneradmin\AppData\Local\Temp\pytest-1\case"
+    value = {
+        "log": rf"no trainable rows in {root}\empty.jsonl",
+        "artifact": json.dumps({"adapter_dir": rf"{root}\gen1"}),
+    }
+
+    assert _scrub(value, root) == {
+        "log": "no trainable rows in <tmp>/empty.jsonl",
+        "artifact": '{"adapter_dir": "<tmp>/gen1"}',
+    }
 
 
 def _ledger_lines(path: Path) -> list[dict[str, Any]]:

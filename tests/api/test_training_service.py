@@ -120,7 +120,7 @@ class TestGetTrainingService:
         app.state.training_service = expected
 
         @app.get("/test")
-        def endpoint(svc=Depends(get_training_service)):
+        async def endpoint(svc=Depends(get_training_service)):
             return {"same": svc is expected}
 
         with SyncASGIClient(app) as client:
@@ -132,7 +132,7 @@ class TestGetTrainingService:
         app = FastAPI()
 
         @app.get("/test")
-        def endpoint(svc=Depends(get_training_service)):
+        async def endpoint(svc=Depends(get_training_service)):
             return {"has_jobs": isinstance(svc.jobs, dict)}
 
         with SyncASGIClient(app) as client:

@@ -28,9 +28,14 @@ class SyncASGIClient:
         self._base_url = base_url
         self._follow_redirects = follow_redirects
         self._loop = asyncio.new_event_loop()
+        self._previous_loop: asyncio.AbstractEventLoop | None = None
         self._client: httpx.AsyncClient | None = None
 
     def __enter__(self) -> SyncASGIClient:
+        try:
+            self._previous_loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self._previous_loop = None
         asyncio.set_event_loop(self._loop)
         transport = httpx.ASGITransport(app=self._app)
         self._client = httpx.AsyncClient(
@@ -45,6 +50,7 @@ class SyncASGIClient:
             self._loop.run_until_complete(self._client.aclose())
             self._client = None
         self._loop.close()
+        asyncio.set_event_loop(self._previous_loop)
 
     def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         """Send a request and return the response."""

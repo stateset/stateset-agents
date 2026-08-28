@@ -1,0 +1,36 @@
+{
+  "status": "completed",
+  "measured": true,
+  "config_sha256": "1fa78fa67561b3e0ff43377f4bdee248a842374a44fba612d800465f6387b87b",
+  "algorithm_config": {
+    "max_steps": 4,
+    "num_generations": 4,
+    "num_iterations": 1,
+    "per_device_train_batch_size": 4,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 5e-06,
+    "max_prompt_length": 512,
+    "max_completion_length": 256,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "beta": 0.0,
+    "objective": "gepo-group-expectation",
+    "clip_eps": 0.2,
+    "use_group_baseline": true,
+    "use_reference_model": false
+  },
+  "algorithm_config_sha256": "b90043ce37f9f1648bda6f504d9b32d53596d4fe6e5d46b854111af026600758",
+  "framework_version": "0.42.4",
+  "artifact_path": "/workspace/algorithm-full/runs/gepo-seed2026/artifact/final_model",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 5080",
+    "gpu_count": 1,
+    "cuda": "12.9"
+  },
+  "metrics": {
+    "samples_processed": 64,
+    "peak_vram_mb": 9849.59228515625,
+    "eval_score_baseline": 0.0625,
+    "eval_score_final": 0.125
+  }
+}

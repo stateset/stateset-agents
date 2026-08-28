@@ -8,6 +8,7 @@ cache management features for high-availability deployments.
 import asyncio
 import fnmatch
 import hashlib
+import inspect
 import json
 import logging
 import pickle
@@ -73,8 +74,13 @@ class CacheConfig:
     health_check_interval: int = 30
     retry_attempts: int = 3
     retry_delay: float = 0.1
+    #: Bound initial Redis discovery. A missing cache is a degraded-mode event,
+    #: not a reason to stall API startup or event-loop shutdown.
+    redis_connect_timeout_seconds: float = 2.0
 
     def __post_init__(self) -> None:
+        if self.redis_connect_timeout_seconds <= 0:
+            raise ValueError("redis_connect_timeout_seconds must be positive")
         serializer = str(self.serializer).lower()
         if serializer not in ("json", "pickle"):
             logger.warning(
@@ -129,6 +135,9 @@ class CacheConfig:
             allow_pickle=allow_pickle,
             compression_enabled=os.getenv("CACHE_COMPRESSION", "false").lower()
             == "true",
+            redis_connect_timeout_seconds=float(
+                os.getenv("CACHE_REDIS_CONNECT_TIMEOUT", "2.0")
+            ),
         )
 
 
@@ -437,21 +446,32 @@ class RedisCache(CacheInterface):
 
     async def connect(self) -> bool:
         """Connect to Redis."""
+        # HYBRID without an explicit Redis URL means memory-only fallback.
+        # Probing localhost here is surprising in production and, when no
+        # server exists, redis-py's connection pool can leave native cleanup
+        # blocked after the event loop closes. Opting into Redis therefore
+        # requires an address; the default remains deterministic and offline.
+        if not self.config.redis_url:
+            logger.info("No Redis URL configured; skipping Redis connection")
+            return False
         try:
             import redis.asyncio as redis
 
             self._client = redis.from_url(
-                self.config.redis_url or "redis://localhost:6379",
+                self.config.redis_url,
                 password=self.config.redis_password,
                 db=self.config.redis_db,
                 decode_responses=False,
-                socket_timeout=5.0,
-                socket_connect_timeout=5.0,
-                retry_on_timeout=True,
+                socket_timeout=self.config.redis_connect_timeout_seconds,
+                socket_connect_timeout=self.config.redis_connect_timeout_seconds,
+                retry_on_timeout=False,
             )
 
             # Test connection
-            await self._client.ping()
+            await asyncio.wait_for(
+                self._client.ping(),
+                timeout=self.config.redis_connect_timeout_seconds,
+            )
             self._connected = True
             self._health_status = True
             logger.info("Connected to Redis successfully")
@@ -461,15 +481,33 @@ class RedisCache(CacheInterface):
             logger.error("redis package not installed. Install with: pip install redis")
             return False
         except asyncio.CancelledError:
+            await self._close_client()
             raise
         except CACHE_EXCEPTIONS as e:
             logger.error(f"Failed to connect to Redis: {e}")
-            self._connected = False
+            await self._close_client()
             return False
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
-            self._connected = False
+            await self._close_client()
             return False
+
+    async def _close_client(self) -> None:
+        """Release the pool even when the initial ping never succeeded."""
+        client, self._client = self._client, None
+        self._connected = False
+        self._health_status = False
+        if client is None:
+            return
+        close = getattr(client, "aclose", None) or getattr(client, "close", None)
+        if close is None:
+            return
+        try:
+            result = close()
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:  # noqa: BLE001 - cleanup is best effort
+            logger.debug("Redis client cleanup failed: %s", exc)
 
     async def get(self, key: str) -> Any | None:
         """Get a value from Redis."""
@@ -648,8 +686,7 @@ class RedisCache(CacheInterface):
             return True
         except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis health check failed: {e}")
-            self._health_status = False
-            self._connected = False
+            await self._close_client()
             return False
 
     def get_stats(self) -> CacheStats:
@@ -708,10 +745,7 @@ class RedisCache(CacheInterface):
 
     async def close(self) -> None:
         """Close Redis connection."""
-        client = self._client
-        if client is not None:
-            await client.close()
-            self._connected = False
+        await self._close_client()
 
 
 # ============================================================================
@@ -826,6 +860,10 @@ class HybridCache(CacheInterface):
             avg_latency_ms=(memory_stats.avg_latency_ms + redis_stats.avg_latency_ms)
             / 2,
         )
+
+    async def close(self) -> None:
+        """Release the Redis pool whether primary connection succeeded or not."""
+        await self._redis.close()
 
 
 # ============================================================================

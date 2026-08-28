@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 
 def _run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
@@ -58,8 +59,10 @@ def _write_synthetic_run(
         "trainer": trainer,
         "task": "gsm8k",
         "model": "Qwen/Qwen3.5-0.8B",
+        "model_revision": "b" * 40,
         "seed": seed,
-        "commit": commit,
+        "commit": commit if len(commit) == 40 else "a" * 40,
+        "evidence_class": "synthetic",
         "timestamp": "2026-05-14T12:00:00Z",
         "config": {"learning_rate": 5e-6, "num_generations": 4},
         "metrics": {
@@ -67,9 +70,11 @@ def _write_synthetic_run(
             "eval_pass_at_1_baseline": baseline,
             "wall_clock_seconds": 2700,
             "peak_vram_mb": 24317,
+            "status": "trained",
             "train_examples": 200,
             "eval_examples": 100,
         },
+        "hardware": {"gpu": "NVIDIA A100-SXM4-80GB"},
     }
     path = dst_dir / f"{trainer}_seed{seed}_qwen3_5_0_8b.json"
     path.write_text(json.dumps(result, indent=2))
@@ -141,6 +146,7 @@ class TestEndToEndHappyPath:
             "scripts/aggregate_phase0_results.py",
             "--results-dir",
             str(results_dir),
+            "--allow-synthetic",
         ]
         result = _run(aggregate_cmd)
         assert result.returncode == 0, f"aggregate failed: {result.stderr}"
@@ -153,14 +159,12 @@ class TestEndToEndHappyPath:
         for trainer in ("GSPO", "GRPO", "DAPO"):
             assert trainer in summary, f"missing {trainer} in summary.md"
 
-        # Gates should pass (3 seeds each, +0.10 improvement, σ = 0).
+        # Synthetic data can exercise rendering but can never pass publication gates.
         gates = json.loads(
             (results_dir / "passes_gates.json").read_text(encoding="utf-8")
         )
         for key, info in gates.items():
-            assert info[
-                "passed"
-            ], f"{key} unexpectedly failed gates: {info['failures']}"
+            assert not info["passed"], f"{key} synthetic evidence unexpectedly passed"
 
         # CSV should have 9 data rows (header + 9).
         csv_lines = (
@@ -205,7 +209,7 @@ class TestSmokePathForAllAdaptersAndTrainers:
     """Cartesian product of (trainer, task) — every combination should run the
     smoke path without errors. Catches regressions in the registry / dispatch."""
 
-    @pytest.mark.parametrize("trainer", ["gspo", "grpo", "dapo"])
+    @pytest.mark.parametrize("trainer", ["gspo", "grpo", "dapo", "vapo", "gepo"])
     @pytest.mark.parametrize("task", ["gsm8k", "customer_support", "tool_calling"])
     def test_smoke(self, tmp_path: Path, trainer: str, task: str) -> None:
         out = tmp_path / f"{trainer}_{task}.json"

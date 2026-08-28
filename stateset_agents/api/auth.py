@@ -4,7 +4,6 @@ API Authentication Module
 Secure authentication and authorization for API services.
 """
 
-import hashlib
 import hmac
 import logging
 import secrets
@@ -16,12 +15,12 @@ from fastapi import Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
+from stateset_agents.utils.credentials import credential_fingerprint
+
 from .config import get_config
 from .errors import ForbiddenError, UnauthorizedError
 
 logger = logging.getLogger(__name__)
-
-JWT_EXCEPTIONS = (ValueError, TypeError)
 
 # Security scheme for OpenAPI docs
 security_scheme = HTTPBearer(auto_error=False)
@@ -70,84 +69,34 @@ class AuthenticatedUser(BaseModel):
 
 
 # ============================================================================
-# JWT Implementation (without external dependencies)
+# JWT implementation
 # ============================================================================
 
 
 class JWTHandler:
-    """Simple JWT handler using HMAC-SHA256."""
+    """JWT handler backed by PyJWT's verified algorithm implementation."""
 
     def __init__(self, secret: str, algorithm: str = "HS256"):
-        self.secret = secret.encode()
+        self.secret = secret
         self.algorithm = algorithm
-
-    def _base64url_encode(self, data: bytes) -> str:
-        """Base64 URL-safe encoding without padding."""
-        import base64
-
-        return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
-
-    def _base64url_decode(self, data: str) -> bytes:
-        """Base64 URL-safe decoding with padding restoration."""
-        import base64
-
-        padding = 4 - len(data) % 4
-        if padding != 4:
-            data += "=" * padding
-        return base64.urlsafe_b64decode(data)
 
     def encode(self, payload: dict[str, Any]) -> str:
         """Encode a JWT token."""
-        import json
+        import jwt
 
-        header = {"alg": self.algorithm, "typ": "JWT"}
-
-        # Encode header and payload
-        header_b64 = self._base64url_encode(json.dumps(header).encode())
-        payload_b64 = self._base64url_encode(json.dumps(payload).encode())
-
-        # Create signature
-        message = f"{header_b64}.{payload_b64}"
-        signature = hmac.new(self.secret, message.encode(), hashlib.sha256).digest()
-        signature_b64 = self._base64url_encode(signature)
-
-        return f"{header_b64}.{payload_b64}.{signature_b64}"
+        return str(jwt.encode(payload, self.secret, algorithm=self.algorithm))
 
     def decode(self, token: str) -> dict[str, Any] | None:
         """Decode and verify a JWT token."""
-        import json
+        import jwt
 
         try:
-            parts = token.split(".")
-            if len(parts) != 3:
-                return None
-
-            header_b64, payload_b64, signature_b64 = parts
-
-            # Verify signature
-            message = f"{header_b64}.{payload_b64}"
-            expected_signature = hmac.new(
-                self.secret, message.encode(), hashlib.sha256
-            ).digest()
-            actual_signature = self._base64url_decode(signature_b64)
-
-            if not hmac.compare_digest(expected_signature, actual_signature):
-                logger.warning("JWT signature verification failed")
-                return None
-
-            # Decode payload
-            payload_json = self._base64url_decode(payload_b64).decode()
-            payload = json.loads(payload_json)
-
-            # Check expiration
-            if "exp" in payload and payload["exp"] < time.time():
-                logger.warning("JWT token expired")
-                return None
-
-            return dict(payload)
-
-        except JWT_EXCEPTIONS as e:
-            logger.warning(f"JWT decode error: {e}")
+            return dict(jwt.decode(token, self.secret, algorithms=[self.algorithm]))
+        except jwt.ExpiredSignatureError:
+            logger.warning("JWT token expired")
+            return None
+        except jwt.PyJWTError:
+            logger.warning("JWT verification failed")
             return None
 
 
@@ -213,8 +162,7 @@ def generate_api_key() -> str:
 
 def _derive_api_user_id(api_key: str) -> str:
     """Derive a stable user id from API key material."""
-    digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
-    return f"api_key:{digest}"
+    return f"api_key:{credential_fingerprint(api_key)}"
 
 
 def _extract_bearer_token(request: Request) -> str | None:
@@ -234,13 +182,6 @@ def _extract_api_key(request: Request) -> str | None:
 
     # Fall back to Authorization header
     return _extract_bearer_token(request)
-
-
-def _mask_api_key(api_key: str) -> str:
-    """Mask API key for logging (show first 8 and last 4 chars)."""
-    if len(api_key) <= 12:
-        return "***"
-    return f"{api_key[:8]}...{api_key[-4:]}"
 
 
 def authenticate_request(request: Request) -> AuthenticatedUser:
@@ -290,19 +231,9 @@ def authenticate_request(request: Request) -> AuthenticatedUser:
                 )
             user_id = _derive_api_user_id(api_key)
 
-            logger.debug(
-                "Authenticated via API key",
-                extra={
-                    "user_id": user_id,
-                    "api_key": _mask_api_key(api_key),
-                    "roles": roles,
-                },
-            )
-
             return AuthenticatedUser(
                 user_id=user_id,
                 roles=roles,
-                api_key=_mask_api_key(api_key),
                 auth_method="api_key",
             )
 

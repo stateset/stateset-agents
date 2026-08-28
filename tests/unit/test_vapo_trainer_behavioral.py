@@ -90,6 +90,24 @@ def test_build_token_rewards_per_row_batch(vapo_trainer_tiny):
     assert rewards.tolist() == [[0.0, 0.0, 2.0, 0.0], [0.0, 0.0, 0.0, 3.0]]
 
 
+def test_fp32_value_head_accepts_bf16_policy_hidden_states(
+    vapo_trainer_tiny, monkeypatch
+):
+    """Mixed-precision policies must not fail in the fp32 critic matmul."""
+    hidden_size = vapo_trainer_tiny.model.config.hidden_size
+    hidden_states = torch.randn(2, 5, hidden_size, dtype=torch.bfloat16)
+    monkeypatch.setattr(
+        vapo_trainer_tiny,
+        "get_hidden_states",
+        lambda input_ids, attention_mask: hidden_states,
+    )
+    values = vapo_trainer_tiny.compute_values(
+        torch.ones(2, 5, dtype=torch.long), torch.ones(2, 5, dtype=torch.long)
+    )
+    assert values.shape == (2, 5)
+    assert values.dtype == torch.float32
+
+
 def test_compute_vapo_losses_uses_critic_advantages_for_value_target(vapo_trainer_tiny):
     """value_loss must depend on critic_advantages (decoupled GAE), not
     just be silently ignored."""
@@ -173,6 +191,31 @@ async def test_train_step_single_optimizer_step_per_call(
 
     assert len(actor_steps) == 1
     assert len(critic_steps) == 1
+
+
+@pytest.mark.asyncio
+async def test_train_step_releases_each_prompt_graph_before_next_forward(
+    vapo_trainer_tiny, monkeypatch
+):
+    """Prompt graphs are backpropagated sequentially to bound CUDA memory."""
+    t = vapo_trainer_tiny
+    monkeypatch.setattr(t, "generate_group_responses", _fake_group_generator())
+    original = t.compute_vapo_losses
+    prior_losses: list[torch.Tensor] = []
+
+    def observe_backward(*args, **kwargs):
+        if prior_losses:
+            assert prior_losses[-1].grad is not None
+        losses = original(*args, **kwargs)
+        losses[0].retain_grad()
+        prior_losses.append(losses[0])
+        return losses
+
+    monkeypatch.setattr(t, "compute_vapo_losses", observe_backward)
+    await t.train_step(["prompt one", "prompt two"])
+
+    assert len(prior_losses) == 2
+    assert all(loss.grad is not None for loss in prior_losses)
 
 
 def _fake_group_generator():

@@ -79,6 +79,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
@@ -182,6 +183,10 @@ jobs:
 
   test-windows:
     runs-on: windows-latest
+    # The full ~4.7k-test suite can take about 42 minutes on hosted Windows,
+    # plus roughly four minutes for setup. Keep a bounded timeout with enough
+    # headroom for normal runner variance and post-test cleanup.
+    timeout-minutes: 60
     strategy:
       matrix:
         python-version: ["3.10", "3.13"]

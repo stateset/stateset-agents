@@ -360,6 +360,7 @@ class TestCliRegistration:
         assert "stdio" in result.output.lower()
 
 
+@pytest.mark.slow
 class TestLiveProtocolSession:
     """End-to-end regression over the real MCP stdio protocol.
 
@@ -367,21 +368,15 @@ class TestLiveProtocolSession:
     it with the ``mcp`` SDK's own client session (initialize -> list_tools
     -> call_tool), the same path a real MCP client (Claude Code, Claude
     Desktop, another agent) takes. This is the only test in this module
-    that actually exercises FastMCP's request dispatch — the tool-function
-    tests above call the underlying Python functions directly, which does
-    not run the tools inside FastMCP's own anyio event loop the way a real
-    session does. That distinction matters: ``grade_transcript`` and
-    ``improve_run`` internally call ``asyncio.run`` (via ``scripts/
-    grade_transcript.py`` / ``cli_improve.run_improve``), which raises
-    ``RuntimeError: asyncio.run() cannot be called from a running event
-    loop`` if invoked directly on FastMCP's loop thread instead of via
-    ``asyncio.to_thread`` — a failure mode only a live protocol session
-    reproduces.
+    that actually exercises FastMCP's request dispatch.
     """
 
     async def test_initialize_list_and_call_tools_over_stdio(
         self, tmp_path: Path
     ) -> None:
+        await self._exercise_live_protocol(tmp_path)
+
+    async def _exercise_live_protocol(self, tmp_path: Path) -> None:
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
 
@@ -396,7 +391,9 @@ class TestLiveProtocolSession:
             cwd=str(REPO_ROOT),
         )
 
-        async with stdio_client(server_params) as (read, write):
+        # Keep the child process off pytest's capture stream: AnyIO's stderr
+        # copier can otherwise block the stdio protocol under capture.
+        async with stdio_client(server_params, errlog=sys.__stderr__) as (read, write):
             async with ClientSession(read, write) as session:
                 init_result = await asyncio.wait_for(
                     session.initialize(), timeout=_timeout(30)

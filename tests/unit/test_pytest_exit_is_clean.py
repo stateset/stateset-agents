@@ -66,6 +66,7 @@ def _available_shutdown_deps() -> list[str]:
     not _available_shutdown_deps(),
     reason="neither litellm nor wandb is installed; nothing to trigger the traceback",
 )
+@pytest.mark.slow
 def test_pytest_session_exits_without_logging_error(tmp_path: Path) -> None:
     probe_dir = TESTS_DIR / f".shutdown_probe_{os.getpid()}"
     probe_dir.mkdir(parents=True, exist_ok=True)

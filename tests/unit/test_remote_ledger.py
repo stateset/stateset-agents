@@ -87,7 +87,7 @@ class TestLedgerIO:
         path = tmp_path / "ledger.jsonl"
         record_entry(self._entry(), path=path)
         with path.open("a", encoding="utf-8") as handle:
-            handle.write("{not json\n")
+            handle.write("\n{not json\n")
         assert len(read_entries(path)) == 1
 
     def test_io_failure_never_raises(self, tmp_path):

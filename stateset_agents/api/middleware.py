@@ -4,8 +4,9 @@ API Middleware Module
 Centralized middleware for security, observability, and request handling.
 """
 
-import hashlib
+import asyncio
 import hmac
+import inspect
 import logging
 import time
 import uuid
@@ -19,6 +20,8 @@ from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+
+from stateset_agents.utils.credentials import credential_fingerprint
 
 from .auth import get_jwt_handler
 from .config import get_config
@@ -213,16 +216,28 @@ class RedisSlidingWindowLimiter:
     stays an optional dependency (see the ``api`` extra in ``pyproject.toml``).
     """
 
-    def __init__(self, redis_url: str, window_seconds: int = 60):
+    def __init__(
+        self,
+        redis_url: str,
+        window_seconds: int = 60,
+        operation_timeout_seconds: float = 2.0,
+    ):
         self.redis_url = redis_url
         self.window_seconds = window_seconds
+        self.operation_timeout_seconds = operation_timeout_seconds
         self._client: Any | None = None
 
     async def _get_client(self) -> Any:
         if self._client is None:
             import redis.asyncio as redis  # noqa: PLC0415 - intentional lazy/optional import
 
-            self._client = redis.from_url(self.redis_url, decode_responses=True)
+            self._client = redis.from_url(
+                self.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=self.operation_timeout_seconds,
+                socket_timeout=self.operation_timeout_seconds,
+                retry_on_timeout=False,
+            )
         return self._client
 
     async def is_allowed(self, key: str, limit: int) -> tuple[bool, int]:
@@ -240,7 +255,9 @@ class RedisSlidingWindowLimiter:
         async with client.pipeline(transaction=True) as pipe:
             pipe.incr(redis_key)
             pipe.expire(redis_key, self.window_seconds, nx=True)
-            count, _ = await pipe.execute()
+            count, _ = await asyncio.wait_for(
+                pipe.execute(), timeout=self.operation_timeout_seconds
+            )
         allowed = count <= limit
         remaining = max(0, limit - count)
         return allowed, remaining
@@ -262,7 +279,7 @@ def _hash_credential(value: str) -> str:
     (``_derive_api_user_id``) so raw credentials never end up in rate-limit
     state or logs.
     """
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    return credential_fingerprint(value)
 
 
 def _validate_credential(credential: str, config: Any) -> bool:
@@ -335,6 +352,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             except (
                 Exception
             ) as exc:  # noqa: BLE001 - any redis/import failure triggers fallback
+                # A failed redis-py pool may retain resolver/connection tasks.
+                # Close it before fallback so event-loop shutdown cannot wait
+                # indefinitely; the next post-cooldown attempt creates a new
+                # client and can recover normally.
+                close = getattr(self._redis_limiter, "close", None)
+                if close is not None:
+                    try:
+                        result = close()
+                        if inspect.isawaitable(result):
+                            await result
+                    except Exception:  # noqa: BLE001 - fallback must survive cleanup
+                        logger.debug("Failed Redis limiter cleanup", exc_info=True)
                 self._redis_disabled_until = now + REDIS_RETRY_COOLDOWN_SECONDS
                 if not self._redis_currently_disabled:
                     logger.warning(

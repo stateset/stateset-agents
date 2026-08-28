@@ -150,11 +150,141 @@ Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 `improve_run`, `improve_status`, `list_model_presets`, `dry_run_finetune`) — see
 [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
 
+Check what has actually been proven—not merely registered—with
+`stateset-agents model-support`. Its schema-versioned output separates unit
+coverage, live hardware attempts, and successful inference by provider.
+
 ---
 
 ## What's new
 
-**v0.39.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
+**v0.42.5 (latest release; PyPI publication pending):**
+
+- **Five native RL objectives, one measured protocol.** A complete 15-run
+  RTX 5080/CUDA 12.9 matrix compares GRPO, GSPO, DAPO, VAPO, and GEPO over
+  three rotated seeds with pinned Qwen2.5-0.5B-Instruct/GSM8K revisions,
+  external wall time, actual completion counts, peak VRAM, held-out scores,
+  exact config attestations, and hashed normalized policies. The strict
+  [descriptive report](benchmark_results/algorithm_comparison/report/comparison.md)
+  accepts all 15 runs; rejected attempts remain published separately.
+- **VAPO now fits the matched 16 GB workload.** The first full attempt exposed
+  deterministic graph-retention OOMs at 15.28/15.47 GiB. Prompt-normalized
+  gradient accumulation preserves one optimizer step and the same mean
+  objective while releasing each forward graph before the next. The corrected
+  three-seed VAPO runs average 6,078 MiB peak VRAM and all complete.
+
+**v0.42.4:**
+
+- **Publication-grade comparison gates.** Framework, algorithm, scaling, and
+  fault-recovery reports now fail closed on synthetic data, unpinned revisions,
+  mismatched hardware/configuration, duplicate seeds, or missing artifacts.
+- **Neutral StateSet-versus-TRL execution.** A framework-neutral shootout
+  rotates three matched seeds, measures wall time outside each adapter, hashes
+  saved models, and independently invokes upstream TRL GRPO. On the exact
+  four-step Qwen2.5-0.5B/GSM8K A40 protocol, StateSet and TRL measured the same
+  throughput within noise (`0.326` vs `0.327` samples/s), wall time (`196.4s`
+  vs `196.0s`), and VRAM (`3436.7` vs `3437.0` MiB); see the
+  [three-seed report](benchmark_results/framework_comparison/report/comparison.md).
+- **Live-discovered GRPO fixes.** RunPod execution replaced the optional
+  FlashAttention default with SDPA, corrected Phase-0 agent construction,
+  bridged TRL's sync reward callback to async rewards, and made returned trained
+  agents immediately usable for inference. A rejected diagnostic shootout also
+  exposed and fixed seed propagation, short-run warmup, and asymmetric
+  evaluation before any comparison result could be published.
+- **Measured 1/2/4/8-GPU weak scaling.** Three matched seeds on eight identical
+  RTX 5080s reached `2.085×`, `4.004×`, and `8.080×` throughput at 2, 4, and 8
+  GPUs (`104.3%`, `100.1%`, and `101.0%` weak-scaling efficiency), with a fixed
+  per-device policy workload and `589.8 MiB` peak VRAM per GPU. The
+  [validated report](benchmark_results/scaling/report/scaling.md) labels this
+  as weak scaling; the failed fixed-global-batch
+  [strong-scaling diagnostic](benchmark_results/scaling/diagnostics/f6e7478-strong/report/scaling.md)
+  is retained rather than hidden.
+- **Measured 1/2/4/8-GPU strong scaling.** A corrected fixed-work protocol holds
+  the effective global batch at `196,608` samples and divides its 96 reference
+  microbatches exactly across ranks. Three matched seeds reached `1.973×`,
+  `3.676×`, and `6.642×` throughput at 2, 4, and 8 GPUs (`98.7%`, `91.9%`, and
+  `83.0%` strong-scaling efficiency); the [validated strong-scaling report](benchmark_results/scaling/strong/report/scaling.md)
+  binds every throughput value to measured work and wall time.
+- **Measured recovery matrix.** Nine CUDA runs injected worker exit, controller
+  SIGKILL, and live TCP control-plane interruption across three seeds. Every
+  run resumed from its atomic optimizer checkpoint, reached the final step,
+  recorded zero lost or duplicate updates, and left zero child resources; see
+  the [retained report](benchmark_results/reliability/report.json).
+- **Fresh provider authentication.** Read-only River and RunPod canaries passed
+  on 2026-08-27 with zero billable resources and verified cleanup. Fireworks is
+  explicitly retained as skipped because its key and account id are absent.
+
+**v0.42.3:**
+
+- **Neutral StateSet-versus-TRL evidence.** Three matched A40 seeds compare the
+  same pinned Qwen2.5-0.5B/GSM8K GRPO protocol, including external wall time,
+  peak VRAM, and hashed model artifacts.
+- **Fail-closed publication evidence.** Comparison reports reject synthetic or
+  incomplete inputs, mismatched configurations, duplicate seeds, and unpinned
+  model, dataset, algorithm, or framework revisions.
+- **RunPod-discovered training fixes.** The release corrected attention
+  defaults, Phase-0 construction, asynchronous reward bridging, seed and
+  warmup propagation, symmetric evaluation, and trained-agent inference.
+
+**v0.42.2:**
+
+- **Real GPU proof.** The packaged RunPod path completed QLoRA SFT with 2/2
+  held-out checks and CUDA GSPO with verified target-probability improvement.
+- **Honest verification.** Missing credentials now fail live workflows,
+  provider canaries run for release tags, and retained evidence distinguishes
+  unit, authentication, hardware, training, inference, and publication claims.
+- **Current RunPod provisioning.** Pod requests use explicit GPU compute and
+  availability priority, while low-cost SFT/RL lanes run serially to avoid
+  competing for scarce Community Cloud capacity.
+
+**v0.42.1:**
+
+- **Deterministic release validation.** The 4,613-test default suite now uses
+  bounded parallelism, per-test timeouts, and CI job ceilings, while Redis and
+  synchronous health checks fail fast instead of stalling teardown.
+- **Auditable model evidence.** `stateset-agents model-support` distinguishes
+  framework unit coverage, hardware attempts, and verified inference in
+  stable human-readable and JSON output.
+- **Consistent deployment artifacts.** Package, Helm, Kubernetes, wheel, and
+  documentation version surfaces advance together and are regression-tested.
+
+**v0.42.0:**
+
+- **Bounded multi-GPU RunPod serving.** Day-zero vLLM images support explicit
+  GPU counts, tensor parallelism, cost ceilings, readiness deadlines, and an
+  independent pod-side watchdog.
+- **Persistent caches and safer diagnostics.** Existing network volumes can
+  retain Hugging Face weights, while authenticated startup-log tails and
+  sanitized provisioning errors improve failure evidence without leaking
+  serving tokens.
+- **Live evidence stays honest.** Bounded Qwen3.8 and small-model control runs
+  cleaned up every pod and isolated dedicated-image/container startup as the
+  remaining RunPod bottleneck; no successful-inference claim is made.
+
+**v0.41.0:**
+
+- **Day-one GLM-5.3-Flash and Qwen3.8-Flash-Next support.** Both native
+  multimodal composite checkpoints have architecture-verified LoRA targets,
+  dedicated dependency extras, safe text-only RL paths, and explicit
+  multimodal serving guidance.
+- **Composite model loading is shared across agents and RL.** Native
+  conditional-generation repositories now fall back from
+  `AutoModelForCausalLM` to Transformers' multimodal auto classes in the core
+  agent, SFT, GSPO, DAPO, GEPO, and VAPO paths.
+- **Provider evidence now stays fresh.** Read-only River, RunPod, and Fireworks
+  canaries emit schema-versioned JSON, fail strict CI on missing credentials or
+  leaked canary resources, and run alongside a bounded weekly slow/E2E lane.
+
+**v0.40.0:**
+
+- **Remote execution is now explicit and restart-safe.** Provider capability
+  discovery prevents unsupported job submissions, Fireworks jobs reconnect
+  across process restarts, and RunPod leases make orphan cleanup auditable.
+- **API and smoke-test reliability improved.** Redis connections are bounded,
+  FastAPI dependencies avoid worker-pool deadlocks, and benchmark smoke mode
+  is deterministic and fully offline.
+
+**v0.39.0:**
 
 - **GEPO and VAPO get a real trust region.** Both trainers recomputed
   their "old" log-probs from the current model in the same step, so the
@@ -700,7 +830,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest release (v0.39.0)
+pip install stateset-agents          # latest version currently available on PyPI
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.42.5"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -742,7 +873,7 @@ trains until you ask:
 
 ```bash
 pip install "stateset-agents[training,trl]"
-python examples/finetune_gspo.py --list-models              # 12 presets
+python examples/finetune_gspo.py --list-models              # 20 presets
 python examples/finetune_gspo.py --model qwen3.5-0.8b       # dry run: show the resolved config
 python examples/finetune_gspo.py --model qwen3.5-0.8b --no-dry-run   # actually train
 ```
@@ -752,15 +883,18 @@ uses 4‑bit quantization and smaller context/group sizes), `--use-lora/--no-lor
 `--use-4bit/--use-8bit`, `--use-vllm`, `--wandb`, `--export-merged`,
 `--write-config PATH`.
 
-Twelve models ship a dedicated starter with tuned defaults; the ✅ column marks
-what has actually been fine-tuned on rented hardware, not merely wired up:
+Twelve models ship a dedicated starter with tuned defaults, and two newly
+released composite models have architecture-aware unified presets. The ✅
+column marks what has actually been fine-tuned on rented hardware, not merely
+wired up:
 
-| Model | Dedicated entry point | Live-verified | Notes |
+| Model | Training entry point | Live-verified | Notes |
 |---|---|---|---|
 | `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
 | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
 | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
 | `Qwen/Qwen3.8-27B` | `stateset-agents qwen3-8-27b` | ✅ | Hybrid linear/standard attention, multimodal, 256K ctx, Apache‑2.0 — ~56GB BF16 |
+| `Qwen/Qwen3.8-Flash-Next` | `python examples/finetune_gspo.py --model qwen3.8-flash-next` | | Qwen4 architecture preview; 125B main / 6B active + 51B n-gram embeddings; native multimodal, 262K ctx |
 | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents qwen3-coder` | | 128 experts / 8 active, 256K ctx, Apache‑2.0 |
 | `openai/gpt-oss-20b` | `stateset-agents gpt-oss` | | 32 experts / 4 active, 128K ctx, Apache‑2.0 |
 | `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents deepseek-v4` | | MLA attention, 256 experts, 1M ctx, MIT — QLoRA + vLLM |
@@ -769,6 +903,7 @@ what has actually been fine-tuned on rented hardware, not merely wired up:
 | `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` | | **Provisional** — HF weights unpublished as of 2026‑07‑16 |
 | `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
 | `zai-org/GLM-5.2` | `python examples/finetune_glm5_2_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
+| `zai-org/GLM-5.3-Flash` | `python examples/finetune_gspo.py --model glm5.3-flash` | | 320B / 18B active, native multimodal, FP8, 1M ctx |
 
 Every CLI starter accepts the same flags: `--json-output`, `--list-profiles`,
 `--starter-profile NAME`, `--write-config PATH`, `--config PATH --no-dry-run`.
@@ -777,7 +912,7 @@ import get_glm5_2_config, run_glm5_2_config`), as are the others.
 
 ### Supported models
 
-First-class starters ship for **Qwen 3.5 0.8B**, **Muse Glimmer 30B**, **Nemotron 3.5 Lightning**, **Qwen3.8 27B**, **Qwen3-Coder 30B**, **gpt-oss 20B**, **DeepSeek V4 Flash**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Any HuggingFace causal LM compatible with `AutoModelForCausalLM` + TRL GRPO is supported through the generic flow.
+First-class starters ship for **Qwen 3.5 0.8B**, **Muse Glimmer 30B**, **Nemotron 3.5 Lightning**, **Qwen3.8 27B**, **Qwen3-Coder 30B**, **gpt-oss 20B**, **DeepSeek V4 Flash**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Architecture-aware unified presets additionally cover **GLM-5.3-Flash** and **Qwen3.8-Flash-Next**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Compatible Hugging Face causal LMs work through the generic flow; native multimodal conditional-generation repositories use StateSet's composite-loader fallback for text-only RL.
 
 See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
 
@@ -1108,7 +1243,7 @@ This closes the **human-in-the-loop curation cycle**: train → eval → chat �
 
 ## Benchmark your fine‑tune
 
-After training, you usually want a defensible number: *did this actually improve over the base model, by how much, and is it reproducible?* The framework ships a Phase‑0 benchmark pipeline that produces publication‑grade results across **three tasks** (GSM8K, the bundled customer‑support corpus, and the tool‑calling corpus).
+After training, you usually want a defensible number: *did this actually improve over the base model, by how much, and is it reproducible?* The framework ships a Phase‑0 benchmark pipeline across **three tasks** (GSM8K, the bundled customer‑support corpus, and the tool‑calling corpus). Results become publication-grade only after the strict provenance and replication gates below pass.
 
 **Quick path:** open one of the bundled Colab notebooks. The whitepaper §11.7 canonical result was produced by `customer_support_3seed_judge.ipynb` — judge improvement **+0.079** with three-seed agreement on Qwen2.5-0.5B-Instruct ([artifact](benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json)).
 
@@ -1141,11 +1276,12 @@ make release-whitepaper-v1
 
 The pipeline:
 
-- **Reproducibility.** `set_all_seeds()` covers Python random, NumPy, PyTorch (CPU + CUDA), and Transformers in one call. Every result JSON carries the git commit hash.
+- **Reproducibility.** `set_all_seeds()` covers Python random, NumPy, PyTorch (CPU + CUDA), and Transformers in one call. Publication evidence carries full source, model, and dataset commits.
 - **Schema.** Each run produces a single JSON conforming to `benchmark_results/SCHEMA.md`. Every published number traces back to a file.
-- **Publication gates.** 3 seeds, σ < 0.10, +0.03 improvement, single commit. Use `make benchmark-aggregate-strict` in CI to enforce.
+- **Publication gates.** Three unique seeds, σ ≤ 0.10, +0.03 improvement, one full source/model revision, real hardware/VRAM/wall-clock evidence, and bounded gradient stability. Synthetic demo rows are excluded by default and can never pass.
 - **Figures.** `make benchmark-plot` produces two whitepaper‑ready PNGs (pass@1 per trainer, improvement ranking) plus a matplotlib‑free text fallback.
-- **One‑shot release.** `make release-whitepaper-v1` aggregates → plots → generates the whitepaper §11.7 markdown snippet → copies figures into `docs/figures/` → writes a release manifest. Six artifacts in one command.
+- **One‑shot release.** `make release-whitepaper-v1` now fails closed unless every gate passes, then aggregates → plots → generates the whitepaper §11.7 markdown snippet → copies figures into `docs/figures/` → writes a release manifest.
+- **Neutral comparison.** `benchmarks/shootout.py` executes StateSet and a direct upstream-TRL adapter from one attested configuration, with three rotated seeds and artifact hashing. See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 See `benchmark_results/README.md` for the full pipeline reference.
 
@@ -1402,12 +1538,14 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.39.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.5`).
+- [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
+  provider, GPU, cleanup, and publication claims for the current release.
 
 Other entry points:
 
 - **[`examples/getting_started/`](examples/getting_started/)** — **start here after `pip install`**: five small examples (stub hello, custom reward, first GSPO fine-tune, LLM-judge eval, serve via FastAPI). All target the published PyPI version; the GPU-free three smoke-test the install end-to-end. Run `make getting-started-smoke` to verify all three at once.
-- `examples/finetune_gspo.py` – **unified finetune driver**: `--model <preset>` over the 12-model registry (`--list-models`), safe `--dry-run` by default, `--no-dry-run` to train
+- `examples/finetune_gspo.py` – **unified finetune driver**: `--model <preset>` over the 20-model registry (`--list-models`), safe `--dry-run` by default, `--no-dry-run` to train
 - `examples/hello_world.py` – stub mode walkthrough
 - `examples/quick_start.py` – stub-backed onboarding example with training + smoke test
 - `examples/complete_grpo_training.py` – end‑to‑end GRPO training

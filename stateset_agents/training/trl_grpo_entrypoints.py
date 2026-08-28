@@ -5,6 +5,7 @@ Training entrypoints for TRL-based GRPO workflows.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import os
@@ -33,16 +34,31 @@ def _build_sync_reward_function(reward_wrapper: Any):
     """Wrap the async reward interface for TRL's synchronous callback."""
 
     def sync_reward_function(completions, prompts, **kwargs):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(
                 reward_wrapper.compute_rewards(completions, prompts, **kwargs)
             )
-        finally:
-            loop.close()
+
+        # TRL invokes rewards synchronously while train_with_trl_grpo itself is
+        # inside asyncio.run(). Python forbids nesting an event loop in that
+        # thread, so execute the coroutine in one short-lived worker thread.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                asyncio.run,
+                reward_wrapper.compute_rewards(completions, prompts, **kwargs),
+            )
+            return future.result()
 
     return sync_reward_function
+
+
+def _attach_trained_backend(agent: Agent, model: Any, tokenizer: Any) -> None:
+    """Make a trainer-produced model immediately usable for agent inference."""
+    agent.model = model
+    agent.tokenizer = tokenizer
+    agent.generation_config = agent._build_generation_config()
 
 
 async def train_with_trl_grpo(
@@ -135,8 +151,7 @@ async def train_with_trl_grpo(
     trainer.save_model(final_model_path)
     logger.info("Model saved to %s", final_model_path)
 
-    agent.model = trainer.model
-    agent.tokenizer = tokenizer
+    _attach_trained_backend(agent, trainer.model, tokenizer)
 
     if wandb_enabled:
         wb = wandb

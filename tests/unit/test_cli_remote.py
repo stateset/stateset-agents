@@ -68,6 +68,22 @@ class TestCommandRegistration:
         assert "local" in result.output
         assert "modal" in result.output
 
+    def test_remote_job_command_is_registered(self):
+        names = {
+            command.name or command.callback.__name__
+            for command in app.registered_commands
+        }
+        assert "remote-job" in names
+
+    def test_remote_providers_reports_capability_matrix(self):
+        result = runner.invoke(app, ["remote-providers", "--json"])
+
+        assert result.exit_code == 0, result.output
+        rows = {row["provider"]: row for row in json.loads(result.output)}
+        assert rows["river"]["job_kinds"] == ["harvest", "rl", "sft"]
+        assert rows["fireworks"]["durable_handles"] is True
+        assert rows["runpod"]["result_kind"] == "local_artifacts"
+
 
 class TestSuccessfulRun:
     def test_local_dry_run_exits_zero(self, dataset, tmp_path):
@@ -415,6 +431,167 @@ class TestFireworksOptions:
         result = invoke_help("train-remote")
 
         assert "fireworks" in result.output
+
+
+class TestRemoteJobCommand:
+    def test_status_reconnects_with_provider_handle(self, monkeypatch):
+        import stateset_agents.cli_remote as cli_remote
+        from stateset_agents.remote.job import JobStatus
+
+        observed = {}
+
+        class StubExecutor:
+            name = "fireworks"
+
+            def status(self, handle):
+                observed["handle"] = handle
+                return JobStatus.RUNNING
+
+            def logs(self, handle):
+                yield "50% complete"
+
+        monkeypatch.setattr(cli_remote, "get_executor", lambda provider: StubExecutor())
+
+        result = runner.invoke(app, ["remote-job", "--job-id", "sftj-1"])
+
+        assert result.exit_code == 0, result.output
+        assert observed["handle"].job_id == "sftj-1"
+        assert "50% complete" in result.output
+        assert "running" in result.output
+
+    def test_fetch_uses_requested_destination(self, monkeypatch, tmp_path):
+        import stateset_agents.cli_remote as cli_remote
+        from stateset_agents.remote.job import JobStatus
+
+        observed = {}
+
+        class StubExecutor:
+            name = "fireworks"
+
+            def status(self, handle):
+                return JobStatus.SUCCEEDED
+
+            def logs(self, handle):
+                return iter(())
+
+            def fetch(self, handle, dest=None):
+                observed["dest"] = dest
+                return dest
+
+        monkeypatch.setattr(cli_remote, "get_executor", lambda provider: StubExecutor())
+        destination = tmp_path / "recovered"
+
+        result = runner.invoke(
+            app,
+            [
+                "remote-job",
+                "--job-id",
+                "sftj-1",
+                "--fetch",
+                "--output-dir",
+                str(destination),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert observed["dest"] == destination
+        assert str(destination) in result.output
+
+
+class TestRunPodOrphansCommand:
+    def test_read_only_mode_lists_leases_without_terminating(self, monkeypatch):
+        import stateset_agents.cli_remote as cli_remote
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        executor = RunPodExecutor(api=object(), ssh=object(), public_key="key")
+        monkeypatch.setattr(
+            executor,
+            "orphaned_leases",
+            lambda: [
+                {
+                    "pod_id": "pod-1",
+                    "job_id": "job-1",
+                    "base_model": "Qwen/test",
+                    "gpu": "H100",
+                }
+            ],
+        )
+        monkeypatch.setattr(
+            executor,
+            "cleanup_orphans",
+            lambda: pytest.fail("read-only mode must not terminate"),
+        )
+        monkeypatch.setattr(cli_remote, "get_executor", lambda provider: executor)
+
+        result = runner.invoke(app, ["runpod-orphans"])
+
+        assert result.exit_code == 0, result.output
+        assert "pod-1" in result.output
+        assert "Read-only" in result.output
+
+
+class TestProviderCanaryCommand:
+    def test_writes_machine_readable_evidence(self, monkeypatch, tmp_path):
+        import stateset_agents.remote.canary as canary
+        from stateset_agents.remote.canary import ProviderCanaryResult
+
+        monkeypatch.setattr(
+            canary,
+            "run_canary_matrix",
+            lambda providers: [
+                ProviderCanaryResult(
+                    provider=providers[0],
+                    status="passed",
+                    checked_at="2026-08-26T00:00:00+00:00",
+                    duration_ms=12,
+                    checks={"billable_resources_created": 0},
+                    cleanup_verified=True,
+                )
+            ],
+        )
+        output = tmp_path / "canary.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "provider-canary",
+                "--provider",
+                "runpod",
+                "--output",
+                str(output),
+                "--strict",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        assert payload["schema_version"] == 1
+        assert payload["billable_resources_created"] == 0
+        assert payload["results"][0]["cleanup_verified"] is True
+
+    def test_strict_mode_fails_on_skipped_provider(self, monkeypatch):
+        import stateset_agents.remote.canary as canary
+        from stateset_agents.remote.canary import ProviderCanaryResult
+
+        monkeypatch.setattr(
+            canary,
+            "run_canary_matrix",
+            lambda providers: [
+                ProviderCanaryResult(
+                    provider=providers[0],
+                    status="skipped",
+                    checked_at="2026-08-26T00:00:00+00:00",
+                    duration_ms=0,
+                    error="missing credentials",
+                )
+            ],
+        )
+
+        result = runner.invoke(
+            app, ["provider-canary", "--provider", "river", "--strict"]
+        )
+
+        assert result.exit_code == 1
 
 
 class TestUndeployCommand:

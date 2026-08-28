@@ -1,5 +1,9 @@
 # GRPO Agent Framework v4.0 - Revolutionary Enhancements
 
+> **Historical design draft — not benchmark evidence.** Numeric convergence
+> and throughput statements below are unverified projections. Current measured
+> claims and publication gates are maintained in `docs/BENCHMARKS.md`.
+
 ## 🚀 Executive Summary
 
 The GRPO (Group Relative Policy Optimization) Agent Framework has been dramatically enhanced with cutting-edge AI capabilities, transforming it into a next-generation platform for intelligent agent development. These improvements represent a quantum leap in functionality, performance, and production readiness.

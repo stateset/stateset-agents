@@ -24,6 +24,7 @@ class TRLGRPOConfig(TrainingConfig):
     num_generations: int = 4
     num_iterations: int = 1
     mini_batch_size: int = 1
+    max_steps: int = -1
 
     num_outer_iterations: int = 1
     generations_per_iteration: int = 100

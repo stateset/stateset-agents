@@ -115,6 +115,9 @@ async def train_with_vapo(
 
     final_dir = os.path.join(output_dir, "final")
     trainer.save_checkpoint(final_dir)
+    trainer.metrics_history["rollout_samples_total"] = [
+        float(trainer.rollout_samples_total)
+    ]
 
     if use_wandb:
         wandb.finish()

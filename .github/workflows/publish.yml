@@ -16,15 +16,10 @@ on:
         options:
           - testpypi
           - pypi
-      run_readiness_gate:
-        description: 'Run the heavy publish-readiness gate (bandit/safety/coverage) before publishing'
-        required: false
-        default: false
-        type: boolean
-
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
     # No id-token here: OIDC trusted publishing happens only in pypi-publish.
@@ -76,6 +71,21 @@ jobs:
           exit 1
         fi
 
+    - name: Run mandatory publish readiness gate
+      run: make publish-readiness
+
+    - name: Upload publish readiness evidence
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: publish-readiness-${{ github.sha }}
+        path: |
+          publish-readiness-summary.json
+          bandit-report.json
+          safety-report.json
+          coverage.xml
+        if-no-files-found: warn
+
     - name: Build distribution
       run: |
         rm -rf dist/
@@ -102,21 +112,6 @@ jobs:
         # extras — no separate pyyaml install needed.
         /tmp/publish-smoke-venv/bin/pip install dist/*.whl
         /tmp/publish-smoke-venv/bin/python -c "import stateset_agents; print('version:', stateset_agents.__version__); from stateset_agents.config import get_agent_preset; preset = get_agent_preset('customer_service'); assert preset, 'preset failed to load'; print('preset keys:', sorted(preset.keys()))"
-
-    - name: Run publish readiness checks (optional, non-blocking)
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_readiness_gate == 'true'
-      continue-on-error: true
-      run: |
-        make publish-readiness
-
-    - name: Show publish readiness summary
-      if: always() && github.event_name == 'workflow_dispatch' && github.event.inputs.run_readiness_gate == 'true'
-      run: |
-        if [ -f publish-readiness-summary.json ]; then
-          cat publish-readiness-summary.json
-        else
-          echo "publish-readiness-summary.json not generated"
-        fi
 
     - name: Publish to TestPyPI
       if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'testpypi'

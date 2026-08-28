@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -16,6 +17,7 @@ from fastapi import (
 )
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+from stateset_agents.utils.credentials import credential_fingerprint
 
 from ..logging_config import get_logger
 from .config import get_grpo_config
@@ -453,11 +455,24 @@ def register_routes(
             if api_key and api_key.lower().startswith("bearer "):
                 api_key = api_key.split(" ", 1)[1].strip()
 
-            if not api_key or api_key not in config.api_keys:
+            matched_key = (
+                next(
+                    (
+                        stored_key
+                        for stored_key in config.api_keys
+                        if api_key is not None
+                        and hmac.compare_digest(stored_key, api_key)
+                    ),
+                    None,
+                )
+                if api_key
+                else None
+            )
+            if matched_key is None:
                 await websocket.close(code=1008, reason="Unauthorized")
                 return
 
-            limit_key = f"ws:{api_key}"
+            limit_key = f"ws:{credential_fingerprint(api_key)}"
             if not rate_limiter.allow(limit_key, config.rate_limit_per_minute):
                 await websocket.close(code=1008, reason="Rate limit exceeded")
                 return

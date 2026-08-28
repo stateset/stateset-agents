@@ -1,0 +1,51 @@
+2026-08-27 18:23:33,663 INFO Seeds set to 2026
+2026-08-27 18:23:33,663 INFO Task: gsm8k
+2026-08-27 18:23:34,152 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 404 Not Found"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-27 18:23:34,152 WARNING Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-27 18:23:34,453 INFO HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:23:34,590 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/740312add88f781978c0658806c59bc2815b9866 "HTTP/1.1 200 OK"
+2026-08-27 18:23:34,725 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-08-27 18:23:34,868 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:23:35,000 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866?recursive=false&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:23:35,134 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 404 Not Found"
+2026-08-27 18:23:35,270 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:23:35,369 INFO HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:23:35,510 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-08-27 18:23:35,646 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 404 Not Found"
+2026-08-27 18:23:35,648 INFO Train: 32 examples, Eval: 16 examples
+2026-08-27 18:23:35,650 INFO Evaluating baseline (un-fine-tuned) on 16 examples…
+2026-08-27 18:23:35,789 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-08-27 18:23:35,926 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:23:36,260 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct "HTTP/1.1 200 OK"
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 290/290 [00:00<00:00, 22588.55it/s]
+2026-08-27 18:24:04,984 INFO Baseline pass@1: 0.062 (parse rate 1.000)
+2026-08-27 18:24:04,985 INFO Invoking vapo trainer with 32 train examples…
+2026-08-27 18:24:04,989 INFO Rust acceleration not available. Install with: cd rust_core && maturin develop --release
+2026-08-27 18:24:05,002 INFO ============================================================
+2026-08-27 18:24:05,002 INFO VAPO Training - Value-Augmented Policy Optimization
+2026-08-27 18:24:05,002 INFO ============================================================
+2026-08-27 18:24:05,002 INFO SOTA: 60.4 on AIME 2024
+2026-08-27 18:24:05,002 INFO Key: Value warmup + Decoupled GAE + Length-adaptive lambda
+2026-08-27 18:24:05,002 INFO Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2026-08-27 18:24:05,002 INFO Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2026-08-27 18:24:05,205 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-08-27 18:24:05,342 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:24:05,666 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct "HTTP/1.1 200 OK"
+
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 290/290 [00:00<00:00, 3681.08it/s]
+2026-08-27 18:24:06,042 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/custom_generate/generate.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:24:06,066 INFO Model loaded on cuda
+2026-08-27 18:24:06,070 INFO Starting training with 32 prompts
+2026-08-27 18:24:06,070 INFO Value warmup steps: 1
+2026-08-27 18:24:06,070 INFO Group size: 4
+2026-08-27 18:24:06,071 INFO Starting value network warmup (1 steps)
+2026-08-27 18:24:17,436 INFO Value network warmup complete
+2026-08-27 18:24:17,437 INFO Value warmup | Loss: 5.7518
+2026-08-27 18:25:02,798 WARNING Training did not produce an agent: OutOfMemoryError: CUDA out of memory. Tried to allocate 740.00 MiB. GPU 0 has a total capacity of 15.47 GiB of which 264.62 MiB is free. Including non-PyTorch memory, this process has 15.20 GiB memory in use. Of the allocated memory 14.82 GiB is allocated by PyTorch, and 66.35 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+2026-08-27 18:25:02,798 INFO Wrote result to /workspace/algorithm-full/runs/vapo-seed2026/phase0-result.json
+2026-08-27 18:25:02,798 ERROR Training did not produce shootout adapter evidence

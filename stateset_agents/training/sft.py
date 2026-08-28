@@ -337,43 +337,34 @@ def log_cuda_memory_per_device() -> None:
 def load_base_model_for_sft(base_model: str):
     """Load ``base_model`` for text-only SFT, tolerating multimodal repos.
 
-    Composite multimodal checkpoints (e.g. ``meta-models/Muse-Glimmer-30B``,
-    model_type ``muse_glimmer``) register only under transformers'
-    image-text-to-text auto-mapping, so ``AutoModelForCausalLM`` raises
-    ValueError on them. Text-only SFT of the language stack still works:
-    retry via ``AutoModelForImageTextToText`` and let LoRA target the
-    text-stack projections.
+    Composite multimodal checkpoints (e.g. ``zai-org/GLM-5.3-Flash`` and
+    ``meta-models/Muse-Glimmer-30B``) register only under Transformers'
+    multimodal/image-text auto mappings, so ``AutoModelForCausalLM`` raises
+    ValueError on them. Text-only SFT of the language stack still works: retry
+    through the composite conditional-generation model and let LoRA target
+    the text-stack projections.
 
     On a multi-GPU host the checkpoint is sharded across every visible GPU
     via ``device_map="auto"`` (see :func:`model_load_kwargs`).
     """
     from transformers import AutoModelForCausalLM
 
+    from stateset_agents.core.transformers_compat import load_generation_model
+
     kwargs = model_load_kwargs()
-    try:
-        model = AutoModelForCausalLM.from_pretrained(  # nosec: B615
-            base_model,
-            **kwargs,
-        )
-        log_device_map_summary(model)
-        return model
-    except ValueError as causal_exc:
-        try:
-            from transformers import AutoModelForImageTextToText
-        except ImportError:
-            raise causal_exc from None
+    model, resolved_model_cls = load_generation_model(
+        AutoModelForCausalLM,
+        base_model,
+        kwargs,
+    )
+    if resolved_model_cls is not AutoModelForCausalLM:
         logger.info(
-            "AutoModelForCausalLM rejected %s (%s); retrying as an "
-            "image-text-to-text checkpoint and training the text stack.",
+            "AutoModelForCausalLM rejected %s; loaded the composite "
+            "conditional-generation model and training its text stack.",
             base_model,
-            causal_exc,
         )
-        model = AutoModelForImageTextToText.from_pretrained(  # nosec: B615
-            base_model,
-            **kwargs,
-        )
-        log_device_map_summary(model)
-        return model
+    log_device_map_summary(model)
+    return model
 
 
 def infer_lora_target_modules(model: Any) -> list[str]:

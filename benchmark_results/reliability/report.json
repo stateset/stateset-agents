@@ -1,0 +1,39 @@
+{
+  "faults": {
+    "controller_restart": {
+      "duplicate_updates": 0,
+      "max_data_loss_steps": 0,
+      "max_recovery_seconds": 2.4683121099951677,
+      "resources_remaining": 0,
+      "seeds": [
+        42,
+        1337,
+        2026
+      ]
+    },
+    "network_interruption": {
+      "duplicate_updates": 0,
+      "max_data_loss_steps": 0,
+      "max_recovery_seconds": 2.5184874379920075,
+      "resources_remaining": 0,
+      "seeds": [
+        42,
+        1337,
+        2026
+      ]
+    },
+    "worker_exit": {
+      "duplicate_updates": 0,
+      "max_data_loss_steps": 0,
+      "max_recovery_seconds": 2.5685700769972755,
+      "resources_remaining": 0,
+      "seeds": [
+        42,
+        1337,
+        2026
+      ]
+    }
+  },
+  "passed": true,
+  "schema_version": 1
+}

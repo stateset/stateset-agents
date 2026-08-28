@@ -212,18 +212,58 @@ def serve_remote(
         help="RunPod GPU type, in RunPod's own vocabulary. The default's "
         "16 GB VRAM fits ~7B fp16 models; go bigger for bigger models.",
     ),
+    gpu_count: int = typer.Option(
+        1,
+        "--gpu-count",
+        min=1,
+        help="Number of identical GPUs to attach to the serving pod.",
+    ),
+    vllm_image: str | None = typer.Option(
+        None,
+        "--vllm-image",
+        help="Prebuilt vLLM image for day-zero models. Starts directly "
+        "without SSH or an in-pod PyPI installation.",
+    ),
+    vllm_arg: list[str] = typer.Option(
+        [],
+        "--vllm-arg",
+        help="One additional argument for `vllm serve` in a prebuilt image; "
+        "repeat this option for flags and values.",
+    ),
     container_disk_gb: int = typer.Option(
         60,
         "--container-disk-gb",
         help="Container disk in GB — must fit the vLLM install (~10 GB) plus "
         "roughly 2.5x the model checkpoint.",
     ),
+    ready_timeout_s: int = typer.Option(
+        1800,
+        "--ready-timeout",
+        min=1,
+        help="Seconds to wait for vLLM readiness before collecting startup "
+        "diagnostics and terminating the pod.",
+    ),
     max_hours: float = typer.Option(
         1.0,
         "--max-hours",
         help="Cost control: a self-destruct armed ON THE POD terminates it "
         "after this many hours, even if this machine goes away. The RunPod "
-        "API key is copied to the pod (chmod 600) to make that possible.",
+        "API key is copied to SSH-managed pods; direct images use RunPod's "
+        "automatically injected pod-scoped key.",
+    ),
+    max_cost_usd: float | None = typer.Option(
+        None,
+        "--max-cost",
+        min=0.0,
+        help="Refuse a direct-image serve when price × max-hours exceeds "
+        "this dollar ceiling.",
+    ),
+    network_volume_id: str | None = typer.Option(
+        None,
+        "--network-volume-id",
+        help="Attach an existing RunPod network volume at /workspace and "
+        "cache Hugging Face weights there. The volume is not created or "
+        "deleted by StateSet and keeps billing after the pod stops.",
     ),
     strict: bool = typer.Option(
         False,
@@ -307,8 +347,22 @@ def serve_remote(
         _echo("--max-hours must be positive.", err=True)
         raise typer.Exit(code=2)
 
-    session = serve_session.RemoteServeSession(container_disk_gb=container_disk_gb)
-    _echo(f"Renting a {gpu} pod and serving {base_model} with vLLM…")
+    if vllm_image is not None:
+        session = serve_session.RemoteServeSession(
+            container_disk_gb=container_disk_gb,
+            ready_timeout_s=ready_timeout_s,
+            direct_vllm_image=True,
+            vllm_args=vllm_arg,
+            image=vllm_image,
+        )
+    else:
+        session = serve_session.RemoteServeSession(
+            container_disk_gb=container_disk_gb,
+            ready_timeout_s=ready_timeout_s,
+            direct_vllm_image=False,
+            vllm_args=vllm_arg,
+        )
+    _echo(f"Renting {gpu_count}× {gpu} and serving {base_model} with vLLM…")
     for name, directory in adapters.items():
         _echo(f"With adapter: {directory} (served-model name: {name})")
     if merge:
@@ -322,12 +376,15 @@ def serve_remote(
             max_hours=max_hours,
             merge=merge,
             strict_effect=strict,
+            gpu_count=gpu_count,
+            max_cost_usd=max_cost_usd,
+            network_volume_id=network_volume_id,
         )
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    model_name = "adapter" if adapter is not None else base_model
+    model_name = "adapter" if adapters else base_model
     for warning in getattr(session, "effect_warnings", []):
         _echo(f"WARNING: {warning}", err=True)
     _echo("")
@@ -483,8 +540,9 @@ def train_remote(
             "'river' is River AI's remote autograd service: it trains without "
             "renting a machine, so the GPU/disk/cloud-type options are "
             "ignored, and the result is a river:// checkpoint pointer rather "
-            "than local adapter weights (NOT live-verified — see "
-            "docs/RIVER_PROVIDER.md). 'fireworks' is Fireworks AI's managed "
+            "than local adapter weights (live-verified; see "
+            "docs/GETTING_STARTED_RIVER.md). 'fireworks' is Fireworks AI's "
+            "managed "
             "fine-tuning service: it also picks its own training hardware, "
             "so the GPU/disk/cloud-type options are ignored, and the tuned "
             "LoRA addon lives on Fireworks — add --deploy to serve it (see "
@@ -732,6 +790,187 @@ def _fireworks_done(executor, handle, result, deploy: bool, accelerator: str | N
         "It bills until deleted: stateset-agents undeploy --deployment "
         f"{deployment['deployment']}"
     )
+
+
+@app.command("remote-job")
+def remote_job(
+    job_id: str = typer.Option(..., "--job-id", help="Provider job id to resume."),
+    provider: str = typer.Option(
+        "fireworks",
+        "--provider",
+        help="Provider that owns the job. Durable reconnect is currently Fireworks.",
+    ),
+    wait: bool = typer.Option(
+        False, "--wait", help="Poll to a terminal state and fetch its artifacts."
+    ),
+    fetch: bool = typer.Option(
+        False, "--fetch", help="Fetch artifacts now; the job must be complete."
+    ),
+    output_dir: Path | None = typer.Option(
+        None, "--output-dir", help="Override the persisted artifact destination."
+    ),
+) -> None:
+    """Reconnect to an asynchronous remote job after the original CLI exits."""
+    from stateset_agents.remote.job import JobHandle
+
+    try:
+        executor = get_executor(provider)
+        handle = JobHandle(provider=executor.name, job_id=job_id)
+        if wait:
+            result = executor.wait(handle)
+            for line in result.logs:
+                _echo(line)
+            _echo(f"Job {job_id}: {result.status.value}")
+            if result.output_dir is not None:
+                _echo(f"Artifacts: {result.output_dir}")
+            if not result.succeeded:
+                raise typer.Exit(code=1)
+            return
+
+        status = executor.status(handle)
+        for line in executor.logs(handle):
+            _echo(line)
+        _echo(f"Job {job_id}: {status.value}")
+        if fetch:
+            destination = executor.fetch(handle, output_dir)
+            _echo(f"Artifacts: {destination}")
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("remote-providers")
+def remote_providers(
+    json_output: bool = typer.Option(
+        False, "--json", "--json-output", help="Emit machine-readable JSON."
+    ),
+) -> None:
+    """List provider capabilities without loading SDKs or credentials."""
+    import json
+
+    rows = [get_executor(name).capabilities() for name in available_providers()]
+    if json_output:
+        _echo(json.dumps(rows, indent=2, sort_keys=True))
+        return
+    for row in rows:
+        flags = []
+        if row["durable_handles"]:
+            flags.append("durable")
+        if row["managed_deployments"]:
+            flags.append("deployments")
+        suffix = f"; {', '.join(flags)}" if flags else ""
+        _echo(
+            f"{row['provider']}: {', '.join(row['job_kinds'])}; "
+            f"result={row['result_kind']}{suffix}"
+        )
+
+
+@app.command("model-support")
+def model_support(
+    json_output: bool = typer.Option(
+        False, "--json", "--json-output", help="Emit machine-readable JSON."
+    ),
+) -> None:
+    """Show model/provider proof levels without overstating live support."""
+    import json
+
+    from stateset_agents.remote.model_evidence import model_provider_evidence
+
+    rows = model_provider_evidence()
+    if json_output:
+        _echo(json.dumps({"schema_version": 1, "evidence": rows}, indent=2))
+        return
+    for row in rows:
+        checked = f" ({row['checked_at']})" if row["checked_at"] else ""
+        _echo(
+            f"{row['model']} @ {row['provider']}: {row['level']}/"
+            f"{row['outcome']}{checked}\n  {row['evidence']}"
+        )
+
+
+@app.command("provider-canary")
+def provider_canary(
+    provider: list[str] = typer.Option(
+        [],
+        "--provider",
+        help="Provider to probe (repeatable). Default: river, runpod, fireworks.",
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", help="Optional path for the JSON evidence report."
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Exit non-zero when a provider fails or credentials are missing.",
+    ),
+) -> None:
+    """Run non-billable live authentication and cleanup canaries."""
+    import json
+
+    from stateset_agents.remote.canary import run_canary_matrix
+
+    selected = provider or ["river", "runpod", "fireworks"]
+    try:
+        results = run_canary_matrix(selected)
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    payload = {
+        "schema_version": 1,
+        "billable_resources_created": 0,
+        "results": [result.to_dict() for result in results],
+    }
+    rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    if output is not None:
+        try:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(rendered, encoding="utf-8")
+        except OSError as exc:
+            _echo(f"Could not write canary report: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+        _echo(f"Canary report: {output}", err=True)
+    _echo(rendered.rstrip())
+
+    if strict and any(not result.ok for result in results):
+        raise typer.Exit(code=1)
+
+
+@app.command("runpod-orphans")
+def runpod_orphans(
+    terminate: bool = typer.Option(
+        False,
+        "--terminate",
+        help="Terminate every leased pod. Without this flag the command is read-only.",
+    ),
+) -> None:
+    """Find training pods left behind when their submitting process crashed."""
+    from stateset_agents.remote.runpod import RunPodExecutor
+
+    executor = get_executor("runpod")
+    if not isinstance(
+        executor, RunPodExecutor
+    ):  # pragma: no cover - registry invariant
+        raise typer.Exit(code=1)
+    leases = executor.orphaned_leases()
+    if not leases:
+        _echo("No locally recorded RunPod orphans.")
+        return
+    for lease in leases:
+        _echo(
+            f"{lease.get('pod_id')}: job={lease.get('job_id')} "
+            f"model={lease.get('base_model')} gpu={lease.get('gpu')}"
+        )
+    if not terminate:
+        _echo("Read-only. Re-run with --terminate after checking active jobs.")
+        return
+    try:
+        terminated = executor.cleanup_orphans()
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    for pod_id in terminated:
+        _echo(f"Terminated {pod_id}; cleanup lease removed.")
 
 
 @app.command("undeploy")

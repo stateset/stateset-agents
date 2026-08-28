@@ -1,5 +1,10 @@
 # GRPO RL Service Framework - Major Enhancements v2.0
 
+> **Historical design draft — not benchmark evidence.** Numeric performance,
+> scale, uptime, and productivity targets in this document were projections and
+> have not been established by the measured protocols in `docs/BENCHMARKS.md`.
+> Do not cite them as StateSet results.
+
 ## 🚀 Executive Summary
 
 We have significantly enhanced the GRPO RL service framework, transforming it from a good framework into a **next-generation, production-ready AI agent training platform**. The improvements span across multiple domains including API architecture, monitoring, state management, training orchestration, and overall system reliability.

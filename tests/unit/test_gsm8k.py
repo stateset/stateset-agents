@@ -2,17 +2,72 @@
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import pytest
 
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.data.gsm8k import (
+    GSM8K_DATASET_REVISION,
     GSM8KExample,
     GSM8KReward,
     PartialCreditGSM8KReward,
     extract_gold_answer,
     extract_predicted_answer,
+    load_gsm8k,
     make_gsm8k_scenarios,
 )
+
+
+class TestLoadGSM8K:
+    def test_rejects_mutable_or_malformed_revision(self) -> None:
+        for revision in ("main", "latest", "a" * 39, "g" * 40):
+            with pytest.raises(ValueError, match="40-character hexadecimal commit"):
+                load_gsm8k(split="train", revision=revision)
+
+    def test_passes_immutable_revision_to_every_split(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_load_dataset(*args: object, **kwargs: object) -> list[dict[str, str]]:
+            calls.append({"args": args, **kwargs})
+            return [{"question": "1 + 1?", "answer": "Two. #### 2"}]
+
+        monkeypatch.setitem(
+            sys.modules, "datasets", SimpleNamespace(load_dataset=fake_load_dataset)
+        )
+        revision = "a" * 40
+
+        train, test = load_gsm8k(revision=revision)
+
+        assert len(train) == len(test) == 1
+        assert [call["split"] for call in calls] == ["train", "test"]
+        assert all(call["revision"] == revision for call in calls)
+
+    def test_default_revision_is_immutable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_load_dataset(*args: object, **kwargs: object) -> list[dict[str, str]]:
+            calls.append(kwargs)
+            return [{"question": "1 + 1?", "answer": "Two. #### 2"}]
+
+        monkeypatch.setitem(
+            sys.modules, "datasets", SimpleNamespace(load_dataset=fake_load_dataset)
+        )
+
+        load_gsm8k(split="train")
+
+        assert calls == [
+            {
+                "cache_dir": None,
+                "revision": GSM8K_DATASET_REVISION,
+                "split": "train",
+            }
+        ]
 
 
 class TestExtractGoldAnswer:

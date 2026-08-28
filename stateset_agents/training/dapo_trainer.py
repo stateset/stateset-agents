@@ -374,6 +374,9 @@ class DAPOTrainer:
         }
 
         self.global_step = 0
+        # Exact completion count used by measured benchmark evidence. This
+        # includes groups later rejected by dynamic sampling.
+        self.rollout_samples_total = 0
 
     async def _compute_reward(self, prompt: str, response: str) -> float:
         """Support sync or async reward callables."""
@@ -403,6 +406,7 @@ class DAPOTrainer:
 
         vllm_config = vllm_config_cls(
             model_name=self.config.model_name,
+            revision=getattr(self.config, "model_revision", None),
             gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
             tensor_parallel_size=self.config.vllm_tensor_parallel_size,
             enable_prefix_caching=self.config.vllm_enable_prefix_caching,
@@ -530,10 +534,12 @@ class DAPOTrainer:
         """
         # Try vLLM first (much faster for batched generation)
         if self.using_vllm:
-            return await self._generate_with_vllm(prompt)
-
-        # Fallback to HuggingFace generation
-        return await self._generate_with_hf(prompt)
+            responses = await self._generate_with_vllm(prompt)
+        else:
+            # Fallback to HuggingFace generation
+            responses = await self._generate_with_hf(prompt)
+        self.rollout_samples_total += len(responses)
+        return responses
 
     async def _generate_with_vllm(self, prompt: str) -> list[dict[str, Any]]:
         """Generate responses using vLLM (5-20x faster)"""
@@ -832,6 +838,7 @@ class DAPOTrainer:
             output_dir,
             training_state={
                 "global_step": self.global_step,
+                "rollout_samples_total": self.rollout_samples_total,
                 "optimizer_state_dict": self.optimizer.state_dict(),
                 "metrics_history": self.metrics_history,
             },

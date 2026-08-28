@@ -25,9 +25,7 @@ Or run directly::
 
 from __future__ import annotations
 
-import asyncio
 import json
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -119,16 +117,8 @@ def ingest_transcripts(input_path: str, format: str, output_dir: str) -> dict[st
         return _err(exc)
 
 
-def _grade_transcript_sync(history_path: str, reward: str) -> dict[str, Any]:
-    """Synchronous implementation of ``grade_transcript`` (calls ``asyncio.run``).
-
-    Must only ever be invoked off the event loop thread — see
-    ``grade_transcript`` below, which runs this via ``asyncio.to_thread``.
-    ``scripts/grade_transcript.py``'s ``grade_transcript`` coroutine is
-    itself driven with ``asyncio.run``, which raises ``RuntimeError: asyncio.
-    run() cannot be called from a running event loop`` if called directly
-    from within FastMCP's anyio event loop.
-    """
+async def _grade_transcript_async(history_path: str, reward: str) -> dict[str, Any]:
+    """Grade a transcript directly on the caller's event loop."""
     try:
         history = Path(history_path)
         if not history.exists():
@@ -143,7 +133,7 @@ def _grade_transcript_sync(history_path: str, reward: str) -> dict[str, Any]:
             return {"error": str(exc)}
 
         turns = gt.load_transcript(history)
-        rows = asyncio.run(gt.grade_transcript(turns, [], reward_fn))
+        rows = await gt.grade_transcript(turns, [], reward_fn)
 
         scores = [row["score"] for row in rows]
         mean_score = (sum(scores) / len(scores)) if scores else 0.0
@@ -172,40 +162,29 @@ def _grade_transcript_sync(history_path: str, reward: str) -> dict[str, Any]:
 async def grade_transcript(history_path: str, reward: str) -> dict[str, Any]:
     """Grade a single transcript JSONL, returning mean score + breakdown.
 
-    Async tool wrapper: the real work (``_grade_transcript_sync``) calls
-    ``asyncio.run`` internally (delegating to ``scripts/grade_transcript.
-    py``'s coroutine API unchanged), which cannot run on FastMCP's own
-    event-loop thread. Offloading to a worker thread via ``asyncio.
-    to_thread`` gives that inner ``asyncio.run`` its own thread + loop.
+    The grading implementation is already asynchronous, so keep it on
+    FastMCP's event loop and avoid dependence on a process-global executor.
     """
-    return await asyncio.to_thread(_grade_transcript_sync, history_path, reward)
+    return await _grade_transcript_async(history_path, reward)
 
 
-def _improve_run_sync(
+async def improve_run(
     transcripts_dir: str,
     reward: str,
     output_dir: str,
-    threshold: float,
-    format: str,
+    threshold: float = 0.7,
+    format: str = "transcripts",
 ) -> dict[str, Any]:
-    """Synchronous implementation of ``improve_run``.
-
-    Must only ever be invoked off the event loop thread — see
-    ``improve_run`` below. ``cli_improve.run_improve`` transitively calls
-    ``asyncio.run`` (via ``_grade_all``), which raises ``RuntimeError:
-    asyncio.run() cannot be called from a running event loop`` if invoked
-    directly from within FastMCP's anyio event loop. Left ``cli_improve``'s
-    own (sync) behavior unchanged — the CLI still calls it directly.
-    """
+    """Run the grade -> curate -> next-steps loop asynchronously."""
     try:
         from stateset_agents.cli_improve import (
             ImproveDataError,
             ImproveUsageError,
-            run_improve,
+            run_improve_async,
         )
 
         try:
-            return run_improve(
+            return await run_improve_async(
                 transcripts=transcripts_dir,
                 reward=reward,
                 output=output_dir,
@@ -216,24 +195,6 @@ def _improve_run_sync(
             return {"error": str(exc)}
     except (ValueError, OSError, json.JSONDecodeError, RuntimeError) as exc:
         return _err(exc)
-
-
-async def improve_run(
-    transcripts_dir: str,
-    reward: str,
-    output_dir: str,
-    threshold: float = 0.7,
-    format: str = "transcripts",
-) -> dict[str, Any]:
-    """Run the grade -> curate -> next-steps loop. Wraps ``cli_improve.run_improve``.
-
-    Async tool wrapper: offloads the sync implementation (which internally
-    calls ``asyncio.run``) to a worker thread via ``asyncio.to_thread`` so
-    it gets its own event loop, independent of FastMCP's.
-    """
-    return await asyncio.to_thread(
-        _improve_run_sync, transcripts_dir, reward, output_dir, threshold, format
-    )
 
 
 def improve_status(output_dir: str) -> dict[str, Any]:
@@ -278,10 +239,10 @@ def list_model_presets() -> dict[str, Any]:
 
 
 def dry_run_finetune(model_preset: str) -> dict[str, Any]:
-    """Run ``examples/finetune_gspo.py --model <preset> --dry-run`` and return its config summary.
+    """Resolve a finetuning preset and return its dry-run config summary.
 
-    v1 only ever dry-runs (stub backend, no real model weights, no
-    training) — this tool never starts GPU training.
+    This uses the same builders as the example driver in-process. It never
+    downloads model weights or starts training.
     """
     try:
         from stateset_agents.core.model_presets import list_preset_names
@@ -295,40 +256,18 @@ def dry_run_finetune(model_preset: str) -> dict[str, Any]:
                 )
             }
 
-        script = _REPO_ROOT / "examples" / "finetune_gspo.py"
-        proc = subprocess.run(
-            [
-                sys.executable,
-                str(script),
-                "--model",
-                model_preset,
-                "--dry-run",
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            cwd=str(_REPO_ROOT),
-            timeout=180,
-            check=False,
-        )
-        if proc.returncode != 0:
-            return {
-                "error": f"dry-run exited with code {proc.returncode}",
-                "stderr": proc.stderr[-4000:],
-            }
+        from examples.finetune_gspo import build_gspo_config, preview_payload
+        from examples.model_presets import get_preset
 
-        # preview_payload() prints a single JSON object to stdout.
-        stdout = proc.stdout.strip()
-        try:
-            payload = json.loads(stdout)
-        except json.JSONDecodeError:
-            return {
-                "error": "Could not parse dry-run output as JSON",
-                "stdout": stdout[-4000:],
-            }
+        preset = get_preset(model_preset)
+        output_dir = f"./outputs/{model_preset.replace('.', '_')}_gspo"
+        config = build_gspo_config(
+            preset,
+            task="customer_service",
+            output_dir=output_dir,
+        )
+        payload = preview_payload(model_preset, preset, config)
         return {"model_preset": model_preset, "config": payload}
-    except subprocess.TimeoutExpired as exc:
-        return _err(exc)
     except (ValueError, OSError) as exc:
         return _err(exc)
 

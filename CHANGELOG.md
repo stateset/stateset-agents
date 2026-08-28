@@ -7,6 +7,242 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.5] - 2026-08-27 — Five-algorithm live evidence
+
+### Added
+
+- Added a fail-closed five-algorithm shootout orchestrator and ready-to-run
+  GRPO/GSPO/DAPO/VAPO/GEPO manifest with rotated seed order, shared and
+  objective-specific config attestations, exact completion counting, external
+  wall time, normalized policy hashing, and strict hardware provenance.
+
+### Fixed
+
+- Phase-0 now executes VAPO and GEPO, applies the declared shared protocol to
+  DAPO and GSPO, supplies DAPO/VAPO correctness verifiers, preserves native
+  checkpoints while emitting one normalized policy artifact, and counts DAPO
+  filtered groups plus VAPO warmup generations instead of estimating work.
+- The first retained five-algorithm CUDA preflight also fixed VAPO mixed-dtype
+  value-head execution and removed GEPO's unconditional W&B dependency when
+  experiment logging is disabled.
+- A complete three-seed CUDA attempt exposed deterministic VAPO graph-retention
+  OOMs at the matched batch shape. VAPO now accumulates the same mean gradient
+  prompt by prompt, releasing each forward graph before the next while keeping
+  one actor/critic optimizer step per update.
+
+## [0.42.4] - 2026-08-27 — Validated scaling and release evidence
+
+### Added
+
+- Added executable, provenance-complete scaling and recovery harnesses. The
+  scaling publication gate requires monotonic 1/2/4/8-GPU throughput and at
+  least 50% efficiency; recovery injects worker exit, controller SIGKILL, and
+  a live TCP control-plane interruption with fail-safe cleanup.
+- Retained a passing three-seed 1/2/4/8-GPU weak-scaling matrix on eight RTX
+  5080s (`8.080×` throughput and `101.0%` efficiency at 8 GPUs) and a nine-run
+  CUDA recovery matrix with zero lost or duplicate updates.
+- Retained the failed fixed-global-batch strong-scaling matrix (`2.9%`
+  efficiency at 8 GPUs) and scope weak-scaling claims separately.
+- Added a corrected fixed-work strong-scaling mode that partitions one
+  `196,608`-sample effective batch exactly across ranks. Its retained
+  three-seed matrix reached `6.642×` throughput and `83.0%` efficiency at eight
+  RTX 5080s; the validator recomputes work from execution shape and wall time.
+- Hardened competitive framework and algorithm gates to require identical seed
+  sets and CUDA environments. Framework comparisons additionally bind the
+  canonical config, while repeatable required-roster flags fail closed when
+  verl, NeMo RL, OpenRLHF, TRL, StateSet, or a prescribed algorithm is absent.
+- Refreshed non-billable River and RunPod authentication/cleanup canaries;
+  Fireworks remains explicitly skipped because credentials are unavailable.
+
+## [0.42.3] - 2026-08-26 — Publication-grade RL evidence
+
+- Hardened benchmark provenance and TRL interoperability: Phase 0 publication
+  gates now reject synthetic evidence, unpinned source/model revisions,
+  incomplete hardware/stability measurements, duplicate-seed inflation, and
+  empty result sets; whitepaper packaging is strict by default; TRL GRPO now
+  requires a version that actually exposes GRPO and adapts safely to its current
+  `processing_class` API.
+- Added an independent upstream-TRL GRPO shootout adapter, immutable GSM8K
+  dataset revision support, canonical shared-config attestation, exact runtime
+  framework-version checks, and a ready-to-fill three-seed shootout manifest.
+- Changed the default attention backend from optional `flash_attention_2` to
+  built-in PyTorch SDPA after the clean RunPod shootout exposed a default model
+  load failure on images without the `flash-attn` wheel; FlashAttention remains
+  available as an explicit optimization.
+- Fixed the real Phase-0 baseline path to instantiate `MultiTurnAgent` instead
+  of the abstract `Agent` base class, as exposed by the clean RunPod shootout.
+- Fixed TRL's synchronous reward callback inside async StateSet training by
+  executing reward coroutines in a worker thread when an event loop is already
+  active; this removes the live `Cannot run the event loop while another loop
+  is running` failure.
+- Fixed the trained-agent lifecycle so TRL-produced models receive a tokenizer
+  and generation configuration before post-training inference.
+- Removed the upstream TRL adapter's dependency on the non-packaged `scripts`
+  module, keeping the comparison path runnable from an isolated checkout.
+- Fixed TRL seed propagation, short-run warmup calculation, and forwarding of
+  optimizer/scheduler settings. Measured framework runs now use the declared
+  seed instead of silently retaining 42 and warm up against `max_steps` rather
+  than the unrelated episode-derived estimate.
+- Added one shared raw-model evaluation protocol for both shootout adapters,
+  preventing chat templating and stopping criteria from changing only the
+  StateSet side of a framework comparison.
+- Release readiness now excludes unrelated hidden agent worktrees from import
+  sorting and runs pytest through the same selected Python interpreter used by
+  typing and builds.
+
+### Fixed
+
+- Publication-facing algorithm and framework comparisons no longer generate
+  simulated competitor timings, reward curves, memory figures, or subjective
+  winner scores. They now fail closed unless supplied with real, matched,
+  provenance-complete evidence from at least three seeds per implementation.
+- Benchmark documentation no longer presents unsupported GPU scaling,
+  framework-performance, or total-cost figures as measured results.
+
+### Added
+
+- Measured comparison schemas and validators enforce immutable model/data and
+  algorithm revisions, exact hardware matching, artifact SHA-256 provenance,
+  unique seeds, and explicit interpretation boundaries.
+- A distributed scaling validator requires matching 1/2/4/8-GPU topology
+  matrices and reports measured speedup and scaling efficiency against the
+  single-GPU baseline.
+- A framework-neutral shootout orchestrator rotates implementation order,
+  measures wall time outside adapters, retains failure logs, hashes artifacts,
+  and emits strict evidence from a shared multi-seed manifest.
+- Trainer and agent configs can pin `model_revision`; the same revision now
+  reaches tokenizer, policy, reference-model, vLLM rollout, and evaluation
+  loading. Phase-0 can emit the neutral measured adapter result directly.
+- A fault-injection evidence gate requires matching worker-exit,
+  controller-restart, and network-interruption runs with exact checkpoint
+  replay, no duplicate updates, bounded lost work, completion, and cleanup.
+- Benchmark-smoke CI and policy tests prevent synthetic comparison claims from
+  returning to publication-facing entry points.
+- Retained a validated three-seed StateSet 0.42.3 versus direct TRL 1.9.1
+  RunPod comparison on one NVIDIA A40. The exact four-step protocol shows
+  semantic and resource parity, while its null/negative GSM8K deltas are
+  explicitly retained as unsuitable for a learning-quality claim.
+
+### Changed
+
+- Tag, release, TestPyPI, and PyPI workflows now require the complete publish
+  readiness suite and retain its coverage/security reports; readiness is no
+  longer an optional non-blocking manual-dispatch step.
+
+## [0.42.2] - 2026-08-26 — Live release evidence
+
+### Fixed
+
+- Scheduled and manually dispatched GPU verification now fails when the
+  RunPod credential is absent instead of producing a false-green run in which
+  every live step was skipped.
+- The SFT and RL GPU lanes run serially so they do not race each other for the
+  same scarce low-cost Community Cloud capacity.
+
+### Changed
+
+- Provider canaries run automatically for release tags as well as weekly and
+  manual schedules, retaining River, RunPod, and Fireworks evidence with the
+  exact tagged revision.
+- Release evidence now records the exact source revision, default-suite result,
+  live provider canaries, bounded GPU jobs, cleanup result, and external
+  publication blockers without promoting partial checks into success claims.
+
+## [0.42.1] - 2026-08-26 — Reliability and verification hardening
+
+### Added
+
+- `stateset-agents model-support` reports the verification level, result, and
+  evidence for each newly supported model/provider path in human-readable or
+  JSON form.
+
+### Fixed
+
+- Redis cache and rate-limit startup now fails fast when Redis is absent or
+  unreachable, uses bounded operation timeouts, and closes failed connection
+  pools before falling back to in-memory enforcement.
+- API authentication regression tests no longer depend on blocking portal
+  threads, and unauthenticated training WebSockets close portably with code
+  4401 after accepting the connection.
+- Synchronous health checks use an isolated executor so event-loop teardown
+  cannot stall the test process.
+- Release image tags and wheel examples are consistent across Helm,
+  Kubernetes, and deployment documentation.
+
+### Changed
+
+- CI uses four deterministic pytest workers, per-test timeouts, and 30-minute
+  job ceilings to prevent silent hangs from consuming the full runner window.
+
+## [0.42.0] - 2026-08-26 — Bounded multi-GPU RunPod serving
+
+### Added
+
+- **Multi-GPU day-zero serving on RunPod.** `serve-remote` can start a
+  provider/model-specific prebuilt vLLM image directly with `--vllm-image`,
+  attach `--gpu-count N`, pass repeatable `--vllm-arg` values, and enforce a
+  `--max-cost` ceiling. Direct-image pods use RunPod's injected pod-scoped key
+  for their independent self-destruct; the user's account key is not copied.
+- **Persistent direct-image model cache.** `serve-remote
+  --network-volume-id` attaches an existing datacenter-scoped RunPod volume at
+  `/workspace` and directs the Hugging Face cache there. StateSet deliberately
+  does not create or delete the independently billed volume.
+- **Authenticated startup diagnostics.** Direct-image pods expose a separate
+  Bearer-protected endpoint containing only the final 64 KiB of the vLLM log.
+  Startup failures include its token-redacted tail before pod cleanup, turning
+  an opaque proxy 502 into actionable evidence.
+- Direct-image watchdog and diagnostics use `python3`, the executable
+  guaranteed by dedicated inference images, instead of assuming a `python`
+  compatibility symlink.
+- `serve-remote --ready-timeout` independently bounds model startup and log
+  collection; it can be set below the on-pod `--max-hours` watchdog.
+
+### Fixed
+
+- RunPod provisioning failures are translated into sanitized StateSet errors;
+  the CLI no longer renders a framework traceback whose locals can contain an
+  ephemeral serving token.
+- RunPod `costPerHr` is now treated as the effective whole-Pod rate instead of
+  being multiplied by `gpu_count` a second time. A live 4x H100 run reported
+  `$13.16/hr` total and confirmed the provider's field semantics.
+- Base-only `serve-remote` examples now address the base model rather than the
+  nonexistent `adapter` model.
+
+### Live evidence
+
+- A bounded Qwen3.8-Flash-Next-FP8 cold-start used the official dedicated
+  vLLM image on 4x H100. The 172.78 GiB checkpoint did not become ready within
+  the 25-minute SLO (HTTP 502), so no inference claim is made. StateSet
+  terminated the pod immediately, verified zero remaining serve pods, and
+  recorded `$5.52` spend.
+- A follow-up 8-minute diagnostic run recorded `$1.77` and returned proxy 502
+  before its container-side log endpoint became reachable. Two controls with
+  a 0.5B model in the same image returned RunPod-level 404 for both ports after
+  three minutes (`$0.04`) and ten minutes (`$0.12`), isolating image
+  pull/container startup as the first unresolved bottleneck. Every cleanup
+  check found zero remaining StateSet serve pods.
+
+## [0.41.0] - 2026-08-26 — Next-model and provider evidence
+
+### Added
+
+- **Day-one Qwen3.8-Flash-Next support.** The unified GSPO registry now
+  includes `Qwen/Qwen3.8-Flash-Next` with Gated DeltaNet and Qwen Sparse
+  Attention LoRA targets verified against the official weight index, a
+  `qwen38next` dependency extra, and explicit text-RL/multimodal boundaries.
+- **Day-one GLM-5.3-Flash support.** The unified GSPO registry now includes
+  `zai-org/GLM-5.3-Flash` with LoRA targets verified against the official
+  hybrid linear/sparse-attention weight map. Shared agent, SFT, and flagship
+  RL loaders recognize native multimodal conditional-generation checkpoints,
+  the `glm53` extra pins the required Transformers 5.16 generation, and the
+  docs keep text-only RL distinct from native image/video inference.
+- **Credential-aware River, RunPod, and Fireworks canaries** plus scheduled
+  provider and bounded slow/E2E workflows. Strict CI fails on missing secrets,
+  provider errors, or leaked `stateset-canary-*` resources while creating no
+  billable resources itself.
+
+## [0.40.0] - 2026-08-26 — Durable remote execution and provider safety
+
 ### Added
 
 - **A behavioural golden over every `RiverExecutor.submit` mode** —

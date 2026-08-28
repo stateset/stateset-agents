@@ -481,6 +481,7 @@ class VAPOTrainer:
 
         self.global_step = 0
         self.value_warmup_complete = False
+        self.rollout_samples_total = 0
 
     async def _compute_reward(self, prompt: str, response: str) -> float:
         """Resolve sync or async reward callbacks to a float."""
@@ -512,7 +513,12 @@ class VAPOTrainer:
     ) -> torch.Tensor:
         """Compute values for a sequence"""
         hidden_states = self.get_hidden_states(input_ids, attention_mask)
-        values = self.value_head(hidden_states)
+        # Keep the critic in fp32 for stable regression while allowing the
+        # policy backbone to run in bf16/fp16.  Linear layers require matching
+        # dtypes; an explicit differentiable cast avoids the live CUDA
+        # ``BFloat16 and Float`` matmul failure without severing actor grads.
+        value_dtype = next(self.value_head.parameters()).dtype
+        values = self.value_head(hidden_states.to(dtype=value_dtype))
         return values.squeeze(-1)
 
     def compute_token_log_probs(
@@ -549,6 +555,7 @@ class VAPOTrainer:
             prompt,
             self.config.group_size,
         )
+        self.rollout_samples_total += len(responses)
         return responses
 
     async def warmup_value_network(
@@ -605,7 +612,8 @@ class VAPOTrainer:
                     batch_input_ids, batch_attention_mask
                 )
 
-            values = self.value_head(hidden_states).squeeze(-1)
+            value_dtype = next(self.value_head.parameters()).dtype
+            values = self.value_head(hidden_states.to(dtype=value_dtype)).squeeze(-1)
 
             # Value loss (MSE)
             value_loss = F.mse_loss(
@@ -916,12 +924,15 @@ class VAPOTrainer:
         num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
 
         for _ in range(num_updates):
-            accumulated_loss: torch.Tensor | None = None
-            prompt_count = 0
+            prompt_count = len(rollouts)
             all_policy_losses: list[float] = []
             all_value_losses: list[float] = []
             all_positive_lm_losses: list[float] = []
             all_explained_variances: list[float] = []
+
+            if prompt_count > 0:
+                self.actor_optimizer.zero_grad()
+                self.critic_optimizer.zero_grad()
 
             for rollout in rollouts:
                 batch_input_ids = rollout["input_ids"]
@@ -955,20 +966,16 @@ class VAPOTrainer:
                     rollout["positive_mask"],
                 )
 
-                # Total loss for this prompt, accumulated (not stepped) so the
-                # optimizer sees a single averaged update per inner update
-                # instead of one partial update per prompt.
+                # Backpropagate each prompt's normalized contribution
+                # immediately, then step once after the loop. This is gradient
+                # accumulation with the same mean objective, but it releases
+                # each pair of large policy/value forward graphs before the
+                # next prompt instead of retaining the whole batch in VRAM.
                 total_loss = (
                     policy_loss
                     + self.config.value_loss_coef * value_loss
                     + self.config.positive_lm_weight * positive_lm_loss
                 )
-                accumulated_loss = (
-                    total_loss
-                    if accumulated_loss is None
-                    else accumulated_loss + total_loss
-                )
-                prompt_count += 1
 
                 all_policy_losses.append(policy_loss.item())
                 all_value_losses.append(value_loss.item())
@@ -985,15 +992,11 @@ class VAPOTrainer:
                             explained_var = 1 - var_residual / var_returns
                             all_explained_variances.append(explained_var.item())
 
-            # Single optimizer update per inner update: average the
-            # accumulated loss over prompts, then one backward()/step() pair.
-            if prompt_count > 0 and accumulated_loss is not None:
-                mean_loss = accumulated_loss / prompt_count
+                (total_loss / prompt_count).backward()
 
-                self.actor_optimizer.zero_grad()
-                self.critic_optimizer.zero_grad()
-                mean_loss.backward()
-
+            # A single optimizer update consumes the mean gradient accumulated
+            # across prompts without requiring their graphs to coexist.
+            if prompt_count > 0:
                 _params = list(self.model.parameters())
                 if _params:
                     torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
@@ -1056,6 +1059,7 @@ class VAPOTrainer:
             output_dir,
             training_state={
                 "global_step": self.global_step,
+                "rollout_samples_total": self.rollout_samples_total,
                 "value_warmup_complete": self.value_warmup_complete,
                 "actor_optimizer_state_dict": self.actor_optimizer.state_dict(),
                 "critic_optimizer_state_dict": self.critic_optimizer.state_dict(),
@@ -1092,6 +1096,9 @@ class VAPOTrainer:
                 state_path, map_location=self.device, trusted=trusted
             )
             self.global_step = state["global_step"]
+            self.rollout_samples_total = int(
+                state.get("rollout_samples_total", self.rollout_samples_total)
+            )
             self.value_warmup_complete = state.get("value_warmup_complete", True)
             self.actor_optimizer.load_state_dict(state["actor_optimizer_state_dict"])
             self.critic_optimizer.load_state_dict(state["critic_optimizer_state_dict"])

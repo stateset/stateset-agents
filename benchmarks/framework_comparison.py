@@ -1,526 +1,428 @@
 #!/usr/bin/env python3
-"""
-Framework Comparison Benchmarks
+"""Compare measured LLM RL framework runs without manufacturing results.
 
-Compare StateSet Agents against:
-- TRL (Transformer Reinforcement Learning)
-- Ray RLlib
-- Custom implementations
-
-Measures:
-- Training speed (samples/sec)
-- Memory usage
-- Setup complexity
-- Feature completeness
-- Final performance
+Each framework must run the same published protocol and emit one evidence JSON
+document per seed. This tool validates provenance, rejects mismatched runs, and
+produces a descriptive comparison. It never invents feature scores, simulates
+competitors, or declares a winner from incomparable experiments.
 """
+
+from __future__ import annotations
 
 import argparse
-import asyncio
+import hashlib
 import json
-import logging
+import math
+import statistics
 import sys
-import time
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-# Add parent to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+class EvidenceError(ValueError):
+    """Raised when benchmark evidence is incomplete or incomparable."""
 
 
-@dataclass
-class FrameworkResult:
-    """Results from framework comparison"""
+REQUIRED_STRINGS = (
+    "framework",
+    "framework_version",
+    "harness_commit",
+    "protocol",
+    "cache_policy",
+    "algorithm",
+    "algorithm_revision",
+    "model",
+    "model_revision",
+    "task",
+    "dataset_revision",
+    "timestamp",
+    "command",
+)
+REQUIRED_METRICS = (
+    "samples_per_second",
+    "wall_clock_seconds",
+    "peak_vram_mb",
+    "eval_score_baseline",
+    "eval_score_final",
+)
+REQUIRED_HARDWARE = ("gpu", "gpu_count", "cuda")
+MATCH_FIELDS = (
+    "protocol",
+    "cache_policy",
+    "algorithm",
+    "algorithm_revision",
+    "model",
+    "model_revision",
+    "task",
+    "dataset_revision",
+)
 
-    framework: str
-    training_speed: float  # samples per second
-    memory_usage: float  # GB
-    setup_time: float  # minutes
-    setup_complexity: int  # lines of code
-    final_reward: float
-    features_score: int  # 0-100
-    ease_of_use: int  # 0-100
-    metadata: dict[str, Any] = field(default_factory=dict)
 
+@dataclass(frozen=True)
+class RunEvidence:
+    """One measured framework run with enough provenance to reproduce it."""
 
-class FrameworkBenchmark:
-    """Compare different RL frameworks"""
+    source: Path
+    data: Mapping[str, Any]
 
-    def __init__(self, output_dir: str = "./benchmark_results"):
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.results = []
+    @property
+    def framework(self) -> str:
+        return str(self.data["framework"])
 
-    async def benchmark_stateset(
-        self,
-        model_name: str = "gpt2",
-        num_samples: int = 1000,
-        use_stub: bool = False,
-    ) -> FrameworkResult:
-        """Benchmark StateSet Agents"""
-        logger.info("Benchmarking StateSet Agents...")
+    @property
+    def seed(self) -> int:
+        return int(self.data["seed"])
 
-        from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
-        from stateset_agents.core.environment import ConversationEnvironment
-        from stateset_agents.core.reward import create_customer_service_reward
+    @property
+    def metrics(self) -> Mapping[str, float]:
+        return self.data["metrics"]
 
-        # Measure setup time
-        setup_start = time.time()
-
-        # Setup code (what user would write)
-        agent_config = AgentConfig(
-            model_name=f"stub://{model_name}" if use_stub else model_name,
-            use_stub_model=use_stub,
-        )
-        agent = MultiTurnAgent(agent_config)
-        await agent.initialize()
-
-        scenarios = [
-            {"topic": "refund", "context": "Order delayed"},
-            {"topic": "shipping", "context": "Track package"},
-        ]
-        # Keep the "what user would write" example without introducing unused locals.
-        ConversationEnvironment(scenarios=scenarios, max_turns=6)
-        create_customer_service_reward()
-
-        setup_time = (time.time() - setup_start) / 60  # Convert to minutes
-
-        # Measure training speed
-        train_start = time.time()
-
-        # Generate samples
-        for i in range(num_samples // 10):  # Batch of 10
-            messages = [{"role": "user", "content": f"Request {i}"}]
-            await agent.generate_response(messages)
-
-        train_time = time.time() - train_start
-        training_speed = num_samples / train_time
-
-        # Setup complexity (approximate lines of code)
-        setup_complexity = 87  # From actual implementation
-
-        result = FrameworkResult(
-            framework="StateSet Agents",
-            training_speed=training_speed,
-            memory_usage=24.3,  # GB (measured for gpt2-medium)
-            setup_time=setup_time,
-            setup_complexity=setup_complexity,
-            final_reward=0.847,  # From actual benchmarks
-            features_score=95,  # Rich features
-            ease_of_use=95,  # Very easy
-            metadata={
-                "model": model_name,
-                "samples": num_samples,
-                "multi_turn": True,
-                "built_in_rewards": True,
-                "api_server": True,
-                "monitoring": True,
-            },
+    @property
+    def comparison_key(self) -> tuple[Any, ...]:
+        hardware = self.data["hardware"]
+        return tuple(self.data[field] for field in MATCH_FIELDS) + (
+            json.dumps(self.data["config"], sort_keys=True, separators=(",", ":")),
+            hardware["gpu"],
+            hardware["gpu_count"],
+            hardware["cuda"],
         )
 
-        self.results.append(result)
-        return result
 
-    async def benchmark_trl(
-        self,
-        model_name: str = "gpt2",
-        num_samples: int = 1000,
-        use_stub: bool = False,
-    ) -> FrameworkResult:
-        """Benchmark TRL (simulated)"""
-        logger.info("Benchmarking TRL...")
+def _require_nonempty_string(data: Mapping[str, Any], field: str, source: Path) -> None:
+    value = data.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise EvidenceError(f"{source}: {field!r} must be a non-empty string")
 
-        # Measure setup time (simulated)
-        setup_start = time.time()
 
-        # Simulate TRL setup
-        await asyncio.sleep(0.5)  # TRL initialization
+def _require_finite_number(
+    data: Mapping[str, Any], field: str, source: Path, *, minimum: float | None = None
+) -> float:
+    value = data.get(field)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise EvidenceError(f"{source}: {field!r} must be numeric")
+    number = float(value)
+    if not math.isfinite(number) or (minimum is not None and number < minimum):
+        requirement = "finite" if minimum is None else f"finite and >= {minimum}"
+        raise EvidenceError(f"{source}: {field!r} must be {requirement}, got {value!r}")
+    return number
 
-        setup_time = (time.time() - setup_start) / 60
 
-        # Measure training speed (simulated, slightly slower than StateSet)
-        train_start = time.time()
-
-        for _i in range(num_samples // 10):
-            await asyncio.sleep(0.001)  # Simulate training
-
-        train_time = time.time() - train_start
-        # TRL is ~7% slower based on benchmarks
-        training_speed = (num_samples / train_time) * 0.93
-
-        result = FrameworkResult(
-            framework="TRL (HuggingFace)",
-            training_speed=training_speed,
-            memory_usage=26.1,  # Slightly more memory
-            setup_time=setup_time,
-            setup_complexity=156,  # More complex setup
-            final_reward=0.834,  # Slightly lower performance
-            features_score=80,  # Good features but less specialized
-            ease_of_use=75,  # More manual setup
-            metadata={
-                "model": model_name,
-                "samples": num_samples,
-                "multi_turn": False,  # Basic support
-                "built_in_rewards": False,
-                "api_server": False,
-                "monitoring": False,
-            },
+def validate_document(data: Mapping[str, Any], source: Path) -> RunEvidence:
+    """Validate one evidence document and return its typed representation."""
+    if data.get("schema_version") != 1:
+        raise EvidenceError(f"{source}: schema_version must be 1")
+    if data.get("measured") is not True:
+        raise EvidenceError(
+            f"{source}: measured must be true; simulated or estimated runs are forbidden"
         )
 
-        self.results.append(result)
-        return result
+    for field in REQUIRED_STRINGS:
+        _require_nonempty_string(data, field, source)
+    for field in ("harness_commit", "model_revision", "dataset_revision"):
+        value = str(data[field])
+        if len(value) != 40:
+            raise EvidenceError(f"{source}: {field} must be a full 40-character commit")
 
-    async def benchmark_rllib(
-        self,
-        model_name: str = "gpt2",
-        num_samples: int = 1000,
-        use_stub: bool = False,
-    ) -> FrameworkResult:
-        """Benchmark Ray RLlib (simulated)"""
-        logger.info("Benchmarking Ray RLlib...")
+    try:
+        parsed_timestamp = datetime.fromisoformat(
+            str(data["timestamp"]).replace("Z", "+00:00")
+        )
+    except ValueError as exc:
+        raise EvidenceError(f"{source}: timestamp is not ISO-8601") from exc
+    if parsed_timestamp.tzinfo is None:
+        raise EvidenceError(f"{source}: timestamp must include a UTC offset")
 
-        # Measure setup time (simulated)
-        setup_start = time.time()
+    seed = data.get("seed")
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise EvidenceError(f"{source}: seed must be a non-negative integer")
 
-        # RLlib has more complex setup for LLMs
-        await asyncio.sleep(1.0)
+    config = data.get("config")
+    if not isinstance(config, Mapping) or not config:
+        raise EvidenceError(f"{source}: config must be a non-empty object")
 
-        setup_time = (time.time() - setup_start) / 60
+    hardware = data.get("hardware")
+    if not isinstance(hardware, Mapping):
+        raise EvidenceError(f"{source}: hardware must be an object")
+    for field in REQUIRED_HARDWARE:
+        if field == "gpu_count":
+            count = hardware.get(field)
+            if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+                raise EvidenceError(f"{source}: hardware.gpu_count must be >= 1")
+        else:
+            _require_nonempty_string(hardware, field, source)
 
-        # Measure training speed (simulated, slower for conversational AI)
-        train_start = time.time()
+    metrics = data.get("metrics")
+    if not isinstance(metrics, Mapping):
+        raise EvidenceError(f"{source}: metrics must be an object")
+    for field in REQUIRED_METRICS:
+        number = _require_finite_number(metrics, field, source)
+        if field in {"samples_per_second", "wall_clock_seconds", "peak_vram_mb"}:
+            if number <= 0:
+                raise EvidenceError(f"{source}: {field!r} must be greater than zero")
 
-        for _i in range(num_samples // 10):
-            await asyncio.sleep(0.0012)  # Simulate training
+    artifact_sha256 = data.get("artifact_sha256")
+    if not isinstance(artifact_sha256, str) or len(artifact_sha256) != 64:
+        raise EvidenceError(f"{source}: artifact_sha256 must contain 64 hex characters")
+    try:
+        bytes.fromhex(artifact_sha256)
+    except ValueError as exc:
+        raise EvidenceError(f"{source}: artifact_sha256 is not hexadecimal") from exc
 
-        train_time = time.time() - train_start
-        # RLlib is ~11% slower for conversational tasks
-        training_speed = (num_samples / train_time) * 0.89
+    return RunEvidence(source=source, data=data)
 
-        result = FrameworkResult(
-            framework="Ray RLlib",
-            training_speed=training_speed,
-            memory_usage=28.7,  # More overhead
-            setup_time=setup_time,
-            setup_complexity=245,  # Complex setup for LLMs
-            final_reward=0.789,  # Lower on conversational tasks
-            features_score=90,  # Excellent features for general RL
-            ease_of_use=60,  # Steep learning curve for LLMs
-            metadata={
-                "model": model_name,
-                "samples": num_samples,
-                "multi_turn": False,  # Not specialized
-                "built_in_rewards": False,
-                "api_server": True,  # Ray Serve
-                "monitoring": True,
-            },
+
+def discover_inputs(inputs: Sequence[Path]) -> list[Path]:
+    """Resolve files and directories into a deterministic JSON file list."""
+    paths: list[Path] = []
+    for candidate in inputs:
+        if candidate.is_dir():
+            paths.extend(sorted(candidate.glob("*.json")))
+        elif candidate.is_file():
+            paths.append(candidate)
+        else:
+            raise EvidenceError(f"benchmark input does not exist: {candidate}")
+    unique = list(dict.fromkeys(path.resolve() for path in paths))
+    if not unique:
+        raise EvidenceError("no benchmark evidence JSON files found")
+    return unique
+
+
+def load_evidence(inputs: Sequence[Path]) -> list[RunEvidence]:
+    """Load and validate all evidence, failing closed on any bad document."""
+    runs: list[RunEvidence] = []
+    for path in discover_inputs(inputs):
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise EvidenceError(f"{path}: invalid JSON: {exc}") from exc
+        if not isinstance(raw, Mapping):
+            raise EvidenceError(f"{path}: top-level value must be an object")
+        runs.append(validate_document(raw, path))
+    return runs
+
+
+def validate_comparison(
+    runs: Sequence[RunEvidence],
+    min_seeds: int = 3,
+    required_frameworks: Sequence[str] = (),
+) -> None:
+    """Require matched protocols, unique seeds, and adequate replication."""
+    if min_seeds < 1:
+        raise EvidenceError("min_seeds must be >= 1")
+    keys = {run.comparison_key for run in runs}
+    if len(keys) != 1:
+        differing: list[str] = []
+        fields = (
+            *MATCH_FIELDS,
+            "config",
+            "hardware.gpu",
+            "hardware.gpu_count",
+            "hardware.cuda",
+        )
+        for field_index, field in enumerate(fields):
+            values = {key[field_index] for key in keys}
+            if len(values) > 1:
+                differing.append(f"{field}={sorted(map(str, values))}")
+        raise EvidenceError("runs are not comparable: " + "; ".join(differing))
+
+    by_framework: dict[str, list[RunEvidence]] = {}
+    for run in runs:
+        by_framework.setdefault(run.framework, []).append(run)
+    if len(by_framework) < 2:
+        raise EvidenceError("comparison requires evidence from at least two frameworks")
+
+    required = tuple(required_frameworks)
+    if any(not name.strip() for name in required):
+        raise EvidenceError("required_frameworks must contain non-empty names")
+    if len(required) != len(set(required)):
+        raise EvidenceError("required_frameworks must not contain duplicates")
+    missing_frameworks = sorted(set(required) - set(by_framework))
+    if missing_frameworks:
+        raise EvidenceError(
+            "comparison is missing required frameworks: "
+            + ", ".join(missing_frameworks)
         )
 
-        self.results.append(result)
-        return result
-
-    async def benchmark_custom(
-        self,
-        model_name: str = "gpt2",
-        num_samples: int = 1000,
-        use_stub: bool = False,
-    ) -> FrameworkResult:
-        """Benchmark custom implementation (simulated)"""
-        logger.info("Benchmarking Custom Implementation...")
-
-        # Custom implementation takes weeks to build
-        await asyncio.sleep(0.2)
-
-        setup_time = 240.0  # 4 hours to get basic version working
-
-        # Measure training speed (simulated, less optimized)
-        train_start = time.time()
-
-        for _i in range(num_samples // 10):
-            await asyncio.sleep(0.0015)  # Less optimized
-
-        train_time = time.time() - train_start
-        # Custom is typically 20-30% slower
-        training_speed = (num_samples / train_time) * 0.75
-
-        result = FrameworkResult(
-            framework="Custom Implementation",
-            training_speed=training_speed,
-            memory_usage=32.4,  # Less memory-efficient
-            setup_time=setup_time,
-            setup_complexity=1500,  # Many lines to implement
-            final_reward=0.768,  # Less refined
-            features_score=40,  # Limited features
-            ease_of_use=30,  # Very difficult
-            metadata={
-                "model": model_name,
-                "samples": num_samples,
-                "multi_turn": False,
-                "built_in_rewards": False,
-                "api_server": False,
-                "monitoring": False,
-                "development_time_weeks": 12,
-            },
-        )
-
-        self.results.append(result)
-        return result
-
-    def generate_comparison_report(self) -> str:
-        """Generate markdown comparison report"""
-        lines = [
-            "# Framework Comparison Report",
-            "",
-            f"**Generated:** {datetime.now().isoformat()}",
-            "",
-            "## Performance Summary",
-            "",
-            "| Framework | Training Speed | Memory (GB) | Final Reward | Setup Time | Setup LOC |",
-            "|-----------|---------------|-------------|--------------|------------|-----------|",
-        ]
-
-        for result in sorted(
-            self.results, key=lambda r: r.training_speed, reverse=True
-        ):
-            lines.append(
-                f"| **{result.framework}** | {result.training_speed:.1f} samp/s | "
-                f"{result.memory_usage:.1f} GB | {result.final_reward:.3f} | "
-                f"{result.setup_time:.1f} min | {result.setup_complexity} LOC |"
+    expected_seeds: set[int] | None = None
+    for framework, framework_runs in sorted(by_framework.items()):
+        seeds = [run.seed for run in framework_runs]
+        if len(seeds) != len(set(seeds)):
+            raise EvidenceError(f"{framework}: duplicate seed evidence is forbidden")
+        if len(seeds) < min_seeds:
+            raise EvidenceError(
+                f"{framework}: only {len(seeds)} seeds; at least {min_seeds} required"
             )
-
-        lines.extend(
-            [
-                "",
-                "## Feature Comparison",
-                "",
-                "| Framework | Features Score | Ease of Use | Multi-Turn | Built-in Rewards | API Server |",
-                "|-----------|---------------|-------------|------------|------------------|------------|",
-            ]
-        )
-
-        for result in sorted(
-            self.results, key=lambda r: r.features_score, reverse=True
-        ):
-            meta = result.metadata
-            lines.append(
-                f"| **{result.framework}** | {result.features_score}/100 | "
-                f"{result.ease_of_use}/100 | "
-                f"{'✅' if meta.get('multi_turn') else '❌'} | "
-                f"{'✅' if meta.get('built_in_rewards') else '❌'} | "
-                f"{'✅' if meta.get('api_server') else '❌'} |"
+        seed_set = set(seeds)
+        if expected_seeds is None:
+            expected_seeds = seed_set
+        elif seed_set != expected_seeds:
+            raise EvidenceError(
+                f"{framework}: seed set {sorted(seed_set)} does not match "
+                f"{sorted(expected_seeds)}"
             )
+        versions = {run.data["framework_version"] for run in framework_runs}
+        if len(versions) != 1:
+            raise EvidenceError(f"{framework}: runs span framework versions {versions}")
 
-        lines.extend(
-            [
-                "",
-                "## Detailed Analysis",
-                "",
-            ]
-        )
 
-        for result in self.results:
-            lines.extend(
-                [
-                    f"### {result.framework}",
-                    "",
-                    "**Performance:**",
-                    f"- Training Speed: {result.training_speed:.1f} samples/sec",
-                    f"- Memory Usage: {result.memory_usage:.1f} GB",
-                    f"- Final Reward: {result.final_reward:.3f}",
-                    "",
-                    "**Developer Experience:**",
-                    f"- Setup Time: {result.setup_time:.1f} minutes",
-                    f"- Setup Complexity: {result.setup_complexity} lines of code",
-                    f"- Ease of Use: {result.ease_of_use}/100",
-                    "",
-                    "**Features:**",
-                    f"- Features Score: {result.features_score}/100",
-                    f"- Multi-turn Support: {'✅' if result.metadata.get('multi_turn') else '❌'}",
-                    f"- Built-in Rewards: {'✅' if result.metadata.get('built_in_rewards') else '❌'}",
-                    f"- API Server: {'✅' if result.metadata.get('api_server') else '❌'}",
-                    f"- Monitoring: {'✅' if result.metadata.get('monitoring') else '❌'}",
-                    "",
-                ]
-            )
+def _stats(values: Iterable[float]) -> dict[str, float | int]:
+    numbers = list(values)
+    return {
+        "mean": statistics.mean(numbers),
+        "std": statistics.stdev(numbers) if len(numbers) > 1 else 0.0,
+        "n": len(numbers),
+    }
 
-        lines.extend(
-            [
-                "## Key Insights",
-                "",
-                "### Performance Ranking",
-                "",
-            ]
-        )
 
-        # Rank by training speed
-        ranked = sorted(self.results, key=lambda r: r.training_speed, reverse=True)
-        for i, result in enumerate(ranked, 1):
-            speedup = (
-                result.training_speed / ranked[-1].training_speed
-                if ranked[-1].training_speed > 0
-                else 1.0
-            )
-            lines.append(
-                f"{i}. **{result.framework}** - {result.training_speed:.1f} samp/s ({speedup:.1f}x baseline)"
-            )
+def summarize(runs: Sequence[RunEvidence]) -> dict[str, Any]:
+    """Return descriptive statistics without subjective feature scoring."""
+    grouped: dict[str, list[RunEvidence]] = {}
+    for run in runs:
+        grouped.setdefault(run.framework, []).append(run)
 
-        lines.extend(
-            [
-                "",
-                "### Memory Efficiency Ranking",
-                "",
-            ]
-        )
-
-        # Rank by memory (lower is better)
-        ranked = sorted(self.results, key=lambda r: r.memory_usage)
-        for i, result in enumerate(ranked, 1):
-            lines.append(f"{i}. **{result.framework}** - {result.memory_usage:.1f} GB")
-
-        lines.extend(
-            [
-                "",
-                "### Developer Experience Ranking",
-                "",
-            ]
-        )
-
-        # Rank by ease of use
-        ranked = sorted(self.results, key=lambda r: r.ease_of_use, reverse=True)
-        for i, result in enumerate(ranked, 1):
-            lines.append(
-                f"{i}. **{result.framework}** - {result.ease_of_use}/100 ease of use, "
-                f"{result.setup_complexity} LOC setup"
-            )
-
-        lines.extend(
-            [
-                "",
-                "## Recommendations",
-                "",
-                "### Best for Production Conversational AI",
-                f"**Winner:** {max(self.results, key=lambda r: r.final_reward * r.features_score).framework}",
-                "",
-                "### Best for Research Flexibility",
-                f"**Winner:** {max(self.results, key=lambda r: r.features_score if 'TRL' in r.framework or 'RLlib' in r.framework else 0).framework}",
-                "",
-                "### Best for Getting Started Quickly",
-                f"**Winner:** {max(self.results, key=lambda r: r.ease_of_use).framework}",
-                "",
-            ]
-        )
-
-        return "\n".join(lines)
-
-    def save_results(self, filename: str = "framework_comparison.json"):
-        """Save results to JSON"""
-        filepath = self.output_dir / filename
-
-        data = {
-            "timestamp": datetime.now().isoformat(),
-            "results": [
-                {
-                    "framework": r.framework,
-                    "training_speed": r.training_speed,
-                    "memory_usage": r.memory_usage,
-                    "setup_time": r.setup_time,
-                    "setup_complexity": r.setup_complexity,
-                    "final_reward": r.final_reward,
-                    "features_score": r.features_score,
-                    "ease_of_use": r.ease_of_use,
-                    "metadata": r.metadata,
-                }
-                for r in self.results
-            ],
+    first = runs[0]
+    result: dict[str, Any] = {
+        "schema_version": 1,
+        "comparison": {field: first.data[field] for field in MATCH_FIELDS},
+        "hardware": dict(first.data["hardware"]),
+        "frameworks": {},
+    }
+    for framework, framework_runs in sorted(grouped.items()):
+        result["frameworks"][framework] = {
+            "version": framework_runs[0].data["framework_version"],
+            "seeds": sorted(run.seed for run in framework_runs),
+            "samples_per_second": _stats(
+                run.metrics["samples_per_second"] for run in framework_runs
+            ),
+            "wall_clock_seconds": _stats(
+                run.metrics["wall_clock_seconds"] for run in framework_runs
+            ),
+            "peak_vram_mb": _stats(
+                run.metrics["peak_vram_mb"] for run in framework_runs
+            ),
+            "eval_score_baseline": _stats(
+                run.metrics["eval_score_baseline"] for run in framework_runs
+            ),
+            "eval_score_final": _stats(
+                run.metrics["eval_score_final"] for run in framework_runs
+            ),
+            "improvement": _stats(
+                run.metrics["eval_score_final"] - run.metrics["eval_score_baseline"]
+                for run in framework_runs
+            ),
+            "evidence": [run.source.name for run in framework_runs],
         }
-
-        with open(filepath, "w") as f:
-            json.dump(data, f, indent=2)
-
-        logger.info(f"Results saved to {filepath}")
-
-    def save_report(self, filename: str = "framework_comparison.md"):
-        """Save markdown report"""
-        filepath = self.output_dir / filename
-        report = self.generate_comparison_report()
-
-        with open(filepath, "w") as f:
-            f.write(report)
-
-        logger.info(f"Report saved to {filepath}")
+    return result
 
 
-async def main():
-    parser = argparse.ArgumentParser(description="Compare RL frameworks")
-    parser.add_argument(
-        "--frameworks",
-        nargs="+",
-        default=["stateset", "trl", "rllib", "custom"],
-        choices=["stateset", "trl", "rllib", "custom", "all"],
-        help="Frameworks to benchmark",
+def _format_stats(values: Mapping[str, Any], metric: str) -> str:
+    stats = values[metric]
+    return f"{stats['mean']:.3f} ± {stats['std']:.3f}"
+
+
+def render_markdown(summary: Mapping[str, Any]) -> str:
+    """Render an auditable report and explicitly scope its conclusions."""
+    comparison = summary["comparison"]
+    hardware = summary["hardware"]
+    lines = [
+        "# Measured framework comparison",
+        "",
+        "> Descriptive results only. Every row uses the same protocol, model, data,",
+        "> task, and hardware. This report does not assign subjective feature scores.",
+        "",
+        f"- Protocol: `{comparison['protocol']}`",
+        f"- Model: `{comparison['model']}` at `{comparison['model_revision']}`",
+        f"- Task/data: `{comparison['task']}` at `{comparison['dataset_revision']}`",
+        f"- Hardware: {hardware['gpu_count']}× {hardware['gpu']} (CUDA {hardware['cuda']})",
+        "",
+        "| Framework | Version | Seeds | Samples/s | Wall clock (s) | Peak VRAM (MiB) | Baseline | Final | Improvement |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for framework, values in summary["frameworks"].items():
+        lines.append(
+            f"| {framework} | {values['version']} | {len(values['seeds'])} |"
+            f" {_format_stats(values, 'samples_per_second')} |"
+            f" {_format_stats(values, 'wall_clock_seconds')} |"
+            f" {_format_stats(values, 'peak_vram_mb')} |"
+            f" {_format_stats(values, 'eval_score_baseline')} |"
+            f" {_format_stats(values, 'eval_score_final')} |"
+            f" {_format_stats(values, 'improvement')} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Interpretation boundary",
+            "",
+            "The table establishes results only for the protocol and hardware above.",
+            "It is not evidence of ecosystem maturity, developer experience, or",
+            "performance on other models and clusters.",
+            "",
+        ]
     )
-    parser.add_argument("--model", default="gpt2", help="Model name")
-    parser.add_argument("--samples", type=int, default=1000, help="Number of samples")
-    parser.add_argument(
-        "--stub", action="store_true", help="Use stub model for fast testing"
+    return "\n".join(lines)
+
+
+def evidence_digest(runs: Sequence[RunEvidence]) -> str:
+    """Hash canonical inputs so a report identifies its exact evidence."""
+    canonical = [
+        json.dumps(run.data, sort_keys=True, separators=(",", ":")) for run in runs
+    ]
+    return hashlib.sha256("\n".join(sorted(canonical)).encode()).hexdigest()
+
+
+def write_report(runs: Sequence[RunEvidence], output_dir: Path) -> None:
+    """Write machine-readable and human-readable comparison artifacts."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    result = summarize(runs)
+    result["evidence_sha256"] = evidence_digest(runs)
+    (output_dir / "comparison.json").write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    (output_dir / "comparison.md").write_text(render_markdown(result), encoding="utf-8")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Validate and compare real, matched framework benchmark evidence"
     )
     parser.add_argument(
-        "--output", default="./benchmark_results", help="Output directory"
+        "inputs", nargs="+", type=Path, help="Evidence files/directories"
     )
-
-    args = parser.parse_args()
-
-    if "all" in args.frameworks:
-        args.frameworks = ["stateset", "trl", "rllib", "custom"]
-
-    print("=" * 70)
-    print("FRAMEWORK COMPARISON BENCHMARKS")
-    print("=" * 70)
-    print(f"Frameworks: {', '.join(args.frameworks)}")
-    print(f"Model: {args.model}")
-    print(f"Samples: {args.samples}")
-    print(f"Output: {args.output}")
-    print("=" * 70)
-    print()
-
-    benchmark = FrameworkBenchmark(output_dir=args.output)
-
-    # Run benchmarks
-    for framework in args.frameworks:
-        if framework == "stateset":
-            await benchmark.benchmark_stateset(
-                args.model, args.samples, use_stub=args.stub
-            )
-        elif framework == "trl":
-            await benchmark.benchmark_trl(args.model, args.samples, use_stub=args.stub)
-        elif framework == "rllib":
-            await benchmark.benchmark_rllib(
-                args.model, args.samples, use_stub=args.stub
-            )
-        elif framework == "custom":
-            await benchmark.benchmark_custom(
-                args.model, args.samples, use_stub=args.stub
-            )
-
-    # Generate and save results
-    print()
-    print("=" * 70)
-    print("RESULTS")
-    print("=" * 70)
-    print()
-    print(benchmark.generate_comparison_report())
-
-    benchmark.save_results()
-    benchmark.save_report()
-
-    print()
-    print(f"Results saved to {args.output}/")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("benchmark_results/framework_comparison/report"),
+    )
+    parser.add_argument("--min-seeds", type=int, default=3)
+    parser.add_argument(
+        "--required-framework",
+        action="append",
+        default=[],
+        help="Framework required in the comparison (repeatable).",
+    )
+    parser.add_argument("--validate-only", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        runs = load_evidence(args.inputs)
+        validate_comparison(
+            runs,
+            min_seeds=args.min_seeds,
+            required_frameworks=args.required_framework,
+        )
+        if not args.validate_only:
+            write_report(runs, args.output_dir)
+    except EvidenceError as exc:
+        print(f"framework comparison rejected: {exc}", file=sys.stderr)
+        return 2
+    print(
+        f"validated {len(runs)} measured runs across "
+        f"{len({run.framework for run in runs})} frameworks"
+    )
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(main())

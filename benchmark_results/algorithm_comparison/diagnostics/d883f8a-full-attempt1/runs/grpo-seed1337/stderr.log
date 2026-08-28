@@ -1,0 +1,177 @@
+2026-08-27 18:17:40,367 INFO Seeds set to 1337
+2026-08-27 18:17:40,367 INFO Task: gsm8k
+2026-08-27 18:17:40,866 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 404 Not Found"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-27 18:17:40,866 WARNING Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-27 18:17:41,178 INFO HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:17:41,316 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/740312add88f781978c0658806c59bc2815b9866 "HTTP/1.1 200 OK"
+2026-08-27 18:17:41,451 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-08-27 18:17:41,589 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:17:41,729 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866?recursive=false&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:17:41,862 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 404 Not Found"
+2026-08-27 18:17:41,996 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:17:42,097 INFO HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:17:42,232 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-08-27 18:17:42,417 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 404 Not Found"
+2026-08-27 18:17:42,420 INFO Train: 32 examples, Eval: 16 examples
+2026-08-27 18:17:42,421 INFO Evaluating baseline (un-fine-tuned) on 16 examples…
+2026-08-27 18:17:42,560 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-08-27 18:17:42,704 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:17:43,032 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct "HTTP/1.1 200 OK"
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 290/290 [00:00<00:00, 20342.65it/s]
+2026-08-27 18:18:11,828 INFO Baseline pass@1: 0.062 (parse rate 1.000)
+2026-08-27 18:18:11,829 INFO Invoking grpo trainer with 32 train examples…
+2026-08-27 18:18:12,180 INFO Initializing TRL GRPO training
+2026-08-27 18:18:12,180 INFO Configuration: {
+  "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "num_episodes": 1000,
+  "num_epochs": 1,
+  "learning_rate": 5e-06,
+  "adam_beta1": 0.9,
+  "adam_beta2": 0.99,
+  "weight_decay": 0.01,
+  "max_grad_norm": 1.0,
+  "warmup_ratio": 0.1,
+  "lr_scheduler_type": "cosine",
+  "per_device_train_batch_size": 4,
+  "batch_size": null,
+  "gradient_accumulation_steps": 1,
+  "num_generations": 4,
+  "generation_batch_size": 4,
+  "rollout_concurrency": 1,
+  "eval_num_generations": 4,
+  "max_prompt_length": 512,
+  "max_completion_length": 256,
+  "max_steps_per_episode": null,
+  "bf16": true,
+  "fp16": false,
+  "use_cpu": false,
+  "dataloader_num_workers": 0,
+  "dataloader_pin_memory": true,
+  "gradient_checkpointing": true,
+  "eval_steps": 50,
+  "save_steps": 100,
+  "logging_steps": 10,
+  "save_total_limit": 3,
+  "output_dir": "/workspace/algorithm-full/runs/grpo-seed1337/artifact",
+  "run_name": null,
+  "wandb_run_name": null,
+  "overwrite_output_dir": true,
+  "report_to": "none",
+  "wandb_project": null,
+  "wandb_entity": null,
+  "wandb_tags": null,
+  "wandb_notes": null,
+  "auto_adjust": true,
+  "early_stopping": false,
+  "patience": 50,
+  "gamma": 0.99,
+  "gae_lambda": 0.95,
+  "reward_clip": 10.0,
+  "advantage_normalization": true,
+  "baseline_type": "group_mean",
+  "beta": 0.0,
+  "use_reference_model": false,
+  "clip_ratio": 0.2,
+  "seq_clip_ratio": 0.0003,
+  "value_clip": 0.2,
+  "entropy_coef": 0.01,
+  "continual_strategy": "none",
+  "replay_buffer_size": 2000,
+  "replay_ratio": 0.5,
+  "replay_min_size": 100,
+  "replay_sampling": "uniform",
+  "replay_storage": "reservoir",
+  "continual_kl_beta": 0.0,
+  "ewc_lambda": 0.0,
+  "ewc_num_samples": 64,
+  "ewc_decay": 0.9,
+  "task_id_key": "task_id",
+  "max_examples": null,
+  "eval_split_size": 0.1,
+  "stratify_by_task": true,
+  "data_format": "jsonl",
+  "run_post_eval": true,
+  "post_eval_samples": 5,
+  "post_eval_detailed": true,
+  "use_lora": true,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "lora_target_modules": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj"
+  ],
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "top_k": 50,
+  "repetition_penalty": 1.1,
+  "use_vllm": false,
+  "vllm_gpu_memory_utilization": 0.85,
+  "vllm_tensor_parallel_size": 1,
+  "vllm_enable_prefix_caching": true,
+  "vllm_max_model_len": null,
+  "vllm_quantization": null,
+  "vllm_enable_chunked_prefill": true,
+  "seed": 1337,
+  "remove_unused_columns": false,
+  "disable_tqdm": false,
+  "task_schedule": null,
+  "task_switch_steps": 0,
+  "resume_from_checkpoint": null,
+  "num_iterations": 1,
+  "mini_batch_size": 1,
+  "max_steps": 4,
+  "num_outer_iterations": 4,
+  "generations_per_iteration": 32,
+  "system_prompt": null,
+  "use_8bit": false,
+  "use_4bit": false
+}
+2026-08-27 18:18:12,180 INFO Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2026-08-27 18:18:12,374 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-08-27 18:18:12,513 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 18:18:12,835 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct "HTTP/1.1 200 OK"
+
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 290/290 [00:00<00:00, 3597.19it/s]
+2026-08-27 18:18:13,108 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/custom_generate/generate.py "HTTP/1.1 404 Not Found"
+2026-08-27 18:18:13,151 INFO LoRA adapters added to model
+2026-08-27 18:18:13,152 INFO Model loaded successfully on cuda
+2026-08-27 18:18:13,153 INFO Training dataset size: 32
+2026-08-27 18:18:13,181 INFO Starting TRL GRPO training...
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+
+  0%|          | 0/4 [00:00<?, ?it/s]2026-08-27 18:18:13,311 INFO HTTP Request: HEAD https://huggingface.co/api/telemetry/trl/GRPOTrainer "HTTP/1.1 200 OK"
+
+ 25%|██▌       | 1/4 [00:04<00:12,  4.09s/it]
+ 50%|█████     | 2/4 [00:08<00:08,  4.03s/it]
+ 75%|███████▌  | 3/4 [00:12<00:04,  4.00s/it]
+100%|██████████| 4/4 [00:16<00:00,  4.00s/it]2026-08-27 18:18:29,540 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-27 18:18:29,554 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-0.5B-Instruct/7ae557604adf67be50417f59c2c2f167def9a775/config.json "HTTP/1.1 200 OK"
+2026-08-27 18:18:29,686 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-27 18:18:29,702 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-0.5B-Instruct/7ae557604adf67be50417f59c2c2f167def9a775/config.json "HTTP/1.1 200 OK"
+
+
+
+100%|██████████| 4/4 [00:16<00:00,  4.00s/it]
+100%|██████████| 4/4 [00:16<00:00,  4.12s/it]
+2026-08-27 18:18:29,925 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-27 18:18:29,942 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-0.5B-Instruct/7ae557604adf67be50417f59c2c2f167def9a775/config.json "HTTP/1.1 200 OK"
+2026-08-27 18:18:30,080 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-27 18:18:30,094 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-0.5B-Instruct/7ae557604adf67be50417f59c2c2f167def9a775/config.json "HTTP/1.1 200 OK"
+2026-08-27 18:18:30,184 INFO Model saved to /workspace/algorithm-full/runs/grpo-seed1337/artifact/final_model
+2026-08-27 18:18:30,184 INFO TRL GRPO training completed successfully.
+2026-08-27 18:18:30,185 INFO Training complete in 18s. Re-evaluating…
+2026-08-27 18:19:19,121 INFO Post-train pass@1: 0.062
+2026-08-27 18:19:19,375 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-27 18:19:19,407 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-0.5B-Instruct/7ae557604adf67be50417f59c2c2f167def9a775/config.json "HTTP/1.1 200 OK"
+2026-08-27 18:19:19,559 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-27 18:19:19,585 INFO HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Qwen/Qwen2.5-0.5B-Instruct/7ae557604adf67be50417f59c2c2f167def9a775/config.json "HTTP/1.1 200 OK"
+2026-08-27 18:19:19,637 INFO Wrote result to /workspace/algorithm-full/runs/grpo-seed1337/phase0-result.json

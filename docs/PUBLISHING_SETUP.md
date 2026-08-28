@@ -223,6 +223,22 @@ make quick-publish # Interactive publish menu (includes branch checks)
 
 ### PyPI Configuration
 
+Production releases use PyPI trusted publishing. Configure the publisher for
+the `stateset-agents` project with these exact claims:
+
+- Owner: `stateset`
+- Repository: `stateset-agents`
+- Workflow: `publish.yml`
+- Environment: `pypi`
+
+The environment value is part of the OIDC identity. Omitting it, or using a
+different spelling, makes PyPI reject an otherwise valid GitHub token with
+`invalid-publisher`. The `pypi-publish` job intentionally fails in that case;
+a built artifact is not a published release.
+
+`PYPI_API_TOKEN` is an optional encrypted secret for temporary recovery. OIDC
+is the normal production path and avoids a long-lived publishing credential.
+
 Ensure `pyproject.toml` has correct metadata:
 
 ```toml

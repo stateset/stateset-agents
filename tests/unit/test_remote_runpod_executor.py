@@ -56,19 +56,30 @@ def spec(dataset, tmp_path):
 class FakePodApi:
     """Models the RunPod pod lifecycle, including ports appearing late."""
 
-    def __init__(self, *, ready_after: int = 2, never_ready: bool = False):
+    def __init__(
+        self,
+        *,
+        ready_after: int = 2,
+        never_ready: bool = False,
+        cost_per_hr: float | None = None,
+    ):
         self.created: list[dict] = []
         self.terminated: list[str] = []
         self.polls = 0
         self.ready_after = ready_after
         self.never_ready = never_ready
+        self.cost_per_hr = cost_per_hr
 
     def create_pod(self, **kwargs):
         self.created.append(kwargs)
         # First pod keeps the historical id; retries get distinct ids so a
         # test can tell WHICH pod was terminated.
         pod_id = "pod-abc" if len(self.created) == 1 else f"pod-abc{len(self.created)}"
-        return {"id": pod_id, "desiredStatus": "RUNNING"}
+        return {
+            "id": pod_id,
+            "desiredStatus": "RUNNING",
+            "costPerHr": self.cost_per_hr,
+        }
 
     def get_pod(self, pod_id):
         self.polls += 1
@@ -147,7 +158,7 @@ class FakeSsh:
 
 
 @pytest.fixture
-def make_executor():
+def make_executor(tmp_path):
     from stateset_agents.remote.runpod import RunPodExecutor
 
     def build(api=None, ssh=None, **kwargs):
@@ -156,6 +167,7 @@ def make_executor():
         # running it happens to have a keypair. (It does locally; the Windows
         # CI runner does not, which is how this was found.)
         kwargs.setdefault("public_key", "ssh-rsa AAAATESTKEY")
+        kwargs.setdefault("lease_dir", tmp_path / "runpod-leases")
         return RunPodExecutor(
             api=api or FakePodApi(),
             ssh=ssh or FakeSsh(),
@@ -227,6 +239,51 @@ class TestJobExecution:
         assert (
             spec.output_dir / "adapter_model.safetensors"
         ).read_bytes() == b"WEIGHTS"
+
+
+class TestCrashRecoveryLeases:
+    def test_pod_has_a_lease_until_termination_is_confirmed(
+        self, make_executor, spec, tmp_path
+    ):
+        api = FakePodApi()
+        executor = make_executor(api=api, lease_dir=tmp_path / "leases")
+        observed = []
+        original_terminate = api.terminate_pod
+
+        def observe_then_terminate(pod_id):
+            observed.append(executor._lease_path(pod_id).exists())
+            original_terminate(pod_id)
+
+        api.terminate_pod = observe_then_terminate
+
+        executor.submit(spec)
+
+        assert observed == [True]
+        assert executor.orphaned_leases() == []
+
+    def test_later_process_can_terminate_a_crash_lease(self, spec, tmp_path):
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        lease_dir = tmp_path / "leases"
+        first = RunPodExecutor(
+            api=FakePodApi(),
+            ssh=FakeSsh(),
+            public_key="ssh-rsa AAAATESTKEY",
+            lease_dir=lease_dir,
+        )
+        first._write_lease("pod-orphan", "job-1", spec, 123.0)
+
+        api = FakePodApi()
+        restarted = RunPodExecutor(
+            api=api,
+            ssh=FakeSsh(),
+            public_key="ssh-rsa AAAATESTKEY",
+            lease_dir=lease_dir,
+        )
+
+        assert restarted.cleanup_orphans() == ["pod-orphan"]
+        assert api.terminated == ["pod-orphan"]
+        assert restarted.orphaned_leases() == []
 
 
 class TestPodTermination:
@@ -439,6 +496,33 @@ class TestScpCommandForm:
         joined = " ".join(captured["cmd"])
         assert "/." not in joined, f"dot-form path is rejected by OpenSSH 9: {joined}"
 
+    def test_secret_upload_streams_to_root_only_remote_file(self, monkeypatch):
+        from stateset_agents.remote.runpod import SshTransport
+
+        captured = {}
+        transport = SshTransport()
+        transport._host, transport._port = "1.2.3.4", 22
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["kwargs"] = kwargs
+
+            class R:
+                returncode = 0
+                stderr = ""
+
+            return R()
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        transport.upload_secret("rp-secret-value", "/workspace/.runpod_key")
+
+        joined = " ".join(captured["cmd"])
+        assert "umask 077; cat > /workspace/.runpod_key" in joined
+        assert "rp-secret-value" not in joined
+        assert captured["kwargs"]["input"] == "rp-secret-value"
+        assert captured["kwargs"]["text"] is True
+
 
 class TestPublicKeyDiscovery:
     """Key discovery reads the host's ~/.ssh, so it is tested against a
@@ -522,6 +606,21 @@ class TestGpuCount:
         make_executor(api=api).submit(spec)
         assert api.created[0]["gpu_count"] == 2
 
+    def test_runpod_whole_pod_price_is_not_multiplied_in_budget(
+        self, make_executor, spec
+    ):
+        api = FakePodApi(cost_per_hr=13.16)
+        spec.gpu_count = 4
+        spec.timeout_s = 3600
+        spec.max_cost_usd = 14.0
+        executor = make_executor(api=api)
+
+        handle = executor.submit(spec)
+
+        # $13.16/hr for one hour is below the $14 ceiling. The old code
+        # multiplied this whole-Pod price by four and rejected the run.
+        assert executor.status(handle) is JobStatus.SUCCEEDED
+
     def test_real_api_sends_gpucount_in_the_payload(self, monkeypatch):
         from stateset_agents.remote.runpod import RunPodApi
 
@@ -551,6 +650,8 @@ class TestGpuCount:
         )
         assert captured["json"]["gpuCount"] == 2
         assert captured["json"]["gpuTypeIds"] == ["g"]
+        assert captured["json"]["computeType"] == "GPU"
+        assert captured["json"]["gpuTypePriority"] == "availability"
 
     def test_real_api_defaults_gpucount_to_one(self, monkeypatch):
         from stateset_agents.remote.runpod import RunPodApi
@@ -575,6 +676,57 @@ class TestGpuCount:
             name="n", image="img", gpu_type_id="g", ports=["22/tcp"], env={}
         )
         assert captured["json"]["gpuCount"] == 1
+
+    def test_real_api_sends_direct_image_command_fields(self, monkeypatch):
+        from stateset_agents.remote.runpod import RunPodApi
+
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"id": "p"}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            captured["json"] = json
+            return FakeResponse()
+
+        import requests
+
+        monkeypatch.setattr(requests, "post", fake_post)
+        RunPodApi("key").create_pod(
+            name="n",
+            image="img",
+            gpu_type_id="g",
+            ports=["8000/http"],
+            env={},
+            docker_entrypoint=["/bin/bash", "-lc"],
+            docker_start_cmd=["exec vllm serve m"],
+        )
+        assert captured["json"]["dockerEntrypoint"] == ["/bin/bash", "-lc"]
+        assert captured["json"]["dockerStartCmd"] == ["exec vllm serve m"]
+
+    def test_create_failure_is_sanitized_as_remote_error(self, monkeypatch):
+        import requests
+
+        from stateset_agents.remote.runpod import RunPodApi
+
+        response = requests.Response()
+        response.status_code = 500
+
+        def fail_send(request):
+            raise requests.HTTPError("provider details", response=response)
+
+        monkeypatch.setattr(RunPodApi, "_send", staticmethod(fail_send))
+
+        with pytest.raises(RemoteExecutionError, match="failed.*HTTP 500") as caught:
+            RunPodApi("secret-key").create_pod(
+                name="n", image="img", gpu_type_id="g", ports=[], env={}
+            )
+
+        assert "secret-key" not in str(caught.value)
 
 
 class TestCloudType:

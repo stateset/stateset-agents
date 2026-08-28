@@ -374,6 +374,7 @@ class TestHybridCache:
         result = await hybrid_cache.get("key")
 
         assert result == "value"
+        assert hybrid_cache._redis._client is None
 
     @pytest.mark.asyncio
     async def test_health_check_memory_only(self, hybrid_cache):

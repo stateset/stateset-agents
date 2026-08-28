@@ -113,15 +113,19 @@ CURRENT_STEP="preflight"
 READINESS_FAILURE_DETAIL=""
 
 if [ -z "${PYTHON_BIN}" ]; then
-  if command -v python3 >/dev/null 2>&1; then
-    PYTHON_BIN="python3"
-  elif command -v python >/dev/null 2>&1; then
-    PYTHON_BIN="python"
-  else
-    READINESS_FAILURE_DETAIL="missing python interpreter (python3 or python)"
-    echo "ERROR: Neither python3 nor python is available on PATH."
-    exit 1
-  fi
+  for candidate in python python3; do
+    if command -v "$candidate" >/dev/null 2>&1 && \
+      "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
+      PYTHON_BIN="$candidate"
+      break
+    fi
+  done
+fi
+if [ -z "${PYTHON_BIN}" ] || ! "$PYTHON_BIN" -c \
+  'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
+  READINESS_FAILURE_DETAIL="missing supported Python interpreter (requires >=3.10)"
+  echo "ERROR: Python 3.10 or newer is required."
+  exit 1
 fi
 
 REQUIRED_COMMANDS=(
@@ -131,7 +135,6 @@ REQUIRED_COMMANDS=(
   "black"
   "isort"
   "mypy"
-  "pytest"
   "bandit"
   "safety"
 )
@@ -151,10 +154,10 @@ if [ "${#MISSING_COMMANDS[@]}" -ne 0 ]; then
   exit 1
 fi
 
-if ! "$PYTHON_BIN" -c "import build, twine" >/dev/null 2>&1; then
-  READINESS_FAILURE_DETAIL="missing_python_modules: build or twine"
-  echo "ERROR: Required Python modules are missing: build, twine"
-  echo "Install dependencies and retry: pip install build twine"
+if ! "$PYTHON_BIN" -c "import build, pytest, twine" >/dev/null 2>&1; then
+  READINESS_FAILURE_DETAIL="missing_python_modules: build, pytest, or twine"
+  echo "ERROR: Required Python modules are missing: build, pytest, or twine"
+  echo "Install dependencies and retry: pip install build pytest twine"
   exit 1
 fi
 
@@ -194,17 +197,18 @@ CURRENT_STEP="tests_with_coverage"
 # Gate value lives in pyproject.toml's [tool.coverage.report] fail_under and
 # is honored automatically by pytest-cov. Avoid passing --cov-fail-under here
 # so the gate has a single source of truth (see v0.15.3 ratchet correction).
-pytest --cov=stateset_agents --cov-report=xml
+"$PYTHON_BIN" -m pytest --cov=stateset_agents --cov-report=xml
 
 printf "\n[4/8] Running security scans...\n"
 CURRENT_STEP="security_scans"
-bandit -r stateset_agents -f json -o "$BANDIT_REPORT_PATH" || true
+bandit -c pyproject.toml -r stateset_agents -f json -o "$BANDIT_REPORT_PATH" || true
 # --save-json writes the JSON straight to a file; piping `--json` stdout to
 # a file (the previous form here) captures safety's banner/deprecation
 # notice ahead of the payload too, corrupting a naive json.loads() the same
 # way `make security-scan-strict` hit before it was fixed. Match the
 # Makefile's invocation exactly so both paths behave identically.
-safety check --save-json "$SAFETY_REPORT_PATH" > /dev/null 2>&1 || true
+safety check -r requirements-dev-lock.txt --save-json "$SAFETY_REPORT_PATH" \
+  --no-prompt > /dev/null 2>&1 || true
 # Route both reports through check_security_findings.py's lenient parser
 # (raw_decode from the first '{', ignoring any surrounding banner text)
 # instead of a second, stricter inline copy of this same parsing logic --

@@ -151,6 +151,7 @@ class ModalExecutor(RemoteExecutor):
     # -- Executor interface ------------------------------------------------
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        self.validate_spec(spec)
         job_id = uuid.uuid4().hex
         handle = JobHandle(provider=self.name, job_id=job_id)
 

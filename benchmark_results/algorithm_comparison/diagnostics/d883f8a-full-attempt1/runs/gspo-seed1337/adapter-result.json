@@ -1,0 +1,35 @@
+{
+  "status": "completed",
+  "measured": true,
+  "config_sha256": "1fa78fa67561b3e0ff43377f4bdee248a842374a44fba612d800465f6387b87b",
+  "algorithm_config": {
+    "max_steps": 4,
+    "num_generations": 4,
+    "num_iterations": 1,
+    "per_device_train_batch_size": 4,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 5e-06,
+    "max_prompt_length": 512,
+    "max_completion_length": 256,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "beta": 0.0,
+    "objective": "gspo-sequence",
+    "clip_range_left": 0.0003,
+    "clip_range_right": 0.0004
+  },
+  "algorithm_config_sha256": "3a518b1a43ad3cae94949c69e8a52a967f1851f860fd180c2bd064b5c83d07cf",
+  "framework_version": "0.42.4",
+  "artifact_path": "/workspace/algorithm-full/runs/gspo-seed1337/artifact/final_model",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 5080",
+    "gpu_count": 1,
+    "cuda": "12.9"
+  },
+  "metrics": {
+    "samples_processed": 64,
+    "peak_vram_mb": 2081.64208984375,
+    "eval_score_baseline": 0.0625,
+    "eval_score_final": 0.0625
+  }
+}

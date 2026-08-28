@@ -1663,6 +1663,10 @@ async def _authorize_websocket(websocket: WebSocket) -> bool:
 async def experiment_ws(websocket: WebSocket, experiment_id: str) -> None:
     """Stream real-time training metrics via WebSocket."""
     if not await _authorize_websocket(websocket):
+        # Accept before closing so clients consistently receive the WebSocket
+        # close code. Closing pre-accept relies on the optional ASGI denial
+        # response extension and deadlocks some Starlette/AnyIO combinations.
+        await websocket.accept()
         await websocket.close(code=4401)
         return
     await websocket.accept()

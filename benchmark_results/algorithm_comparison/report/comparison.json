@@ -1,0 +1,242 @@
+{
+  "algorithms": {
+    "dapo": {
+      "eval_score_baseline": {
+        "mean": 0.0625,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.14583333333333334,
+        "n": 3,
+        "std": 0.03608439182435161
+      },
+      "evidence": [
+        "dapo-seed1337.json",
+        "dapo-seed2026.json",
+        "dapo-seed42.json"
+      ],
+      "improvement": {
+        "mean": 0.08333333333333333,
+        "n": 3,
+        "std": 0.03608439182435161
+      },
+      "peak_vram_mb": {
+        "mean": 5092.068359375,
+        "n": 3,
+        "std": 100.87507964418238
+      },
+      "samples_per_second": {
+        "mean": 0.2614918097958145,
+        "n": 3,
+        "std": 0.00454028132496045
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "stateset-dapo-token-objective-v1",
+      "wall_clock_seconds": {
+        "mean": 244.7991164343354,
+        "n": 3,
+        "std": 4.283083696959113
+      }
+    },
+    "gepo": {
+      "eval_score_baseline": {
+        "mean": 0.0625,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.16666666666666666,
+        "n": 3,
+        "std": 0.07216878364870322
+      },
+      "evidence": [
+        "gepo-seed1337.json",
+        "gepo-seed2026.json",
+        "gepo-seed42.json"
+      ],
+      "improvement": {
+        "mean": 0.10416666666666667,
+        "n": 3,
+        "std": 0.07216878364870322
+      },
+      "peak_vram_mb": {
+        "mean": 10019.536946614584,
+        "n": 3,
+        "std": 442.03572971891793
+      },
+      "samples_per_second": {
+        "mean": 0.26547270219024,
+        "n": 3,
+        "std": 0.0045572459226171395
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "stateset-gepo-group-expectation-objective-v1",
+      "wall_clock_seconds": {
+        "mean": 241.12694299966097,
+        "n": 3,
+        "std": 4.154373543139183
+      }
+    },
+    "grpo": {
+      "eval_score_baseline": {
+        "mean": 0.0625,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.125,
+        "n": 3,
+        "std": 0.125
+      },
+      "evidence": [
+        "grpo-seed1337.json",
+        "grpo-seed2026.json",
+        "grpo-seed42.json"
+      ],
+      "improvement": {
+        "mean": 0.0625,
+        "n": 3,
+        "std": 0.125
+      },
+      "peak_vram_mb": {
+        "mean": 3436.6943359375,
+        "n": 3,
+        "std": 7.091590300513785
+      },
+      "samples_per_second": {
+        "mean": 0.6272057440147366,
+        "n": 3,
+        "std": 0.015367590976816657
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "trl-grpo-objective-v1",
+      "wall_clock_seconds": {
+        "mean": 102.08047822335114,
+        "n": 3,
+        "std": 2.4855221971040593
+      }
+    },
+    "gspo": {
+      "eval_score_baseline": {
+        "mean": 0.0625,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.0625,
+        "n": 3,
+        "std": 0.0
+      },
+      "evidence": [
+        "gspo-seed1337.json",
+        "gspo-seed2026.json",
+        "gspo-seed42.json"
+      ],
+      "improvement": {
+        "mean": 0.0,
+        "n": 3,
+        "std": 0.0
+      },
+      "peak_vram_mb": {
+        "mean": 2170.46875,
+        "n": 3,
+        "std": 121.86078326813751
+      },
+      "samples_per_second": {
+        "mean": 0.5990595283716883,
+        "n": 3,
+        "std": 0.02677641926711605
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "stateset-gspo-sequence-objective-v1",
+      "wall_clock_seconds": {
+        "mean": 106.97722392998791,
+        "n": 3,
+        "std": 4.80383936117129
+      }
+    },
+    "vapo": {
+      "eval_score_baseline": {
+        "mean": 0.0625,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.1875,
+        "n": 3,
+        "std": 0.10825317547305482
+      },
+      "evidence": [
+        "vapo-seed1337.json",
+        "vapo-seed2026.json",
+        "vapo-seed42.json"
+      ],
+      "improvement": {
+        "mean": 0.125,
+        "n": 3,
+        "std": 0.10825317547305482
+      },
+      "peak_vram_mb": {
+        "mean": 6078.169596354167,
+        "n": 3,
+        "std": 55.469660599088975
+      },
+      "samples_per_second": {
+        "mean": 0.26101544237808305,
+        "n": 3,
+        "std": 0.0014863409877152907
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "stateset-vapo-value-augmented-objective-v1",
+      "wall_clock_seconds": {
+        "mean": 260.52660341502633,
+        "n": 3,
+        "std": 1.4801236209564452
+      }
+    }
+  },
+  "comparison": {
+    "algorithms": [
+      "dapo",
+      "gepo",
+      "grpo",
+      "gspo",
+      "vapo"
+    ],
+    "cache_policy": "prewarmed-model-and-dataset-v1",
+    "dataset_revision": "740312add88f781978c0658806c59bc2815b9866",
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "protocol": "stateset-five-algorithm-gsm8k-v1",
+    "task": "gsm8k"
+  },
+  "evidence_sha256": "3fbc1156828afad1b27369d1ea145f935cb50d7e657fb2be9c236ef86f4b74e4",
+  "hardware": {
+    "cuda": "12.9",
+    "gpu": "NVIDIA GeForce RTX 5080",
+    "gpu_count": 1
+  },
+  "report_kind": "measured-algorithm-comparison",
+  "schema_version": 1
+}

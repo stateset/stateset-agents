@@ -1,0 +1,33 @@
+{
+  "kind": "exit",
+  "returncode": 1,
+  "command": [
+    "python",
+    "scripts/run_phase0_benchmark.py",
+    "--trainer",
+    "vapo",
+    "--task",
+    "gsm8k",
+    "--model",
+    "Qwen/Qwen2.5-0.5B-Instruct",
+    "--model-revision",
+    "7ae557604adf67be50417f59c2c2f167def9a775",
+    "--dataset-revision",
+    "740312add88f781978c0658806c59bc2815b9866",
+    "--num-train-examples",
+    "4",
+    "--num-eval-examples",
+    "2",
+    "--seed",
+    "42",
+    "--train",
+    "--output",
+    "/workspace/algorithm-preflight/runs/vapo-seed42/phase0-result.json",
+    "--output-dir",
+    "/workspace/algorithm-preflight/runs/vapo-seed42/artifact",
+    "--adapter-output",
+    "/workspace/algorithm-preflight/runs/vapo-seed42/adapter-result.json",
+    "--shootout-config-json",
+    "{\"adam_beta1\":0.9,\"adam_beta2\":0.99,\"beta\":0.0,\"bf16\":true,\"gradient_accumulation_steps\":1,\"gradient_checkpointing\":true,\"learning_rate\":5e-06,\"lora_alpha\":16,\"lora_dropout\":0.05,\"lora_r\":8,\"lora_target_modules\":[\"q_proj\",\"k_proj\",\"v_proj\",\"o_proj\"],\"lr_scheduler_type\":\"cosine\",\"max_completion_length\":64,\"max_grad_norm\":1.0,\"max_prompt_length\":128,\"max_steps\":1,\"num_eval_examples\":2,\"num_generations\":2,\"num_iterations\":1,\"num_train_epochs\":1,\"num_train_examples\":4,\"per_device_train_batch_size\":1,\"temperature\":0.7,\"top_p\":0.9,\"warmup_ratio\":0.1,\"weight_decay\":0.01}"
+  ]
+}

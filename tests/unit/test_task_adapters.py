@@ -192,6 +192,11 @@ class TestToolCallingAdapter:
 
 
 class TestTaskRegistry:
+    def test_default_agent_attention_has_no_optional_flash_dependency(self) -> None:
+        from stateset_agents.core.agent_config import AgentConfig
+
+        assert AgentConfig(model_name="stub://test").attn_implementation == "sdpa"
+
     def test_registry_has_all_three_tasks(self) -> None:
         assert "gsm8k" in runner.TASKS
         assert "customer_support" in runner.TASKS
@@ -219,6 +224,87 @@ class TestTaskRegistry:
         commit = runner.get_git_commit()
         assert isinstance(commit, str)
         assert len(commit) > 0
+
+    def test_rollout_sample_estimate_is_protocol_derived(self) -> None:
+        assert (
+            runner.estimate_rollout_samples("gspo", 200, {"num_generations": 4}) == 160
+        )
+        assert runner.estimate_rollout_samples("dapo", 200, {"group_size": 8}) == 80
+        assert runner.estimate_rollout_samples("gepo", 10, {"group_size": 4}) == 40
+        assert (
+            runner.estimate_rollout_samples(
+                "vapo", 10, {"group_size": 4, "value_warmup_steps": 1}
+            )
+            == 44
+        )
+
+    @pytest.mark.parametrize("trainer", ["grpo", "gspo", "dapo", "vapo", "gepo"])
+    def test_algorithm_config_attests_shared_budget(self, trainer: str) -> None:
+        config = runner.build_algorithm_config(
+            trainer,
+            {
+                "max_steps": 7,
+                "num_generations": 3,
+                "num_iterations": 2,
+                "per_device_train_batch_size": 2,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 1e-6,
+            },
+        )
+        assert config["max_steps"] == 7
+        assert config["num_generations"] == 3
+        assert config["num_iterations"] == 2
+        assert config["objective"]
+
+    def test_normalized_policy_artifact_saves_model_and_tokenizer(
+        self, tmp_path: Path
+    ) -> None:
+        class Saveable:
+            def __init__(self, filename: str) -> None:
+                self.filename = filename
+
+            def save_pretrained(self, output: Path) -> None:
+                (output / self.filename).write_text("saved", encoding="utf-8")
+
+        agent = type(
+            "Agent",
+            (),
+            {"model": Saveable("model.bin"), "tokenizer": Saveable("tokenizer.json")},
+        )()
+        artifact = tmp_path / "final_model"
+        runner.save_normalized_policy_artifact(agent, artifact)
+        assert (artifact / "model.bin").is_file()
+        assert (artifact / "tokenizer.json").is_file()
+
+    def test_trainer_config_retains_model_revision(self) -> None:
+        revision = "a" * 40
+        config = runner.build_trainer_config(
+            "gspo", model_name="example/model", model_revision=revision
+        )
+        assert config["model_revision"] == revision
+
+    def test_trained_evaluation_is_greedy_and_restores_agent_config(self) -> None:
+        from stateset_agents.data.gsm8k import GSM8KExample
+
+        class RecordingAgent:
+            def __init__(self) -> None:
+                self.config = type(
+                    "Config", (), {"temperature": 0.7, "do_sample": True}
+                )()
+
+            async def generate_response(self, prompt: str) -> str:
+                assert self.config.temperature == 0.0
+                assert self.config.do_sample is False
+                return "The answer is 1"
+
+        agent = RecordingAgent()
+        example = GSM8KExample("Q?", "#### 1", 1.0)
+        result = runner._evaluate_with_agent(
+            "unused", runner.GSM8KAdapter(), [example], trained_agent=agent
+        )
+        assert result["pass_at_1"] == 1.0
+        assert agent.config.temperature == 0.7
+        assert agent.config.do_sample is True
 
 
 class TestBuildEnvReward:

@@ -1,0 +1,84 @@
+name: Provider Canary
+
+on:
+  push:
+    tags:
+      - 'v*'
+  schedule:
+    - cron: "30 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-canary
+  cancel-in-progress: false
+
+jobs:
+  river:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RIVER_API_KEY: ${{ secrets.RIVER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install River canary dependencies
+        run: pip install -e . river-client
+      - name: Probe River health and account capabilities
+        run: stateset-agents provider-canary --provider river --strict --output canary-river.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-canary-river
+          path: canary-river.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  fireworks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+      FIREWORKS_ACCOUNT_ID: ${{ secrets.FIREWORKS_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Fireworks canary dependencies
+        run: pip install -e ".[fireworks]"
+      - name: Probe Fireworks models, jobs, deployments, and cleanup
+        run: stateset-agents provider-canary --provider fireworks --strict --output canary-fireworks.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-canary-fireworks
+          path: canary-fireworks.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  runpod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install RunPod canary dependencies
+        run: pip install -e .
+      - name: Probe RunPod account and cleanup leases
+        run: stateset-agents provider-canary --provider runpod --strict --output canary-runpod.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-canary-runpod
+          path: canary-runpod.json
+          if-no-files-found: warn
+          retention-days: 30

@@ -68,6 +68,8 @@ _REMOTE_DESTRUCT_SCRIPT = f"{_REMOTE_WORKDIR}/self_destruct.sh"
 _REMOTE_VLLM_LOG = f"{_REMOTE_WORKDIR}/vllm.log"
 _VLLM_PORT = 8000
 _REMOTE_MERGED_DIR = f"{_REMOTE_WORKDIR}/merged"
+_DIRECT_LOG_PORT = 8001
+_DIRECT_LOG_FILE = f"{_REMOTE_WORKDIR}/stateset-vllm.log"
 
 #: flashinfer (pulled in by vllm) annotates with ``array.array[int]``, which
 #: raises TypeError at import time on the image's Python 3.11 and takes the
@@ -91,6 +93,10 @@ _FLASHINFER_PATCH_COMMAND = (
 #: network. Returns an HTTP status code, raising on connection failure.
 HttpGet = Callable[[str, dict[str, str]], int]
 
+#: HTTP GET returning both status and a bounded text body. Used only for the
+#: authenticated direct-image diagnostic endpoint after startup fails.
+HttpGetText = Callable[[str, dict[str, str]], tuple[int, str]]
+
 #: HTTP POST seam for the adapter-effect probe. Returns the parsed JSON body.
 HttpPostJson = Callable[[str, dict[str, str], dict[str, Any]], dict[str, Any]]
 
@@ -103,6 +109,13 @@ def _default_http_get(url: str, headers: dict[str, str]) -> int:
     import requests
 
     return int(requests.get(url, headers=headers, timeout=10).status_code)
+
+
+def _default_http_get_text(url: str, headers: dict[str, str]) -> tuple[int, str]:
+    import requests
+
+    response = requests.get(url, headers=headers, timeout=10)
+    return int(response.status_code), response.text[-65536:]
 
 
 def _default_http_post_json(
@@ -131,8 +144,11 @@ def self_destruct_script(
         f"# after {max_hours} hour(s), whatever happens to the laptop that\n"
         "# started it.\n"
         f"sleep {seconds}\n"
+        f"api_key=$(cat {_REMOTE_KEY_FILE})\n"
+        f"rm -f {_REMOTE_KEY_FILE}\n"
         f'curl -s -X DELETE "{api_root}/pods/{pod_id}" '
-        f'-H "Authorization: Bearer $(cat {_REMOTE_KEY_FILE})"\n'
+        f'-H "Authorization: Bearer $api_key"\n'
+        "unset api_key\n"
     )
 
 
@@ -221,8 +237,11 @@ class RemoteServeSession:
         max_provision_attempts: int = 2,
         poll_interval_s: float = 10.0,
         http_get: HttpGet | None = None,
+        http_get_text: HttpGetText | None = None,
         http_post_json: HttpPostJson | None = None,
         token: str | None = None,
+        direct_vllm_image: bool = False,
+        vllm_args: list[str] | None = None,
     ) -> None:
         self._api = api
         self._ssh = ssh
@@ -250,7 +269,15 @@ class RemoteServeSession:
         self._pod_cost_per_hr: float | None = None
         self._base_model: str | None = None
         self._gpu: str | None = None
+        self._gpu_count = 1
+        # Day-zero model builds are often published as dedicated vLLM images
+        # before their wheels reach PyPI. In direct-image mode the container
+        # starts vLLM itself, so no SSH server or in-pod installation is
+        # required. This also makes multi-GPU serving possible.
+        self.direct_vllm_image = direct_vllm_image
+        self.vllm_args = list(vllm_args or [])
         self._http_get = http_get or _default_http_get
+        self._http_get_text = http_get_text or _default_http_get_text
         self._http_post_json = http_post_json or _default_http_post_json
         #: Filled by the post-readiness effect probe; the CLI prints these.
         self.effect_warnings: list[str] = []
@@ -451,10 +478,8 @@ class RemoteServeSession:
 
     def _arm_self_destruct(self, ssh: Any, api: Any, max_hours: float) -> None:
         """Install and start the remote self-destruct (see module docstring)."""
+        ssh.upload_secret(str(api.api_key), _REMOTE_KEY_FILE)
         with tempfile.TemporaryDirectory() as staging:
-            key_file = Path(staging) / "runpod_key"
-            key_file.write_text(str(api.api_key))
-            ssh.upload(key_file, _REMOTE_KEY_FILE)
             script_file = Path(staging) / "self_destruct.sh"
             script_file.write_text(
                 self_destruct_script(str(self.pod_id), max_hours, api.root)
@@ -557,6 +582,8 @@ class RemoteServeSession:
             # A merged checkpoint serves under the API name "adapter" so
             # callers address it the same way with and without --merge.
             parts += ["--served-model-name adapter"]
+        if self._gpu_count > 1:
+            parts += [f"--tensor-parallel-size {self._gpu_count}"]
         if adapter_names:
             modules = " ".join(
                 f"{shlex.quote(n)}={_REMOTE_WORKDIR}/{shlex.quote(n)}"
@@ -674,6 +701,9 @@ class RemoteServeSession:
         adapters: dict[str, Path] | None = None,
         merge: bool = False,
         strict_effect: bool = False,
+        gpu_count: int = 1,
+        max_cost_usd: float | None = None,
+        network_volume_id: str | None = None,
     ) -> None:
         """Provision, arm the self-destruct, boot vLLM, block until ready.
 
@@ -685,6 +715,10 @@ class RemoteServeSession:
                 "--max-hours must be positive; the self-destruct is the "
                 "backstop that keeps a forgotten pod from billing forever",
                 provider=self.provider,
+            )
+        if gpu_count <= 0:
+            raise RemoteExecutionError(
+                "--gpu-count must be positive", provider=self.provider
             )
         # One spelling internally: ``adapter_dir`` is sugar for a single
         # adapter served under the name "adapter".
@@ -699,6 +733,23 @@ class RemoteServeSession:
                 provider=self.provider,
             )
         api = self._require_api()
+        if self.direct_vllm_image:
+            if all_adapters or merge:
+                raise RemoteExecutionError(
+                    "direct vLLM images currently serve base checkpoints only; "
+                    "adapters and --merge require the SSH-managed serving path",
+                    provider=self.provider,
+                )
+            self._start_direct_image(
+                api,
+                base_model=base_model,
+                gpu=gpu or self.DEFAULT_GPU,
+                gpu_count=gpu_count,
+                max_hours=max_hours,
+                max_cost_usd=max_cost_usd,
+                network_volume_id=network_volume_id,
+            )
+            return
         public_key = self._require_public_key()
         ssh = self._require_ssh()
 
@@ -708,14 +759,17 @@ class RemoteServeSession:
                 name=self.pod_name,
                 image=self.image,
                 gpu_type_id=gpu or self.DEFAULT_GPU,
+                gpu_count=gpu_count,
                 ports=["22/tcp", f"{_VLLM_PORT}/http"],
                 env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
                 container_disk_gb=self.container_disk_gb,
+                **self._network_volume_args(api, network_volume_id),
             )
             self.pod_id = str(pod["id"])
             self._pod_started_at = time.time()
             self._base_model = base_model
             self._gpu = gpu or self.DEFAULT_GPU
+            self._gpu_count = gpu_count
             try:
                 raw_price = pod.get("costPerHr")
                 self._pod_cost_per_hr = (
@@ -723,6 +777,11 @@ class RemoteServeSession:
                 )
             except (TypeError, ValueError):
                 self._pod_cost_per_hr = None
+            try:
+                self._enforce_cost_ceiling(max_hours, max_cost_usd)
+            except BaseException:
+                self.terminate()
+                raise
             try:
                 endpoints = self._wait_for_endpoints(api, self.pod_id)
                 break
@@ -779,6 +838,227 @@ class RemoteServeSession:
             self.terminate()
             raise
 
+    def _start_direct_image(
+        self,
+        api: Any,
+        *,
+        base_model: str,
+        gpu: str,
+        gpu_count: int,
+        max_hours: float,
+        max_cost_usd: float | None,
+        network_volume_id: str | None,
+    ) -> None:
+        """Start a prebuilt vLLM image without requiring SSH.
+
+        RunPod injects ``RUNPOD_POD_ID`` and a pod-scoped ``RUNPOD_API_KEY``
+        into every Pod. A background watchdog uses those credentials to
+        delete its own Pod after ``max_hours``; startup failures are also
+        terminated locally. The user key is therefore never copied into the
+        container.
+        """
+        seconds = max(1, int(max_hours * 3600))
+        watchdog = (
+            "import os,time,urllib.request;"
+            f"time.sleep({seconds});"
+            f"u='{_API_ROOT}/pods/'+os.environ['RUNPOD_POD_ID'];"
+            "r=urllib.request.Request(u,method='DELETE',headers={"
+            "'Authorization':'Bearer '+os.environ['RUNPOD_API_KEY']});"
+            "urllib.request.urlopen(r,timeout=30).read()"
+        )
+        launch_parts = [
+            "vllm",
+            "serve",
+            shlex.quote(base_model),
+            "--host 0.0.0.0",
+            f"--port {_VLLM_PORT}",
+            f"--api-key {shlex.quote(self.token)}",
+        ]
+        engine_args = list(self.vllm_args)
+        if gpu_count > 1 and not any(
+            arg == "--tensor-parallel-size" or arg.startswith("--tensor-parallel-size=")
+            for arg in engine_args
+        ):
+            engine_args += ["--tensor-parallel-size", str(gpu_count)]
+        launch_parts += [shlex.quote(arg) for arg in engine_args]
+        log_server = self._direct_log_server_source()
+        command = (
+            f"python3 -c {shlex.quote(watchdog)} >/tmp/stateset-watchdog.log "
+            f"2>&1 & python3 -c {shlex.quote(log_server)} "
+            f">/tmp/stateset-log-server.log 2>&1 & "
+            f"exec {' '.join(launch_parts)} >{_DIRECT_LOG_FILE} 2>&1"
+        )
+        volume_args = self._network_volume_args(api, network_volume_id)
+        env = {}
+        if network_volume_id:
+            env = {
+                "HF_HOME": f"{_REMOTE_WORKDIR}/huggingface",
+                "HF_HUB_CACHE": f"{_REMOTE_WORKDIR}/huggingface/hub",
+            }
+        self.pod_name = f"{_POD_PREFIX}{uuid.uuid4().hex[:12]}"
+        pod = api.create_pod(
+            name=self.pod_name,
+            image=self.image,
+            gpu_type_id=gpu,
+            gpu_count=gpu_count,
+            ports=[f"{_VLLM_PORT}/http", f"{_DIRECT_LOG_PORT}/http"],
+            env=env,
+            container_disk_gb=self.container_disk_gb,
+            docker_entrypoint=["/bin/bash", "-lc"],
+            docker_start_cmd=[command],
+            **volume_args,
+        )
+        self.pod_id = str(pod["id"])
+        self._pod_started_at = time.time()
+        self._base_model = base_model
+        self._gpu = gpu
+        self._gpu_count = gpu_count
+        try:
+            raw_price = pod.get("costPerHr")
+            if raw_price is None:
+                raw_price = api.get_pod(self.pod_id).get("costPerHr")
+            self._pod_cost_per_hr = float(raw_price) if raw_price is not None else None
+        except (TypeError, ValueError):
+            self._pod_cost_per_hr = None
+
+        try:
+            self._enforce_cost_ceiling(max_hours, max_cost_usd)
+            self.endpoint_url = self._proxy_endpoint_url(self.pod_id)
+            self._await_direct_server_ready()
+        except BaseException:
+            self.terminate()
+            raise
+
+    def _network_volume_args(
+        self, api: Any, network_volume_id: str | None
+    ) -> dict[str, Any]:
+        """Resolve an existing volume and pin its Pod to the same datacenter."""
+        if not network_volume_id:
+            return {}
+        volume = api.get_network_volume(network_volume_id)
+        data_center_id = volume.get("dataCenterId") or volume.get("data_center_id")
+        if not data_center_id:
+            raise RemoteExecutionError(
+                f"RunPod network volume {network_volume_id!r} did not report "
+                "a dataCenterId; refusing an attachment that cannot be pinned",
+                provider=self.provider,
+            )
+        return {
+            "network_volume_id": network_volume_id,
+            "volume_mount_path": _REMOTE_WORKDIR,
+            "data_center_id": str(data_center_id),
+        }
+
+    def _direct_log_server_source(self) -> str:
+        """A tiny Bearer-protected endpoint serving only the last 64 KiB."""
+        return f"""import http.server
+TOKEN = {self.token!r}
+LOG = {_DIRECT_LOG_FILE!r}
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/logs":
+            self.send_error(404)
+            return
+        if self.headers.get("Authorization") != "Bearer " + TOKEN:
+            self.send_error(401)
+            return
+        try:
+            with open(LOG, "rb") as stream:
+                stream.seek(0, 2)
+                size = stream.tell()
+                stream.seek(max(0, size - 65536))
+                body = stream.read()
+        except FileNotFoundError:
+            body = b"vLLM log has not been created yet"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        pass
+
+http.server.ThreadingHTTPServer(("0.0.0.0", {_DIRECT_LOG_PORT}), Handler).serve_forever()
+"""
+
+    def _direct_startup_log(self) -> str:
+        """Fetch and redact the protected diagnostic tail, if reachable."""
+        if self.pod_id is None:
+            return ""
+        url = f"https://{self.pod_id}-{_DIRECT_LOG_PORT}.proxy.runpod.net/logs"
+        try:
+            status, body = self._http_get_text(
+                url, {"Authorization": f"Bearer {self.token}"}
+            )
+        except Exception as exc:
+            return f"[startup-log endpoint unreachable: {type(exc).__name__}]"
+        if status != 200:
+            detail = body[-2048:].replace(self.token, "[REDACTED]").strip()
+            suffix = f"\n{detail}" if detail else ""
+            return f"[startup-log endpoint returned HTTP {status}]{suffix}"
+        return body[-65536:].replace(self.token, "[REDACTED]").strip()
+
+    def _enforce_cost_ceiling(
+        self, max_hours: float, max_cost_usd: float | None
+    ) -> None:
+        """Refuse a serve whose provider-reported worst case exceeds budget."""
+        if max_cost_usd is None:
+            return
+        if self._pod_cost_per_hr is None:
+            raise RemoteExecutionError(
+                "--max-cost was set but RunPod did not report this Pod's "
+                "hourly price",
+                provider=self.provider,
+            )
+        worst_case = self._pod_cost_per_hr * max_hours
+        if worst_case > max_cost_usd:
+            raise RemoteExecutionError(
+                f"serve could cost ${worst_case:.2f}, above the --max-cost "
+                f"ceiling of ${max_cost_usd:.2f}",
+                provider=self.provider,
+            )
+
+    def _await_direct_server_ready(self) -> None:
+        """Wait for a direct-image vLLM server, with a finite billing bound."""
+        assert self.endpoint_url is not None
+        url = f"{self.endpoint_url}/v1/models"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        deadline = time.monotonic() + self.ready_timeout_s
+        status = -1
+        while time.monotonic() < deadline:
+            if self._api is not None and self.pod_id is not None:
+                pod = self._api.get_pod(self.pod_id)
+                desired = str(pod.get("desiredStatus") or "").upper()
+                if desired in {"EXITED", "TERMINATED"}:
+                    log_tail = self._direct_startup_log()
+                    raise RemoteExecutionError(
+                        "direct-image Pod exited before vLLM became ready "
+                        f"(status {desired})"
+                        + (f". Startup log:\n{log_tail}" if log_tail else ""),
+                        provider=self.provider,
+                    )
+            try:
+                status = self._http_get(url, headers)
+            except Exception:
+                status = -1
+            if status == 200:
+                return
+            if status == 401:
+                raise RemoteExecutionError(
+                    "vLLM is up but rejected the generated API token",
+                    provider=self.provider,
+                )
+            time.sleep(self.poll_interval_s)
+        log_tail = self._direct_startup_log()
+        raise RemoteExecutionError(
+            f"direct-image vLLM did not become ready within "
+            f"{self.ready_timeout_s}s (last HTTP status {status})"
+            + (f". Startup log:\n{log_tail}" if log_tail else ""),
+            provider=self.provider,
+        )
+
     def _record_cost(self, pod_id: str) -> None:
         """Append this pod's cost to the ledger; never raises."""
         from stateset_agents.remote.ledger import (
@@ -799,6 +1079,7 @@ class RemoteServeSession:
                     job_id=pod_id,
                     base_model=self._base_model or "?",
                     gpu=self._gpu or "?",
+                    gpu_count=self._gpu_count,
                     cost_per_hr=self._pod_cost_per_hr,
                     duration_s=round(duration, 1) if duration is not None else None,
                     cost_usd=estimate_cost_usd(self._pod_cost_per_hr, duration),

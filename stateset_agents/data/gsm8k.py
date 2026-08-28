@@ -41,6 +41,8 @@ from ..core.trajectory import ConversationTurn
 
 # The canonical GSM8K answer format ends with "#### <number>" on its own line.
 _GOLD_ANSWER_RE = re.compile(r"####\s*([\-+]?[\d,\.]+)")
+_IMMUTABLE_HF_REVISION_RE = re.compile(r"[0-9a-fA-F]{40}")
+GSM8K_DATASET_REVISION = "740312add88f781978c0658806c59bc2815b9866"
 
 # Generated answer extraction — try several patterns in priority order.
 _ANSWER_PATTERNS = [
@@ -115,6 +117,7 @@ def load_gsm8k(
     split: str | None = None,
     cache_dir: str | None = None,
     limit: int | None = None,
+    revision: str | None = None,
 ) -> list[GSM8KExample] | tuple[list[GSM8KExample], list[GSM8KExample]]:
     """Load GSM8K from Hugging Face.
 
@@ -123,11 +126,17 @@ def load_gsm8k(
         cache_dir: Optional Hugging Face cache directory.
         limit: If set, return at most this many examples per split. Useful for
             smoke tests on Colab.
+        revision: Immutable Hugging Face dataset revision. Defaults to the
+            repository's validated GSM8K commit.
 
     Returns:
         A list of ``GSM8KExample`` if ``split`` is named, otherwise a
         ``(train, test)`` tuple.
     """
+    resolved_revision = revision or GSM8K_DATASET_REVISION
+    if _IMMUTABLE_HF_REVISION_RE.fullmatch(resolved_revision) is None:
+        raise ValueError("revision must be a full 40-character hexadecimal commit")
+
     try:
         from datasets import load_dataset
     except ImportError as e:
@@ -153,28 +162,18 @@ def load_gsm8k(
                 break
         return examples
 
-    # Dataset repo id ("openai/gsm8k") is a fixed, well-known public
-    # benchmark name, not attacker-controlled input; pinning a revision
-    # would require this module to track upstream commit hashes for a
-    # dataset it doesn't own. The bare "gsm8k" repo id (no namespace) that
-    # used to resolve here no longer does -- recent `datasets`/
-    # `huggingface_hub` releases validate repo ids as "namespace/name"
-    # before ever hitting the network, so "gsm8k" alone fails locally with
-    # `HFValidationError: Repository id must be 'namespace/name', got
-    # 'gsm8k'` regardless of connectivity. "openai/gsm8k" is the correct,
-    # currently-resolving repo id with the same "main" config/schema.
+    load_kwargs = {"cache_dir": cache_dir, "revision": resolved_revision}
+
+    def _load_split(name: str) -> Any:
+        # The resolved revision is restricted above to an immutable commit.
+        return load_dataset("openai/gsm8k", "main", split=name, **load_kwargs)  # nosec
+
     if split is not None:
-        ds = load_dataset(
-            "openai/gsm8k", "main", split=split, cache_dir=cache_dir
-        )  # nosec: B615
+        ds = _load_split(split)
         return _to_examples(ds)
 
-    train = load_dataset(
-        "openai/gsm8k", "main", split="train", cache_dir=cache_dir
-    )  # nosec: B615
-    test = load_dataset(
-        "openai/gsm8k", "main", split="test", cache_dir=cache_dir
-    )  # nosec: B615
+    train = _load_split("train")
+    test = _load_split("test")
     return _to_examples(train), _to_examples(test)
 
 

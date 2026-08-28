@@ -1,95 +1,76 @@
-# StateSet Agents Roadmap
+# StateSet Agents roadmap
 
-This document outlines the planned development direction for StateSet Agents. It is updated regularly as priorities evolve.
+Current release line: **v0.42.x (beta)**.
 
-## Current Version: 0.5.x
+The roadmap is evidence-driven. A checked box means the behavior exists and
+has retained tests or live evidence; an unchecked box is not a product claim.
 
-### Recently Completed (v0.5.0)
-- Modular stub backend for offline development and CI/CD
-- Defensive optional dependencies with graceful degradation
-- Modern async health checks and monitoring
-- GSPO (Group Sequence Policy Optimization) support
-- HPO (Hyperparameter Optimization) via Optuna, Ray Tune, W&B Sweeps
-- Gemma 3 and Qwen 3 fine-tuning support
-- TRL integration for HuggingFace ecosystem compatibility
+## Current foundation
 
----
+- [x] GRPO, GSPO, DAPO, GEPO, VAPO, PPO, offline RL, and RLAIF surfaces
+- [x] Single-turn and multi-turn environments, rewards, trajectories, and evals
+- [x] QLoRA/SFT and real CUDA GSPO proof on RunPod
+- [x] River remote-autograd training, sampling, and improvement loops
+- [x] RunPod training, artifact retrieval, serving, leases, and cleanup controls
+- [x] Fireworks adapter with durable job reconnection and artifact handling
+- [x] FastAPI/OpenAI-compatible serving, observability, and deployment assets
+- [x] Python 3.10–3.13 packaging and a 4,600+ test default suite
+- [x] Provenance-enforced measured algorithm/framework comparison schemas
+- [x] Neutral StateSet/upstream-TRL runner with config attestation and artifact hashing
+- [x] Strict 1/2/4/8-GPU scaling and three-scenario recovery validators
 
-## Short-Term Goals
+See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 
-### v0.6.0 - Enhanced Evaluation & Monitoring
-- [ ] Comprehensive evaluation suite with standard benchmarks
-- [ ] Real-time training dashboards
-- [ ] Automated model comparison and selection
-- [ ] Enhanced memory profiling and optimization recommendations
-- [ ] Support for evaluation on standard RL benchmarks
+## A+ evidence gates
 
-### v0.7.0 - Multi-Agent & Distributed Training
-- [ ] Multi-agent coordination framework
-- [ ] Distributed training across multiple nodes
-- [ ] Federated learning support for privacy-preserving training
-- [ ] Agent-to-agent communication protocols
-- [ ] Hierarchical agent architectures
+These are the blockers between the current strong beta and an independently
+defensible A+ rating.
 
----
+### Release and provider completion
 
-## Medium-Term Goals
+- [ ] Publish the current release to PyPI through a working trusted publisher
+- [ ] Live-verify Fireworks training, artifact retrieval, serving, and cleanup
+- [ ] Keep tag-triggered River, RunPod, and Fireworks canaries green
+- [ ] Publish signed/SLSA provenance for Python and container artifacts
 
-### v0.8.0 - Advanced RL Algorithms
-- [ ] PPO-Clip with adaptive clipping
-- [ ] Soft Actor-Critic (SAC) for continuous action spaces
-- [ ] Rainbow DQN components for discrete actions
-- [ ] Model-based RL with world models
-- [ ] Offline RL algorithms (CQL, IQL, Decision Transformer)
+### Comparative evidence
 
-### v0.9.0 - Production Hardening
-- [ ] Enterprise authentication and authorization
-- [ ] Rate limiting and quota management
-- [ ] Enhanced audit logging
-- [ ] Compliance tooling (GDPR, SOC2)
-- [ ] High-availability deployment patterns
+- [ ] Complete the 8B, three-seed flagship multi-turn benchmark
+- [ ] Run matched StateSet versus TRL, verl, NeMo RL, and OpenRLHF comparisons
+- [x] Complete matched GRPO/GSPO/DAPO/VAPO/GEPO comparisons
+- [x] Publish negative/null runs alongside positive results
+- [ ] Obtain at least one independent reproduction outside StateSet
 
----
+### Scale and reliability
 
-## Long-Term Vision
+- [x] Measure 1/2/4/8-GPU throughput, memory, and weak/strong scaling efficiency
+- [ ] Verify multi-node training on a retained, reproducible configuration
+- [x] Add a measured-evidence gate for worker, network, and controller recovery
+- [x] Execute and retain the complete three-seed fault-injection matrix
+- [ ] Report cost per rollout, training step, and measured eval improvement
+- [ ] Add soak tests for long-running remote training and serving sessions
 
-### v1.0.0 - Production Release
-- [ ] Stable API with semantic versioning guarantees
-- [ ] Comprehensive migration guides from beta versions
-- [ ] Enterprise support tier availability
-- [ ] Full documentation with video tutorials
-- [ ] Community plugin ecosystem
+### Stable product surface
 
-### Future Directions
-- **Multimodal Agents**: Support for vision, audio, and structured data inputs
-- **Tool Learning**: Automatic tool creation and composition
-- **Self-Improving Agents**: Meta-learning and continual improvement
-- **Safety & Alignment**: Constitutional AI integration, red-teaming tools
-- **Edge Deployment**: Optimized models for on-device inference
+- [ ] Freeze a v1 public API and publish compatibility/migration guarantees
+- [ ] Graduate beta components using explicit per-component maturity criteria
+- [ ] Complete standard agent benchmarks for tool use, long horizon, and SWE tasks
+- [ ] Establish public security response SLAs and third-party review
 
----
+## Next implementation sequence
 
-## How We Prioritize
+1. Extend the neutral framework adapter contract from StateSet/TRL to verl,
+   NeMo RL, and OpenRLHF, then run the matched three-seed roster.
+2. Configure PyPI trusted publishing and Fireworks credentials externally;
+   rerun the existing release/provider workflows without code-side exceptions.
+3. Run the 8B multi-turn and multi-node protocols, then obtain an independent
+   reproduction before promoting the A+ claim.
 
-1. **User Feedback**: Issues and feature requests from the community
-2. **Production Needs**: Features required for real-world deployments
-3. **Research Advances**: Incorporating latest RL and LLM research
-4. **Ecosystem Compatibility**: Integration with popular ML frameworks
+## Contribution policy
 
-## Contributing to the Roadmap
+New roadmap work should include deterministic unit tests and, where applicable,
+an integration or live-evidence path. Performance changes need before/after raw
+artifacts on identical configurations. Feature requests and RFCs belong in the
+GitHub issue tracker.
 
-We welcome community input on our roadmap. To suggest features:
-
-1. Open a [GitHub Issue](https://github.com/stateset/stateset-agents/issues) with the `feature-request` label
-2. Join discussions in existing roadmap-related issues
-3. Submit RFCs for significant architectural changes
-
-## Versioning Policy
-
-- **Major versions** (1.x, 2.x): Breaking API changes
-- **Minor versions** (0.x.0): New features, backwards compatible
-- **Patch versions** (0.0.x): Bug fixes, security patches
-
----
-
-*Last updated: December 2024*
+Last updated: 2026-08-27.

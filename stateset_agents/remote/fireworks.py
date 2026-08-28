@@ -98,6 +98,16 @@ CHECKPOINT_POINTER_NAME = "fireworks_checkpoint.json"
 #: OpenAI-compatible inference base URL for deployed models.
 FIREWORKS_INFERENCE_BASE_URL = "https://api.fireworks.ai/inference/v1"
 
+#: Durable metadata for asynchronous jobs. Unlike credentials, the job spec
+#: and provider resource ids are safe to persist and are required to fetch an
+#: addon after the submitting CLI process exits.
+DEFAULT_FIREWORKS_STATE_DIR = (
+    Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    / "stateset-agents"
+    / "fireworks-jobs"
+)
+_STATE_SCHEMA_VERSION = 1
+
 logger = logging.getLogger(__name__)
 
 #: Spec fields that describe rented training hardware. Fireworks schedules
@@ -176,7 +186,7 @@ class _FireworksJob:
     logs: list[str] = field(default_factory=list)
     output_model: str | None = None
     cost_usd: float | None = None
-    submitted_at: float = field(default_factory=time.monotonic)
+    submitted_at: float = field(default_factory=time.time)
     duration_s: float | None = None
     #: Last progress line appended, so repeated polls at the same percent do
     #: not fill the log with identical lines.
@@ -187,17 +197,100 @@ class FireworksExecutor(RemoteExecutor):
     """Runs a :class:`RemoteJobSpec` as a Fireworks supervised fine-tune."""
 
     name = "fireworks"
+    durable_handles = True
+    managed_deployments = True
+    result_kind = "hosted_pointer_or_local_artifacts"
 
     def __init__(
         self,
         client: Any | None = None,
         account_id: str | None = None,
         ledger_path: Path | None = None,
+        state_dir: Path | None = None,
     ) -> None:
         self._client = client
         self._account_id = account_id
         self.ledger_path = ledger_path
+        # A custom ledger normally means a test or isolated application run;
+        # colocating state beside it avoids leaking test records into the
+        # user's global cache without making persistence opt-in in production.
+        self.state_dir = (
+            Path(state_dir)
+            if state_dir is not None
+            else (
+                Path(ledger_path).parent / "fireworks-jobs"
+                if ledger_path is not None
+                else DEFAULT_FIREWORKS_STATE_DIR
+            )
+        )
         self._jobs: dict[str, _FireworksJob] = {}
+
+    # -- durable job metadata ---------------------------------------------
+
+    def _state_path(self, job_id: str) -> Path:
+        safe_id = re.sub(r"[^A-Za-z0-9._-]", "_", job_id)
+        return self.state_dir / f"{safe_id}.json"
+
+    def _persist_record(self, job_id: str, record: _FireworksJob) -> None:
+        """Atomically persist the non-secret state needed by a later process."""
+        payload = {
+            "schema_version": _STATE_SCHEMA_VERSION,
+            "provider": self.name,
+            "job_id": job_id,
+            "spec": record.spec.to_dict(),
+            "dataset_id": record.dataset_id,
+            "job_name": record.job_name,
+            "status": record.status.value,
+            "logs": record.logs,
+            "output_model": record.output_model,
+            "cost_usd": record.cost_usd,
+            "submitted_at": record.submitted_at,
+            "duration_s": record.duration_s,
+            "last_progress": record.last_progress,
+        }
+        target = self._state_path(job_id)
+        temporary = target.with_suffix(".tmp")
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(target)
+        except OSError as exc:
+            logger.warning("could not persist Fireworks job %s: %s", job_id, exc)
+            temporary.unlink(missing_ok=True)
+
+    def _load_record(self, job_id: str) -> _FireworksJob | None:
+        path = self._state_path(job_id)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("schema_version") != _STATE_SCHEMA_VERSION:
+                raise ValueError("unsupported state schema")
+            if payload.get("provider") != self.name or payload.get("job_id") != job_id:
+                raise ValueError("state identity mismatch")
+            record = _FireworksJob(
+                spec=RemoteJobSpec.from_dict(payload["spec"]),
+                dataset_id=str(payload["dataset_id"]),
+                job_name=str(payload["job_name"]),
+                status=JobStatus(str(payload.get("status", "pending"))),
+                logs=[str(line) for line in payload.get("logs", [])],
+                output_model=payload.get("output_model"),
+                cost_usd=payload.get("cost_usd"),
+                submitted_at=float(payload.get("submitted_at", time.time())),
+                duration_s=payload.get("duration_s"),
+                last_progress=payload.get("last_progress"),
+            )
+        except FileNotFoundError:
+            return None
+        except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
+            raise RemoteExecutionError(
+                f"durable metadata for Fireworks job {job_id} is invalid: {exc}",
+                provider=self.name,
+                job_id=job_id,
+            ) from exc
+        self._jobs[job_id] = record
+        return record
 
     # -- client ------------------------------------------------------------
 
@@ -247,6 +340,7 @@ class FireworksExecutor(RemoteExecutor):
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
         """Upload the dataset, create the fine-tuning job, return its handle."""
+        self.validate_spec(spec)
         self._warn_ignored_fields(spec)
         # Credentials first: failing on a missing key after validating a
         # large dataset wastes the user's time.
@@ -316,6 +410,7 @@ class FireworksExecutor(RemoteExecutor):
             output_model=getattr(job, "output_model", None),
             logs=[f"fireworks job {job_id} submitted on {spec.base_model}"],
         )
+        self._persist_record(job_id, self._jobs[job_id])
         _verbose_log(f"submitted job {job_id}")
         return JobHandle(provider=self.name, job_id=job_id)
 
@@ -362,7 +457,7 @@ class FireworksExecutor(RemoteExecutor):
         state = getattr(remote, "state", None) or "JOB_STATE_UNSPECIFIED"
         status = _JOB_STATES.get(state, JobStatus.PENDING)
 
-        record = self._jobs.get(handle.job_id)
+        record = self._jobs.get(handle.job_id) or self._load_record(handle.job_id)
         if record is not None:
             self._record_progress(record, remote, state, status)
         return status
@@ -387,11 +482,12 @@ class FireworksExecutor(RemoteExecutor):
         )
         record.cost_usd = _money(getattr(remote, "estimated_cost", None))
         if status.is_terminal and record.duration_s is None:
-            record.duration_s = time.monotonic() - record.submitted_at
+            record.duration_s = max(0.0, time.time() - record.submitted_at)
             message = getattr(getattr(remote, "status", None), "message", None)
             if status is JobStatus.FAILED and message:
                 record.logs.append(f"fireworks: {message}")
             self._record_cost(record)
+        self._persist_record(_resource_id(record.job_name), record)
 
     def logs(self, handle: JobHandle) -> Iterator[str]:
         """Yield the progress lines observed while polling.
@@ -401,7 +497,7 @@ class FireworksExecutor(RemoteExecutor):
         percent-complete — not the training log. Said plainly here rather
         than implied by an empty iterator.
         """
-        record = self._jobs.get(handle.job_id)
+        record = self._jobs.get(handle.job_id) or self._load_record(handle.job_id)
         if record is None:
             return
         yield from record.logs
@@ -413,7 +509,7 @@ class FireworksExecutor(RemoteExecutor):
         not a price computed here. When the job reports none, this returns
         None — unknown, never zero.
         """
-        record = self._jobs.get(handle.job_id)
+        record = self._jobs.get(handle.job_id) or self._load_record(handle.job_id)
         if record is None:
             return (None, None)
         return (record.duration_s, record.cost_usd)
@@ -441,16 +537,16 @@ class FireworksExecutor(RemoteExecutor):
     # -- fetch -------------------------------------------------------------
 
     def _local_record(self, handle: JobHandle) -> _FireworksJob:
-        try:
-            return self._jobs[handle.job_id]
-        except KeyError:
+        record = self._jobs.get(handle.job_id) or self._load_record(handle.job_id)
+        if record is None:
             raise RemoteExecutionError(
-                f"job {handle.job_id} was not submitted by this process, so its "
-                "training spec is unknown; rerun the fetch from the session that "
-                "submitted it, or download the addon from the Fireworks console",
+                f"job {handle.job_id} has no local durable metadata, so its "
+                "training spec is unknown; submit it with this version or "
+                "download the addon from the Fireworks console",
                 provider=self.name,
                 job_id=handle.job_id,
-            ) from None
+            )
+        return record
 
     def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
         """Write the checkpoint pointer and manifest; download weights if offered.
@@ -606,9 +702,10 @@ class FireworksExecutor(RemoteExecutor):
                 provider=self.name,
                 job_id=handle.job_id,
             ) from exc
-        record = self._jobs.get(handle.job_id)
+        record = self._jobs.get(handle.job_id) or self._load_record(handle.job_id)
         if record is not None and not record.status.is_terminal:
             record.status = JobStatus.CANCELLED
+            self._persist_record(handle.job_id, record)
 
     # -- deployment --------------------------------------------------------
 

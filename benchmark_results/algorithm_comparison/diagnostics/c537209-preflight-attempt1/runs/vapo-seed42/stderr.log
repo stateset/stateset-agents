@@ -1,0 +1,49 @@
+2026-08-27 17:28:50,981 INFO Seeds set to 42
+2026-08-27 17:28:50,981 INFO Task: gsm8k
+2026-08-27 17:28:51,472 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 17:28:51,783 INFO HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 17:28:51,916 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/revision/740312add88f781978c0658806c59bc2815b9866 "HTTP/1.1 200 OK"
+2026-08-27 17:28:52,049 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-08-27 17:28:52,182 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 17:28:52,329 INFO HTTP Request: GET https://huggingface.co/api/datasets/openai/gsm8k/tree/740312add88f781978c0658806c59bc2815b9866?recursive=false&expand=false "HTTP/1.1 200 OK"
+2026-08-27 17:28:52,464 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 404 Not Found"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-27 17:28:52,464 WARNING Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-27 17:28:52,600 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 17:28:52,704 INFO HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/openai/gsm8k/openai/gsm8k.py "HTTP/1.1 404 Not Found"
+2026-08-27 17:28:52,847 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-08-27 17:28:52,980 INFO HTTP Request: HEAD https://huggingface.co/datasets/openai/gsm8k/resolve/740312add88f781978c0658806c59bc2815b9866/dataset_infos.json "HTTP/1.1 404 Not Found"
+2026-08-27 17:28:52,982 INFO Train: 4 examples, Eval: 2 examples
+2026-08-27 17:28:52,984 INFO Evaluating baseline (un-fine-tuned) on 2 examples…
+2026-08-27 17:28:53,123 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-08-27 17:28:53,268 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 17:28:53,596 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct "HTTP/1.1 200 OK"
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 290/290 [00:00<00:00, 22933.52it/s]
+2026-08-27 17:28:57,925 INFO Baseline pass@1: 0.000 (parse rate 1.000)
+2026-08-27 17:28:57,926 INFO Invoking vapo trainer with 4 train examples…
+2026-08-27 17:28:57,933 INFO Rust acceleration not available. Install with: cd rust_core && maturin develop --release
+2026-08-27 17:28:57,948 INFO ============================================================
+2026-08-27 17:28:57,948 INFO VAPO Training - Value-Augmented Policy Optimization
+2026-08-27 17:28:57,948 INFO ============================================================
+2026-08-27 17:28:57,948 INFO SOTA: 60.4 on AIME 2024
+2026-08-27 17:28:57,948 INFO Key: Value warmup + Decoupled GAE + Length-adaptive lambda
+2026-08-27 17:28:57,948 INFO Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2026-08-27 17:28:57,948 INFO Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2026-08-27 17:28:58,099 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-08-27 17:28:58,247 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct/tree/7ae557604adf67be50417f59c2c2f167def9a775?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-27 17:28:58,578 INFO HTTP Request: GET https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct "HTTP/1.1 200 OK"
+
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 290/290 [00:00<00:00, 3661.30it/s]
+2026-08-27 17:28:58,954 INFO HTTP Request: HEAD https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/custom_generate/generate.py "HTTP/1.1 404 Not Found"
+2026-08-27 17:28:58,977 INFO Model loaded on cuda
+2026-08-27 17:28:58,980 INFO Starting training with 4 prompts
+2026-08-27 17:28:58,980 INFO Value warmup steps: 1
+2026-08-27 17:28:58,980 INFO Group size: 2
+2026-08-27 17:28:58,981 INFO Starting value network warmup (1 steps)
+2026-08-27 17:29:00,463 WARNING Training did not produce an agent: RuntimeError: mat1 and mat2 must have the same dtype, but got BFloat16 and Float
+2026-08-27 17:29:00,463 INFO Wrote result to /workspace/algorithm-preflight/runs/vapo-seed42/phase0-result.json
+2026-08-27 17:29:00,463 ERROR Training did not produce shootout adapter evidence

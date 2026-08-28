@@ -2,7 +2,12 @@
 
 ## Overview
 
-**Group Sequence Policy Optimization (GSPO)** is a stable, efficient, and performant reinforcement learning algorithm for training large language models. GSPO was developed by the Qwen Team at Alibaba and has been proven to achieve superior training stability, efficiency, and performance compared to GRPO, especially for large Mixture-of-Experts (MoE) models.
+**Group Sequence Policy Optimization (GSPO)** is a sequence-level policy
+optimization algorithm developed by the Qwen Team at Alibaba. Its authors
+report improved training stability for large Mixture-of-Experts models versus
+their GRPO setup. StateSet does not generalize that result to other models or
+claim framework-level superiority without matched evidence; see
+`docs/BENCHMARKS.md`.
 
 ## Key Features
 

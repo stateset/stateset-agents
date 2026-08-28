@@ -6,14 +6,11 @@
 > then run `.river-venv/bin/python -m stateset_agents.cli train-remote --provider river …`.
 > Verified live 2026-08-18 (training + checkpoint sampling).
 
-> **This integration has never been run against the live service.** It was
-> written from River's public documentation (<https://docs.river.ai>). We hold
-> no River API key, and `river-client` is not installable from PyPI in this
-> environment, so every call name, keyword, and response shape below is an
-> informed guess exercised only against fakes. Nothing here should be trusted
-> until someone runs it with a real key. The assumptions most likely to be
-> wrong are listed in [Unverified assumptions](#unverified-assumptions), each
-> with the symptom it would produce.
+> **Live verification:** on 2026-08-18 this executor trained Qwen3.5-9B and
+> sampling the saved `river://` checkpoint reproduced the target behaviour on
+> 3/3 held-out prompts. Offline behavioural goldens still pin every submit
+> mode, and `provider-canary.yml` now provides the recurring authentication,
+> health, and capability check once the repository secret is configured.
 
 ## What River is
 
@@ -204,8 +201,8 @@ module touches the network. That is how the entire test suite runs.
 
 ## What we confirmed against the live API
 
-We have a River API key but no credits, so no training call has run. Probing
-`api.river.ai` directly did establish three things the SDK docs do not:
+Live training and checkpoint sampling established the full executor path.
+Earlier direct REST probing also established three details the SDK docs did not:
 
 - There **is** a plain REST surface (`GET /v1/models` answers), despite the
   documentation presenting an SDK-only interface.
