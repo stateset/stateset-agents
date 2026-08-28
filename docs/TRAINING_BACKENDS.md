@@ -156,3 +156,40 @@ The supported canonical config keys are:
 
 Real GPU conformance and matched three-seed benchmark evidence are still
 required before claiming performance parity with OpenRLHF.
+
+## verl adapter
+
+The executable verl adapter targets the current Hydra-based
+`verl.trainer.main_ppo` entrypoint:
+
+```python
+from stateset_agents.training import verl_backend
+
+backend = verl_backend(version="PINNED_INSTALLED_VERSION")
+result = backend.run(experiment)
+```
+
+The initial supported surface is intentionally narrow: PPO and GRPO with an
+explicit `vllm` or `sglang` rollout engine, distributed execution, optional
+multimodal data, a local content-addressed Parquet dataset, and a content-pinned
+Python reward function. StateSet disables verl's implicit validation, W&B, and
+checkpoint-resume defaults; propagates the canonical seed across data, actor,
+reference, critic, and rollout workers; and forces a final checkpoint into the
+experiment artifact directory.
+
+Supported canonical config keys are:
+
+- `learning_rate`, `train_batch_size`, `ppo_mini_batch_size`
+- `ppo_micro_batch_size_per_gpu`, `rollout_samples`
+- `max_prompt_length`, `max_response_length`
+- `total_epochs`, `total_training_steps`
+- `num_nodes`, `gpus_per_node`, `tensor_parallel_size`
+- `gpu_memory_utilization`, `temperature`, `top_p`
+- `prompt_key`, `image_key`, `rollout_engine`
+- `kl_reward_coefficient`, `kl_loss_coefficient`
+- `gradient_checkpointing`, `remove_padding`, `dynamic_batching`, `deterministic`
+
+Multi-turn, tool-use, and asynchronous verl modes remain rejected until their
+tool/agent-loop configuration files and staleness semantics are represented in
+the backend protocol. Live GPU conformance and matched three-seed evidence also
+remain open gates.

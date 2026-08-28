@@ -56,6 +56,9 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         "build_openrlhf_command",
     ),
     "openrlhf_backend": (f"{_PKG}.adapters.openrlhf", "openrlhf_backend"),
+    "VerlConfigError": (f"{_PKG}.adapters.verl", "VerlConfigError"),
+    "build_verl_command": (f"{_PKG}.adapters.verl", "build_verl_command"),
+    "verl_backend": (f"{_PKG}.adapters.verl", "verl_backend"),
     # Auto-Research Loop
     "AutoResearchConfig": (f"{_PKG}.auto_research.config", "AutoResearchConfig"),
     "AutoResearchLoop": (
