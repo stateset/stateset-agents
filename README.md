@@ -158,7 +158,7 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.42.6 (latest release; PyPI publication pending):**
+**v0.42.6 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.42.6/)):**
 
 - **Cross-platform release confidence.** The complete PR gate now passes on
   Python 3.10–3.13 plus Windows 3.10/3.13, with deterministic API router tests,
@@ -171,6 +171,9 @@ coverage, live hardware attempts, and successful inference by provider.
   were refreshed; both RustSec workspace audits report zero vulnerabilities.
 - **Reproducible evaluation inputs.** GSM8K downloads default to the validated
   immutable dataset commit, and mutable revision identifiers fail closed.
+- **Verified distribution.** The tag-built wheel and sdist passed the complete
+  publish-readiness gate, Twine validation, and isolated wheel installation;
+  their public PyPI SHA-256 digests match the retained workflow artifacts.
 
 **v0.42.5:**
 

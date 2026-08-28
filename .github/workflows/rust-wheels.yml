@@ -46,9 +46,9 @@ jobs:
       matrix:
         target: [x86_64, aarch64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.10"
 
@@ -68,7 +68,7 @@ jobs:
           python -m pip install dist/*.whl
           python -c "import numpy as np; import stateset_rl_core as r; print('ok', r.compute_gae(np.array([1.,0.,1.]), np.array([.5,.5,.5,0.])))"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-linux-${{ matrix.target }}
           path: rust_core/dist/*.whl
@@ -83,9 +83,9 @@ jobs:
       matrix:
         target: [x86_64, aarch64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.10"
 
@@ -104,7 +104,7 @@ jobs:
           python -m pip install dist/*.whl
           python -c "import numpy as np; import stateset_rl_core as r; print('ok', r.compute_gae(np.array([1.,0.,1.]), np.array([.5,.5,.5,0.])))"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-macos-${{ matrix.target }}
           path: rust_core/dist/*.whl
@@ -115,9 +115,9 @@ jobs:
     name: build / windows-x86_64
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.10"
 
@@ -135,7 +135,7 @@ jobs:
           python -c "import numpy as np; import stateset_rl_core as r; print('ok', r.compute_gae(np.array([1.,0.,1.]), np.array([.5,.5,.5,0.])))"
         shell: pwsh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-windows-x86_64
           path: rust_core/dist/*.whl
@@ -146,9 +146,9 @@ jobs:
     name: build / sdist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.10"
 
@@ -159,7 +159,7 @@ jobs:
           command: sdist
           args: --out dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: rust_core/dist/*.tar.gz
@@ -180,9 +180,9 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.10"
 
@@ -205,7 +205,7 @@ jobs:
           fi
 
       - name: Download all wheels + sdist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: rust_core/dist-staging
           pattern: "{wheels-*,sdist}"

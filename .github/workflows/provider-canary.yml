@@ -22,8 +22,8 @@ jobs:
     env:
       RIVER_API_KEY: ${{ secrets.RIVER_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install River canary dependencies
@@ -31,7 +31,7 @@ jobs:
       - name: Probe River health and account capabilities
         run: stateset-agents provider-canary --provider river --strict --output canary-river.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: provider-canary-river
           path: canary-river.json
@@ -45,8 +45,8 @@ jobs:
       FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
       FIREWORKS_ACCOUNT_ID: ${{ secrets.FIREWORKS_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install Fireworks canary dependencies
@@ -54,7 +54,7 @@ jobs:
       - name: Probe Fireworks models, jobs, deployments, and cleanup
         run: stateset-agents provider-canary --provider fireworks --strict --output canary-fireworks.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: provider-canary-fireworks
           path: canary-fireworks.json
@@ -67,8 +67,8 @@ jobs:
     env:
       RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install RunPod canary dependencies
@@ -76,7 +76,7 @@ jobs:
       - name: Probe RunPod account and cleanup leases
         run: stateset-agents provider-canary --provider runpod --strict --output canary-runpod.json
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: provider-canary-runpod
           path: canary-runpod.json

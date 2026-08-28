@@ -6,15 +6,20 @@ publication are separate claims.
 
 ## v0.42.6 release evidence
 
-Merged release baseline: `91c9c2c2459c93bd29e99a48e3b047af0596fccb`.
+Merged release commit: `ce5fd665a39ed85608f5a1a43a65296c518c049b`.
+Post-release RunPod dependency fix: `997820419aa2990390d9cd19fe82f949401c40cb`.
 
 | Surface | Result | Evidence |
 |---|---|---|
 | Pull-request matrix | Passed | Python 3.10–3.13 on Linux, Python 3.10/3.13 on Windows, docs, Helm, publish readiness, security, CodeQL, dependency review, secrets detection, benchmarks, and Phase-0 smoke all passed |
-| Merged-master matrix | Passed | The same ten-job CI matrix passed against merge commit `91c9c2c` |
+| Release pull-request matrix | Passed | The complete matrix passed against the exact reviewed release head before merge commit `ce5fd665` was tagged |
 | Release smoke | Passed | 164 benchmark/scaffolding tests, 56 example-pattern tests, offline benchmark smoke, all four starter templates, and all 14 bundled notebooks |
 | Version and hygiene | Passed | Changelog, repository hygiene, lock synchronization, and 18 release/version documentation guards |
-| Distribution | Passed | `stateset_agents-0.42.6` wheel and sdist built successfully; both passed Twine metadata validation |
+| Distribution | Passed | The tag-built wheel and sdist passed Twine and isolated-install checks, were published to [PyPI](https://pypi.org/project/stateset-agents/0.42.6/), and their public digests match the retained workflow artifacts (`686b7717…` wheel; `8fe52cc9…` sdist) |
+| River canary | Passed | Read-only health and capability probe passed after release; 0 billable resources created |
+| RunPod canary | Passed | Read-only account and cleanup probe passed on post-release merge `99782041`; 0 billable resources created |
+| Fireworks canary | Skipped | Strict canary retained missing `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID` as a visible failure rather than claiming live support |
+| Publication automation | Partial | Docs deployed and artifacts passed every build gate; production PyPI upload required the project token because PyPI rejected the repository OIDC identity as `invalid-publisher`; Docker credentials were absent |
 | Coverage gate | Passed | Stable 61.9% floor across the Python matrix, with the one-point self-moving ratchet retained |
 | Credential hardening | Passed | Constant-time WebSocket key comparison, opaque rate-limit fingerprints, and no local plaintext staging for RunPod teardown credentials |
 | Dependency security | Passed | `cryptography` 50.0.1 and patched Rust locks; RustSec scanned 341 root and 74 accelerator dependencies with zero vulnerabilities |

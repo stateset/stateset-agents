@@ -72,7 +72,31 @@ The procedure it codifies:
 7. **Optional** `--push` (master + tag) and `--publish` (`python -m build`,
    `twine check`, `twine upload`). Publishing reads the PyPI token from
    `STATESET_PYPI_TOKEN`, falling back to the first line of the local file
-   `/home/dom/pypi`.
+   `/home/dom/pypi` for the legacy local flow. Never commit either value.
+
+### Required repository publishing setup
+
+Production tags use PyPI trusted publishing. Configure the publisher under the
+`stateset-agents` project's PyPI publishing settings with these exact claims:
+
+- GitHub owner: `stateset`
+- Repository: `stateset-agents`
+- Workflow: `publish.yml`
+- Environment: `pypi`
+
+The `pypi` GitHub environment should require the desired release approval and
+must permit the tag workflow. `PYPI_API_TOKEN` is supported only as a temporary
+migration fallback; OIDC is the durable path. Docker publication additionally
+requires `DOCKER_USERNAME` and `DOCKER_PASSWORD`, and the provider canary needs
+`RIVER_API_KEY`, `RUNPOD_API_KEY`, `FIREWORKS_API_KEY`, and
+`FIREWORKS_ACCOUNT_ID`.
+
+A pushed `v*` tag is the single production trigger. The workflow runs the
+publish-readiness gate, builds and smoke-tests the distributions, emits GitHub
+build attestations, publishes to PyPI, creates the GitHub Release with the same
+artifacts, publishes provenance/SBOM-enabled container images when credentials
+exist, and deploys documentation. Publishing the generated GitHub Release does
+not trigger a second package upload.
 
 Legacy shorthand bumps (older `scripts/publish.py` flow):
 
@@ -120,7 +144,7 @@ make publish-test
 make quick-publish
 ```
 
-#### 3. Create GitHub Release
+#### 3. Tag the Release
 ```bash
 # Tag and push
 git add .
@@ -128,11 +152,7 @@ git commit -m "Release v1.2.3"
 git tag -a v1.2.3 -m "Release v1.2.3"
 git push origin v1.2.3
 
-# Create GitHub release
-gh release create v1.2.3 \
-  --title "StateSet Agents v1.2.3" \
-  --notes-file RELEASE_NOTES.md \
-  --latest
+# The tag workflow creates the GitHub Release from the verified artifacts.
 ```
 
 #### 4. Publish to PyPI
@@ -215,7 +235,7 @@ description = "A comprehensive framework for training multi-turn AI agents"
 authors = [{name = "StateSet Team", email = "team@stateset.ai"}]
 license = {text = "Business Source License 1.1"}
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
