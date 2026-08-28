@@ -5,6 +5,8 @@ Comprehensive tests for all API endpoints including agents, conversations,
 training, and metrics routers.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import FastAPI
 
@@ -260,8 +262,13 @@ class TestConversationEndpoints:
 class TestTrainingEndpoints:
     """Tests for training job endpoints."""
 
-    def test_start_training_success(self, client):
+    def test_start_training_success(self, client, monkeypatch):
         """Test successful training start."""
+        from stateset_agents.api.services.training_service import TrainingService
+
+        start_training = AsyncMock(return_value="training-test-id")
+        monkeypatch.setattr(TrainingService, "start_training", start_training)
+
         response = client.post(
             "/training",
             json={
@@ -274,11 +281,17 @@ class TestTrainingEndpoints:
 
         assert response.status_code == 202
         data = response.json()
-        assert "training_id" in data
+        assert data["training_id"] == "training-test-id"
         assert data["status"] == "running"
+        start_training.assert_awaited_once()
 
-    def test_start_training_with_overrides(self, client):
+    def test_start_training_with_overrides(self, client, monkeypatch):
         """Test training start with configuration overrides."""
+        from stateset_agents.api.services.training_service import TrainingService
+
+        start_training = AsyncMock(return_value="training-overrides-id")
+        monkeypatch.setattr(TrainingService, "start_training", start_training)
+
         response = client.post(
             "/training",
             json={
@@ -295,6 +308,13 @@ class TestTrainingEndpoints:
         )
 
         assert response.status_code == 202
+        assert response.json()["training_id"] == "training-overrides-id"
+        request = start_training.await_args.args[0]
+        assert request.resume_from_checkpoint == "./outputs/checkpoint-10"
+        assert request.training_config_overrides == {
+            "continual_strategy": "replay_lwf",
+            "replay_ratio": 0.2,
+        }
 
     def test_start_training_no_scenarios(self, client):
         """Test training without scenarios fails."""
