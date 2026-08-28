@@ -36,9 +36,9 @@ The architecture is compositional: StateSet owns the stable trace, environment,
 reward, evaluation, and lineage contracts while training may run through the
 StateSet reference implementation or a specialized backend. The versioned
 [backend protocol](TRAINING_BACKENDS.md) now enforces semantic digests and
-capabilities. The executable OpenRLHF adapter is implemented but still awaits
-live GPU conformance; executable verl and NeMo RL adapters remain roadmap work.
-None are presented as benchmark wins today.
+capabilities. Executable OpenRLHF and verl adapters are implemented but still
+await live GPU conformance; the executable NeMo RL adapter remains roadmap
+work. None are presented as benchmark wins today.
 
 ---
 
