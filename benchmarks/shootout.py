@@ -367,6 +367,46 @@ def execution_order(
     return [*implementations[offset:], *implementations[:offset]]
 
 
+def validate_required_frameworks(
+    manifest: Mapping[str, Any], required_frameworks: Sequence[str]
+) -> None:
+    """Reject a manifest that omits any explicitly required framework."""
+    required = {name.strip() for name in required_frameworks if name.strip()}
+    configured = {
+        str(implementation["name"]) for implementation in manifest["implementations"]
+    }
+    missing = sorted(required - configured)
+    if missing:
+        raise ShootoutError(
+            "manifest is missing required frameworks: " + ", ".join(missing)
+        )
+
+
+def write_run_summary(
+    output_dir: Path,
+    *,
+    mode: str,
+    manifest: Path,
+    attempts: Sequence[Mapping[str, Any]],
+) -> None:
+    """Write an accounting record for every attempted framework/seed pair."""
+    succeeded = sum(attempt["status"] == "completed" for attempt in attempts)
+    payload = {
+        "schema_version": 1,
+        "kind": "framework-shootout-accounting",
+        "mode": mode,
+        "manifest": str(manifest),
+        "attempted": len(attempts),
+        "completed": succeeded,
+        "failed": len(attempts) - succeeded,
+        "attempts": list(attempts),
+    }
+    accounting_dir = output_dir / "_accounting"
+    accounting_dir.mkdir(parents=True, exist_ok=True)
+    destination = accounting_dir / "shootout-summary.json"
+    destination.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run a measured framework shootout manifest"
@@ -376,11 +416,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--timeout-seconds", type=int, default=14400)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="run the first seed for every framework; never publication-complete",
+    )
+    parser.add_argument(
+        "--required-framework",
+        action="append",
+        default=[],
+        help="fail before execution when the manifest omits this framework",
+    )
     args = parser.parse_args(argv)
     try:
         manifest = load_manifest(args.manifest)
+        validate_required_frameworks(manifest, args.required_framework)
         if args.timeout_seconds < 1:
             raise ShootoutError("timeout-seconds must be >= 1")
+        if args.dry_run and args.preflight:
+            raise ShootoutError("--dry-run and --preflight are mutually exclusive")
         if args.dry_run:
             for index, seed in enumerate(manifest["seeds"]):
                 for implementation in execution_order(
@@ -389,11 +443,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(f"seed={seed} framework={implementation['name']}")
             return 0
         args.output_dir.mkdir(parents=True, exist_ok=True)
-        produced = []
-        for index, seed in enumerate(manifest["seeds"]):
+        attempts: list[dict[str, Any]] = []
+        seeds = manifest["seeds"][:1] if args.preflight else manifest["seeds"]
+        for index, seed in enumerate(seeds):
             for implementation in execution_order(manifest["implementations"], index):
-                produced.append(
-                    run_implementation(
+                framework = str(implementation["name"])
+                try:
+                    evidence = run_implementation(
                         manifest,
                         implementation,
                         seed,
@@ -401,11 +457,46 @@ def main(argv: Sequence[str] | None = None) -> int:
                         args.root,
                         args.timeout_seconds,
                     )
+                except (ShootoutError, EvidenceError) as exc:
+                    attempts.append(
+                        {
+                            "framework": framework,
+                            "seed": seed,
+                            "status": "failed",
+                            "error": str(exc),
+                        }
+                    )
+                    continue
+                attempts.append(
+                    {
+                        "framework": framework,
+                        "seed": seed,
+                        "status": "completed",
+                        "evidence": str(evidence),
+                    }
                 )
+        write_run_summary(
+            args.output_dir,
+            mode="preflight" if args.preflight else "measured",
+            manifest=args.manifest,
+            attempts=attempts,
+        )
     except (ShootoutError, EvidenceError) as exc:
         print(f"shootout rejected: {exc}", file=sys.stderr)
         return 2
-    print(f"wrote {len(produced)} measured evidence documents")
+    failed = sum(attempt["status"] == "failed" for attempt in attempts)
+    completed = len(attempts) - failed
+    if failed:
+        print(
+            f"shootout completed {completed}/{len(attempts)} attempts; "
+            f"{failed} failed (see _accounting/shootout-summary.json)",
+            file=sys.stderr,
+        )
+        return 2
+    if args.preflight:
+        print(f"preflight completed {completed} framework runs")
+        return 0
+    print(f"wrote {completed} measured evidence documents")
     return 0
 
 

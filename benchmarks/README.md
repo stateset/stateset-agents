@@ -11,7 +11,23 @@ revisions and framework versions, replace the exact GPU name, then commit the
 harness before execution:
 
 ```bash
+# Cheap first-seed diagnostic across every configured framework.
 python benchmarks/shootout.py shootout-manifest.json \
+  --preflight \
+  --required-framework stateset-agents \
+  --required-framework trl \
+  --required-framework verl \
+  --required-framework nemo-rl \
+  --required-framework openrlhf \
+  --output-dir benchmark_results/framework_comparison/preflight
+
+# Publication run: all frameworks and all three seeds.
+python benchmarks/shootout.py shootout-manifest.json \
+  --required-framework stateset-agents \
+  --required-framework trl \
+  --required-framework verl \
+  --required-framework nemo-rl \
+  --required-framework openrlhf \
   --output-dir benchmark_results/framework_comparison/evidence
 
 python benchmarks/framework_comparison.py \
@@ -19,12 +35,16 @@ python benchmarks/framework_comparison.py \
   --output-dir benchmark_results/framework_comparison/report
 ```
 
-The orchestrator runs StateSet and the independent upstream-TRL adapter for
-three matched seeds. It passes every protocol field directly, rotates execution
-order, measures wall time outside each adapter, checks the exact installed
-version and canonical config digest, verifies hardware, hashes artifacts, and
-retains logs on failure. Dirty-worktree runs and unpinned model/dataset
-revisions are rejected.
+The checked-in example runs StateSet and the independent upstream-TRL adapter;
+the competitive gate additionally requires verl, NeMo RL, and OpenRLHF adapter
+commands. The orchestrator passes every protocol field directly, rotates
+execution order, measures wall time outside each adapter, checks the exact
+installed version and canonical config digest, verifies hardware, and hashes
+artifacts. A failed framework no longer prevents the rest of the roster from
+running: `_accounting/shootout-summary.json` accounts for every success and failure, and
+the command returns nonzero after all attempts. Dirty-worktree runs and
+unpinned model/dataset revisions are rejected. Preflight results are diagnostic
+and cannot satisfy the three-seed publication gate.
 
 ## Other strict evidence gates
 
