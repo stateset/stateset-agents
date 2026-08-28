@@ -17,6 +17,7 @@ Merged release baseline: `91c9c2c2459c93bd29e99a48e3b047af0596fccb`.
 | Distribution | Passed | `stateset_agents-0.42.6` wheel and sdist built successfully; both passed Twine metadata validation |
 | Coverage gate | Passed | Stable 61.9% floor across the Python matrix, with the one-point self-moving ratchet retained |
 | Credential hardening | Passed | Constant-time WebSocket key comparison, opaque rate-limit fingerprints, and no local plaintext staging for RunPod teardown credentials |
+| Dependency security | Passed | `cryptography` 50.0.1 and patched Rust locks; RustSec scanned 341 root and 74 accelerator dependencies with zero vulnerabilities |
 | Dataset provenance | Passed | GSM8K defaults to a validated 40-character immutable dataset revision and rejects mutable identifiers |
 
 This patch release hardens the existing provider and algorithm surfaces. It

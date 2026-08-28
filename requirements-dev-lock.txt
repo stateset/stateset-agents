@@ -92,7 +92,7 @@ colorama==0.4.6
     # via semgrep
 coverage[toml]==7.15.2
     # via pytest-cov
-cryptography==49.0.0
+cryptography==50.0.1
     # via
     #   authlib
     #   joserfc

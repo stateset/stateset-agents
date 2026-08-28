@@ -63,7 +63,7 @@ dotenvy = "0.15"
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"], optional = true }
 
 # Metrics
-prometheus = { version = "0.13", optional = true }
+prometheus = { version = "0.14", optional = true }
 
 # Retry logic
 backoff = { version = "0.4", features = ["tokio"] }

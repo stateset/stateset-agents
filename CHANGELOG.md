@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Updated `cryptography` to 50.0.1, `pyo3`/`numpy` to 0.29, Prometheus to
+  0.14 with protobuf 3.7.2, and the affected `h2`, `bytes`, `rand`, `anyhow`,
+  `chacha20`, and `crossbeam-epoch` lock entries. RustSec audits now report
+  zero vulnerabilities for both Rust workspaces.
 - Replaced raw API-key identifiers in rate-limit state with domain-separated
   fingerprints and constant-time WebSocket credential comparisons.
 - Streamed RunPod self-destruct credentials directly into root-only remote

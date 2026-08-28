@@ -84,7 +84,7 @@ impl GrpcClient {
 /// In production, you would:
 /// 1. Run `cargo build` to generate proto types
 /// 2. Import the generated clients:
-///    ```rust
+///    ```text
 ///    use crate::proto::order::order_service_client::OrderServiceClient;
 ///    use crate::proto::inventory::inventory_service_client::InventoryServiceClient;
 ///    ```

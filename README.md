@@ -167,7 +167,8 @@ coverage, live hardware attempts, and successful inference by provider.
 - **Credential-safe remote execution.** API-key identities use
   domain-separated fingerprints and constant-time WebSocket comparisons, while
   RunPod self-destruct keys stream directly to root-only remote files instead
-  of touching plaintext local staging files.
+  of touching plaintext local staging files. Python and Rust security locks
+  were refreshed; both RustSec workspace audits report zero vulnerabilities.
 - **Reproducible evaluation inputs.** GSM8K downloads default to the validated
   immutable dataset commit, and mutable revision identifiers fail closed.
 

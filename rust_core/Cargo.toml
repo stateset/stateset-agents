@@ -27,8 +27,8 @@ crate-type = ["cdylib", "rlib"]
 # which never has libpython available) work without the `extension-module`
 # feature. maturin builds enable the `python` feature below, which pulls in
 # `pyo3/extension-module`.
-pyo3 = { version = "0.22", features = ["abi3-py310"], optional = true }
-numpy = { version = "0.22", optional = true }
+pyo3 = { version = "0.29", features = ["abi3-py310"], optional = true }
+numpy = { version = "0.29", optional = true }
 
 # Performance
 rayon = "1.10"
