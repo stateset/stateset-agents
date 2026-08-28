@@ -28,6 +28,8 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - A versioned, capability-checked [training backend protocol](docs/TRAINING_BACKENDS.md)
   for delegating the same experiment to specialized engines without silently
   changing its model, data, environment, reward, or algorithm configuration.
+- A fail-closed OpenRLHF adapter for version-pinned PPO, GRPO, and GSPO engine
+  execution; live GPU conformance remains an explicit evidence gate.
 
 StateSet's focus is the complete improvement loop: preserve the agent's
 multi-turn production traces, turn them into reproducible rewards and

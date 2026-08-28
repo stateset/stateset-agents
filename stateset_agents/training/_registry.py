@@ -47,6 +47,15 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
     "CommandTrainingBackend": (f"{_PKG}.backends", "CommandTrainingBackend"),
     "TrainingBackend": (f"{_PKG}.backends", "TrainingBackend"),
     "TrainingExperiment": (f"{_PKG}.backends", "TrainingExperiment"),
+    "OpenRLHFConfigError": (
+        f"{_PKG}.adapters.openrlhf",
+        "OpenRLHFConfigError",
+    ),
+    "build_openrlhf_command": (
+        f"{_PKG}.adapters.openrlhf",
+        "build_openrlhf_command",
+    ),
+    "openrlhf_backend": (f"{_PKG}.adapters.openrlhf", "openrlhf_backend"),
     # Auto-Research Loop
     "AutoResearchConfig": (f"{_PKG}.auto_research.config", "AutoResearchConfig"),
     "AutoResearchLoop": (

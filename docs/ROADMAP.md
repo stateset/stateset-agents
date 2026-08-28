@@ -20,6 +20,8 @@ has retained tests or live evidence; an unchecked box is not a product claim.
 - [x] Strict 1/2/4/8-GPU scaling and three-scenario recovery validators
 - [x] Versioned training-backend protocol with semantic digests, capability
   checks, secret-free requests, and shell-free external adapter execution
+- [x] Fail-closed OpenRLHF PPO/GRPO/GSPO adapter with immutable inputs and
+  content-pinned reward/agent code (live GPU conformance remains open)
 
 See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 
@@ -86,12 +88,13 @@ estimated targets in marketing material.
 
 ## Next implementation sequence
 
-1. Implement executable verl, NeMo RL, and OpenRLHF adapters. Preflight all
-   five frameworks, then run the matched three-seed roster. The orchestrator
-   now enforces a required roster and accounts for every attempt after errors.
+1. Implement executable verl and NeMo RL adapters, then live-preflight those
+   plus the implemented OpenRLHF adapter. Run the matched three-seed roster.
+   The orchestrator enforces a required roster and accounts for every attempt
+   after errors.
 2. Run the 8B multi-turn flagship and report quality, throughput, memory, and
    cost per successful held-out episode.
-3. Implement native and external engine adapters on the versioned backend
+3. Complete native and external engine coverage on the versioned backend
    protocol so StateSet environments, rewards, evals, and lineage target TRL,
    verl, NeMo RL, or OpenRLHF execution without semantic drift.
 4. Prove multi-node asynchronous rollout/training, weight synchronization,
