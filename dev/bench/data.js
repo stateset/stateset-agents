@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787910746191,
+  "lastUpdate": 1787912192236,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -62,6 +62,72 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.514435174451323e-8",
             "extra": "mean: 447.65919502590003 nsec\nrounds: 54834"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "domsteil14@gmail.com",
+            "name": "Dom Steil",
+            "username": "domsteil"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f221fa642dc8fed1c2217015d19f6b7bd76d020e",
+          "message": "Merge pull request #35 from stateset/feat/backend-shootout-foundation\n\nfeat: add fail-closed training backend protocol",
+          "timestamp": "2026-08-28T03:13:38-07:00",
+          "tree_id": "b0bfa82e86632b1371d92b854e5f61546b734d64",
+          "url": "https://github.com/stateset/stateset-agents/commit/f221fa642dc8fed1c2217015d19f6b7bd76d020e"
+        },
+        "date": 1787912189831,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 10920.141692113844,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001049376123650948",
+            "extra": "mean: 91.57390336081134 usec\nrounds: 2380"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11987.695030628744,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009919286085855534",
+            "extra": "mean: 83.41887222230669 usec\nrounds: 2700"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8670.544258414902,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014627473826230202",
+            "extra": "mean: 115.3330137297303 usec\nrounds: 3059"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1068.735433959141,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001554876544892983",
+            "extra": "mean: 935.6852671156323 usec\nrounds: 891"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 229.58299586496662,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000746991912624739",
+            "extra": "mean: 4.355723280953124 msec\nrounds: 210"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2990354.3283606316,
+            "unit": "iter/sec",
+            "range": "stddev: 4.1178368213405694e-8",
+            "extra": "mean: 334.4085316298349 nsec\nrounds: 189108"
           }
         ]
       }
