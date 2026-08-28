@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a public, versioned training-backend protocol with canonical experiment
   digests, capability negotiation, a registry, secret-free serialization, and
   a shell-free command adapter for external training engines.
+- Added an executable, version-pinned OpenRLHF adapter for PPO, GRPO, and GSPO
+  with strict config translation, immutable model resolution, verified dataset
+  bytes, content-pinned Python reward/agent code, and reusable-artifact checks.
 - Added full-roster enforcement, one-seed preflight mode, and machine-readable
   attempt accounting to the neutral cross-framework benchmark runner.
 - Added GitHub artifact attestations for tag-built Python distributions and

@@ -120,3 +120,39 @@ An engine adapter is complete only after it:
 
 The benchmark-specific evidence schema remains stricter than this execution
 contract; see [`BENCHMARKS.md`](BENCHMARKS.md).
+
+## OpenRLHF adapter
+
+StateSet includes an executable, version-pinned adapter for OpenRLHF's current
+dotted-argument CLI:
+
+```python
+from stateset_agents.training import openrlhf_backend
+
+backend = openrlhf_backend(version="0.10.2")
+result = backend.run(experiment)
+```
+
+The engine remains an optional installation and is never imported while
+listing StateSet backends. The adapter currently supports PPO, GRPO, and GSPO.
+It verifies local dataset bytes, resolves remote models at an immutable commit,
+and requires content hashes for Python reward and agent functions. It rejects
+unknown configuration fields, mutable remote model revisions, unpinned reward
+services/models, and unsupported environment semantics before launching
+OpenRLHF. The adapter also verifies the installed OpenRLHF version and requires
+a non-empty reusable model artifact after training.
+
+The supported canonical config keys are:
+
+- `learning_rate`, `train_batch_size`, `train_micro_batch_size`
+- `rollout_batch_size`, `rollout_micro_batch_size`, `samples_per_prompt`
+- `max_epochs`, `max_samples`, `max_length`, `max_new_tokens`
+- `zero_stage`, `dtype`, `num_nodes`, `gpus_per_node`
+- `vllm_num_engines`, `vllm_tensor_parallel_size`
+- `kl_coefficient`, `temperature`, `top_p`
+- `input_key`, `label_key`, `max_images_per_prompt`
+- `apply_chat_template`, `packing_samples`, `gradient_checkpointing`
+- `colocate_all`, `deterministic`
+
+Real GPU conformance and matched three-seed benchmark evidence are still
+required before claiming performance parity with OpenRLHF.
