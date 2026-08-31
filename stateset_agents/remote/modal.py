@@ -24,6 +24,8 @@ later works without restarting.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -88,6 +90,8 @@ class ModalExecutor(RemoteExecutor):
     """Executes the job on Modal-provisioned GPU compute."""
 
     name = "modal"
+    compute_model = "rented-serverless-gpu"
+    verification_status = "transport-unverified"
     #: Modal's own GPU vocabulary.
     DEFAULT_GPU = "A10G"
 
@@ -117,9 +121,32 @@ class ModalExecutor(RemoteExecutor):
             f"stateset-agents[training]=={version}"
         )
 
+    @staticmethod
+    def _volume_name(job_id: str) -> str:
+        return f"stateset-sft-{job_id}"
+
+    def _delete_volume(self, name: str) -> None:
+        """Delete one executor-owned persistent volume."""
+        sdk = self._require_sdk()
+        try:
+            deletion = sdk.Volume.objects.delete(name, allow_missing=True)
+            if inspect.isawaitable(deletion):
+
+                async def wait_for_deletion() -> Any:
+                    return await deletion
+
+                asyncio.run(wait_for_deletion())
+        except Exception as exc:
+            raise RemoteExecutionError.wrap(
+                exc,
+                f"could not delete Modal volume {name}",
+                provider=self.name,
+                volume=name,
+            ) from exc
+
     def _run_remote(
         self, spec: RemoteJobSpec, job_id: str
-    ) -> tuple[dict[str, Any], Any]:
+    ) -> tuple[dict[str, Any], Any, str]:
         """Provision and run the job. Returns (outcome, volume).
 
         The single seam not covered by CI — everything the executor *decides*
@@ -128,7 +155,8 @@ class ModalExecutor(RemoteExecutor):
         """
         sdk = self._require_sdk()
         image = self.build_image(spec)
-        volume = sdk.Volume.from_name(f"stateset-sft-{job_id}", create_if_missing=True)
+        volume_name = self._volume_name(job_id)
+        volume = sdk.Volume.from_name(volume_name, create_if_missing=True)
         app = sdk.App(_APP_NAME)
 
         function = app.function(
@@ -143,10 +171,16 @@ class ModalExecutor(RemoteExecutor):
         # requested output_dir is a *local* path and means nothing in there.
         payload["output_dir"] = f"{self.remote_mount.rstrip('/')}/{job_id}"
 
-        with app.run():
-            outcome = function.remote(payload)
+        try:
+            with app.run():
+                outcome = function.remote(payload)
+        except Exception:
+            # The caller never receives the handle on this path, so cleanup
+            # must happen here rather than in submit().
+            self._delete_volume(volume_name)
+            raise
 
-        return outcome, volume
+        return outcome, volume, volume_name
 
     # -- Executor interface ------------------------------------------------
 
@@ -156,7 +190,7 @@ class ModalExecutor(RemoteExecutor):
         handle = JobHandle(provider=self.name, job_id=job_id)
 
         try:
-            outcome, volume = self._run_remote(spec, job_id)
+            outcome, volume, volume_name = self._run_remote(spec, job_id)
         except RemoteExecutionError:
             raise
         except Exception as exc:  # provider SDK / transport failure
@@ -167,11 +201,13 @@ class ModalExecutor(RemoteExecutor):
         logs = list(outcome.get("logs", []))
 
         if outcome.get("returncode", 1) != 0:
+            self._delete_volume(volume_name)
             self._jobs[job_id] = _ModalJob(spec, JobStatus.FAILED, logs)
             return handle
 
         if spec.dry_run:
             # Nothing is written on a dry run — that is the whole point.
+            self._delete_volume(volume_name)
             self._jobs[job_id] = _ModalJob(spec, JobStatus.SUCCEEDED, logs)
             return handle
 
@@ -179,6 +215,19 @@ class ModalExecutor(RemoteExecutor):
             downloaded = self._download(volume, job_id, spec.output_dir)
         except Exception as exc:
             logs.append(f"failed to download adapter: {exc}")
+            try:
+                self._delete_volume(volume_name)
+            except Exception as cleanup_exc:  # noqa: BLE001 - retain both failures
+                logs.append(
+                    f"failed to delete Modal volume {volume_name}: {cleanup_exc}"
+                )
+            self._jobs[job_id] = _ModalJob(spec, JobStatus.FAILED, logs)
+            return handle
+
+        try:
+            self._delete_volume(volume_name)
+        except Exception as exc:
+            logs.append(f"failed to delete Modal volume {volume_name}: {exc}")
             self._jobs[job_id] = _ModalJob(spec, JobStatus.FAILED, logs)
             return handle
 

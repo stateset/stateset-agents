@@ -170,6 +170,12 @@ class TestSuccessfulJob:
 
         assert any("Loaded 3 examples" in line for line in result.logs)
 
+    def test_executor_owned_volume_is_deleted(self, executor, spec, trains_for_real):
+        executor.wait(executor.submit(spec))
+
+        assert fake_modal.FakeVolume.deleted_names
+        assert not fake_modal.FakeVolume._instances
+
     def test_eval_prompts_reach_the_training_job(
         self, executor, spec, trains_for_real, monkeypatch
     ):
@@ -209,6 +215,7 @@ class TestFailingJob:
         assert result.status is JobStatus.FAILED
         assert not result.succeeded
         assert result.output_dir is None
+        assert not fake_modal.FakeVolume._instances
 
     def test_fetch_after_failure_is_an_error(self, executor, tmp_path):
         empty = tmp_path / "empty.jsonl"
@@ -264,6 +271,7 @@ class TestDryRun:
 
         assert result.status is JobStatus.SUCCEEDED
         assert any("SFT Training Plan" in line for line in result.logs)
+        assert not fake_modal.FakeVolume._instances
 
 
 class TestHandles:

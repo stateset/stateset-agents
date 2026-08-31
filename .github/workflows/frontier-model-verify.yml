@@ -1,0 +1,176 @@
+name: Frontier Model Verify
+
+# Deliberately manual and environment-gated: these checkpoints require costly
+# multi-GPU pods. The workflow refuses to start without an exact spend
+# acknowledgement, retains every returned artifact, and runs a read-only
+# account cleanup audit after the executor's unconditional teardown.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Frontier model to certify
+        type: choice
+        required: true
+        options:
+          - Qwen/Qwen3.8-Flash-Next
+          - zai-org/GLM-5.3-Flash
+      max_cost_usd:
+        description: Hard total RunPod ceiling in USD
+        required: true
+        default: "25"
+      network_volume_id:
+        description: Existing RunPod volume for resumable checkpoints
+        required: true
+      confirmation:
+        description: Enter exactly FRONTIER GPU SPEND APPROVED
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontier-model-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: frontier-gpu-verification
+    timeout-minutes: 240
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      STATESET_MODEL: ${{ inputs.model }}
+      STATESET_MAX_COST: ${{ inputs.max_cost_usd }}
+      STATESET_NETWORK_VOLUME: ${{ inputs.network_volume_id }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate explicit spend approval and credentials
+        env:
+          STATESET_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          test "$STATESET_CONFIRMATION" = "FRONTIER GPU SPEND APPROVED"
+          test -n "$RUNPOD_API_KEY"
+          test -n "$HF_TOKEN"
+          test -n "$STATESET_NETWORK_VOLUME"
+          python - <<'PY'
+          import os
+          value = float(os.environ["STATESET_MAX_COST"])
+          if not 0 < value <= 100:
+              raise SystemExit("max_cost_usd must be greater than 0 and at most 100")
+          PY
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install and build the exact checkout
+        run: |
+          python -m pip install --upgrade pip build
+          pip install -e ".[remote]"
+          python -m build --wheel
+          echo "STATESET_AGENTS_WHEEL=$(find dist -maxdepth 1 -name 'stateset_agents-*.whl' -print -quit)" >> "$GITHUB_ENV"
+
+      - name: Generate ephemeral SSH key and bounded data
+        run: |
+          mkdir -p ~/.ssh frontier-evidence
+          ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -q
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          rows = [
+              {"messages": [
+                  {"role": "user", "content": f"Return certification token {i}."},
+                  {"role": "assistant", "content": f"CERTIFIED-{i}"},
+              ]}
+              for i in range(16)
+          ]
+          with Path("frontier-train.jsonl").open("w", encoding="utf-8") as fh:
+              for row in rows:
+                  fh.write(json.dumps(row) + "\n")
+          Path("frontier-eval.txt").write_text(
+              json.dumps({"prompt": "Return certification token 41.", "expect": ["CERTIFIED"]}) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Record the non-billable resolved plan
+        run: |
+          stateset-agents train-remote --provider runpod \
+            --dataset frontier-train.jsonl --base-model "$STATESET_MODEL" \
+            --network-volume-id "$STATESET_NETWORK_VOLUME" \
+            --max-cost "$STATESET_MAX_COST" --plan-only \
+            > frontier-evidence/resource-plan.json
+
+      - name: Train, evaluate, retrieve, and tear down
+        id: train
+        run: |
+          set -o pipefail
+          stateset-agents train-remote --provider runpod \
+            --dataset frontier-train.jsonl --base-model "$STATESET_MODEL" \
+            --output-dir frontier-evidence/adapter --num-epochs 1 \
+            --lora-r 8 --max-length 256 --per-device-batch-size 1 \
+            --gradient-accumulation-steps 1 --eval-prompts frontier-eval.txt \
+            --eval-max-new-tokens 128 --timeout 10800 \
+            --network-volume-id "$STATESET_NETWORK_VOLUME" --resume \
+            --max-cost "$STATESET_MAX_COST" 2>&1 | tee frontier-evidence/run.log
+
+      - name: Mandatory post-job resource audit
+        if: always()
+        run: >-
+          stateset-agents provider-canary --provider runpod --strict
+          --output frontier-evidence/cleanup-audit.json
+
+      - name: Write content-addressed evidence manifest
+        if: always()
+        env:
+          STATESET_TRAIN_OUTCOME: ${{ steps.train.outcome }}
+          STATESET_COMMIT: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          def digest(path):
+              path = Path(path)
+              return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+          wheel = Path(os.environ["STATESET_AGENTS_WHEEL"])
+          log = Path("frontier-evidence/run.log")
+          text = log.read_text(encoding="utf-8") if log.exists() else ""
+          costs = re.findall(r"Cost: ~\$([0-9.]+)", text)
+          manifest = {
+              "schema_version": 1,
+              "kind": "frontier-model-certification",
+              "status": os.environ["STATESET_TRAIN_OUTCOME"],
+              "commit": os.environ["STATESET_COMMIT"],
+              "model": os.environ["STATESET_MODEL"],
+              "max_cost_usd": float(os.environ["STATESET_MAX_COST"]),
+              "network_volume_id": os.environ["STATESET_NETWORK_VOLUME"],
+              "dataset_sha256": digest("frontier-train.jsonl"),
+              "wheel_sha256": digest(wheel),
+              "resource_plan_sha256": digest("frontier-evidence/resource-plan.json"),
+              "eval_sha256": digest("frontier-evidence/adapter/eval_results.json"),
+              "reported_training_cost_usd": float(costs[-1]) if costs else None,
+              "cleanup_audit_sha256": digest("frontier-evidence/cleanup-audit.json"),
+          }
+          Path("frontier-evidence/evidence.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Retain certification evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontier-${{ github.run_id }}-${{ github.run_attempt }}
+          path: frontier-evidence
+          if-no-files-found: error
+          retention-days: 90

@@ -1,6 +1,6 @@
 # StateSet Agents roadmap
 
-Current release line: **v0.42.x (beta)**.
+Current release line: **v0.43.x (beta)**.
 
 The roadmap is evidence-driven. A checked box means the behavior exists and
 has retained tests or live evidence; an unchecked box is not a product claim.
@@ -59,6 +59,13 @@ evaluation, and lineage contracts.
 - [ ] Live-verify Fireworks training, artifact retrieval, serving, and cleanup
 - [ ] Keep tag-triggered River, RunPod, and Fireworks canaries green
 - [ ] Publish signed/SLSA provenance for Python and container artifacts
+- [x] Publish a machine-readable model/provider tier and certification matrix
+- [x] Add non-billable RunPod resource planning with measured-vs-estimated labels
+- [x] Require an explicit spend ceiling before estimated frontier plans execute
+- [ ] Promote Qwen3.8-Flash-Next after retained train/eval/serve/cleanup proof
+- [ ] Promote GLM-5.3-Flash after the same retained proof
+- [ ] Live-verify Modal transport with a bounded ephemeral GPU job
+- [x] Add approval-gated, cleanup-enforced Modal and Fireworks live workflows
 
 The tag pipeline now generates GitHub build attestations for Python artifacts
 and requests maximal provenance plus SBOMs for both container images. This gate

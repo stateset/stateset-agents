@@ -15,6 +15,7 @@ decorator, ``app.run()`` as a context manager, and ``Function.remote()``.
 from __future__ import annotations
 
 import contextlib
+import shutil
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,6 +58,7 @@ class FakeVolume:
     """A volume backed by a real directory on local disk."""
 
     _instances: dict[str, FakeVolume] = {}
+    deleted_names: list[str] = []
 
     def __init__(self, name: str, root: Path) -> None:
         self.name = name
@@ -82,6 +84,7 @@ class FakeVolume:
     @classmethod
     def reset(cls) -> None:
         cls._instances.clear()
+        cls.deleted_names.clear()
 
     def reload(self) -> None:
         self.reload_count += 1
@@ -157,7 +160,20 @@ def build(volume_root: Path) -> Any:
 
     module = types.ModuleType("modal")
     module.Image = FakeImage()
-    module.Volume = types.SimpleNamespace(from_name=FakeVolume.bind(volume_root))
+
+    async def delete(name: str, *, allow_missing: bool = False, **kwargs: Any) -> None:
+        volume = FakeVolume._instances.pop(name, None)
+        if volume is None:
+            if allow_missing:
+                return
+            raise KeyError(name)
+        shutil.rmtree(volume.root, ignore_errors=True)
+        FakeVolume.deleted_names.append(name)
+
+    module.Volume = types.SimpleNamespace(
+        from_name=FakeVolume.bind(volume_root),
+        objects=types.SimpleNamespace(delete=delete),
+    )
 
     apps: list[FakeApp] = []
 

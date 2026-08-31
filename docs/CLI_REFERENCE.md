@@ -242,6 +242,17 @@ exercised only against fakes. See `docs/FIREWORKS_PROVIDER.md`.
 | `modal` | `pip install "stateset-agents[modal]"` | Modal Volume | Transport **not** yet verified against a live account |
 
 RunPod creates the pod with TCP 22 exposed and your public key
+
+Use `train-remote --plan-only` for a non-billable resource plan. It never
+constructs the provider executor. For RunPod, known models receive catalog
+GPU/count/disk defaults; estimated frontier or unknown-model plans require an
+explicit `--max-cost` before execution. `--dry-run` is a worker-level training
+dry run and can still provision remote hardware.
+
+Modal requires SDK 1.1.2 or newer. Every executor-created `stateset-sft-*`
+Volume is deleted after artifact retrieval, dry-run completion, or failure;
+failure to confirm deletion makes the job fail rather than silently retaining
+persistent storage.
 (`~/.ssh/id_ed25519.pub` or `id_rsa.pub`) injected, copies the dataset in,
 runs the job, copies the adapter back, and **terminates the pod on every exit
 path** — including failures and timeouts — so nothing keeps billing. By
@@ -254,7 +265,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.42.6-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.43.0-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`

@@ -1,0 +1,95 @@
+name: Modal Transport Verify
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modal-transport-verify
+  cancel-in-progress: false
+
+jobs:
+  transport:
+    runs-on: ubuntu-latest
+    environment: provider-live-verification
+    timeout-minutes: 30
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Validate credentials and install exact checkout
+        run: |
+          test -n "$MODAL_TOKEN_ID"
+          test -n "$MODAL_TOKEN_SECRET"
+          pip install -e ".[modal]"
+
+      - name: Capture pre-run persistent volumes
+        run: modal volume list --json > modal-volumes-before.json
+
+      - name: Exercise the real Modal image, function, GPU, and Volume transport
+        id: transport
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          row = {"messages": [
+              {"role": "user", "content": "Say transport ready."},
+              {"role": "assistant", "content": "transport ready"},
+          ]}
+          Path("modal-canary.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+          PY
+          stateset-agents train-remote --provider modal \
+            --dataset modal-canary.jsonl --base-model Qwen/Qwen3.5-0.8B \
+            --gpu A10G --timeout 600 --dry-run 2>&1 | tee modal-transport.log
+
+      - name: Verify the executor left no new persistent Volume
+        if: always()
+        run: |
+          modal volume list --json > modal-volumes-after.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def names(path):
+              payload = json.loads(Path(path).read_text(encoding="utf-8"))
+              rows = payload if isinstance(payload, list) else payload.get("volumes", [])
+              return {
+                  str(row.get("Name") or row.get("name") or "")
+                  for row in rows
+                  if isinstance(row, dict)
+              }
+
+          leaked = sorted(
+              name
+              for name in names("modal-volumes-after.json") - names("modal-volumes-before.json")
+              if name.startswith("stateset-sft-")
+          )
+          evidence = {"schema_version": 1, "new_executor_volume_leftovers": leaked}
+          Path("modal-cleanup-audit.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          if leaked:
+              raise SystemExit(f"Modal Volume cleanup failed: {leaked}")
+          PY
+
+      - name: Retain transport evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: modal-transport-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            modal-transport.log
+            modal-cleanup-audit.json
+            modal-volumes-before.json
+            modal-volumes-after.json
+          if-no-files-found: warn
+          retention-days: 30

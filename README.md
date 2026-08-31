@@ -109,6 +109,41 @@ closes: chat → ingest → improve → train → chat.
 | **Bigger jobs on rented GPUs** | [`docs/RUNPOD_GUIDE.md`](docs/RUNPOD_GUIDE.md) — GPU/disk sizing, spot pricing, multi-GPU sharding, merged serving for hybrid models, and every failure mode we hit |
 | **Five minutes and curiosity** | `bash examples/five_minute_demo.sh` — the whole loop offline, no GPU, no key |
 
+### Choose a training provider
+
+The provider changes where compute runs and where the trained result lives; it
+does not change the dataset or experiment contract. Start with RunPod when you
+want model weights back, or River when you want managed remote-autograd RL
+without operating a GPU machine.
+
+| Provider | Compute model | Result | Current evidence |
+|---|---|---|---|
+| **RunPod** | Rented GPU machine | Local adapter and evaluation artifacts | Live end-to-end training, serving, cost, and cleanup evidence |
+| **River AI** | Managed remote autograd | Hosted `river://` checkpoint | Live SFT/RL training and held-out sampling evidence |
+| **Fireworks AI** | Managed fine-tuning and serving | Hosted LoRA, with optional local artifacts | Integration complete; live full-lifecycle certification pending |
+| **Modal** | Rented serverless GPU | Local artifacts | Transport certification pending; per-job Volume cleanup is enforced |
+| **Local** | Your machine or cluster | Local artifacts | Unit-tested reference path |
+
+Inspect capabilities and model evidence from the installed release:
+
+```bash
+stateset-agents remote-providers --json
+stateset-agents model-support --json
+```
+
+Before paying for a frontier-model run, ask RunPod for a non-billable plan:
+
+```bash
+stateset-agents train-remote --provider runpod \
+  --dataset data/train.jsonl --base-model Qwen/Qwen3.8-Flash-Next \
+  --plan-only
+```
+
+`--plan-only` never contacts or provisions RunPod. Estimated frontier plans
+must also have an explicit `--max-cost` before they can execute. The full
+evidence rules and promotion stages are in
+[`docs/MODEL_PROVIDER_CERTIFICATION.md`](docs/MODEL_PROVIDER_CERTIFICATION.md).
+
 Both guides are written from live runs — the pitfalls listed are ones we
 actually paid for. What the loop has proven, with numbers:
 [`docs/rl-vibe.md`](docs/rl-vibe.md); every claim's evidence status:
@@ -183,7 +218,23 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.42.6 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.42.6/)):**
+**v0.43.0 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.43.0/)):**
+
+- **Model/provider certification is explicit.** A machine-readable catalog
+  separates default, frontier-preview, and compatibility models across
+  configured, smoke-tested, training-verified, serving-verified, and
+  production-certified stages without promoting architecture support into a
+  live claim.
+- **RunPod plans before it rents.** `train-remote --plan-only` resolves
+  model-aware GPU/count/disk recommendations without provisioning hardware;
+  estimated frontier and unknown plans require an explicit `--max-cost` before
+  execution.
+- **Managed-provider cleanup fails closed.** Modal deletes per-job persistent
+  Volumes across every terminal path, Fireworks rolls back deployments after
+  addon-load failures, and approval-gated workflows retain frontier, Modal,
+  and Fireworks lifecycle evidence.
+
+**v0.42.6:**
 
 - **Cross-platform release confidence.** The complete PR gate now passes on
   Python 3.10–3.13 plus Windows 3.10/3.13, with deterministic API router tests,
@@ -768,6 +819,25 @@ Full breakdown in [CHANGELOG.md](CHANGELOG.md).
 
 ## Renting GPUs, and knowing what it cost
 
+Model/provider support is now tiered as `default`, `frontier-preview`, or
+`compatibility`, with separate configured, smoke, training, serving, and
+production certification stages. `stateset-agents model-support --json`
+returns the auditable catalog and its dated evidence. See
+[`docs/MODEL_PROVIDER_CERTIFICATION.md`](docs/MODEL_PROVIDER_CERTIFICATION.md).
+
+Before renting anything, resolve a non-billable RunPod plan:
+
+```bash
+stateset-agents train-remote --provider runpod \
+  --dataset data/train.jsonl --base-model Qwen/Qwen3.8-Flash-Next \
+  --plan-only
+```
+
+Known measured models automatically select catalog GPU/count/disk defaults.
+Frontier or unknown plans are explicitly labeled estimates and require a
+`--max-cost` ceiling before execution. `--plan-only` provisions nothing;
+`--dry-run` runs on the selected provider and may still allocate compute.
+
 Four commands cover the whole rented-hardware lifecycle. Every pod is
 terminated on every exit path — success, failure, timeout, or your laptop
 dying mid-run — and every pod records what it cost.
@@ -872,8 +942,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest version currently available on PyPI
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.42.6"
+pip install "stateset-agents==0.43.0" # current stable release on PyPI
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.43.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -903,6 +973,23 @@ pip install "stateset-agents[distributed]"   # DeepSpeed / multi‑GPU helpers
 pip install "stateset-agents[rust]"          # Rust-accelerated GAE/advantage kernels (stateset-rl-core)
 pip install "stateset-agents[full]"          # Most extras in one go
 ```
+
+### Node.js API client
+
+The dependency-free, typed Node.js client lives in [`npm/`](npm/) and targets
+the stable Messages and OpenAI-compatible API surfaces. It supports JSON and
+SSE streaming, bearer authentication, timeouts, structured errors, and custom
+`fetch` implementations. Until its first registry publication, validate or use
+the workspace package directly:
+
+```bash
+npm --prefix npm ci
+npm --prefix npm test
+```
+
+The tagged release workflow publishes it as `@stateset/agents` only when its
+version exactly matches the Git tag. See [`npm/README.md`](npm/README.md) for
+the client API.
 
 > This repository also contains an internal, unpublished Rust crate at the repo root (a StateSet
 > commerce daemon) that is unrelated to the `stateset-rl-core` accelerator behind `[rust]` above.
@@ -1585,7 +1672,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.6`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.43.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

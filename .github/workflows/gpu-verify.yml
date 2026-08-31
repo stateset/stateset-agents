@@ -103,6 +103,9 @@ jobs:
       run: |
         python - <<'PY'
         import glob
+        import hashlib
+        import json
+        import os
         import sys
         from pathlib import Path
 
@@ -152,8 +155,6 @@ jobs:
         for f in adapter_files:
             print(f, f.stat().st_size, "bytes")
 
-        import json
-
         eval_path = Path("outputs/gpu_verify/eval_results.json")
         if not eval_path.exists():
             print("::error::eval_results.json was not returned.")
@@ -170,6 +171,36 @@ jobs:
             sys.exit(1)
         for r in rows:
             print("EVAL", r["prompt"], "->", r["finetuned"][:60])
+
+        def digest(path):
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+
+        evidence = {
+            "schema_version": 1,
+            "kind": "sft",
+            "commit": os.environ["GITHUB_SHA"],
+            "model": spec.base_model,
+            "gpu_requested": gpu,
+            "image": executor.image,
+            "dataset_sha256": digest(spec.dataset),
+            "wheel_sha256": digest(Path(wheel)),
+            "duration_s": result.duration_s,
+            "cost_usd": result.cost_usd,
+            "max_cost_usd": spec.max_cost_usd,
+            "cleanup_confirmed": True,
+            "eval_sha256": digest(eval_path),
+            "artifacts": {
+                str(path.relative_to(spec.output_dir)): {
+                    "sha256": digest(path),
+                    "size": path.stat().st_size,
+                }
+                for path in sorted(adapter_files)
+            },
+        }
+        (spec.output_dir / "evidence.json").write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         PY
 
     - name: Upload adapter artifact
@@ -236,7 +267,10 @@ jobs:
       run: |
         python - <<'PY'
         import glob
+        import hashlib
+        import json
         import math
+        import os
         import shlex
         import sys
         import tempfile
@@ -244,7 +278,11 @@ jobs:
         import uuid
         from pathlib import Path
 
-        from stateset_agents.remote.ledger import BudgetExceeded, check_budget
+        from stateset_agents.remote.ledger import (
+            BudgetExceeded,
+            check_budget,
+            estimate_cost_usd,
+        )
         from stateset_agents.remote.runpod import (
             RunPodApi,
             RunPodExecutor,
@@ -279,6 +317,9 @@ jobs:
         print(f"created pod {pod_id} ({gpu}, max ${max_cost_usd:.2f})")
 
         exit_code = 1
+        output = ""
+        summary = None
+        termination_confirmed = False
         try:
             raw_price = pod.get("costPerHr")
             if raw_price is None:
@@ -348,12 +389,57 @@ jobs:
                 "python -m stateset_agents.training.gpu_verify_rl"
             )
             print(output)
+            summary_lines = [
+                line
+                for line in output.splitlines()
+                if line.startswith("GPU_VERIFY_RL_SUMMARY ")
+            ]
+            if len(summary_lines) != 1:
+                raise RuntimeError("RL verification emitted no unique JSON summary")
+            summary = json.loads(summary_lines[0].split(" ", 1)[1])
+            if summary.get("device") != "cuda" or not summary.get("gpu"):
+                raise RuntimeError(f"RL verification did not use CUDA: {summary}")
+            if not summary.get("converged"):
+                raise RuntimeError(f"RL verification did not converge: {summary}")
         finally:
             # Unconditional: an orphaned pod bills by the hour.
             api.terminate_pod(pod_id)
+            termination_confirmed = True
             print(f"terminated pod {pod_id}")
 
         if exit_code != 0:
             print(f"::error::RL GPU verification exited {exit_code}.")
             sys.exit(1)
+
+        duration_s = time.time() - pod_started_at
+        output_dir = Path("outputs/gpu_verify_rl")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        evidence = {
+            "schema_version": 1,
+            "kind": "gspo",
+            "commit": os.environ["GITHUB_SHA"],
+            "gpu_requested": gpu,
+            "gpu_observed": summary["gpu"],
+            "image": executor.image,
+            "wheel_sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+            "duration_s": round(duration_s, 3),
+            "cost_per_hr": cost_per_hr,
+            "cost_usd": estimate_cost_usd(cost_per_hr, duration_s),
+            "max_cost_usd": max_cost_usd,
+            "max_lifetime_s": max_lifetime_s,
+            "cleanup_confirmed": termination_confirmed,
+            "summary": summary,
+        }
+        (output_dir / "evidence.json").write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         PY
+
+    - name: Upload RL verification evidence
+      if: steps.creds.outputs.present == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: gpu-verify-rl-evidence
+        path: outputs/gpu_verify_rl/evidence.json
+        retention-days: 14

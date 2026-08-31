@@ -63,6 +63,8 @@ class RemoteExecutor(abc.ABC):
     durable_handles: bool = False
     managed_deployments: bool = False
     result_kind: str = "local_artifacts"
+    compute_model: str = "provider-specific"
+    verification_status: str = "unit-tested"
 
     def supports(self, job_kind: str) -> bool:
         """Whether this provider preserves the requested job mode's meaning."""
@@ -76,6 +78,8 @@ class RemoteExecutor(abc.ABC):
             "durable_handles": self.durable_handles,
             "managed_deployments": self.managed_deployments,
             "result_kind": self.result_kind,
+            "compute_model": self.compute_model,
+            "verification_status": self.verification_status,
         }
 
     def validate_spec(self, spec: RemoteJobSpec) -> None:

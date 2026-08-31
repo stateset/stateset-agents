@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+import re
+import textwrap
 from pathlib import Path
 
 import yaml
@@ -39,6 +42,24 @@ def test_gpu_verification_has_total_spend_and_lifetime_backstops() -> None:
     assert "check_budget(" in workflow
     assert "self_destruct_script(" in workflow
     assert workflow.count("container_disk_gb=40") == 2
+
+
+def test_gpu_verification_emits_hashed_cuda_evidence() -> None:
+    workflow = (ROOT / ".github/workflows/gpu-verify.yml").read_text(encoding="utf-8")
+
+    assert workflow.count('"schema_version": 1') == 2
+    assert workflow.count('"cleanup_confirmed"') == 2
+    assert 'summary.get("device") != "cuda"' in workflow
+    assert 'summary.get("converged")' in workflow
+    assert '"dataset_sha256"' in workflow
+    assert workflow.count('"wheel_sha256"') == 2
+    assert "gpu-verify-rl-evidence" in workflow
+    assert "outputs/gpu_verify_rl/evidence.json" in workflow
+
+    scripts = re.findall(r"python - <<'PY'\n(.*?)\n\s*PY", workflow, re.DOTALL)
+    assert len(scripts) >= 3
+    for script in scripts:
+        ast.parse(textwrap.dedent(script))
 
 
 def test_provider_canaries_run_for_release_tags() -> None:
@@ -102,5 +123,24 @@ def test_tag_publish_attests_and_releases_verified_artifacts_once() -> None:
     assert "attestations: write" in workflow
     assert "github-release:" in workflow
     assert 'gh release create "${GITHUB_REF_NAME}" dist/*' in workflow
+    assert workflow.count('--repo "${GITHUB_REPOSITORY}"') == 3
     assert workflow.count("provenance: mode=max") == 2
     assert workflow.count("sbom: true") == 2
+
+
+def test_pypi_publish_has_explicit_scoped_token_fallback() -> None:
+    workflow = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
+
+    assert "Publish to PyPI (OIDC or scoped API token)" in workflow
+    assert "secrets.PYPI_API_TOKEN != ''" in workflow
+    assert "password: ${{ secrets.PYPI_API_TOKEN" in workflow
+
+
+def test_tag_publish_tests_and_publishes_version_matched_npm_client() -> None:
+    workflow = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
+
+    assert "npm-publish:" in workflow
+    assert 'tag_version="${GITHUB_REF_NAME#v}"' in workflow
+    assert "require('./package.json').version" in workflow
+    assert "NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}" in workflow
+    assert "npm publish --access public --provenance" in workflow

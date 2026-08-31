@@ -19,6 +19,12 @@ from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.registry import get_executor
 
 CANARY_RESOURCE_PREFIX = "stateset-canary-"
+_EPHEMERAL_RUNPOD_PREFIXES = (
+    CANARY_RESOURCE_PREFIX,
+    "stateset-sft-",
+    "gpu-verify-",
+    "stateset-conformance-",
+)
 _CREDENTIAL_ENV = {
     "fireworks": ("FIREWORKS_API_KEY", "FIREWORKS_ACCOUNT_ID"),
     "river": ("RIVER_API_KEY",),
@@ -129,17 +135,18 @@ def _probe_runpod(executor: RemoteExecutor) -> tuple[dict[str, Any], bool]:
     api = executor._require_api()  # type: ignore[attr-defined]
     pods = api.list_pods()
     leases = executor.orphaned_leases()  # type: ignore[attr-defined]
-    canary_pods = sorted(
+    ephemeral_pods = sorted(
         str(pod.get("id") or pod.get("podId") or pod.get("name") or "")
         for pod in pods
-        if CANARY_RESOURCE_PREFIX in str(pod.get("name") or "")
+        if str(pod.get("name") or "").startswith(_EPHEMERAL_RUNPOD_PREFIXES)
     )
     return {
         "pods_observed": len(pods),
         "local_cleanup_leases": len(leases),
-        "canary_leftovers": canary_pods,
+        "canary_leftovers": ephemeral_pods,
+        "ephemeral_training_leftovers": ephemeral_pods,
         "billable_resources_created": 0,
-    }, not canary_pods and not leases
+    }, not ephemeral_pods and not leases
 
 
 _PROBES = {

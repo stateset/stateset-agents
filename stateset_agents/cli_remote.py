@@ -437,17 +437,25 @@ def deploy(
         "--output-dir",
         help="Where the trained adapter is written locally.",
     ),
-    gpu: str = typer.Option(
-        "NVIDIA H100 80GB HBM3",
+    gpu: str | None = typer.Option(
+        None,
         "--gpu",
-        help="RunPod GPU used for BOTH the training job and the endpoint.",
+        help="RunPod GPU used for both phases. Catalog default when omitted.",
+    ),
+    gpu_count: int | None = typer.Option(
+        None,
+        "--gpu-count",
+        min=1,
+        help="Identical GPUs used for both training and serving.",
     ),
     container_disk_gb: int | None = typer.Option(
         None, "--container-disk-gb", help="~2.5x the checkpoint size."
     ),
     num_epochs: int = typer.Option(3, "--num-epochs"),
     max_cost_usd: float | None = typer.Option(
-        None, "--max-cost", help="Ceiling for the TRAINING job."
+        None,
+        "--max-cost",
+        help="Per-phase ceiling for training and serving provisioning.",
     ),
     max_hours: float = typer.Option(
         1.0,
@@ -463,6 +471,33 @@ def deploy(
     story of docs/GETTING_STARTED_API.md as a single invocation.
     """
     from stateset_agents.remote import serve_session
+    from stateset_agents.remote.model_catalog import (
+        get_model_support,
+        plan_runpod_resources,
+    )
+
+    support = get_model_support(base_model)
+    if support is not None:
+        plan = plan_runpod_resources(
+            base_model,
+            gpu=gpu,
+            gpu_count=gpu_count,
+            container_disk_gb=container_disk_gb,
+        )
+        gpu = plan["gpu"]
+        gpu_count = plan["gpu_count"]
+        container_disk_gb = plan["container_disk_gb"]
+        if plan["manual_review_required"] and max_cost_usd is None:
+            _echo(
+                "Frontier deploy plans require --max-cost because both training "
+                "and serving allocate estimated multi-GPU resources.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+    else:
+        gpu = gpu or "NVIDIA H100 80GB HBM3"
+        gpu_count = gpu_count or 1
+    assert gpu is not None and gpu_count is not None
 
     spec = RemoteJobSpec(
         dataset=dataset,
@@ -470,6 +505,7 @@ def deploy(
         output_dir=output_dir,
         num_epochs=num_epochs,
         gpu=gpu,
+        gpu_count=gpu_count,
         container_disk_gb=container_disk_gb,
         max_cost_usd=max_cost_usd,
     )
@@ -502,7 +538,9 @@ def deploy(
             base_model=base_model,
             adapters={"adapter": Path(result.output_dir)},
             gpu=gpu,
+            gpu_count=gpu_count,
             max_hours=max_hours,
+            max_cost_usd=max_cost_usd,
         )
     except StateSetError as exc:
         _echo(str(exc), err=True)
@@ -568,13 +606,13 @@ def train_remote(
         '"A10G"; RunPod: "NVIDIA RTX A4000"). Defaults to the provider\'s '
         "own default.",
     ),
-    gpu_count: int = typer.Option(
-        1,
+    gpu_count: int | None = typer.Option(
+        None,
         "--gpu-count",
         help="RunPod only: how many GPUs of the requested type to attach. "
         "With more than one, the job shards the model across all of them "
         "(device_map='auto'), letting a checkpoint bigger than one card "
-        "train. Billing scales with the count.",
+        "train. When omitted on RunPod, the model catalog selects a count.",
     ),
     timeout: int = typer.Option(3600, "--timeout", help="Job timeout in seconds."),
     package_version: str | None = typer.Option(
@@ -661,7 +699,20 @@ def train_remote(
         "Defaults to whatever Fireworks picks for the base model.",
     ),
     dry_run: bool = typer.Option(
-        False, "--dry-run", help="Print the training plan without training."
+        False,
+        "--dry-run",
+        help="Run the packaged training command in dry-run mode. Remote providers "
+        "may still allocate compute; use --plan-only for a non-billable plan.",
+    ),
+    plan_only: bool = typer.Option(
+        False,
+        "--plan-only",
+        help="Print the resolved provider/resource plan and exit without provisioning.",
+    ),
+    auto_resources: bool = typer.Option(
+        True,
+        "--auto-resources/--no-auto-resources",
+        help="Apply catalog GPU/count/disk recommendations on RunPod when omitted.",
     ),
 ) -> None:
     """Run the SFT job from `improve` on local or rented GPU compute."""
@@ -675,6 +726,54 @@ def train_remote(
             for line in eval_prompts.read_text().splitlines()
             if line.strip()
         ]
+
+    normalized_provider = provider.strip().lower()
+    resource_plan: dict[str, object] | None = None
+    if normalized_provider == "runpod" and auto_resources:
+        from stateset_agents.remote.model_catalog import plan_runpod_resources
+
+        runpod_plan = plan_runpod_resources(
+            base_model,
+            gpu=gpu,
+            gpu_count=gpu_count,
+            container_disk_gb=container_disk_gb,
+        )
+        resource_plan = dict(runpod_plan)
+        resource_plan.update(
+            {
+                "timeout_s": timeout,
+                "max_cost_usd": max_cost_usd,
+                "network_volume_id": network_volume_id,
+            }
+        )
+        gpu = runpod_plan["gpu"]
+        gpu_count = runpod_plan["gpu_count"]
+        container_disk_gb = runpod_plan["container_disk_gb"]
+        if runpod_plan["manual_review_required"] and not plan_only:
+            if max_cost_usd is None:
+                _echo(
+                    "This model's RunPod topology is estimated or unknown. "
+                    "Pass --max-cost to acknowledge a bounded live run, or "
+                    "use --plan-only to inspect the non-billable plan.",
+                    err=True,
+                )
+                raise typer.Exit(code=2)
+
+    if plan_only:
+        import json
+
+        if resource_plan is None:
+            resource_plan = {
+                "provider": normalized_provider,
+                "model": base_model,
+                "gpu": gpu or "provider default",
+                "gpu_count": gpu_count or 1,
+                "container_disk_gb": container_disk_gb,
+                "provisions_hardware": False,
+                "note": "The provider selects managed resources where applicable.",
+            }
+        _echo(json.dumps(resource_plan, indent=2, sort_keys=True))
+        return
 
     try:
         spec = RemoteJobSpec(
@@ -693,7 +792,7 @@ def train_remote(
             eval_prompts=prompts,
             eval_max_new_tokens=eval_max_new_tokens,
             gpu=gpu,
-            gpu_count=gpu_count,
+            gpu_count=gpu_count or 1,
             timeout_s=timeout,
             package_version=package_version,
             container_disk_gb=container_disk_gb,
@@ -711,7 +810,7 @@ def train_remote(
         _echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
-    if deploy and provider.strip().lower() != "fireworks":
+    if deploy and normalized_provider != "fireworks":
         _echo("--deploy is only supported by --provider fireworks.", err=True)
         raise typer.Exit(code=2)
 
@@ -732,7 +831,7 @@ def train_remote(
 
     if result.cost_usd is not None:
         _echo(f"Cost: ~${result.cost_usd:.2f} ({result.duration_s:.0f}s of pod time)")
-    if provider.strip().lower() == "river":
+    if normalized_provider == "river":
         # River keeps the weights; what landed locally is a pointer, so the
         # usual `serve --checkpoint` hint would be a lie.
         _echo(f"Done. River checkpoint pointer written to {result.output_dir}")
@@ -741,7 +840,7 @@ def train_remote(
             f"API using the checkpoint in {result.output_dir}/river_checkpoint.json"
         )
         return
-    if provider.strip().lower() == "fireworks":
+    if normalized_provider == "fireworks":
         _fireworks_done(executor, handle, result, deploy, deploy_accelerator)
         return
     _echo(f"Done. Adapter written to {result.output_dir}")
@@ -861,7 +960,8 @@ def remote_providers(
         suffix = f"; {', '.join(flags)}" if flags else ""
         _echo(
             f"{row['provider']}: {', '.join(row['job_kinds'])}; "
-            f"result={row['result_kind']}{suffix}"
+            f"compute={row['compute_model']}; result={row['result_kind']}; "
+            f"verification={row['verification_status']}{suffix}"
         )
 
 
@@ -874,12 +974,25 @@ def model_support(
     """Show model/provider proof levels without overstating live support."""
     import json
 
+    from stateset_agents.remote.model_catalog import model_catalog
     from stateset_agents.remote.model_evidence import model_provider_evidence
 
     rows = model_provider_evidence()
     if json_output:
-        _echo(json.dumps({"schema_version": 1, "evidence": rows}, indent=2))
+        _echo(
+            json.dumps(
+                {"schema_version": 2, "models": model_catalog(), "evidence": rows},
+                indent=2,
+            )
+        )
         return
+    for model in model_catalog():
+        _echo(
+            f"{model['model']}: tier={model['tier']}; "
+            f"certification={model['certification']}; "
+            f"recommended_provider={model['recommended_provider']}"
+        )
+    _echo("\nEvidence:")
     for row in rows:
         checked = f" ({row['checked_at']})" if row["checked_at"] else ""
         _echo(

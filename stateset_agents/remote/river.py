@@ -166,6 +166,8 @@ class RiverExecutor(RemoteExecutor):
     name = "river"
     supported_job_kinds = frozenset({"sft", "harvest", "rl"})
     result_kind = "hosted_pointer"
+    compute_model = "managed-remote-autograd"
+    verification_status = "live-training-verified"
 
     #: River's default loss for supervised data.
     SFT_LOSS_FN = "cross_entropy"

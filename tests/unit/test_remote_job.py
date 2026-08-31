@@ -215,6 +215,8 @@ class TestProviderJobKindCapabilities:
             "durable_handles": True,
             "managed_deployments": True,
             "result_kind": "hosted_pointer_or_local_artifacts",
+            "compute_model": "managed-finetuning-and-serving",
+            "verification_status": "code-complete-live-lifecycle-pending",
         }
 
 

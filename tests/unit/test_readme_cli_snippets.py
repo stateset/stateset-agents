@@ -8,12 +8,14 @@ asserts every long flag it uses appears in that help text.
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import re
 import shlex
 import subprocess
 import sys
+from functools import cache
 
 import pytest
 
@@ -115,6 +117,48 @@ def _shlex(line: str) -> list[str]:
         return line.split()
 
 
+@cache
+def _command_options(path: tuple[str, ...]) -> dict[str, dict[str, object]]:
+    """Read exact Click metadata in the same fresh process as the real CLI."""
+    probe = r"""
+import json
+import sys
+
+from typer.main import get_command
+
+from stateset_agents.cli import app
+
+command = get_command(app)
+for word in json.loads(sys.argv[1]):
+    if not hasattr(command, "get_command"):
+        break
+    command = command.get_command(None, word)
+    if command is None:
+        raise SystemExit(f"command not found: {word}")
+
+options = {}
+for parameter in command.params:
+    if hasattr(parameter, "is_flag"):
+        metadata = {
+            "is_flag": parameter.is_flag,
+            "secondary_opts": list(getattr(parameter, "secondary_opts", ())),
+        }
+        for option in (*parameter.opts, *metadata["secondary_opts"]):
+            options[option] = metadata
+print(json.dumps(options, sort_keys=True))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", probe, json.dumps(path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
 @pytest.mark.parametrize(
     "src,lineno,line",
     SNIPPETS,
@@ -139,31 +183,32 @@ def test_readme_command_flags_exist(src: str, lineno: int, line: str) -> None:
     assert result.returncode == 0, f"{where} — {result.stderr[-400:]}"
     assert path, f"{where} — no valid subcommand found"
 
-    help_text = result.stdout
+    options = _command_options(path)
     for flag in sorted(flags):
-        assert (
-            flag in help_text
-        ), f"{where} — unknown flag {flag} for `{' '.join(path)}`"
+        assert flag in options, f"{where} — unknown flag {flag} for `{' '.join(path)}`"
 
     # Boolean flags (rendered as `--flag  --no-flag`) take no value: a snippet
     # writing `--dry-run false` would silently pass `false` as a positional.
     for idx, word in enumerate(words):
         if not word.startswith("--") or "=" in word:
             continue
-        negated = "--no-" + word[2:]
-        if negated not in help_text:
+        option = options.get(word)
+        if option is None or not option["is_flag"]:
             continue
         nxt = words[idx + 1] if idx + 1 < len(words) else None
+        alternative = next(
+            iter(option["secondary_opts"]), f"omit the value after {word}"
+        )
         assert nxt is None or nxt.startswith("-"), (
             f"{where} — {word} is a boolean flag; it takes no value "
-            f"(got {nxt!r}, use {negated} instead)"
+            f"(got {nxt!r}; use {alternative})"
         )
 
 
 def test_expected_snippet_count() -> None:
     """Guard against the extractor silently matching nothing."""
     per_doc = {name: sum(1 for s, _, _ in SNIPPETS if s == name) for name in DOCS}
-    assert per_doc == {"README.md": 21, "QUICKSTART.md": 6}, per_doc
+    assert per_doc == {"README.md": 25, "QUICKSTART.md": 6}, per_doc
 
 
 def test_help_stays_plain_when_the_environment_forces_color(
@@ -179,3 +224,11 @@ def test_help_stays_plain_when_the_environment_forces_color(
     assert result.returncode == 0, result.stderr
     assert "\x1b[" not in result.stdout
     assert "--format" in result.stdout
+
+
+def test_long_options_are_read_from_click_metadata_without_help_truncation() -> None:
+    """Rich may abbreviate long flags on narrow Windows consoles."""
+    options = _command_options(("train-remote",))
+
+    assert "--container-disk-gb" in options
+    assert "--gradient-accumulation-steps" in options
