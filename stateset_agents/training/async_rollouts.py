@@ -316,7 +316,7 @@ class AsyncRolloutCoordinator:
                 return await _submit()
             operation = asyncio.create_task(_submit())
             return await asyncio.wait_for(operation, timeout=timeout_seconds)
-        except TimeoutError as exc:
+        except (TimeoutError, asyncio.TimeoutError) as exc:
             raise AsyncRolloutTimeout(
                 "timed out waiting for rollout queue capacity"
             ) from exc
@@ -376,7 +376,7 @@ class AsyncRolloutCoordinator:
                 return await _collect()
             operation = asyncio.create_task(_collect())
             return await asyncio.wait_for(operation, timeout=timeout_seconds)
-        except TimeoutError as exc:
+        except (TimeoutError, asyncio.TimeoutError) as exc:
             raise AsyncRolloutTimeout("timed out waiting for a rollout batch") from exc
 
     async def advance_policy(self, new_version: int | None = None) -> int:

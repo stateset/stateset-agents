@@ -32,6 +32,18 @@ def _record(label: str, version: int) -> RolloutRecord:
     )
 
 
+async def _wait_for_producers_to_stop(timeout_seconds: float = 1.0) -> None:
+    """Wait for named runtime workers without assuming scheduler latency."""
+    async def _all_stopped() -> None:
+        while any(
+            task.get_name().startswith("stateset-rollout-producer-")
+            for task in asyncio.all_tasks()
+        ):
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(_all_stopped(), timeout=timeout_seconds)
+
+
 def test_async_runtime_surface_is_public_and_lazy() -> None:
     assert training.AsyncRolloutRuntime is AsyncRolloutRuntime
     assert "AsyncRolloutRuntime" in training.__all__
@@ -276,11 +288,7 @@ async def test_external_cancellation_cleans_up_internal_waiters() -> None:
 
     with pytest.raises(asyncio.CancelledError):
         await run_task
-    await asyncio.sleep(0)
-    assert not any(
-        task.get_name().startswith("stateset-rollout-producer-")
-        for task in asyncio.all_tasks()
-    )
+    await _wait_for_producers_to_stop()
 
 
 @pytest.mark.asyncio
@@ -318,11 +326,7 @@ async def test_shutdown_deadline_bounds_cancellation_resistant_producer() -> Non
     assert cancellation_delayed.is_set()
 
     release_producer.set()
-    await asyncio.sleep(0.01)
-    assert not any(
-        task.get_name().startswith("stateset-rollout-producer-")
-        for task in asyncio.all_tasks()
-    )
+    await _wait_for_producers_to_stop()
 
 
 @pytest.mark.asyncio
