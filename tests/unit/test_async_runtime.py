@@ -34,6 +34,7 @@ def _record(label: str, version: int) -> RolloutRecord:
 
 async def _wait_for_producers_to_stop(timeout_seconds: float = 1.0) -> None:
     """Wait for named runtime workers without assuming scheduler latency."""
+
     async def _all_stopped() -> None:
         while any(
             task.get_name().startswith("stateset-rollout-producer-")
