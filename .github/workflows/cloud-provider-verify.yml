@@ -1,0 +1,206 @@
+name: CoreWeave and Nebius Verify
+
+# Deliberately manual and environment-gated. Canary mode is read-only; SFT
+# mode allocates GPU resources and requires an exact acknowledgement. Neither
+# provider exposes an authoritative per-job quote through the integration, so
+# timeout is a safety bound rather than a claimed dollar ceiling.
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Cloud provider to certify
+        type: choice
+        required: true
+        options:
+          - coreweave
+          - nebius
+      mode:
+        description: Read-only canary or billable end-to-end SFT
+        type: choice
+        required: true
+        options:
+          - canary
+          - sft
+      model:
+        description: Published model used for SFT mode
+        required: true
+        default: Qwen/Qwen3.5-0.8B
+      package_version:
+        description: Published stateset-agents version containing these adapters
+        required: true
+      confirmation:
+        description: Enter READ ONLY or CLOUD GPU SPEND APPROVED
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-provider-verify-${{ inputs.provider }}
+  cancel-in-progress: false
+
+jobs:
+  coreweave:
+    if: inputs.provider == 'coreweave'
+    runs-on: ubuntu-latest
+    environment: cloud-provider-verification
+    timeout-minutes: 90
+    env:
+      COREWEAVE_KUBECONFIG_B64: ${{ secrets.COREWEAVE_KUBECONFIG_B64 }}
+      COREWEAVE_KUBE_CONTEXT: ${{ secrets.COREWEAVE_KUBE_CONTEXT }}
+      COREWEAVE_KUBE_NAMESPACE: ${{ secrets.COREWEAVE_KUBE_NAMESPACE }}
+      COREWEAVE_S3_BUCKET: ${{ secrets.COREWEAVE_S3_BUCKET }}
+      COREWEAVE_S3_ENDPOINT_URL: ${{ secrets.COREWEAVE_S3_ENDPOINT_URL }}
+      COREWEAVE_JOB_S3_ENDPOINT_URL: ${{ secrets.COREWEAVE_JOB_S3_ENDPOINT_URL }}
+      COREWEAVE_STORAGE_SECRET: ${{ secrets.COREWEAVE_STORAGE_SECRET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.COREWEAVE_S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.COREWEAVE_S3_SECRET_ACCESS_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      STATESET_MODE: ${{ inputs.mode }}
+      STATESET_CONFIRMATION: ${{ inputs.confirmation }}
+      STATESET_MODEL: ${{ inputs.model }}
+      STATESET_PACKAGE_VERSION: ${{ inputs.package_version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Validate approval and credentials
+        run: |
+          test -n "$COREWEAVE_KUBECONFIG_B64"
+          test -n "$COREWEAVE_S3_BUCKET"
+          test -n "$COREWEAVE_STORAGE_SECRET"
+          if [ "$STATESET_MODE" = sft ]; then
+            test "$STATESET_CONFIRMATION" = "CLOUD GPU SPEND APPROVED"
+          else
+            test "$STATESET_CONFIRMATION" = "READ ONLY"
+          fi
+      - name: Configure CKS access
+        run: |
+          printf '%s' "$COREWEAVE_KUBECONFIG_B64" | base64 --decode > "$RUNNER_TEMP/coreweave-kubeconfig"
+          chmod 600 "$RUNNER_TEMP/coreweave-kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/coreweave-kubeconfig" >> "$GITHUB_ENV"
+      - name: Install exact checkout
+        run: pip install -e ".[coreweave]"
+      - name: Run read-only canary
+        run: stateset-agents provider-canary --provider coreweave --strict --output coreweave-canary.json
+      - name: Generate bounded training data
+        if: inputs.mode == 'sft'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          rows = [{"messages": [
+              {"role": "user", "content": f"Return token {i}."},
+              {"role": "assistant", "content": f"COREWEAVE-{i}"},
+          ]} for i in range(16)]
+          Path("cloud-train.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+          PY
+      - name: Run bounded CKS SFT
+        if: inputs.mode == 'sft'
+        run: |
+          stateset-agents train-remote --provider coreweave \
+            --dataset cloud-train.jsonl --base-model "$STATESET_MODEL" \
+            --package-version "$STATESET_PACKAGE_VERSION" \
+            --num-epochs 1 --gpu L40 --gpu-count 1 --timeout 3600 \
+            --container-disk-gb 80 --output-dir cloud-evidence/coreweave
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coreweave-verification
+          path: |
+            coreweave-canary.json
+            cloud-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
+  nebius:
+    if: inputs.provider == 'nebius'
+    runs-on: ubuntu-latest
+    environment: cloud-provider-verification
+    timeout-minutes: 90
+    env:
+      NEBIUS_PROJECT_ID: ${{ secrets.NEBIUS_PROJECT_ID }}
+      NEBIUS_SERVICE_ACCOUNT_ID: ${{ secrets.NEBIUS_SERVICE_ACCOUNT_ID }}
+      NEBIUS_PUBLIC_KEY_ID: ${{ secrets.NEBIUS_PUBLIC_KEY_ID }}
+      NEBIUS_PRIVATE_KEY_B64: ${{ secrets.NEBIUS_PRIVATE_KEY_B64 }}
+      NEBIUS_PROFILE: stateset-ci
+      NEBIUS_SUBNET_ID: ${{ secrets.NEBIUS_SUBNET_ID }}
+      NEBIUS_S3_BUCKET: ${{ secrets.NEBIUS_S3_BUCKET }}
+      NEBIUS_S3_ENDPOINT_URL: ${{ secrets.NEBIUS_S3_ENDPOINT_URL }}
+      NEBIUS_S3_ACCESS_KEY_SECRET: ${{ secrets.NEBIUS_S3_ACCESS_KEY_SECRET }}
+      NEBIUS_S3_SECRET_KEY_SECRET: ${{ secrets.NEBIUS_S3_SECRET_KEY_SECRET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.NEBIUS_S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.NEBIUS_S3_SECRET_ACCESS_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      STATESET_MODE: ${{ inputs.mode }}
+      STATESET_CONFIRMATION: ${{ inputs.confirmation }}
+      STATESET_MODEL: ${{ inputs.model }}
+      STATESET_PACKAGE_VERSION: ${{ inputs.package_version }}
+      NEBIUS_CLI_INSTALL_SHA256: ${{ secrets.NEBIUS_CLI_INSTALL_SHA256 }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Validate approval and credentials
+        run: |
+          test -n "$NEBIUS_PROJECT_ID"
+          test -n "$NEBIUS_SERVICE_ACCOUNT_ID"
+          test -n "$NEBIUS_PUBLIC_KEY_ID"
+          test -n "$NEBIUS_PRIVATE_KEY_B64"
+          test -n "$NEBIUS_CLI_INSTALL_SHA256"
+          if [ "$STATESET_MODE" = sft ]; then
+            test "$STATESET_CONFIRMATION" = "CLOUD GPU SPEND APPROVED"
+          else
+            test "$STATESET_CONFIRMATION" = "READ ONLY"
+          fi
+      - name: Install and configure the official Nebius CLI
+        run: |
+          curl -fsSL https://storage.eu-north1.nebius.cloud/cli/install.sh -o "$RUNNER_TEMP/install-nebius.sh"
+          printf '%s  %s\n' "$NEBIUS_CLI_INSTALL_SHA256" "$RUNNER_TEMP/install-nebius.sh" | sha256sum --check --strict
+          bash "$RUNNER_TEMP/install-nebius.sh"
+          echo "$HOME/.nebius/bin" >> "$GITHUB_PATH"
+          printf '%s' "$NEBIUS_PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/nebius-private-key.pem"
+          chmod 600 "$RUNNER_TEMP/nebius-private-key.pem"
+          "$HOME/.nebius/bin/nebius" profile create \
+            --profile "$NEBIUS_PROFILE" --endpoint api.nebius.cloud \
+            --service-account-id "$NEBIUS_SERVICE_ACCOUNT_ID" \
+            --public-key-id "$NEBIUS_PUBLIC_KEY_ID" \
+            --private-key-file "$RUNNER_TEMP/nebius-private-key.pem" \
+            --parent-id "$NEBIUS_PROJECT_ID"
+      - name: Install exact checkout
+        run: pip install -e ".[nebius]"
+      - name: Run read-only canary
+        run: stateset-agents provider-canary --provider nebius --strict --output nebius-canary.json
+      - name: Generate bounded training data
+        if: inputs.mode == 'sft'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          rows = [{"messages": [
+              {"role": "user", "content": f"Return token {i}."},
+              {"role": "assistant", "content": f"NEBIUS-{i}"},
+          ]} for i in range(16)]
+          Path("cloud-train.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+          PY
+      - name: Run bounded Serverless AI SFT
+        if: inputs.mode == 'sft'
+        run: |
+          stateset-agents train-remote --provider nebius \
+            --dataset cloud-train.jsonl --base-model "$STATESET_MODEL" \
+            --package-version "$STATESET_PACKAGE_VERSION" \
+            --num-epochs 1 --gpu gpu-l40s-a --gpu-count 1 --timeout 3600 \
+            --container-disk-gb 80 --output-dir cloud-evidence/nebius
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nebius-verification
+          path: |
+            nebius-canary.json
+            cloud-evidence/
+          if-no-files-found: warn
+          retention-days: 30

@@ -81,6 +81,28 @@ MODEL_PROVIDER_EVIDENCE: tuple[ModelProviderEvidence, ...] = (
         ),
     ),
     ModelProviderEvidence(
+        model="Qwen/Qwen3.5-0.8B",
+        provider="coreweave",
+        level="unit-tested",
+        outcome="pass",
+        checked_at="2026-08-31",
+        evidence=(
+            "CKS Job, object-store transport, durable lifecycle, cleanup, and "
+            "Dedicated Inference payloads are unit-pinned; no live claim."
+        ),
+    ),
+    ModelProviderEvidence(
+        model="Qwen/Qwen3.5-0.8B",
+        provider="nebius",
+        level="unit-tested",
+        outcome="pass",
+        checked_at="2026-08-31",
+        evidence=(
+            "Serverless AI job and endpoint lifecycles are unit-pinned; "
+            "no live training or inference claim."
+        ),
+    ),
+    ModelProviderEvidence(
         model="Qwen/Qwen3.8-Flash-Next",
         provider="framework",
         level="unit-tested",

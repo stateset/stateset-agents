@@ -21,6 +21,12 @@ def _load_fireworks() -> RemoteExecutor:
     return FireworksExecutor()
 
 
+def _load_coreweave() -> RemoteExecutor:
+    from stateset_agents.remote.coreweave import CoreWeaveExecutor
+
+    return CoreWeaveExecutor()
+
+
 def _load_local() -> RemoteExecutor:
     from stateset_agents.remote.local import LocalExecutor
 
@@ -31,6 +37,12 @@ def _load_modal() -> RemoteExecutor:
     from stateset_agents.remote.modal import ModalExecutor
 
     return ModalExecutor()
+
+
+def _load_nebius() -> RemoteExecutor:
+    from stateset_agents.remote.nebius import NebiusExecutor
+
+    return NebiusExecutor()
 
 
 def _load_runpod() -> RemoteExecutor:
@@ -46,9 +58,11 @@ def _load_river() -> RemoteExecutor:
 
 
 _PROVIDERS: dict[str, Callable[[], RemoteExecutor]] = {
+    "coreweave": _load_coreweave,
     "fireworks": _load_fireworks,
     "local": _load_local,
     "modal": _load_modal,
+    "nebius": _load_nebius,
     "river": _load_river,
     "runpod": _load_runpod,
 }

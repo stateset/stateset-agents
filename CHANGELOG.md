@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added first-class CoreWeave CKS and Nebius Serverless AI remote SFT
+  executors with durable handles, S3-compatible artifact transport, secret
+  references, cancellation, cleanup, and non-billable authentication canaries.
+- Added a provider-neutral managed-inference lifecycle plus CoreWeave
+  Dedicated Inference and Nebius endpoint adapters, CLI deploy/status/delete
+  commands, provider guides, and an approval-gated live certification workflow.
 - Added a dependency-free, strictly typed `@stateset/agents` Node.js client
   for Messages, OpenAI-compatible chat completions, model discovery, health,
   and SSE streaming, with runtime, declaration, and package-contract tests.

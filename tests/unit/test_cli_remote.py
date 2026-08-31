@@ -87,6 +87,8 @@ class TestCommandRegistration:
         assert rows["runpod"]["verification_status"] == "live-end-to-end"
         assert rows["river"]["compute_model"] == "managed-remote-autograd"
         assert rows["modal"]["verification_status"] == "transport-unverified"
+        assert rows["coreweave"]["compute_model"] == "managed-bare-metal-kubernetes"
+        assert rows["nebius"]["compute_model"] == "serverless-container-job"
 
 
 class TestSuccessfulRun:
@@ -663,6 +665,106 @@ class TestUndeployCommand:
         assert result.exit_code == 0, result.output
         assert recorded["deployment"] == "dep-1"
         assert "dep-1" in result.output
+
+
+class TestManagedInferenceCommands:
+    def test_deploy_outputs_durable_handle(self, monkeypatch):
+        from stateset_agents.remote import deployment_registry
+        from stateset_agents.remote.deployment import DeploymentHandle
+
+        class Provider:
+            def deploy(self, spec):
+                assert spec.weights_uri == "s3://weights/model"
+                return DeploymentHandle(
+                    "coreweave",
+                    "deployment-1",
+                    spec.model_name,
+                    "https://gateway",
+                    "gateway-1",
+                    True,
+                )
+
+        monkeypatch.setattr(
+            deployment_registry, "get_deployment_provider", lambda name: Provider()
+        )
+        result = runner.invoke(
+            app,
+            [
+                "inference-deploy",
+                "--provider",
+                "coreweave",
+                "--name",
+                "support",
+                "--model-name",
+                "support-model",
+                "--weights-uri",
+                "s3://weights/model",
+                "--gpu",
+                "gpu-type",
+                "--zone",
+                "zone-a",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["deployment_id"] == "deployment-1"
+
+    def test_delete_delegates_to_provider(self, monkeypatch):
+        from stateset_agents.remote import deployment_registry
+
+        deleted = []
+
+        class Provider:
+            def delete(self, handle):
+                deleted.append(handle)
+
+        monkeypatch.setattr(
+            deployment_registry, "get_deployment_provider", lambda name: Provider()
+        )
+        result = runner.invoke(
+            app,
+            [
+                "inference-delete",
+                "--provider",
+                "nebius",
+                "--deployment-id",
+                "endpoint-1",
+                "--model-name",
+                "support",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert deleted[0].deployment_id == "endpoint-1"
+
+    def test_delete_can_remove_an_owned_coreweave_gateway(self, monkeypatch):
+        from stateset_agents.remote import deployment_registry
+
+        deleted = []
+
+        class Provider:
+            def delete(self, handle):
+                deleted.append(handle)
+
+        monkeypatch.setattr(
+            deployment_registry, "get_deployment_provider", lambda name: Provider()
+        )
+        result = runner.invoke(
+            app,
+            [
+                "inference-delete",
+                "--provider",
+                "coreweave",
+                "--deployment-id",
+                "deployment-1",
+                "--model-name",
+                "support",
+                "--gateway-id",
+                "gateway-1",
+                "--delete-gateway",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert deleted[0].gateway_id == "gateway-1"
+        assert deleted[0].owns_gateway is True
 
     def test_undeploy_on_a_provider_without_deployments_exits_nonzero(
         self, monkeypatch

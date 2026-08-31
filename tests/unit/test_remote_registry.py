@@ -33,3 +33,5 @@ class TestAvailableProviders:
 
         assert "local" in providers
         assert "modal" in providers
+        assert "coreweave" in providers
+        assert "nebius" in providers

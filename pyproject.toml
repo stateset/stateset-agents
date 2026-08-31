@@ -210,6 +210,16 @@ remote = [
     # to the provider API rather than depending on a provider SDK.
     "requests>=2.31.0",
 ]
+cloud = [
+    # S3-compatible artifact transport shared by CoreWeave and Nebius.
+    "boto3>=1.34.0",
+]
+coreweave = [
+    "stateset-agents[remote,cloud]",
+]
+nebius = [
+    "stateset-agents[remote,cloud]",
+]
 fireworks = [
     # Fireworks provider for `train-remote --provider fireworks`. Not a core
     # dependency, for the same reason as modal: the framework imports and
@@ -228,7 +238,7 @@ modal = [
     "modal>=1.1.2",
 ]
 full = [
-    "stateset-agents[training,api,hpo,auto-research,vllm,rust]",
+    "stateset-agents[training,api,hpo,auto-research,vllm,rust,cloud]",
 ]
 
 [project.urls]
