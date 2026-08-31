@@ -101,6 +101,23 @@ def test_cks_submit_status_logs_fetch_and_manifest(spec, tmp_path) -> None:
     assert (executor.fetch(handle) / "adapter_model.safetensors").exists()
 
 
+def test_cks_scratch_disk_sets_worker_tempdir(spec, tmp_path) -> None:
+    spec.container_disk_gb = 80
+    kube = FakeKube()
+    executor = CoreWeaveExecutor(
+        kube=kube,
+        artifact_store=FakeArtifacts(),
+        bucket="bucket",
+        storage_secret="secret",
+        state_dir=tmp_path,
+    )
+    executor.submit(spec)
+    pod = kube.manifests[0]["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    assert {"name": "TMPDIR", "value": "/stateset-scratch"} in container["env"]
+    assert container["volumeMounts"][0]["mountPath"] == "/stateset-scratch"
+
+
 def test_cks_cancel_deletes_kubernetes_job(spec, tmp_path) -> None:
     kube = FakeKube()
     kube.get_job = lambda name: {"metadata": {"name": name}, "status": {"active": 1}}

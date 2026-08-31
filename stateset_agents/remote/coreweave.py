@@ -299,7 +299,10 @@ class CoreWeaveExecutor(RemoteExecutor):
             "nodeSelector": {"gpu.nvidia.com/class": spec.gpu or self.DEFAULT_GPU},
         }
         if spec.container_disk_gb is not None:
-            container["volumeMounts"] = [{"name": "scratch", "mountPath": "/tmp"}]
+            container["env"].append({"name": "TMPDIR", "value": "/stateset-scratch"})
+            container["volumeMounts"] = [
+                {"name": "scratch", "mountPath": "/stateset-scratch"}
+            ]
             pod_spec["volumes"] = [
                 {
                     "name": "scratch",

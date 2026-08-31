@@ -531,7 +531,7 @@ class NebiusEndpointProvider(InferenceDeploymentProvider):
             "--served-model-name",
             spec.model_name,
             "--host",
-            "0.0.0.0",
+            "0.0.0.0",  # nosec B104 -- endpoint container must bind externally
             "--port",
             "8000",
         ]
