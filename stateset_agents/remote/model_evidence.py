@@ -37,6 +37,17 @@ class ModelProviderEvidence:
 
 MODEL_PROVIDER_EVIDENCE: tuple[ModelProviderEvidence, ...] = (
     ModelProviderEvidence(
+        model="thinkingmachines/Inkling-Small",
+        provider="tinker",
+        level="unit-tested",
+        outcome="pass",
+        checked_at="2026-08-31",
+        evidence=(
+            "Tinker Datum construction, remote-autograd loop, optimizer steps, "
+            "checkpoint pointers, and lifecycle are unit-pinned; no live claim."
+        ),
+    ),
+    ModelProviderEvidence(
         model="Qwen/Qwen3.5-0.8B",
         provider="runpod",
         level="inference-verified",

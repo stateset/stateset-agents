@@ -22,8 +22,15 @@ def _nebius() -> InferenceDeploymentProvider:
     return NebiusEndpointProvider()
 
 
+def _huggingface() -> InferenceDeploymentProvider:
+    from stateset_agents.remote.huggingface import HuggingFaceEndpointProvider
+
+    return HuggingFaceEndpointProvider()
+
+
 _PROVIDERS: dict[str, Callable[[], InferenceDeploymentProvider]] = {
     "coreweave": _coreweave,
+    "huggingface": _huggingface,
     "nebius": _nebius,
 }
 

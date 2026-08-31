@@ -64,12 +64,12 @@ corresponding local suite completed with **4,898 passed and 11 skipped**. See
 the retained [proof ledger](docs/PROOFS.md) for the evidence behind individual
 training, serving, and provider claims.
 
-The `v0.44.0` CoreWeave/Nebius release candidate completed its local full suite with
-**4,932 passed and 11 skipped**, plus clean Ruff, isort, type, repository
-hygiene, and workflow-policy gates. Provider-live evidence is intentionally
-still pending.
+The `v0.45.0` managed-provider release completed its local full suite with
+**4,939 passed and 11 skipped**, plus clean Ruff, type, repository-hygiene,
+package-build, and distribution-content gates. New provider-live evidence is
+intentionally still pending.
 
-- **Published Python package:** `stateset-agents==0.44.0` on PyPI.
+- **Current Python release:** `stateset-agents==0.45.0` on PyPI.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/); its first npm registry
   publication remains pending.
@@ -151,6 +151,10 @@ without operating a GPU machine.
 | **CoreWeave** | Bare-metal CKS training; Dedicated Inference | Local adapters; hosted BYOW model | Integration and cleanup unit-pinned; live certification pending ([guide](docs/COREWEAVE_PROVIDER.md)) |
 | **Nebius** | Serverless AI jobs and endpoints | Local adapters; hosted vLLM model | Integration and cleanup unit-pinned; live certification pending ([guide](docs/NEBIUS_PROVIDER.md)) |
 | **Fireworks AI** | Managed fine-tuning and serving | Hosted LoRA, with optional local artifacts | Integration complete; live full-lifecycle certification pending |
+| **Tinker** | Managed remote autograd | Hosted sampler and training-state pointers | Inkling-Small SFT loop unit-pinned; live certification pending ([guide](docs/MANAGED_TRAINING_PROVIDERS.md)) |
+| **Prime Intellect Lab** | Managed verifiers/OpenEnv RL | Hosted Prime run pointer | Config/CLI lifecycle unit-pinned; live certification pending ([guide](docs/MANAGED_TRAINING_PROVIDERS.md)) |
+| **Hugging Face** | GPU Jobs and Inference Endpoints | Writable bucket artifact pointer; hosted endpoint | Job/endpoint lifecycles unit-pinned; live certification pending ([guide](docs/MANAGED_TRAINING_PROVIDERS.md)) |
+| **Together AI** | Managed supervised fine-tuning | Hosted tuned-model pointer | Upload/train/poll/cancel lifecycle unit-pinned; live certification pending ([guide](docs/MANAGED_TRAINING_PROVIDERS.md)) |
 | **Modal** | Rented serverless GPU | Local artifacts | Transport certification pending; per-job Volume cleanup is enforced |
 | **Local** | Your machine or cluster | Local artifacts | Unit-tested reference path |
 
@@ -252,7 +256,21 @@ coverage, live hardware attempts, and successful inference by provider.
 
 - No unreleased changes yet.
 
-**v0.44.0 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.44.0/)):**
+**v0.45.0 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.45.0/)):**
+
+- **Four new managed substrates.** Tinker remote autograd, Prime Intellect Lab
+  verifiers/OpenEnv RL, Hugging Face GPU Jobs plus Inference Endpoints, and
+  Together managed LoRA fine-tuning now share StateSet's provider lifecycle
+  without hiding their different artifact and durability semantics.
+- **Inkling-Small support.** `thinkingmachines/Inkling-Small` is cataloged as a
+  Tinker-native frontier model with assistant-masked SFT, token-aligned
+  importance-sampling RL, sampler checkpoints, resumable state, and honest
+  unit-tested/live-pending evidence.
+- **Provider-aware CLI and canaries.** `train-remote` accepts explicit job modes
+  and provider options, while credential-safe probes cover Tinker, Hugging
+  Face, and Together without creating billable resources.
+
+**v0.44.0:**
 
 - **CoreWeave and Nebius are first-class providers.** The same packaged SFT
   job now runs on CoreWeave CKS or Nebius Serverless AI with durable handles,
@@ -995,8 +1013,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.44.0" # current stable release on PyPI
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.44.0"
+pip install "stateset-agents==0.45.0" # current stable release on PyPI
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.45.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1088,6 +1106,7 @@ wired up:
 | `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
 | `zai-org/GLM-5.2` | `python examples/finetune_glm5_2_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
 | `zai-org/GLM-5.3-Flash` | `python examples/finetune_gspo.py --model glm5.3-flash` | | 320B / 18B active, native multimodal, FP8, 1M ctx |
+| `thinkingmachines/Inkling-Small` | `stateset-agents train-remote --provider tinker --base-model thinkingmachines/Inkling-Small ...` | | Tinker-native 276B / 12B-active multimodal MoE; remote-autograd SFT/RL, hosted sampler/state pointers |
 
 Every CLI starter accepts the same flags: `--json-output`, `--list-profiles`,
 `--starter-profile NAME`, `--write-config PATH`, `--config PATH --no-dry-run`.
@@ -1727,7 +1746,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.44.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.45.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

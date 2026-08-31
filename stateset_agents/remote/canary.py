@@ -31,10 +31,34 @@ _CREDENTIAL_ENV = {
     # Their read-only probes report authentication errors directly.
     "coreweave": (),
     "fireworks": ("FIREWORKS_API_KEY", "FIREWORKS_ACCOUNT_ID"),
+    "huggingface": ("HF_TOKEN",),
     "nebius": (),
     "river": ("RIVER_API_KEY",),
     "runpod": ("RUNPOD_API_KEY",),
+    "tinker": ("TINKER_API_KEY",),
+    "together": ("TOGETHER_API_KEY",),
 }
+
+
+def _probe_huggingface(executor: RemoteExecutor) -> tuple[dict[str, Any], bool]:
+    user = executor._client().whoami()  # type: ignore[attr-defined]
+    return {"authenticated": True, "identity": _safe_value(user)}, True
+
+
+def _probe_together(executor: RemoteExecutor) -> tuple[dict[str, Any], bool]:
+    response = executor._client().models.list()  # type: ignore[attr-defined]
+    models = list(islice(getattr(response, "data", response), 10))
+    return {"authenticated": True, "models_observed": len(models)}, True
+
+
+def _probe_tinker(executor: RemoteExecutor) -> tuple[dict[str, Any], bool]:
+    _, client = executor._sdk()  # type: ignore[attr-defined]
+    capabilities = client.get_server_capabilities()
+    models = getattr(capabilities, "supported_models", ())
+    return {
+        "authenticated": True,
+        "models_observed": len(models),
+    }, True
 
 
 @dataclass(frozen=True)
@@ -167,9 +191,12 @@ def _probe_executor_canary(
 _PROBES = {
     "coreweave": _probe_executor_canary,
     "fireworks": _probe_fireworks,
+    "huggingface": _probe_huggingface,
     "nebius": _probe_executor_canary,
     "river": _probe_river,
     "runpod": _probe_runpod,
+    "tinker": _probe_tinker,
+    "together": _probe_together,
 }
 
 

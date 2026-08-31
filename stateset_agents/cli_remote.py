@@ -587,7 +587,23 @@ def train_remote(
             "docs/FIREWORKS_PROVIDER.md). 'nebius' runs an OCI training job "
             "on Serverless AI; 'coreweave' submits a Kubernetes Job to an "
             "existing CKS cluster. Both exchange artifacts through their "
-            "S3-compatible object stores."
+            "S3-compatible object stores. Tinker runs remote-autograd SFT/RL; "
+            "Prime runs verifiers/OpenEnv RL; Hugging Face runs container Jobs; "
+            "Together runs managed SFT. See docs/MANAGED_TRAINING_PROVIDERS.md."
+        ),
+    ),
+    job_kind: str = typer.Option(
+        "sft",
+        "--job-kind",
+        help="Training mode: sft, harvest, or rl (provider capabilities apply).",
+    ),
+    provider_options_json: str | None = typer.Option(
+        None,
+        "--provider-options-json",
+        help=(
+            "Provider/mode options as JSON. Prime RL accepts environment, "
+            "harness, runtime, max_steps, rollouts_per_example, max_tokens, "
+            "and temperature."
         ),
     ),
     output_dir: Path = typer.Option(
@@ -719,7 +735,7 @@ def train_remote(
         help="Apply catalog GPU/count/disk recommendations on RunPod when omitted.",
     ),
 ) -> None:
-    """Run the SFT job from `improve` on local or rented GPU compute."""
+    """Run SFT, harvest, or RL on local, rented, or managed compute."""
     prompts: list[str | dict] | None = None
     if eval_prompts is not None:
         if not eval_prompts.exists():
@@ -730,6 +746,19 @@ def train_remote(
             for line in eval_prompts.read_text().splitlines()
             if line.strip()
         ]
+
+    provider_options: dict[str, object] | None = None
+    if provider_options_json:
+        import json
+
+        try:
+            decoded = json.loads(provider_options_json)
+            if not isinstance(decoded, dict):
+                raise ValueError("must decode to an object")
+            provider_options = decoded
+        except (json.JSONDecodeError, ValueError) as exc:
+            _echo(f"Invalid --provider-options-json: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
 
     normalized_provider = provider.strip().lower()
     resource_plan: dict[str, object] | None = None
@@ -795,6 +824,8 @@ def train_remote(
             resume=resume,
             eval_prompts=prompts,
             eval_max_new_tokens=eval_max_new_tokens,
+            job_kind=job_kind,
+            harvest=provider_options,
             gpu=gpu,
             gpu_count=gpu_count or 1,
             timeout_s=timeout,
@@ -818,7 +849,10 @@ def train_remote(
         _echo("--deploy is only supported by --provider fireworks.", err=True)
         raise typer.Exit(code=2)
 
-    _echo(f"Submitting SFT job to '{provider}' ({spec.gpu or 'provider default'})…")
+    _echo(
+        f"Submitting {spec.job_kind.upper()} job to '{provider}' "
+        f"({spec.gpu or 'provider default'})…"
+    )
     try:
         handle = executor.submit(spec)
         result = executor.wait(handle)
@@ -835,13 +869,19 @@ def train_remote(
 
     if result.cost_usd is not None:
         _echo(f"Cost: ~${result.cost_usd:.2f} ({result.duration_s:.0f}s of pod time)")
-    if normalized_provider == "river":
+    if normalized_provider in {
+        "river",
+        "tinker",
+        "prime",
+        "huggingface",
+        "together",
+    }:
         # River keeps the weights; what landed locally is a pointer, so the
         # usual `serve --checkpoint` hint would be a lie.
-        _echo(f"Done. River checkpoint pointer written to {result.output_dir}")
+        _echo(f"Done. {executor.name} result pointer written to {result.output_dir}")
         _echo(
-            "The trained LoRA lives on River — sample it through the River "
-            f"API using the checkpoint in {result.output_dir}/river_checkpoint.json"
+            f"The managed result lives on {executor.name}; use the JSON pointer "
+            f"in {result.output_dir} to reconnect or deploy it."
         )
         return
     if normalized_provider == "fireworks":
@@ -901,7 +941,10 @@ def remote_job(
     provider: str = typer.Option(
         "fireworks",
         "--provider",
-        help="Provider that owns the job. Durable reconnect is currently Fireworks.",
+        help=(
+            "Provider that owns the job. Durable reconnect is supported by "
+            "Fireworks, Hugging Face Jobs, and Together."
+        ),
     ),
     wait: bool = typer.Option(
         False, "--wait", help="Poll to a terminal state and fetch its artifacts."
@@ -1241,7 +1284,9 @@ def adapters(
 
 @app.command("inference-deploy")
 def inference_deploy(
-    provider: str = typer.Option(..., "--provider", help="coreweave or nebius."),
+    provider: str = typer.Option(
+        ..., "--provider", help="coreweave, huggingface, or nebius."
+    ),
     name: str = typer.Option(..., "--name", help="Provider deployment name."),
     model_name: str = typer.Option(
         ..., "--model-name", help="Model name exposed by the OpenAI-compatible API."
@@ -1298,7 +1343,9 @@ def inference_deploy(
 
 @app.command("inference-status")
 def inference_status(
-    provider: str = typer.Option(..., "--provider", help="coreweave or nebius."),
+    provider: str = typer.Option(
+        ..., "--provider", help="coreweave, huggingface, or nebius."
+    ),
     deployment_id: str = typer.Option(..., "--deployment-id"),
     model_name: str = typer.Option(..., "--model-name"),
 ) -> None:
@@ -1320,7 +1367,9 @@ def inference_status(
 
 @app.command("inference-delete")
 def inference_delete(
-    provider: str = typer.Option(..., "--provider", help="coreweave or nebius."),
+    provider: str = typer.Option(
+        ..., "--provider", help="coreweave, huggingface, or nebius."
+    ),
     deployment_id: str = typer.Option(..., "--deployment-id"),
     model_name: str = typer.Option(..., "--model-name"),
     gateway_id: str | None = typer.Option(

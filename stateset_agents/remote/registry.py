@@ -57,14 +57,42 @@ def _load_river() -> RemoteExecutor:
     return RiverExecutor()
 
 
+def _load_huggingface() -> RemoteExecutor:
+    from stateset_agents.remote.huggingface import HuggingFaceJobsExecutor
+
+    return HuggingFaceJobsExecutor()
+
+
+def _load_prime() -> RemoteExecutor:
+    from stateset_agents.remote.prime import PrimeLabExecutor
+
+    return PrimeLabExecutor()
+
+
+def _load_tinker() -> RemoteExecutor:
+    from stateset_agents.remote.tinker import TinkerExecutor
+
+    return TinkerExecutor()
+
+
+def _load_together() -> RemoteExecutor:
+    from stateset_agents.remote.together import TogetherExecutor
+
+    return TogetherExecutor()
+
+
 _PROVIDERS: dict[str, Callable[[], RemoteExecutor]] = {
     "coreweave": _load_coreweave,
     "fireworks": _load_fireworks,
+    "huggingface": _load_huggingface,
     "local": _load_local,
     "modal": _load_modal,
     "nebius": _load_nebius,
+    "prime": _load_prime,
     "river": _load_river,
     "runpod": _load_runpod,
+    "tinker": _load_tinker,
+    "together": _load_together,
 }
 
 
