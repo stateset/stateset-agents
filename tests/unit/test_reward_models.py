@@ -128,11 +128,10 @@ class TestRewardDataset:
 
     def test_dataset_creation(self):
         """Test dataset can be created"""
-        from transformers import AutoTokenizer
-
         from stateset_agents.training.transformer_reward_model import (
             RewardDataset,
             RewardExample,
+            _SimpleTokenizer,
         )
 
         examples = [
@@ -144,9 +143,10 @@ class TestRewardDataset:
             ),
         ]
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            "sentence-transformers/all-MiniLM-L6-v2"
-        )
+        # A unit test must not depend on Hugging Face availability or network
+        # latency. The production fallback exercises the same tokenizer
+        # contract that RewardDataset consumes.
+        tokenizer = _SimpleTokenizer()
         dataset = RewardDataset(examples, tokenizer, max_length=128)
 
         assert len(dataset) == 2
