@@ -35,7 +35,11 @@ has retained tests or live evidence; an unchecked box is not a product claim.
   checkpoint bytes and rejects missing, duplicate, or semantically drifted
   NeMo RL, verl, and OpenRLHF evidence
 - [x] Immutable conformance execution envelopes with digest-pinned images,
-  exact GPU topology, workload timeouts, spend ceilings, and failure accounting
+  exact GPU topology/disk, workload and total-lifetime bounds, spend ceilings,
+  and failure accounting
+- [x] Fail-closed RunPod conformance launcher with zero-cost catalog planning,
+  explicit spend confirmation, authoritative price recheck, remote
+  self-destruct, local recovery lease, cost ledger, and portable retrieval
 
 See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 

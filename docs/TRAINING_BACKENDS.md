@@ -129,12 +129,16 @@ It binds the backend result to the manifest and experiment digests, exact GPU
 identities, runtime, wall time, and artifact hash. Success is adapter
 conformance only; it is not comparative performance evidence.
 
-Manifest schema v2 makes the execution envelope part of that immutable input:
-provider and tier, digest-pinned container image, exact GPU name/count, workload
-timeout, and a finite positive dollar ceiling. The local runner refuses GPU or
-timeout drift before invoking an engine. The provider wrapper remains
-responsible for checking its live quote against the declared dollar ceiling
-before it creates a billable resource.
+Manifest schema v3 makes the execution envelope part of that immutable input:
+provider and tier, digest-pinned container image, exact GPU name/count and disk,
+workload timeout, total billable pod lifetime, and a finite positive dollar
+ceiling. The local runner refuses GPU or timeout drift before invoking an
+engine. `benchmarks/runpod_backend_conformance.py` supplies provider enforcement:
+its default mode is a zero-cost catalog plan, while provisioning additionally
+requires `--execute` plus an exact `--confirm-max-cost-usd`. It rechecks the
+authoritative whole-pod price immediately after allocation and terminates on
+drift, arms a remote lifetime watchdog, maintains a crash-recovery lease, and
+records measured pod lifetime and estimated cost alongside downloaded evidence.
 
 Conformance artifacts use paths relative to their evidence document. A complete
 backend output directory can therefore be moved off the worker and revalidated

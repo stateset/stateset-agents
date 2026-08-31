@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "backend": "nemo-rl",
   "backend_version": "0.6.0+REPLACE_WITH_SOURCE_SHA",
   "harness_revision": "REPLACE_WITH_40_CHARACTER_STATESET_COMMIT",
@@ -9,7 +9,9 @@
     "container_image": "REPLACE_WITH_IMAGE@sha256:REPLACE_WITH_64_CHARACTER_DIGEST",
     "gpu_name": "NVIDIA A40",
     "gpu_count": 1,
+    "container_disk_gb": 80,
     "timeout_seconds": 1800,
+    "max_lifetime_seconds": 2400,
     "max_cost_usd": 1.0
   },
   "experiment": {

@@ -40,8 +40,11 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
   bytes and requires one semantically aligned NeMo RL, OpenRLHF, and verl record
   before the adapter roster can be called complete.
 - Immutable conformance execution envelopes that bind provider tier,
-  digest-pinned images, exact GPU topology, workload timeouts, and spend
-  ceilings without treating an unevaluated ceiling as provider enforcement.
+  digest-pinned images, exact GPU topology/disk, workload and total pod-lifetime
+  bounds, and spend ceilings. The RunPod launcher performs a free public-catalog
+  plan, requires explicit spend confirmation, rechecks the authoritative pod
+  price after allocation, arms a remote self-destruct, and always retains a
+  cost record while keeping a cleanup lease until termination is confirmed.
 
 StateSet's focus is the complete improvement loop: preserve the agent's
 multi-turn production traces, turn them into reproducible rewards and

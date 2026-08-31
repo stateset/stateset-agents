@@ -38,7 +38,7 @@ def _manifest(
     max_cost_usd: float = 1.0,
 ) -> dict[str, Any]:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "backend": backend,
         "backend_version": f"{backend}-version",
         "harness_revision": harness,
@@ -48,7 +48,9 @@ def _manifest(
             "container_image": f"registry.example/{backend}@sha256:" + "d" * 64,
             "gpu_name": "NVIDIA H100",
             "gpu_count": 1,
+            "container_disk_gb": 80,
             "timeout_seconds": 60,
+            "max_lifetime_seconds": 120,
             "max_cost_usd": max_cost_usd,
         },
         "experiment": {
@@ -79,7 +81,7 @@ def _write_evidence(
     (artifact / "weights.bin").write_bytes(backend.encode())
     manifest = _manifest(backend, seed=seed, harness=harness, max_cost_usd=max_cost_usd)
     evidence = {
-        "schema_version": 2,
+        "schema_version": 3,
         "kind": "stateset-external-backend-conformance",
         "status": "completed",
         "measured": True,
