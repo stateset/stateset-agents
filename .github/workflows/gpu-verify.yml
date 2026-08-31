@@ -27,6 +27,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: gpu-verify
+  cancel-in-progress: false
+
 jobs:
   sft-live-smoke:
     runs-on: ubuntu-latest
@@ -118,6 +122,8 @@ jobs:
             gpu=gpu,
             cloud_type="COMMUNITY",
             timeout_s=1800,
+            container_disk_gb=40,
+            max_cost_usd=0.50,
             # Held-out prompts with expect-specs: the job returns
             # eval_results.json with base-vs-finetuned completions AND
             # exits non-zero unless each finetuned completion contains
@@ -128,7 +134,9 @@ jobs:
                 {"prompt": "Say the number 77.", "expect": ["number"]},
             ],
         )
-        executor = RunPodExecutor(wheel=Path(wheel))
+        # One pod only: max_cost_usd is therefore a total workflow ceiling,
+        # not a per-attempt ceiling multiplied by spot-pod retries.
+        executor = RunPodExecutor(wheel=Path(wheel), max_provision_attempts=1)
         result = executor.wait(executor.submit(spec))
         for line in result.logs:
             print(line)
@@ -228,16 +236,22 @@ jobs:
       run: |
         python - <<'PY'
         import glob
+        import math
+        import shlex
         import sys
+        import tempfile
+        import time
         import uuid
         from pathlib import Path
 
+        from stateset_agents.remote.ledger import BudgetExceeded, check_budget
         from stateset_agents.remote.runpod import (
             RunPodApi,
             RunPodExecutor,
             SshTransport,
             package_pin,
         )
+        from stateset_agents.remote.serve_session import self_destruct_script
 
         wheel_path = next(iter(glob.glob("dist/stateset_agents-*.whl")), None)
         assert wheel_path, "wheel not built"
@@ -247,6 +261,8 @@ jobs:
         executor = RunPodExecutor(wheel=wheel)
         api = executor._require_api()
         public_key = executor._require_public_key()
+        max_lifetime_s = 1200
+        max_cost_usd = 0.50
 
         job_id = uuid.uuid4().hex[:12]
         pod = api.create_pod(
@@ -256,16 +272,73 @@ jobs:
             cloud_type="COMMUNITY",
             ports=["22/tcp"],
             env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
+            container_disk_gb=40,
         )
         pod_id = str(pod["id"])
-        print(f"created pod {pod_id} ({gpu})")
+        pod_started_at = time.time()
+        print(f"created pod {pod_id} ({gpu}, max ${max_cost_usd:.2f})")
 
         exit_code = 1
         try:
+            raw_price = pod.get("costPerHr")
+            if raw_price is None:
+                raw_price = api.get_pod(pod_id).get("costPerHr")
+            try:
+                cost_per_hr = float(raw_price)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError("RunPod did not report a usable pod price") from exc
+            try:
+                worst_case = check_budget(
+                    cost_per_hr,
+                    max_lifetime_s,
+                    max_cost_usd,
+                    # costPerHr is the effective whole-pod price.
+                    gpu_count=1,
+                )
+            except BudgetExceeded as exc:
+                raise RuntimeError(str(exc)) from exc
+            print(
+                f"authoritative price ${cost_per_hr:.4f}/hr; "
+                f"worst case ${worst_case:.4f}"
+            )
+
             host, port = executor._wait_for_ssh_endpoint(api, pod_id)
             print(f"pod reachable at {host}:{port}")
             ssh = SshTransport()
-            ssh.wait_until_reachable(host, port, executor.ready_timeout_s)
+            remaining = max_lifetime_s - math.ceil(time.time() - pod_started_at)
+            if remaining <= 0:
+                raise RuntimeError("pod exhausted its lifetime before SSH readiness")
+            ssh.wait_until_reachable(host, port, min(executor.ready_timeout_s, remaining))
+
+            # The runner's finally block is the primary cleanup. This remote
+            # watchdog is the independent backstop if the hosted runner dies.
+            remaining = max_lifetime_s - math.ceil(time.time() - pod_started_at)
+            if remaining <= 0:
+                raise RuntimeError("pod exhausted its lifetime before watchdog setup")
+            key_file = "/workspace/.gpu_verify_runpod_key"
+            script_path = "/workspace/gpu_verify_self_destruct.sh"
+            ssh.upload_secret(api.api_key, key_file)
+            with tempfile.TemporaryDirectory() as staging:
+                local_script = Path(staging) / "self-destruct.sh"
+                local_script.write_text(
+                    self_destruct_script(
+                        pod_id,
+                        remaining / 3600,
+                        api.root,
+                        key_file=key_file,
+                    ),
+                    encoding="utf-8",
+                )
+                ssh.upload(local_script, script_path)
+            arm_code, arm_output = ssh.run(
+                f"chmod 600 {shlex.quote(key_file)} {shlex.quote(script_path)} && "
+                f"(nohup bash {shlex.quote(script_path)} "
+                "> /workspace/gpu_verify_self_destruct.log 2>&1 < /dev/null &)"
+            )
+            if arm_code != 0:
+                raise RuntimeError(f"could not arm self-destruct: {arm_output}")
+            print(f"armed remote self-destruct with {remaining}s remaining")
+
             ssh.upload(wheel, f"/workspace/{wheel.name}")
 
             pin = package_pin(wheel, None)

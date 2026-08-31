@@ -45,6 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bound the live RunPod GPU verification workflow to one concurrent run,
+  explicit disk/runtime/spend ceilings, authoritative price checks, and a
+  remote self-destruct backstop for its custom RL pod.
 - Increased RunPod API resilience to five bounded exponential attempts for
   rate limits and transient provider failures, while preserving immediate
   failure for permanent client errors and ambiguous transport failures.

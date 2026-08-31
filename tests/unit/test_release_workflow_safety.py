@@ -27,6 +27,20 @@ def test_gpu_verification_cannot_pass_by_skipping_for_missing_key() -> None:
     assert "needs: sft-live-smoke" in workflow
 
 
+def test_gpu_verification_has_total_spend_and_lifetime_backstops() -> None:
+    workflow = (ROOT / ".github/workflows/gpu-verify.yml").read_text(encoding="utf-8")
+
+    assert "group: gpu-verify" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "max_cost_usd=0.50" in workflow
+    assert "max_provision_attempts=1" in workflow
+    assert "max_lifetime_s = 1200" in workflow
+    assert "max_cost_usd = 0.50" in workflow
+    assert "check_budget(" in workflow
+    assert "self_destruct_script(" in workflow
+    assert workflow.count("container_disk_gb=40") == 2
+
+
 def test_provider_canaries_run_for_release_tags() -> None:
     workflow = (ROOT / ".github/workflows/provider-canary.yml").read_text(
         encoding="utf-8"
