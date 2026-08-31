@@ -14,6 +14,16 @@ python benchmarks/backend_conformance.py backend-conformance.json \
   --output-dir benchmark_results/backend_conformance/nemo-rl \
   --timeout-seconds 1800
 
+# RunPod: free catalog preflight (the default; creates no pod).
+python benchmarks/runpod_backend_conformance.py backend-conformance.json \
+  --dataset ./gsm8k.jsonl --plan-output runpod-plan.json
+
+# RunPod: the only provisioning mode; repeat the manifest ceiling exactly.
+RUNPOD_API_KEY=... python benchmarks/runpod_backend_conformance.py \
+  backend-conformance.json --dataset ./gsm8k.jsonl --execute \
+  --confirm-max-cost-usd 1.0 \
+  --output-dir benchmark_results/backend_conformance/nemo-rl
+
 # Revalidate the self-contained record and checkpoint bytes later.
 python benchmarks/backend_conformance.py \
   --validate-evidence benchmark_results/backend_conformance/nemo-rl/conformance.json
@@ -28,8 +38,9 @@ The runner invokes the public StateSet backend protocol, requires a visible
 NVIDIA GPU, records every GPU UUID/size/driver, verifies exact engine and
 StateSet versions, rejects a dirty or mismatched harness checkout, and enforces
 the manifest's exact GPU count/name and workload timeout before launch. Schema
-v2 also requires an immutable container-image digest, provider/tier, and a
-finite positive spend ceiling. The runner embeds and hashes that execution
+v3 also requires an immutable container-image digest, provider/tier, container
+disk size, a total billable-lifetime bound, and a finite positive spend ceiling.
+The runner embeds and hashes that execution
 contract, manifest, experiment, and resulting artifact, and writes either
 `conformance.json` or `failure.json` without overwriting a prior attempt. Artifact
 locations are evidence-relative, so copying the complete backend directory preserves
@@ -37,6 +48,15 @@ independent byte-level validation. The manifest contains no credentials; provide
 Hub/provider credentials through the process environment. A provider wrapper
 must additionally compare its live price quote with `max_cost_usd` before
 renting hardware; recording a ceiling is not itself provider-side enforcement.
+The RunPod launcher does this twice: first against the unauthenticated catalog
+before creation, then against the authoritative whole-pod `costPerHr` returned
+after allocation. Any drift terminates immediately. A local recovery lease and
+an in-pod self-destruct cover launcher and client failure, and the downloaded
+`runpod-provider.json` records lifetime, estimated spend, and confirmed cleanup.
+The digest-pinned image must already contain the selected external engine and
+its runtime dependencies. The launcher installs the exact committed StateSet
+checkout without resolving dependencies, then cleans generated build metadata
+before the harness performs its clean-worktree check.
 
 The suite gate recursively discovers only `conformance.json` records, rehashes
 every colocated checkpoint, and requires exactly one NeMo RL, OpenRLHF, and verl

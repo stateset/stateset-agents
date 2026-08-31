@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added schema-v2 conformance execution envelopes for digest-pinned images,
   exact provider/GPU topology, workload timeouts, positive spend ceilings, and
   manifest-bound failure accounting.
+- Added schema-v3 conformance manifests that bind container disk and total
+  billable lifetime, plus a fail-closed RunPod launcher with zero-cost catalog
+  planning, explicit spend confirmation, authoritative post-allocation price
+  enforcement, remote self-destruct, crash-recovery leases, cost accounting,
+  and portable evidence retrieval.
 - Added full-roster enforcement, one-seed preflight mode, and machine-readable
   attempt accounting to the neutral cross-framework benchmark runner.
 - Added GitHub artifact attestations for tag-built Python distributions and

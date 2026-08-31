@@ -447,6 +447,14 @@ class TestSelfDestruct:
         assert "Authorization: Bearer $api_key" in script
         assert "rp-test-key" not in script
 
+    def test_script_quotes_custom_key_and_provider_url(self):
+        script = self_destruct_script(
+            "pod-9", 0.01, "https://provider.test/a path", "/tmp/key file"
+        )
+
+        assert "cat '/tmp/key file'" in script
+        assert "'https://provider.test/a path/pods/pod-9'" in script
+
     def test_start_uploads_key_and_script_and_arms_before_vllm_install(self):
         ssh = FakeSsh()
         session = make_session(ssh=ssh)

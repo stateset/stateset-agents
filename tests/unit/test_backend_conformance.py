@@ -27,7 +27,7 @@ ConformanceError = backend_conformance.ConformanceError
 
 def _manifest(**updates: Any) -> dict[str, Any]:
     value: dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "backend": "nemo-rl",
         "backend_version": "0.6.0+abcdef0",
         "harness_revision": "a" * 40,
@@ -37,7 +37,9 @@ def _manifest(**updates: Any) -> dict[str, Any]:
             "container_image": "registry.example/nemo@sha256:" + "d" * 64,
             "gpu_name": "NVIDIA H100 80GB HBM3",
             "gpu_count": 1,
+            "container_disk_gb": 80,
             "timeout_seconds": 60,
+            "max_lifetime_seconds": 120,
             "max_cost_usd": 1.0,
         },
         "experiment": {
@@ -89,7 +91,7 @@ def test_manifest_requires_known_backend_pins_and_exact_schema(tmp_path: Path) -
         backend_conformance.load_manifest(path)
 
     path.write_text(json.dumps(_manifest(schema_version=1)), encoding="utf-8")
-    with pytest.raises(ConformanceError, match="schema_version=2"):
+    with pytest.raises(ConformanceError, match="schema_version=3"):
         backend_conformance.load_manifest(path)
 
 
@@ -112,7 +114,9 @@ def test_manifest_rejects_unknown_and_missing_experiment_fields(tmp_path: Path) 
     [
         ("container_image", "registry.example/nemo:latest", "immutable"),
         ("gpu_count", 0, "positive integer"),
+        ("container_disk_gb", 0, "positive integer"),
         ("timeout_seconds", True, "positive integer"),
+        ("max_lifetime_seconds", 0, "positive integer"),
         ("max_cost_usd", float("inf"), "finite and positive"),
     ],
 )
@@ -133,6 +137,13 @@ def test_manifest_requires_exact_execution_schema(tmp_path: Path) -> None:
     manifest = _manifest()
     manifest["execution"]["api_key"] = "secret"
     with pytest.raises(ConformanceError, match="unknown execution fields"):
+        backend_conformance.load_manifest(_write_manifest(tmp_path, manifest))
+
+
+def test_manifest_lifetime_covers_workload_timeout(tmp_path: Path) -> None:
+    manifest = _manifest()
+    manifest["execution"]["max_lifetime_seconds"] = 59
+    with pytest.raises(ConformanceError, match="at least timeout_seconds"):
         backend_conformance.load_manifest(_write_manifest(tmp_path, manifest))
 
 

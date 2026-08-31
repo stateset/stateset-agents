@@ -129,24 +129,28 @@ def _default_http_post_json(
 
 
 def self_destruct_script(
-    pod_id: str, max_hours: float, api_root: str = _API_ROOT
+    pod_id: str,
+    max_hours: float,
+    api_root: str = _API_ROOT,
+    key_file: str = _REMOTE_KEY_FILE,
 ) -> str:
     """The remote self-destruct: sleep ``max_hours``, then DELETE own pod.
 
-    Reads the API key from :data:`_REMOTE_KEY_FILE` at fire time rather than
-    embedding it, so the script itself is safe to log. The key file still
-    lives on the pod — see the module docstring for the tradeoff.
+    Reads the API key from ``key_file`` at fire time rather than embedding it,
+    so the script itself is safe to log. The key file still lives on the pod —
+    see the module docstring for the tradeoff.
     """
     seconds = max(1, int(max_hours * 3600))
+    delete_url = shlex.quote(f"{api_root}/pods/{pod_id}")
     return (
         "#!/bin/bash\n"
         f"# stateset-agents serve-remote cost control: terminate this pod\n"
         f"# after {max_hours} hour(s), whatever happens to the laptop that\n"
         "# started it.\n"
         f"sleep {seconds}\n"
-        f"api_key=$(cat {_REMOTE_KEY_FILE})\n"
-        f"rm -f {_REMOTE_KEY_FILE}\n"
-        f'curl -s -X DELETE "{api_root}/pods/{pod_id}" '
+        f"api_key=$(cat {shlex.quote(key_file)})\n"
+        f"rm -f {shlex.quote(key_file)}\n"
+        f"curl -s -X DELETE {delete_url} "
         f'-H "Authorization: Bearer $api_key"\n'
         "unset api_key\n"
     )

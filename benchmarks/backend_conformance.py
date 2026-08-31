@@ -59,7 +59,9 @@ _EXECUTION_FIELDS = frozenset(
         "container_image",
         "gpu_name",
         "gpu_count",
+        "container_disk_gb",
         "timeout_seconds",
+        "max_lifetime_seconds",
         "max_cost_usd",
     }
 )
@@ -91,8 +93,8 @@ def canonical_digest(value: Mapping[str, Any]) -> str:
 
 def validate_manifest(raw: Any) -> dict[str, Any]:
     """Validate and normalize one external-backend conformance manifest."""
-    if not isinstance(raw, Mapping) or raw.get("schema_version") != 2:
-        raise ConformanceError("manifest must be an object with schema_version=2")
+    if not isinstance(raw, Mapping) or raw.get("schema_version") != 3:
+        raise ConformanceError("manifest must be an object with schema_version=3")
     allowed = {
         "schema_version",
         "backend",
@@ -142,10 +144,19 @@ def validate_manifest(raw: Any) -> dict[str, Any]:
         raise ConformanceError(
             "execution.container_image must use an immutable @sha256 digest"
         )
-    for field in ("gpu_count", "timeout_seconds"):
+    for field in (
+        "gpu_count",
+        "container_disk_gb",
+        "timeout_seconds",
+        "max_lifetime_seconds",
+    ):
         value = execution.get(field)
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ConformanceError(f"execution.{field} must be a positive integer")
+    if execution["max_lifetime_seconds"] < execution["timeout_seconds"]:
+        raise ConformanceError(
+            "execution.max_lifetime_seconds must be at least timeout_seconds"
+        )
     max_cost = execution.get("max_cost_usd")
     if (
         isinstance(max_cost, bool)
@@ -395,7 +406,7 @@ def validate_evidence(evidence: Mapping[str, Any], manifest: Mapping[str, Any]) 
             f"evidence schema mismatch; missing={missing}, unknown={unknown}"
         )
     if (
-        evidence.get("schema_version") != 2
+        evidence.get("schema_version") != 3
         or evidence.get("kind") != "stateset-external-backend-conformance"
         or evidence.get("status") != "completed"
         or evidence.get("measured") is not True
@@ -548,7 +559,7 @@ def run_conformance(
         raise ConformanceError("backend artifact escaped the conformance run directory")
     artifact_uri = artifact.relative_to(output_root).as_posix()
     evidence = {
-        "schema_version": 2,
+        "schema_version": 3,
         "kind": "stateset-external-backend-conformance",
         "status": "completed",
         "measured": True,
@@ -616,7 +627,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_json_once(args.output_dir / "conformance.json", evidence)
     except Exception as exc:
         failure = {
-            "schema_version": 2,
+            "schema_version": 3,
             "kind": "stateset-external-backend-conformance",
             "status": "failed",
             "measured": True,

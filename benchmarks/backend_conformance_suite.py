@@ -27,7 +27,9 @@ MATCHED_EXECUTION_FIELDS = (
     "provider_tier",
     "gpu_name",
     "gpu_count",
+    "container_disk_gb",
     "timeout_seconds",
+    "max_lifetime_seconds",
     "max_cost_usd",
 )
 
