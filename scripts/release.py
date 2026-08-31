@@ -51,6 +51,7 @@ ANCHORED_FILES: list[tuple[str, str]] = [
     ("pyproject.toml", 'version = "{v}"'),
     ("stateset_agents/__init__.py", '__version__ = "{v}"'),
     ("deployment/helm/stateset-agents/Chart.yaml", 'appVersion: "{v}"'),
+    ("npm/package.json", '"version": "{v}"'),
 ]
 
 #: Files where every occurrence of the current version becomes the new one.
@@ -66,6 +67,7 @@ PLAIN_FILES: list[str] = [
     "docs/ARCHITECTURE.md",
     "docs/KIMI_K25_GKE_AUTOPILOT.md",
     "docs/CLI_REFERENCE.md",
+    "npm/package-lock.json",
 ]
 
 GUARD_TESTS = [

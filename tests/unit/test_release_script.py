@@ -79,6 +79,16 @@ def fixture_repo(tmp_path: Path) -> Path:
     pkg.mkdir()
     (pkg / "__init__.py").write_text('__version__ = "0.25.0"\n', encoding="utf-8")
 
+    npm = tmp_path / "npm"
+    npm.mkdir()
+    (npm / "package.json").write_text(
+        '{"name":"@stateset/agents","version": "0.25.0"}\n', encoding="utf-8"
+    )
+    (npm / "package-lock.json").write_text(
+        '{"version":"0.25.0","packages":{"":{"version":"0.25.0"}}}\n',
+        encoding="utf-8",
+    )
+
     helm = tmp_path / "deployment" / "helm" / "stateset-agents"
     helm.mkdir(parents=True)
     (helm / "Chart.yaml").write_text(
@@ -228,6 +238,8 @@ def test_build_plan_full(fixture_repo: Path):
     assert 'version = "0.26.0"' in plan.changes["pyproject.toml"]
     assert "pytest-asyncio>=0.21.0" in plan.changes["pyproject.toml"]
     assert '__version__ = "0.26.0"' in plan.changes["stateset_agents/__init__.py"]
+    assert '"version": "0.26.0"' in plan.changes["npm/package.json"]
+    assert "0.25.0" not in plan.changes["npm/package-lock.json"]
     assert (
         'appVersion: "0.26.0"'
         in plan.changes["deployment/helm/stateset-agents/Chart.yaml"]

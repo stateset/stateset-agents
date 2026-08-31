@@ -123,5 +123,24 @@ def test_tag_publish_attests_and_releases_verified_artifacts_once() -> None:
     assert "attestations: write" in workflow
     assert "github-release:" in workflow
     assert 'gh release create "${GITHUB_REF_NAME}" dist/*' in workflow
+    assert workflow.count('--repo "${GITHUB_REPOSITORY}"') == 3
     assert workflow.count("provenance: mode=max") == 2
     assert workflow.count("sbom: true") == 2
+
+
+def test_pypi_publish_has_explicit_scoped_token_fallback() -> None:
+    workflow = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
+
+    assert "Publish to PyPI (OIDC or scoped API token)" in workflow
+    assert "secrets.PYPI_API_TOKEN != ''" in workflow
+    assert "password: ${{ secrets.PYPI_API_TOKEN" in workflow
+
+
+def test_tag_publish_tests_and_publishes_version_matched_npm_client() -> None:
+    workflow = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
+
+    assert "npm-publish:" in workflow
+    assert 'tag_version="${GITHUB_REF_NAME#v}"' in workflow
+    assert "require('./package.json').version" in workflow
+    assert "NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}" in workflow
+    assert "npm publish --access public --provenance" in workflow

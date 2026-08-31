@@ -41,19 +41,18 @@ true over time. The categories are strict:
 | `stateset-agents flywheel` (the loop as one command) | **Live-verified** (2026‑08‑17) | [`FLYWHEEL_DOMAIN2.md`](FLYWHEEL_DOMAIN2.md) — full multi-generation run: 0/12 → 6/12 → 7/12 for $2.60 |
 | The ceiling-raise replicates across domain and scale | Live-verified (2026‑08‑17/18, **four model/substrate/domain combinations**) | RunPod 0.8B IT-helpdesk: 0/12 → 7/12 and 0/12 → 11/12; River 9B IT-helpdesk: 7/12 → 11/12 (plateau-stop); River **35B MoE** travel-concierge: 7/12 → **12/12 in one generation** (perfect-score stop, harvest rate 74%) |
 
-\* **Honesty note on "weekly":** the scheduled GPU jobs need the
-`RUNPOD_API_KEY` repository secret, which has not yet been configured — so
-`gpu-verify.yml` exists but **has never run on schedule**. Until that secret
-is set, treat its rows as "live-verified once, automation pending." The
-same applies to `publish.yml`: PyPI trusted publishing rejects the current
-configuration (`invalid-publisher`), so every release on PyPI so far was a
-manual token upload. Both fixes are five-minute owner-side actions:
+\* **Honesty note on "weekly":** `RUNPOD_API_KEY` and `RIVER_API_KEY` are
+configured in GitHub Actions. Scheduled GPU verification passed on 2026-08-17
+and 2026-08-24. The 2026-08-31 run failed before allocation when RunPod's pod
+creation endpoint returned HTTP 500 after bounded retries; that red run remains
+visible and created no training claim. "Weekly" therefore means an automated,
+fail-closed schedule with retained successes and failures, not an assertion
+that the most recent provider attempt was green.
 
-1. GitHub → repo Settings → Secrets → add `RUNPOD_API_KEY`, `RIVER_API_KEY`,
-   `FIREWORKS_API_KEY`, and `FIREWORKS_ACCOUNT_ID`.
-2. PyPI → project settings → trusted publisher: owner `stateset`, repo
-   `stateset-agents`, workflow `publish.yml`, environment `pypi`.
-
-When they land, this page's "pending" rows convert to green automation —
-which is the point of the page: every claim either re-proves itself, or
-says plainly that it doesn't yet.
+PyPI rejected the repository's OIDC identity as `invalid-publisher` for
+v0.43.0, so that release was uploaded with a scoped project token and its live
+digests were compared byte-for-byte with the validated local artifacts. The
+same scoped token is now configured as the workflow fallback. OIDC remains a
+desirable owner-side hardening step. Fireworks certification still requires
+`FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`; their absence is reported as a
+strict canary failure rather than silently skipped.

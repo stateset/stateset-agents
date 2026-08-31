@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a dependency-free, strictly typed `@stateset/agents` Node.js client
+  for Messages, OpenAI-compatible chat completions, model discovery, health,
+  and SSE streaming, with runtime, declaration, and package-contract tests.
+- Added npm testing and provenance publication to CI and tagged releases.
+
+### Changed
+
+- Made GitHub Release creation repository-explicit so artifact-only jobs no
+  longer fail from the absence of a checked-out `.git` directory.
+- Added a tested, project-scoped PyPI token fallback while trusted-publisher
+  configuration remains unavailable, and synchronized Python/npm version bumps.
+
 ## [0.43.0] - 2026-08-31 — Model and provider certification
 
 ### Added

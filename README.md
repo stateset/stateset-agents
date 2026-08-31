@@ -974,6 +974,23 @@ pip install "stateset-agents[rust]"          # Rust-accelerated GAE/advantage ke
 pip install "stateset-agents[full]"          # Most extras in one go
 ```
 
+### Node.js API client
+
+The dependency-free, typed Node.js client lives in [`npm/`](npm/) and targets
+the stable Messages and OpenAI-compatible API surfaces. It supports JSON and
+SSE streaming, bearer authentication, timeouts, structured errors, and custom
+`fetch` implementations. Until its first registry publication, validate or use
+the workspace package directly:
+
+```bash
+npm --prefix npm ci
+npm --prefix npm test
+```
+
+The tagged release workflow publishes it as `@stateset/agents` only when its
+version exactly matches the Git tag. See [`npm/README.md`](npm/README.md) for
+the client API.
+
 > This repository also contains an internal, unpublished Rust crate at the repo root (a StateSet
 > commerce daemon) that is unrelated to the `stateset-rl-core` accelerator behind `[rust]` above.
 > See `docs/RUST_CRATES.md` for how the two Rust crates in this repo relate.
