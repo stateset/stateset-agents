@@ -109,6 +109,41 @@ closes: chat → ingest → improve → train → chat.
 | **Bigger jobs on rented GPUs** | [`docs/RUNPOD_GUIDE.md`](docs/RUNPOD_GUIDE.md) — GPU/disk sizing, spot pricing, multi-GPU sharding, merged serving for hybrid models, and every failure mode we hit |
 | **Five minutes and curiosity** | `bash examples/five_minute_demo.sh` — the whole loop offline, no GPU, no key |
 
+### Choose a training provider
+
+The provider changes where compute runs and where the trained result lives; it
+does not change the dataset or experiment contract. Start with RunPod when you
+want model weights back, or River when you want managed remote-autograd RL
+without operating a GPU machine.
+
+| Provider | Compute model | Result | Current evidence |
+|---|---|---|---|
+| **RunPod** | Rented GPU machine | Local adapter and evaluation artifacts | Live end-to-end training, serving, cost, and cleanup evidence |
+| **River AI** | Managed remote autograd | Hosted `river://` checkpoint | Live SFT/RL training and held-out sampling evidence |
+| **Fireworks AI** | Managed fine-tuning and serving | Hosted LoRA, with optional local artifacts | Integration complete; live full-lifecycle certification pending |
+| **Modal** | Rented serverless GPU | Local artifacts | Transport certification pending; per-job Volume cleanup is enforced |
+| **Local** | Your machine or cluster | Local artifacts | Unit-tested reference path |
+
+Inspect capabilities and model evidence from the installed release:
+
+```bash
+stateset-agents remote-providers --json
+stateset-agents model-support --json
+```
+
+Before paying for a frontier-model run, ask RunPod for a non-billable plan:
+
+```bash
+stateset-agents train-remote --provider runpod \
+  --dataset data/train.jsonl --base-model Qwen/Qwen3.8-Flash-Next \
+  --plan-only
+```
+
+`--plan-only` never contacts or provisions RunPod. Estimated frontier plans
+must also have an explicit `--max-cost` before they can execute. The full
+evidence rules and promotion stages are in
+[`docs/MODEL_PROVIDER_CERTIFICATION.md`](docs/MODEL_PROVIDER_CERTIFICATION.md).
+
 Both guides are written from live runs — the pitfalls listed are ones we
 actually paid for. What the loop has proven, with numbers:
 [`docs/rl-vibe.md`](docs/rl-vibe.md); every claim's evidence status:
@@ -907,7 +942,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install stateset-agents          # latest version currently available on PyPI
+pip install "stateset-agents==0.43.0" # current stable release on PyPI
 pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.43.0"
 ```
 
