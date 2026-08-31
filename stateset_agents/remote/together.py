@@ -79,9 +79,7 @@ class TogetherExecutor(RemoteExecutor):
         self.validate_spec(spec)
         client = self._client()
         try:
-            uploaded = client.files.upload(
-                file=str(spec.dataset), purpose="fine-tune"
-            )
+            uploaded = client.files.upload(file=str(spec.dataset), purpose="fine-tune")
             file_id = str(_field(uploaded, "id", "file_id"))
             job = client.fine_tuning.create(
                 training_file=file_id,
