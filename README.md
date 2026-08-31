@@ -27,6 +27,10 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).
 - An **MCP server** so Claude Code/Desktop — or any MCP client — can drive the loop conversationally.
 - Optional **performance layers** (vLLM generation, Rust acceleration, distributed training, HPO, FastAPI service).
+- A native, policy-versioned [asynchronous rollout control plane](docs/ASYNC_ROLLOUTS.md)
+  with bounded backpressure, explicit staleness limits, sampler log-probability
+  evidence, importance correction, auditable drop/reject counters, and a
+  failure-safe multi-producer/serialized-learner runtime.
 - A versioned, capability-checked [training backend protocol](docs/TRAINING_BACKENDS.md)
   for delegating the same experiment to specialized engines without silently
   changing its model, data, environment, reward, or algorithm configuration.
@@ -64,12 +68,12 @@ corresponding local suite completed with **4,898 passed and 11 skipped**. See
 the retained [proof ledger](docs/PROOFS.md) for the evidence behind individual
 training, serving, and provider claims.
 
-The `v0.45.0` managed-provider release completed its local full suite with
-**4,939 passed and 11 skipped**, plus clean Ruff, type, repository-hygiene,
-package-build, and distribution-content gates. New provider-live evidence is
-intentionally still pending.
+The `v0.46.0` asynchronous-RL release completed its local full suite with
+**5,005 passed and 11 skipped**, plus a final **833-test** training/export
+regression suite and clean Ruff, Black, isort, type, repository-hygiene, and
+diff gates. Native multi-node async evidence is intentionally still pending.
 
-- **Current Python release:** `stateset-agents==0.45.0` on PyPI.
+- **Current Python release:** `stateset-agents==0.46.0` on PyPI.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/); its first npm registry
   publication remains pending.
@@ -252,11 +256,20 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**On `master` (unreleased):**
+**On `master` (unreleased):** No unreleased changes yet.
 
-- No unreleased changes yet.
+**v0.46.0 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.46.0/)):**
 
-**v0.45.0 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.45.0/)):**
+- **Policy-safe asynchronous rollouts.** Native producers and learners can
+  run independently through a bounded coordinator and executable runtime. It
+  rejects future-policy samples, evicts rollouts beyond a configured policy-lag
+  window, retains sampler token log-probabilities, deduplicates producer retries
+  across checkpoint restore, computes clipped importance weights in log space,
+  propagates worker failures, and exposes a new policy version only after its
+  weights are published. The initial proof is deterministic and in-process;
+  multi-node GPU throughput and recovery remain explicit evidence gates.
+
+**v0.45.0:**
 
 - **Four new managed substrates.** Tinker remote autograd, Prime Intellect Lab
   verifiers/OpenEnv RL, Hugging Face GPU Jobs plus Inference Endpoints, and
@@ -1013,8 +1026,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.45.0" # current stable release on PyPI
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.45.0"
+pip install "stateset-agents==0.46.0" # current stable release on PyPI
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.46.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1746,7 +1759,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.45.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.46.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

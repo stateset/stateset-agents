@@ -66,7 +66,10 @@ StateSet Agents is a higher‑level framework focused on **multi‑turn agent le
 - Native **multi‑turn conversation trajectories** and dialogue state.
 - Group‑based LLM RL algorithms beyond standard PPO (GRPO, GSPO, GEPO, DAPO, VAPO).
 - **Composable rewards** (rule‑based, neural reward models, LLM‑as‑judge, multi‑objective rewards).
-- Async‑first training and orchestration designed for large‑scale agent rollouts.
+- A policy-versioned asynchronous rollout control plane with bounded
+  backpressure, ordered weight publication, producer failure propagation, and
+  explicit stale-sample handling; native multi-node execution remains an
+  evidence gate.
 - Built‑in observability, health checks, and API serving.
 
 ### Feature comparison
@@ -77,7 +80,7 @@ StateSet Agents is a higher‑level framework focused on **multi‑turn agent le
 | Conversation/task environments | Yes (`core/environment.py`) | Stateful per-rollout environment factory |
 | Group‑based RL algorithms | Yes (GRPO/GSPO/GEPO/DAPO/VAPO) | Partial (GRPO/PPO/DPO‑family) |
 | Reward composition | Yes (`rewards/`, `core/reward.py`) | Minimal (reward fn/model hook) |
-| Distributed/async rollouts | Yes (`training/distributed_trainer.py`) | Accelerate/DeepSpeed plus experimental async GRPO |
+| Distributed/async rollouts | Policy-versioned bounded coordinator and executable producer/learner runtime (`training/async_rollouts.py`, `training/async_runtime.py`); native multi-node proof pending | Accelerate/DeepSpeed plus experimental async GRPO |
 | Production serving | Yes (`api/`) | No |
 | HPO support | Built‑in (`training/hpo/`, Optuna/Ray/W&B extras) | External |
 

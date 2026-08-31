@@ -82,6 +82,9 @@ remains unchecked until a tagged run retains and verifies those attestations.
 ### Scale and reliability
 
 - [x] Measure 1/2/4/8-GPU throughput, memory, and weak/strong scaling efficiency
+- [x] Define native policy-versioned async queue and runtime, staleness bounds,
+  importance-correction evidence, publication ordering, backpressure, failure
+  propagation, and audit counters
 - [ ] Verify multi-node training on a retained, reproducible configuration
 - [x] Add a measured-evidence gate for worker, network, and controller recovery
 - [x] Execute and retain the complete three-seed fault-injection matrix
