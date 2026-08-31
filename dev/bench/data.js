@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788199793826,
+  "lastUpdate": 1788200240268,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -248,6 +248,72 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 8.905044473276962e-8",
             "extra": "mean: 388.32680207448095 nsec\nrounds: 124024"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "domsteil14@gmail.com",
+            "name": "Dom Steil",
+            "username": "domsteil"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "152e17695caed33610f4e85ae00cb01501b54730",
+          "message": "Merge pull request #45 from stateset/feat/gpu-verify-evidence\n\nci: persist verified GPU evidence",
+          "timestamp": "2026-08-31T11:15:00-07:00",
+          "tree_id": "2fa7c48b132d3f5b607efc0ffacd041408047a20",
+          "url": "https://github.com/stateset/stateset-agents/commit/152e17695caed33610f4e85ae00cb01501b54730"
+        },
+        "date": 1788200239032,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5882.123963930217,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000027982693112413994",
+            "extra": "mean: 170.00661770001818 usec\nrounds: 1661"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6618.365519640296,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016598841028588",
+            "extra": "mean: 151.0947071497419 usec\nrounds: 2182"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5080.62625912689,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018649019637790604",
+            "extra": "mean: 196.82612910240928 usec\nrounds: 3230"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 763.396597057643,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002942798881287669",
+            "extra": "mean: 1.3099351030045152 msec\nrounds: 699"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 181.80634650050158,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00007533227662130319",
+            "extra": "mean: 5.5003580416662805 msec\nrounds: 168"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2249221.776777591,
+            "unit": "iter/sec",
+            "range": "stddev: 5.0156902134493664e-8",
+            "extra": "mean: 444.5982207377866 nsec\nrounds: 107910"
           }
         ]
       }
