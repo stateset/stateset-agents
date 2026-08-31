@@ -5,6 +5,8 @@
 **The RL improvement control plane for deployed AI agents.**
 
 [![PyPI version](https://img.shields.io/pypi/v/stateset-agents.svg)](https://pypi.org/project/stateset-agents/)
+[![CI](https://github.com/stateset/stateset-agents/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/stateset/stateset-agents/actions/workflows/ci.yml)
+[![Security](https://github.com/stateset/stateset-agents/actions/workflows/security.yml/badge.svg?branch=master)](https://github.com/stateset/stateset-agents/actions/workflows/security.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-green.svg)](LICENSE)
 [![Whitepaper v0.13.4](https://img.shields.io/badge/whitepaper-v0.13.4-blue)](docs/WHITEPAPER.md)
@@ -52,6 +54,26 @@ evaluations, train through the most appropriate backend, and deploy the result
 with lineage. Multi-turn generation is now available in several trainer
 libraries; the differentiator here is keeping that whole loop coherent and
 measurable.
+
+### Current verification status
+
+The `master` branch passed its complete merge gate on **2026-08-31**: Linux
+Python 3.10–3.13, Windows Python 3.10/3.13, CodeQL, dependency and secret
+scanning, package-readiness, docs, benchmarks, Helm, and the Node client. The
+corresponding local suite completed with **4,898 passed and 11 skipped**. See
+the retained [proof ledger](docs/PROOFS.md) for the evidence behind individual
+training, serving, and provider claims.
+
+- **Published Python package:** `stateset-agents==0.43.0` on PyPI.
+- **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
+  package is tested and release-wired in [`npm/`](npm/); its first npm registry
+  publication remains pending.
+- **Live providers:** RunPod and River have retained end-to-end evidence.
+  Fireworks lifecycle and Modal transport certification remain open and are
+  never promoted from unit coverage to live support automatically.
+- **Frontier models:** GLM-5.3-Flash and Qwen3.8-Flash-Next are integrated and
+  smoke-tested; their production certification still requires retained live
+  training and serving evidence.
 
 ---
 
@@ -217,6 +239,19 @@ coverage, live hardware attempts, and successful inference by provider.
 ---
 
 ## What's new
+
+**On `master` (unreleased):**
+
+- **Typed Node.js client.** `@stateset/agents` covers Messages, OpenAI-compatible
+  chat completions, model discovery, health checks, JSON/SSE responses,
+  authentication, timeouts, cancellation, and structured API errors without
+  runtime dependencies.
+- **One tag, two registries.** The release workflow verifies Python and Node
+  versions against the Git tag, publishes both packages with provenance, and
+  creates or updates the GitHub Release explicitly against this repository.
+- **Cross-platform documentation guards.** README CLI snippets are checked
+  against exact Typer option metadata, independent of terminal width, while
+  still executing every referenced command's help path.
 
 **v0.43.0 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.43.0/)):**
 
