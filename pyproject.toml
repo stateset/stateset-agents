@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateset-agents"
-version = "0.44.0"
+version = "0.45.0"
 description = "Production-ready RL framework for training multi-turn conversational AI agents using GRPO and GSPO"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -228,6 +228,21 @@ fireworks = [
     # 1.x is the Stainless-generated typed client this adapter is written
     # against; 0.x exposed a different `fireworks.client` surface entirely.
     "fireworks-ai>=1.2",
+]
+huggingface = [
+    "stateset-agents[remote]",
+    "huggingface-hub>=1.0",
+]
+tinker = [
+    "stateset-agents[training]",
+    "tinker>=0.4.0",
+]
+together = [
+    "together>=2.0.0",
+]
+prime = [
+    # Prime's supported integration surface is its separately installed CLI.
+    # This extra keeps the discoverable provider name symmetric with others.
 ]
 modal = [
     # Modal provider for `train-remote --provider modal`. Not a core

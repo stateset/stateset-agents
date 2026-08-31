@@ -75,6 +75,12 @@ _H100 = "NVIDIA H100 80GB HBM3"
 
 MODEL_CATALOG: tuple[ModelSupport, ...] = (
     ModelSupport(
+        model="thinkingmachines/Inkling-Small",
+        tier="frontier-preview",
+        certification="configured",
+        recommended_provider="tinker",
+    ),
+    ModelSupport(
         model="Qwen/Qwen3.5-0.8B",
         aliases=("Qwen/Qwen3.5-0.8B-Base",),
         tier="default",

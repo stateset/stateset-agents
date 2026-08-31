@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-08-31 — Managed training provider expansion
+
+### Added
+
+- Added Tinker remote-autograd SFT with first-class Inkling-Small catalog
+  coverage and hosted sampler/training-state artifacts.
+- Added Prime Intellect Lab RL config and CLI execution for verifiers/OpenEnv
+  environments, Hugging Face GPU Jobs and Inference Endpoints, and Together AI
+  managed fine-tuning.
+- Added all four providers to capability discovery, credential-aware canaries,
+  optional dependency groups, CLI mode/provider options, documentation, and
+  deterministic lifecycle tests.
+
 ## [0.44.0] - 2026-08-31 — CoreWeave and Nebius cloud providers
 
 ### Added
