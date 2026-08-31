@@ -9,6 +9,11 @@ See ``docs/superpowers/specs/2026-07-30-remote-executor-design.md``.
 
 from __future__ import annotations
 
+from stateset_agents.remote.deployment import (
+    DeploymentHandle,
+    DeploymentSpec,
+    InferenceDeploymentProvider,
+)
 from stateset_agents.remote.job import (
     JobHandle,
     JobStatus,
@@ -17,6 +22,9 @@ from stateset_agents.remote.job import (
 )
 
 __all__ = [
+    "DeploymentHandle",
+    "DeploymentSpec",
+    "InferenceDeploymentProvider",
     "JobHandle",
     "JobStatus",
     "RemoteJobResult",

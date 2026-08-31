@@ -144,7 +144,8 @@ exercised only against fakes. See `docs/FIREWORKS_PROVIDER.md`.
 
 - `--dataset PATH`: Chat-format JSONL to train on (required).
 - `--base-model TEXT`: Hugging Face base model (required).
-- `--provider [fireworks|local|modal|river|runpod]`: Where to run. Default
+- `--provider [coreweave|fireworks|local|modal|nebius|river|runpod]`: Where to
+  run. Default
   `local`. `river` and `fireworks` are different in kind from the others —
   see the notes above.
 - `--deploy` / `--deploy-accelerator TEXT`: Fireworks only — serve the tuned
@@ -154,8 +155,10 @@ exercised only against fakes. See `docs/FIREWORKS_PROVIDER.md`.
   `--max-length`, `--per-device-batch-size`,
   `--gradient-accumulation-steps`: Passed through to the training script.
 - `--gpu TEXT`: GPU type to request (remote only). Default `A10G`.
-- `--gpu-count INTEGER`: RunPod only — how many GPUs of that type to attach
-  to the pod. Default `1`. With more than one, the training job loads the
+- `--gpu-count INTEGER`: Number of GPUs to request on providers that expose
+  topology (RunPod, CoreWeave, and Nebius). Nebius requires a matching
+  `NEBIUS_PRESET`. Default `1`. With more than one, the
+  training job loads the
   base model with `device_map="auto"`, sharding the checkpoint across every
   visible GPU — this is what lets a model bigger than one card train at all
   (verified live: Muse-Glimmer-30B split ~evenly across 2x H100). Single-GPU
@@ -163,8 +166,9 @@ exercised only against fakes. See `docs/FIREWORKS_PROVIDER.md`.
 - `--timeout INTEGER`: Job timeout in seconds. Default `3600`.
 - `--package-version TEXT`: Version installed remotely. Defaults to the
   running version.
-- `--container-disk-gb INTEGER`: RunPod only — container disk for the pod, in
-  GB. Size it at roughly 2.5x the model download (a 30B BF16 checkpoint is
+- `--container-disk-gb INTEGER`: Container/scratch disk in GB on RunPod,
+  CoreWeave, and Nebius. Size it at roughly 2.5x the model download (a 30B
+  BF16 checkpoint is
   ~63GB and dies mid-download on the 40GB default). Defaults to the
   executor's default (40).
 - `--cloud-type [SECURE|COMMUNITY]`: RunPod only — which pod pool to rent
@@ -285,6 +289,40 @@ stateset-agents undeploy --deployment accounts/my-org/deployments/dep-1
 
 Needs `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`. See
 `docs/FIREWORKS_PROVIDER.md`.
+
+### `stateset-agents inference-deploy`
+
+Deploy a complete model directory to CoreWeave Dedicated Inference or a
+Nebius Serverless AI endpoint. This is deliberately separate from
+`train-remote`: a LoRA adapter must be merged or materialized before it can be
+used as standalone BYOW weights.
+
+```bash
+stateset-agents inference-deploy --provider coreweave \
+  --name support-production --model-name support-model \
+  --weights-uri s3://model-weights/support-model \
+  --gpu gd-8xh100ib-i128 --runtime dynamo-vllm --zone US-WEST-04A
+```
+
+The JSON result is the durable cleanup handle. Preserve it, especially
+`gateway_id` and `owns_gateway` for an automatically created CoreWeave
+gateway. See `docs/COREWEAVE_PROVIDER.md` and `docs/NEBIUS_PROVIDER.md` for
+provider configuration and secret requirements.
+
+### `stateset-agents inference-status`
+
+Read a managed inference resource without changing it:
+
+```bash
+stateset-agents inference-status --provider coreweave \
+  --deployment-id <id> --model-name support-model
+```
+
+### `stateset-agents inference-delete`
+
+Delete a managed deployment. For CoreWeave, add `--gateway-id <id>
+--delete-gateway` only when the deployment handle says `owns_gateway: true`.
+Omitting that flag preserves shared gateways.
 
 ### `stateset-agents qwen3-5-0-8b`
 

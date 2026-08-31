@@ -75,6 +75,23 @@ def test_provider_canaries_run_for_release_tags() -> None:
     assert 'pip install -e ".[remote]"' in workflow
 
 
+def test_cloud_provider_certification_is_manual_approved_and_bounded() -> None:
+    workflow = (ROOT / ".github/workflows/cloud-provider-verify.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "workflow_dispatch:" in workflow
+    assert "schedule:" not in workflow
+    assert workflow.count("environment: cloud-provider-verification") == 2
+    assert '"CLOUD GPU SPEND APPROVED"' in workflow
+    assert '"READ ONLY"' in workflow
+    assert workflow.count("--timeout 3600") == 2
+    assert workflow.count('--package-version "$STATESET_PACKAGE_VERSION"') == 2
+    assert "NEBIUS_CLI_INSTALL_SHA256" in workflow
+    assert "sha256sum --check --strict" in workflow
+    assert "cancel-in-progress: false" in workflow
+
+
 def test_publish_requires_readiness_before_build_or_upload() -> None:
     workflow = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
 

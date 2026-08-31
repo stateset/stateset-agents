@@ -26,7 +26,12 @@ _EPHEMERAL_RUNPOD_PREFIXES = (
     "stateset-conformance-",
 )
 _CREDENTIAL_ENV = {
+    # CKS credentials normally live in kubeconfig and Nebius credentials in
+    # the selected CLI profile, so neither has a mandatory environment key.
+    # Their read-only probes report authentication errors directly.
+    "coreweave": (),
     "fireworks": ("FIREWORKS_API_KEY", "FIREWORKS_ACCOUNT_ID"),
+    "nebius": (),
     "river": ("RIVER_API_KEY",),
     "runpod": ("RUNPOD_API_KEY",),
 }
@@ -149,8 +154,20 @@ def _probe_runpod(executor: RemoteExecutor) -> tuple[dict[str, Any], bool]:
     }, not ephemeral_pods and not leases
 
 
+def _probe_executor_canary(
+    executor: RemoteExecutor,
+) -> tuple[dict[str, Any], bool]:
+    result = executor.canary()  # type: ignore[attr-defined]
+    checks = _safe_value(result)
+    assert isinstance(checks, dict)
+    checks["billable_resources_created"] = 0
+    return checks, bool(checks.get("authenticated"))
+
+
 _PROBES = {
+    "coreweave": _probe_executor_canary,
     "fireworks": _probe_fireworks,
+    "nebius": _probe_executor_canary,
     "river": _probe_river,
     "runpod": _probe_runpod,
 }

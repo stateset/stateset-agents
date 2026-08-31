@@ -584,7 +584,10 @@ def train_remote(
             "fine-tuning service: it also picks its own training hardware, "
             "so the GPU/disk/cloud-type options are ignored, and the tuned "
             "LoRA addon lives on Fireworks — add --deploy to serve it (see "
-            "docs/FIREWORKS_PROVIDER.md)."
+            "docs/FIREWORKS_PROVIDER.md). 'nebius' runs an OCI training job "
+            "on Serverless AI; 'coreweave' submits a Kubernetes Job to an "
+            "existing CKS cluster. Both exchange artifacts through their "
+            "S3-compatible object stores."
         ),
     ),
     output_dir: Path = typer.Option(
@@ -609,10 +612,11 @@ def train_remote(
     gpu_count: int | None = typer.Option(
         None,
         "--gpu-count",
-        help="RunPod only: how many GPUs of the requested type to attach. "
+        help="How many GPUs to request on providers that expose topology. "
         "With more than one, the job shards the model across all of them "
         "(device_map='auto'), letting a checkpoint bigger than one card "
-        "train. When omitted on RunPod, the model catalog selects a count.",
+        "train. Nebius requires an exact matching NEBIUS_PRESET. When "
+        "omitted on RunPod, the model catalog selects a count.",
     ),
     timeout: int = typer.Option(3600, "--timeout", help="Job timeout in seconds."),
     package_version: str | None = typer.Option(
@@ -624,7 +628,7 @@ def train_remote(
     container_disk_gb: int | None = typer.Option(
         None,
         "--container-disk-gb",
-        help="RunPod only: GPU-pool container disk in GB for the model "
+        help="Provider container/scratch disk in GB for the model "
         "download. Size it at roughly 2.5x the checkpoint (a 30B BF16 "
         "model is ~63GB). Defaults to the executor's own default.",
     ),
@@ -1233,3 +1237,121 @@ def adapters(
     if lineage:
         _echo("")
         _echo(f"{len(lineage)} lineage link(s) found.")
+
+
+@app.command("inference-deploy")
+def inference_deploy(
+    provider: str = typer.Option(..., "--provider", help="coreweave or nebius."),
+    name: str = typer.Option(..., "--name", help="Provider deployment name."),
+    model_name: str = typer.Option(
+        ..., "--model-name", help="Model name exposed by the OpenAI-compatible API."
+    ),
+    weights_uri: str = typer.Option(
+        ..., "--weights-uri", help="Complete model directory in s3://bucket/path."
+    ),
+    gpu: str = typer.Option(
+        ..., "--gpu", help="Provider GPU platform or instance type."
+    ),
+    gpu_count: int = typer.Option(1, "--gpu-count", min=1),
+    min_replicas: int = typer.Option(1, "--min-replicas", min=1),
+    max_replicas: int = typer.Option(1, "--max-replicas", min=1),
+    runtime: str = typer.Option(
+        "vllm", "--runtime", help="Inference runtime (vllm or dynamo-vllm)."
+    ),
+    gateway_id: str | None = typer.Option(
+        None, "--gateway-id", help="Existing CoreWeave inference gateway."
+    ),
+    zone: str | None = typer.Option(
+        None, "--zone", help="CoreWeave zone used when creating a gateway."
+    ),
+    runtime_version: str | None = typer.Option(None, "--runtime-version"),
+) -> None:
+    """Deploy complete model weights to managed OpenAI-compatible inference."""
+    import json
+
+    from stateset_agents.remote.deployment import DeploymentSpec
+    from stateset_agents.remote.deployment_registry import get_deployment_provider
+
+    if max_replicas < min_replicas:
+        _echo("--max-replicas must be >= --min-replicas", err=True)
+        raise typer.Exit(code=2)
+    spec = DeploymentSpec(
+        name=name,
+        model_name=model_name,
+        weights_uri=weights_uri,
+        gpu=gpu,
+        gpu_count=gpu_count,
+        min_replicas=min_replicas,
+        max_replicas=max_replicas,
+        runtime=runtime,
+        runtime_version=runtime_version,
+        gateway_id=gateway_id,
+        zone=zone,
+    )
+    try:
+        handle = get_deployment_provider(provider).deploy(spec)
+    except (StateSetError, ValueError) as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo(json.dumps(handle.__dict__, indent=2, sort_keys=True))
+
+
+@app.command("inference-status")
+def inference_status(
+    provider: str = typer.Option(..., "--provider", help="coreweave or nebius."),
+    deployment_id: str = typer.Option(..., "--deployment-id"),
+    model_name: str = typer.Option(..., "--model-name"),
+) -> None:
+    """Read a managed inference deployment without mutating it."""
+    import json
+
+    from stateset_agents.remote.deployment import DeploymentHandle
+    from stateset_agents.remote.deployment_registry import get_deployment_provider
+
+    normalized_provider = provider.strip().lower()
+    handle = DeploymentHandle(normalized_provider, deployment_id, model_name)
+    try:
+        payload = get_deployment_provider(provider).status(handle)
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo(json.dumps(payload, indent=2, sort_keys=True))
+
+
+@app.command("inference-delete")
+def inference_delete(
+    provider: str = typer.Option(..., "--provider", help="coreweave or nebius."),
+    deployment_id: str = typer.Option(..., "--deployment-id"),
+    model_name: str = typer.Option(..., "--model-name"),
+    gateway_id: str | None = typer.Option(
+        None,
+        "--gateway-id",
+        help="CoreWeave gateway associated with the deployment.",
+    ),
+    delete_gateway: bool = typer.Option(
+        False,
+        "--delete-gateway",
+        help="Also delete the CoreWeave gateway created for this deployment.",
+    ),
+) -> None:
+    """Delete a managed inference deployment so its compute stops billing."""
+    from stateset_agents.remote.deployment import DeploymentHandle
+    from stateset_agents.remote.deployment_registry import get_deployment_provider
+
+    normalized_provider = provider.strip().lower()
+    if delete_gateway and not gateway_id:
+        _echo("--delete-gateway requires --gateway-id", err=True)
+        raise typer.Exit(code=2)
+    handle = DeploymentHandle(
+        normalized_provider,
+        deployment_id,
+        model_name,
+        gateway_id=gateway_id,
+        owns_gateway=delete_gateway,
+    )
+    try:
+        get_deployment_provider(provider).delete(handle)
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo(f"Deleted {provider} deployment {deployment_id}.")

@@ -150,14 +150,15 @@ class RemoteJobSpec:
     #: default would silently send an invalid id to whichever provider did not
     #: coin it. ``None`` means "use the executor's own default".
     gpu: str | None = None
-    #: How many GPUs of that type to attach to the pod — RunPod only.
+    #: How many GPUs of that type to attach to the provider workload.
     #: The training job shards the model across every visible GPU via
     #: ``device_map="auto"`` when more than one is present, which is what
     #: lets a checkpoint bigger than one card train at all.
     gpu_count: int = 1
     timeout_s: int = 3600
     package_version: str | None = None
-    #: GPU-pool container disk (GiB) for the model download — RunPod only.
+    #: Ephemeral container/scratch disk (GiB) for the model download on
+    #: providers that expose it (RunPod, Nebius, and CoreWeave Kubernetes).
     #: Size it at roughly 2.5x the checkpoint: a 63GB BF16 checkpoint dies
     #: mid-download on the old fixed 40GB (verified live). ``None`` means
     #: "use the executor's own default".
