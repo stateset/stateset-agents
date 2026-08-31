@@ -132,8 +132,8 @@ class ModalExecutor(RemoteExecutor):
             deletion = sdk.Volume.objects.delete(name, allow_missing=True)
             if inspect.isawaitable(deletion):
 
-                async def wait_for_deletion() -> None:
-                    await deletion
+                async def wait_for_deletion() -> Any:
+                    return await deletion
 
                 asyncio.run(wait_for_deletion())
         except Exception as exc:
