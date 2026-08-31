@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-08-31 — Policy-safe asynchronous RL runtime
+
+### Added
+
+- Added a native policy-versioned asynchronous rollout coordinator with
+  bounded backpressure, explicit staleness eviction, rollout deduplication,
+  restart-safe state, auditable counters, and log-space importance correction.
+- Added a failure-safe multi-producer/serialized-learner runtime with ordered
+  policy publication, bounded collection and shutdown, worker failure
+  propagation, validated learner metrics, and deterministic run evidence.
+- Added comprehensive behavioral tests and documentation covering queue
+  invariants, checkpoint restore, cancellation, publication ordering, and
+  cancellation-resistant producers.
+
+### Changed
+
+- Updated framework comparisons, backend documentation, and the roadmap to
+  distinguish the proven in-process async runtime from pending multi-node GPU
+  throughput and recovery evidence.
+
 ## [0.45.0] - 2026-08-31 — Managed training provider expansion
 
 ### Added

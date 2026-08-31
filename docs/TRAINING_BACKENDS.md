@@ -8,9 +8,9 @@ return the same canonical experiment digest.
 
 This is the foundation for delegating StateSet experiments to specialized
 engines such as TRL, verl, NeMo RL, and OpenRLHF without silently changing the
-task or reward. The protocol is production-ready; engine-specific adapters
-beyond StateSet's existing TRL path are still roadmap items and must not be
-described as available until their live conformance runs pass.
+task or reward. Executable, fail-closed adapters exist for verl, NeMo RL, and
+OpenRLHF, but they remain **live-conformance pending** and must not be described
+as performance-equivalent until their retained GPU gates pass.
 
 ## Contract
 
