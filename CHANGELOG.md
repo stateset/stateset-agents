@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added durable, commit-bound GPU verification evidence with dataset, wheel,
+  adapter, and evaluation hashes, measured cost and duration, confirmed
+  cleanup, and a strict observed-CUDA requirement for the live RL probe.
 - Added a public, versioned training-backend protocol with canonical experiment
   digests, capability negotiation, a registry, secret-free serialization, and
   a shell-free command adapter for external training engines.

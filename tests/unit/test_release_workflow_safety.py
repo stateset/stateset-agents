@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+import re
+import textwrap
 from pathlib import Path
 
 import yaml
@@ -39,6 +42,24 @@ def test_gpu_verification_has_total_spend_and_lifetime_backstops() -> None:
     assert "check_budget(" in workflow
     assert "self_destruct_script(" in workflow
     assert workflow.count("container_disk_gb=40") == 2
+
+
+def test_gpu_verification_emits_hashed_cuda_evidence() -> None:
+    workflow = (ROOT / ".github/workflows/gpu-verify.yml").read_text(encoding="utf-8")
+
+    assert workflow.count('"schema_version": 1') == 2
+    assert workflow.count('"cleanup_confirmed"') == 2
+    assert 'summary.get("device") != "cuda"' in workflow
+    assert 'summary.get("converged")' in workflow
+    assert '"dataset_sha256"' in workflow
+    assert workflow.count('"wheel_sha256"') == 2
+    assert "gpu-verify-rl-evidence" in workflow
+    assert "outputs/gpu_verify_rl/evidence.json" in workflow
+
+    scripts = re.findall(r"python - <<'PY'\n(.*?)\n\s*PY", workflow, re.DOTALL)
+    assert len(scripts) >= 3
+    for script in scripts:
+        ast.parse(textwrap.dedent(script))
 
 
 def test_provider_canaries_run_for_release_tags() -> None:
