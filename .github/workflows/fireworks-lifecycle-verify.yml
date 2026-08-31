@@ -1,0 +1,172 @@
+name: Fireworks Lifecycle Verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_model:
+        description: Fireworks base-model resource name
+        required: true
+        default: accounts/fireworks/models/qwen3p5-9b
+      accelerator:
+        description: Deployment accelerator
+        required: true
+        default: NVIDIA_H100_80GB
+      confirmation:
+        description: Enter exactly FIREWORKS PAID LIFECYCLE APPROVED
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fireworks-lifecycle-verify
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    environment: provider-live-verification
+    timeout-minutes: 180
+    env:
+      FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+      FIREWORKS_ACCOUNT_ID: ${{ secrets.FIREWORKS_ACCOUNT_ID }}
+      STATESET_BASE_MODEL: ${{ inputs.base_model }}
+      STATESET_ACCELERATOR: ${{ inputs.accelerator }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Validate explicit approval and credentials
+        env:
+          STATESET_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          test "$STATESET_CONFIRMATION" = "FIREWORKS PAID LIFECYCLE APPROVED"
+          test -n "$FIREWORKS_API_KEY"
+          test -n "$FIREWORKS_ACCOUNT_ID"
+          pip install -e ".[fireworks]"
+
+      - name: Train, deploy, infer, and undeploy
+        run: |
+          mkdir -p fireworks-evidence
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import signal
+          import time
+          from pathlib import Path
+
+          import requests
+
+          from stateset_agents.remote.fireworks import FireworksExecutor
+          from stateset_agents.remote.job import RemoteJobSpec
+
+          data = Path("fireworks-evidence/train.jsonl")
+          with data.open("w", encoding="utf-8") as fh:
+              for i in range(32):
+                  fh.write(json.dumps({"messages": [
+                      {"role": "user", "content": f"Return lifecycle token {i}."},
+                      {"role": "assistant", "content": f"LIFECYCLE-{i}"},
+                  ]}) + "\n")
+
+          executor = FireworksExecutor()
+          handle = None
+          deployment = None
+          cleanup_confirmed = False
+          inference_status = None
+          inference_sha256 = None
+          result = None
+
+          def stop(signum, frame):
+              if deployment:
+                  executor.undeploy(deployment)
+              elif handle is not None:
+                  executor.cancel(handle)
+              raise SystemExit(f"interrupted by signal {signum}; cleanup requested")
+
+          signal.signal(signal.SIGTERM, stop)
+          signal.signal(signal.SIGINT, stop)
+          try:
+              spec = RemoteJobSpec(
+                  dataset=data,
+                  base_model=os.environ["STATESET_BASE_MODEL"],
+                  output_dir=Path("fireworks-evidence/artifacts"),
+                  num_epochs=1,
+                  lora_r=8,
+                  max_length=256,
+                  per_device_batch_size=1,
+                  timeout_s=9000,
+              )
+              handle = executor.submit(spec)
+              result = executor.wait(handle, poll_interval_s=15)
+              if not result.succeeded:
+                  raise RuntimeError(f"fine-tune ended {result.status.value}")
+              served = executor.deploy(
+                  handle,
+                  accelerator_type=os.environ["STATESET_ACCELERATOR"],
+                  min_replica_count=0,
+                  max_replica_count=1,
+              )
+              deployment = served["deployment"]
+              payload = {
+                  "model": served["model"],
+                  "messages": [{"role": "user", "content": "Return lifecycle token 41."}],
+                  "max_tokens": 64,
+              }
+              last_error = None
+              for _ in range(20):
+                  response = requests.post(
+                      served["base_url"] + "/chat/completions",
+                      headers={"Authorization": "Bearer " + os.environ["FIREWORKS_API_KEY"]},
+                      json=payload,
+                      timeout=60,
+                  )
+                  inference_status = response.status_code
+                  if response.ok:
+                      inference_sha256 = hashlib.sha256(response.content).hexdigest()
+                      break
+                  last_error = response.text[:500]
+                  time.sleep(30)
+              else:
+                  raise RuntimeError(f"deployed inference never became ready: {last_error}")
+          finally:
+              if deployment:
+                  executor.undeploy(deployment)
+                  cleanup_confirmed = True
+              evidence = {
+                  "schema_version": 1,
+                  "kind": "fireworks-paid-lifecycle",
+                  "commit": os.environ["GITHUB_SHA"],
+                  "base_model": os.environ["STATESET_BASE_MODEL"],
+                  "job_id": handle.job_id if handle else None,
+                  "job_status": result.status.value if result else None,
+                  "reported_cost_usd": result.cost_usd if result else None,
+                  "deployment": deployment,
+                  "inference_http_status": inference_status,
+                  "inference_response_sha256": inference_sha256,
+                  "cleanup_confirmed": cleanup_confirmed,
+              }
+              Path("fireworks-evidence/evidence.json").write_text(
+                  json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+              )
+          if inference_status != 200 or not cleanup_confirmed:
+              raise SystemExit("lifecycle did not pass inference and cleanup gates")
+          PY
+
+      - name: Read-only post-run account audit
+        if: always()
+        run: >-
+          stateset-agents provider-canary --provider fireworks --strict
+          --output fireworks-evidence/account-audit.json
+
+      - name: Retain lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fireworks-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}
+          path: fireworks-evidence
+          if-no-files-found: error
+          retention-days: 90

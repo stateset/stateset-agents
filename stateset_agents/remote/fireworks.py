@@ -200,6 +200,8 @@ class FireworksExecutor(RemoteExecutor):
     durable_handles = True
     managed_deployments = True
     result_kind = "hosted_pointer_or_local_artifacts"
+    compute_model = "managed-finetuning-and-serving"
+    verification_status = "code-complete-live-lifecycle-pending"
 
     def __init__(
         self,
@@ -774,13 +776,23 @@ class FireworksExecutor(RemoteExecutor):
         try:
             client.lora.load(model=record.output_model, deployment=deployment_name)
         except Exception as exc:  # noqa: BLE001 - provider SDK error
+            cleanup_error: str | None = None
+            try:
+                self.undeploy(deployment_name)
+            except Exception as cleanup_exc:  # noqa: BLE001 - report both failures
+                cleanup_error = str(cleanup_exc)
+            cleanup_note = (
+                "the deployment was rolled back automatically"
+                if cleanup_error is None
+                else f"automatic rollback also failed: {cleanup_error}"
+            )
             raise RemoteExecutionError.wrap(
                 exc,
                 f"deployment {deployment_name} was created but the addon could "
-                "not be loaded onto it; delete it with `stateset-agents "
-                "fireworks-undeploy` so it stops billing",
+                f"not be loaded onto it; {cleanup_note}",
                 provider=self.name,
                 deployment=deployment_name,
+                rollback_confirmed=cleanup_error is None,
             ) from exc
 
         return {

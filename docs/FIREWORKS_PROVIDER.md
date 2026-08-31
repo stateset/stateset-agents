@@ -119,8 +119,9 @@ to nothing. Tear it down explicitly:
 stateset-agents undeploy --deployment accounts/my-org/deployments/dep-1
 ```
 
-If the deployment is created but the addon fails to load, the error names the
-deployment and tells you to delete it — a half-built deployment still bills.
+If the deployment is created but the addon fails to load, the executor rolls
+the deployment back automatically. If rollback itself fails, the error retains
+the deployment name and reports both failures so cleanup can be completed.
 
 ## Cost accounting
 
@@ -162,10 +163,17 @@ explicit teardown instruction.
 | `JOB_STATE_EARLY_STOPPED` means a trained addon exists | a job reports success with no usable `output_model`; `fetch()` then writes a pointer with `model: null` |
 | A PEFT addon is downloadable via `models.get_download_endpoint` | `weights_downloaded` is always `false` and `serve --checkpoint` never works — the pointer path is the fallback and is expected to be the common case |
 | The training `--base-model` is also a valid deployment `baseModel` | `--deploy` fails with a not-found while the fine-tune itself succeeded; pass the Fireworks model id (`accounts/fireworks/models/…`) rather than the bare HF name |
-| A deployment created with `enable_addons=True` accepts `lora.load(model=…, deployment=…)` | `--deploy` creates a billing deployment and then errors; the error tells you to run `undeploy` |
+| A deployment created with `enable_addons=True` accepts `lora.load(model=…, deployment=…)` | `--deploy` creates a deployment, the addon load errors, and the executor automatically rolls the deployment back |
 | Fireworks' `estimatedCost` is populated for completed SFT jobs | ledger rows show `null` cost, which is honest but less useful |
 
 When you run this live, the fixes belong in
 `tests/unit/test_remote_fireworks_executor.py` first — the fakes there are a
 recording of the call sequence we believe in, so correcting them is how the
 correction gets pinned down.
+
+The manual `Fireworks Lifecycle Verify` workflow is the promotion gate for
+this document's remaining live assumptions. It requires environment approval,
+trains a bounded addon, creates an on-demand deployment, performs an inference
+request, undeploys in a `finally` path, runs the read-only account canary, and
+retains job cost, response digest, and cleanup evidence. Fireworks remains
+`code-complete-live-lifecycle-pending` until that workflow passes.

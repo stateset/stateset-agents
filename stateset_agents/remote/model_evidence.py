@@ -37,6 +37,50 @@ class ModelProviderEvidence:
 
 MODEL_PROVIDER_EVIDENCE: tuple[ModelProviderEvidence, ...] = (
     ModelProviderEvidence(
+        model="Qwen/Qwen3.5-0.8B",
+        provider="runpod",
+        level="inference-verified",
+        outcome="pass",
+        checked_at="2026-08-27",
+        evidence=(
+            "Live bounded QLoRA and CUDA GSPO jobs passed held-out checks; "
+            "artifacts returned and pods terminated. See docs/RELEASE_EVIDENCE.md."
+        ),
+    ),
+    ModelProviderEvidence(
+        model="Qwen/Qwen3.8-27B",
+        provider="runpod",
+        level="inference-verified",
+        outcome="pass",
+        checked_at="2026-08-05",
+        evidence=(
+            "Live H100 QLoRA run passed 2/2 held-out assertions, returned a "
+            "467MB adapter, recorded $0.96 spend, and terminated the pod."
+        ),
+    ),
+    ModelProviderEvidence(
+        model="meta-models/Muse-Glimmer-30B",
+        provider="runpod",
+        level="inference-verified",
+        outcome="pass",
+        checked_at="2026-08-01",
+        evidence=(
+            "Live H100 training returned an adapter and adapter-backed chat "
+            "resolved a held-out multi-turn support case."
+        ),
+    ),
+    ModelProviderEvidence(
+        model="Qwen/Qwen3.5-9B",
+        provider="river",
+        level="inference-verified",
+        outcome="pass",
+        checked_at="2026-08-18",
+        evidence=(
+            "Remote-autograd training completed and the resulting checkpoint "
+            "answered 3/3 held-out tickets with the required resolutions."
+        ),
+    ),
+    ModelProviderEvidence(
         model="Qwen/Qwen3.8-Flash-Next",
         provider="framework",
         level="unit-tested",

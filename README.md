@@ -183,7 +183,23 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.42.6 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.42.6/)):**
+**v0.43.0 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.43.0/)):**
+
+- **Model/provider certification is explicit.** A machine-readable catalog
+  separates default, frontier-preview, and compatibility models across
+  configured, smoke-tested, training-verified, serving-verified, and
+  production-certified stages without promoting architecture support into a
+  live claim.
+- **RunPod plans before it rents.** `train-remote --plan-only` resolves
+  model-aware GPU/count/disk recommendations without provisioning hardware;
+  estimated frontier and unknown plans require an explicit `--max-cost` before
+  execution.
+- **Managed-provider cleanup fails closed.** Modal deletes per-job persistent
+  Volumes across every terminal path, Fireworks rolls back deployments after
+  addon-load failures, and approval-gated workflows retain frontier, Modal,
+  and Fireworks lifecycle evidence.
+
+**v0.42.6:**
 
 - **Cross-platform release confidence.** The complete PR gate now passes on
   Python 3.10–3.13 plus Windows 3.10/3.13, with deterministic API router tests,
@@ -768,6 +784,25 @@ Full breakdown in [CHANGELOG.md](CHANGELOG.md).
 
 ## Renting GPUs, and knowing what it cost
 
+Model/provider support is now tiered as `default`, `frontier-preview`, or
+`compatibility`, with separate configured, smoke, training, serving, and
+production certification stages. `stateset-agents model-support --json`
+returns the auditable catalog and its dated evidence. See
+[`docs/MODEL_PROVIDER_CERTIFICATION.md`](docs/MODEL_PROVIDER_CERTIFICATION.md).
+
+Before renting anything, resolve a non-billable RunPod plan:
+
+```bash
+stateset-agents train-remote --provider runpod \
+  --dataset data/train.jsonl --base-model Qwen/Qwen3.8-Flash-Next \
+  --plan-only
+```
+
+Known measured models automatically select catalog GPU/count/disk defaults.
+Frontier or unknown plans are explicitly labeled estimates and require a
+`--max-cost` ceiling before execution. `--plan-only` provisions nothing;
+`--dry-run` runs on the selected provider and may still allocate compute.
+
 Four commands cover the whole rented-hardware lifecycle. Every pod is
 terminated on every exit path — success, failure, timeout, or your laptop
 dying mid-run — and every pod records what it cost.
@@ -873,7 +908,7 @@ asyncio.run(main())
 
 ```bash
 pip install stateset-agents          # latest version currently available on PyPI
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.42.6"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.43.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1585,7 +1620,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.42.6`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.43.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

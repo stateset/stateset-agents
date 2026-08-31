@@ -443,6 +443,8 @@ class RunPodExecutor(RemoteExecutor):
 
     name = "runpod"
     supported_job_kinds = frozenset({"sft", "harvest"})
+    compute_model = "rented-gpu-machine"
+    verification_status = "live-end-to-end"
     #: RunPod's own GPU vocabulary. 16 GB is enough for a small-model LoRA
     #: SFT and is among the cheapest widely-available options.
     DEFAULT_GPU = "NVIDIA RTX A4000"

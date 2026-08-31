@@ -83,6 +83,10 @@ class TestCommandRegistration:
         assert rows["river"]["job_kinds"] == ["harvest", "rl", "sft"]
         assert rows["fireworks"]["durable_handles"] is True
         assert rows["runpod"]["result_kind"] == "local_artifacts"
+        assert rows["runpod"]["compute_model"] == "rented-gpu-machine"
+        assert rows["runpod"]["verification_status"] == "live-end-to-end"
+        assert rows["river"]["compute_model"] == "managed-remote-autograd"
+        assert rows["modal"]["verification_status"] == "transport-unverified"
 
 
 class TestSuccessfulRun:
@@ -258,6 +262,48 @@ class TestOptionPassthrough:
         assert captured["spec"].cloud_type == "SECURE"
         assert captured["spec"].resume is False
         assert captured["spec"].network_volume_id is None
+
+    def test_runpod_plan_only_is_non_billable(self, dataset, monkeypatch):
+        def forbidden(*args, **kwargs):
+            raise AssertionError("plan-only must not resolve an executor")
+
+        monkeypatch.setattr("stateset_agents.cli_remote.get_executor", forbidden)
+        result = runner.invoke(
+            app,
+            [
+                "train-remote",
+                "--provider",
+                "runpod",
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "Qwen/Qwen3.8-Flash-Next",
+                "--plan-only",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        plan = json.loads(result.output)
+        assert plan["gpu_count"] == 4
+        assert plan["provisions_hardware"] is False
+        assert plan["manual_review_required"] is True
+
+    def test_estimated_runpod_plan_requires_cost_ceiling(self, dataset):
+        result = runner.invoke(
+            app,
+            [
+                "train-remote",
+                "--provider",
+                "runpod",
+                "--dataset",
+                str(dataset),
+                "--base-model",
+                "zai-org/GLM-5.3-Flash",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "--max-cost" in result.output
 
     def test_invalid_cloud_type_is_rejected_before_submitting(
         self, dataset, tmp_path, monkeypatch

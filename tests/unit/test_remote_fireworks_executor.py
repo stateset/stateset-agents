@@ -475,6 +475,21 @@ def test_deploy_refuses_a_job_that_has_not_finished(executor, client, spec):
         executor.deploy(handle)
 
 
+def test_deploy_rolls_back_when_addon_load_fails(executor, client, spec):
+    handle = executor.submit(spec)
+    client.supervised_fine_tuning_jobs.states = ["JOB_STATE_COMPLETED"]
+
+    def fail(**kwargs):
+        raise RuntimeError("addon rejected")
+
+    client.lora.load = fail
+
+    with pytest.raises(RemoteExecutionError, match="rolled back automatically"):
+        executor.deploy(handle)
+
+    assert client.deployments.deleted == ["dep-1"]
+
+
 def test_undeploy_deletes_the_deployment(executor, client):
     executor.undeploy("accounts/acct/deployments/dep-1")
 

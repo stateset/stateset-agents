@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-08-31 — Model and provider certification
+
 ### Added
+
+- Added a machine-readable, tiered model catalog with explicit certification
+  stages and measured-versus-estimated RunPod resource recommendations.
+- Added a genuinely non-billable `train-remote --plan-only` path and
+  approval-gated live workflows for frontier models, Modal transport, and the
+  complete Fireworks train/deploy/infer/undeploy lifecycle.
+- Added provider compute-model and verification metadata to capability output.
 
 - Added durable, commit-bound GPU verification evidence with dataset, wheel,
   adapter, and evaluation hashes, measured cost and duration, confirmed
@@ -47,6 +56,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   container images.
 
 ### Changed
+
+- RunPod now fills omitted GPU count and disk settings from measured model
+  profiles, while estimated frontier and unknown-model runs require an
+  explicit cost ceiling.
+- Modal now deletes every executor-created persistent Volume on success,
+  dry-run completion, transport failure, or training failure, and requires an
+  SDK version with the supported deletion API.
+- Fireworks now automatically rolls back a newly created deployment when LoRA
+  loading fails instead of leaving billing cleanup to the caller.
 
 - Bound the live RunPod GPU verification workflow to one concurrent run,
   explicit disk/runtime/spend ceilings, authoritative price checks, and a

@@ -70,6 +70,18 @@ def test_runpod_canary_passes_with_no_leases_or_canary_pods() -> None:
     assert result.checks["billable_resources_created"] == 0
 
 
+def test_runpod_canary_fails_on_ephemeral_training_pod() -> None:
+    api = SimpleNamespace(
+        list_pods=lambda: [{"id": "pod-2", "name": "stateset-sft-leaked"}]
+    )
+    executor = _executor(_require_api=lambda: api, orphaned_leases=lambda: [])
+
+    result = run_provider_canary("runpod", executor=executor)
+
+    assert result.status == "failed"
+    assert result.checks["ephemeral_training_leftovers"] == ["pod-2"]
+
+
 def test_provider_error_redacts_credentials(monkeypatch) -> None:
     monkeypatch.setenv("RUNPOD_API_KEY", "secret-value")
 
