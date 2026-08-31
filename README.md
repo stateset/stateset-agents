@@ -64,12 +64,12 @@ corresponding local suite completed with **4,898 passed and 11 skipped**. See
 the retained [proof ledger](docs/PROOFS.md) for the evidence behind individual
 training, serving, and provider claims.
 
-This CoreWeave/Nebius integration branch completed its local full suite with
+The `v0.44.0` CoreWeave/Nebius release candidate completed its local full suite with
 **4,932 passed and 11 skipped**, plus clean Ruff, isort, type, repository
 hygiene, and workflow-policy gates. Provider-live evidence is intentionally
 still pending.
 
-- **Published Python package:** `stateset-agents==0.43.0` on PyPI.
+- **Published Python package:** `stateset-agents==0.44.0` on PyPI.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/); its first npm registry
   publication remains pending.
@@ -250,6 +250,10 @@ coverage, live hardware attempts, and successful inference by provider.
 
 **On `master` (unreleased):**
 
+- No unreleased changes yet.
+
+**v0.44.0 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.44.0/)):**
+
 - **CoreWeave and Nebius are first-class providers.** The same packaged SFT
   job now runs on CoreWeave CKS or Nebius Serverless AI with durable handles,
   S3-compatible artifact exchange, secret references, cancellation, cleanup,
@@ -267,7 +271,7 @@ coverage, live hardware attempts, and successful inference by provider.
   against exact Typer option metadata, independent of terminal width, while
   still executing every referenced command's help path.
 
-**v0.43.0 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.43.0/)):**
+**v0.43.0:**
 
 - **Model/provider certification is explicit.** A machine-readable catalog
   separates default, frontier-preview, and compatibility models across
@@ -991,8 +995,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.43.0" # current stable release on PyPI
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.43.0"
+pip install "stateset-agents==0.44.0" # current stable release on PyPI
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.44.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1723,7 +1727,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.43.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.44.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
