@@ -727,6 +727,79 @@ class TestGpuCount:
             )
 
         assert "secret-key" not in str(caught.value)
+        assert caught.value.context.details["attempts"] == 5
+
+    def test_transient_http_errors_use_bounded_exponential_backoff(self, monkeypatch):
+        import requests
+
+        from stateset_agents.remote.runpod import RunPodApi
+
+        calls = 0
+        sleeps = []
+
+        class FakeResponse:
+            status_code = 500
+
+            def raise_for_status(self):
+                nonlocal calls
+                calls += 1
+                if calls < 5:
+                    response = requests.Response()
+                    response.status_code = 500
+                    raise requests.HTTPError("transient", response=response)
+
+        monkeypatch.setattr("stateset_agents.remote.runpod.time.sleep", sleeps.append)
+
+        response = RunPodApi._send(FakeResponse)
+
+        assert isinstance(response, FakeResponse)
+        assert calls == 5
+        assert sleeps == [2.0, 4.0, 8.0, 16.0]
+
+    @pytest.mark.parametrize("status", [400, 401, 403, 404, 422])
+    def test_permanent_http_errors_are_not_retried(self, status):
+        import requests
+
+        from stateset_agents.remote.runpod import RunPodApi
+
+        calls = 0
+
+        def request():
+            nonlocal calls
+            calls += 1
+            response = requests.Response()
+            response.status_code = status
+            raise requests.HTTPError("permanent", response=response)
+
+        with pytest.raises(requests.HTTPError):
+            RunPodApi._send(request)
+
+        assert calls == 1
+
+    def test_rate_limit_is_retried(self, monkeypatch):
+        import requests
+
+        from stateset_agents.remote.runpod import RunPodApi
+
+        statuses = iter([429, 200])
+        sleeps = []
+
+        class FakeResponse:
+            def __init__(self, status_code):
+                self.status_code = status_code
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    response = requests.Response()
+                    response.status_code = self.status_code
+                    raise requests.HTTPError("rate limited", response=response)
+
+        monkeypatch.setattr("stateset_agents.remote.runpod.time.sleep", sleeps.append)
+
+        response = RunPodApi._send(lambda: FakeResponse(next(statuses)))
+
+        assert response.status_code == 200
+        assert sleeps == [2.0]
 
 
 class TestCloudType:

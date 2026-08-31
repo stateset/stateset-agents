@@ -47,6 +47,8 @@ from stateset_agents.remote.ledger import (
 __all__ = ["RunPodApi", "RunPodExecutor", "SshTransport", "package_pin"]
 
 _API_ROOT = "https://rest.runpod.io/v1"
+_HTTP_ATTEMPTS = 5
+_HTTP_BACKOFF_S = 2.0
 #: Official RunPod PyTorch image — ships a preconfigured sshd that reads
 #: PUBLIC_KEY, so no custom start command is needed.
 #:
@@ -97,13 +99,19 @@ class RunPodApi:
         }
 
     @staticmethod
-    def _send(request: Any, attempts: int = 3, backoff_s: float = 2.0) -> Any:
-        """Issue ``request()`` retrying transient 5xx answers.
+    def _send(
+        request: Any,
+        attempts: int = _HTTP_ATTEMPTS,
+        backoff_s: float = _HTTP_BACKOFF_S,
+    ) -> Any:
+        """Issue ``request()`` retrying transient HTTP answers.
 
         RunPod's REST API intermittently answers 500 on /v1/pods (observed
         repeatedly live; one such 500 killed a whole serve attempt during
-        provisioning). A 5xx is their infrastructure hiccuping, not our
-        request being wrong — retry briefly; 4xx still raises immediately.
+        provisioning). Retry 429 and 5xx with a bounded exponential backoff;
+        permanent 4xx responses still raise immediately. Transport errors are
+        deliberately not retried here: after an ambiguous POST disconnect we
+        cannot know whether a billable pod was created.
         """
         import requests
 
@@ -115,10 +123,11 @@ class RunPodApi:
                 return response
             except requests.HTTPError as exc:
                 status = exc.response.status_code if exc.response is not None else 0
-                if status < 500 or attempt == attempts:
+                retryable = status == 429 or status >= 500
+                if not retryable or attempt == attempts:
                     raise
                 last = exc
-                time.sleep(backoff_s * attempt)
+                time.sleep(backoff_s * (2 ** (attempt - 1)))
         assert last is not None  # pragma: no cover - loop always sets it
         raise last
 
@@ -184,9 +193,14 @@ class RunPodApi:
         except requests.RequestException as exc:
             status = exc.response.status_code if exc.response is not None else None
             detail = f" (HTTP {status})" if status is not None else ""
+            request_id = None
+            if exc.response is not None:
+                request_id = exc.response.headers.get("x-request-id")
             raise RemoteExecutionError(
                 "RunPod pod creation failed after retries" + detail,
                 provider="runpod",
+                attempts=_HTTP_ATTEMPTS,
+                request_id=request_id,
             ) from exc
         return dict(response.json())
 
@@ -907,7 +921,7 @@ class RunPodExecutor(RemoteExecutor):
                     # here. Observed live — RunPod restarted a pod under a
                     # running job and its IP changed.
                     raise _PodDiedMidJob(
-                        f"ssh transport to pod {pod_id} died mid-job " "(ssh exit 255)",
+                        f"ssh transport to pod {pod_id} died mid-job (ssh exit 255)",
                         provider=self.name,
                     )
             except _PodDiedMidJob:
