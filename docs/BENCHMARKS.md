@@ -46,11 +46,48 @@ itself evidence that the live matrix passed.
 
 Standard agent capability evidence is gated by
 `benchmarks/agent_quality_evidence.py`. It requires matched three-seed
-base-versus-trained evaluations on tau-bench, BFCL, and SWE-bench Verified,
+base-versus-trained evaluations on τ³-bench, BFCL V4, and SWE-bench Verified,
 immutable suite/model/harness revisions, identical evaluation configuration,
 retained artifacts, task and cost accounting, at least `+0.03` mean improvement
 per suite, and a paired 95% confidence bound above zero. Until those measured
 documents exist, StateSet makes no standard-suite leadership claim.
+
+Collection is executable rather than hand-authored. Copy
+`benchmarks/agent_quality_manifest.example.json` and
+`benchmarks/agent_quality_harnesses.example.json`, replace every model,
+artifact, upstream-suite revision, checkout path, and driver with immutable
+experiment values. The included paired adapter verifies that each upstream
+checkout is clean and exactly matches its pinned revision, then executes the
+same baseline/trained command template without a shell for every seed. It
+retains stdout, stderr, normalized task records, raw artifacts, and failures
+before invoking the publication gate automatically:
+
+```bash
+make benchmark-agent-quality-contract
+make benchmark-agent-quality-run \
+  MANIFEST=benchmarks/agent_quality_manifest.json \
+  OUTPUT_DIR=benchmark_results/agent_quality
+```
+
+Use `EXTRA_ARGS=--preflight` for one seed per suite. Preflight proves wiring
+only and never produces a passing publication matrix. Measured execution is
+rejected from a dirty harness worktree.
+
+Each suite driver receives the model, model revision, seed, suite revision,
+split, canonical evaluation config, output path, and artifact directory as
+separate argv values. It writes one JSON object per line to `{output}`:
+
+```json
+{"task_id": "stable-upstream-id", "success": true, "cost_usd": 0.0123}
+```
+
+The paired adapter requires unique, identical, ordered task IDs for baseline
+and trained policies. It calculates the task digest, scores, success counts, and
+combined measured cost; writes the neutral `{adapter_output}`; and retains a
+paired summary plus both policies' records and logs beneath `{artifact_dir}`.
+The outer runner rehashes that artifact itself. Evidence schema v2 also binds
+the trained-policy artifact digest, preventing a model name from standing in
+for checkpoint identity.
 
 ## Currently supported claims
 

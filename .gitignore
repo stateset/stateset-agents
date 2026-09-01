@@ -223,6 +223,14 @@ benchmark_results/reliability/*
 benchmark_results/provider_canaries/*
 !benchmark_results/provider_canaries/*.json
 !benchmark_results/provider_canaries/README.md
+!benchmark_results/agent_quality/
+benchmark_results/agent_quality/*
+!benchmark_results/agent_quality/README.md
+!benchmark_results/agent_quality/evidence/
+!benchmark_results/agent_quality/evidence/*.json
+!benchmark_results/agent_quality/report.json
+!benchmark_results/agent_quality/_accounting/
+!benchmark_results/agent_quality/_accounting/*.json
 hpo_results/
 
 # Python package/typing artifacts

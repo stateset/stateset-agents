@@ -1,4 +1,4 @@
-.PHONY: help install install-dev install-all install-locked lock lock-check dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene api-compatibility release-governance clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-loop benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish benchmark-distributed-async-gate benchmark-agent-quality-gate release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
+.PHONY: help install install-dev install-all install-locked lock lock-check dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene api-compatibility release-governance clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-loop benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish benchmark-distributed-async-gate benchmark-agent-quality-contract benchmark-agent-quality-run benchmark-agent-quality-gate release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
 
 PYTHON_BIN := $(shell command -v python3 >/dev/null 2>&1 && echo python3 || command -v python)
 PACKAGE_VERSION := $(shell $(PYTHON_BIN) -c "import stateset_agents; print(stateset_agents.__version__)")
@@ -315,7 +315,20 @@ benchmark-distributed-async-gate: ## Validate multi-node async evidence (INPUTS 
 	@test -n "$(INPUTS)" || { echo "Usage: make $@ INPUTS='path ...' [OUTPUT=report.json]" >&2; exit 2; }
 	$(PYTHON_BIN) benchmarks/distributed_async_evidence.py $(INPUTS) $(if $(OUTPUT),--output $(OUTPUT),)
 
-benchmark-agent-quality-gate: ## Validate tau-bench/BFCL/SWE evidence (INPUTS required; optional OUTPUT)
+benchmark-agent-quality-contract: ## Validate the standard-agent execution manifest contract without running suites
+	$(PYTHON_BIN) benchmarks/adapters/paired_agent_harness.py validate \
+		--harness-config benchmarks/agent_quality_harnesses.example.json
+	$(PYTHON_BIN) benchmarks/run_agent_quality_matrix.py \
+		benchmarks/agent_quality_manifest.example.json \
+		--output-dir /tmp/stateset-agent-quality-contract --dry-run
+
+benchmark-agent-quality-run: ## Execute paired Tau3/BFCL V4/SWE matrix (MANIFEST and OUTPUT_DIR required)
+	@test -n "$(MANIFEST)" || { echo "Usage: make $@ MANIFEST=path OUTPUT_DIR=path [EXTRA_ARGS='...']" >&2; exit 2; }
+	@test -n "$(OUTPUT_DIR)" || { echo "Usage: make $@ MANIFEST=path OUTPUT_DIR=path [EXTRA_ARGS='...']" >&2; exit 2; }
+	$(PYTHON_BIN) benchmarks/run_agent_quality_matrix.py $(MANIFEST) \
+		--output-dir $(OUTPUT_DIR) $(EXTRA_ARGS)
+
+benchmark-agent-quality-gate: ## Validate Tau3/BFCL V4/SWE evidence (INPUTS required; optional OUTPUT)
 	@test -n "$(INPUTS)" || { echo "Usage: make $@ INPUTS='path ...' [OUTPUT=report.json]" >&2; exit 2; }
 	$(PYTHON_BIN) benchmarks/agent_quality_evidence.py $(INPUTS) $(if $(OUTPUT),--output $(OUTPUT),)
 	@echo "Whitepaper-ready artifacts in benchmark_results/whitepaper_v1/"
