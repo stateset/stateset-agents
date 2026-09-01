@@ -316,6 +316,8 @@ benchmark-distributed-async-gate: ## Validate multi-node async evidence (INPUTS 
 	$(PYTHON_BIN) benchmarks/distributed_async_evidence.py $(INPUTS) $(if $(OUTPUT),--output $(OUTPUT),)
 
 benchmark-agent-quality-contract: ## Validate the standard-agent execution manifest contract without running suites
+	$(PYTHON_BIN) benchmarks/adapters/paired_agent_harness.py validate \
+		--harness-config benchmarks/agent_quality_harnesses.example.json
 	$(PYTHON_BIN) benchmarks/run_agent_quality_matrix.py \
 		benchmarks/agent_quality_manifest.example.json \
 		--output-dir /tmp/stateset-agent-quality-contract --dry-run

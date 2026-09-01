@@ -26,6 +26,7 @@ def _command() -> list[str]:
         "{suite}",
         "{suite_revision}",
         "{split}",
+        "{framework_version}",
         "{baseline_model}",
         "{baseline_revision}",
         "{trained_model}",

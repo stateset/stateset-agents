@@ -140,14 +140,22 @@ make benchmark-agent-quality-gate \
   OUTPUT=benchmark_results/agent_quality/report.json
 ```
 
-Start from `agent_quality_manifest.example.json`. The collection runner binds
-both policy revisions, the trained artifact digest, identical paired task IDs,
-the canonical evaluation configuration, upstream suite revisions, raw result
-artifacts, and measured cost provenance. It accounts for every failed attempt
-before the existing publication gate evaluates the complete matrix. Schemas
-and collection guidance live under `benchmark_results/`. These tools fail
-closed on missing seeds, mismatched protocols, estimated results, and
-incomplete provenance.
+Start from `agent_quality_manifest.example.json` and
+`agent_quality_harnesses.example.json`. The included
+`adapters/paired_agent_harness.py` executes both policies shell-free against the
+same clean upstream checkout at the manifest-pinned revision. Each configured
+suite driver writes ordered JSONL records with a non-empty string `task_id`, a
+boolean `success`, and a finite, non-negative `cost_usd`. The adapter rejects
+duplicate or reordered task sets and derives both scores, success counts, task
+digest, and total cost from those records rather than trusting aggregate values
+reported by an upstream command.
+
+The collection runner additionally binds both policy revisions, the trained
+artifact digest, the canonical evaluation configuration, raw result artifacts,
+and measured cost provenance. It accounts for every failed attempt before the
+publication gate evaluates the complete matrix. Schemas and collection guidance
+live under `benchmark_results/`. These tools fail closed on missing seeds,
+mismatched protocols, estimated results, and incomplete provenance.
 
 ## Non-comparative tests
 

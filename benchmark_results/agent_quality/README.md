@@ -6,9 +6,10 @@ claim until the complete matrix has run and passed.
 
 ## Collection
 
-Copy `benchmarks/agent_quality_manifest.example.json` to an experiment-specific
-manifest, replace all placeholder revisions and adapter commands, commit the
-harness, then run:
+Copy `benchmarks/agent_quality_manifest.example.json` and
+`benchmarks/agent_quality_harnesses.example.json` to experiment-specific files,
+replace all placeholder revisions, checkout paths, and driver commands, commit
+the harness, then run:
 
 ```bash
 make benchmark-agent-quality-run \
@@ -62,7 +63,10 @@ write JSON to `{adapter_output}` with these fields:
 }
 ```
 
-The adapter must evaluate the exact same ordered task IDs for both policies and
-calculate `paired_task_ids_sha256` from that canonical ordered list. The runner
-does not trust an adapter-supplied artifact digest: it hashes the retained path
-after execution.
+The included `benchmarks/adapters/paired_agent_harness.py` produces this neutral
+object. Each suite driver only writes ordered JSONL records containing
+`task_id`, boolean `success`, and measured `cost_usd`. The paired adapter
+requires the exact same unique ordered task IDs for both policies and derives
+the digest, scores, counts, and combined cost itself. The outer runner does not
+trust an adapter-supplied artifact digest: it hashes the retained path after
+execution.

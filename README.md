@@ -93,10 +93,12 @@ gates. Native multi-node GPU evidence is intentionally still pending.
   criteria, stable API references, or response targets drift.
 - **Standard agent benchmarks:** a manifest-driven tau-bench, BFCL, and
   SWE-bench Verified runner now executes paired base-versus-trained matrices,
-  binds both policy revisions and the trained artifact digest, retains raw
-  results and failures, and rejects publication unless every suite clears the
-  three-seed significance and cost-accounting gate. The suites still require
-  measured execution; an implemented runner is not a benchmark result.
+  verifies clean pinned upstream checkouts, derives scores from identical
+  ordered per-task records, binds both policy revisions and the trained artifact
+  digest, retains raw results and failures, and rejects publication unless every
+  suite clears the three-seed significance and cost-accounting gate. The suites
+  still require measured execution; an implemented runner is not a benchmark
+  result.
 
 ---
 

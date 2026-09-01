@@ -112,6 +112,9 @@ remains unchecked until a tagged run retains and verifies those attestations.
 - [x] Add an executable, manifest-driven tau-bench/BFCL/SWE collection runner
   that binds both policies, the trained artifact, paired task IDs, raw outputs,
   failures, and cost provenance before invoking the evidence gate
+- [x] Add a shell-free paired upstream-harness adapter that verifies pinned,
+  clean suite checkouts and derives scores and cost from identical ordered
+  per-task records
 - [x] Establish machine-validated public security response SLAs and safe harbor
 - [ ] Complete and retain an independent third-party security review
 
