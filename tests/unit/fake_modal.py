@@ -105,7 +105,9 @@ class FakeVolume:
             return
         for item in sorted(base.rglob("*") if recursive else base.iterdir()):
             if item.is_file():
-                yield FakeEntry(path=str(item.relative_to(self.root)))
+                # Modal returns container-relative POSIX paths regardless of
+                # the client OS running the SDK.
+                yield FakeEntry(path=item.relative_to(self.root).as_posix())
 
     def read_file(self, path: str) -> Iterator[bytes]:
         yield (self.root / path).read_bytes()
