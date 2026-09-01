@@ -162,6 +162,9 @@ def test_run_suite_emits_v2_evidence_and_hashes_retained_artifact(
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
     monkeypatch.setattr("benchmarks.run_agent_quality_matrix.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "benchmarks.run_agent_quality_matrix.time.monotonic", lambda: 10.0
+    )
     destination = run_suite(
         manifest,
         suite,
@@ -175,6 +178,7 @@ def test_run_suite_emits_v2_evidence_and_hashes_retained_artifact(
     validate_run(evidence, destination)
     assert evidence["schema_version"] == 2
     assert evidence["training_artifact_sha256"] == "c" * 64
+    assert evidence["evaluation_seconds"] > 0
     assert evidence["cost_per_successful_episode_usd"] == pytest.approx(0.1)
 
 

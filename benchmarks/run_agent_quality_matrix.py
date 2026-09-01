@@ -326,9 +326,13 @@ def run_suite(
             timeout=timeout_seconds,
             env=os.environ.copy(),
         )
-        elapsed = time.monotonic() - started
+        # Some Windows timer implementations can return the same tick for a
+        # fast adapter (and tests replace the subprocess with an in-process
+        # stub). Evidence requires a strictly positive duration, so preserve
+        # that invariant at the measurement boundary.
+        elapsed = max(time.monotonic() - started, 1e-9)
     except subprocess.TimeoutExpired as exc:
-        elapsed = time.monotonic() - started
+        elapsed = max(time.monotonic() - started, 1e-9)
         (run_dir / "failure.json").write_text(
             json.dumps({"kind": "timeout", "elapsed_seconds": elapsed}, indent=2)
             + "\n",
