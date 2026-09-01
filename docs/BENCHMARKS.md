@@ -52,6 +52,34 @@ retained artifacts, task and cost accounting, at least `+0.03` mean improvement
 per suite, and a paired 95% confidence bound above zero. Until those measured
 documents exist, StateSet makes no standard-suite leadership claim.
 
+Collection is executable rather than hand-authored. Copy
+`benchmarks/agent_quality_manifest.example.json`, replace every model, artifact,
+and upstream-suite revision with immutable digests, and provide one shell-free
+adapter command per suite. The runner executes the same baseline/trained pair
+for every seed, retains stdout, stderr, raw artifacts, and failures, then invokes
+the publication gate automatically:
+
+```bash
+make benchmark-agent-quality-contract
+make benchmark-agent-quality-run \
+  MANIFEST=benchmarks/agent_quality_manifest.json \
+  OUTPUT_DIR=benchmark_results/agent_quality
+```
+
+Use `EXTRA_ARGS=--preflight` for one seed per suite. Preflight proves wiring
+only and never produces a passing publication matrix. Measured execution is
+rejected from a dirty harness worktree.
+
+Each upstream adapter must write the JSON path supplied as `{adapter_output}`.
+The neutral result must report `status: completed`, `measured: true`, the exact
+suite/seed and baseline/trained model revisions supplied by the runner, the
+canonical evaluation-config digest, a digest of the ordered paired task IDs,
+task and success counts for both policies, both scores, measured USD cost and
+its source, and an `artifact_path` contained inside `{artifact_dir}`. The runner
+rehashes that artifact itself. Evidence schema v2 also binds the trained-policy
+artifact digest, preventing a model name from standing in for checkpoint
+identity.
+
 ## Currently supported claims
 
 ### Multi-turn customer-support improvement

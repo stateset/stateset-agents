@@ -33,3 +33,15 @@ def test_publish_readiness_enforces_release_governance() -> None:
 
     assert 'CURRENT_STEP="release_governance"' in contents
     assert '"$PYTHON_BIN" scripts/check_release_governance.py' in contents
+
+
+def test_publish_readiness_enforces_agent_quality_contract() -> None:
+    script_path = (
+        Path(__file__).resolve().parents[2] / "scripts" / "publish_readiness.sh"
+    )
+    contents = script_path.read_text(encoding="utf-8")
+
+    assert 'CURRENT_STEP="agent_quality_contract"' in contents
+    assert "benchmarks/run_agent_quality_matrix.py" in contents
+    assert "benchmarks/agent_quality_manifest.example.json" in contents
+    assert "--dry-run" in contents

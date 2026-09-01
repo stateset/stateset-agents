@@ -109,6 +109,9 @@ remains unchecked until a tagged run retains and verifies those attestations.
 - [ ] Complete standard agent benchmarks for tool use, long horizon, and SWE tasks
 - [x] Add a fail-closed tau-bench/BFCL/SWE-bench Verified evidence gate with
   paired significance, immutable revisions, artifacts, and cost accounting
+- [x] Add an executable, manifest-driven tau-bench/BFCL/SWE collection runner
+  that binds both policies, the trained artifact, paired task IDs, raw outputs,
+  failures, and cost provenance before invoking the evidence gate
 - [x] Establish machine-validated public security response SLAs and safe harbor
 - [ ] Complete and retain an independent third-party security review
 
@@ -130,9 +133,9 @@ estimated targets in marketing material.
 
 ## Next implementation sequence
 
-1. Merge the v0.47.0 release commit into `master`, configure npm trusted
-   publishing (or its scoped-token fallback), and configure Fireworks and
-   Docker credentials so every tag job completes green.
+1. Complete npm trusted publishing (or its scoped-token fallback), and
+   configure Fireworks and Docker credentials so every tag job completes
+   green.
 2. Live-preflight the implemented NeMo RL, verl, and OpenRLHF adapters, then run
    the matched three-seed roster.
    The orchestrator enforces a required roster and accounts for every attempt
@@ -156,4 +159,4 @@ an integration or live-evidence path. Performance changes need before/after raw
 artifacts on identical configurations. Feature requests and RFCs belong in the
 GitHub issue tracker.
 
-Last updated: 2026-08-31.
+Last updated: 2026-09-01.

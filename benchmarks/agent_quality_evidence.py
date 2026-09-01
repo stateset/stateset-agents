@@ -14,6 +14,9 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_SUITES = ("tau-bench", "bfcl", "swe-bench-verified")
+COST_SOURCES = frozenset(
+    {"provider-api", "provider-invoice", "local-meter", "sponsored"}
+)
 HEX_DIGITS = frozenset("0123456789abcdef")
 
 
@@ -61,22 +64,38 @@ def _digest(data: Mapping[str, Any], key: str, source: Path, length: int) -> str
 def validate_run(data: Mapping[str, Any], source: Path) -> dict[str, Any]:
     """Validate one paired base-versus-trained held-out evaluation."""
     if (
-        data.get("schema_version") != 1
+        data.get("schema_version") != 2
         or data.get("kind") != "stateset-agent-quality-evidence"
         or data.get("status") != "completed"
         or data.get("measured") is not True
     ):
         raise AgentQualityEvidenceError(
-            f"{source}: completed measured schema_version=1 evidence is required"
+            f"{source}: completed measured schema_version=2 evidence is required"
         )
     suite = _string(data, "suite", source)
     if suite not in REQUIRED_SUITES:
         raise AgentQualityEvidenceError(f"{source}: unsupported suite {suite!r}")
-    for key in ("run_id", "framework_version", "model", "split", "timestamp"):
+    for key in (
+        "run_id",
+        "protocol",
+        "framework_version",
+        "baseline_model",
+        "trained_model",
+        "split",
+        "timestamp",
+        "cost_source",
+    ):
         _string(data, key, source)
+    if data["cost_source"] not in COST_SOURCES:
+        raise AgentQualityEvidenceError(
+            f"{source}: cost_source must be one of {sorted(COST_SOURCES)}"
+        )
     _digest(data, "suite_revision", source, 40)
-    _digest(data, "model_revision", source, 40)
+    _digest(data, "baseline_model_revision", source, 40)
+    _digest(data, "trained_model_revision", source, 40)
+    _digest(data, "training_artifact_sha256", source, 64)
     _digest(data, "harness_commit", source, 40)
+    _digest(data, "paired_task_ids_sha256", source, 64)
     _digest(data, "artifact_sha256", source, 64)
     _integer(data, "seed", source)
 
@@ -94,9 +113,12 @@ def validate_run(data: Mapping[str, Any], source: Path) -> dict[str, Any]:
         )
 
     tasks = _integer(data, "tasks", source, minimum=1)
-    successful = _integer(data, "successful_episodes", source)
-    if successful > tasks:
-        raise AgentQualityEvidenceError(f"{source}: successful_episodes exceeds tasks")
+    baseline_successful = _integer(data, "baseline_successful_episodes", source)
+    trained_successful = _integer(data, "trained_successful_episodes", source)
+    if baseline_successful > tasks or trained_successful > tasks:
+        raise AgentQualityEvidenceError(
+            f"{source}: successful episode count exceeds tasks"
+        )
     baseline = _number(data, "baseline_score", source)
     trained = _number(data, "trained_score", source)
     if not 0.0 <= baseline <= 1.0 or not 0.0 <= trained <= 1.0:
@@ -108,7 +130,7 @@ def validate_run(data: Mapping[str, Any], source: Path) -> dict[str, Any]:
             f"{source}: duration must be positive and cost non-negative"
         )
     per_success = _number(data, "cost_per_successful_episode_usd", source)
-    expected_cost = cost / successful if successful else 0.0
+    expected_cost = cost / trained_successful if trained_successful else 0.0
     if not math.isclose(per_success, expected_cost, rel_tol=0.02, abs_tol=1e-9):
         raise AgentQualityEvidenceError(
             f"{source}: cost per successful episode is inconsistent"
@@ -150,7 +172,12 @@ def validate_matrix(
     if min_seeds < 3 or minimum_mean_improvement <= 0:
         raise AgentQualityEvidenceError("invalid matrix gate configuration")
     grouped: dict[str, list[Mapping[str, Any]]] = {}
+    run_ids: set[str] = set()
     for run in runs:
+        run_id = str(run["run_id"])
+        if run_id in run_ids:
+            raise AgentQualityEvidenceError(f"duplicate run_id: {run_id}")
+        run_ids.add(run_id)
         grouped.setdefault(str(run["suite"]), []).append(run)
     if set(grouped) != set(REQUIRED_SUITES):
         raise AgentQualityEvidenceError(
@@ -163,9 +190,14 @@ def validate_matrix(
             field
             for field in (
                 "framework_version",
-                "model",
-                "model_revision",
+                "protocol",
+                "baseline_model",
+                "baseline_model_revision",
+                "trained_model",
+                "trained_model_revision",
+                "training_artifact_sha256",
                 "harness_commit",
+                "evaluation_config_sha256",
             )
             if run[field] != first[field]
         ]
@@ -174,6 +206,14 @@ def validate_matrix(
 
     expected_seeds: set[int] | None = None
     for suite, suite_runs in sorted(grouped.items()):
+        for field in (
+            "suite_revision",
+            "split",
+            "tasks",
+            "paired_task_ids_sha256",
+        ):
+            if len({str(run[field]) for run in suite_runs}) != 1:
+                raise AgentQualityEvidenceError(f"{suite}: {field} drift")
         seeds = [int(run["seed"]) for run in suite_runs]
         if len(seeds) != len(set(seeds)) or len(seeds) < min_seeds:
             raise AgentQualityEvidenceError(
@@ -219,11 +259,15 @@ def summarize(runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             ),
         }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "stateset-agent-quality-matrix",
         "passed": True,
-        "model": runs[0]["model"],
-        "model_revision": runs[0]["model_revision"],
+        "protocol": runs[0]["protocol"],
+        "baseline_model": runs[0]["baseline_model"],
+        "baseline_model_revision": runs[0]["baseline_model_revision"],
+        "trained_model": runs[0]["trained_model"],
+        "trained_model_revision": runs[0]["trained_model_revision"],
+        "training_artifact_sha256": runs[0]["training_artifact_sha256"],
         "suites": suites,
     }
 

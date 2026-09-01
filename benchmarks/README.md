@@ -131,13 +131,22 @@ make benchmark-distributed-async-gate \
   OUTPUT=benchmark_results/distributed_async/report.json
 
 # Three-seed tau-bench, BFCL, and SWE-bench Verified quality matrix
+make benchmark-agent-quality-contract
+make benchmark-agent-quality-run \
+  MANIFEST=benchmarks/agent_quality_manifest.json \
+  OUTPUT_DIR=benchmark_results/agent_quality
 make benchmark-agent-quality-gate \
   INPUTS=benchmark_results/agent_quality/evidence \
   OUTPUT=benchmark_results/agent_quality/report.json
 ```
 
-Schemas and collection guidance live under `benchmark_results/`. These tools
-fail closed on missing seeds, mismatched protocols, estimated results, and
+Start from `agent_quality_manifest.example.json`. The collection runner binds
+both policy revisions, the trained artifact digest, identical paired task IDs,
+the canonical evaluation configuration, upstream suite revisions, raw result
+artifacts, and measured cost provenance. It accounts for every failed attempt
+before the existing publication gate evaluates the complete matrix. Schemas
+and collection guidance live under `benchmark_results/`. These tools fail
+closed on missing seeds, mismatched protocols, estimated results, and
 incomplete provenance.
 
 ## Non-comparative tests

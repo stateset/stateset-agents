@@ -34,6 +34,15 @@ def test_make_exposes_release_governance_gate() -> None:
     assert "\tpython scripts/check_release_governance.py" in contents
 
 
+def test_make_exposes_agent_quality_collection_and_contract_gates() -> None:
+    makefile_path = Path(__file__).resolve().parents[2] / "Makefile"
+    contents = makefile_path.read_text(encoding="utf-8")
+
+    assert "benchmark-agent-quality-contract:" in contents
+    assert "benchmark-agent-quality-run:" in contents
+    assert "benchmarks/run_agent_quality_matrix.py" in contents
+
+
 def test_make_ci_uses_read_only_checks() -> None:
     makefile_path = Path(__file__).resolve().parents[2] / "Makefile"
     contents = makefile_path.read_text(encoding="utf-8")
