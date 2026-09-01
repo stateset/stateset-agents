@@ -1,0 +1,4780 @@
+{
+  "contract_version": 1,
+  "http": {
+    "operations": {
+      "DELETE /api/v1/conversations/{conversation_id}": {
+        "operationId": "end_conversation_v1_api_v1_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "DELETE /api/v1/rollouts/workers/{worker_id}": {
+        "operationId": "unregister_worker_api_v1_rollouts_workers__worker_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "worker_id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "DELETE /api/v1/training/{job_id}": {
+        "operationId": "cancel_training_v1_api_v1_training__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingCancelResponseV1"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "GET /api/v1/conversations/{conversation_id}": {
+        "operationId": "get_conversation_v1_api_v1_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "GET /api/v1/health": {
+        "operationId": "health_v1_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "GET /api/v1/rollouts/stats": {
+        "operationId": "get_distributed_stats_api_v1_rollouts_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistributedStatsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "GET /api/v1/rollouts/workers": {
+        "operationId": "list_worker_health_api_v1_rollouts_workers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerHealthListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "GET /api/v1/training/{job_id}": {
+        "operationId": "get_training_status_v1_api_v1_training__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingStatusResponseV1"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "GET /healthz": {
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "GET /live": {
+        "operationId": "liveness_check_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "GET /ready": {
+        "operationId": "readiness_check_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "GET /v1/models": {
+        "operationId": "list_models_v1_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "POST /api/v1/conversations": {
+        "operationId": "chat_v1_api_v1_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationRequestV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponseV1"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "POST /api/v1/rollouts/workers/{worker_id}/heartbeat": {
+        "operationId": "heartbeat_worker_api_v1_rollouts_workers__worker_id__heartbeat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "worker_id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerLeaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "POST /api/v1/rollouts/workers/{worker_id}/register": {
+        "operationId": "register_worker_api_v1_rollouts_workers__worker_id__register_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "worker_id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerLeaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "POST /api/v1/rollouts/workers/{worker_id}/submit": {
+        "operationId": "submit_rollout_api_v1_rollouts_workers__worker_id__submit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "worker_id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitRolloutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitRolloutResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "POST /api/v1/training": {
+        "operationId": "start_training_v1_api_v1_training_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingRequestV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingCreateResponseV1"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "POST /v1/chat/completions": {
+        "operationId": "chat_completions_v1_chat_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenAIChatCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAIChatCompletionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "POST /v1/messages": {
+        "operationId": "create_message_v1_messages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessagesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/MessagesResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OpenAIChatCompletionResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {}
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ConversationRequestV1": {
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "messages": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MessageV1"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ConversationResponseV1": {
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "processing_time_ms": {
+            "type": "integer"
+          },
+          "response": {
+            "type": "string"
+          },
+          "tokens_used": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "response",
+          "tokens_used",
+          "processing_time_ms"
+        ],
+        "type": "object"
+      },
+      "DistributedStatsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "stats": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "stats"
+        ],
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LeaseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "lease_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "lease_id"
+        ],
+        "type": "object"
+      },
+      "MessageInput": {
+        "additionalProperties": true,
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "assistant",
+              "tool"
+            ],
+            "type": "string"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
+      "MessageV1": {
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "assistant"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "type": "object"
+      },
+      "MessagesRequest": {
+        "additionalProperties": true,
+        "properties": {
+          "max_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageInput"
+            },
+            "type": "array"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "response_format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "anthropic",
+                  "openai"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stop_sequences": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stream": {
+            "default": false,
+            "type": "boolean"
+          },
+          "system": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_choice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "top_k": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "model",
+          "messages"
+        ],
+        "type": "object"
+      },
+      "MessagesResponse": {
+        "properties": {
+          "content": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "role": {
+            "const": "assistant",
+            "default": "assistant",
+            "type": "string"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stop_sequence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "const": "message",
+            "default": "message",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageInfo"
+          }
+        },
+        "required": [
+          "id",
+          "model",
+          "content",
+          "usage"
+        ],
+        "type": "object"
+      },
+      "OpenAIChatCompletionRequest": {
+        "additionalProperties": true,
+        "properties": {
+          "max_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/OpenAIChatMessage"
+            },
+            "type": "array"
+          },
+          "model": {
+            "type": "string"
+          },
+          "stop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stream": {
+            "default": false,
+            "type": "boolean"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_choice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "model",
+          "messages"
+        ],
+        "type": "object"
+      },
+      "OpenAIChatCompletionResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "choices": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "created": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "created",
+          "model",
+          "choices"
+        ],
+        "type": "object"
+      },
+      "OpenAIChatMessage": {
+        "additionalProperties": true,
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "assistant",
+              "tool"
+            ],
+            "type": "string"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
+      "PolicyArtifactResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_version": {
+            "type": "integer"
+          },
+          "published_at": {
+            "type": "number"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer"
+          },
+          "uri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy_version",
+          "uri",
+          "sha256",
+          "size_bytes",
+          "published_at"
+        ],
+        "type": "object"
+      },
+      "RolloutValue": {
+        "additionalProperties": false,
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "policy_artifact_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policy_version": {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "rollout_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sampler_log_probs": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 1000000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "rollout_id",
+          "policy_version",
+          "sampler_log_probs",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "SubmitRolloutRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "lease_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rollout": {
+            "$ref": "#/components/schemas/RolloutValue"
+          },
+          "timeout_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 300.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "lease_id",
+          "rollout"
+        ],
+        "type": "object"
+      },
+      "SubmitRolloutResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted"
+        ],
+        "type": "object"
+      },
+      "TrainingCancelResponseV1": {
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "message"
+        ],
+        "type": "object"
+      },
+      "TrainingCreateResponseV1": {
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "TrainingRequestV1": {
+        "properties": {
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "num_iterations": {
+            "default": 1,
+            "minimum": 1.0,
+            "type": "integer"
+          },
+          "prompts": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "strategy": {
+            "default": "computational",
+            "enum": [
+              "computational",
+              "distributed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompts"
+        ],
+        "type": "object"
+      },
+      "TrainingStatusResponseV1": {
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "UsageInfo": {
+        "properties": {
+          "input_tokens": {
+            "type": "integer"
+          },
+          "output_tokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "input_tokens",
+          "output_tokens"
+        ],
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "type": "object"
+          },
+          "input": {},
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "msg": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "type": "object"
+      },
+      "WorkerHealthListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "workers": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerHealthResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "workers"
+        ],
+        "type": "object"
+      },
+      "WorkerHealthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "type": "integer"
+          },
+          "lease_seconds_remaining": {
+            "type": "number"
+          },
+          "policy_version": {
+            "type": "integer"
+          },
+          "worker_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "generation",
+          "policy_version",
+          "lease_seconds_remaining"
+        ],
+        "type": "object"
+      },
+      "WorkerLeaseResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyArtifactResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "number"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "issued_at": {
+            "type": "number"
+          },
+          "lease_id": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "integer"
+          },
+          "worker_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "lease_id",
+          "generation",
+          "policy_version",
+          "issued_at",
+          "expires_at"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "python": {
+    "stateset_agents": {
+      "Agent": {
+        "module": "stateset_agents.core.agent",
+        "name": "Agent",
+        "signature": {
+          "parameters": [
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "model_loader"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tokenizer_loader"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "generation_config_factory"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "backend"
+            }
+          ]
+        }
+      },
+      "AsyncResourcePool": {
+        "module": "stateset_agents.core.async_pool",
+        "name": "AsyncResourcePool",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "factory"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "min_size"
+            },
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_size"
+            },
+            {
+              "default": 300.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_idle_time"
+            },
+            {
+              "default": 3600.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_age"
+            },
+            {
+              "default": 60.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "health_check_interval"
+            },
+            {
+              "default": 30.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "acquire_timeout"
+            },
+            {
+              "default": "AsyncPool",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "name"
+            }
+          ]
+        }
+      },
+      "AsyncTaskManager": {
+        "module": "stateset_agents.core.async_pool",
+        "name": "AsyncTaskManager",
+        "signature": {
+          "parameters": [
+            {
+              "default": 100,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_concurrent_tasks"
+            },
+            {
+              "default": 300.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_timeout"
+            },
+            {
+              "default": 60.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "cleanup_interval"
+            }
+          ]
+        }
+      },
+      "AutoResearchConfig": {
+        "module": "stateset_agents.training.auto_research",
+        "name": "AutoResearchConfig",
+        "signature": {
+          "parameters": [
+            {
+              "default": 300,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "time_budget"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_experiments"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_wall_clock"
+            },
+            {
+              "default": "eval_reward",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "objective_metric"
+            },
+            {
+              "default": "maximize",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "direction"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "improvement_threshold"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "improvement_patience"
+            },
+            {
+              "default": "./auto_research_results",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "output_dir"
+            },
+            {
+              "default": "perturbation",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "proposer"
+            },
+            {
+              "default": "grpo",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "search_space_name"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "search_space_overrides"
+            },
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_episodes"
+            },
+            {
+              "default": 42,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_seed"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_concurrency"
+            },
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "selection_promotion_zscore"
+            },
+            {
+              "default": "worktree",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "experiment_isolation"
+            },
+            {
+              "default": "venv",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "runtime_environment"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "save_checkpoints"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "log_to_wandb"
+            },
+            {
+              "default": "auto-research",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_project"
+            },
+            {
+              "default": "gspo",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "trainer_algorithm"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "calibrate_rewards"
+            },
+            {
+              "default": "percentile",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "calibration_method"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "base_config_overrides"
+            }
+          ]
+        }
+      },
+      "AutoResearchLoop": {
+        "module": "stateset_agents.training.auto_research",
+        "name": "AutoResearchLoop",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "agent"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "environment"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "eval_scenarios"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "reward_fn"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "proposer"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "baseline_params"
+            }
+          ]
+        }
+      },
+      "AutoTrainer": {
+        "module": "stateset_agents.training.train",
+        "name": "AutoTrainer",
+        "signature": {
+          "parameters": [
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "auto_adjust"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "early_stopping"
+            },
+            {
+              "default": 50,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "patience"
+            }
+          ]
+        }
+      },
+      "BatchOptimizer": {
+        "module": "stateset_agents.core.performance_optimizer",
+        "name": "BatchOptimizer",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            }
+          ]
+        }
+      },
+      "CircuitBreakerConfig": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "CircuitBreakerConfig",
+        "signature": {
+          "parameters": [
+            {
+              "default": 5,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "failure_threshold"
+            },
+            {
+              "default": 60.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "recovery_timeout"
+            },
+            {
+              "default": {
+                "repr": "<class 'Exception'>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_exception"
+            }
+          ]
+        }
+      },
+      "CompositeReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "CompositeReward",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_functions"
+            },
+            {
+              "default": "weighted_sum",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "combination_method"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "normalize_weights"
+            }
+          ]
+        }
+      },
+      "ComputeConfig": {
+        "module": "stateset_agents.core.performance_optimizer",
+        "name": "ComputeConfig",
+        "signature": {
+          "parameters": [
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_mixed_precision"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "compile_model"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_flash_attention"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enable_tensor_parallel"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "fused_optimizer"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_channels_last"
+            }
+          ]
+        }
+      },
+      "ConcisenessReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "ConcisenessReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": 150,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "optimal_length"
+            }
+          ]
+        }
+      },
+      "ConfigValidator": {
+        "module": "stateset_agents.core.type_system",
+        "name": "ConfigValidator",
+        "signature": {
+          "parameters": []
+        }
+      },
+      "ConversationDataset": {
+        "module": "stateset_agents.data",
+        "name": "ConversationDataset",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "trajectories"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "embedding_cache"
+            }
+          ]
+        }
+      },
+      "ConversationDatasetConfig": {
+        "module": "stateset_agents.data",
+        "name": "ConversationDatasetConfig",
+        "signature": {
+          "parameters": [
+            {
+              "default": "",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "data_path"
+            },
+            {
+              "default": "jsonl",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "format"
+            },
+            {
+              "default": 20,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_turns"
+            },
+            {
+              "default": "all-MiniLM-L6-v2",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "embedding_model"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "normalize_rewards"
+            },
+            {
+              "default": "standard",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_normalization_method"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "compute_returns"
+            },
+            {
+              "default": 0.99,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "discount_factor"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "min_trajectory_length"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_trajectory_length"
+            }
+          ]
+        }
+      },
+      "ConversationEnvironment": {
+        "module": "stateset_agents.core.environment",
+        "name": "ConversationEnvironment",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "scenarios"
+            },
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_turns"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "persona"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "ConversationExample": {
+        "module": "stateset_agents.core.data_processing",
+        "name": "ConversationExample",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "query"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_response"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_type"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "metadata"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "conversation_history"
+            }
+          ]
+        }
+      },
+      "ConversationReplayBuffer": {
+        "module": "stateset_agents.data",
+        "name": "ConversationReplayBuffer",
+        "signature": {
+          "parameters": [
+            {
+              "default": 100000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "capacity"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "priority"
+            },
+            {
+              "default": 0.6,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "priority_alpha"
+            },
+            {
+              "default": 0.4,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "priority_beta"
+            }
+          ]
+        }
+      },
+      "ConversationSimulator": {
+        "module": "stateset_agents.environments",
+        "name": "ConversationSimulator",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "domain_randomization"
+            }
+          ]
+        }
+      },
+      "ConversationSimulatorConfig": {
+        "module": "stateset_agents.environments",
+        "name": "ConversationSimulatorConfig",
+        "signature": {
+          "parameters": [
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "personas"
+            },
+            {
+              "default": "uniform",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "persona_sampling"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "topic_distribution"
+            },
+            {
+              "default": {
+                "tuple": [
+                  0.3,
+                  0.9
+                ]
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "difficulty_range"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_curriculum"
+            },
+            {
+              "default": 5000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "curriculum_steps"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "noise_level"
+            },
+            {
+              "default": 0.02,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "typo_rate"
+            },
+            {
+              "default": 0.05,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "truncation_rate"
+            },
+            {
+              "default": "rule_based",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "llm_backend"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "llm_model"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_rule_based_fallback"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "calibration_dataset_path"
+            },
+            {
+              "default": "mmd",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "calibration_method"
+            },
+            {
+              "default": 20,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_turns"
+            },
+            {
+              "default": 0.05,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "timeout_probability"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "early_exit_probability"
+            },
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_scale"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "penalize_repetition"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "penalize_irrelevance"
+            }
+          ]
+        }
+      },
+      "ConversationTurn": {
+        "module": "stateset_agents.core.trajectory",
+        "name": "ConversationTurn",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "VAR_POSITIONAL",
+              "name": "args"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "CorrectnessReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "CorrectnessReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "ground_truth"
+            }
+          ]
+        }
+      },
+      "CustomerServiceReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "CustomerServiceReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_responses"
+            }
+          ]
+        }
+      },
+      "DataConfig": {
+        "module": "stateset_agents.core.performance_optimizer",
+        "name": "DataConfig",
+        "signature": {
+          "parameters": [
+            {
+              "default": 4,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_workers"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "pin_memory"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "persistent_workers"
+            },
+            {
+              "default": 2,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "prefetch_factor"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "batch_size_scaling"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "dynamic_batching"
+            }
+          ]
+        }
+      },
+      "DataException": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "DataException",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "DataLoader": {
+        "module": "stateset_agents.core.data_processing",
+        "name": "DataLoader",
+        "signature": {
+          "parameters": [
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_examples"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "validation_split"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "stratify_by"
+            },
+            {
+              "default": 42,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "random_seed"
+            }
+          ]
+        }
+      },
+      "DataProcessor": {
+        "module": "stateset_agents.core.data_processing",
+        "name": "DataProcessor",
+        "signature": {
+          "parameters": [
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tokenizer"
+            }
+          ]
+        }
+      },
+      "DeviceType": {
+        "module": "stateset_agents.core.type_system",
+        "name": "DeviceType"
+      },
+      "DomainSpecificReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "DomainSpecificReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "domain_keywords"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_responses"
+            }
+          ]
+        }
+      },
+      "EmbeddingCache": {
+        "module": "stateset_agents.data",
+        "name": "EmbeddingCache",
+        "signature": {
+          "parameters": [
+            {
+              "default": "all-MiniLM-L6-v2",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "embedding_model"
+            },
+            {
+              "default": 100000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "cache_size"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "device"
+            }
+          ]
+        }
+      },
+      "EngagementReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "EngagementReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            }
+          ]
+        }
+      },
+      "Environment": {
+        "module": "stateset_agents.core.environment",
+        "name": "Environment",
+        "signature": {
+          "parameters": [
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_turns"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_function"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "timeout_seconds"
+            }
+          ]
+        }
+      },
+      "ErrorCode": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "ErrorCode"
+      },
+      "ErrorHandler": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "ErrorHandler",
+        "signature": {
+          "parameters": [
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "logger"
+            },
+            {
+              "default": 10000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_error_history"
+            }
+          ]
+        }
+      },
+      "GRPOException": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "GRPOException",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "default": {
+                "enum": "stateset_agents.core.error_handling.ErrorCategory",
+                "member": "SYSTEM"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "category"
+            },
+            {
+              "default": {
+                "enum": "stateset_agents.core.error_handling.ErrorSeverity",
+                "member": "MEDIUM"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "severity"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "error_code"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "details"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "recovery_actions"
+            }
+          ]
+        }
+      },
+      "GRPOTrainer": {
+        "module": "stateset_agents.training.trainer",
+        "name": "GRPOTrainer",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "agent"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "environment"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_logger"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "callbacks"
+            }
+          ]
+        }
+      },
+      "HelpfulnessReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "HelpfulnessReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            }
+          ]
+        }
+      },
+      "MemoryConfig": {
+        "module": "stateset_agents.core.performance_optimizer",
+        "name": "MemoryConfig",
+        "signature": {
+          "parameters": [
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enable_gradient_checkpointing"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enable_cpu_offload"
+            },
+            {
+              "default": 0.85,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_memory_usage_percent"
+            },
+            {
+              "default": 100,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "clear_cache_frequency"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_memory_mapping"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enable_memory_profiling"
+            }
+          ]
+        }
+      },
+      "MemoryMonitor": {
+        "module": "stateset_agents.core.performance_optimizer",
+        "name": "MemoryMonitor",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            }
+          ]
+        }
+      },
+      "ModelConfig": {
+        "module": "stateset_agents.core.type_system",
+        "name": "ModelConfig"
+      },
+      "ModelException": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "ModelException",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "ModelOptimizer": {
+        "module": "stateset_agents.core.performance_optimizer",
+        "name": "ModelOptimizer",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            }
+          ]
+        }
+      },
+      "ModelSize": {
+        "module": "stateset_agents.core.type_system",
+        "name": "ModelSize"
+      },
+      "MultiTurnAgent": {
+        "module": "stateset_agents.core.agent",
+        "name": "MultiTurnAgent",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "memory_window"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "context_compression"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "model_loader"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tokenizer_loader"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "generation_config_factory"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "backend"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "planning_manager"
+            }
+          ]
+        }
+      },
+      "MultiTurnGRPOTrainer": {
+        "module": "stateset_agents.training.trainer",
+        "name": "MultiTurnGRPOTrainer",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "agent"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "environment"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_logger"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "callbacks"
+            }
+          ]
+        }
+      },
+      "MultiTurnTrajectory": {
+        "module": "stateset_agents.core.trajectory",
+        "name": "MultiTurnTrajectory",
+        "signature": {
+          "parameters": [
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "trajectory_id"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "turns"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "total_reward"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "rewards"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "turn_rewards"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "metadata"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "initial_state"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "final_state"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "state_history"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "conversation_quality_score"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_completion_score"
+            }
+          ]
+        }
+      },
+      "NetworkException": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "NetworkException",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "OptimizationLevel": {
+        "module": "stateset_agents.core.performance_optimizer",
+        "name": "OptimizationLevel"
+      },
+      "PerformanceMetrics": {
+        "module": "stateset_agents.core.performance_optimizer",
+        "name": "PerformanceMetrics",
+        "signature": {
+          "parameters": [
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "timestamp"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "memory_usage_mb"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gpu_memory_usage_mb"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "cpu_usage_percent"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gpu_utilization_percent"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "throughput_tokens_per_sec"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "latency_ms"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "batch_size"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "sequence_length"
+            }
+          ]
+        }
+      },
+      "PerformanceOptimizer": {
+        "module": "stateset_agents.core.performance_optimizer",
+        "name": "PerformanceOptimizer",
+        "signature": {
+          "parameters": [
+            {
+              "default": {
+                "enum": "stateset_agents.core.performance_optimizer.OptimizationLevel",
+                "member": "BALANCED"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "optimization_level"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "memory_config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "compute_config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "data_config"
+            }
+          ]
+        }
+      },
+      "PooledResource": {
+        "module": "stateset_agents.core.async_pool",
+        "name": "PooledResource",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "resource"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "resource_id"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "pool"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "created_at"
+            }
+          ]
+        }
+      },
+      "ResourceException": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "ResourceException",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "RetryConfig": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "RetryConfig",
+        "signature": {
+          "parameters": [
+            {
+              "default": 3,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_attempts"
+            },
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "base_delay"
+            },
+            {
+              "default": 60.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_delay"
+            },
+            {
+              "default": 2.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "exponential_base"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "jitter"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "retry_on"
+            }
+          ]
+        }
+      },
+      "RewardFunction": {
+        "module": "stateset_agents.core.reward",
+        "name": "RewardFunction",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": {
+                "enum": "stateset_agents.core.reward_base.RewardType",
+                "member": "IMMEDIATE"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_type"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "name"
+            }
+          ]
+        }
+      },
+      "RewardMetrics": {
+        "module": "stateset_agents.core.type_system",
+        "name": "RewardMetrics"
+      },
+      "SafetyReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "SafetyReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "strict_mode"
+            }
+          ]
+        }
+      },
+      "SalesAssistantReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "SalesAssistantReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            }
+          ]
+        }
+      },
+      "SimToRealEvaluator": {
+        "module": "stateset_agents.evaluation",
+        "name": "SimToRealEvaluator",
+        "signature": {
+          "parameters": [
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "simulator"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "real_dataset"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "user_model"
+            }
+          ]
+        }
+      },
+      "SimToRealMetrics": {
+        "module": "stateset_agents.evaluation",
+        "name": "SimToRealMetrics",
+        "signature": {
+          "parameters": [
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "response_length_kl"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vocabulary_js_divergence"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "turn_count_mmd"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "response_time_gap"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_correlation"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "policy_performance_gap"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "success_rate_gap"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "user_model_likelihood"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "scenario_coverage"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "persona_diversity"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "overall_gap"
+            }
+          ]
+        }
+      },
+      "SimilarityAwareReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "SimilarityAwareReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_responses_map"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "base_reward_fn"
+            }
+          ]
+        }
+      },
+      "TaskCompletionReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "TaskCompletionReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_criteria"
+            }
+          ]
+        }
+      },
+      "TaskEnvironment": {
+        "module": "stateset_agents.core.environment",
+        "name": "TaskEnvironment",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tasks"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "success_criteria"
+            },
+            {
+              "default": 20,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_turns"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "TechnicalSupportReward": {
+        "module": "stateset_agents.core.reward",
+        "name": "TechnicalSupportReward",
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            }
+          ]
+        }
+      },
+      "ToolAgent": {
+        "module": "stateset_agents.core.agent",
+        "name": "ToolAgent",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tools"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "TrainingConfig": {
+        "module": "stateset_agents.training.config",
+        "name": "TrainingConfig",
+        "signature": {
+          "parameters": [
+            {
+              "default": "gpt2",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "model_name"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "model_revision"
+            },
+            {
+              "default": 1000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_episodes"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_epochs"
+            },
+            {
+              "default": 5e-06,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "learning_rate"
+            },
+            {
+              "default": 0.9,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "adam_beta1"
+            },
+            {
+              "default": 0.99,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "adam_beta2"
+            },
+            {
+              "default": 0.01,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight_decay"
+            },
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_grad_norm"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "warmup_ratio"
+            },
+            {
+              "default": "cosine",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lr_scheduler_type"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "per_device_train_batch_size"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "batch_size"
+            },
+            {
+              "default": 4,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gradient_accumulation_steps"
+            },
+            {
+              "default": 16,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_generations"
+            },
+            {
+              "default": 4,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "generation_batch_size"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "rollout_concurrency"
+            },
+            {
+              "default": 4,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_num_generations"
+            },
+            {
+              "default": 512,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_prompt_length"
+            },
+            {
+              "default": 512,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_completion_length"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_steps_per_episode"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "bf16"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "fp16"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_cpu"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "dataloader_num_workers"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "dataloader_pin_memory"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gradient_checkpointing"
+            },
+            {
+              "default": 50,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_steps"
+            },
+            {
+              "default": 100,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "save_steps"
+            },
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "logging_steps"
+            },
+            {
+              "default": 3,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "save_total_limit"
+            },
+            {
+              "default": "./outputs",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "output_dir"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "run_name"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_run_name"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "overwrite_output_dir"
+            },
+            {
+              "default": "wandb",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "report_to"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_project"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_entity"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_tags"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_notes"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "auto_adjust"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "early_stopping"
+            },
+            {
+              "default": 50,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "patience"
+            },
+            {
+              "default": 0.99,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gamma"
+            },
+            {
+              "default": 0.95,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gae_lambda"
+            },
+            {
+              "default": 10.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_clip"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "advantage_normalization"
+            },
+            {
+              "default": "group_mean",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "baseline_type"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "beta"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_reference_model"
+            },
+            {
+              "default": 0.2,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "clip_ratio"
+            },
+            {
+              "default": 0.0003,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "seq_clip_ratio"
+            },
+            {
+              "default": 0.2,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "value_clip"
+            },
+            {
+              "default": 0.01,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "entropy_coef"
+            },
+            {
+              "default": "none",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "continual_strategy"
+            },
+            {
+              "default": 2000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "replay_buffer_size"
+            },
+            {
+              "default": 0.5,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "replay_ratio"
+            },
+            {
+              "default": 100,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "replay_min_size"
+            },
+            {
+              "default": "uniform",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "replay_sampling"
+            },
+            {
+              "default": "reservoir",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "replay_storage"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "continual_kl_beta"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "ewc_lambda"
+            },
+            {
+              "default": 64,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "ewc_num_samples"
+            },
+            {
+              "default": 0.9,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "ewc_decay"
+            },
+            {
+              "default": "task_id",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_id_key"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_examples"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_split_size"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "stratify_by_task"
+            },
+            {
+              "default": "jsonl",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "data_format"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "run_post_eval"
+            },
+            {
+              "default": 5,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "post_eval_samples"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "post_eval_detailed"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_lora"
+            },
+            {
+              "default": 8,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lora_r"
+            },
+            {
+              "default": 16,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lora_alpha"
+            },
+            {
+              "default": 0.05,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lora_dropout"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lora_target_modules"
+            },
+            {
+              "default": 0.7,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "temperature"
+            },
+            {
+              "default": 0.9,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "top_p"
+            },
+            {
+              "default": 50,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "top_k"
+            },
+            {
+              "default": 1.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "repetition_penalty"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_vllm"
+            },
+            {
+              "default": 0.85,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_gpu_memory_utilization"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_tensor_parallel_size"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_enable_prefix_caching"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_max_model_len"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_quantization"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_enable_chunked_prefill"
+            },
+            {
+              "default": 42,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "seed"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "remove_unused_columns"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "disable_tqdm"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_schedule"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_switch_steps"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "resume_from_checkpoint"
+            }
+          ]
+        }
+      },
+      "TrainingException": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "TrainingException",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "TrainingProfile": {
+        "module": "stateset_agents.training.config",
+        "name": "TrainingProfile"
+      },
+      "TrainingStage": {
+        "module": "stateset_agents.core.type_system",
+        "name": "TrainingStage"
+      },
+      "Trajectory": {
+        "module": "stateset_agents.core.trajectory",
+        "name": "Trajectory",
+        "signature": {
+          "parameters": [
+            {
+              "default": "",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "prompt"
+            },
+            {
+              "default": "",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "response"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "turns"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "metadata"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "trajectory_id"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "log_probs"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "value_estimates"
+            }
+          ]
+        }
+      },
+      "TrajectoryData": {
+        "module": "stateset_agents.core.type_system",
+        "name": "TrajectoryData"
+      },
+      "TypeSafeSerializer": {
+        "module": "stateset_agents.core.type_system",
+        "name": "TypeSafeSerializer",
+        "signature": {
+          "parameters": []
+        }
+      },
+      "TypeValidator": {
+        "module": "stateset_agents.core.type_system",
+        "name": "TypeValidator",
+        "signature": {
+          "parameters": []
+        }
+      },
+      "TypedConversationTurn": {
+        "module": "stateset_agents.core.type_system",
+        "name": "ConversationTurn"
+      },
+      "TypedTrainingConfig": {
+        "module": "stateset_agents.core.type_system",
+        "name": "TypedTrainingConfig"
+      },
+      "ValidationException": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "ValidationException",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "WandBLogger": {
+        "module": "stateset_agents.utils.wandb_integration",
+        "name": "WandBLogger",
+        "signature": {
+          "parameters": [
+            {
+              "default": "stateset-agents",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "project"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "entity"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "api_key"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enabled"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "circuit_breaker": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "circuit_breaker",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "name"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "error_handler"
+            }
+          ]
+        }
+      },
+      "create_adaptive_reward": {
+        "module": "stateset_agents.core.reward",
+        "name": "create_adaptive_reward",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "base_rewards"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_responses"
+            },
+            {
+              "default": 0.3,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "similarity_weight"
+            }
+          ]
+        }
+      },
+      "create_domain_reward": {
+        "module": "stateset_agents.core.reward",
+        "name": "create_domain_reward",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "domain"
+            },
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_responses"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "create_typed_config": {
+        "module": "stateset_agents.core.type_system",
+        "name": "create_typed_config",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config_type"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "ensure_async_type_safety": {
+        "module": "stateset_agents.core.type_system",
+        "name": "ensure_async_type_safety",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "func"
+            }
+          ]
+        }
+      },
+      "ensure_type_safety": {
+        "module": "stateset_agents.core.type_system",
+        "name": "ensure_type_safety",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "func"
+            }
+          ]
+        }
+      },
+      "get_config_for_task": {
+        "module": "stateset_agents.training.config",
+        "name": "get_config_for_task",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_type"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "overrides"
+            }
+          ]
+        }
+      },
+      "get_error_summary": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "get_error_summary",
+        "signature": {
+          "parameters": []
+        }
+      },
+      "get_http_pool": {
+        "module": "stateset_agents.core.async_pool",
+        "name": "get_http_pool",
+        "signature": {
+          "parameters": []
+        }
+      },
+      "get_task_manager": {
+        "module": "stateset_agents.core.async_pool",
+        "name": "get_task_manager",
+        "signature": {
+          "parameters": []
+        }
+      },
+      "handle_error": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "handle_error",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "error"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "component"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "operation"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "context"
+            }
+          ]
+        }
+      },
+      "init_wandb": {
+        "module": "stateset_agents.utils.wandb_integration",
+        "name": "init_wandb",
+        "signature": {
+          "parameters": [
+            {
+              "default": "stateset-agents",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "project"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "entity"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "api_key"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "load_and_prepare_data": {
+        "module": "stateset_agents.core.data_processing",
+        "name": "load_and_prepare_data",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "data_path"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_examples"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "validation_split"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tokenizer"
+            }
+          ]
+        }
+      },
+      "managed_async_resources": {
+        "module": "stateset_agents.core.async_pool",
+        "name": "managed_async_resources",
+        "signature": {
+          "parameters": []
+        }
+      },
+      "retry_async": {
+        "module": "stateset_agents.core.error_handling",
+        "name": "retry_async",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            }
+          ]
+        }
+      },
+      "run_auto_research": {
+        "module": "stateset_agents.training.auto_research",
+        "name": "run_auto_research",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "agent"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "environment"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "eval_scenarios"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "reward_fn"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "baseline_params"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "proposer"
+            }
+          ]
+        }
+      },
+      "train": {
+        "module": "stateset_agents.training.train",
+        "name": "train",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "agent"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "environment"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "default": 1000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_episodes"
+            },
+            {
+              "default": "balanced",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "profile"
+            },
+            {
+              "default": "auto",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "training_mode"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config_overrides"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "save_path"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "resume_from_checkpoint"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "callbacks"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "dataset"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "dataset_path"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "uncertainty_weighted"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      }
+    },
+    "stateset_agents.api": {
+      "APIConfig": {
+        "module": "stateset_agents.api.config",
+        "name": "APIConfig",
+        "signature": {
+          "parameters": [
+            {
+              "default": {
+                "enum": "stateset_agents.api.config.Environment",
+                "member": "DEVELOPMENT"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "environment"
+            },
+            {
+              "default": "0.0.0.0",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "host"
+            },
+            {
+              "default": 8000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "port"
+            },
+            {
+              "default": "v1",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "api_version"
+            },
+            {
+              "default": "StateSet Agents API",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "title"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "cors"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "rate_limit"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "security"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "validation"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "observability"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enable_training_lab"
+            }
+          ]
+        }
+      },
+      "ConversationRequest": {
+        "module": "stateset_agents.api.schemas",
+        "name": "ConversationRequest",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "messages"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "conversation_id"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "user_id"
+            },
+            {
+              "default": 512,
+              "kind": "KEYWORD_ONLY",
+              "name": "max_tokens"
+            },
+            {
+              "default": 0.8,
+              "kind": "KEYWORD_ONLY",
+              "name": "temperature"
+            },
+            {
+              "default": false,
+              "kind": "KEYWORD_ONLY",
+              "name": "stream"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "context"
+            }
+          ]
+        }
+      },
+      "ConversationResponse": {
+        "module": "stateset_agents.api.schemas",
+        "name": "ConversationResponse",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "response"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "conversation_id"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "tokens_used"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "processing_time"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "KEYWORD_ONLY",
+              "name": "metadata"
+            }
+          ]
+        }
+      },
+      "HealthResponse": {
+        "module": "stateset_agents.api.schemas",
+        "name": "HealthResponse",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "status"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "timestamp"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "version"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "uptime"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "components"
+            }
+          ]
+        }
+      },
+      "TrainingRequest": {
+        "module": "stateset_agents.api.schemas",
+        "name": "TrainingRequest",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "agent_config"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "environment_scenarios"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "reward_config"
+            },
+            {
+              "default": 100,
+              "kind": "KEYWORD_ONLY",
+              "name": "num_episodes"
+            },
+            {
+              "default": "balanced",
+              "kind": "KEYWORD_ONLY",
+              "name": "profile"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "resume_from_checkpoint"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "training_config_overrides"
+            }
+          ]
+        }
+      },
+      "TrainingResponse": {
+        "module": "stateset_agents.api.schemas",
+        "name": "TrainingResponse",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "training_id"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "status"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "estimated_time"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "message"
+            }
+          ]
+        }
+      },
+      "attach_distributed_rollout_control_plane": {
+        "module": "stateset_agents.api",
+        "name": "attach_distributed_rollout_control_plane",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "app"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "control_plane"
+            }
+          ]
+        }
+      },
+      "create_app": {
+        "module": "stateset_agents.api",
+        "name": "create_app",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "VAR_POSITIONAL",
+              "name": "args"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
+      "get_config": {
+        "module": "stateset_agents.api.config",
+        "name": "get_config",
+        "signature": {
+          "parameters": []
+        }
+      }
+    }
+  },
+  "stability": "v1"
+}

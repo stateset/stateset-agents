@@ -103,7 +103,7 @@ remains unchecked until a tagged run retains and verifies those attestations.
 
 ### Stable product surface
 
-- [ ] Freeze a v1 public API and publish compatibility/migration guarantees
+- [x] Freeze a v1 public API and publish compatibility/migration guarantees
 - [ ] Graduate beta components using explicit per-component maturity criteria
 - [ ] Complete standard agent benchmarks for tool use, long horizon, and SWE tasks
 - [x] Add a fail-closed tau-bench/BFCL/SWE-bench Verified evidence gate with
