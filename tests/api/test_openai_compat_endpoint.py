@@ -109,6 +109,12 @@ async def test_openai_chat_completions_stream_stub(monkeypatch, preserve_api_con
             },
         ) as response:
             assert response.status_code == 200
+            # Streaming responses should advertise proper SSE headers
+            assert response.headers.get("content-type", "").startswith(
+                "text/event-stream"
+            )
+            assert "no-cache" in response.headers.get("cache-control", "").lower()
+            assert response.headers.get("x-accel-buffering") == "no"
             body = "".join([chunk async for chunk in response.aiter_text()])
 
     assert "data:" in body

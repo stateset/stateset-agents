@@ -136,7 +136,16 @@ async def create_message(
             generator = service.stream_openai(request)
         else:
             generator = service.stream_anthropic(request)
-        return StreamingResponse(generator, media_type="text/event-stream")
+        # Set standard SSE headers to ensure proxies and clients do not buffer.
+        sse_headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Disable nginx buffering if present in front of the API
+            "X-Accel-Buffering": "no",
+        }
+        return StreamingResponse(
+            generator, media_type="text/event-stream", headers=sse_headers
+        )
 
     try:
         if request.response_format == "openai":
