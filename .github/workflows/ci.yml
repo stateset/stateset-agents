@@ -62,6 +62,10 @@ jobs:
       run: |
         make benchmark-agent-quality-contract
 
+    - name: Verify distributed async benchmark contract
+      run: |
+        make benchmark-distributed-async-contract
+
     - name: Verify lock files are in sync with pyproject.toml
       run: |
         # pip is capped below 26 for this step only. pip-tools reaches into

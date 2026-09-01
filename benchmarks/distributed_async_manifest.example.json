@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-distributed-async-manifest",
+  "protocol": "stateset-distributed-async-v1",
+  "framework_version": "0.47.1",
+  "provider": "REPLACE_WITH_PROVIDER",
+  "cost_source": "REPLACE_WITH_PROVIDER_API_OR_INVOICE",
+  "seeds": [42, 1337, 2026],
+  "scenarios": [
+    "steady_state_soak",
+    "worker_exit",
+    "controller_restart",
+    "network_interruption"
+  ],
+  "minimum_duration_seconds": {
+    "steady_state_soak": 43200,
+    "worker_exit": 300,
+    "controller_restart": 300,
+    "network_interruption": 300
+  },
+  "config": {
+    "max_policy_lag": 1,
+    "queue_capacity": 1024,
+    "batch_size": 32,
+    "checkpoint_interval_updates": 10
+  },
+  "topology": {
+    "node_count": 2,
+    "worker_count": 4,
+    "accelerator": "REPLACE_WITH_EXACT_ACCELERATOR",
+    "accelerator_driver": "REPLACE_WITH_EXACT_DRIVER",
+    "interconnect": "REPLACE_WITH_EXACT_INTERCONNECT"
+  },
+  "command": [
+    "python",
+    "REPLACE_WITH_PROVIDER_DRIVER.py",
+    "--scenario",
+    "{scenario}",
+    "--seed",
+    "{seed}",
+    "--mode",
+    "{mode}",
+    "--protocol",
+    "{protocol}",
+    "--framework-version",
+    "{framework_version}",
+    "--config-json",
+    "{config_json}",
+    "--config-sha256",
+    "{config_sha256}",
+    "--output",
+    "{adapter_output}",
+    "--artifact-dir",
+    "{artifact_dir}"
+  ]
+}

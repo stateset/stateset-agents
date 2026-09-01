@@ -61,11 +61,11 @@ measurable.
 
 ### Current verification status
 
-The current merge candidate passed its complete gate on **2026-09-01**: Linux
+The `v0.47.1` release passed its complete gate on **2026-09-01**: Linux
 Python 3.10–3.13, Windows Python 3.10/3.13, CodeQL, dependency and secret
 scanning, package-readiness, release governance, docs, Helm, and the Node
 client. All **16 remote checks passed**, and the corresponding local suite
-completed with **5,110 passed and 11 skipped**. See the retained
+completed with **5,142 passed and 11 skipped**. See the retained
 [proof ledger](docs/PROOFS.md) for the evidence behind individual training,
 serving, and provider claims.
 
@@ -74,8 +74,8 @@ The `v0.47.0` distributed-rollout release completed its local full suite with
 regression suites and clean Ruff, isort, type, repository-hygiene, and diff
 gates. Native multi-node GPU evidence is intentionally still pending.
 
-- **Current Python release:** `stateset-agents==0.47.0` (published from the
-  annotated release tag after its release workflow passes).
+- **Current Python release:** `stateset-agents==0.47.1`, published from the
+  annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/); its first npm registry
   publication remains pending.
@@ -99,6 +99,11 @@ gates. Native multi-node GPU evidence is intentionally still pending.
   suite clears the three-seed significance and cost-accounting gate. The suites
   still require measured execution; an implemented runner is not a benchmark
   result.
+- **Distributed evidence collection:** a shell-free manifest runner executes
+  the two-node, three-seed soak and fault matrix, rotates scenario order,
+  measures wall time outside provider adapters, hashes retained artifacts,
+  accounts for failures, and invokes the strict publication gate. Live
+  execution and the 12-hour soak remain pending.
 
 ---
 
@@ -273,6 +278,15 @@ coverage, live hardware attempts, and successful inference by provider.
 
 **Current development head (unreleased):**
 
+- **Executable multi-node evidence collection.** The distributed async A+
+  gate now has a shell-free collector with immutable manifests, exact topology
+  checks, independently measured duration, rotated fault order, artifact
+  hashing, retained failures, and automatic matrix validation. Preflight output
+  is explicitly non-measured and cannot satisfy the publication gate.
+- **Node 24 release compatibility.** Runtime tests now select the JavaScript
+  suite explicitly, preventing Node 24's native TypeScript discovery from
+  executing compile-only API fixtures and making network requests during
+  publication; TypeScript remains covered by the separate compiler gate.
 - **Machine-enforced maturity and security governance.** Every canonical
   product domain now carries a Stable, Beta, or Experimental designation tied
   to existing tests, documentation, evidence, limitations, graduation
@@ -1070,8 +1084,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.47.0" # current stable release after tag publication
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.47.0"
+pip install "stateset-agents==0.47.1" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.47.1"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub

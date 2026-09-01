@@ -46,7 +46,7 @@
       "name": "Distributed asynchronous rollout control plane",
       "owner": "training",
       "public_contract_refs": [],
-      "tests": ["tests/unit/test_distributed_rollouts.py", "tests/api/test_distributed_rollouts.py"]
+      "tests": ["tests/unit/test_distributed_rollouts.py", "tests/api/test_distributed_rollouts.py", "tests/unit/test_run_distributed_async_matrix.py"]
     },
     {
       "docs": ["docs/ARCHITECTURE.md"],

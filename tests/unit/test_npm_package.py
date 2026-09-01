@@ -37,5 +37,12 @@ def test_npm_package_is_dependency_free_and_exports_types() -> None:
     assert (ROOT / "npm" / "src" / "index.d.ts").is_file()
 
 
+def test_npm_runtime_tests_do_not_execute_typecheck_fixtures() -> None:
+    package = json.loads(PACKAGE.read_text(encoding="utf-8"))
+
+    assert package["scripts"]["test"].startswith("node --test test/client.test.js")
+    assert "types.test.ts" not in package["scripts"]["test"]
+
+
 def test_npm_tarball_carries_complete_project_license() -> None:
     assert (ROOT / "npm" / "LICENSE").read_bytes() == (ROOT / "LICENSE").read_bytes()

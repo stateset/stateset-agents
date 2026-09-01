@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a publication-grade distributed asynchronous evidence collector with
+  exact topology validation, three-seed scenario rotation, independently
+  measured wall time, retained failure artifacts, cost-source verification,
+  and automatic enforcement of the existing 12-hour soak/fault matrix gate.
+
+### Fixed
+
+- Scoped npm runtime tests to the JavaScript client suite so Node 24 cannot
+  execute TypeScript compile fixtures and make unintended network requests
+  during tagged publication; the separate TypeScript compiler gate remains.
+
 ## [0.47.1] - 2026-09-01 — Modal production transport
 
 ### Added
