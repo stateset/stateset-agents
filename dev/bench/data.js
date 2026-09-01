@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788282898740,
+  "lastUpdate": 1788283456194,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -1248,6 +1248,72 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.6184591316494524e-8",
             "extra": "mean: 439.7148507030115 nsec\nrounds: 109446"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "domsteil14@gmail.com",
+            "name": "Dom Steil",
+            "username": "domsteil"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9cc52bdaa1a9ccc6e7cf8a44812f98a0c7ba292e",
+          "message": "feat: complete Modal training transport (#56)\n\n* feat: complete Modal training transport\n\n* test: make Modal volume fake cross-platform\n\n* style: format Modal test fake\n\n* test: model Modal artifact paths as POSIX\n\n---------\n\nCo-authored-by: domsteil <team@stateset.ai>",
+          "timestamp": "2026-09-01T10:21:53-07:00",
+          "tree_id": "f019de17608d2d36010ff2edde8e3d584162bd39",
+          "url": "https://github.com/stateset/stateset-agents/commit/9cc52bdaa1a9ccc6e7cf8a44812f98a0c7ba292e"
+        },
+        "date": 1788283455245,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6124.429548365513,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016582020028554337",
+            "extra": "mean: 163.2805132466386 usec\nrounds: 1925"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6614.616727836511,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001539800543496819",
+            "extra": "mean: 151.1803391104532 usec\nrounds: 2135"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5051.926565477163,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017627739966870285",
+            "extra": "mean: 197.94428660812258 usec\nrounds: 3517"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 749.7126419383611,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000031664548900560686",
+            "extra": "mean: 1.3338443879171198 msec\nrounds: 629"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 180.60619431738968,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006856735911359224",
+            "extra": "mean: 5.536908652438811 msec\nrounds: 164"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2192462.453140555,
+            "unit": "iter/sec",
+            "range": "stddev: 4.773903281859489e-8",
+            "extra": "mean: 456.10815298915026 nsec\nrounds: 105955"
           }
         ]
       }
