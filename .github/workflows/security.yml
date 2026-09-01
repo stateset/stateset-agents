@@ -50,8 +50,11 @@ jobs:
 
     - name: Run Safety dependency check
       run: |
-        safety check -r requirements-dev-lock.txt --save-json safety-report.json --no-prompt > /dev/null 2>&1 || true
-        safety check -r requirements-dev-lock.txt --no-prompt > safety-report.txt || true
+        # Safety 3.8.1 crashes on the cuda-toolkit extras meta-package. Its
+        # concrete CUDA component packages remain pinned and scanned below.
+        grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-safety-requirements.txt
+        safety check -r /tmp/stateset-safety-requirements.txt --save-json safety-report.json --no-prompt > /dev/null 2>&1 || true
+        safety check -r /tmp/stateset-safety-requirements.txt --no-prompt > safety-report.txt || true
 
     - name: Run Semgrep security analysis
       run: |
