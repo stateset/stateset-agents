@@ -1755,192 +1755,1129 @@
       "Agent": {
         "module": "stateset_agents.core.agent",
         "name": "Agent",
-        "signature": "(config: 'AgentConfig | None' = None, model_loader: 'Callable[[AgentConfig], Any] | None' = None, tokenizer_loader: 'Callable[[AgentConfig], Any] | None' = None, generation_config_factory: 'Callable[[AgentConfig, Any, Any], GenerationConfig] | None' = None, backend: 'ModelBackend | None' = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "model_loader"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tokenizer_loader"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "generation_config_factory"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "backend"
+            }
+          ]
+        }
       },
       "AsyncResourcePool": {
         "module": "stateset_agents.core.async_pool",
         "name": "AsyncResourcePool",
-        "signature": "(factory: 'AsyncResourceFactory[T]', min_size: 'int' = 1, max_size: 'int' = 10, max_idle_time: 'float' = 300.0, max_age: 'float' = 3600.0, health_check_interval: 'float' = 60.0, acquire_timeout: 'float' = 30.0, name: 'str' = 'AsyncPool')"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "factory"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "min_size"
+            },
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_size"
+            },
+            {
+              "default": 300.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_idle_time"
+            },
+            {
+              "default": 3600.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_age"
+            },
+            {
+              "default": 60.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "health_check_interval"
+            },
+            {
+              "default": 30.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "acquire_timeout"
+            },
+            {
+              "default": "AsyncPool",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "name"
+            }
+          ]
+        }
       },
       "AsyncTaskManager": {
         "module": "stateset_agents.core.async_pool",
         "name": "AsyncTaskManager",
-        "signature": "(max_concurrent_tasks: 'int' = 100, task_timeout: 'float' = 300.0, cleanup_interval: 'float' = 60.0)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 100,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_concurrent_tasks"
+            },
+            {
+              "default": 300.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_timeout"
+            },
+            {
+              "default": 60.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "cleanup_interval"
+            }
+          ]
+        }
       },
       "AutoResearchConfig": {
         "module": "stateset_agents.training.auto_research",
         "name": "AutoResearchConfig",
-        "signature": "(time_budget: 'int' = 300, max_experiments: 'int' = 0, max_wall_clock: 'int' = 0, objective_metric: 'str' = 'eval_reward', direction: 'str' = 'maximize', improvement_threshold: 'float' = 0.0, improvement_patience: 'int' = 0, output_dir: 'str' = './auto_research_results', proposer: 'str' = 'perturbation', search_space_name: 'str | None' = 'grpo', search_space_overrides: 'dict[str, Any] | None' = None, eval_episodes: 'int' = 10, eval_seed: 'int' = 42, eval_concurrency: 'int' = 1, selection_promotion_zscore: 'float' = 1.0, experiment_isolation: 'str' = 'worktree', runtime_environment: 'str' = 'venv', save_checkpoints: 'bool' = True, log_to_wandb: 'bool' = False, wandb_project: 'str' = 'auto-research', trainer_algorithm: 'str' = 'gspo', calibrate_rewards: 'bool' = False, calibration_method: 'str' = 'percentile', base_config_overrides: 'dict[str, Any]' = <factory>) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": 300,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "time_budget"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_experiments"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_wall_clock"
+            },
+            {
+              "default": "eval_reward",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "objective_metric"
+            },
+            {
+              "default": "maximize",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "direction"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "improvement_threshold"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "improvement_patience"
+            },
+            {
+              "default": "./auto_research_results",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "output_dir"
+            },
+            {
+              "default": "perturbation",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "proposer"
+            },
+            {
+              "default": "grpo",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "search_space_name"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "search_space_overrides"
+            },
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_episodes"
+            },
+            {
+              "default": 42,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_seed"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_concurrency"
+            },
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "selection_promotion_zscore"
+            },
+            {
+              "default": "worktree",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "experiment_isolation"
+            },
+            {
+              "default": "venv",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "runtime_environment"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "save_checkpoints"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "log_to_wandb"
+            },
+            {
+              "default": "auto-research",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_project"
+            },
+            {
+              "default": "gspo",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "trainer_algorithm"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "calibrate_rewards"
+            },
+            {
+              "default": "percentile",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "calibration_method"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "base_config_overrides"
+            }
+          ]
+        }
       },
       "AutoResearchLoop": {
         "module": "stateset_agents.training.auto_research",
         "name": "AutoResearchLoop",
-        "signature": "(*, agent: 'Any', environment: 'Any', eval_scenarios: 'Sequence[dict[str, Any]]', reward_fn: 'Any', config: 'AutoResearchConfig', proposer: 'ExperimentProposer | None' = None, baseline_params: 'dict[str, Any] | None' = None)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "agent"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "environment"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "eval_scenarios"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "reward_fn"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "proposer"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "baseline_params"
+            }
+          ]
+        }
       },
       "AutoTrainer": {
         "module": "stateset_agents.training.train",
         "name": "AutoTrainer",
-        "signature": "(auto_adjust: bool = True, early_stopping: bool = True, patience: int = 50)"
+        "signature": {
+          "parameters": [
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "auto_adjust"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "early_stopping"
+            },
+            {
+              "default": 50,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "patience"
+            }
+          ]
+        }
       },
       "BatchOptimizer": {
         "module": "stateset_agents.core.performance_optimizer",
         "name": "BatchOptimizer",
-        "signature": "(config: 'DataConfig')"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            }
+          ]
+        }
       },
       "CircuitBreakerConfig": {
         "module": "stateset_agents.core.error_handling",
         "name": "CircuitBreakerConfig",
-        "signature": "(failure_threshold: int = 5, recovery_timeout: float = 60.0, expected_exception: type[Exception] = <class 'Exception'>)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 5,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "failure_threshold"
+            },
+            {
+              "default": 60.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "recovery_timeout"
+            },
+            {
+              "default": {
+                "repr": "<class 'Exception'>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_exception"
+            }
+          ]
+        }
       },
       "CompositeReward": {
         "module": "stateset_agents.core.reward",
         "name": "CompositeReward",
-        "signature": "(reward_functions: list[stateset_agents.core.reward_base.RewardFunction], combination_method: str = 'weighted_sum', normalize_weights: bool = False)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_functions"
+            },
+            {
+              "default": "weighted_sum",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "combination_method"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "normalize_weights"
+            }
+          ]
+        }
       },
       "ComputeConfig": {
         "module": "stateset_agents.core.performance_optimizer",
         "name": "ComputeConfig",
-        "signature": "(use_mixed_precision: 'bool' = True, compile_model: 'bool' = False, use_flash_attention: 'bool' = True, enable_tensor_parallel: 'bool' = False, fused_optimizer: 'bool' = True, use_channels_last: 'bool' = False) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_mixed_precision"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "compile_model"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_flash_attention"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enable_tensor_parallel"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "fused_optimizer"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_channels_last"
+            }
+          ]
+        }
       },
       "ConcisenessReward": {
         "module": "stateset_agents.core.reward",
         "name": "ConcisenessReward",
-        "signature": "(weight: float = 1.0, optimal_length: int = 150)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": 150,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "optimal_length"
+            }
+          ]
+        }
       },
       "ConfigValidator": {
         "module": "stateset_agents.core.type_system",
         "name": "ConfigValidator",
-        "signature": "()"
+        "signature": {
+          "parameters": []
+        }
       },
       "ConversationDataset": {
         "module": "stateset_agents.data",
         "name": "ConversationDataset",
-        "signature": "(trajectories: list[stateset_agents.data.conversation_dataset.TrajectoryData], config: stateset_agents.data.conversation_dataset.ConversationDatasetConfig | None = None, embedding_cache: Optional[ForwardRef('EmbeddingCache')] = None)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "trajectories"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "embedding_cache"
+            }
+          ]
+        }
       },
       "ConversationDatasetConfig": {
         "module": "stateset_agents.data",
         "name": "ConversationDatasetConfig",
-        "signature": "(data_path: str = '', format: str = 'jsonl', max_turns: int = 20, embedding_model: str = 'all-MiniLM-L6-v2', normalize_rewards: bool = True, reward_normalization_method: str = 'standard', compute_returns: bool = True, discount_factor: float = 0.99, min_trajectory_length: int = 1, max_trajectory_length: int | None = None) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": "",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "data_path"
+            },
+            {
+              "default": "jsonl",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "format"
+            },
+            {
+              "default": 20,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_turns"
+            },
+            {
+              "default": "all-MiniLM-L6-v2",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "embedding_model"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "normalize_rewards"
+            },
+            {
+              "default": "standard",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_normalization_method"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "compute_returns"
+            },
+            {
+              "default": 0.99,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "discount_factor"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "min_trajectory_length"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_trajectory_length"
+            }
+          ]
+        }
       },
       "ConversationEnvironment": {
         "module": "stateset_agents.core.environment",
         "name": "ConversationEnvironment",
-        "signature": "(scenarios: 'list[dict[str, Any]]', max_turns: 'int' = 10, reward_fn: 'RewardFunction | None' = None, persona: 'str | None' = None, **kwargs: 'Any') -> 'None'"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "scenarios"
+            },
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_turns"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "persona"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "ConversationExample": {
         "module": "stateset_agents.core.data_processing",
         "name": "ConversationExample",
-        "signature": "(query: 'str', expected_response: 'str | None' = None, task_type: 'str | None' = None, metadata: 'dict[str, Any]' = <factory>, conversation_history: 'list[ConversationTurn]' = <factory>) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "query"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_response"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_type"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "metadata"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "conversation_history"
+            }
+          ]
+        }
       },
       "ConversationReplayBuffer": {
         "module": "stateset_agents.data",
         "name": "ConversationReplayBuffer",
-        "signature": "(capacity: int = 100000, priority: bool = False, priority_alpha: float = 0.6, priority_beta: float = 0.4)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 100000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "capacity"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "priority"
+            },
+            {
+              "default": 0.6,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "priority_alpha"
+            },
+            {
+              "default": 0.4,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "priority_beta"
+            }
+          ]
+        }
       },
       "ConversationSimulator": {
         "module": "stateset_agents.environments",
         "name": "ConversationSimulator",
-        "signature": "(config: stateset_agents.environments.conversation_simulator.ConversationSimulatorConfig, domain_randomization: stateset_agents.training.domain_randomization.DomainRandomizationConfig | None = None)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "domain_randomization"
+            }
+          ]
+        }
       },
       "ConversationSimulatorConfig": {
         "module": "stateset_agents.environments",
         "name": "ConversationSimulatorConfig",
-        "signature": "(personas: list[stateset_agents.training.domain_randomization.UserPersona] = <factory>, persona_sampling: str = 'uniform', topic_distribution: dict[str, float] = <factory>, difficulty_range: tuple[float, float] = (0.3, 0.9), use_curriculum: bool = True, curriculum_steps: int = 5000, noise_level: float = 0.1, typo_rate: float = 0.02, truncation_rate: float = 0.05, llm_backend: str = 'rule_based', llm_model: str | None = None, use_rule_based_fallback: bool = True, calibration_dataset_path: str | None = None, calibration_method: str = 'mmd', max_turns: int = 20, timeout_probability: float = 0.05, early_exit_probability: float = 0.1, reward_scale: float = 1.0, penalize_repetition: bool = True, penalize_irrelevance: bool = True) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "personas"
+            },
+            {
+              "default": "uniform",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "persona_sampling"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "topic_distribution"
+            },
+            {
+              "default": {
+                "tuple": [
+                  0.3,
+                  0.9
+                ]
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "difficulty_range"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_curriculum"
+            },
+            {
+              "default": 5000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "curriculum_steps"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "noise_level"
+            },
+            {
+              "default": 0.02,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "typo_rate"
+            },
+            {
+              "default": 0.05,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "truncation_rate"
+            },
+            {
+              "default": "rule_based",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "llm_backend"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "llm_model"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_rule_based_fallback"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "calibration_dataset_path"
+            },
+            {
+              "default": "mmd",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "calibration_method"
+            },
+            {
+              "default": 20,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_turns"
+            },
+            {
+              "default": 0.05,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "timeout_probability"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "early_exit_probability"
+            },
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_scale"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "penalize_repetition"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "penalize_irrelevance"
+            }
+          ]
+        }
       },
       "ConversationTurn": {
         "module": "stateset_agents.core.trajectory",
         "name": "ConversationTurn",
-        "signature": "(*args: Any, **kwargs: Any) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "VAR_POSITIONAL",
+              "name": "args"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "CorrectnessReward": {
         "module": "stateset_agents.core.reward",
         "name": "CorrectnessReward",
-        "signature": "(weight: float = 1.0, ground_truth: dict[str, typing.Any] | None = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "ground_truth"
+            }
+          ]
+        }
       },
       "CustomerServiceReward": {
         "module": "stateset_agents.core.reward",
         "name": "CustomerServiceReward",
-        "signature": "(weight: float = 1.0, expected_responses: dict[str, str] | None = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_responses"
+            }
+          ]
+        }
       },
       "DataConfig": {
         "module": "stateset_agents.core.performance_optimizer",
         "name": "DataConfig",
-        "signature": "(num_workers: 'int' = 4, pin_memory: 'bool' = True, persistent_workers: 'bool' = True, prefetch_factor: 'int' = 2, batch_size_scaling: 'bool' = True, dynamic_batching: 'bool' = True) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": 4,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_workers"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "pin_memory"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "persistent_workers"
+            },
+            {
+              "default": 2,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "prefetch_factor"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "batch_size_scaling"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "dynamic_batching"
+            }
+          ]
+        }
       },
       "DataException": {
         "module": "stateset_agents.core.error_handling",
         "name": "DataException",
-        "signature": "(message: str, **kwargs)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "DataLoader": {
         "module": "stateset_agents.core.data_processing",
         "name": "DataLoader",
-        "signature": "(max_examples: 'int | None' = None, validation_split: 'float' = 0.1, stratify_by: 'str | None' = None, random_seed: 'int' = 42)"
+        "signature": {
+          "parameters": [
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_examples"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "validation_split"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "stratify_by"
+            },
+            {
+              "default": 42,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "random_seed"
+            }
+          ]
+        }
       },
       "DataProcessor": {
         "module": "stateset_agents.core.data_processing",
         "name": "DataProcessor",
-        "signature": "(tokenizer=None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tokenizer"
+            }
+          ]
+        }
       },
       "DeviceType": {
         "module": "stateset_agents.core.type_system",
-        "name": "DeviceType",
-        "signature": "(*values)"
+        "name": "DeviceType"
       },
       "DomainSpecificReward": {
         "module": "stateset_agents.core.reward",
         "name": "DomainSpecificReward",
-        "signature": "(weight: float = 1.0, domain_keywords: dict[str, list[str]] | None = None, expected_responses: dict[str, str] | None = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "domain_keywords"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_responses"
+            }
+          ]
+        }
       },
       "EmbeddingCache": {
         "module": "stateset_agents.data",
         "name": "EmbeddingCache",
-        "signature": "(embedding_model: str = 'all-MiniLM-L6-v2', cache_size: int = 100000, device: str | None = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": "all-MiniLM-L6-v2",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "embedding_model"
+            },
+            {
+              "default": 100000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "cache_size"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "device"
+            }
+          ]
+        }
       },
       "EngagementReward": {
         "module": "stateset_agents.core.reward",
         "name": "EngagementReward",
-        "signature": "(weight: float = 1.0)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            }
+          ]
+        }
       },
       "Environment": {
         "module": "stateset_agents.core.environment",
         "name": "Environment",
-        "signature": "(max_turns: 'int' = 10, reward_fn: 'RewardFunction | None' = None, reward_function: 'RewardFunction | None' = None, timeout_seconds: 'float | None' = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_turns"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_function"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "timeout_seconds"
+            }
+          ]
+        }
       },
       "ErrorCode": {
         "module": "stateset_agents.core.error_handling",
-        "name": "ErrorCode",
-        "signature": "(*values)"
+        "name": "ErrorCode"
       },
       "ErrorHandler": {
         "module": "stateset_agents.core.error_handling",
         "name": "ErrorHandler",
-        "signature": "(logger: logging.Logger | None = None, max_error_history: int = 10000)"
+        "signature": {
+          "parameters": [
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "logger"
+            },
+            {
+              "default": 10000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_error_history"
+            }
+          ]
+        }
       },
       "GRPOException": {
         "module": "stateset_agents.core.error_handling",
         "name": "GRPOException",
-        "signature": "(message: str, category: stateset_agents.core.error_handling.ErrorCategory = <ErrorCategory.SYSTEM: 'system'>, severity: stateset_agents.core.error_handling.ErrorSeverity = <ErrorSeverity.MEDIUM: 'medium'>, error_code: stateset_agents.core.error_handling.ErrorCode | None = None, details: dict[str, typing.Any] | None = None, recovery_actions: list[str] | None = None)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "default": {
+                "enum": "stateset_agents.core.error_handling.ErrorCategory",
+                "member": "SYSTEM"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "category"
+            },
+            {
+              "default": {
+                "enum": "stateset_agents.core.error_handling.ErrorSeverity",
+                "member": "MEDIUM"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "severity"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "error_code"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "details"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "recovery_actions"
+            }
+          ]
+        }
       },
       "GRPOTrainer": {
         "module": "stateset_agents.training.trainer",
         "name": "GRPOTrainer",
-        "signature": "(agent: 'Any', environment: 'Any', reward_fn: 'Any | None' = None, config: 'Any | None' = None, wandb_logger: 'Any | None' = None, callbacks: 'list | None' = None)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "agent"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "environment"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_logger"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "callbacks"
+            }
+          ]
+        }
       },
       "HelpfulnessReward": {
         "module": "stateset_agents.core.reward",
         "name": "HelpfulnessReward",
-        "signature": "(weight: float = 1.0)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            }
+          ]
+        }
       },
       "MemoryConfig": {
         "module": "stateset_agents.core.performance_optimizer",
         "name": "MemoryConfig",
-        "signature": "(enable_gradient_checkpointing: 'bool' = True, enable_cpu_offload: 'bool' = False, max_memory_usage_percent: 'float' = 0.85, clear_cache_frequency: 'int' = 100, use_memory_mapping: 'bool' = True, enable_memory_profiling: 'bool' = False) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enable_gradient_checkpointing"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enable_cpu_offload"
+            },
+            {
+              "default": 0.85,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_memory_usage_percent"
+            },
+            {
+              "default": 100,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "clear_cache_frequency"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_memory_mapping"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enable_memory_profiling"
+            }
+          ]
+        }
       },
       "MemoryMonitor": {
         "module": "stateset_agents.core.performance_optimizer",
         "name": "MemoryMonitor",
-        "signature": "(config: 'MemoryConfig')"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            }
+          ]
+        }
       },
       "ModelConfig": {
         "module": "stateset_agents.core.type_system",
@@ -1949,72 +2886,397 @@
       "ModelException": {
         "module": "stateset_agents.core.error_handling",
         "name": "ModelException",
-        "signature": "(message: str, **kwargs)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "ModelOptimizer": {
         "module": "stateset_agents.core.performance_optimizer",
         "name": "ModelOptimizer",
-        "signature": "(config: 'ComputeConfig')"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            }
+          ]
+        }
       },
       "ModelSize": {
         "module": "stateset_agents.core.type_system",
-        "name": "ModelSize",
-        "signature": "(*values)"
+        "name": "ModelSize"
       },
       "MultiTurnAgent": {
         "module": "stateset_agents.core.agent",
         "name": "MultiTurnAgent",
-        "signature": "(config: 'AgentConfig', memory_window: 'int' = 10, context_compression: 'bool' = False, model_loader: 'Callable[[AgentConfig], Any] | None' = None, tokenizer_loader: 'Callable[[AgentConfig], Any] | None' = None, generation_config_factory: 'Callable[[AgentConfig, Any, Any], GenerationConfig] | None' = None, backend: 'ModelBackend | None' = None, planning_manager: 'PlanningManager | None' = None)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "memory_window"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "context_compression"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "model_loader"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tokenizer_loader"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "generation_config_factory"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "backend"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "planning_manager"
+            }
+          ]
+        }
       },
       "MultiTurnGRPOTrainer": {
         "module": "stateset_agents.training.trainer",
         "name": "MultiTurnGRPOTrainer",
-        "signature": "(agent: 'Any', environment: 'Any', reward_fn: 'Any | None' = None, config: 'Any | None' = None, wandb_logger: 'Any | None' = None, callbacks: 'list | None' = None)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "agent"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "environment"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_logger"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "callbacks"
+            }
+          ]
+        }
       },
       "MultiTurnTrajectory": {
         "module": "stateset_agents.core.trajectory",
         "name": "MultiTurnTrajectory",
-        "signature": "(trajectory_id: str = <factory>, turns: list[stateset_agents.core.trajectory.ConversationTurn] = <factory>, total_reward: float = 0.0, rewards: list[float] | None = None, turn_rewards: list[float] | None = None, metadata: dict[str, typing.Any] = <factory>, initial_state: dict[str, typing.Any] | None = None, final_state: dict[str, typing.Any] | None = None, state_history: list[dict[str, typing.Any]] | None = None, conversation_quality_score: float | None = None, task_completion_score: float | None = None) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "trajectory_id"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "turns"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "total_reward"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "rewards"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "turn_rewards"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "metadata"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "initial_state"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "final_state"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "state_history"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "conversation_quality_score"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_completion_score"
+            }
+          ]
+        }
       },
       "NetworkException": {
         "module": "stateset_agents.core.error_handling",
         "name": "NetworkException",
-        "signature": "(message: str, **kwargs)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "OptimizationLevel": {
         "module": "stateset_agents.core.performance_optimizer",
-        "name": "OptimizationLevel",
-        "signature": "(*values)"
+        "name": "OptimizationLevel"
       },
       "PerformanceMetrics": {
         "module": "stateset_agents.core.performance_optimizer",
         "name": "PerformanceMetrics",
-        "signature": "(timestamp: 'float' = <factory>, memory_usage_mb: 'float' = 0.0, gpu_memory_usage_mb: 'float' = 0.0, cpu_usage_percent: 'float' = 0.0, gpu_utilization_percent: 'float' = 0.0, throughput_tokens_per_sec: 'float' = 0.0, latency_ms: 'float' = 0.0, batch_size: 'int' = 0, sequence_length: 'int' = 0) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "timestamp"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "memory_usage_mb"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gpu_memory_usage_mb"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "cpu_usage_percent"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gpu_utilization_percent"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "throughput_tokens_per_sec"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "latency_ms"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "batch_size"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "sequence_length"
+            }
+          ]
+        }
       },
       "PerformanceOptimizer": {
         "module": "stateset_agents.core.performance_optimizer",
         "name": "PerformanceOptimizer",
-        "signature": "(optimization_level: 'OptimizationLevel' = <OptimizationLevel.BALANCED: 'balanced'>, memory_config: 'MemoryConfig | None' = None, compute_config: 'ComputeConfig | None' = None, data_config: 'DataConfig | None' = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": {
+                "enum": "stateset_agents.core.performance_optimizer.OptimizationLevel",
+                "member": "BALANCED"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "optimization_level"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "memory_config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "compute_config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "data_config"
+            }
+          ]
+        }
       },
       "PooledResource": {
         "module": "stateset_agents.core.async_pool",
         "name": "PooledResource",
-        "signature": "(resource: 'T', resource_id: 'str', pool: 'AsyncResourcePool', created_at: 'float | None' = None)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "resource"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "resource_id"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "pool"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "created_at"
+            }
+          ]
+        }
       },
       "ResourceException": {
         "module": "stateset_agents.core.error_handling",
         "name": "ResourceException",
-        "signature": "(message: str, **kwargs)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "RetryConfig": {
         "module": "stateset_agents.core.error_handling",
         "name": "RetryConfig",
-        "signature": "(max_attempts: int = 3, base_delay: float = 1.0, max_delay: float = 60.0, exponential_base: float = 2.0, jitter: bool = True, retry_on: list[type[Exception]] | None = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 3,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_attempts"
+            },
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "base_delay"
+            },
+            {
+              "default": 60.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_delay"
+            },
+            {
+              "default": 2.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "exponential_base"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "jitter"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "retry_on"
+            }
+          ]
+        }
       },
       "RewardFunction": {
         "module": "stateset_agents.core.reward",
         "name": "RewardFunction",
-        "signature": "(weight: float = 1.0, reward_type: stateset_agents.core.reward_base.RewardType = <RewardType.IMMEDIATE: 'immediate'>, name: str | None = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": {
+                "enum": "stateset_agents.core.reward_base.RewardType",
+                "member": "IMMEDIATE"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_type"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "name"
+            }
+          ]
+        }
       },
       "RewardMetrics": {
         "module": "stateset_agents.core.type_system",
@@ -2023,72 +3285,780 @@
       "SafetyReward": {
         "module": "stateset_agents.core.reward",
         "name": "SafetyReward",
-        "signature": "(weight: float = 1.0, strict_mode: bool = False)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "strict_mode"
+            }
+          ]
+        }
       },
       "SalesAssistantReward": {
         "module": "stateset_agents.core.reward",
         "name": "SalesAssistantReward",
-        "signature": "(weight: float = 1.0)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            }
+          ]
+        }
       },
       "SimToRealEvaluator": {
         "module": "stateset_agents.evaluation",
         "name": "SimToRealEvaluator",
-        "signature": "(simulator: Any = None, real_dataset: Any = None, user_model: Any = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "simulator"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "real_dataset"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "user_model"
+            }
+          ]
+        }
       },
       "SimToRealMetrics": {
         "module": "stateset_agents.evaluation",
         "name": "SimToRealMetrics",
-        "signature": "(response_length_kl: float = 0.0, vocabulary_js_divergence: float = 0.0, turn_count_mmd: float = 0.0, response_time_gap: float = 0.0, reward_correlation: float = 0.0, policy_performance_gap: float = 0.0, success_rate_gap: float = 0.0, user_model_likelihood: float = 0.0, scenario_coverage: float = 0.0, persona_diversity: float = 0.0, overall_gap: float = 0.0) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "response_length_kl"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vocabulary_js_divergence"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "turn_count_mmd"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "response_time_gap"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_correlation"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "policy_performance_gap"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "success_rate_gap"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "user_model_likelihood"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "scenario_coverage"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "persona_diversity"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "overall_gap"
+            }
+          ]
+        }
       },
       "SimilarityAwareReward": {
         "module": "stateset_agents.core.reward",
         "name": "SimilarityAwareReward",
-        "signature": "(weight: float = 1.0, expected_responses_map: dict[str, str] | None = None, base_reward_fn: stateset_agents.core.reward_base.RewardFunction | None = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_responses_map"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "base_reward_fn"
+            }
+          ]
+        }
       },
       "TaskCompletionReward": {
         "module": "stateset_agents.core.reward",
         "name": "TaskCompletionReward",
-        "signature": "(weight: float = 1.0, task_criteria: dict[str, typing.Any] | None = None)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_criteria"
+            }
+          ]
+        }
       },
       "TaskEnvironment": {
         "module": "stateset_agents.core.environment",
         "name": "TaskEnvironment",
-        "signature": "(tasks: 'list[dict[str, Any]]', success_criteria: 'Callable[[list[ConversationTurn], dict[str, Any]], bool]', max_turns: 'int' = 20, reward_fn: 'RewardFunction | None' = None, **kwargs)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tasks"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "success_criteria"
+            },
+            {
+              "default": 20,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_turns"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "TechnicalSupportReward": {
         "module": "stateset_agents.core.reward",
         "name": "TechnicalSupportReward",
-        "signature": "(weight: float = 1.0)"
+        "signature": {
+          "parameters": [
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            }
+          ]
+        }
       },
       "ToolAgent": {
         "module": "stateset_agents.core.agent",
         "name": "ToolAgent",
-        "signature": "(config: 'AgentConfig', tools: 'list[dict[str, Any]] | None' = None, **kwargs)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tools"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "TrainingConfig": {
         "module": "stateset_agents.training.config",
         "name": "TrainingConfig",
-        "signature": "(model_name: str = 'gpt2', model_revision: str | None = None, num_episodes: int = 1000, num_epochs: int = 1, learning_rate: float = 5e-06, adam_beta1: float = 0.9, adam_beta2: float = 0.99, weight_decay: float = 0.01, max_grad_norm: float = 1.0, warmup_ratio: float = 0.1, lr_scheduler_type: str = 'cosine', per_device_train_batch_size: int = 1, batch_size: int | None = None, gradient_accumulation_steps: int = 4, num_generations: int = 16, generation_batch_size: int = 4, rollout_concurrency: int = 1, eval_num_generations: int = 4, max_prompt_length: int = 512, max_completion_length: int = 512, max_steps_per_episode: int | None = None, bf16: bool = True, fp16: bool = False, use_cpu: bool = False, dataloader_num_workers: int = 0, dataloader_pin_memory: bool = True, gradient_checkpointing: bool = False, eval_steps: int = 50, save_steps: int = 100, logging_steps: int = 10, save_total_limit: int = 3, output_dir: str = './outputs', run_name: str | None = None, wandb_run_name: str | None = None, overwrite_output_dir: bool = True, report_to: str = 'wandb', wandb_project: str | None = None, wandb_entity: str | None = None, wandb_tags: list[str] | None = None, wandb_notes: str | None = None, auto_adjust: bool = True, early_stopping: bool = False, patience: int = 50, gamma: float = 0.99, gae_lambda: float = 0.95, reward_clip: float = 10.0, advantage_normalization: bool = True, baseline_type: str = 'group_mean', beta: float = 0.0, use_reference_model: bool = False, clip_ratio: float = 0.2, seq_clip_ratio: float = 0.0003, value_clip: float = 0.2, entropy_coef: float = 0.01, continual_strategy: str = 'none', replay_buffer_size: int = 2000, replay_ratio: float = 0.5, replay_min_size: int = 100, replay_sampling: str = 'uniform', replay_storage: str = 'reservoir', continual_kl_beta: float = 0.0, ewc_lambda: float = 0.0, ewc_num_samples: int = 64, ewc_decay: float = 0.9, task_id_key: str = 'task_id', max_examples: int | None = None, eval_split_size: float = 0.1, stratify_by_task: bool = True, data_format: str = 'jsonl', run_post_eval: bool = True, post_eval_samples: int = 5, post_eval_detailed: bool = True, use_lora: bool = True, lora_r: int = 8, lora_alpha: int = 16, lora_dropout: float = 0.05, lora_target_modules: list[str] | None = None, temperature: float = 0.7, top_p: float = 0.9, top_k: int = 50, repetition_penalty: float = 1.1, use_vllm: bool = False, vllm_gpu_memory_utilization: float = 0.85, vllm_tensor_parallel_size: int = 1, vllm_enable_prefix_caching: bool = True, vllm_max_model_len: int | None = None, vllm_quantization: str | None = None, vllm_enable_chunked_prefill: bool = True, seed: int = 42, remove_unused_columns: bool = False, disable_tqdm: bool = False, task_schedule: list[str] | None = None, task_switch_steps: int = 0, resume_from_checkpoint: str | None = None) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": "gpt2",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "model_name"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "model_revision"
+            },
+            {
+              "default": 1000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_episodes"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_epochs"
+            },
+            {
+              "default": 5e-06,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "learning_rate"
+            },
+            {
+              "default": 0.9,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "adam_beta1"
+            },
+            {
+              "default": 0.99,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "adam_beta2"
+            },
+            {
+              "default": 0.01,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight_decay"
+            },
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_grad_norm"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "warmup_ratio"
+            },
+            {
+              "default": "cosine",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lr_scheduler_type"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "per_device_train_batch_size"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "batch_size"
+            },
+            {
+              "default": 4,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gradient_accumulation_steps"
+            },
+            {
+              "default": 16,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_generations"
+            },
+            {
+              "default": 4,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "generation_batch_size"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "rollout_concurrency"
+            },
+            {
+              "default": 4,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_num_generations"
+            },
+            {
+              "default": 512,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_prompt_length"
+            },
+            {
+              "default": 512,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_completion_length"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_steps_per_episode"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "bf16"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "fp16"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_cpu"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "dataloader_num_workers"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "dataloader_pin_memory"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gradient_checkpointing"
+            },
+            {
+              "default": 50,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_steps"
+            },
+            {
+              "default": 100,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "save_steps"
+            },
+            {
+              "default": 10,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "logging_steps"
+            },
+            {
+              "default": 3,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "save_total_limit"
+            },
+            {
+              "default": "./outputs",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "output_dir"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "run_name"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_run_name"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "overwrite_output_dir"
+            },
+            {
+              "default": "wandb",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "report_to"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_project"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_entity"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_tags"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "wandb_notes"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "auto_adjust"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "early_stopping"
+            },
+            {
+              "default": 50,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "patience"
+            },
+            {
+              "default": 0.99,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gamma"
+            },
+            {
+              "default": 0.95,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "gae_lambda"
+            },
+            {
+              "default": 10.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_clip"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "advantage_normalization"
+            },
+            {
+              "default": "group_mean",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "baseline_type"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "beta"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_reference_model"
+            },
+            {
+              "default": 0.2,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "clip_ratio"
+            },
+            {
+              "default": 0.0003,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "seq_clip_ratio"
+            },
+            {
+              "default": 0.2,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "value_clip"
+            },
+            {
+              "default": 0.01,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "entropy_coef"
+            },
+            {
+              "default": "none",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "continual_strategy"
+            },
+            {
+              "default": 2000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "replay_buffer_size"
+            },
+            {
+              "default": 0.5,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "replay_ratio"
+            },
+            {
+              "default": 100,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "replay_min_size"
+            },
+            {
+              "default": "uniform",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "replay_sampling"
+            },
+            {
+              "default": "reservoir",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "replay_storage"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "continual_kl_beta"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "ewc_lambda"
+            },
+            {
+              "default": 64,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "ewc_num_samples"
+            },
+            {
+              "default": 0.9,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "ewc_decay"
+            },
+            {
+              "default": "task_id",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_id_key"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_examples"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "eval_split_size"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "stratify_by_task"
+            },
+            {
+              "default": "jsonl",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "data_format"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "run_post_eval"
+            },
+            {
+              "default": 5,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "post_eval_samples"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "post_eval_detailed"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_lora"
+            },
+            {
+              "default": 8,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lora_r"
+            },
+            {
+              "default": 16,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lora_alpha"
+            },
+            {
+              "default": 0.05,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lora_dropout"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lora_target_modules"
+            },
+            {
+              "default": 0.7,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "temperature"
+            },
+            {
+              "default": 0.9,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "top_p"
+            },
+            {
+              "default": 50,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "top_k"
+            },
+            {
+              "default": 1.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "repetition_penalty"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "use_vllm"
+            },
+            {
+              "default": 0.85,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_gpu_memory_utilization"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_tensor_parallel_size"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_enable_prefix_caching"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_max_model_len"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_quantization"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "vllm_enable_chunked_prefill"
+            },
+            {
+              "default": 42,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "seed"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "remove_unused_columns"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "disable_tqdm"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_schedule"
+            },
+            {
+              "default": 0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_switch_steps"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "resume_from_checkpoint"
+            }
+          ]
+        }
       },
       "TrainingException": {
         "module": "stateset_agents.core.error_handling",
         "name": "TrainingException",
-        "signature": "(message: str, **kwargs)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "TrainingProfile": {
         "module": "stateset_agents.training.config",
-        "name": "TrainingProfile",
-        "signature": "(*values)"
+        "name": "TrainingProfile"
       },
       "TrainingStage": {
         "module": "stateset_agents.core.type_system",
-        "name": "TrainingStage",
-        "signature": "(*values)"
+        "name": "TrainingStage"
       },
       "Trajectory": {
         "module": "stateset_agents.core.trajectory",
         "name": "Trajectory",
-        "signature": "(prompt: str = '', response: str = '', reward: float = 0.0, turns: list[dict[str, typing.Any]] = <factory>, metadata: dict[str, typing.Any] = <factory>, trajectory_id: str = <factory>, log_probs: list[float] | None = None, value_estimates: list[float] | None = None) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": "",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "prompt"
+            },
+            {
+              "default": "",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "response"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "turns"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "metadata"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "trajectory_id"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "log_probs"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "value_estimates"
+            }
+          ]
+        }
       },
       "TrajectoryData": {
         "module": "stateset_agents.core.type_system",
@@ -2097,12 +4067,16 @@
       "TypeSafeSerializer": {
         "module": "stateset_agents.core.type_system",
         "name": "TypeSafeSerializer",
-        "signature": "()"
+        "signature": {
+          "parameters": []
+        }
       },
       "TypeValidator": {
         "module": "stateset_agents.core.type_system",
         "name": "TypeValidator",
-        "signature": "()"
+        "signature": {
+          "parameters": []
+        }
       },
       "TypedConversationTurn": {
         "module": "stateset_agents.core.type_system",
@@ -2115,144 +4089,690 @@
       "ValidationException": {
         "module": "stateset_agents.core.error_handling",
         "name": "ValidationException",
-        "signature": "(message: str, **kwargs)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "WandBLogger": {
         "module": "stateset_agents.utils.wandb_integration",
         "name": "WandBLogger",
-        "signature": "(project: 'str' = 'stateset-agents', entity: 'str | None' = None, api_key: 'str | None' = None, enabled: 'bool' = True, **kwargs)"
+        "signature": {
+          "parameters": [
+            {
+              "default": "stateset-agents",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "project"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "entity"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "api_key"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enabled"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "circuit_breaker": {
         "module": "stateset_agents.core.error_handling",
         "name": "circuit_breaker",
-        "signature": "(name: str, config: stateset_agents.core.error_handling.CircuitBreakerConfig, error_handler: stateset_agents.core.error_handling.ErrorHandler)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "name"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "error_handler"
+            }
+          ]
+        }
       },
       "create_adaptive_reward": {
         "module": "stateset_agents.core.reward",
         "name": "create_adaptive_reward",
-        "signature": "(base_rewards: list[stateset_agents.core.reward_base.RewardFunction], expected_responses: dict[str, str] | None = None, similarity_weight: float = 0.3) -> stateset_agents.core.reward_base.CompositeReward"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "base_rewards"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_responses"
+            },
+            {
+              "default": 0.3,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "similarity_weight"
+            }
+          ]
+        }
       },
       "create_domain_reward": {
         "module": "stateset_agents.core.reward",
         "name": "create_domain_reward",
-        "signature": "(domain: str, weight: float = 1.0, expected_responses: dict[str, str] | None = None, **kwargs: Any) -> stateset_agents.core.reward_base.RewardFunction"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "domain"
+            },
+            {
+              "default": 1.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "weight"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "expected_responses"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "create_typed_config": {
         "module": "stateset_agents.core.type_system",
         "name": "create_typed_config",
-        "signature": "(config_type: type, **kwargs) -> dict[str, typing.Any]"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config_type"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "ensure_async_type_safety": {
         "module": "stateset_agents.core.type_system",
         "name": "ensure_async_type_safety",
-        "signature": "(func: collections.abc.Callable) -> collections.abc.Callable"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "func"
+            }
+          ]
+        }
       },
       "ensure_type_safety": {
         "module": "stateset_agents.core.type_system",
         "name": "ensure_type_safety",
-        "signature": "(func: collections.abc.Callable) -> collections.abc.Callable"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "func"
+            }
+          ]
+        }
       },
       "get_config_for_task": {
         "module": "stateset_agents.training.config",
         "name": "get_config_for_task",
-        "signature": "(task_type: str, **overrides) -> stateset_agents.training.config.TrainingConfig"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "task_type"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "overrides"
+            }
+          ]
+        }
       },
       "get_error_summary": {
         "module": "stateset_agents.core.error_handling",
         "name": "get_error_summary",
-        "signature": "() -> dict[str, typing.Any]"
+        "signature": {
+          "parameters": []
+        }
       },
       "get_http_pool": {
         "module": "stateset_agents.core.async_pool",
         "name": "get_http_pool",
-        "signature": "() -> 'AsyncResourcePool[aiohttp.ClientSession]'"
+        "signature": {
+          "parameters": []
+        }
       },
       "get_task_manager": {
         "module": "stateset_agents.core.async_pool",
         "name": "get_task_manager",
-        "signature": "() -> 'AsyncTaskManager'"
+        "signature": {
+          "parameters": []
+        }
       },
       "handle_error": {
         "module": "stateset_agents.core.error_handling",
         "name": "handle_error",
-        "signature": "(error: Exception, component: str, operation: str, context: dict[str, typing.Any] | None = None) -> stateset_agents.core.error_handling.ErrorContext"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "error"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "component"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "operation"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "context"
+            }
+          ]
+        }
       },
       "init_wandb": {
         "module": "stateset_agents.utils.wandb_integration",
         "name": "init_wandb",
-        "signature": "(project: 'str' = 'stateset-agents', entity: 'str | None' = None, api_key: 'str | None' = None, **kwargs) -> 'WandBLogger'"
+        "signature": {
+          "parameters": [
+            {
+              "default": "stateset-agents",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "project"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "entity"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "api_key"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "load_and_prepare_data": {
         "module": "stateset_agents.core.data_processing",
         "name": "load_and_prepare_data",
-        "signature": "(data_path: 'str | Path', max_examples: 'int | None' = None, validation_split: 'float' = 0.1, tokenizer=None) -> 'tuple[list[dict[str, Any]], list[dict[str, Any]]]'"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "data_path"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_examples"
+            },
+            {
+              "default": 0.1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "validation_split"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "tokenizer"
+            }
+          ]
+        }
       },
       "managed_async_resources": {
         "module": "stateset_agents.core.async_pool",
         "name": "managed_async_resources",
-        "signature": "()"
+        "signature": {
+          "parameters": []
+        }
       },
       "retry_async": {
         "module": "stateset_agents.core.error_handling",
         "name": "retry_async",
-        "signature": "(config: stateset_agents.core.error_handling.RetryConfig)"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config"
+            }
+          ]
+        }
       },
       "run_auto_research": {
         "module": "stateset_agents.training.auto_research",
         "name": "run_auto_research",
-        "signature": "(*, agent: 'Any', environment: 'Any', eval_scenarios: 'Sequence[dict[str, Any]]', reward_fn: 'Any', config: 'AutoResearchConfig | None' = None, baseline_params: 'dict[str, Any] | None' = None, proposer: 'ExperimentProposer | None' = None) -> 'ExperimentTracker'"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "agent"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "environment"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "eval_scenarios"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "reward_fn"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "config"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "baseline_params"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "proposer"
+            }
+          ]
+        }
       },
       "train": {
         "module": "stateset_agents.training.train",
         "name": "train",
-        "signature": "(agent: stateset_agents.core.agent.Agent, environment: stateset_agents.core.environment_base.Environment, reward_fn: stateset_agents.core.reward_base.RewardFunction | None = None, num_episodes: int = 1000, profile: str = 'balanced', training_mode: str = 'auto', config_overrides: dict[str, typing.Any] | None = None, save_path: str | None = None, resume_from_checkpoint: str | None = None, callbacks: list[typing.Any] | None = None, dataset: typing.Any | None = None, dataset_path: str | None = None, uncertainty_weighted: bool = False, **kwargs) -> stateset_agents.core.agent.Agent"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "agent"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "environment"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_fn"
+            },
+            {
+              "default": 1000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_episodes"
+            },
+            {
+              "default": "balanced",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "profile"
+            },
+            {
+              "default": "auto",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "training_mode"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "config_overrides"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "save_path"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "resume_from_checkpoint"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "callbacks"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "dataset"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "dataset_path"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "uncertainty_weighted"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       }
     },
     "stateset_agents.api": {
       "APIConfig": {
         "module": "stateset_agents.api.config",
         "name": "APIConfig",
-        "signature": "(environment: stateset_agents.api.config.Environment = <Environment.DEVELOPMENT: 'development'>, host: str = '0.0.0.0', port: int = 8000, api_version: str = 'v1', title: str = 'StateSet Agents API', cors: stateset_agents.api.config.CORSConfig = <factory>, rate_limit: stateset_agents.api.config.RateLimitConfig = <factory>, security: stateset_agents.api.config.SecurityConfig = <factory>, validation: stateset_agents.api.config.ValidationConfig = <factory>, observability: stateset_agents.api.config.ObservabilityConfig = <factory>, enable_training_lab: bool = False) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "default": {
+                "enum": "stateset_agents.api.config.Environment",
+                "member": "DEVELOPMENT"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "environment"
+            },
+            {
+              "default": "0.0.0.0",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "host"
+            },
+            {
+              "default": 8000,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "port"
+            },
+            {
+              "default": "v1",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "api_version"
+            },
+            {
+              "default": "StateSet Agents API",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "title"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "cors"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "rate_limit"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "security"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "validation"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "observability"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "enable_training_lab"
+            }
+          ]
+        }
       },
       "ConversationRequest": {
         "module": "stateset_agents.api.schemas",
         "name": "ConversationRequest",
-        "signature": "(*, messages: list[dict[str, str]], conversation_id: str | None = None, user_id: str | None = None, max_tokens: Annotated[int, Ge(ge=1), Le(le=4096)] = 512, temperature: Annotated[float, Ge(ge=0.0), Le(le=2.0)] = 0.8, stream: bool = False, context: dict[str, typing.Any] | None = None) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "messages"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "conversation_id"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "user_id"
+            },
+            {
+              "default": 512,
+              "kind": "KEYWORD_ONLY",
+              "name": "max_tokens"
+            },
+            {
+              "default": 0.8,
+              "kind": "KEYWORD_ONLY",
+              "name": "temperature"
+            },
+            {
+              "default": false,
+              "kind": "KEYWORD_ONLY",
+              "name": "stream"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "context"
+            }
+          ]
+        }
       },
       "ConversationResponse": {
         "module": "stateset_agents.api.schemas",
         "name": "ConversationResponse",
-        "signature": "(*, response: str, conversation_id: str, tokens_used: int, processing_time: float, metadata: dict[str, typing.Any] = <factory>) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "response"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "conversation_id"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "tokens_used"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "processing_time"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "KEYWORD_ONLY",
+              "name": "metadata"
+            }
+          ]
+        }
       },
       "HealthResponse": {
         "module": "stateset_agents.api.schemas",
         "name": "HealthResponse",
-        "signature": "(*, status: str, timestamp: float, version: str, uptime: float, components: dict[str, str]) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "status"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "timestamp"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "version"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "uptime"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "components"
+            }
+          ]
+        }
       },
       "TrainingRequest": {
         "module": "stateset_agents.api.schemas",
         "name": "TrainingRequest",
-        "signature": "(*, agent_config: stateset_agents.api.schemas.AgentConfigRequest, environment_scenarios: list[dict[str, typing.Any]], reward_config: dict[str, typing.Any], num_episodes: Annotated[int, Ge(ge=1), Le(le=10000)] = 100, profile: str = 'balanced', resume_from_checkpoint: str | None = None, training_config_overrides: dict[str, typing.Any] | None = None) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "agent_config"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "environment_scenarios"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "reward_config"
+            },
+            {
+              "default": 100,
+              "kind": "KEYWORD_ONLY",
+              "name": "num_episodes"
+            },
+            {
+              "default": "balanced",
+              "kind": "KEYWORD_ONLY",
+              "name": "profile"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "resume_from_checkpoint"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "training_config_overrides"
+            }
+          ]
+        }
       },
       "TrainingResponse": {
         "module": "stateset_agents.api.schemas",
         "name": "TrainingResponse",
-        "signature": "(*, training_id: str, status: str, estimated_time: float | None = None, message: str) -> None"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "training_id"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "status"
+            },
+            {
+              "default": null,
+              "kind": "KEYWORD_ONLY",
+              "name": "estimated_time"
+            },
+            {
+              "kind": "KEYWORD_ONLY",
+              "name": "message"
+            }
+          ]
+        }
       },
       "attach_distributed_rollout_control_plane": {
         "module": "stateset_agents.api",
         "name": "attach_distributed_rollout_control_plane",
-        "signature": "(app: 'FastAPI', control_plane: 'DistributedRolloutControlPlane') -> 'None'"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "app"
+            },
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "control_plane"
+            }
+          ]
+        }
       },
       "create_app": {
         "module": "stateset_agents.api",
         "name": "create_app",
-        "signature": "(*args: 'Any', **kwargs: 'Any') -> 'FastAPI'"
+        "signature": {
+          "parameters": [
+            {
+              "kind": "VAR_POSITIONAL",
+              "name": "args"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
       },
       "get_config": {
         "module": "stateset_agents.api.config",
         "name": "get_config",
-        "signature": "() -> stateset_agents.api.config.APIConfig"
+        "signature": {
+          "parameters": []
+        }
       }
     }
   },

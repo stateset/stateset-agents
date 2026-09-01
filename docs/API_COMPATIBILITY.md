@@ -11,7 +11,7 @@ has reached version 1.0.
 The contract records:
 
 - every public symbol exported by `stateset_agents.__all__`, including its
-  import target and inspectable call signature;
+  import target and inspectable parameter names, calling kinds, and defaults;
 - every public symbol exported by `stateset_agents.api.__all__`, with the same
   signature protection;
 - the production `/v1/*`, `/api/v1/*`, health, readiness, and liveness

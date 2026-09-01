@@ -8,6 +8,7 @@ import inspect
 import json
 import os
 import sys
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +82,43 @@ def _collect_schema_refs(value: Any) -> set[str]:
     return refs
 
 
-def _python_contract() -> dict[str, dict[str, dict[str, str]]]:
+def _stable_default(value: Any) -> Any:
+    """Return a deterministic JSON-compatible callable default."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Enum):
+        enum_type = type(value)
+        return {
+            "enum": f"{enum_type.__module__}.{enum_type.__qualname__}",
+            "member": value.name,
+        }
+    if isinstance(value, tuple):
+        return {"tuple": [_stable_default(item) for item in value]}
+    return {"repr": repr(value)}
+
+
+def _call_signature(value: Any) -> dict[str, Any] | None:
+    """Describe call shape without interpreter-specific annotation rendering."""
+    if inspect.isclass(value) and issubclass(value, Enum):
+        return None
+    try:
+        signature = inspect.signature(value, eval_str=False)
+    except (TypeError, ValueError):
+        return None
+
+    parameters: list[dict[str, Any]] = []
+    for parameter in signature.parameters.values():
+        item: dict[str, Any] = {
+            "kind": parameter.kind.name,
+            "name": parameter.name,
+        }
+        if parameter.default is not inspect.Parameter.empty:
+            item["default"] = _stable_default(parameter.default)
+        parameters.append(item)
+    return {"parameters": parameters}
+
+
+def _python_contract() -> dict[str, dict[str, dict[str, Any]]]:
     import stateset_agents
     import stateset_agents.api as api
 
@@ -96,20 +133,16 @@ def _python_contract() -> dict[str, dict[str, dict[str, str]]]:
             f"unmapped={missing}, undeclared={extra}"
         )
 
-    root_exports: dict[str, dict[str, str]] = {}
+    root_exports: dict[str, dict[str, Any]] = {}
     for name, (module_name, attr_name, _hint) in sorted(lazy_exports.items()):
         entry = {"module": module_name, "name": attr_name}
         value = getattr(stateset_agents, name)
         if callable(value):
-            try:
-                entry["signature"] = str(inspect.signature(value, eval_str=False))
-            except (TypeError, ValueError):
-                # TypedDict and a few extension-backed callables deliberately
-                # expose no inspectable runtime signature. Their import target
-                # remains protected even though Python cannot describe a call.
-                pass
+            signature = _call_signature(value)
+            if signature is not None:
+                entry["signature"] = signature
         root_exports[name] = entry
-    api_exports: dict[str, dict[str, str]] = {}
+    api_exports: dict[str, dict[str, Any]] = {}
     for name in sorted(api.__all__):
         value = getattr(api, name)
         api_exports[name] = {
@@ -117,12 +150,9 @@ def _python_contract() -> dict[str, dict[str, dict[str, str]]]:
             "name": str(getattr(value, "__qualname__", name)),
         }
         if callable(value):
-            try:
-                api_exports[name]["signature"] = str(
-                    inspect.signature(value, eval_str=False)
-                )
-            except (TypeError, ValueError):
-                pass
+            signature = _call_signature(value)
+            if signature is not None:
+                api_exports[name]["signature"] = signature
     return {
         "stateset_agents": root_exports,
         "stateset_agents.api": api_exports,

@@ -47,6 +47,16 @@ def test_contract_covers_declared_python_and_http_surfaces() -> None:
     assert set(contract["http"]["operations"]) == set(STABLE_HTTP_OPERATIONS)
     assert contract["http"]["schemas"]
     assert contract["python"]["stateset_agents"]["Agent"]["signature"]
+    assert "signature" not in contract["python"]["stateset_agents"]["DeviceType"]
+    agent_parameters = contract["python"]["stateset_agents"]["Agent"]["signature"][
+        "parameters"
+    ]
+    assert agent_parameters[0] == {
+        "default": None,
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "name": "config",
+    }
+    assert all("annotation" not in parameter for parameter in agent_parameters)
 
 
 def test_compare_contracts_reports_removed_and_changed_surface() -> None:
