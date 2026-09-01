@@ -61,11 +61,11 @@ measurable.
 
 ### Current verification status
 
-The `v0.47.1` release passed its complete gate on **2026-09-01**: Linux
+The `v0.47.2` release passed its complete gate on **2026-09-01**: Linux
 Python 3.10–3.13, Windows Python 3.10/3.13, CodeQL, dependency and secret
 scanning, package-readiness, release governance, docs, Helm, and the Node
 client. All **16 remote checks passed**, and the corresponding local suite
-completed with **5,142 passed and 11 skipped**. See the retained
+completed with **5,149 passed and 11 skipped**. See the retained
 [proof ledger](docs/PROOFS.md) for the evidence behind individual training,
 serving, and provider claims.
 
@@ -74,7 +74,7 @@ The `v0.47.0` distributed-rollout release completed its local full suite with
 regression suites and clean Ruff, isort, type, repository-hygiene, and diff
 gates. Native multi-node GPU evidence is intentionally still pending.
 
-- **Current Python release:** `stateset-agents==0.47.1`, published from the
+- **Current Python release:** `stateset-agents==0.47.2`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/); its first npm registry
@@ -278,15 +278,6 @@ coverage, live hardware attempts, and successful inference by provider.
 
 **Current development head (unreleased):**
 
-- **Executable multi-node evidence collection.** The distributed async A+
-  gate now has a shell-free collector with immutable manifests, exact topology
-  checks, independently measured duration, rotated fault order, artifact
-  hashing, retained failures, and automatic matrix validation. Preflight output
-  is explicitly non-measured and cannot satisfy the publication gate.
-- **Node 24 release compatibility.** Runtime tests now select the JavaScript
-  suite explicitly, preventing Node 24's native TypeScript discovery from
-  executing compile-only API fixtures and making network requests during
-  publication; TypeScript remains covered by the separate compiler gate.
 - **Machine-enforced maturity and security governance.** Every canonical
   product domain now carries a Stable, Beta, or Experimental designation tied
   to existing tests, documentation, evidence, limitations, graduation
@@ -296,7 +287,19 @@ coverage, live hardware attempts, and successful inference by provider.
   fail-closed validator runs in CI and publish readiness; independent
   third-party security review remains explicitly pending.
 
-**v0.47.1 (latest release; publication triggered by tag):**
+**v0.47.2 (latest release; publication triggered by tag):**
+
+- **Executable multi-node evidence collection.** Added a shell-free collector
+  with immutable manifests, exact topology checks, independently measured
+  duration, rotated fault order, artifact hashing, retained failures, and
+  automatic matrix validation. Preflight output cannot satisfy the publication
+  gate.
+- **Node 24 release compatibility.** Runtime tests now select the JavaScript
+  client suite explicitly while TypeScript remains covered by its compiler
+  gate, preventing compile-only fixtures from making network requests during
+  npm publication.
+
+**v0.47.1:**
 
 - Completed Modal dataset transport through isolated per-job Volume input and output paths with explicit output commits.
 - Added current Modal GPU and multi-GPU resource wiring, named Secret references, regional placement, safe artifact extraction, and failure-artifact recovery.
@@ -1084,8 +1087,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.47.1" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.47.1"
+pip install "stateset-agents==0.47.2" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.47.2"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1842,7 +1845,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.47.1`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.47.2`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
