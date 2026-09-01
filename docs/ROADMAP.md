@@ -67,6 +67,8 @@ evaluation, and lineage contracts.
 - [ ] Promote GLM-5.3-Flash after the same retained proof
 - [ ] Live-verify Modal transport with a bounded ephemeral GPU job
 - [x] Add approval-gated, cleanup-enforced Modal and Fireworks live workflows
+- [x] Complete Modal dataset upload, isolated input/output Volume paths,
+  output commit, named-Secret/region injection, and multi-GPU resource wiring
 
 The tag pipeline now generates GitHub build attestations for Python artifacts
 and requests maximal provenance plus SBOMs for both container images. This gate

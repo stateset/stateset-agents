@@ -63,11 +63,12 @@ the requirement is zero billing.
   Modal transport remain certification work, not production claims.
 
 The manual `Modal Transport Verify` workflow exercises the real image,
-function, A10G, and Volume path. The executor deletes its per-job persistent
-Volume on success, training failure, dry-run completion, and transport error;
-the workflow compares pre/post account inventories before retaining evidence.
-Modal remains `transport-unverified` until that workflow passes on a live
-account.
+function, A10 GPU, local-dataset upload, mounted read, output commit, and Volume
+cleanup path. The executor deletes its per-job persistent Volume on success,
+training failure, dry-run completion, and transport error; the workflow asserts
+that the remote log names the mounted dataset, compares pre/post account
+inventories, and retains the evidence. Modal remains `transport-unverified`
+until that workflow passes on a live account.
 
 ## Promotion gate
 

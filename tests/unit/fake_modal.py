@@ -8,8 +8,9 @@ kwargs. Asserting on recorded kwargs is what let an earlier version of
 
 It models only the surface ``ModalExecutor`` uses, per Modal's reference docs:
 ``Image.debian_slim().pip_install()``, ``Volume.from_name(create_if_missing=)``
-with ``reload``/``iterdir``/``read_file``, ``App.function(...)`` as a
-decorator, ``app.run()`` as a context manager, and ``Function.remote()``.
+with batched upload/commit/reload/list/read, named Secrets,
+``App.function(...)`` as a decorator, ``app.run()`` as a context manager, and
+``Function.remote()``.
 """
 
 from __future__ import annotations
@@ -63,8 +64,10 @@ class FakeVolume:
     def __init__(self, name: str, root: Path) -> None:
         self.name = name
         self.root = root
+        self.storage_root = root
         self.root.mkdir(parents=True, exist_ok=True)
         self.reload_count = 0
+        self.commit_count = 0
 
     @classmethod
     def bind(cls, root: Path) -> Callable[..., FakeVolume]:
@@ -90,7 +93,11 @@ class FakeVolume:
         self.reload_count += 1
 
     def commit(self) -> None:
-        pass
+        self.commit_count += 1
+
+    @contextlib.contextmanager
+    def batch_upload(self) -> Iterator[FakeVolumeUpload]:
+        yield FakeVolumeUpload(self)
 
     def iterdir(self, path: str, *, recursive: bool = True) -> Iterator[FakeEntry]:
         base = self.root / path.lstrip("/")
@@ -98,10 +105,24 @@ class FakeVolume:
             return
         for item in sorted(base.rglob("*") if recursive else base.iterdir()):
             if item.is_file():
-                yield FakeEntry(path=str(item.relative_to(self.root)))
+                # Modal returns container-relative POSIX paths regardless of
+                # the client OS running the SDK.
+                yield FakeEntry(path=item.relative_to(self.root).as_posix())
 
     def read_file(self, path: str) -> Iterator[bytes]:
         yield (self.root / path).read_bytes()
+
+
+@dataclass
+class FakeVolumeUpload:
+    """Write local files into a fake Volume using Modal's upload surface."""
+
+    volume: FakeVolume
+
+    def put_file(self, local_path: str, remote_path: str) -> None:
+        target = self.volume.root / remote_path.lstrip("/")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(local_path, target)
 
 
 @dataclass
@@ -112,17 +133,45 @@ class FakeFunction:
     kwargs: dict[str, Any]
     app: FakeApp
 
+    @staticmethod
+    def _rewrite_paths(value: Any, source: str, target: str) -> Any:
+        """Translate container paths to the fake host mount and back."""
+        if isinstance(value, str):
+            return value.replace(source, target)
+        if isinstance(value, dict):
+            return {
+                key: FakeFunction._rewrite_paths(item, source, target)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [FakeFunction._rewrite_paths(item, source, target) for item in value]
+        if isinstance(value, tuple):
+            return tuple(
+                FakeFunction._rewrite_paths(item, source, target) for item in value
+            )
+        return value
+
     def remote(self, *args: Any, **kwargs: Any) -> Any:
         if not self.app.running:
             raise RuntimeError("function called outside of app.run()")
         self.app.calls.append((args, kwargs))
-        # A mounted volume *is* the directory the container writes to. Bind
-        # the volume's storage to its mount path so a write at the mount is
-        # readable through the volume afterwards, as it is on Modal.
+        translated_args = args
+        translated_kwargs = kwargs
+        translations: list[tuple[str, str]] = []
+        # Container mounts are POSIX paths even when this fake runs on a
+        # Windows host. Translate them to the temporary host-backed Volume
+        # while executing, then translate returned paths and logs back.
         for mount, volume in (self.kwargs.get("volumes") or {}).items():
-            volume.root = Path(mount)
-            volume.root.mkdir(parents=True, exist_ok=True)
-        return self.fn(*args, **kwargs)
+            host_mount = str(volume.root)
+            translated_args = self._rewrite_paths(translated_args, mount, host_mount)
+            translated_kwargs = self._rewrite_paths(
+                translated_kwargs, mount, host_mount
+            )
+            translations.append((host_mount, mount))
+        result = self.fn(*translated_args, **translated_kwargs)
+        for host_mount, mount in translations:
+            result = self._rewrite_paths(result, host_mount, mount)
+        return result
 
     def spawn(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError("spawn is not modelled")
@@ -168,12 +217,20 @@ def build(volume_root: Path) -> Any:
                 return
             raise KeyError(name)
         shutil.rmtree(volume.root, ignore_errors=True)
+        if volume.storage_root != volume.root:
+            shutil.rmtree(volume.storage_root, ignore_errors=True)
         FakeVolume.deleted_names.append(name)
 
     module.Volume = types.SimpleNamespace(
         from_name=FakeVolume.bind(volume_root),
         objects=types.SimpleNamespace(delete=delete),
     )
+
+    @dataclass(frozen=True)
+    class FakeSecret:
+        name: str
+
+    module.Secret = types.SimpleNamespace(from_name=lambda name: FakeSecret(name))
 
     apps: list[FakeApp] = []
 

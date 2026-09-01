@@ -26,10 +26,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from stateset_agents.exceptions import IMPORT_EXCEPTIONS
@@ -92,13 +93,28 @@ class ModalExecutor(RemoteExecutor):
     name = "modal"
     compute_model = "rented-serverless-gpu"
     verification_status = "transport-unverified"
-    #: Modal's own GPU vocabulary.
-    DEFAULT_GPU = "A10G"
+    #: Modal's own current GPU vocabulary.
+    DEFAULT_GPU = "A10"
 
-    def __init__(self, remote_mount: str = _DEFAULT_MOUNT) -> None:
+    def __init__(
+        self,
+        remote_mount: str = _DEFAULT_MOUNT,
+        *,
+        secret_names: Sequence[str] | None = None,
+        region: str | None = None,
+    ) -> None:
         self._jobs: dict[str, _ModalJob] = {}
         #: Where the adapter volume is mounted inside the container.
-        self.remote_mount = remote_mount
+        mount = remote_mount.strip().rstrip("/")
+        mount_path = PurePosixPath(mount)
+        if not mount or not mount_path.is_absolute() or ".." in mount_path.parts:
+            raise ValueError("Modal remote_mount must be an absolute container path")
+        self.remote_mount = mount
+        if secret_names is None:
+            secret_names = os.environ.get("STATESET_MODAL_SECRET_NAMES", "").split(",")
+        self.secret_names = tuple(name.strip() for name in secret_names if name.strip())
+        configured_region = region or os.environ.get("STATESET_MODAL_REGION")
+        self.region = configured_region.strip() if configured_region else None
 
     # -- SDK plumbing ------------------------------------------------------
 
@@ -124,6 +140,30 @@ class ModalExecutor(RemoteExecutor):
     @staticmethod
     def _volume_name(job_id: str) -> str:
         return f"stateset-sft-{job_id}"
+
+    @staticmethod
+    def _gpu_request(spec: RemoteJobSpec) -> str:
+        """Render Modal's ``GPU[:count]`` resource string."""
+        gpu = spec.gpu or ModalExecutor.DEFAULT_GPU
+        if ":" in gpu:
+            if spec.gpu_count != 1:
+                raise RemoteExecutionError(
+                    "set Modal GPU count either in --gpu or --gpu-count, not both",
+                    provider="modal",
+                )
+            return gpu
+        return f"{gpu}:{spec.gpu_count}" if spec.gpu_count > 1 else gpu
+
+    def _secrets(self, sdk: Any) -> list[Any]:
+        """Resolve configured Modal Secret objects without reading their values."""
+        return [sdk.Secret.from_name(name) for name in self.secret_names]
+
+    def _upload_dataset(self, volume: Any, spec: RemoteJobSpec, job_id: str) -> str:
+        """Upload the local dataset and return its mounted container path."""
+        relative = f"inputs/{job_id}/{spec.dataset.name}"
+        with volume.batch_upload() as upload:
+            upload.put_file(str(spec.dataset), f"/{relative}")
+        return f"{self.remote_mount}/{relative}"
 
     def _delete_volume(self, name: str) -> None:
         """Delete one executor-owned persistent volume."""
@@ -159,19 +199,36 @@ class ModalExecutor(RemoteExecutor):
         volume = sdk.Volume.from_name(volume_name, create_if_missing=True)
         app = sdk.App(_APP_NAME)
 
-        function = app.function(
-            image=image,
-            gpu=spec.gpu or self.DEFAULT_GPU,
-            timeout=spec.timeout_s,
-            volumes={self.remote_mount: volume},
-        )(_remote_entrypoint)
-
-        payload = spec.to_dict()
-        # Redirect the job's output into the mounted volume; the caller's
-        # requested output_dir is a *local* path and means nothing in there.
-        payload["output_dir"] = f"{self.remote_mount.rstrip('/')}/{job_id}"
-
         try:
+            remote_dataset = self._upload_dataset(volume, spec, job_id)
+            payload = spec.to_dict()
+            payload["dataset"] = remote_dataset
+            # The caller's output_dir is a local path and means nothing in the
+            # container. Inputs and outputs use separate prefixes so dataset
+            # transport can never be mistaken for a produced adapter.
+            payload["output_dir"] = f"{self.remote_mount}/outputs/{job_id}"
+
+            def invoke(payload: dict[str, Any]) -> dict[str, Any]:
+                outcome = _remote_entrypoint(payload)
+                volume.commit()
+                return outcome
+
+            function_options: dict[str, Any] = {
+                "image": image,
+                "gpu": self._gpu_request(spec),
+                "timeout": spec.timeout_s,
+                "volumes": {self.remote_mount: volume},
+                # ``invoke`` closes over the hydrated Volume so it can commit
+                # outputs before the local client starts downloading them.
+                "serialized": True,
+            }
+            secrets = self._secrets(sdk)
+            if secrets:
+                function_options["secrets"] = secrets
+            if self.region:
+                function_options["region"] = self.region
+            function = app.function(**function_options)(invoke)
+
             with app.run():
                 outcome = function.remote(payload)
         except Exception:
@@ -186,6 +243,11 @@ class ModalExecutor(RemoteExecutor):
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
         self.validate_spec(spec)
+        if not spec.dataset.is_file():
+            raise RemoteExecutionError(
+                f"Modal dataset must be a regular file: {spec.dataset}",
+                provider=self.name,
+            )
         job_id = uuid.uuid4().hex
         handle = JobHandle(provider=self.name, job_id=job_id)
 
@@ -201,8 +263,23 @@ class ModalExecutor(RemoteExecutor):
         logs = list(outcome.get("logs", []))
 
         if outcome.get("returncode", 1) != 0:
-            self._delete_volume(volume_name)
-            self._jobs[job_id] = _ModalJob(spec, JobStatus.FAILED, logs)
+            fetched: Path | None = None
+            if outcome.get("artifacts"):
+                try:
+                    downloaded = self._download(
+                        volume, f"outputs/{job_id}", spec.output_dir
+                    )
+                    if downloaded:
+                        fetched = spec.output_dir
+                except Exception as exc:
+                    logs.append(f"failed to download failure artifacts: {exc}")
+            try:
+                self._delete_volume(volume_name)
+            except Exception as exc:
+                logs.append(f"failed to delete Modal volume {volume_name}: {exc}")
+            self._jobs[job_id] = _ModalJob(
+                spec, JobStatus.FAILED, logs, fetched=fetched
+            )
             return handle
 
         if spec.dry_run:
@@ -212,7 +289,7 @@ class ModalExecutor(RemoteExecutor):
             return handle
 
         try:
-            downloaded = self._download(volume, job_id, spec.output_dir)
+            downloaded = self._download(volume, f"outputs/{job_id}", spec.output_dir)
         except Exception as exc:
             logs.append(f"failed to download adapter: {exc}")
             try:
@@ -228,7 +305,9 @@ class ModalExecutor(RemoteExecutor):
             self._delete_volume(volume_name)
         except Exception as exc:
             logs.append(f"failed to delete Modal volume {volume_name}: {exc}")
-            self._jobs[job_id] = _ModalJob(spec, JobStatus.FAILED, logs)
+            self._jobs[job_id] = _ModalJob(
+                spec, JobStatus.FAILED, logs, fetched=spec.output_dir
+            )
             return handle
 
         if not downloaded:
@@ -244,13 +323,37 @@ class ModalExecutor(RemoteExecutor):
         )
         return handle
 
-    def _download(self, volume: Any, job_id: str, dest: Path) -> list[Path]:
+    def _download(self, volume: Any, remote_dir: str, dest: Path) -> list[Path]:
         """Copy the adapter out of the volume onto local disk."""
         volume.reload()
         written: list[Path] = []
-        for entry in volume.iterdir(job_id, recursive=True):
-            relative = Path(entry.path).relative_to(job_id)
-            target = dest / relative
+        prefix = PurePosixPath(remote_dir.strip("/"))
+        destination = dest.resolve()
+        for entry in volume.iterdir(remote_dir, recursive=True):
+            entry_type = getattr(entry, "type", None)
+            if entry_type is not None and getattr(entry_type, "name", "") != "FILE":
+                continue
+            entry_path = PurePosixPath(str(entry.path).lstrip("/"))
+            try:
+                relative = entry_path.relative_to(prefix)
+            except ValueError as exc:
+                raise RemoteExecutionError(
+                    f"Modal returned an artifact outside {remote_dir}: {entry.path}",
+                    provider=self.name,
+                ) from exc
+            if ".." in relative.parts or not relative.parts:
+                raise RemoteExecutionError(
+                    f"Modal returned an unsafe artifact path: {entry.path}",
+                    provider=self.name,
+                )
+            target = (destination / Path(*relative.parts)).resolve()
+            try:
+                target.relative_to(destination)
+            except ValueError as exc:
+                raise RemoteExecutionError(
+                    f"Modal artifact escapes output directory: {entry.path}",
+                    provider=self.name,
+                ) from exc
             target.parent.mkdir(parents=True, exist_ok=True)
             with open(target, "wb") as handle:
                 for chunk in volume.read_file(entry.path):
@@ -274,12 +377,12 @@ class ModalExecutor(RemoteExecutor):
 
     def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
         job = self._job(handle)
-        if job.status is not JobStatus.SUCCEEDED:
+        if job.status is not JobStatus.SUCCEEDED and job.fetched is None:
             raise RemoteExecutionError(
                 f"job {handle.job_id} is not finished successfully; nothing to fetch",
                 provider=self.name,
             )
-        return dest or job.spec.output_dir
+        return dest or job.fetched or job.spec.output_dir
 
     def cancel(self, handle: JobHandle) -> None:
         job = self._job(handle)

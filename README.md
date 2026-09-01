@@ -174,7 +174,7 @@ without operating a GPU machine.
 | **Prime Intellect Lab** | Managed verifiers/OpenEnv RL | Hosted Prime run pointer | Config/CLI lifecycle unit-pinned; live certification pending ([guide](docs/MANAGED_TRAINING_PROVIDERS.md)) |
 | **Hugging Face** | GPU Jobs and Inference Endpoints | Writable bucket artifact pointer; hosted endpoint | Job/endpoint lifecycles unit-pinned; live certification pending ([guide](docs/MANAGED_TRAINING_PROVIDERS.md)) |
 | **Together AI** | Managed supervised fine-tuning | Hosted tuned-model pointer | Upload/train/poll/cancel lifecycle unit-pinned; live certification pending ([guide](docs/MANAGED_TRAINING_PROVIDERS.md)) |
-| **Modal** | Rented serverless GPU | Local artifacts | Transport certification pending; per-job Volume cleanup is enforced |
+| **Modal** | Rented serverless GPU | Local artifacts | Dataset upload, named Secrets, region/multi-GPU wiring, output commit/download, and per-job Volume cleanup implemented; live certification pending |
 | **Local** | Your machine or cluster | Local artifacts | Unit-tested reference path |
 
 Inspect capabilities and model evidence from the installed release:

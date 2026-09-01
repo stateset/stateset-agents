@@ -62,6 +62,11 @@ stateset-agents train-remote --dataset improved/curated.jsonl \
 stateset-agents train-remote --provider modal --gpu A100 \
     --dataset improved/curated.jsonl --base-model Qwen/Qwen3.5-0.8B
 
+# Optional: reference provider-side Secrets and constrain placement.
+# Secret values are never serialized into the StateSet job payload.
+export STATESET_MODAL_SECRET_NAMES=huggingface,weights-and-biases
+export STATESET_MODAL_REGION=us-east
+
 # Or on RunPod (GPU names are RunPod's own, e.g. "NVIDIA RTX A4000")
 export RUNPOD_API_KEY=...
 stateset-agents train-remote --provider runpod --gpu "NVIDIA RTX A4000" \
@@ -154,7 +159,8 @@ exercised only against fakes. See `docs/FIREWORKS_PROVIDER.md`.
 - `--num-epochs`, `--lora-r`, `--lora-alpha`, `--learning-rate`,
   `--max-length`, `--per-device-batch-size`,
   `--gradient-accumulation-steps`: Passed through to the training script.
-- `--gpu TEXT`: GPU type to request (remote only). Default `A10G`.
+- `--gpu TEXT`: GPU type to request in provider vocabulary (remote only).
+  Modal defaults to `A10`; multi-GPU requests render as `GPU:count`.
 - `--gpu-count INTEGER`: Number of GPUs to request on providers that expose
   topology (RunPod, CoreWeave, and Nebius). Nebius requires a matching
   `NEBIUS_PRESET`. Default `1`. With more than one, the
@@ -243,7 +249,7 @@ exercised only against fakes. See `docs/FIREWORKS_PROVIDER.md`.
 |---|---|---|---|
 | `local` | a GPU on this machine | none | Verified end-to-end |
 | `runpod` | `RUNPOD_API_KEY`, an SSH keypair, `ssh`/`scp` on PATH | SSH/SCP to a rented pod | **Verified end-to-end on live hardware** (RTX A4000 + Qwen3.5-0.8B, ~5 min; H100 80GB + Muse-Glimmer-30B multimodal, 63GB checkpoint, `container_disk_gb=160`). GPU names are RunPod's own (`"NVIDIA RTX A4000"`) |
-| `modal` | `pip install "stateset-agents[modal]"` | Modal Volume | Transport **not** yet verified against a live account |
+| `modal` | `pip install "stateset-agents[modal]"`; Modal token; optional named Secrets | Per-job Modal Volume | Local datasets are uploaded before allocation, outputs are committed/downloaded separately, and the Volume is deleted; live transport certification pending |
 
 RunPod creates the pod with TCP 22 exposed and your public key
 
@@ -256,7 +262,12 @@ dry run and can still provision remote hardware.
 Modal requires SDK 1.1.2 or newer. Every executor-created `stateset-sft-*`
 Volume is deleted after artifact retrieval, dry-run completion, or failure;
 failure to confirm deletion makes the job fail rather than silently retaining
-persistent storage.
+persistent storage. Set `STATESET_MODAL_SECRET_NAMES` to a comma-separated list
+of existing Modal Secret names (for example a Secret containing `HF_TOKEN` or
+`WANDB_API_KEY`); only names are sent by StateSet and Modal injects their values
+inside the Function. `STATESET_MODAL_REGION` optionally constrains compute
+placement. Modal's standard `MODAL_ENVIRONMENT` selects the isolated resource
+environment.
 (`~/.ssh/id_ed25519.pub` or `id_rsa.pub`) injected, copies the dataset in,
 runs the job, copies the adapter back, and **terminates the pod on every exit
 path** — including failures and timeouts — so nothing keeps billing. By
