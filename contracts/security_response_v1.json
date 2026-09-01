@@ -1,0 +1,28 @@
+{
+  "coordinated_disclosure_max_days": 90,
+  "reporting_channels": [
+    "mailto:security@stateset.ai",
+    "github-private-vulnerability-reporting"
+  ],
+  "safe_harbor": true,
+  "schema_version": 1,
+  "service_levels": {
+    "acknowledgement_hours": 24,
+    "remediation_target_calendar_days": {
+      "critical": 7,
+      "high": 14,
+      "low": 90,
+      "medium": 30
+    },
+    "status_update_hours_critical_high": 72,
+    "triage_hours": 72
+  },
+  "supported_versions": {
+    "latest_minor": true,
+    "older_minors": false
+  },
+  "third_party_review": {
+    "evidence": [],
+    "status": "pending"
+  }
+}

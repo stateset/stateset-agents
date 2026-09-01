@@ -61,12 +61,13 @@ measurable.
 
 ### Current verification status
 
-The `master` branch passed its complete merge gate on **2026-08-31**: Linux
+The current merge candidate passed its complete gate on **2026-09-01**: Linux
 Python 3.10–3.13, Windows Python 3.10/3.13, CodeQL, dependency and secret
-scanning, package-readiness, docs, benchmarks, Helm, and the Node client. The
-corresponding local suite completed with **4,898 passed and 11 skipped**. See
-the retained [proof ledger](docs/PROOFS.md) for the evidence behind individual
-training, serving, and provider claims.
+scanning, package-readiness, release governance, docs, Helm, and the Node
+client. All **16 remote checks passed**, and the corresponding local suite
+completed with **5,110 passed and 11 skipped**. See the retained
+[proof ledger](docs/PROOFS.md) for the evidence behind individual training,
+serving, and provider claims.
 
 The `v0.47.0` distributed-rollout release completed its local full suite with
 **5,083 passed and 11 skipped**, plus focused API and distributed/async
@@ -85,6 +86,11 @@ gates. Native multi-node GPU evidence is intentionally still pending.
 - **Frontier models:** GLM-5.3-Flash and Qwen3.8-Flash-Next are integrated and
   smoke-tested; their production certification still requires retained live
   training and serving evidence.
+- **Release governance:** `make release-governance` validates the canonical
+  [component maturity](contracts/component_maturity_v1.json) and
+  [security response](contracts/security_response_v1.json) contracts. CI and
+  package publication fail closed if evidence, limitations, graduation
+  criteria, stable API references, or response targets drift.
 
 ---
 
@@ -256,6 +262,17 @@ coverage, live hardware attempts, and successful inference by provider.
 ---
 
 ## What's new
+
+**Current development head (unreleased):**
+
+- **Machine-enforced maturity and security governance.** Every canonical
+  product domain now carries a Stable, Beta, or Experimental designation tied
+  to existing tests, documentation, evidence, limitations, graduation
+  criteria, ownership, and—where stable—the public API contract. A versioned
+  security-response contract defines reporting channels, acknowledgement and
+  remediation targets, coordinated disclosure, and safe harbor. The same
+  fail-closed validator runs in CI and publish readiness; independent
+  third-party security review remains explicitly pending.
 
 **v0.47.0 (latest release; publication triggered by tag):**
 
@@ -1164,6 +1181,21 @@ addition, removal, signature-schema change, or response-schema change fails
 closed. See [`docs/API_COMPATIBILITY.md`](docs/API_COMPATIBILITY.md) for the
 covered surface, deprecation window, and migration process. Experimental and
 opt-in training-lab APIs are intentionally outside this guarantee.
+
+### Component maturity and security response
+
+Every canonical product domain has an evidence-backed Stable, Beta, or
+Experimental designation in the
+[`component maturity policy`](docs/COMPONENT_MATURITY.md). CI rejects missing
+tests, documentation, evidence, limitations, graduation criteria, or invalid
+stable-contract references. The public [`security policy`](SECURITY.md) defines
+private reporting, severity-based response targets, coordinated disclosure,
+and safe harbor; the independent third-party review remains explicitly pending.
+Run the same fail-closed validation locally with:
+
+```bash
+make release-governance
+```
 
 ### Dashboard and mobile app (separate repos)
 

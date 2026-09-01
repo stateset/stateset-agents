@@ -1,0 +1,202 @@
+{
+  "components": [
+    {
+      "docs": ["docs/API_COMPATIBILITY.md", "docs/GETTING_STARTED_API.md"],
+      "evidence": ["docs/RELEASE_EVIDENCE.md"],
+      "graduation_criteria": [],
+      "id": "api-serving",
+      "limitations": [],
+      "maturity": "stable",
+      "name": "FastAPI and compatible inference APIs",
+      "owner": "api",
+      "public_contract_refs": ["python:stateset_agents.api.create_app", "http:POST /v1/chat/completions", "http:POST /v1/messages", "http:GET /v1/models"],
+      "tests": ["tests/api/test_openai_compat_endpoint.py", "tests/api/test_messages_endpoint.py"]
+    },
+    {
+      "docs": ["docs/ARCHITECTURE.md"],
+      "evidence": ["benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json"],
+      "graduation_criteria": [],
+      "id": "core-agents",
+      "limitations": [],
+      "maturity": "stable",
+      "name": "Agent, MultiTurnAgent, and ToolAgent",
+      "owner": "core",
+      "public_contract_refs": ["python:stateset_agents.Agent", "python:stateset_agents.MultiTurnAgent", "python:stateset_agents.ToolAgent"],
+      "tests": ["tests/unit/test_agent.py", "tests/unit/test_tool_agent.py"]
+    },
+    {
+      "docs": ["docs/CLOUD_DEPLOYMENT.md"],
+      "evidence": ["docs/RELEASE_EVIDENCE.md"],
+      "graduation_criteria": ["Retain a tagged container SBOM and signed provenance", "Complete one external deployment reproduction"],
+      "id": "deployment-assets",
+      "limitations": ["Container provenance is not yet retained", "Custom Helm profiles require validation"],
+      "maturity": "beta",
+      "name": "Helm, Kubernetes, and container deployment assets",
+      "owner": "platform",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_helm_chart_renders.py"]
+    },
+    {
+      "docs": ["docs/ARCHITECTURE.md"],
+      "evidence": ["benchmark_results/reliability/report.json"],
+      "graduation_criteria": ["Complete a retained multi-node LLM run", "Pass a 12-hour fault-injected soak"],
+      "id": "distributed-rollouts",
+      "limitations": ["Native multi-node throughput and long-running soak evidence remain pending"],
+      "maturity": "beta",
+      "name": "Distributed asynchronous rollout control plane",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_distributed_rollouts.py", "tests/api/test_distributed_rollouts.py"]
+    },
+    {
+      "docs": ["docs/ARCHITECTURE.md"],
+      "evidence": ["benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json"],
+      "graduation_criteria": [],
+      "id": "environments-rewards",
+      "limitations": [],
+      "maturity": "stable",
+      "name": "Environment and reward primitives",
+      "owner": "core",
+      "public_contract_refs": ["python:stateset_agents.Environment", "python:stateset_agents.RewardFunction", "python:stateset_agents.CompositeReward"],
+      "tests": ["tests/unit/test_environment_comprehensive.py", "tests/unit/test_reward_comprehensive.py"]
+    },
+    {
+      "docs": ["docs/TRAINING_BACKENDS.md"],
+      "evidence": ["docs/ROADMAP.md"],
+      "graduation_criteria": ["Complete matched three-seed live conformance for NeMo RL, verl, and OpenRLHF"],
+      "id": "external-training-backends",
+      "limitations": ["Adapters are fail-closed and tested, but live GPU conformance remains open"],
+      "maturity": "beta",
+      "name": "NeMo RL, verl, and OpenRLHF adapters",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_backend_conformance.py", "tests/unit/test_training_backends.py"]
+    },
+    {
+      "docs": ["docs/ADVANCED_RL_ALGORITHMS.md", "docs/GSPO_GUIDE.md"],
+      "evidence": ["benchmark_results/algorithm_comparison/report/comparison.json"],
+      "graduation_criteria": ["Pass the 8B three-seed flagship quality gate", "Retain matched competitor efficiency results"],
+      "id": "gspo-dapo-gepo",
+      "limitations": ["Current comparative evidence uses a four-step 0.5B protocol"],
+      "maturity": "beta",
+      "name": "GSPO, DAPO, and GEPO trainers",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_gspo_trainer.py", "tests/unit/test_dapo_trainer_behavioral.py", "tests/unit/test_gepo_trainer_behavioral.py"]
+    },
+    {
+      "docs": ["docs/GRPO_IMPLEMENTATION.md", "docs/TRL_GRPO_TRAINING_GUIDE.md"],
+      "evidence": ["benchmark_results/framework_comparison/report/comparison.json"],
+      "graduation_criteria": [],
+      "id": "grpo-training",
+      "limitations": [],
+      "maturity": "stable",
+      "name": "TRL-backed GRPO training",
+      "owner": "training",
+      "public_contract_refs": ["python:stateset_agents.GRPOTrainer", "python:stateset_agents.MultiTurnGRPOTrainer"],
+      "tests": ["tests/unit/test_trl_grpo_trainer.py", "tests/e2e/test_gspo_convergence_tiny.py"]
+    },
+    {
+      "docs": ["docs/ARCHITECTURE.md"],
+      "evidence": ["docs/RELEASE_EVIDENCE.md"],
+      "graduation_criteria": ["Add backend-parity and restart tests for every persistence implementation"],
+      "id": "memory",
+      "limitations": ["SQLite and long-running persistence paths have less production evidence than memory and Redis"],
+      "maturity": "beta",
+      "name": "Agent memory and persistence",
+      "owner": "core",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_memory_evaluation.py", "tests/api/test_persistence.py"]
+    },
+    {
+      "docs": ["docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md"],
+      "evidence": ["docs/WHITEPAPER.md"],
+      "graduation_criteria": ["Publish dialogue-specific held-out comparisons for every advertised offline objective"],
+      "id": "offline-rl",
+      "limitations": ["Individual algorithms are tested, but the blending schedule lacks published agent-quality evidence"],
+      "maturity": "experimental",
+      "name": "Offline RL algorithms",
+      "owner": "research",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_offline_rl_sim_to_real.py"]
+    },
+    {
+      "docs": ["docs/MANAGED_TRAINING_PROVIDERS.md", "docs/MODEL_PROVIDER_CERTIFICATION.md"],
+      "evidence": ["docs/RELEASE_EVIDENCE.md"],
+      "graduation_criteria": ["Retain train, retrieve, serve, and cleanup evidence for every promoted provider"],
+      "id": "provider-control-plane",
+      "limitations": ["Fireworks, CoreWeave, Nebius, and Modal live certification is incomplete"],
+      "maturity": "beta",
+      "name": "Managed training and GPU provider control plane",
+      "owner": "platform",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_provider_evidence.py", "tests/unit/test_remote_new_providers.py"]
+    },
+    {
+      "docs": ["docs/WHITEPAPER.md"],
+      "evidence": ["docs/ROADMAP.md"],
+      "graduation_criteria": ["Define stable APIs and retain task-specific quality evidence before promotion"],
+      "id": "research-modules",
+      "limitations": ["APIs may change or be removed in a patch release"],
+      "maturity": "experimental",
+      "name": "Auto-research, continual learning, planning, and multi-agent research modules",
+      "owner": "research",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_multi_agent_coordination.py"]
+    },
+    {
+      "docs": ["docs/STATESET_RL_AGENTS_OVERVIEW.md"],
+      "evidence": ["benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json"],
+      "graduation_criteria": ["Publish a judge calibration set and an independent RLAIF reproduction"],
+      "id": "reward-learning-rlaif",
+      "limitations": ["Judge quality and bias remain external trust dependencies"],
+      "maturity": "beta",
+      "name": "Neural rewards and RLAIF",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_reward_models.py"]
+    },
+    {
+      "docs": ["docs/PERFORMANCE_TUNING_GUIDE.md"],
+      "evidence": ["benchmark_results/whitepaper_v1/rust_vs_python_microbenchmark.json"],
+      "graduation_criteria": ["Run parity and performance gates on every supported Python and GPU platform"],
+      "id": "rust-acceleration",
+      "limitations": ["The extension is optional and not available on every supported platform"],
+      "maturity": "beta",
+      "name": "Optional Rust acceleration",
+      "owner": "performance",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_vapo_rust_gae_parity.py"]
+    },
+    {
+      "docs": ["docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md"],
+      "evidence": ["docs/WHITEPAPER.md"],
+      "graduation_criteria": ["Publish a public sim-to-real benchmark with retained domain-shift metrics"],
+      "id": "sim-to-real",
+      "limitations": ["Public benchmark evidence remains pending"],
+      "maturity": "beta",
+      "name": "Sim-to-real evaluation and domain randomization",
+      "owner": "research",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_offline_rl_sim_to_real.py"]
+    },
+    {
+      "docs": ["docs/WHITEPAPER.md"],
+      "evidence": ["benchmark_results/algorithm_comparison/report/comparison.json"],
+      "graduation_criteria": ["Reproduce value-network quality gains on the 8B flagship", "Complete long-horizon warmup and checkpoint recovery evidence"],
+      "id": "vapo",
+      "limitations": ["Value warmup and decoupled-GAE behavior have not been validated at flagship scale"],
+      "maturity": "experimental",
+      "name": "VAPO trainer",
+      "owner": "research",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_vapo_trainer_behavioral.py"]
+    }
+  ],
+  "levels": {
+    "beta": "Functionally complete with tests; limitations and measurable graduation criteria are public.",
+    "experimental": "Research surface; not recommended for production and may change in patch releases.",
+    "stable": "Covered by the v1 contract, tests, documentation, and retained production or benchmark evidence."
+  },
+  "schema_version": 1
+}

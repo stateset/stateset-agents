@@ -23,3 +23,13 @@ def test_publish_readiness_enforces_stable_api_contract() -> None:
 
     assert 'CURRENT_STEP="api_compatibility"' in contents
     assert '"$PYTHON_BIN" scripts/check_api_compatibility.py' in contents
+
+
+def test_publish_readiness_enforces_release_governance() -> None:
+    script_path = (
+        Path(__file__).resolve().parents[2] / "scripts" / "publish_readiness.sh"
+    )
+    contents = script_path.read_text(encoding="utf-8")
+
+    assert 'CURRENT_STEP="release_governance"' in contents
+    assert '"$PYTHON_BIN" scripts/check_release_governance.py' in contents
