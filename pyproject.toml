@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateset-agents"
-version = "0.46.0"
+version = "0.47.0"
 description = "Production-ready RL framework for training multi-turn conversational AI agents using GRPO and GSPO"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -352,10 +352,10 @@ omit = [
 #
 # History: 70 set in v0.15.1 (aspirational — silently broke the CI test
 # step because measured coverage was ~54.5%); lowered to 54 to match the
-# measured floor on the post-CLI-decomp tree. Async rollout coordinator and
-# runtime coverage raised the cross-version measurement to roughly 62.9%, so
-# 62 is now a stable floor with margin for optional-import/xdist variation.
-fail_under = 62
+# measured floor on the post-CLI-decomp tree. Async rollout coordinator,
+# runtime, and evidence-gate tests raised the Python 3.11 CI measurement to
+# 63.21%, so 63 is now the demonstrated floor.
+fail_under = 63
 precision = 2
 show_missing = true
 skip_covered = false

@@ -33,6 +33,10 @@ from .schemas import (
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from stateset_agents.training.distributed_rollouts import (
+        DistributedRolloutControlPlane,
+    )
+
 
 def create_app(*args: Any, **kwargs: Any) -> FastAPI:
     """Create the FastAPI app without importing the gateway at package import time."""
@@ -41,8 +45,24 @@ def create_app(*args: Any, **kwargs: Any) -> FastAPI:
     return _create_app(*args, **kwargs)
 
 
+def attach_distributed_rollout_control_plane(
+    app: FastAPI, control_plane: DistributedRolloutControlPlane
+) -> None:
+    """Attach a training-owned rollout control plane to the API gateway."""
+    from stateset_agents.training.distributed_rollouts import (
+        DistributedRolloutControlPlane as _DistributedRolloutControlPlane,
+    )
+
+    if not isinstance(control_plane, _DistributedRolloutControlPlane):
+        raise TypeError("control_plane must be DistributedRolloutControlPlane")
+    if not hasattr(app, "state"):
+        raise TypeError("app must expose FastAPI-compatible state")
+    app.state.distributed_rollout_control_plane = control_plane
+
+
 __all__ = [
     "create_app",
+    "attach_distributed_rollout_control_plane",
     "get_config",
     "APIConfig",
     "TrainingRequest",

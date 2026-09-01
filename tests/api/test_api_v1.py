@@ -1067,7 +1067,9 @@ class TestInputValidationSecurity:
             json={"message": huge_message},
         )
 
-        assert response.status_code == 422
+        # The gateway rejects the JSON envelope before field-level validation
+        # once it exceeds API_MAX_REQUEST_SIZE_MB.
+        assert response.status_code == 413
 
     def test_unicode_handling(self, client):
         """Should handle unicode properly."""

@@ -212,6 +212,14 @@ def test_rollout_checkpoint_rejects_unknown_fields() -> None:
         RolloutRecord.from_dict(value)
 
 
+def test_rollout_checkpoint_restores_pre_artifact_records() -> None:
+    value = _record("legacy", 0).to_dict()
+    value.pop("policy_artifact_sha256")
+    restored = RolloutRecord.from_dict(value)
+    assert restored.rollout_id == "legacy"
+    assert restored.policy_artifact_sha256 is None
+
+
 @pytest.mark.asyncio
 async def test_backpressure_rechecks_staleness_after_policy_update() -> None:
     coordinator = AsyncRolloutCoordinator(

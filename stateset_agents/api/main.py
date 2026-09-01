@@ -15,7 +15,16 @@ from .errors import setup_exception_handlers
 from .middleware import setup_middleware
 from .openapi import add_documentation_routes, setup_openapi
 from .resilience import HealthChecker, HealthStatus, get_all_circuit_stats
-from .routers import agents, messages, metrics, openai, training, training_lab, v1
+from .routers import (
+    agents,
+    distributed_rollouts,
+    messages,
+    metrics,
+    openai,
+    training,
+    training_lab,
+    v1,
+)
 from .services.inference_service import InferenceConfig, InferenceService
 
 logger = logging.getLogger(__name__)
@@ -222,6 +231,7 @@ def create_app() -> FastAPI:
     app.include_router(v1.router)
     app.include_router(messages.router)
     app.include_router(openai.router)
+    app.include_router(distributed_rollouts.router)
     if config.enable_training_lab:
         app.include_router(training_lab.router)
         app.include_router(training_lab.ws_router)

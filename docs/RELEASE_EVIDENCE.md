@@ -4,6 +4,29 @@ This page records what was actually exercised for the current release line.
 Registration, authentication, hardware allocation, training, inference, and
 publication are separate claims.
 
+## v0.47.0 release evidence
+
+Tagged release commit: `d99b4e9ed3d93769d6d61518a3f14d01b32d3495`.
+
+| Surface | Result | Evidence |
+|---|---|---|
+| Local default suite | Passed | 5,083 passed, 11 skipped; focused distributed/async and API regressions also passed |
+| Static and package gates | Passed | Ruff, isort, 326-file type check, repository hygiene, wheel/sdist build, Twine metadata, and isolated release-module inspection |
+| Publish readiness | Passed | The tag workflow passed its mandatory lint, format, type, coverage, security, build, metadata, and wheel-install gate |
+| Python distribution | Passed | PyPI publication completed and the workflow generated GitHub build attestations for the wheel and sdist |
+| GitHub Release and docs | Passed | Verified distributions were attached to the GitHub Release and the documentation deployment completed |
+| River canary | Passed | Authenticated read-only capability probe completed with zero billable resources |
+| RunPod canary | Passed | Authenticated account and cleanup probe completed with zero billable resources |
+| npm distribution | Failed | Package tests and type checks passed, but publication used Node 20/npm 10 with an empty `NODE_AUTH_TOKEN` and failed `ENEEDAUTH`; the next release uses an npm 11/Node 24 OIDC-first workflow with scoped-token fallback |
+| Fireworks canary | Failed closed | `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID` were absent; the retained report records a skipped probe and zero billable resources |
+| Container distribution | Skipped | Docker Hub credentials were absent, so no images or container SBOM/provenance claims were created |
+| Merge state | Pending | The tagged commit remains on `feat/distributed-async-control-plane` and is not yet contained by `master` |
+
+The release proves the distributed control-plane contract, authenticated HTTP
+transport, content-addressed policy publication, package integrity, and Python
+publication. It does not establish native multi-node throughput, long-running
+soak behavior, external-engine parity, or live Fireworks lifecycle support.
+
 ## v0.42.6 release evidence
 
 Merged release commit: `ce5fd665a39ed85608f5a1a43a65296c518c049b`.

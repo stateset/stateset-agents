@@ -147,11 +147,169 @@ policy version, counters, and deduplication ledger for restart; restore it with
 `AsyncRolloutCoordinator.from_state_dict(...)` through the same checkpoint
 mechanism used for learner and optimizer state.
 
+## Remote worker control plane
+
+`DistributedRolloutControlPlane` adds the worker lifecycle that a remote
+transport needs without coupling correctness to HTTP, Ray, Kubernetes, or a
+specific GPU provider. A registration returns a renewable `WorkerLease` with a
+generation, deadline, and exact policy assignment. Re-registering the same
+worker fences its prior generation, so a delayed process cannot submit after a
+replacement takes ownership.
+
+```python
+import time
+
+from stateset_agents.training import (
+    DistributedRolloutConfig,
+    DistributedRolloutControlPlane,
+    PolicyArtifact,
+)
+
+control = DistributedRolloutControlPlane(
+    coordinator=coordinator,
+    config=DistributedRolloutConfig(
+        lease_ttl_seconds=30,
+        max_workers=1_024,
+        worker_history_capacity=1_000_000,
+        policy_artifact_capacity=64,
+        require_policy_artifact=True,
+    ),
+)
+
+await control.register_initial_policy_artifact(
+    PolicyArtifact(
+        policy_version=0,
+        uri="s3://my-policy-bucket/run-42/policy-0.safetensors",
+        sha256="<64 lowercase hexadecimal characters>",
+        size_bytes=12_345_678,
+        published_at=time.time(),
+    )
+)
+
+lease = await control.register("run-42/worker-3")
+lease_artifact = await control.policy_artifact(lease.policy_version)
+assert lease_artifact is not None
+
+# A transport should authenticate this call before delegating to the control
+# plane. The heartbeat renews the lease and returns the current assignment.
+lease = await control.heartbeat(lease.worker_id, lease.lease_id)
+sample = await sample_with_policy(lease.policy_version)
+await control.submit(
+    lease.worker_id,
+    lease.lease_id,
+    RolloutRecord(
+        rollout_id=sample.id,
+        policy_version=lease.policy_version,
+        sampler_log_probs=tuple(sample.log_probs),
+        payload=sample.payload,
+        policy_artifact_sha256=lease_artifact.sha256,
+    ),
+)
+```
+
+Admission checks both the active worker generation and the assigned policy
+snapshot before the coordinator applies its usual lag, backpressure, and
+deduplication rules. Both live capacity and retained generation history are
+bounded to prevent identity churn from creating unbounded controller state.
+`health()` returns sorted, lease-ID-free worker status for
+metrics endpoints; `stats()` distinguishes unknown, expired, stale-generation,
+and wrong-policy rejections. `state_dict()` checkpoints leases, generation
+fences, counters, and the coordinator atomically from the control plane's point
+of view. Restore discards leases whose wall-clock deadline passed while the
+controller was unavailable, while preserving their generation fence.
+
+Lease IDs prevent stale process generations from acting as the current worker;
+they are not authentication credentials. Checkpoint files contain active lease
+IDs and must receive the same access controls as optimizer and model state.
+
+## Content-addressed weight synchronization
+
+`PolicyArtifact` binds every policy version to an immutable URI, exact byte
+count, SHA-256 digest, and publication timestamp. Artifact URIs reject embedded
+credentials, query strings, and fragments so signed secrets cannot leak into
+checkpoints, health responses, or evidence bundles. Supported descriptor
+schemes are `https`, `s3`, `gs`, `az`, and absolute `file` URIs.
+
+After an optimizer step, upload and durably commit the weights before calling:
+
+```python
+await control.publish_policy_artifact(
+    PolicyArtifact(
+        policy_version=coordinator.current_policy_version + 1,
+        uri="s3://my-policy-bucket/run-42/policy-1.safetensors",
+        sha256=uploaded_sha256,
+        size_bytes=uploaded_size,
+        published_at=time.time(),
+    )
+)
+```
+
+This records the artifact before advancing the coordinator while holding the
+same condition used by worker heartbeats. A worker cannot observe policy
+version N without also receiving N's artifact descriptor. Failed or cancelled
+advancement rolls back the staged descriptor. Distributed publishers must use
+this method instead of calling `coordinator.advance_policy()` directly.
+
+Workers download the assigned URI, call
+`verify_policy_artifact(local_path, assignment)`, load the weights, and include
+`policy_artifact_sha256` in every `RolloutRecord`. Artifact-required control
+planes reject rollouts that omit the digest or claim different bytes. Artifact
+history is bounded and checkpointed alongside leases and the rollout queue.
+
+## Authenticated HTTP transport
+
+The FastAPI gateway mounts a typed transport at `/api/v1/rollouts`. A training
+process owns the coordinator and attaches its control plane to the application;
+the gateway intentionally returns `503` instead of silently creating a queue
+that is disconnected from the learner.
+
+```python
+from stateset_agents.api import attach_distributed_rollout_control_plane, create_app
+
+app = create_app()
+attach_distributed_rollout_control_plane(app, control)
+```
+
+Configure a dedicated worker credential and keep global authentication enabled
+in deployed environments:
+
+```bash
+export API_REQUIRE_AUTH=true
+export API_KEYS='replace-with-a-long-random-key:rollout_worker,replace-with-long-admin-key:admin'
+export API_MAX_REQUEST_SIZE_MB=10
+uvicorn my_training_gateway:app --host 0.0.0.0 --port 8000
+```
+
+The rollout routes require explicit API-key or JWT authentication even when a
+development gateway sets `API_REQUIRE_AUTH=false`. Roles `rollout_worker`,
+`trainer`, and `admin` may operate workers; only `admin` may inspect fleet-wide
+health and counters. Each external worker ID is namespaced to an opaque
+fingerprint of the authenticated principal, preventing one credential from
+renewing, submitting through, or unregistering another credential's worker.
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/rollouts/workers/{id}/register` | Create or replace a worker generation and fetch its weights |
+| `POST` | `/api/v1/rollouts/workers/{id}/heartbeat` | Renew its lease and fetch exact version, URI, size, and digest |
+| `POST` | `/api/v1/rollouts/workers/{id}/submit` | Submit one typed rollout through all admission gates |
+| `DELETE` | `/api/v1/rollouts/workers/{id}` | Release the current generation |
+| `GET` | `/api/v1/rollouts/workers` | Read lease-ID-free fleet health as an administrator |
+| `GET` | `/api/v1/rollouts/stats` | Read lifecycle and rejection counters as an administrator |
+
+The gateway maps expired leases to `410`, fenced or wrong-policy submissions to
+`409`, capacity exhaustion to `429`, and closed/backpressured queues to `503`.
+The global request-size middleware enforces `API_MAX_REQUEST_SIZE_MB` against
+both declared `Content-Length` and chunked bodies before JSON parsing. Deploying
+TLS and network-level denial-of-service protection remains the responsibility
+of the ingress or service mesh.
+
 ## Evidence boundary
 
-These components establish deterministic in-process scheduling, publication
-ordering, failure propagation, and staleness semantics. They do **not** by
-themselves prove multi-node throughput, remote weight synchronization, crash
-recovery, or learning-quality parity. StateSet will only claim those properties
-after retained multi-node GPU runs exercise the same policy-version and counter
-contract.
+These components establish deterministic scheduling, artifact-before-version
+publication ordering, content-addressed weight assignments, failure
+propagation, staleness semantics, remote-worker fencing, lease expiry, and
+control-plane checkpoint recovery. They do **not** by themselves provide a
+non-HTTP transport or prove measured multi-node throughput, worker download
+latency, process-level crash recovery, or learning-quality parity. StateSet
+will only claim those properties after retained multi-node GPU runs exercise
+the same policy-version, artifact, lease, HTTP, and counter contract.

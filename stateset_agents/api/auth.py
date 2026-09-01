@@ -184,7 +184,9 @@ def _extract_api_key(request: Request) -> str | None:
     return _extract_bearer_token(request)
 
 
-def authenticate_request(request: Request) -> AuthenticatedUser:
+def authenticate_request(
+    request: Request, *, force_auth: bool = False
+) -> AuthenticatedUser:
     """
     Authenticate a request using API key or JWT token.
 
@@ -197,7 +199,7 @@ def authenticate_request(request: Request) -> AuthenticatedUser:
     config = get_config()
 
     # Skip auth if not required
-    if not config.security.require_auth:
+    if not config.security.require_auth and not force_auth:
         return AuthenticatedUser(
             user_id="anonymous",
             roles=["anonymous"],
