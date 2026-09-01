@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 import textwrap
 from pathlib import Path
@@ -169,3 +170,12 @@ def test_tag_publish_tests_and_publishes_version_matched_npm_client() -> None:
     assert "NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}" in workflow
     assert "npm publish --access public\n" in workflow
     assert "npm publish --access public --provenance" in workflow
+
+
+def test_npm_test_runner_limits_to_js_tests() -> None:
+    pkg = json.loads(
+        (ROOT / "npm" / "package.json").read_text(encoding="utf-8")
+    )
+    # Node 24's test runner may execute .ts tests by default; ensure we scope
+    # runtime tests to JS files and rely on tsc for type-checking TS-only tests.
+    assert 'node --test "test/**/*.test.js"' in pkg["scripts"]["test"]
