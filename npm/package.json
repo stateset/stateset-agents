@@ -17,7 +17,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test && npm run typecheck",
+    "test": "node --test \"test/**/*.test.js\" && npm run typecheck",
     "typecheck": "tsc --project tsconfig.json",
     "pack:check": "npm pack --dry-run"
   },
