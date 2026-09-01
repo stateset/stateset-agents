@@ -127,9 +127,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
             for seed in seeds
         )
     ):
-        raise FlagshipError(
-            "manifest.seeds must contain exactly three unique integers"
-        )
+        raise FlagshipError("manifest.seeds must contain exactly three unique integers")
 
     config = raw.get("config")
     if not isinstance(config, Mapping):
