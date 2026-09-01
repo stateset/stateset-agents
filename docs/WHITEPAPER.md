@@ -942,6 +942,12 @@ Reference models with examples and Kubernetes manifests: Qwen 3.5 27B, Qwen 3, Q
 
 Not every module in the framework is at the same level of production-readiness. The table below disambiguates **stable** (used in production deployments, API-stable across point releases), **beta** (functionally complete, API may change, used in non-critical production), and **experimental** (works in tests, not yet recommended for production).
 
+> **Canonical policy:** The table below is a whitepaper snapshot. The current,
+> machine-validated inventory, evidence references, limitations, and measurable
+> promotion gates live in [`COMPONENT_MATURITY.md`](COMPONENT_MATURITY.md) and
+> `contracts/component_maturity_v1.json`. Release readiness rejects drift in
+> that contract.
+
 | Component | Maturity | Notes |
 |-----------|----------|-------|
 | `Agent`, `MultiTurnAgent`, `ToolAgent` | **Stable** | Core abstractions; covered by integration tests |

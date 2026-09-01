@@ -26,6 +26,14 @@ def test_make_test_cov_targets_packaged_module() -> None:
     )
 
 
+def test_make_exposes_release_governance_gate() -> None:
+    makefile_path = Path(__file__).resolve().parents[2] / "Makefile"
+    contents = makefile_path.read_text(encoding="utf-8")
+
+    assert "release-governance: ## Verify maturity evidence" in contents
+    assert "\tpython scripts/check_release_governance.py" in contents
+
+
 def test_make_ci_uses_read_only_checks() -> None:
     makefile_path = Path(__file__).resolve().parents[2] / "Makefile"
     contents = makefile_path.read_text(encoding="utf-8")

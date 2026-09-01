@@ -1165,6 +1165,16 @@ closed. See [`docs/API_COMPATIBILITY.md`](docs/API_COMPATIBILITY.md) for the
 covered surface, deprecation window, and migration process. Experimental and
 opt-in training-lab APIs are intentionally outside this guarantee.
 
+### Component maturity and security response
+
+Every canonical product domain has an evidence-backed Stable, Beta, or
+Experimental designation in the
+[`component maturity policy`](docs/COMPONENT_MATURITY.md). CI rejects missing
+tests, documentation, evidence, limitations, graduation criteria, or invalid
+stable-contract references. The public [`security policy`](SECURITY.md) defines
+private reporting, severity-based response targets, coordinated disclosure,
+and safe harbor; the independent third-party review remains explicitly pending.
+
 ### Dashboard and mobile app (separate repos)
 
 The React + Vite dashboard and Expo mobile app — working clients for the

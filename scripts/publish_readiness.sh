@@ -182,28 +182,32 @@ fi
 
 printf "\n==> Publish readiness checks for stateset-agents\n"
 
-printf "\n[1/9] Running linters...\n"
+printf "\n[1/10] Running linters...\n"
 CURRENT_STEP="linters"
 ruff check .
 black --check .
 isort --check-only .
 
-printf "\n[2/9] Running type checks...\n"
+printf "\n[2/10] Running type checks...\n"
 CURRENT_STEP="type_checks"
 python scripts/check_types.py --all
 
-printf "\n[3/9] Verifying stable v1 API compatibility...\n"
+printf "\n[3/10] Verifying stable v1 API compatibility...\n"
 CURRENT_STEP="api_compatibility"
 "$PYTHON_BIN" scripts/check_api_compatibility.py
 
-printf "\n[4/9] Running tests with coverage gate...\n"
+printf "\n[4/10] Verifying release governance...\n"
+CURRENT_STEP="release_governance"
+"$PYTHON_BIN" scripts/check_release_governance.py
+
+printf "\n[5/10] Running tests with coverage gate...\n"
 CURRENT_STEP="tests_with_coverage"
 # Gate value lives in pyproject.toml's [tool.coverage.report] fail_under and
 # is honored automatically by pytest-cov. Avoid passing --cov-fail-under here
 # so the gate has a single source of truth (see v0.15.3 ratchet correction).
 "$PYTHON_BIN" -m pytest --cov=stateset_agents --cov-report=xml
 
-printf "\n[5/9] Running security scans...\n"
+printf "\n[6/10] Running security scans...\n"
 CURRENT_STEP="security_scans"
 bandit -c pyproject.toml -r stateset_agents -f json -o "$BANDIT_REPORT_PATH" || true
 # --save-json writes the JSON straight to a file; piping `--json` stdout to
@@ -219,22 +223,22 @@ safety check -r requirements-dev-lock.txt --save-json "$SAFETY_REPORT_PATH" \
 # one implementation for both `make security-scan-strict` and this script.
 "$PYTHON_BIN" scripts/check_security_findings.py
 
-printf "\n[6/9] Building package...\n"
+printf "\n[7/10] Building package...\n"
 CURRENT_STEP="build"
 if [ -d dist ]; then
   rm -rf dist
 fi
 "$PYTHON_BIN" -m build --no-isolation
 
-printf "\n[7/9] Verifying built distribution metadata...\n"
+printf "\n[8/10] Verifying built distribution metadata...\n"
 CURRENT_STEP="twine_check"
 "$PYTHON_BIN" -m twine check dist/*
 
-printf "\n[8/9] Running package smoke test...\n"
+printf "\n[9/10] Running package smoke test...\n"
 CURRENT_STEP="smoke_test"
 "$PYTHON_BIN" -c "import stateset_agents, stateset_agents.api; print(stateset_agents.__version__)"
 
-printf "\n[9/9] Verifying working tree is clean...\n"
+printf "\n[10/10] Verifying working tree is clean...\n"
 CURRENT_STEP="working_tree_clean"
 if [ -n "$(git status --porcelain)" ]; then
   echo "Working tree has uncommitted changes. Commit before releasing."

@@ -104,11 +104,13 @@ remains unchecked until a tagged run retains and verifies those attestations.
 ### Stable product surface
 
 - [x] Freeze a v1 public API and publish compatibility/migration guarantees
-- [ ] Graduate beta components using explicit per-component maturity criteria
+- [x] Govern beta graduation with explicit, machine-validated per-component
+  maturity criteria and retained evidence references
 - [ ] Complete standard agent benchmarks for tool use, long horizon, and SWE tasks
 - [x] Add a fail-closed tau-bench/BFCL/SWE-bench Verified evidence gate with
   paired significance, immutable revisions, artifacts, and cost accounting
-- [ ] Establish public security response SLAs and third-party review
+- [x] Establish machine-validated public security response SLAs and safe harbor
+- [ ] Complete and retain an independent third-party security review
 
 ## Leadership scorecard
 
