@@ -62,6 +62,10 @@ jobs:
       run: |
         make benchmark-agent-quality-contract
 
+    - name: Verify flagship benchmark contract
+      run: |
+        make benchmark-flagship-contract
+
     - name: Verify distributed async benchmark contract
       run: |
         make benchmark-distributed-async-contract

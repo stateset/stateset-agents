@@ -278,6 +278,11 @@ coverage, live hardware attempts, and successful inference by provider.
 
 **Current development head (unreleased):**
 
+- **Publication-grade flagship collection.** The 7–9B multi-turn customer
+  support benchmark now runs from one immutable manifest, measures each seed
+  externally, retains failures and policy hashes, binds provider billing, and
+  requires a positive paired 95% confidence bound before publication. The live
+  three-seed GPU execution remains pending.
 - **Machine-enforced maturity and security governance.** Every canonical
   product domain now carries a Stable, Beta, or Experimental designation tied
   to existing tests, documentation, evidence, limitations, graduation
@@ -287,7 +292,20 @@ coverage, live hardware attempts, and successful inference by provider.
   fail-closed validator runs in CI and publish readiness; independent
   third-party security review remains explicitly pending.
 
-**v0.47.2 (latest release; publication triggered by tag):**
+**v0.48.0 (latest release; publication triggered by tag):**
+
+- **Publication-grade flagship evidence pipeline.** A strict, shell-free runner
+  validates immutable 7–9B GSPO manifests, executes exactly three measured
+  seeds, retains failures and hashed artifacts, binds provider billing and
+  hardware, and rejects publication unless improvement, stability, judge
+  agreement, time, and cost gates all pass.
+- **CI-enforced benchmark contract.** The example manifest, Make targets,
+  maturity contract, tests, benchmark documentation, roadmap, and release
+  evidence now share one executable protocol. Dry-run preflight evidence is
+  explicitly non-publishable, while live GPU execution remains an honest open
+  evidence gate.
+
+**v0.47.2:**
 
 - **Executable multi-node evidence collection.** Added a shell-free collector
   with immutable manifests, exact topology checks, independently measured
@@ -1845,7 +1863,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.47.2`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.48.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

@@ -77,6 +77,9 @@ remains unchecked until a tagged run retains and verifies those attestations.
 ### Comparative evidence
 
 - [ ] Complete the 8B, three-seed flagship multi-turn benchmark
+- [x] Add a fail-closed flagship collector with immutable model, dataset, and
+  judge revisions, provider cost ceilings, complete seed accounting, artifact
+  hashes, external timing, judge stability, and paired significance
 - [ ] Run matched StateSet versus TRL, verl, NeMo RL, and OpenRLHF comparisons
 - [x] Complete matched GRPO/GSPO/DAPO/VAPO/GEPO comparisons
 - [x] Publish negative/null runs alongside positive results
@@ -102,7 +105,7 @@ remains unchecked until a tagged run retains and verifies those attestations.
   complete failure accounting, and automatic publication-gate execution
 - [ ] Verify multi-node training on a retained, reproducible configuration
 - [x] Add a measured-evidence gate for worker, network, and controller recovery
-- [x] Execute and retain the complete three-seed fault-injection matrix
+- [ ] Execute and retain the complete live three-seed fault-injection matrix
 - [ ] Report cost per rollout, training step, and measured eval improvement
 - [ ] Add soak tests for long-running remote training and serving sessions
 
@@ -148,8 +151,9 @@ estimated targets in marketing material.
    the matched three-seed roster.
    The orchestrator enforces a required roster and accounts for every attempt
    after errors.
-3. Run the 8B multi-turn flagship and report quality, throughput, memory, and
-   cost per successful held-out episode.
+3. Fill the immutable flagship manifest, run its bounded preflight, then run
+   the complete 7–9B three-seed matrix and report quality, throughput, memory,
+   and provider-derived cost per successful held-out episode.
 4. Complete native and external engine coverage on the versioned backend
    protocol so StateSet environments, rewards, evals, and lineage target TRL,
    verl, NeMo RL, or OpenRLHF execution without semantic drift.

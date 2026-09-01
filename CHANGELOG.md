@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-09-01 — Flagship evidence pipeline
+
+### Added
+
+- Added a fail-closed 7–9B flagship benchmark collector with immutable
+  model/data/judge revisions, a complete three-seed roster, external timing,
+  provider-derived cost ceilings, artifact hashing, paired significance, judge
+  stability, and explicit non-publishable preflight evidence.
+
 ## [0.47.2] - 2026-09-01 — Distributed evidence collection
 
 ### Added

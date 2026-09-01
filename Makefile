@@ -1,4 +1,4 @@
-.PHONY: help install install-dev install-all install-locked lock lock-check dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene api-compatibility release-governance clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-loop benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish benchmark-distributed-async-contract benchmark-distributed-async-run benchmark-distributed-async-gate benchmark-agent-quality-contract benchmark-agent-quality-run benchmark-agent-quality-gate release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
+.PHONY: help install install-dev install-all install-locked lock lock-check dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene api-compatibility release-governance clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-loop benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish benchmark-flagship-contract benchmark-flagship-run flagship-benchmark flagship-benchmark-all benchmark-distributed-async-contract benchmark-distributed-async-run benchmark-distributed-async-gate benchmark-agent-quality-contract benchmark-agent-quality-run benchmark-agent-quality-gate release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
 
 PYTHON_BIN := $(shell command -v python3 >/dev/null 2>&1 && echo python3 || command -v python)
 PACKAGE_VERSION := $(shell $(PYTHON_BIN) -c "import stateset_agents; print(stateset_agents.__version__)")
@@ -310,6 +310,17 @@ benchmark-plot: ## Generate PNG figures + text_plots.md from summary.csv
 		--results-dir benchmark_results/whitepaper_v1
 
 benchmark-publish: benchmark-aggregate benchmark-plot ## Produce summary.md + figures in one shot
+
+benchmark-flagship-contract: ## Validate the 7–9B flagship collection contract without provisioning
+	$(PYTHON_BIN) benchmarks/run_flagship_matrix.py \
+		benchmarks/flagship_manifest.example.json \
+		--output-dir /tmp/stateset-flagship-contract --dry-run
+
+benchmark-flagship-run: ## Execute the strict three-seed flagship matrix (MANIFEST and OUTPUT_DIR required)
+	@test -n "$(MANIFEST)" || { echo "Usage: make $@ MANIFEST=path OUTPUT_DIR=path [EXTRA_ARGS='...']" >&2; exit 2; }
+	@test -n "$(OUTPUT_DIR)" || { echo "Usage: make $@ MANIFEST=path OUTPUT_DIR=path [EXTRA_ARGS='...']" >&2; exit 2; }
+	$(PYTHON_BIN) benchmarks/run_flagship_matrix.py $(MANIFEST) \
+		--output-dir $(OUTPUT_DIR) $(EXTRA_ARGS)
 
 benchmark-distributed-async-contract: ## Validate the multi-node async collection contract without provisioning
 	$(PYTHON_BIN) benchmarks/run_distributed_async_matrix.py \
@@ -780,14 +791,6 @@ clean: ## Remove build artifacts and caches
 	find . -name "__pycache__" -type d -prune -exec rm -rf {} +
 	find . -name "*.py[cod]" -delete
 
-flagship-benchmark: ## Run one flagship benchmark seed (GPU; SEED=42 default) — see benchmarks/FLAGSHIP.md
-	python scripts/run_phase0_benchmark.py --trainer gspo --task customer_support \
-		--model $${FLAGSHIP_MODEL:-Qwen/Qwen3.5-8B-Instruct} \
-		--num-train-examples 500 --num-eval-examples 200 \
-		--seed $${SEED:-42} --train --vllm \
-		--output benchmark_results/flagship_v1/gspo_seed$${SEED:-42}_customer_support.json
+flagship-benchmark: benchmark-flagship-run ## Compatibility alias for the strict flagship runner
 
-flagship-benchmark-all: ## Run all three flagship seeds sequentially (GPU)
-	$(MAKE) flagship-benchmark SEED=42
-	$(MAKE) flagship-benchmark SEED=43
-	$(MAKE) flagship-benchmark SEED=44
+flagship-benchmark-all: benchmark-flagship-run ## Compatibility alias; the manifest always declares the full roster
