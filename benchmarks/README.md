@@ -125,7 +125,15 @@ python benchmarks/scaling_comparison.py EVIDENCE \
 # Worker, controller, and network recovery evidence
 python benchmarks/reliability_evidence.py EVIDENCE --output REPORT.json
 
-# Two-node minimum, three-seed async fault matrix plus 12-hour soak
+# Validate the multi-node collection contract without provisioning
+make benchmark-distributed-async-contract
+
+# Execute the two-node minimum, three-seed fault matrix plus 12-hour soak
+make benchmark-distributed-async-run \
+  MANIFEST=benchmarks/distributed_async_manifest.json \
+  OUTPUT_DIR=benchmark_results/distributed_async
+
+# Revalidate retained evidence independently
 make benchmark-distributed-async-gate \
   INPUTS=benchmark_results/distributed_async/evidence \
   OUTPUT=benchmark_results/distributed_async/report.json

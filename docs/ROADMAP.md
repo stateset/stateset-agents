@@ -55,7 +55,7 @@ evaluation, and lineage contracts.
 
 ### Release and provider completion
 
-- [ ] Publish the current release to PyPI through a working trusted publisher
+- [x] Publish the current release to PyPI through the release workflow
 - [ ] Live-verify Fireworks training, artifact retrieval, serving, and cleanup
 - [ ] Keep tag-triggered River, RunPod, and Fireworks canaries green
 - [x] Publish signed provenance for Python distributions
@@ -97,6 +97,9 @@ remains unchecked until a tagged run retains and verifies those attestations.
 - [x] Add a fail-closed multi-node async evidence contract covering a 12-hour
   soak, fault recovery, policy lag, weight-sync tail latency, integrity,
   throughput, cleanup, and cost per accepted rollout
+- [x] Add a shell-free multi-node collection runner with immutable manifests,
+  external wall-time verification, rotated fault order, retained artifacts,
+  complete failure accounting, and automatic publication-gate execution
 - [ ] Verify multi-node training on a retained, reproducible configuration
 - [x] Add a measured-evidence gate for worker, network, and controller recovery
 - [x] Execute and retain the complete three-seed fault-injection matrix
@@ -154,8 +157,8 @@ estimated targets in marketing material.
    staleness bounds, checkpoint recovery, and a long-running soak.
 6. Add reproducible tool-use and long-horizon agent suites (starting with
    τ³-bench/BFCL V4 and a SWE task) and obtain an independent reproduction.
-7. Configure PyPI trusted publishing and rerun the release workflow without
-   its scoped-token fallback.
+7. Remove the scoped PyPI-token fallback after the trusted-publisher identity
+   is independently verified.
 
 ## Contribution policy
 

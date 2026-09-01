@@ -4,6 +4,27 @@ This page records what was actually exercised for the current release line.
 Registration, authentication, hardware allocation, training, inference, and
 publication are separate claims.
 
+## v0.47.1 release evidence
+
+Tagged release commit: `a07c76dc376572a4e3f813bf2efb118c9034f49c`.
+Workflow run: [33538819116](https://github.com/stateset/stateset-agents/actions/runs/33538819116).
+
+| Surface | Result | Evidence |
+|---|---|---|
+| Pull-request matrices | Passed | Modal PR #56 and release PR #57 each passed all 16 Linux, Windows, security, package, docs, Helm, benchmark, and governance checks |
+| Local verification | Passed | 5,142 passed, 11 skipped; 326-file type check, Ruff, Black, isort, repository hygiene, and focused Modal tests passed |
+| Publish readiness | Passed | Mandatory gate, build, Twine metadata, isolated wheel install, and Python distribution attestation completed |
+| Python distribution | Passed | `stateset-agents==0.47.1` published to PyPI through the release workflow |
+| GitHub Release and docs | Passed | Verified distributions were attached to the GitHub Release and documentation deployed |
+| npm distribution | Failed closed | Node 24 discovered and executed the compile-only `test/types.test.ts` fixture via bare `node --test`, causing a network request; publication never ran. Development head now selects the JavaScript runtime suite explicitly and retains a separate TypeScript compiler gate |
+| Container distribution | Skipped | The successful job explicitly reported missing Docker Hub credentials; checkout, build, push, SBOM, and provenance steps were skipped |
+| Modal transport | Unit-verified, live pending | Dataset upload, isolated Volume paths, output commit, secret/region wiring, safe retrieval, cleanup, and cross-platform behavior passed; no paid live GPU canary was run |
+
+The release closes Python publication and the Modal client-side transport
+implementation. It does not establish live Modal execution, container
+publication, npm publication, multi-node scale, or standard agent-benchmark
+leadership.
+
 ## v0.47.0 release evidence
 
 Tagged release commit: `d99b4e9ed3d93769d6d61518a3f14d01b32d3495`.

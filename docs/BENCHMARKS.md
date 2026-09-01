@@ -44,6 +44,26 @@ provider-derived cost per accepted rollout. The validator rejects synthetic
 documents and configuration/topology drift; implementing the contract is not
 itself evidence that the live matrix passed.
 
+Collection is executable through `benchmarks/run_distributed_async_matrix.py`.
+Copy `benchmarks/distributed_async_manifest.example.json`, replace the provider
+driver and exact topology values, and commit the harness before execution. The
+runner invokes the driver without a shell, rotates scenario order across seeds,
+measures wall time outside the provider adapter, hashes retained artifacts,
+accounts for every failed attempt, and invokes the publication gate only after
+the complete roster succeeds:
+
+```bash
+make benchmark-distributed-async-contract
+make benchmark-distributed-async-run \
+  MANIFEST=benchmarks/distributed_async_manifest.json \
+  OUTPUT_DIR=benchmark_results/distributed_async
+```
+
+Use `EXTRA_ARGS=--preflight` for one short seed across all fault scenarios.
+Preflight evidence is marked non-measured and cannot produce a passing report.
+The measured runner rejects dirty harness worktrees and rejects a reported
+scenario duration that exceeds its independently measured wall time.
+
 Standard agent capability evidence is gated by
 `benchmarks/agent_quality_evidence.py`. It requires matched three-seed
 base-versus-trained evaluations on τ³-bench, BFCL V4, and SWE-bench Verified,
