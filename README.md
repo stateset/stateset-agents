@@ -282,7 +282,13 @@ coverage, live hardware attempts, and successful inference by provider.
   fail-closed validator runs in CI and publish readiness; independent
   third-party security review remains explicitly pending.
 
-**v0.47.0 (latest release; publication triggered by tag):**
+**v0.47.1 (latest release; publication triggered by tag):**
+
+- Completed Modal dataset transport through isolated per-job Volume input and output paths with explicit output commits.
+- Added current Modal GPU and multi-GPU resource wiring, named Secret references, regional placement, safe artifact extraction, and failure-artifact recovery.
+- Strengthened the approval-gated live Modal canary and added cross-platform behavioral coverage for container mounts and artifact paths.
+
+**v0.47.0:**
 
 - **Restartable distributed rollout control plane.** Remote workers now share
   transport-neutral registration, renewable leases, generation fencing,
@@ -1822,7 +1828,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.47.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.47.1`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

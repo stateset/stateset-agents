@@ -1,6 +1,6 @@
 {
   "name": "@stateset/agents",
-  "version": "0.47.0",
+  "version": "0.47.1",
   "description": "Typed Node.js client for the StateSet Agents API",
   "type": "module",
   "main": "./src/index.js",
