@@ -179,7 +179,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
             f"suite roster must be exactly {sorted(REQUIRED_SUITES)}"
         )
     if "official_suite_pipelines" in config:
-        contract_dir = Path("/tmp/stateset-agent-quality-contract")
+        contract_dir = path.parent.resolve() / ".agent-quality-contract"
         try:
             for suite in REQUIRED_SUITES:
                 load_pipeline_config(config, suite, contract_dir / suite)
