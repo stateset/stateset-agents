@@ -142,9 +142,7 @@ class FakeFunction:
                 for key, item in value.items()
             }
         if isinstance(value, list):
-            return [
-                FakeFunction._rewrite_paths(item, source, target) for item in value
-            ]
+            return [FakeFunction._rewrite_paths(item, source, target) for item in value]
         if isinstance(value, tuple):
             return tuple(
                 FakeFunction._rewrite_paths(item, source, target) for item in value
