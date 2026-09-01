@@ -68,7 +68,7 @@ def executor(sdk, monkeypatch, tmp_path):
     from stateset_agents.remote import modal as modal_mod
 
     monkeypatch.setattr(modal_mod, "MODAL_AVAILABLE", True)
-    return modal_mod.ModalExecutor(remote_mount=str(tmp_path / "mnt"))
+    return modal_mod.ModalExecutor(remote_mount="/outputs-test")
 
 
 @pytest.fixture
@@ -174,7 +174,7 @@ class TestResourceWiring:
         self, executor, sdk, dataset, tmp_path
     ):
         configured = type(executor)(
-            remote_mount=str(tmp_path / "mnt"),
+            remote_mount="/outputs-test",
             secret_names=["huggingface", "weights-and-biases"],
             region="us-east",
         )
@@ -202,7 +202,7 @@ class TestResourceWiring:
         )
         monkeypatch.setenv("STATESET_MODAL_REGION", "eu-west")
 
-        configured = type(executor)(remote_mount=str(tmp_path / "mnt"))
+        configured = type(executor)(remote_mount="/outputs-test")
 
         assert configured.secret_names == ("huggingface", "weights-and-biases")
         assert configured.region == "eu-west"

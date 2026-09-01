@@ -131,20 +131,47 @@ class FakeFunction:
     kwargs: dict[str, Any]
     app: FakeApp
 
+    @staticmethod
+    def _rewrite_paths(value: Any, source: str, target: str) -> Any:
+        """Translate container paths to the fake host mount and back."""
+        if isinstance(value, str):
+            return value.replace(source, target)
+        if isinstance(value, dict):
+            return {
+                key: FakeFunction._rewrite_paths(item, source, target)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [
+                FakeFunction._rewrite_paths(item, source, target) for item in value
+            ]
+        if isinstance(value, tuple):
+            return tuple(
+                FakeFunction._rewrite_paths(item, source, target) for item in value
+            )
+        return value
+
     def remote(self, *args: Any, **kwargs: Any) -> Any:
         if not self.app.running:
             raise RuntimeError("function called outside of app.run()")
         self.app.calls.append((args, kwargs))
-        # A mounted volume *is* the directory the container writes to. Bind
-        # the volume's storage to its mount path so a write at the mount is
-        # readable through the volume afterwards, as it is on Modal.
+        translated_args = args
+        translated_kwargs = kwargs
+        translations: list[tuple[str, str]] = []
+        # Container mounts are POSIX paths even when this fake runs on a
+        # Windows host. Translate them to the temporary host-backed Volume
+        # while executing, then translate returned paths and logs back.
         for mount, volume in (self.kwargs.get("volumes") or {}).items():
-            mounted = Path(mount)
-            if mounted != volume.root:
-                mounted.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(volume.root, mounted, dirs_exist_ok=True)
-                volume.root = mounted
-        return self.fn(*args, **kwargs)
+            host_mount = str(volume.root)
+            translated_args = self._rewrite_paths(translated_args, mount, host_mount)
+            translated_kwargs = self._rewrite_paths(
+                translated_kwargs, mount, host_mount
+            )
+            translations.append((host_mount, mount))
+        result = self.fn(*translated_args, **translated_kwargs)
+        for host_mount, mount in translations:
+            result = self._rewrite_paths(result, host_mount, mount)
+        return result
 
     def spawn(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError("spawn is not modelled")
