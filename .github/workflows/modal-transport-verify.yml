@@ -49,7 +49,8 @@ jobs:
           PY
           stateset-agents train-remote --provider modal \
             --dataset modal-canary.jsonl --base-model Qwen/Qwen3.5-0.8B \
-            --gpu A10G --timeout 600 --dry-run 2>&1 | tee modal-transport.log
+            --gpu A10 --timeout 600 --dry-run 2>&1 | tee modal-transport.log
+          grep -F "Loaded 1 examples from /outputs/inputs/" modal-transport.log
 
       - name: Verify the executor left no new persistent Volume
         if: always()

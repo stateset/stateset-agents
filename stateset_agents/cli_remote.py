@@ -622,7 +622,7 @@ def train_remote(
         None,
         "--gpu",
         help="GPU to request, in the provider's own vocabulary (Modal: "
-        '"A10G"; RunPod: "NVIDIA RTX A4000"). Defaults to the provider\'s '
+        '"A10"; RunPod: "NVIDIA RTX A4000"). Defaults to the provider\'s '
         "own default.",
     ),
     gpu_count: int | None = typer.Option(

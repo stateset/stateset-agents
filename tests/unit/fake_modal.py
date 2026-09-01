@@ -8,8 +8,9 @@ kwargs. Asserting on recorded kwargs is what let an earlier version of
 
 It models only the surface ``ModalExecutor`` uses, per Modal's reference docs:
 ``Image.debian_slim().pip_install()``, ``Volume.from_name(create_if_missing=)``
-with ``reload``/``iterdir``/``read_file``, ``App.function(...)`` as a
-decorator, ``app.run()`` as a context manager, and ``Function.remote()``.
+with batched upload/commit/reload/list/read, named Secrets,
+``App.function(...)`` as a decorator, ``app.run()`` as a context manager, and
+``Function.remote()``.
 """
 
 from __future__ import annotations
@@ -63,8 +64,10 @@ class FakeVolume:
     def __init__(self, name: str, root: Path) -> None:
         self.name = name
         self.root = root
+        self.storage_root = root
         self.root.mkdir(parents=True, exist_ok=True)
         self.reload_count = 0
+        self.commit_count = 0
 
     @classmethod
     def bind(cls, root: Path) -> Callable[..., FakeVolume]:
@@ -90,7 +93,11 @@ class FakeVolume:
         self.reload_count += 1
 
     def commit(self) -> None:
-        pass
+        self.commit_count += 1
+
+    @contextlib.contextmanager
+    def batch_upload(self) -> Iterator[FakeVolumeUpload]:
+        yield FakeVolumeUpload(self)
 
     def iterdir(self, path: str, *, recursive: bool = True) -> Iterator[FakeEntry]:
         base = self.root / path.lstrip("/")
@@ -102,6 +109,18 @@ class FakeVolume:
 
     def read_file(self, path: str) -> Iterator[bytes]:
         yield (self.root / path).read_bytes()
+
+
+@dataclass
+class FakeVolumeUpload:
+    """Write local files into a fake Volume using Modal's upload surface."""
+
+    volume: FakeVolume
+
+    def put_file(self, local_path: str, remote_path: str) -> None:
+        target = self.volume.root / remote_path.lstrip("/")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(local_path, target)
 
 
 @dataclass
@@ -120,8 +139,11 @@ class FakeFunction:
         # the volume's storage to its mount path so a write at the mount is
         # readable through the volume afterwards, as it is on Modal.
         for mount, volume in (self.kwargs.get("volumes") or {}).items():
-            volume.root = Path(mount)
-            volume.root.mkdir(parents=True, exist_ok=True)
+            mounted = Path(mount)
+            if mounted != volume.root:
+                mounted.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(volume.root, mounted, dirs_exist_ok=True)
+                volume.root = mounted
         return self.fn(*args, **kwargs)
 
     def spawn(self, *args: Any, **kwargs: Any) -> Any:
@@ -168,12 +190,20 @@ def build(volume_root: Path) -> Any:
                 return
             raise KeyError(name)
         shutil.rmtree(volume.root, ignore_errors=True)
+        if volume.storage_root != volume.root:
+            shutil.rmtree(volume.storage_root, ignore_errors=True)
         FakeVolume.deleted_names.append(name)
 
     module.Volume = types.SimpleNamespace(
         from_name=FakeVolume.bind(volume_root),
         objects=types.SimpleNamespace(delete=delete),
     )
+
+    @dataclass(frozen=True)
+    class FakeSecret:
+        name: str
+
+    module.Secret = types.SimpleNamespace(from_name=lambda name: FakeSecret(name))
 
     apps: list[FakeApp] = []
 
