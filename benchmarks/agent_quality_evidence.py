@@ -96,9 +96,7 @@ def validate_run(data: Mapping[str, Any], source: Path) -> dict[str, Any]:
     tasks = _integer(data, "tasks", source, minimum=1)
     successful = _integer(data, "successful_episodes", source)
     if successful > tasks:
-        raise AgentQualityEvidenceError(
-            f"{source}: successful_episodes exceeds tasks"
-        )
+        raise AgentQualityEvidenceError(f"{source}: successful_episodes exceeds tasks")
     baseline = _number(data, "baseline_score", source)
     trained = _number(data, "trained_score", source)
     if not 0.0 <= baseline <= 1.0 or not 0.0 <= trained <= 1.0:

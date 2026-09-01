@@ -187,9 +187,7 @@ def validate_run(data: Mapping[str, Any], source: Path) -> dict[str, Any]:
     _nonempty(cost, "source", source)
     total_cost = _number(cost, "total", source)
     per_rollout = _number(cost, "per_accepted_rollout", source)
-    if not math.isclose(
-        per_rollout, total_cost / accepted, rel_tol=0.02, abs_tol=1e-9
-    ):
+    if not math.isclose(per_rollout, total_cost / accepted, rel_tol=0.02, abs_tol=1e-9):
         raise DistributedAsyncEvidenceError(
             f"{source}: per-rollout cost does not match total / accepted"
         )
@@ -319,8 +317,7 @@ def summarize(runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "total_cost_usd": total_cost,
         "cost_per_accepted_rollout_usd": total_cost / total_rollouts,
         "max_weight_sync_p95_ms": max(
-            float(run["metrics"]["weight_sync_latency_ms"]["p95"])
-            for run in runs
+            float(run["metrics"]["weight_sync_latency_ms"]["p95"]) for run in runs
         ),
         "max_observed_policy_lag": max(
             int(run["metrics"]["max_observed_policy_lag"]) for run in runs
