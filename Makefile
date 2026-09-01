@@ -322,13 +322,13 @@ benchmark-agent-quality-contract: ## Validate the standard-agent execution manif
 		benchmarks/agent_quality_manifest.example.json \
 		--output-dir /tmp/stateset-agent-quality-contract --dry-run
 
-benchmark-agent-quality-run: ## Execute paired tau-bench/BFCL/SWE matrix (MANIFEST and OUTPUT_DIR required)
+benchmark-agent-quality-run: ## Execute paired Tau3/BFCL V4/SWE matrix (MANIFEST and OUTPUT_DIR required)
 	@test -n "$(MANIFEST)" || { echo "Usage: make $@ MANIFEST=path OUTPUT_DIR=path [EXTRA_ARGS='...']" >&2; exit 2; }
 	@test -n "$(OUTPUT_DIR)" || { echo "Usage: make $@ MANIFEST=path OUTPUT_DIR=path [EXTRA_ARGS='...']" >&2; exit 2; }
 	$(PYTHON_BIN) benchmarks/run_agent_quality_matrix.py $(MANIFEST) \
 		--output-dir $(OUTPUT_DIR) $(EXTRA_ARGS)
 
-benchmark-agent-quality-gate: ## Validate tau-bench/BFCL/SWE evidence (INPUTS required; optional OUTPUT)
+benchmark-agent-quality-gate: ## Validate Tau3/BFCL V4/SWE evidence (INPUTS required; optional OUTPUT)
 	@test -n "$(INPUTS)" || { echo "Usage: make $@ INPUTS='path ...' [OUTPUT=report.json]" >&2; exit 2; }
 	$(PYTHON_BIN) benchmarks/agent_quality_evidence.py $(INPUTS) $(if $(OUTPUT),--output $(OUTPUT),)
 	@echo "Whitepaper-ready artifacts in benchmark_results/whitepaper_v1/"

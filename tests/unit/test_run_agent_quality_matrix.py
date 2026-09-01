@@ -41,7 +41,7 @@ def _manifest() -> dict[str, Any]:
     return {
         "schema_version": 1,
         "kind": "stateset-agent-quality-manifest",
-        "protocol": "stateset-standard-agent-quality-v1",
+        "protocol": "stateset-standard-agent-quality-v2",
         "framework_version": "0.47.0",
         "baseline_policy": {"model": "example/base", "revision": "a" * 40},
         "trained_policy": {
@@ -59,7 +59,7 @@ def _manifest() -> dict[str, Any]:
                 "command": _command(),
             }
             for index, name in enumerate(
-                ("tau-bench", "bfcl", "swe-bench-verified"), start=1
+                ("tau3-bench", "bfcl-v4", "swe-bench-verified"), start=1
             )
         ],
     }
@@ -205,7 +205,7 @@ def test_run_suite_retains_failure_account(
             harness_commit="f" * 40,
             timeout_seconds=30,
         )
-    failure = tmp_path / "output/runs/tau-bench-seed42/failure.json"
+    failure = tmp_path / "output/runs/tau3-bench-seed42/failure.json"
     assert json.loads(failure.read_text(encoding="utf-8"))["returncode"] == 7
 
 

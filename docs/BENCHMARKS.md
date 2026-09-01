@@ -46,7 +46,7 @@ itself evidence that the live matrix passed.
 
 Standard agent capability evidence is gated by
 `benchmarks/agent_quality_evidence.py`. It requires matched three-seed
-base-versus-trained evaluations on tau-bench, BFCL, and SWE-bench Verified,
+base-versus-trained evaluations on τ³-bench, BFCL V4, and SWE-bench Verified,
 immutable suite/model/harness revisions, identical evaluation configuration,
 retained artifacts, task and cost accounting, at least `+0.03` mean improvement
 per suite, and a paired 95% confidence bound above zero. Until those measured

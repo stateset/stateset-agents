@@ -107,9 +107,9 @@ remains unchecked until a tagged run retains and verifies those attestations.
 - [x] Govern beta graduation with explicit, machine-validated per-component
   maturity criteria and retained evidence references
 - [ ] Complete standard agent benchmarks for tool use, long horizon, and SWE tasks
-- [x] Add a fail-closed tau-bench/BFCL/SWE-bench Verified evidence gate with
+- [x] Add a fail-closed τ³-bench/BFCL V4/SWE-bench Verified evidence gate with
   paired significance, immutable revisions, artifacts, and cost accounting
-- [x] Add an executable, manifest-driven tau-bench/BFCL/SWE collection runner
+- [x] Add an executable, manifest-driven τ³-bench/BFCL V4/SWE collection runner
   that binds both policies, the trained artifact, paired task IDs, raw outputs,
   failures, and cost provenance before invoking the evidence gate
 - [x] Add a shell-free paired upstream-harness adapter that verifies pinned,
@@ -151,7 +151,7 @@ estimated targets in marketing material.
 5. Prove multi-node asynchronous rollout/training, weight synchronization,
    staleness bounds, checkpoint recovery, and a long-running soak.
 6. Add reproducible tool-use and long-horizon agent suites (starting with
-   tau-bench/BFCL and a SWE task) and obtain an independent reproduction.
+   τ³-bench/BFCL V4 and a SWE task) and obtain an independent reproduction.
 7. Configure PyPI trusted publishing and rerun the release workflow without
    its scoped-token fallback.
 

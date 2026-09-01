@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-REQUIRED_SUITES = ("tau-bench", "bfcl", "swe-bench-verified")
+REQUIRED_SUITES = ("tau3-bench", "bfcl-v4", "swe-bench-verified")
 COST_SOURCES = frozenset(
     {"provider-api", "provider-invoice", "local-meter", "sponsored"}
 )

@@ -243,7 +243,7 @@ def run_policy(
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     """Execute the policy pair and return the neutral matrix-runner payload."""
-    if args.suite not in {"tau-bench", "bfcl", "swe-bench-verified"}:
+    if args.suite not in {"tau3-bench", "bfcl-v4", "swe-bench-verified"}:
         raise PairedHarnessError(f"unsupported suite: {args.suite}")
     try:
         evaluation_config = json.loads(args.evaluation_config_json)
@@ -371,7 +371,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.adapter_command == "validate":
             config_path = Path(args.harness_config).resolve()
-            for suite in ("tau-bench", "bfcl", "swe-bench-verified"):
+            for suite in ("tau3-bench", "bfcl-v4", "swe-bench-verified"):
                 load_suite_config(config_path, suite)
             print("validated paired harness commands for 3 suites")
             return 0

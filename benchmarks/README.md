@@ -130,7 +130,7 @@ make benchmark-distributed-async-gate \
   INPUTS=benchmark_results/distributed_async/evidence \
   OUTPUT=benchmark_results/distributed_async/report.json
 
-# Three-seed tau-bench, BFCL, and SWE-bench Verified quality matrix
+# Three-seed τ³-bench, BFCL V4, and SWE-bench Verified quality matrix
 make benchmark-agent-quality-contract
 make benchmark-agent-quality-run \
   MANIFEST=benchmarks/agent_quality_manifest.json \
@@ -156,6 +156,29 @@ and measured cost provenance. It accounts for every failed attempt before the
 publication gate evaluates the complete matrix. Schemas and collection guidance
 live under `benchmark_results/`. These tools fail closed on missing seeds,
 mismatched protocols, estimated results, and incomplete provenance.
+
+Suite drivers can normalize the official artifacts without trusting upstream
+aggregate scores:
+
+```bash
+# τ³-bench uses its embedded per-simulation agent_cost by default.
+python benchmarks/adapters/official_result_normalizer.py \
+  --suite tau3-bench --results TAU_RESULTS --output tasks.jsonl
+
+# BFCL V4 joins generated IDs to official incorrect-case score files.
+python benchmarks/adapters/official_result_normalizer.py \
+  --suite bfcl-v4 --results BFCL_RESULTS --scores BFCL_SCORES \
+  --cost-records costs.jsonl --output tasks.jsonl
+
+# SWE-bench requires the complete official schema-v2 run report.
+python benchmarks/adapters/official_result_normalizer.py \
+  --suite swe-bench-verified --results SWE_RESULTS \
+  --cost-records costs.jsonl --output tasks.jsonl
+```
+
+`costs.jsonl` must contain exactly one `task_id` and measured `cost_usd` for
+every evaluated task. Partial SWE-bench reports, BFCL category-count drift,
+duplicate trials, missing costs, and extra cost IDs are rejected.
 
 ## Non-comparative tests
 

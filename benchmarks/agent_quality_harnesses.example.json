@@ -2,13 +2,13 @@
   "schema_version": 1,
   "kind": "stateset-paired-agent-harness-config",
   "suites": {
-    "tau-bench": {
-      "repository_path": "REPLACE_WITH_PINNED_TAU_BENCH_CHECKOUT",
+    "tau3-bench": {
+      "repository_path": "REPLACE_WITH_PINNED_TAU3_BENCH_CHECKOUT",
       "timeout_seconds": 14400,
       "cost_source": "provider-api",
       "command": [
         "python",
-        "REPLACE_WITH_TAU_BENCH_DRIVER.py",
+        "REPLACE_WITH_TAU3_BENCH_DRIVER.py",
         "--policy", "{policy}",
         "--model", "{model}",
         "--model-revision", "{model_revision}",
@@ -21,7 +21,7 @@
         "--artifact-dir", "{artifact_dir}"
       ]
     },
-    "bfcl": {
+    "bfcl-v4": {
       "repository_path": "REPLACE_WITH_PINNED_BFCL_CHECKOUT",
       "timeout_seconds": 14400,
       "cost_source": "provider-api",

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "kind": "stateset-agent-quality-manifest",
-  "protocol": "stateset-standard-agent-quality-v1",
+  "protocol": "stateset-standard-agent-quality-v2",
   "framework_version": "0.47.0",
   "baseline_policy": {
     "model": "REPLACE_WITH_BASE_MODEL",
@@ -21,7 +21,7 @@
   "seeds": [42, 1337, 2026],
   "suites": [
     {
-      "name": "tau-bench",
+      "name": "tau3-bench",
       "revision": "0000000000000000000000000000000000000000",
       "split": "test",
       "command": [
@@ -57,7 +57,7 @@
       ]
     },
     {
-      "name": "bfcl",
+      "name": "bfcl-v4",
       "revision": "0000000000000000000000000000000000000000",
       "split": "test",
       "command": [

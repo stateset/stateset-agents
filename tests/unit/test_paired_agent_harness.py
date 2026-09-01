@@ -55,7 +55,7 @@ def _write_config(path: Path, repository: Path) -> None:
                 "schema_version": 1,
                 "kind": "stateset-paired-agent-harness-config",
                 "suites": {
-                    "tau-bench": {
+                    "tau3-bench": {
                         "repository_path": str(repository),
                         "timeout_seconds": 30,
                         "cost_source": "provider-api",
@@ -77,7 +77,7 @@ def _args(config: Path, output: Path) -> Any:
             "--seed",
             "42",
             "--suite",
-            "tau-bench",
+            "tau3-bench",
             "--suite-revision",
             "a" * 40,
             "--split",
@@ -105,13 +105,13 @@ def _args(config: Path, output: Path) -> Any:
 def test_config_requires_complete_shell_free_command(tmp_path: Path) -> None:
     config = tmp_path / "config.json"
     _write_config(config, tmp_path)
-    assert load_suite_config(config, "tau-bench")["timeout_seconds"] == 30
+    assert load_suite_config(config, "tau3-bench")["timeout_seconds"] == 30
 
     payload = json.loads(config.read_text(encoding="utf-8"))
-    payload["suites"]["tau-bench"]["command"].remove("{model_revision}")
+    payload["suites"]["tau3-bench"]["command"].remove("{model_revision}")
     config.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(PairedHarnessError, match="missing placeholders"):
-        load_suite_config(config, "tau-bench")
+        load_suite_config(config, "tau3-bench")
 
 
 def test_validate_command_checks_complete_suite_roster(tmp_path: Path) -> None:

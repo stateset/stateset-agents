@@ -91,7 +91,7 @@ gates. Native multi-node GPU evidence is intentionally still pending.
   [security response](contracts/security_response_v1.json) contracts. CI and
   package publication fail closed if evidence, limitations, graduation
   criteria, stable API references, or response targets drift.
-- **Standard agent benchmarks:** a manifest-driven tau-bench, BFCL, and
+- **Standard agent benchmarks:** a manifest-driven τ³-bench, BFCL V4, and
   SWE-bench Verified runner now executes paired base-versus-trained matrices,
   verifies clean pinned upstream checkouts, derives scores from identical
   ordered per-task records, binds both policy revisions and the trained artifact
