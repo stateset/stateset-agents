@@ -1,4 +1,4 @@
-.PHONY: help install install-dev install-all install-locked lock lock-check dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-loop benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
+.PHONY: help install install-dev install-all install-locked lock lock-check dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-loop benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish benchmark-distributed-async-gate benchmark-agent-quality-gate release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
 
 PYTHON_BIN := $(shell command -v python3 >/dev/null 2>&1 && echo python3 || command -v python)
 PACKAGE_VERSION := $(shell $(PYTHON_BIN) -c "import stateset_agents; print(stateset_agents.__version__)")
@@ -304,6 +304,14 @@ benchmark-plot: ## Generate PNG figures + text_plots.md from summary.csv
 		--results-dir benchmark_results/whitepaper_v1
 
 benchmark-publish: benchmark-aggregate benchmark-plot ## Produce summary.md + figures in one shot
+
+benchmark-distributed-async-gate: ## Validate multi-node async evidence (INPUTS required; optional OUTPUT)
+	@test -n "$(INPUTS)" || { echo "Usage: make $@ INPUTS='path ...' [OUTPUT=report.json]" >&2; exit 2; }
+	$(PYTHON_BIN) benchmarks/distributed_async_evidence.py $(INPUTS) $(if $(OUTPUT),--output $(OUTPUT),)
+
+benchmark-agent-quality-gate: ## Validate tau-bench/BFCL/SWE evidence (INPUTS required; optional OUTPUT)
+	@test -n "$(INPUTS)" || { echo "Usage: make $@ INPUTS='path ...' [OUTPUT=report.json]" >&2; exit 2; }
+	$(PYTHON_BIN) benchmarks/agent_quality_evidence.py $(INPUTS) $(if $(OUTPUT),--output $(OUTPUT),)
 	@echo "Whitepaper-ready artifacts in benchmark_results/whitepaper_v1/"
 	@ls benchmark_results/whitepaper_v1/ 2>/dev/null || true
 

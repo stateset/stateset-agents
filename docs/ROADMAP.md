@@ -1,6 +1,6 @@
 # StateSet Agents roadmap
 
-Current release line: **v0.43.x (beta)**.
+Current release line: **v0.47.x (beta)**.
 
 The roadmap is evidence-driven. A checked box means the behavior exists and
 has retained tests or live evidence; an unchecked box is not a product claim.
@@ -58,7 +58,8 @@ evaluation, and lineage contracts.
 - [ ] Publish the current release to PyPI through a working trusted publisher
 - [ ] Live-verify Fireworks training, artifact retrieval, serving, and cleanup
 - [ ] Keep tag-triggered River, RunPod, and Fireworks canaries green
-- [ ] Publish signed/SLSA provenance for Python and container artifacts
+- [x] Publish signed provenance for Python distributions
+- [ ] Publish provenance and SBOMs for container artifacts
 - [x] Publish a machine-readable model/provider tier and certification matrix
 - [x] Add non-billable RunPod resource planning with measured-vs-estimated labels
 - [x] Require an explicit spend ceiling before estimated frontier plans execute
@@ -91,6 +92,9 @@ remains unchecked until a tagged run retains and verifies those attestations.
   routes with strict schemas, bounded bodies, and stable failure semantics
 - [x] Bind policy versions and rollouts to content-addressed weight artifacts
   with atomic publication, local verification, and restart recovery
+- [x] Add a fail-closed multi-node async evidence contract covering a 12-hour
+  soak, fault recovery, policy lag, weight-sync tail latency, integrity,
+  throughput, cleanup, and cost per accepted rollout
 - [ ] Verify multi-node training on a retained, reproducible configuration
 - [x] Add a measured-evidence gate for worker, network, and controller recovery
 - [x] Execute and retain the complete three-seed fault-injection matrix
@@ -102,6 +106,8 @@ remains unchecked until a tagged run retains and verifies those attestations.
 - [ ] Freeze a v1 public API and publish compatibility/migration guarantees
 - [ ] Graduate beta components using explicit per-component maturity criteria
 - [ ] Complete standard agent benchmarks for tool use, long horizon, and SWE tasks
+- [x] Add a fail-closed tau-bench/BFCL/SWE-bench Verified evidence gate with
+  paired significance, immutable revisions, artifacts, and cost accounting
 - [ ] Establish public security response SLAs and third-party review
 
 ## Leadership scorecard
@@ -122,21 +128,24 @@ estimated targets in marketing material.
 
 ## Next implementation sequence
 
-1. Live-preflight the implemented NeMo RL, verl, and OpenRLHF adapters, then run
+1. Merge the v0.47.0 release commit into `master`, configure npm trusted
+   publishing (or its scoped-token fallback), and configure Fireworks and
+   Docker credentials so every tag job completes green.
+2. Live-preflight the implemented NeMo RL, verl, and OpenRLHF adapters, then run
    the matched three-seed roster.
    The orchestrator enforces a required roster and accounts for every attempt
    after errors.
-2. Run the 8B multi-turn flagship and report quality, throughput, memory, and
+3. Run the 8B multi-turn flagship and report quality, throughput, memory, and
    cost per successful held-out episode.
-3. Complete native and external engine coverage on the versioned backend
+4. Complete native and external engine coverage on the versioned backend
    protocol so StateSet environments, rewards, evals, and lineage target TRL,
    verl, NeMo RL, or OpenRLHF execution without semantic drift.
-4. Prove multi-node asynchronous rollout/training, weight synchronization,
+5. Prove multi-node asynchronous rollout/training, weight synchronization,
    staleness bounds, checkpoint recovery, and a long-running soak.
-5. Add reproducible tool-use and long-horizon agent suites (starting with
+6. Add reproducible tool-use and long-horizon agent suites (starting with
    tau-bench/BFCL and a SWE task) and obtain an independent reproduction.
-6. Configure PyPI trusted publishing and Fireworks credentials externally;
-   rerun the existing release/provider workflows without code-side exceptions.
+7. Configure PyPI trusted publishing and rerun the release workflow without
+   its scoped-token fallback.
 
 ## Contribution policy
 
@@ -145,4 +154,4 @@ an integration or live-evidence path. Performance changes need before/after raw
 artifacts on identical configurations. Feature requests and RFCs belong in the
 GitHub issue tracker.
 
-Last updated: 2026-08-28.
+Last updated: 2026-08-31.

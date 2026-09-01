@@ -159,5 +159,13 @@ def test_tag_publish_tests_and_publishes_version_matched_npm_client() -> None:
     assert "npm-publish:" in workflow
     assert 'tag_version="${GITHUB_REF_NAME#v}"' in workflow
     assert "require('./package.json').version" in workflow
+    assert 'node-version: "24"' in workflow
+    assert "package-manager-cache: false" in workflow
+    assert "npm install --global npm@11.15.0" in workflow
+    assert "Publish npm package with trusted publishing" in workflow
+    assert "if: env.NPM_TOKEN == ''" in workflow
+    assert "Publish npm package with scoped token fallback" in workflow
+    assert "if: env.NPM_TOKEN != ''" in workflow
     assert "NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}" in workflow
+    assert "npm publish --access public\n" in workflow
     assert "npm publish --access public --provenance" in workflow

@@ -124,6 +124,16 @@ python benchmarks/scaling_comparison.py EVIDENCE \
 
 # Worker, controller, and network recovery evidence
 python benchmarks/reliability_evidence.py EVIDENCE --output REPORT.json
+
+# Two-node minimum, three-seed async fault matrix plus 12-hour soak
+make benchmark-distributed-async-gate \
+  INPUTS=benchmark_results/distributed_async/evidence \
+  OUTPUT=benchmark_results/distributed_async/report.json
+
+# Three-seed tau-bench, BFCL, and SWE-bench Verified quality matrix
+make benchmark-agent-quality-gate \
+  INPUTS=benchmark_results/agent_quality/evidence \
+  OUTPUT=benchmark_results/agent_quality/report.json
 ```
 
 Schemas and collection guidance live under `benchmark_results/`. These tools

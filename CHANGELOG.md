@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added fail-closed publication gates for multi-node asynchronous RL and
+  standard agent-quality benchmarks, including soak/fault matrices, policy and
+  artifact invariants, statistical improvement, tail latency, and cost.
+
+### Changed
+
+- Updated npm release automation to use Node 24 and an OIDC-capable npm CLI,
+  with trusted publishing preferred and a scoped-token fallback.
+- Refreshed the roadmap and release-evidence ledger for v0.47.0, including the
+  successful Python release and the visible npm, Fireworks, Docker, and merge
+  blockers.
+
 ## [0.47.0] - 2026-08-31 — Distributed rollout control plane
 
 ### Added

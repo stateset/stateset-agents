@@ -163,6 +163,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     steps:
     - uses: actions/checkout@v7
@@ -170,10 +172,13 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v6
       with:
-        node-version: "20"
+        # npm trusted publishing requires Node >=22.14 and npm >=11.5.1.
+        node-version: "24"
         registry-url: https://registry.npmjs.org
-        cache: npm
-        cache-dependency-path: npm/package-lock.json
+        package-manager-cache: false
+
+    - name: Install OIDC-capable npm CLI
+      run: npm install --global npm@11.15.0
 
     - name: Verify npm version matches tag
       working-directory: npm
@@ -183,14 +188,23 @@ jobs:
         package_version="$(node -p "require('./package.json').version")"
         test "${package_version}" = "${tag_version}"
 
-    - name: Test and publish npm package
+    - name: Test npm package
       working-directory: npm
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       run: |
         npm ci
         npm test
-        npm publish --access public --provenance
+
+    - name: Publish npm package with trusted publishing
+      if: env.NPM_TOKEN == ''
+      working-directory: npm
+      run: npm publish --access public
+
+    - name: Publish npm package with scoped token fallback
+      if: env.NPM_TOKEN != ''
+      working-directory: npm
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      run: npm publish --access public --provenance
 
   github-release:
     runs-on: ubuntu-latest

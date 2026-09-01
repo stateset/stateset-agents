@@ -34,6 +34,24 @@ whole-pod price and terminates immediately on drift. Its remote self-destruct,
 local recovery lease, unconditional cleanup, and provider cost record bound
 the paid execution path; they do not turn an unrun plan into evidence.
 
+Multi-node asynchronous evidence is gated separately by
+`benchmarks/distributed_async_evidence.py`. A publishable matrix requires two
+or more distinct machines, three matched seeds, a 12-hour steady-state soak,
+worker-exit/controller-restart/network-interruption scenarios, exact policy-lag
+bounds, zero lost or duplicate optimizer updates, zero artifact-digest
+mismatches, ordered weight-sync latency percentiles, measured throughput, and
+provider-derived cost per accepted rollout. The validator rejects synthetic
+documents and configuration/topology drift; implementing the contract is not
+itself evidence that the live matrix passed.
+
+Standard agent capability evidence is gated by
+`benchmarks/agent_quality_evidence.py`. It requires matched three-seed
+base-versus-trained evaluations on tau-bench, BFCL, and SWE-bench Verified,
+immutable suite/model/harness revisions, identical evaluation configuration,
+retained artifacts, task and cost accounting, at least `+0.03` mean improvement
+per suite, and a paired 95% confidence bound above zero. Until those measured
+documents exist, StateSet makes no standard-suite leadership claim.
+
 ## Currently supported claims
 
 ### Multi-turn customer-support improvement
