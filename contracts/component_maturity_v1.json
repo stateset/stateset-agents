@@ -82,7 +82,7 @@
       "name": "GSPO, DAPO, and GEPO trainers",
       "owner": "training",
       "public_contract_refs": [],
-      "tests": ["tests/unit/test_gspo_trainer.py", "tests/unit/test_dapo_trainer_behavioral.py", "tests/unit/test_gepo_trainer_behavioral.py"]
+      "tests": ["tests/unit/test_gspo_trainer.py", "tests/unit/test_dapo_trainer_behavioral.py", "tests/unit/test_gepo_trainer_behavioral.py", "tests/unit/test_run_flagship_matrix.py"]
     },
     {
       "docs": ["docs/GRPO_IMPLEMENTATION.md", "docs/TRL_GRPO_TRAINING_GUIDE.md"],
