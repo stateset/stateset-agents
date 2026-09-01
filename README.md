@@ -278,6 +278,11 @@ coverage, live hardware attempts, and successful inference by provider.
 
 **Current development head (unreleased):**
 
+- **Publication-grade flagship collection.** The 7–9B multi-turn customer
+  support benchmark now runs from one immutable manifest, measures each seed
+  externally, retains failures and policy hashes, binds provider billing, and
+  requires a positive paired 95% confidence bound before publication. The live
+  three-seed GPU execution remains pending.
 - **Machine-enforced maturity and security governance.** Every canonical
   product domain now carries a Stable, Beta, or Experimental designation tied
   to existing tests, documentation, evidence, limitations, graduation

@@ -4,6 +4,26 @@ This page records what was actually exercised for the current release line.
 Registration, authentication, hardware allocation, training, inference, and
 publication are separate claims.
 
+## v0.47.2 release evidence
+
+Tagged release commit: `eaa453e7471c5288871772972c22ca0e97da9a81`.
+Publish workflow: [33550479054](https://github.com/stateset/stateset-agents/actions/runs/33550479054).
+Provider canaries: [33550479086](https://github.com/stateset/stateset-agents/actions/runs/33550479086).
+
+| Surface | Result | Evidence |
+|---|---|---|
+| Pull-request matrices | Passed | Feature PR #59 and release PR #60 each passed all 16 Linux, Windows, security, package, docs, Helm, benchmark, and governance checks |
+| Python distribution | Passed | `stateset-agents==0.47.2` published to PyPI after build, Twine, isolated-wheel, readiness, and attestation gates passed |
+| GitHub Release and docs | Passed | Verified Python distributions were attached and documentation deployed |
+| npm distribution | Failed closed | Node 24 runtime and TypeScript gates passed and signed provenance reached Sigstore, but npm returned 404 for `@stateset/agents`; the scope/package authorization must be created or granted in npm before retrying |
+| Container distribution | Skipped | Docker Hub credentials were absent, so image build, push, SBOM, and provenance steps did not execute |
+| River and RunPod canaries | Passed | Both authenticated non-billable probes completed with zero resources created |
+| Fireworks canary | Failed closed | `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID` were absent; no billable resources were created |
+
+The release proves the Python package and the collector contracts. It does not
+establish npm/container publication, Fireworks or Modal live execution, the
+7–9B flagship result, multi-node scale, or standard agent-suite leadership.
+
 ## v0.47.1 release evidence
 
 Tagged release commit: `a07c76dc376572a4e3f813bf2efb118c9034f49c`.

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-flagship-manifest",
+  "protocol": "stateset-flagship-multiturn-v1",
+  "framework_version": "0.47.2",
+  "provider": "REPLACE_WITH_PROVIDER",
+  "cost_source": "REPLACE_WITH_PROVIDER_API_OR_INVOICE",
+  "model": "REPLACE_WITH_IMMUTABLE_7_TO_9B_MODEL",
+  "model_revision": "0000000000000000000000000000000000000000",
+  "model_parameter_count": 8000000000,
+  "dataset": "stateset/customer-support-multiturn-v1",
+  "dataset_revision": "0000000000000000000000000000000000000000",
+  "trainer": "gspo",
+  "task": "customer_support",
+  "seeds": [42, 1337, 2026],
+  "config": {
+    "num_train_examples": 500,
+    "num_eval_examples": 200,
+    "max_wall_clock_seconds": 14400,
+    "max_cost_usd_per_seed": 25.0,
+    "temperature": 0.0,
+    "max_turns": 4,
+    "use_lora": true,
+    "bf16": true
+  },
+  "judge": {
+    "model": "REPLACE_WITH_CROSS_FAMILY_JUDGE",
+    "revision": "0000000000000000000000000000000000000000",
+    "rubric_revision": "0000000000000000000000000000000000000000"
+  },
+  "hardware": {
+    "gpu": "REPLACE_WITH_EXACT_GPU_NAME",
+    "gpu_count": 1
+  },
+  "command": [
+    "python",
+    "REPLACE_WITH_PROVIDER_FLAGSHIP_DRIVER.py",
+    "--seed",
+    "{seed}",
+    "--mode",
+    "{mode}",
+    "--framework-version",
+    "{framework_version}",
+    "--model",
+    "{model}",
+    "--model-revision",
+    "{model_revision}",
+    "--dataset-revision",
+    "{dataset_revision}",
+    "--config-json",
+    "{config_json}",
+    "--config-sha256",
+    "{config_sha256}",
+    "--output",
+    "{adapter_output}",
+    "--artifact-dir",
+    "{artifact_dir}"
+  ]
+}

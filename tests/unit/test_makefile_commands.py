@@ -42,7 +42,10 @@ def test_make_exposes_agent_quality_collection_and_contract_gates() -> None:
     assert "benchmark-agent-quality-run:" in contents
     assert "benchmark-distributed-async-contract:" in contents
     assert "benchmark-distributed-async-run:" in contents
+    assert "benchmark-flagship-contract:" in contents
+    assert "benchmark-flagship-run:" in contents
     assert "benchmarks/run_agent_quality_matrix.py" in contents
+    assert "benchmarks/run_flagship_matrix.py" in contents
 
 
 def test_make_ci_uses_read_only_checks() -> None:

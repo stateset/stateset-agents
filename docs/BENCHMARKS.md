@@ -259,6 +259,23 @@ python scripts/run_phase0_benchmark.py \
 Run all prescribed seeds; negative and null results must be retained. See
 [`benchmarks/FLAGSHIP.md`](../benchmarks/FLAGSHIP.md) for the complete protocol.
 
+The publication path uses the strict manifest runner rather than the loose
+single-seed command above. It validates the complete seed roster, immutable
+model/data/judge revisions, exact hardware, external wall time, provider cost,
+judge stability, and trained-policy artifact hashes:
+
+```bash
+make benchmark-flagship-contract
+make benchmark-flagship-run \
+  MANIFEST=benchmarks/flagship_manifest.json \
+  OUTPUT_DIR=benchmark_results/flagship_v1
+```
+
+Add `EXTRA_ARGS=--preflight` and use a separate preflight output directory for
+one bounded diagnostic seed. Preflight is retained but can never pass the
+publication gate. The measured command rejects a dirty harness tree and does
+not select successful seeds after execution.
+
 ### Measured algorithm comparison
 
 Execute the complete rotated three-seed matrix from the checked-in manifest:
