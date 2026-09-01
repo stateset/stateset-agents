@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788266200632,
+  "lastUpdate": 1788269085281,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -376,6 +376,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.2815027739858145e-8",
             "extra": "mean: 421.9765126527139 nsec\nrounds: 114104"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "committer": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "id": "f507bd9d3a2475f3a71530e2abd5070d22f8ab0f",
+          "message": "feat(api): add standard SSE headers for streaming endpoints; add header assertions in tests",
+          "timestamp": "2026-09-01T12:44:15Z",
+          "url": "https://github.com/stateset/stateset-agents/pull/53/commits/f507bd9d3a2475f3a71530e2abd5070d22f8ab0f"
+        },
+        "date": 1788269084430,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8403.17176366725,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017486557271484978",
+            "extra": "mean: 119.00268471527558 usec\nrounds: 1773"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9229.385780711082,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001578610921358441",
+            "extra": "mean: 108.349572090696 usec\nrounds: 2157"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6741.236448603147,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016764025250196306",
+            "extra": "mean: 148.3407395103624 usec\nrounds: 3432"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 831.832365505035,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000023647965006162807",
+            "extra": "mean: 1.2021652937161977 msec\nrounds: 732"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 178.46878030093436,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000618628633341512",
+            "extra": "mean: 5.603220901234369 msec\nrounds: 162"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2378936.414332041,
+            "unit": "iter/sec",
+            "range": "stddev: 3.582693137682652e-8",
+            "extra": "mean: 420.35591786961675 nsec\nrounds: 57884"
           }
         ]
       }
