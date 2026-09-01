@@ -68,12 +68,13 @@ corresponding local suite completed with **4,898 passed and 11 skipped**. See
 the retained [proof ledger](docs/PROOFS.md) for the evidence behind individual
 training, serving, and provider claims.
 
-The `v0.46.0` asynchronous-RL release completed its local full suite with
-**5,005 passed and 11 skipped**, plus a final **833-test** training/export
-regression suite and clean Ruff, Black, isort, type, repository-hygiene, and
-diff gates. Native multi-node async evidence is intentionally still pending.
+The `v0.47.0` distributed-rollout release completed its local full suite with
+**5,083 passed and 11 skipped**, plus focused API and distributed/async
+regression suites and clean Ruff, isort, type, repository-hygiene, and diff
+gates. Native multi-node GPU evidence is intentionally still pending.
 
-- **Current Python release:** `stateset-agents==0.46.0` on PyPI.
+- **Current Python release:** `stateset-agents==0.47.0` (published from the
+  annotated release tag after its release workflow passes).
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/); its first npm registry
   publication remains pending.
@@ -256,9 +257,21 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**On `master` (unreleased):** No unreleased changes yet.
+**v0.47.0 (latest release; publication triggered by tag):**
 
-**v0.46.0 (latest release; [available on PyPI](https://pypi.org/project/stateset-agents/0.46.0/)):**
+- **Restartable distributed rollout control plane.** Remote workers now share
+  transport-neutral registration, renewable leases, generation fencing,
+  policy-exact admission, capacity reclamation, secret-free health snapshots,
+  auditable rejection counters, and quiescent checkpoint recovery. An
+  authenticated FastAPI transport adds principal-scoped worker isolation,
+  role-gated fleet observability, strict schemas, deterministic error mapping,
+  and fixed/chunked request-size enforcement. Content-addressed publication
+  binds each policy version to an immutable URI, byte count, and SHA-256;
+  workers verify downloaded weights and rollouts retain that digest. Live
+  multi-node GPU evidence remains an explicit gate rather than an inferred
+  claim.
+
+**v0.46.0:**
 
 - **Policy-safe asynchronous rollouts.** Native producers and learners can
   run independently through a bounded coordinator and executable runtime. It
@@ -1026,8 +1039,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.46.0" # current stable release on PyPI
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.46.0"
+pip install "stateset-agents==0.47.0" # current stable release after tag publication
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.47.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1759,7 +1772,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.46.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.47.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

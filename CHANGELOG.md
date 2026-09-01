@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-08-31 — Distributed rollout control plane
+
+### Added
+
+- Added a transport-neutral distributed rollout control plane with renewable
+  worker leases, restart generation fencing, exact policy assignments, bounded
+  capacity, safe health snapshots, and explicit rejection counters.
+- Added combined worker/coordinator checkpoint recovery that preserves rollout
+  deduplication and generation history while dropping leases that expire during
+  controller downtime.
+- Added deterministic coverage for registration replacement, heartbeat renewal,
+  capacity reclamation, stale/expired worker rejection, policy mismatch,
+  secret-free observability, and restart behavior.
+- Added an authenticated FastAPI rollout transport with principal-scoped worker
+  identities, worker/admin roles, typed registration/heartbeat/submission
+  routes, fleet health, stable error mapping, and strict request schemas.
+- Enforced the existing `API_MAX_REQUEST_SIZE_MB` setting before body parsing
+  for both fixed-length and chunked gateway requests.
+- Added immutable policy artifact descriptors, streaming SHA-256 verification,
+  bounded artifact history, artifact-aware checkpoint recovery, and atomic
+  artifact-before-policy-version publication.
+- Bound artifact-required rollout records to the SHA-256 of their assigned
+  weights and exposed the exact URI, digest, size, and publication timestamp in
+  authenticated registration and heartbeat responses.
+
+### Changed
+
+- Clarified the async evidence boundary: the distributed safety contract and
+  HTTP transport are implemented, while retained multi-node GPU throughput,
+  measured weight-sync, process-recovery, and soak evidence remain pending.
+
 ## [0.46.0] - 2026-08-31 — Policy-safe asynchronous RL runtime
 
 ### Added

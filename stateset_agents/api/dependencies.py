@@ -179,6 +179,34 @@ async def get_current_user(request: Request) -> AuthenticatedUser:
         ) from e
 
 
+async def get_strict_current_user(request: Request) -> AuthenticatedUser:
+    """Authenticate even when anonymous access is enabled for general routes.
+
+    Infrastructure control planes must never inherit development-mode anonymous
+    access. When global authentication is enabled, reuse its lockout-aware
+    dependency; otherwise require and validate an explicitly configured API key
+    or JWT for this request.
+    """
+    from .config import get_config
+
+    if get_config().security.require_auth:
+        return await get_current_user(request)
+    try:
+        return authenticate_request(request, force_auth=True)
+    except UnauthorizedError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail=exc.message,
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except AUTH_EXCEPTIONS as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication failed",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+
 async def get_optional_user(request: Request) -> AuthenticatedUser | None:
     """
     Get current user if authenticated, None otherwise.

@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from stateset_agents.utils.credentials import credential_fingerprint
 
@@ -43,6 +44,93 @@ from .constants import (
 from .rate_limiter import UnifiedRateLimiter, get_rate_limiter
 
 logger = logging.getLogger(__name__)
+
+
+class RequestSizeLimitMiddleware:
+    """Reject oversized fixed-length and chunked HTTP request bodies.
+
+    Checking only ``Content-Length`` is insufficient because clients may omit
+    it or use chunked transfer encoding. This pure ASGI middleware buffers up
+    to the configured bound and counts the bytes actually received before
+    FastAPI parses the body.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    @staticmethod
+    async def _reject(scope: Scope, receive: Receive, send: Send) -> None:
+        response = JSONResponse(
+            status_code=413,
+            content={"detail": "Request body exceeds the configured size limit"},
+        )
+        await response(scope, receive, send)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        max_bytes = get_config().validation.max_request_size_mb * 1024 * 1024
+        content_lengths = [
+            value
+            for name, value in scope.get("headers", [])
+            if name.lower() == b"content-length"
+        ]
+        if len(content_lengths) > 1:
+            response = JSONResponse(
+                status_code=400,
+                content={"detail": "Multiple Content-Length headers are not allowed"},
+            )
+            await response(scope, receive, send)
+            return
+        if content_lengths:
+            try:
+                content_length = int(content_lengths[-1])
+            except ValueError:
+                response = JSONResponse(
+                    status_code=400, content={"detail": "Invalid Content-Length header"}
+                )
+                await response(scope, receive, send)
+                return
+            if content_length < 0:
+                response = JSONResponse(
+                    status_code=400, content={"detail": "Invalid Content-Length header"}
+                )
+                await response(scope, receive, send)
+                return
+            if content_length > max_bytes:
+                await self._reject(scope, receive, send)
+                return
+
+        received_bytes = 0
+        messages: list[Message] = []
+        while True:
+            message = await receive()
+            messages.append(message)
+            if message["type"] == "http.disconnect":
+                break
+            if message["type"] != "http.request":
+                continue
+            received_bytes += len(message.get("body", b""))
+            if received_bytes > max_bytes:
+                await self._reject(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+
+        message_index = 0
+
+        async def replay_receive() -> Message:
+            nonlocal message_index
+            if message_index < len(messages):
+                message = messages[message_index]
+                message_index += 1
+                return message
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
+
 
 try:  # Optional: only used when Prometheus scraping is enabled.
     from prometheus_client import Counter, Gauge, Histogram
@@ -686,7 +774,10 @@ def setup_middleware(app: FastAPI) -> None:
     # 4. Request context (runs early, sets up tracing)
     app.add_middleware(RequestContextMiddleware)
 
-    # 5. Security headers (runs first, adds headers to all responses)
+    # 5. Body-size limit (runs before parsing, within security headers)
+    app.add_middleware(RequestSizeLimitMiddleware)
+
+    # 6. Security headers (runs first, adds headers to all responses)
     app.add_middleware(SecurityHeadersMiddleware)
 
     logger.info("Middleware configured successfully")

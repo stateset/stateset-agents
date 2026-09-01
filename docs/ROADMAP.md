@@ -85,6 +85,12 @@ remains unchecked until a tagged run retains and verifies those attestations.
 - [x] Define native policy-versioned async queue and runtime, staleness bounds,
   importance-correction evidence, publication ordering, backpressure, failure
   propagation, and audit counters
+- [x] Define transport-neutral remote worker leases, heartbeats, generation
+  fencing, policy-exact admission, health counters, and checkpoint recovery
+- [x] Expose the control plane through authenticated, principal-isolated HTTP
+  routes with strict schemas, bounded bodies, and stable failure semantics
+- [x] Bind policy versions and rollouts to content-addressed weight artifacts
+  with atomic publication, local verification, and restart recovery
 - [ ] Verify multi-node training on a retained, reproducible configuration
 - [x] Add a measured-evidence gate for worker, network, and controller recovery
 - [x] Execute and retain the complete three-seed fault-injection matrix

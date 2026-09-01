@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import re
 from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -88,6 +89,7 @@ class RolloutRecord:
     policy_version: int
     sampler_log_probs: tuple[float, ...]
     payload: Mapping[str, Any]
+    policy_artifact_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.rollout_id, str) or not self.rollout_id.strip():
@@ -104,6 +106,12 @@ class RolloutRecord:
             raise ValueError("sampler_log_probs must be finite")
         if not isinstance(self.payload, Mapping):
             raise ValueError("payload must be a mapping")
+        if self.policy_artifact_sha256 is not None and not re.fullmatch(
+            r"[0-9a-f]{64}", self.policy_artifact_sha256
+        ):
+            raise ValueError(
+                "policy_artifact_sha256 must be 64 lowercase hexadecimal characters"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """Return a Python-native checkpoint representation."""
@@ -112,18 +120,22 @@ class RolloutRecord:
             "policy_version": self.policy_version,
             "sampler_log_probs": list(self.sampler_log_probs),
             "payload": dict(self.payload),
+            "policy_artifact_sha256": self.policy_artifact_sha256,
         }
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> RolloutRecord:
         """Restore and validate a record from coordinator state."""
-        expected = {
+        required = {
             "rollout_id",
             "policy_version",
             "sampler_log_probs",
             "payload",
         }
-        if set(value) != expected:
+        if not required.issubset(value) or set(value) - {
+            *required,
+            "policy_artifact_sha256",
+        }:
             raise ValueError("rollout checkpoint fields do not match schema")
         try:
             log_probs = value["sampler_log_probs"]
@@ -136,6 +148,7 @@ class RolloutRecord:
                 policy_version=value["policy_version"],
                 sampler_log_probs=tuple(log_probs),
                 payload=value["payload"],
+                policy_artifact_sha256=value.get("policy_artifact_sha256"),
             )
         except KeyError as exc:
             raise ValueError(f"rollout checkpoint is missing {exc.args[0]!r}") from exc
@@ -285,8 +298,9 @@ class AsyncRolloutCoordinator:
                     return False
 
                 await self._condition.wait_for(
-                    lambda: self._closed
-                    or len(self._queue) < self.config.queue_capacity
+                    lambda: (
+                        self._closed or len(self._queue) < self.config.queue_capacity
+                    )
                 )
                 if self._closed:
                     raise AsyncRolloutClosed("rollout coordinator is closed")
