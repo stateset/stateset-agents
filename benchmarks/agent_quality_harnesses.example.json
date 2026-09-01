@@ -8,7 +8,7 @@
       "cost_source": "provider-api",
       "command": [
         "python",
-        "REPLACE_WITH_TAU3_BENCH_DRIVER.py",
+        "{official_suite_pipeline}",
         "--policy", "{policy}",
         "--model", "{model}",
         "--model-revision", "{model_revision}",
@@ -18,7 +18,8 @@
         "--split", "{split}",
         "--evaluation-config-json", "{evaluation_config_json}",
         "--output", "{output}",
-        "--artifact-dir", "{artifact_dir}"
+        "--artifact-dir", "{artifact_dir}",
+        "--upstream-repository", "{upstream_repository}"
       ]
     },
     "bfcl-v4": {
@@ -27,7 +28,7 @@
       "cost_source": "provider-api",
       "command": [
         "python",
-        "REPLACE_WITH_BFCL_DRIVER.py",
+        "{official_suite_pipeline}",
         "--policy", "{policy}",
         "--model", "{model}",
         "--model-revision", "{model_revision}",
@@ -37,7 +38,8 @@
         "--split", "{split}",
         "--evaluation-config-json", "{evaluation_config_json}",
         "--output", "{output}",
-        "--artifact-dir", "{artifact_dir}"
+        "--artifact-dir", "{artifact_dir}",
+        "--upstream-repository", "{upstream_repository}"
       ]
     },
     "swe-bench-verified": {
@@ -46,7 +48,7 @@
       "cost_source": "provider-api",
       "command": [
         "python",
-        "REPLACE_WITH_SWE_BENCH_DRIVER.py",
+        "{official_suite_pipeline}",
         "--policy", "{policy}",
         "--model", "{model}",
         "--model-revision", "{model_revision}",
@@ -56,7 +58,8 @@
         "--split", "{split}",
         "--evaluation-config-json", "{evaluation_config_json}",
         "--output", "{output}",
-        "--artifact-dir", "{artifact_dir}"
+        "--artifact-dir", "{artifact_dir}",
+        "--upstream-repository", "{upstream_repository}"
       ]
     }
   }

@@ -111,6 +111,25 @@ def test_manifest_requires_exact_roster_policy_digests_and_placeholders(
         load_manifest(path)
 
 
+def test_manifest_validates_embedded_official_pipeline_contract(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest()
+    manifest["evaluation_config"]["official_suite_pipelines"] = {
+        suite: {
+            "results_path": "../escaped.json" if suite == "tau3-bench" else "result",
+            "scores_path": "score",
+            "cost_records_path": "costs.jsonl",
+            "commands": [["runner", "{model}"]],
+        }
+        for suite in ("tau3-bench", "bfcl-v4", "swe-bench-verified")
+    }
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(AgentQualityRunnerError, match="pipeline is invalid"):
+        load_manifest(path)
+
+
 def test_adapter_rejects_unpaired_or_drifted_results(tmp_path: Path) -> None:
     manifest = _manifest()
     suite = manifest["suites"][0]
