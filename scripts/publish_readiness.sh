@@ -6,6 +6,7 @@ REPORT_DIR="$ROOT_DIR"
 BANDIT_REPORT_PATH="$REPORT_DIR/bandit-report.json"
 SAFETY_REPORT_PATH="$REPORT_DIR/safety-report.json"
 SUMMARY_PATH="$REPORT_DIR/publish-readiness-summary.json"
+SAFETY_INPUT_PATH="$(mktemp /tmp/stateset-publish-safety.XXXXXX.txt)"
 PYTHON_BIN="${PYTHON_BIN:-}"
 cd "$ROOT_DIR"
 START_TIME="$(date -u +%s)"
@@ -105,7 +106,9 @@ PY
 }
 
 on_exit() {
-    write_summary "$?" "$CURRENT_STEP"
+    local exit_code="$?"
+    rm -f "$SAFETY_INPUT_PATH"
+    write_summary "$exit_code" "$CURRENT_STEP"
 }
 trap on_exit EXIT
 
@@ -220,8 +223,11 @@ bandit -c pyproject.toml -r stateset_agents -f json -o "$BANDIT_REPORT_PATH" || 
 # a file (the previous form here) captures safety's banner/deprecation
 # notice ahead of the payload too, corrupting a naive json.loads() the same
 # way `make security-scan-strict` hit before it was fixed. Match the
-# Makefile's invocation exactly so both paths behave identically.
-safety check -r requirements-dev-lock.txt --save-json "$SAFETY_REPORT_PATH" \
+# Makefile's invocation exactly so both paths behave identically. Safety's
+# parser does not recognize the environment-marker form of cuda-toolkit even
+# though pip does, so omit that entry from Safety's normalized scan input.
+grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > "$SAFETY_INPUT_PATH"
+safety check -r "$SAFETY_INPUT_PATH" --save-json "$SAFETY_REPORT_PATH" \
   --no-prompt > /dev/null 2>&1 || true
 # Route both reports through check_security_findings.py's lenient parser
 # (raw_decode from the first '{', ignoring any surrounding banner text)

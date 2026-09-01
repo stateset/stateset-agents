@@ -45,3 +45,14 @@ def test_publish_readiness_enforces_agent_quality_contract() -> None:
     assert "benchmarks/run_agent_quality_matrix.py" in contents
     assert "benchmarks/agent_quality_manifest.example.json" in contents
     assert "--dry-run" in contents
+
+
+def test_publish_readiness_normalizes_safety_input() -> None:
+    script_path = (
+        Path(__file__).resolve().parents[2] / "scripts" / "publish_readiness.sh"
+    )
+    contents = script_path.read_text(encoding="utf-8")
+
+    assert "grep -v '^cuda-toolkit\\[' requirements-dev-lock.txt" in contents
+    assert 'safety check -r "$SAFETY_INPUT_PATH"' in contents
+    assert 'rm -f "$SAFETY_INPUT_PATH"' in contents

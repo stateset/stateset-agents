@@ -98,21 +98,14 @@ repos:
       - id: trailing-whitespace
         exclude: \.(md|rst)$
 
-  # Safety - Check for insecure Python packages
-  #
-  # The hook's default `files` regex (`pyproject\.toml|requirements`) matches
-  # pyproject.toml, rust_core/pyproject.toml, requirements-lock.txt, and
-  # requirements-dev-lock.txt all at once; safety_check refuses to run
-  # against a mix of pyproject.toml- and requirements-style inputs in a
-  # single invocation ("Unsupported mix of pyproject.toml & requirements
-  # files"). Restrict it to requirements-dev-lock.txt, the superset lock
-  # file (dev + api extras) that already pins every dependency this project
-  # ships with.
-  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
-    rev: v1.4.2
-    hooks:
-      - id: python-safety-dependencies-check
-        files: ^requirements-dev-lock\.txt$
+  # Dependency vulnerability scanning intentionally lives in the dedicated
+  # `security` and `publish-readiness` CI jobs. The legacy third-party Safety
+  # pre-commit wrapper crashes while parsing valid, Python-version-specific
+  # CUDA lock entries (for example `cuda-toolkit`) and makes otherwise
+  # identical matrix jobs nondeterministic. Those CI jobs normalize the lock
+  # input before invoking the maintained Safety CLI, retain the JSON report,
+  # and enforce the repository's severity policy via
+  # scripts/check_security_findings.py.
 
   # Bandit - Security linter for Python
   #
