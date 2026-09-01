@@ -1155,6 +1155,16 @@ and may change or be removed in any release. The former
 `stateset_agents.core.<module>` import paths still work for one deprecation
 cycle and emit a `DeprecationWarning`.
 
+### Stable v1 compatibility contract
+
+The supported top-level Python exports and production HTTP operations are
+frozen in [`contracts/public_api_v1.json`](contracts/public_api_v1.json).
+Every pull request and release runs `make api-compatibility`; an unreviewed
+addition, removal, signature-schema change, or response-schema change fails
+closed. See [`docs/API_COMPATIBILITY.md`](docs/API_COMPATIBILITY.md) for the
+covered surface, deprecation window, and migration process. Experimental and
+opt-in training-lab APIs are intentionally outside this guarantee.
+
 ### Dashboard and mobile app (separate repos)
 
 The React + Vite dashboard and Expo mobile app — working clients for the

@@ -20,7 +20,7 @@ Tagged release commit: `d99b4e9ed3d93769d6d61518a3f14d01b32d3495`.
 | npm distribution | Failed | Package tests and type checks passed, but publication used Node 20/npm 10 with an empty `NODE_AUTH_TOKEN` and failed `ENEEDAUTH`; the next release uses an npm 11/Node 24 OIDC-first workflow with scoped-token fallback |
 | Fireworks canary | Failed closed | `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID` were absent; the retained report records a skipped probe and zero billable resources |
 | Container distribution | Skipped | Docker Hub credentials were absent, so no images or container SBOM/provenance claims were created |
-| Merge state | Pending | The tagged commit remains on `feat/distributed-async-control-plane` and is not yet contained by `master` |
+| Merge state | Passed | PR #50 merged the release line into `master` at `c39a78abd27c7e81aa4e194f7c6c543532b29516` |
 
 The release proves the distributed control-plane contract, authenticated HTTP
 transport, content-addressed policy publication, package integrity, and Python
