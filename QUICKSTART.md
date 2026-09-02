@@ -88,6 +88,24 @@ python scripts/sft_from_curated.py \
 
 ---
 
+## 3.1) Contract‑only: standard‑agent quality contract (no GPU)
+
+This validates the standard‑agent execution manifest shape and harness config without provisioning compute. It is NOT a measured τ³/BFCL/SWE result — just an unpaid receipt that the contract is intact.
+
+Example (uses the committed example manifest and harness config):
+
+```bash
+make benchmark-agent-quality-contract
+# Under the hood (for reference):
+#   python benchmarks/adapters/paired_agent_harness.py validate \
+#       --harness-config benchmarks/agent_quality_harnesses.example.json
+#   python benchmarks/run_agent_quality_matrix.py \
+#       benchmarks/agent_quality_manifest.example.json \
+#       --output-dir /tmp/stateset-agent-quality-contract --dry-run
+```
+
+---
+
 ## 4) Remote training (default backend = Modal)
 
 Modal is the recommended remote backend. Live transport remains unverified; jobs fail closed without credentials and never claim results.
