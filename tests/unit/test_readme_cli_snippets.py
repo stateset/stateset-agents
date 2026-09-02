@@ -208,7 +208,9 @@ def test_readme_command_flags_exist(src: str, lineno: int, line: str) -> None:
 def test_expected_snippet_count() -> None:
     """Guard against the extractor silently matching nothing."""
     per_doc = {name: sum(1 for s, _, _ in SNIPPETS if s == name) for name in DOCS}
-    assert per_doc == {"README.md": 25, "QUICKSTART.md": 6}, per_doc
+    # QUICKSTART was simplified in the "golden path" update; it now contains
+    # fewer direct CLI snippets. Keep this guard aligned with the current doc.
+    assert per_doc == {"README.md": 25, "QUICKSTART.md": 2}, per_doc
 
 
 def test_help_stays_plain_when_the_environment_forces_color(
