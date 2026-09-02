@@ -267,6 +267,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "evaluation_config_json": json.dumps(
             evaluation_config, sort_keys=True, separators=(",", ":")
         ),
+        "official_suite_pipeline": Path(__file__)
+        .with_name("official_suite_pipeline.py")
+        .resolve(),
+        "upstream_repository": repository_path,
     }
     command = suite_config["command"]
     baseline = run_policy(

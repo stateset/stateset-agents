@@ -151,12 +151,23 @@ make benchmark-agent-quality-gate \
 Start from `agent_quality_manifest.example.json` and
 `agent_quality_harnesses.example.json`. The included
 `adapters/paired_agent_harness.py` executes both policies shell-free against the
-same clean upstream checkout at the manifest-pinned revision. Each configured
-suite driver writes ordered JSONL records with a non-empty string `task_id`, a
-boolean `success`, and a finite, non-negative `cost_usd`. The adapter rejects
-duplicate or reordered task sets and derives both scores, success counts, task
-digest, and total cost from those records rather than trusting aggregate values
-reported by an upstream command.
+same clean upstream checkout at the manifest-pinned revision. Its built-in
+`adapters/official_suite_pipeline.py` executes each suite's configured official
+CLI stages, retains a revision-bound execution manifest and per-command logs,
+rejects stale or out-of-directory artifacts, and verifies that no command
+modifies the pinned checkout. It then converts official τ³-bench, BFCL V4, or
+SWE-bench Verified artifacts into ordered JSONL records with a non-empty string
+`task_id`, a boolean `success`, and a finite, non-negative `cost_usd`.
+
+The example contains runnable official τ³ and BFCL CLI stages. Replace its
+explicit user-simulator model, provider-meter exporter, coding-agent command,
+model revisions, and checkout paths with immutable experiment values. The
+meter exporter must write exactly one measured `task_id`/`cost_usd` JSONL row
+per BFCL or SWE task; the SWE coding agent must also write the official
+predictions JSONL. These are experiment inputs, not framework driver code.
+The paired adapter rejects duplicate or reordered task sets and derives both
+scores, success counts, task digest, and total cost from the normalized records
+rather than trusting aggregate values reported by an upstream command.
 
 The collection runner additionally binds both policy revisions, the trained
 artifact digest, the canonical evaluation configuration, raw result artifacts,
@@ -165,8 +176,8 @@ publication gate evaluates the complete matrix. Schemas and collection guidance
 live under `benchmark_results/`. These tools fail closed on missing seeds,
 mismatched protocols, estimated results, and incomplete provenance.
 
-Suite drivers can normalize the official artifacts without trusting upstream
-aggregate scores:
+The pipeline invokes the same normalizers directly. They also remain available
+as standalone commands for inspecting or importing existing official runs:
 
 ```bash
 # τ³-bench uses its embedded per-simulation agent_cost by default.

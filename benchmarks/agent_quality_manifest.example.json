@@ -16,7 +16,74 @@
     "temperature": 0.0,
     "max_turns": 20,
     "tool_timeout_seconds": 30,
-    "parallelism": 1
+    "parallelism": 1,
+    "official_suite_pipelines": {
+      "tau3-bench": {
+        "command_timeout_seconds": 14400,
+        "results_path": "official/results.json",
+        "commands": [[
+          "tau2", "run",
+          "--domain", "retail",
+          "--agent-llm", "{model}",
+          "--user-llm", "REPLACE_WITH_PINNED_USER_SIMULATOR_MODEL",
+          "--num-trials", "1",
+          "--task-split-name", "{split}",
+          "--seed", "{seed}",
+          "--max-steps", "{max_turns}",
+          "--max-concurrency", "{parallelism}",
+          "--save-to", "{official_results}",
+          "--verbose-logs"
+        ]]
+      },
+      "bfcl-v4": {
+        "command_timeout_seconds": 14400,
+        "results_path": "official/result",
+        "scores_path": "official/score",
+        "cost_records_path": "official/costs.jsonl",
+        "commands": [
+          [
+            "bfcl", "generate", "--model", "{model}",
+            "--result-dir", "{official_results}",
+            "--num-threads", "{parallelism}"
+          ],
+          [
+            "bfcl", "evaluate", "--model", "{model}",
+            "--result-dir", "{official_results}",
+            "--score-dir", "{official_scores}"
+          ],
+          [
+            "REPLACE_WITH_PROVIDER_METER_EXPORTER",
+            "--model", "{model}", "--seed", "{seed}",
+            "--results", "{official_results}",
+            "--output", "{cost_records}", "--artifact-dir", "{artifact_dir}"
+          ]
+        ]
+      },
+      "swe-bench-verified": {
+        "command_timeout_seconds": 43200,
+        "results_path": "official/report",
+        "cost_records_path": "official/costs.jsonl",
+        "artifact_paths": {
+          "predictions": "official/predictions.jsonl"
+        },
+        "commands": [
+          [
+            "REPLACE_WITH_PINNED_CODING_AGENT",
+            "--model", "{model}", "--model-revision", "{model_revision}",
+            "--seed", "{seed}", "--split", "{split}",
+            "--predictions", "{predictions}", "--cost-records", "{cost_records}",
+            "--artifact-dir", "{artifact_dir}"
+          ],
+          [
+            "python", "-m", "swebench.harness.run_evaluation",
+            "--dataset_name", "princeton-nlp/SWE-bench_Verified",
+            "--split", "{split}", "--predictions_path", "{predictions}",
+            "--max_workers", "{parallelism}", "--run_id", "{policy}",
+            "--report_dir", "{official_results}"
+          ]
+        ]
+      }
+    }
   },
   "seeds": [42, 1337, 2026],
   "suites": [

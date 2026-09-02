@@ -123,6 +123,9 @@ remains unchecked until a tagged run retains and verifies those attestations.
 - [x] Add a shell-free paired upstream-harness adapter that verifies pinned,
   clean suite checkouts and derives scores and cost from identical ordered
   per-task records
+- [x] Add a shell-free official-suite pipeline for multi-stage τ³/BFCL V4/SWE
+  commands with fresh confined artifacts, checkout-mutation detection,
+  revision-bound manifests, retained command logs, and direct normalization
 - [x] Establish machine-validated public security response SLAs and safe harbor
 - [ ] Complete and retain an independent third-party security review
 

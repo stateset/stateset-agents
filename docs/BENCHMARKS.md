@@ -75,12 +75,13 @@ documents exist, StateSet makes no standard-suite leadership claim.
 Collection is executable rather than hand-authored. Copy
 `benchmarks/agent_quality_manifest.example.json` and
 `benchmarks/agent_quality_harnesses.example.json`, replace every model,
-artifact, upstream-suite revision, checkout path, and driver with immutable
-experiment values. The included paired adapter verifies that each upstream
-checkout is clean and exactly matches its pinned revision, then executes the
-same baseline/trained command template without a shell for every seed. It
-retains stdout, stderr, normalized task records, raw artifacts, and failures
-before invoking the publication gate automatically:
+artifact, upstream-suite revision, checkout path, user-simulator, provider
+meter, and coding-agent command with immutable experiment values. The included
+paired adapter and official-suite pipeline verify that each upstream checkout
+is clean and exactly matches its pinned revision, execute every official stage
+without a shell, reject stale/out-of-tree artifacts and checkout mutation, and
+retain execution manifests, per-command streams, normalized task records, raw
+artifacts, and failures before invoking the publication gate automatically:
 
 ```bash
 make benchmark-agent-quality-contract
@@ -93,9 +94,11 @@ Use `EXTRA_ARGS=--preflight` for one seed per suite. Preflight proves wiring
 only and never produces a passing publication matrix. Measured execution is
 rejected from a dirty harness worktree.
 
-Each suite driver receives the model, model revision, seed, suite revision,
-split, canonical evaluation config, output path, and artifact directory as
-separate argv values. It writes one JSON object per line to `{output}`:
+The official-suite pipeline receives the model, model revision, seed, suite
+revision, split, canonical evaluation config, output path, artifact directory,
+and verified upstream checkout as separate argv values. Each configured stage
+uses whole-argument placeholders only. After official evaluation, the pipeline
+writes one JSON object per line to `{output}`:
 
 ```json
 {"task_id": "stable-upstream-id", "success": true, "cost_usd": 0.0123}

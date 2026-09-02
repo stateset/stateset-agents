@@ -17,6 +17,10 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from .adapters.official_suite_pipeline import (
+        OfficialPipelineError,
+        load_pipeline_config,
+    )
     from .agent_quality_evidence import (
         REQUIRED_SUITES,
         AgentQualityEvidenceError,
@@ -26,6 +30,10 @@ try:
         validate_run,
     )
 except ImportError:  # pragma: no cover - direct script execution
+    from adapters.official_suite_pipeline import (
+        OfficialPipelineError,
+        load_pipeline_config,
+    )
     from agent_quality_evidence import (
         REQUIRED_SUITES,
         AgentQualityEvidenceError,
@@ -170,6 +178,15 @@ def load_manifest(path: Path) -> dict[str, Any]:
         raise AgentQualityRunnerError(
             f"suite roster must be exactly {sorted(REQUIRED_SUITES)}"
         )
+    if "official_suite_pipelines" in config:
+        contract_dir = path.parent.resolve() / ".agent-quality-contract"
+        try:
+            for suite in REQUIRED_SUITES:
+                load_pipeline_config(config, suite, contract_dir / suite)
+        except OfficialPipelineError as exc:
+            raise AgentQualityRunnerError(
+                f"manifest.evaluation_config pipeline is invalid: {exc}"
+            ) from exc
     return dict(raw)
 
 
