@@ -571,10 +571,10 @@ def train_remote(
         ..., "--base-model", help="Hugging Face base model (e.g. Qwen/Qwen3.5-0.8B)."
     ),
     provider: str = typer.Option(
-        "local",
+        "modal",
         "--provider",
         help=(
-            f"Where to run: {', '.join(available_providers())}. "
+            f"Where to run (default: modal): {', '.join(available_providers())}. "
             "'river' is River AI's remote autograd service: it trains without "
             "renting a machine, so the GPU/disk/cloud-type options are "
             "ignored, and the result is a river:// checkpoint pointer rather "

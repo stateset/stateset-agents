@@ -14,6 +14,13 @@
 
 </div>
 
+👉 Start here: the one‑page, boring path is in [QUICKSTART.md](QUICKSTART.md). It covers:
+
+- pip install → ingest sample logs → improve (grade/curate) → one GRPO dry‑run (stub/HF) → serve
+- remote training defaults to Modal (unverified; fail‑closed), with other providers still available
+
+---
+
 StateSet Agents is a production‑oriented RL stack for training and serving LLM‑backed agents that improve through **multi‑turn interaction**. The library provides:
 
 - An **improvement loop** that turns your agent's own logs into a better agent: `ingest` → `improve` (grade → curate) → fine‑tune.

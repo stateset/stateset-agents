@@ -167,5 +167,7 @@ def test_tag_publish_tests_and_publishes_version_matched_npm_client() -> None:
     assert "Publish npm package with scoped token fallback" in workflow
     assert "if: env.NPM_TOKEN != ''" in workflow
     assert "NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}" in workflow
-    assert "npm publish --access public\n" in workflow
+    # Accept either a simple one-line run or the guarded bash-script form.
+    # Match when the publish command is followed by a newline (LF/CRLF) or a shell ';'.
+    assert re.search(r"npm publish --access public(?:\r?\n|;)", workflow) is not None
     assert "npm publish --access public --provenance" in workflow

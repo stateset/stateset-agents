@@ -193,11 +193,30 @@ jobs:
       run: |
         npm ci
         npm test
+        npm run pack:check
+
+    - name: Determine npm publish auth mode
+      shell: bash
+      run: |
+        if [ -z "${NPM_TOKEN:-}" ]; then
+          echo "Using GitHub OIDC trusted publishing (no NPM_TOKEN configured)."
+        else
+          echo "Using scoped NPM token fallback (NPM_TOKEN is configured)."
+        fi
 
     - name: Publish npm package with trusted publishing
       if: env.NPM_TOKEN == ''
       working-directory: npm
-      run: npm publish --access public
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Attempting npm publish with GitHub OIDC (trusted publishing)…"
+        # whoami is best-effort — it can fail before publish acquires an id-token.
+        npm whoami || true
+        if ! npm publish --access public; then
+          echo "::error::npm publish failed. If this repo/package is not configured for npm trusted publishing, set it up in your npm org (Settings → Access → Automation tokens), link this GitHub repository on the package, and re-run. Alternatively, add an NPM_TOKEN repository secret (automation token scoped to @stateset) to fall back to token mode."
+          exit 1
+        fi
 
     - name: Publish npm package with scoped token fallback
       if: env.NPM_TOKEN != ''
