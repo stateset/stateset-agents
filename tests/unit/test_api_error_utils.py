@@ -7,7 +7,9 @@ from stateset_agents.api.routers import openai as openai_router
 def _make_httpx_response(status_code: int, content: str) -> httpx.Response:
     # httpx.Response requires a request to safely access .json() in some contexts
     req = httpx.Request("GET", "http://testserver")
-    return httpx.Response(status_code=status_code, content=content.encode("utf-8"), request=req)
+    return httpx.Response(
+        status_code=status_code, content=content.encode("utf-8"), request=req
+    )
 
 
 def test_extract_inference_error_text_messages_variants():
@@ -28,7 +30,10 @@ def test_extract_inference_error_text_messages_variants():
     assert messages_router._extract_inference_error_text(exc3) == "upstream broke"
 
     # no response attached
-    assert messages_router._extract_inference_error_text(Exception("x")) == "Inference backend request failed"
+    assert (
+        messages_router._extract_inference_error_text(Exception("x"))
+        == "Inference backend request failed"
+    )
 
 
 def test_extract_inference_error_text_openai_variants():
@@ -49,7 +54,10 @@ def test_extract_inference_error_text_openai_variants():
     assert openai_router._extract_inference_error_text(exc3) == "gateway failed"
 
     # no response attached
-    assert openai_router._extract_inference_error_text(Exception("x")) == "Inference backend request failed"
+    assert (
+        openai_router._extract_inference_error_text(Exception("x"))
+        == "Inference backend request failed"
+    )
 
 
 def test_estimate_message_content_length_messages_router():
@@ -79,4 +87,3 @@ def test_estimate_message_content_length_openai_router():
     assert openai_router._estimate_message_content_length({"k": "v"}) >= 7
     length2 = openai_router._estimate_message_content_length({"x": object()})
     assert isinstance(length2, int) and length2 > 0
-
