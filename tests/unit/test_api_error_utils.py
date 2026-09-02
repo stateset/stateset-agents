@@ -1,5 +1,4 @@
 import httpx
-import pytest
 
 from stateset_agents.api.routers import messages as messages_router
 from stateset_agents.api.routers import openai as openai_router
@@ -25,7 +24,7 @@ def test_extract_inference_error_text_messages_variants():
     # plain-text body
     resp3 = _make_httpx_response(500, "upstream broke")
     exc3 = httpx.HTTPError("oops")
-    setattr(exc3, "response", resp3)
+    exc3.response = resp3
     assert messages_router._extract_inference_error_text(exc3) == "upstream broke"
 
     # no response attached
@@ -46,7 +45,7 @@ def test_extract_inference_error_text_openai_variants():
     # plain-text body
     resp3 = _make_httpx_response(502, "gateway failed")
     exc3 = httpx.HTTPError("oops")
-    setattr(exc3, "response", resp3)
+    exc3.response = resp3
     assert openai_router._extract_inference_error_text(exc3) == "gateway failed"
 
     # no response attached
