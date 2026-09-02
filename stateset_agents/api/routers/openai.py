@@ -179,7 +179,14 @@ async def chat_completions(
 
     if messages_request.stream:
         generator = service.stream_openai(messages_request)
-        return StreamingResponse(generator, media_type="text/event-stream")
+        sse_headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+        return StreamingResponse(
+            generator, media_type="text/event-stream", headers=sse_headers
+        )
 
     try:
         openai_payload = await service.create_openai_response(messages_request)

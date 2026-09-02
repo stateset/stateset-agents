@@ -87,6 +87,12 @@ async def test_messages_endpoint_stream(monkeypatch, preserve_api_config):
             },
         ) as response:
             assert response.status_code == 200
+            # Streaming responses should advertise proper SSE headers
+            assert response.headers.get("content-type", "").startswith(
+                "text/event-stream"
+            )
+            assert "no-cache" in response.headers.get("cache-control", "").lower()
+            assert response.headers.get("x-accel-buffering") == "no"
             body = "".join([chunk async for chunk in response.aiter_text()])
 
     assert "event: message_start" in body
