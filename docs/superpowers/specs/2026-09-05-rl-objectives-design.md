@@ -63,10 +63,13 @@ module never requires torch. `rl_losses.py` stays as the primitive layer;
 | `kl_bias_correction` | bool | Multiply per-token k3 by the ratio (TRL `use_bias_correction_kl`) |
 | `entropy_coef` | float | Subtracts `entropy_coef · masked_mean(entropy)` when the caller supplies an entropy tensor |
 
-`__post_init__` validates every combination and raises `ValueError` with the
-offending field: `seq_sum_const` without `max_completion_length`;
-`group_expectation` with anything but sequence-sum old log-probs; `clip_low`
-or `clip_high` negative; `kl_coef` non-zero with `kl="none"`, and so on.
+`__post_init__` validates every field value and raises `ValueError` naming
+the offending field: unknown enum values; `clip_low` or `clip_high`
+negative; `kl_coef` non-zero with `kl="none"`; `kl_bias_correction` outside
+`k3_token`, and so on. Shape-dependent checks (`seq_sum_const` without
+`max_completion_length`, `group_expectation` without sequence-sum old
+log-probs, `token` ratio without per-token old log-probs) are raised by
+`policy_loss`, so presets can carry `None` placeholders.
 `with_(**changes)` returns a modified copy so presets are easy to tweak.
 
 ### 1.2 `compute_advantages(rewards, group_ids, objective) -> Tensor[N]`
@@ -216,11 +219,11 @@ pinned behaviour:
 | 1 | DAPO | `dapo` with config `clip_eps_low/high`, aggregate from `use_token_level_loss` | none |
 | 2 | VAPO | `ppo`-family with `advantage="external"`, config clip, aggregate from `use_token_level_loss`; value loss and positive-LM loss stay in VAPO | none |
 | 3 | GSPO | `gspo` with `clip_range_left/right`, `kl="k3_sequence"`, `kl_coef=beta` | none |
-| 4 | GSPO-token | `gspo_token`, same config | none |
+| 4 | GSPO-token | `gspo_token`, same config | **reported `policy_loss` value** becomes the clipped-surrogate value (as GSPO reports) instead of the log-prob-weighted sum; gradients identical and pinned |
 | 5 | GEPO | `gepo` with `clip_eps` | none |
 | 6 | PPO | `ppo` with `clip_eps`, `kl="k3_token"`, adaptive controller still scales `kl_coef` per step | **intended**: k3 replaces naive KL; ratio gains overflow clamp |
-| 7 | GRPO plain | per-token log-probs gathered from the same forward pass (equal to the mean NLL it uses today); `ratio="sequence"` always, since `trajectory.log_probs` is stored as a sum, clip `seq_clip_ratio`; `advantage` from `baseline_type` / `advantage_normalization` | none for the clipped path; the no-old-log-prob REINFORCE path stays REINFORCE |
-| 8 | GRPO enhanced | as above with `kl="external"` fed by the existing exact KL | none |
+| 7 | GRPO plain (clipped branch only; the REINFORCE fallback stays `advantage * loss`) | per-token log-probs gathered from the same forward pass (equal to the mean NLL it uses today); `ratio="sequence"` always, since `trajectory.log_probs` is stored as a sum, clip `seq_clip_ratio`; `advantage` from `baseline_type` / `advantage_normalization` | none for the clipped path; the no-old-log-prob REINFORCE path stays REINFORCE |
+| 8 | GRPO enhanced | clipped branch as above; the exact full-vocab KL and the historical unbiased-std advantage normalisation stay in place (routing the KL through `kl="external"` was not needed for parity) | none |
 
 `compute_grpo_loss` and `compute_enhanced_grpo_loss` keep their signatures,
 so `multi_turn_trainer`, `single_turn_trainer`, and `distributed_trainer`
@@ -268,3 +271,11 @@ loop references + property tests, (2) TRL pin, (3) golden capture + goldens,
 commit: `ruff check`, `black --check`, `isort --check`, `python
 scripts/check_types.py --all`, and the affected unit tests; the full suite
 with the coverage ratchet before the PR.
+
+## Implementation record (2026-09-05)
+
+Implemented on `feat/rl-objectives` per `docs/superpowers/plans/2026-09-05-rl-objectives.md`.
+Deviations from the text above are folded in: shape checks live in
+`policy_loss`; GSPO-token's reported loss value changed (gradients pinned);
+enhanced GRPO keeps its unbiased-std advantages; `surrogate` and `aggregate`
+are public helpers used by DAPO's ratio-based entry point.
