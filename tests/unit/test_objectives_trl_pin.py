@@ -8,15 +8,45 @@ module skip loudly rather than silently pass.
 
 from __future__ import annotations
 
+import importlib
+import sys
 from collections import defaultdict
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
 torch = pytest.importorskip("torch")
-trl = pytest.importorskip("trl")
 
 from stateset_agents.training import objectives as O  # noqa: E402
+
+
+def _import_real_trl():
+    """Import the real ``trl`` even when another test module has leaked
+    ``MagicMock`` stand-ins for ``trl``/``peft``/``vllm`` into ``sys.modules``
+    (``tests/unit/test_trl_grpo_trainer.py`` does so at import time and never
+    restores them). The mocks are put back afterwards so that module still
+    sees them; the real classes bound here keep working regardless.
+    """
+    leaked = {
+        name: mod
+        for name, mod in list(sys.modules.items())
+        if name.split(".")[0] in ("trl", "peft", "vllm") and isinstance(mod, MagicMock)
+    }
+    for name in leaked:
+        del sys.modules[name]
+    try:
+        trl_mod = importlib.import_module("trl")
+        grpo_mod = importlib.import_module("trl.trainer.grpo_trainer")
+    finally:
+        sys.modules.update(leaked)
+    return trl_mod, grpo_mod.GRPOTrainer
+
+
+try:
+    trl, GRPOTrainer = _import_real_trl()
+except ImportError as exc:  # pragma: no cover - depends on the environment
+    pytest.skip(f"trl is not importable: {exc}", allow_module_level=True)
 
 TRL_MAJOR = 1
 if int(trl.__version__.split(".")[0]) != TRL_MAJOR:
@@ -24,8 +54,6 @@ if int(trl.__version__.split(".")[0]) != TRL_MAJOR:
         f"objective pin targets trl {TRL_MAJOR}.x, found {trl.__version__}",
         allow_module_level=True,
     )
-
-from trl.trainer.grpo_trainer import GRPOTrainer  # noqa: E402
 
 
 def _fixture(seed: int, n: int = 6, t: int = 8, prompt: int = 3):

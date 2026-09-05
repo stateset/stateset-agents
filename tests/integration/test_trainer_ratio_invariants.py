@@ -94,14 +94,15 @@ def _make_dapo_harness() -> TrainerHarness:
     response_mask[:, :4] = 0.0
 
     captured_ratios: list[torch.Tensor] = []
-    orig_ratio = trainer.compute_importance_ratio
+    orig_loss = trainer.compute_dapo_loss_from_log_probs
 
-    def spy(cur: torch.Tensor, old: torch.Tensor) -> torch.Tensor:
-        ratio = orig_ratio(cur, old)
-        captured_ratios.append(ratio.detach().clone())
-        return ratio
+    def spy(
+        cur: torch.Tensor, old: torch.Tensor, adv: torch.Tensor, mask: torch.Tensor
+    ) -> tuple[torch.Tensor, dict[str, float]]:
+        captured_ratios.append(trainer.compute_importance_ratio(cur, old).detach())
+        return orig_loss(cur, old, adv, mask)
 
-    trainer.compute_importance_ratio = spy  # type: ignore[method-assign]
+    trainer.compute_dapo_loss_from_log_probs = spy  # type: ignore[method-assign]
 
     async def run_train_step() -> dict[str, float]:
         captured_ratios.clear()
