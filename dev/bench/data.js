@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788523959167,
+  "lastUpdate": 1788607337515,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -192,6 +192,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.338675719030506e-8",
             "extra": "mean: 425.6563942981647 nsec\nrounds: 112702"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Dom Steil",
+            "username": "domsteil",
+            "email": "domsteil14@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "5ea30e23c787bed3244a62a2159d3931ca9f7d67",
+          "message": "test(api): stabilize py310 coverage by exercising SSE router helpers (#63)\n\n* test(api): increase coverage for SSE routers by exercising error extraction and content-length helpers (stabilize py310 coverage)\n\nCo-authored-by: Dom Steil <domsteil@users.noreply.github.com>\n\n* test(api): fix ruff findings in new coverage tests (remove unused import, avoid setattr)\n\nCo-authored-by: Dom Steil <domsteil@users.noreply.github.com>\n\n* test(api): format and sort imports per black/isort (py310, 88)\n\nCo-authored-by: Dom Steil <domsteil@users.noreply.github.com>\n\n---------\n\nCo-authored-by: Cursor Agent <cursoragent@cursor.com>\nCo-authored-by: Dom Steil <domsteil@users.noreply.github.com>",
+          "timestamp": "2026-09-02T17:56:04Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/5ea30e23c787bed3244a62a2159d3931ca9f7d67"
+        },
+        "date": 1788607336725,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 6088.685398335821,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001550800636570098",
+            "extra": "mean: 164.2390655088409 usec\nrounds: 2015"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6512.119909255886,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015390092119244094",
+            "extra": "mean: 153.55982597597253 usec\nrounds: 1948"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4952.67584243663,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000026479623133837036",
+            "extra": "mean: 201.91105410767557 usec\nrounds: 3031"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 751.90373351982,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003070939466123598",
+            "extra": "mean: 1.329957487135739 msec\nrounds: 583"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 184.49321800402782,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000029333801448920618",
+            "extra": "mean: 5.420253442477046 msec\nrounds: 113"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2242198.9337716447,
+            "unit": "iter/sec",
+            "range": "stddev: 5.5384517366618535e-8",
+            "extra": "mean: 445.99075708143397 nsec\nrounds: 106633"
           }
         ]
       }
