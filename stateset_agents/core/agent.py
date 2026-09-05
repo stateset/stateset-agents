@@ -845,23 +845,34 @@ class MultiTurnAgent(Agent):
         response = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
 
         details: dict[str, Any] = {"response": self._clean_response(response)}
+        # Best-effort token capture for per-token RL. Never let it break
+        # generation: mocked models, empty generations, and backends without
+        # per-step logits simply return text only.
         raw_logits = getattr(outputs, "logits", None)
-        if raw_logits:
-            with torch.no_grad():
-                # Model log-probs of the sampled ids from the RAW logits (before
-                # temperature / top-p warping), so a training-time forward pass
-                # on the stored ids reproduces them.
-                stacked = torch.stack(list(raw_logits), dim=1)[0].float()
-                log_probs = torch.log_softmax(stacked, dim=-1)
-                n = min(int(response_tokens.shape[0]), int(log_probs.shape[0]))
-                picked = (
-                    log_probs[:n]
-                    .gather(-1, response_tokens[:n].unsqueeze(-1))
-                    .squeeze(-1)
-                )
-            details["prompt_token_ids"] = [int(t) for t in inputs["input_ids"][0]]
-            details["token_ids"] = [int(t) for t in response_tokens[:n]]
-            details["sampler_log_probs"] = [float(x) for x in picked]
+        try:
+            steps = (
+                [t for t in raw_logits if torch.is_tensor(t)]
+                if isinstance(raw_logits, (tuple, list))
+                else []
+            )
+            if steps and torch.is_tensor(response_tokens) and response_tokens.numel():
+                with torch.no_grad():
+                    # Model log-probs of the sampled ids from the RAW logits
+                    # (before temperature / top-p warping), so a training-time
+                    # forward pass on the stored ids reproduces them.
+                    stacked = torch.stack(steps, dim=1)[0].float()
+                    log_probs = torch.log_softmax(stacked, dim=-1)
+                    n = min(int(response_tokens.shape[0]), int(log_probs.shape[0]))
+                    picked = (
+                        log_probs[:n]
+                        .gather(-1, response_tokens[:n].unsqueeze(-1))
+                        .squeeze(-1)
+                    )
+                details["prompt_token_ids"] = [int(t) for t in inputs["input_ids"][0]]
+                details["token_ids"] = [int(t) for t in response_tokens[:n]]
+                details["sampler_log_probs"] = [float(x) for x in picked]
+        except (RuntimeError, TypeError, ValueError, AttributeError, IndexError) as e:
+            logger.debug("token capture skipped: %s", e)
         return details
 
     def _clean_response(self, response: str) -> str:
