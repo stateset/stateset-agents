@@ -10,7 +10,6 @@ This module provides exhaustive tests for all API components including:
 - Integration tests
 """
 
-import asyncio
 import os
 import time
 from types import SimpleNamespace
