@@ -12,6 +12,11 @@ StateSet Agents now includes state-of-the-art reinforcement learning algorithms 
 | **DAPO** | Long-CoT reasoning | 50 pts | Clip-Higher + Dynamic Sampling |
 | **VAPO** | Reasoning (SOTA) | 60.4 pts | Value-augmented PPO |
 
+Every trainer below evaluates a named `PolicyObjective`
+(`stateset_agents.training.objectives`); see [OBJECTIVES.md](OBJECTIVES.md)
+for the exact formulas, the eleven presets (including Dr. GRPO, BNPO, RLOO,
+REINFORCE++-baseline, and CISPO), and the numeric pin against TRL 1.12.
+
 ## GEPO: Group Expectation Policy Optimization
 
 GEPO is designed for stable training in heterogeneous and distributed environments where network latency causes policy staleness.

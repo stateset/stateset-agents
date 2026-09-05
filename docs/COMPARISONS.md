@@ -78,7 +78,7 @@ StateSet Agents is a higher‑level framework focused on **multi‑turn agent le
 |---|---|---|
 | Multi‑turn agent runtime | Yes (`core/multiturn_agent.py`) | Yes in GRPO tool/environment workflows |
 | Conversation/task environments | Yes (`core/environment.py`) | Stateful per-rollout environment factory |
-| Group‑based RL algorithms | Yes (GRPO/GSPO/GEPO/DAPO/VAPO) | Partial (GRPO/PPO/DPO‑family) |
+| Group‑based RL algorithms | Yes — 11 presets in `training/objectives.py` (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO), losses pinned to TRL 1.12 on CPU fixtures | grpo/bnpo/dr_grpo/dapo/cispo/sapo/vespo/luspo loss types |
 | Reward composition | Yes (`rewards/`, `core/reward.py`) | Minimal (reward fn/model hook) |
 | Distributed/async rollouts | Policy-versioned bounded coordinator and executable producer/learner runtime (`training/async_rollouts.py`, `training/async_runtime.py`); native multi-node proof pending | Accelerate/DeepSpeed plus experimental async GRPO |
 | Production serving | Yes (`api/`) | No |
@@ -99,6 +99,12 @@ Choose **StateSet Agents** if:
 - You need GRPO/GSPO‑style group training as a first‑class workflow.
 
 ### What the benchmark establishes
+
+Separately from throughput, every StateSet objective preset that TRL also
+implements (grpo, bnpo, dr_grpo, dapo, cispo, and sequence-level ratios) is
+numerically pinned to TRL 1.12's loss on identical tensors in
+`tests/unit/test_objectives_trl_pin.py` (see [OBJECTIVES.md](OBJECTIVES.md)).
+That is a correctness check, not a benchmark.
 
 On the retained four-step Qwen2.5-0.5B/GSM8K A40 protocol, StateSet and direct
 TRL have equivalent throughput, wall time, and peak VRAM within run-to-run

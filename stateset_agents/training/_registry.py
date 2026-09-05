@@ -78,6 +78,12 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{_PKG}.async_rollouts",
         "compute_importance_weights",
     ),
+    # Declarative policy-optimisation objectives (torch-free import).
+    "PolicyObjective": (f"{_PKG}.objectives", "PolicyObjective"),
+    "PolicyLossResult": (f"{_PKG}.objectives", "PolicyLossResult"),
+    "OBJECTIVES": (f"{_PKG}.objectives", "OBJECTIVES"),
+    "compute_advantages": (f"{_PKG}.objectives", "compute_advantages"),
+    "policy_loss": (f"{_PKG}.objectives", "policy_loss"),
     "AsyncRolloutRunResult": (
         f"{_PKG}.async_runtime",
         "AsyncRolloutRunResult",
