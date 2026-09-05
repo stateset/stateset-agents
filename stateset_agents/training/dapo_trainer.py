@@ -312,7 +312,11 @@ class DAPOTrainer:
         )
         # The DAPO objective (Clip-Higher, token- or sequence-level
         # aggregation) as one declarative PolicyObjective.
-        self._objective = objectives.OBJECTIVES["dapo"].with_(
+        self._objective = objectives.resolve_objective(
+            config,
+            "dapo",
+            max_completion_length=int(config.max_completion_length),
+            supported_ratios=("token", "sequence", "sequence_token"),
             clip_low=float(config.clip_eps_low),
             clip_high=float(config.clip_eps_high),
             aggregate="token_mean" if config.use_token_level_loss else "seq_mean",
@@ -487,11 +491,16 @@ class DAPOTrainer:
         return rl_losses.safe_exp_ratio(current_log_probs - old_log_probs)
 
     def compute_group_advantages(self, rewards: torch.Tensor) -> torch.Tensor:
-        """Group-relative advantages for one group of rewards [group_size].
+        """Advantages for one group of rewards [group_size] using the
+        configured objective's estimator (group-normalised by default).
 
         Groups of size 1 (or constant rewards) yield zeros rather than NaN.
         """
-        return rl_losses.group_advantages(rewards)
+        group_ids = torch.zeros(
+            rewards.numel(), dtype=torch.long, device=rewards.device
+        )
+        objective = getattr(self, "_objective", None) or objectives.OBJECTIVES["dapo"]
+        return objectives.compute_advantages(rewards, group_ids, objective)
 
     def compute_dapo_loss_from_log_probs(
         self,

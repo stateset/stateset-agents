@@ -406,6 +406,75 @@ OBJECTIVES: Mapping[str, PolicyObjective] = MappingProxyType(
     }
 )
 
+# --- selection ---------------------------------------------------------------
+
+
+def compatible_presets(supported_ratios: tuple[str, ...] | None) -> list[str]:
+    """Names of presets whose ratio level is in ``supported_ratios`` (all if None)."""
+    return sorted(
+        name
+        for name, obj in OBJECTIVES.items()
+        if supported_ratios is None or obj.ratio in supported_ratios
+    )
+
+
+def resolve_objective(
+    config: Any,
+    default: str,
+    *,
+    kl_coef: float | None = None,
+    max_completion_length: int | None = None,
+    supported_ratios: tuple[str, ...] | None = None,
+    **native_fields: Any,
+) -> PolicyObjective:
+    """Build the objective a trainer should evaluate for ``config``.
+
+    ``config.objective`` unset: the trainer's native ``default`` preset with
+    its ``native_fields`` (clip range, aggregation, ...) applied, so every
+    trainer behaves exactly as before. Set: that preset, keeping its own clip
+    and aggregation choices (the native fields describe the native objective
+    and are not applied), with ``kl_coef`` applied when the preset has a KL
+    estimator, ``max_completion_length`` filled in, and
+    ``config.objective_overrides`` applied last. ``supported_ratios`` lists
+    the ratio levels the trainer's rollouts can feed (sequence sums cannot
+    drive token-level ratios); an incompatible choice raises ``ValueError``
+    naming the compatible presets.
+    """
+    name = getattr(config, "objective", None)
+    overrides = dict(getattr(config, "objective_overrides", None) or {})
+    if name is None:
+        obj = OBJECTIVES[default].with_(**native_fields)
+        if kl_coef is not None and obj.kl != "none":
+            obj = obj.with_(kl_coef=float(kl_coef))
+    else:
+        if name not in OBJECTIVES:
+            raise ValueError(
+                f"unknown objective {name!r}; expected one of: "
+                f"{', '.join(sorted(OBJECTIVES))}"
+            )
+        obj = OBJECTIVES[name]
+        if kl_coef is not None and obj.kl != "none":
+            obj = obj.with_(kl_coef=float(kl_coef))
+    if max_completion_length is not None and obj.max_completion_length is None:
+        obj = obj.with_(max_completion_length=int(max_completion_length))
+    if overrides:
+        unknown = sorted(set(overrides) - set(PolicyObjective.__dataclass_fields__))
+        if unknown:
+            raise ValueError(
+                f"objective_overrides has unknown field(s) {unknown}; valid fields: "
+                f"{', '.join(sorted(PolicyObjective.__dataclass_fields__))}"
+            )
+        obj = obj.with_(**overrides)
+    if supported_ratios is not None and obj.ratio not in supported_ratios:
+        raise ValueError(
+            f"objective {obj.name!r} uses ratio={obj.ratio!r}, but this trainer "
+            f"can only drive {', '.join(supported_ratios)} ratios (its rollouts "
+            "store sequence-level log-probs). Compatible presets: "
+            f"{', '.join(compatible_presets(supported_ratios))}."
+        )
+    return obj
+
+
 __all__ = [
     "ADVANTAGE_KINDS",
     "AGGREGATE_KINDS",
@@ -416,7 +485,9 @@ __all__ = [
     "PolicyLossResult",
     "PolicyObjective",
     "aggregate",
+    "compatible_presets",
     "compute_advantages",
     "policy_loss",
+    "resolve_objective",
     "surrogate",
 ]

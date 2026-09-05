@@ -58,10 +58,14 @@ class GSPOTokenTrainer(GSPOTrainer):
         # Override config flag
         self.config.use_gspo_token = True
         # GSPO-token: stop-gradient sequence ratio, gradient through tokens.
-        self._objective = objectives.OBJECTIVES["gspo_token"].with_(
+        self._objective = objectives.resolve_objective(
+            config,
+            "gspo_token",
+            kl_coef=float(config.beta),
+            max_completion_length=int(config.max_completion_length),
+            supported_ratios=("sequence", "sequence_token"),
             clip_low=float(config.clip_range_left),
             clip_high=float(config.clip_range_right),
-            kl_coef=float(config.beta),
         )
 
     def compute_token_importance_ratio(

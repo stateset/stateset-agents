@@ -398,7 +398,11 @@ class VAPOTrainer:
         )
         # Policy half of VAPO: Clip-Higher surrogate on external (GAE)
         # per-token advantages; value and positive-LM losses stay local.
-        self._objective = objectives.OBJECTIVES["ppo"].with_(
+        self._objective = objectives.resolve_objective(
+            config,
+            "ppo",
+            max_completion_length=int(config.max_completion_length),
+            supported_ratios=("token", "sequence", "sequence_token"),
             name="vapo",
             clip_low=float(config.clip_eps_low),
             clip_high=float(config.clip_eps_high),

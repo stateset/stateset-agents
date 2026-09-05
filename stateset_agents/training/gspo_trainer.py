@@ -349,10 +349,14 @@ class GSPOTrainer:
         self.ref_model = ref_model
         # The GSPO objective (length-normalised sequence ratio, asymmetric
         # clip, k3 KL on sequence log-probs) as one declarative PolicyObjective.
-        self._objective = objectives.OBJECTIVES["gspo"].with_(
+        self._objective = objectives.resolve_objective(
+            config,
+            "gspo",
+            kl_coef=float(config.beta),
+            max_completion_length=int(config.max_completion_length),
+            supported_ratios=("sequence", "sequence_token"),
             clip_low=float(config.clip_range_left),
             clip_high=float(config.clip_range_right),
-            kl_coef=float(config.beta),
         )
 
         # Optimizer
@@ -444,9 +448,13 @@ class GSPOTrainer:
             else torch.as_tensor(rewards, dtype=torch.float32)
         )
 
-        # Single source of truth for the formula; this method only adds the
-        # logging stats on top.
-        advantages = rl_losses.group_advantages(rewards_tensor)
+        # The configured objective's estimator (group-normalised by default);
+        # this method only adds the logging stats on top.
+        group_ids = torch.zeros(
+            rewards_tensor.numel(), dtype=torch.long, device=rewards_tensor.device
+        )
+        objective = getattr(self, "_objective", None) or objectives.OBJECTIVES["gspo"]
+        advantages = objectives.compute_advantages(rewards_tensor, group_ids, objective)
 
         std_reward = rewards_tensor.float().std(unbiased=False)
         stats = {

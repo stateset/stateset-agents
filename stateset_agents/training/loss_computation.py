@@ -52,8 +52,16 @@ def _grpo_objective(config: Any) -> Any:
     """GRPO trainers score a trajectory as summed log-probs, so the ratio is
     sequence-level and clipped at ``seq_clip_ratio`` (GSPO scale)."""
     seq_clip = float(getattr(config, "seq_clip_ratio", 3e-4))
-    return objectives.OBJECTIVES["gspo"].with_(
-        name="grpo_sequence", clip_low=seq_clip, clip_high=seq_clip, kl="none"
+    return objectives.resolve_objective(
+        config,
+        "gspo",
+        max_completion_length=int(getattr(config, "max_completion_length", 0) or 0)
+        or None,
+        supported_ratios=("sequence", "sequence_token"),
+        name="grpo_sequence",
+        clip_low=seq_clip,
+        clip_high=seq_clip,
+        kl="none",
     )
 
 
@@ -138,8 +146,15 @@ def compute_grpo_loss(
                 rewards, min=-float(reward_clip), max=float(reward_clip)
             )
 
-        # Select baseline
-        if baseline_type == "group_median":
+        # Select baseline. A configured objective preset owns the estimator.
+        if getattr(config, "objective", None) is not None:
+            baseline = rewards - objectives.compute_advantages(
+                rewards,
+                torch.zeros_like(rewards, dtype=torch.long),
+                _grpo_objective(config).with_(advantage_eps=1e-8),
+            )
+            normalize_adv = False  # the preset already normalised (or not)
+        elif baseline_type == "group_median":
             baseline = rewards.median()
         elif baseline_type == "global_mean":
             # Update running global mean baseline

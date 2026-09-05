@@ -219,8 +219,13 @@ class GEPOTrainer:
 
         self.config = config
         # GEPO objective: group-expectation importance coefficient, PPO clip.
-        self._objective = objectives.OBJECTIVES["gepo"].with_(
-            clip_low=float(config.clip_eps), clip_high=float(config.clip_eps)
+        self._objective = objectives.resolve_objective(
+            config,
+            "gepo",
+            max_completion_length=int(config.max_completion_length),
+            supported_ratios=("group_expectation", "sequence", "sequence_token"),
+            clip_low=float(config.clip_eps),
+            clip_high=float(config.clip_eps),
         )
         self.model = model
         self.tokenizer = tokenizer
@@ -427,7 +432,11 @@ class GEPOTrainer:
             advantages: Normalized advantages [group_size]
             stats: Reward statistics
         """
-        advantages = rl_losses.group_advantages(rewards)
+        group_ids = torch.zeros(
+            rewards.numel(), dtype=torch.long, device=rewards.device
+        )
+        objective = getattr(self, "_objective", None) or objectives.OBJECTIVES["gepo"]
+        advantages = objectives.compute_advantages(rewards, group_ids, objective)
 
         std_reward = rewards.float().std(correction=0) if rewards.numel() > 1 else 0.0
         stats = {

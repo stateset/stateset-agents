@@ -279,8 +279,14 @@ class PPOTrainer:
         self.config = config
         # PPO clipped surrogate as one declarative PolicyObjective; the KL
         # penalty is added separately in train_step (adaptive coefficient).
-        self._objective = objectives.OBJECTIVES["ppo"].with_(
-            clip_low=float(config.clip_eps), clip_high=float(config.clip_eps), kl="none"
+        self._objective = objectives.resolve_objective(
+            config,
+            "ppo",
+            max_completion_length=int(config.max_completion_length),
+            supported_ratios=("token", "sequence", "sequence_token"),
+            clip_low=float(config.clip_eps),
+            clip_high=float(config.clip_eps),
+            kl="none",
         )
         self.model = model
         self.tokenizer = tokenizer

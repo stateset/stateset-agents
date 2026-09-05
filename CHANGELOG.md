@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`docs/OBJECTIVES.md`).
 - Golden regression pins for every native trainer's objective
   (`scripts/capture_objective_goldens.py`, `tests/unit/test_objective_goldens.py`).
+- Objective selection: `TrainingConfig.objective` (a preset name) and
+  `objective_overrides` are honoured by DAPO, VAPO, GSPO, GSPO-token, GEPO,
+  PPO, and the GRPO trainers via `objectives.resolve_objective`, including the
+  preset's advantage estimator; incompatible presets are rejected at
+  construction with the compatible names. `stateset-agents train --objective`
+  / `--list-objectives`, `--objective` on every per-model starter command, and
+  matching `objective` fields on the starter configs.
+  Reviewed additive change to the stable v1 API contract: `TrainingConfig`
+  gains the two keyword parameters `objective` and `objective_overrides`
+  (appended, defaults `None`; `contracts/public_api_v1.json` regenerated).
 
 ### Changed
 

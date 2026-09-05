@@ -167,6 +167,10 @@ class Gemma4Config(_common.StarterConfigMixin):
     generations_per_iteration: int = 12
     clip_range_left: float = 2e-4
     clip_range_right: float = 3e-4
+    # Policy objective preset + field overrides (docs/OBJECTIVES.md); None
+    # keeps the native GSPO objective.
+    objective: str | None = None
+    objective_overrides: dict[str, Any] | None = None
 
     output_dir: str = GEMMA4_31B_DEFAULT_OUTPUT_DIR
     save_steps_every: int = 5

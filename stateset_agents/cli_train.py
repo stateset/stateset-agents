@@ -63,8 +63,27 @@ def train(
             "(conservative, balanced, aggressive, experimental; aliases: speed, quality)."
         ),
     ),
+    objective: str | None = typer.Option(
+        None,
+        "--objective",
+        help=(
+            "Policy objective preset (grpo, dr_grpo, bnpo, dapo, gspo, gspo_token, "
+            "gepo, rloo, reinforce_pp_baseline, cispo, ppo). Default: the "
+            "trainer's native objective. See --list-objectives."
+        ),
+    ),
+    list_objectives: bool = typer.Option(
+        False,
+        "--list-objectives",
+        help="Describe every policy objective preset and exit.",
+    ),
 ) -> None:
     """Guide or launch training (lightweight)."""
+    if list_objectives:
+        _echo_objective_catalog()
+        return
+    if objective is not None:
+        _require_known_objective(objective)
     cfg = _load_config(config)
     validation_errors, validation_warnings = _validate_config(cfg)
     if validation_errors:
@@ -93,6 +112,8 @@ def train(
         raise typer.Exit(code=2)
 
     if dry_run and not stub:
+        if objective is not None:
+            _echo(f"Objective: {objective}")
         if cfg:
             _echo("Dry-run: configuration loaded and validated.")
             if cfg:
@@ -212,6 +233,7 @@ def train(
             reward_fn=reward_fn,
             num_episodes=num_episodes,
             profile=resolved_profile,
+            config_overrides={"objective": objective} if objective else None,
             save_path=save or None,
         )
 
@@ -223,6 +245,35 @@ def train(
 
     _echo("Training complete.")
     raise typer.Exit(code=0)
+
+
+def _require_known_objective(name: str) -> None:
+    """Exit with code 2 (and the valid names) for an unknown objective preset."""
+    from stateset_agents.training.objectives import OBJECTIVES
+
+    if name not in OBJECTIVES:
+        _echo(
+            f"Unknown objective '{name}'. Use one of: {', '.join(sorted(OBJECTIVES))}."
+        )
+        raise typer.Exit(code=2)
+
+
+def _echo_objective_catalog() -> None:
+    """Print one line per policy objective preset."""
+    from stateset_agents.training.objectives import OBJECTIVES
+
+    _echo("Policy objective presets (docs/OBJECTIVES.md):")
+    for name in sorted(OBJECTIVES):
+        obj = OBJECTIVES[name]
+        clip = (
+            f"clip {obj.clip_low}/{obj.clip_high}"
+            if obj.clip == "clipped"
+            else (f"cispo cap {obj.is_cap}" if obj.clip == "cispo" else "no clip")
+        )
+        _echo(
+            f"- {name}: advantage={obj.advantage}, ratio={obj.ratio}, {clip}, "
+            f"aggregate={obj.aggregate}, kl={obj.kl}"
+        )
 
 
 def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
@@ -305,6 +356,14 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
             None,
             "--wandb-project",
             help="Optional W&B project name.",
+        ),
+        objective: str | None = typer.Option(
+            None,
+            "--objective",
+            help=(
+                "Policy objective preset (see `stateset-agents train "
+                "--list-objectives`). Default: the starter's native GSPO objective."
+            ),
         ),
         write_config: str | None = typer.Option(
             None,
@@ -402,6 +461,8 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
                 conflicting_options.append("--wandb")
             if wandb_project is not None:
                 conflicting_options.append("--wandb-project")
+            if objective is not None:
+                conflicting_options.append("--objective")
             if conflicting_options:
                 _echo(
                     "`--config` cannot be combined with starter override options: "
@@ -423,6 +484,9 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
                 )
                 raise typer.Exit(code=2)
             config_overrides: dict[str, t.Any] = {}
+            if objective is not None:
+                _require_known_objective(objective)
+                config_overrides["objective"] = objective
             if iterations is not None:
                 config_overrides["num_outer_iterations"] = _coerce_positive_int(
                     iterations,

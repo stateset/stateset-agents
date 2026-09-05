@@ -174,6 +174,16 @@ class TrainingConfig:
     task_switch_steps: int = 0
     resume_from_checkpoint: str | None = None
 
+    # Policy objective selection. ``None`` keeps each trainer's native
+    # objective (GRPO -> sequence-clipped GRPO, DAPO -> dapo, ...). Set to a
+    # preset name from ``stateset_agents.training.objectives.OBJECTIVES``
+    # (grpo, dr_grpo, bnpo, dapo, gspo, gspo_token, gepo, rloo,
+    # reinforce_pp_baseline, cispo, ppo) to train with that objective instead;
+    # ``objective_overrides`` tweaks individual PolicyObjective fields, e.g.
+    # ``{"clip_high": 0.3, "is_cap": 3.0}``. See docs/OBJECTIVES.md.
+    objective: str | None = None
+    objective_overrides: dict[str, Any] | None = None
+
     def __post_init__(self):
         # Map compatibility aliases
         if self.batch_size is not None and self.batch_size > 0:
@@ -310,6 +320,16 @@ class TrainingConfig:
         # W&B checks
         if self.report_to == "wandb" and not self.wandb_project:
             warnings.append("W&B reporting enabled but no project specified")
+
+        # Objective selection checks (torch-free: only the preset names).
+        if self.objective is not None:
+            from .objectives import OBJECTIVES
+
+            if self.objective not in OBJECTIVES:
+                warnings.append(
+                    f"objective '{self.objective}' is not a known preset; "
+                    f"expected one of: {', '.join(sorted(OBJECTIVES))}"
+                )
 
         # Continual learning checks
         valid_strategies = {

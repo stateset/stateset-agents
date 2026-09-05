@@ -120,6 +120,47 @@ Notes:
 - KL coefficients default to 0 in every preset; trainers set `kl_coef` from
   their `beta` config field.
 
+## Selecting an objective
+
+Every trainer evaluates its native preset unless you name another one.
+
+```python
+from stateset_agents.training.dapo_trainer import DAPOConfig, DAPOTrainer
+
+config = DAPOConfig(model_name="Qwen/Qwen2.5-0.5B-Instruct", objective="cispo")
+config = DAPOConfig(objective="dapo", objective_overrides={"clip_high": 0.3})
+config = DAPOConfig(objective="dr_grpo")  # max_completion_length is filled in
+```
+
+```bash
+stateset-agents train --list-objectives
+stateset-agents train --objective rloo --no-dry-run
+stateset-agents qwen3-5-0-8b --objective gspo_token --write-config run.json
+```
+
+Rules, implemented by `objectives.resolve_objective`:
+
+- `objective` unset: the trainer's native preset with the trainer's own clip
+  and aggregation fields (`clip_eps_low`, `use_token_level_loss`, ...), so
+  nothing changes by default.
+- `objective` set: that preset with its own clip and aggregation choices; the
+  trainer's native clip fields are not applied. `beta` becomes `kl_coef` when
+  the preset has a KL estimator, `max_completion_length` is filled in for
+  `dr_grpo`, and `objective_overrides` (any `PolicyObjective` field) is
+  applied last.
+- The preset's advantage estimator is used for the group advantages, so
+  `rloo`, `dr_grpo`, and `reinforce_pp_baseline` change more than the
+  surrogate.
+- Trainers whose rollouts store sequence-level log-probs (GSPO, GSPO-token,
+  GEPO, and the GRPO trainers) accept only sequence-level presets
+  (`gspo`, `gspo_token`, and `gepo` for GEPO). Trainers with per-token
+  log-probs (DAPO, VAPO, PPO) accept everything except `gepo`. An
+  incompatible choice raises at construction and names the compatible presets.
+- VAPO and PPO keep their external GAE advantages and separate value losses;
+  the preset only changes the policy surrogate.
+- An unknown name warns in `TrainingConfig.validate()` and raises at trainer
+  construction and on the CLI, listing the valid presets.
+
 ## Which preset
 
 | Situation | Start with |
