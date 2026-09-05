@@ -68,20 +68,29 @@ measurable.
 
 ### Current verification status
 
-The `v0.47.2` release passed its complete gate on **2026-09-01**: Linux
-Python 3.10–3.13, Windows Python 3.10/3.13, CodeQL, dependency and secret
-scanning, package-readiness, release governance, docs, Helm, and the Node
-client. All **16 remote checks passed**, and the corresponding local suite
-completed with **5,149 passed and 11 skipped**. See the retained
-[proof ledger](docs/PROOFS.md) for the evidence behind individual training,
-serving, and provider claims.
+The `v0.50.0` release tree completed its local full suite on **2026-09-05**
+with **5,424 passed and 18 skipped**, plus clean Ruff, Black, isort, mypy,
+stable-API-contract, release-governance, repository-hygiene, and pre-commit
+gates; its release pull request runs the same 17 remote checks (Linux Python
+3.10–3.13, Windows 3.10/3.13, CodeQL, dependency and secret scanning,
+package-readiness, docs, Helm, Node client) that the `v0.49.0` release
+passed. See the retained [proof ledger](docs/PROOFS.md) for the evidence
+behind individual training, serving, and provider claims.
 
-The `v0.47.0` distributed-rollout release completed its local full suite with
-**5,083 passed and 11 skipped**, plus focused API and distributed/async
-regression suites and clean Ruff, isort, type, repository-hygiene, and diff
-gates. Native multi-node GPU evidence is intentionally still pending.
-
-- **Current Python release:** `stateset-agents==0.47.2`, published from the
+- **RL objectives:** every native trainer evaluates one declarative
+  [`PolicyObjective`](docs/OBJECTIVES.md); the eleven presets are verified by
+  explicit-loop references, Hypothesis invariants, a numeric pin against TRL
+  1.12, and deterministic per-trainer goldens. The GRPO trainers train on the
+  exact generated token ids with per-token ratios, KL, entropy, and optional
+  PPO-style inner updates; before `v0.50.0` they recorded no log-probs and
+  trained as unclipped REINFORCE on re-tokenised text.
+- **Measured comparisons:** the retained three-seed A40 result establishes
+  parity with direct TRL at 0.5B on a four-step protocol. A 48-step
+  three-seed comparison (`benchmarks/shootout_manifest_v2.json`, run through
+  the budget-bounded [`benchmarks/runpod_shootout.py`](benchmarks/runpod_shootout.py))
+  is the next evidence gate; no learning-quality superiority is claimed until
+  its validated report is retained.
+- **Current Python release:** `stateset-agents==0.50.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/); its first npm registry
@@ -1433,6 +1442,31 @@ async def main():
 asyncio.run(main())
 ```
 
+With a real model, `train(...)` asks the agent for full turns
+(`MultiTurnAgent.generate_turn`), so each trajectory carries the exact
+prompt and response token ids the policy sampled. The loss then takes one
+padded forward pass per trajectory group and evaluates the configured
+[`PolicyObjective`](docs/OBJECTIVES.md) on per-token log-probs; stub and
+text-only agents fall back to the sequence-level path. Pick any preset and
+PPO-style inner updates through the config:
+
+```python
+trained_agent = await train(
+    agent=agent,
+    environment=env,
+    reward_fn=reward_fn,
+    num_episodes=4,
+    config_overrides={
+        "objective": "dapo",          # or dr_grpo, cispo, rloo, gspo, ...
+        "objective_overrides": {"clip_high": 0.3},
+        "num_gradient_updates": 2,    # inner updates against frozen old log-probs
+    },
+)
+```
+
+`stateset-agents train --list-objectives` prints every preset with its
+advantage estimator, ratio level, clip, aggregation, and KL estimator.
+
 More end‑to‑end scripts live in `examples/complete_grpo_training.py` and `examples/production_ready_customer_service.py`.
 
 ---
@@ -1497,6 +1531,12 @@ All algorithms are available under `stateset_agents.training` when training deps
 - **VAPO**: value‑augmented group optimization (strong for math/reasoning)
 - **PPO baseline**: standard PPO trainer for comparison
 - **RLAIF**: RL from AI feedback via judge/reward models
+
+Every trainer above evaluates a named [`PolicyObjective`](docs/OBJECTIVES.md)
+and accepts `objective="<preset>"` on its config to swap the advantage
+estimator, ratio level, clipping, aggregation, and KL estimator; trainers
+whose rollouts store sequence-level log-probs reject token-level presets at
+construction with the compatible names.
 
 Minimal GSPO sketch:
 
