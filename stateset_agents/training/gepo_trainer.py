@@ -24,7 +24,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from . import rl_losses
+from . import objectives, rl_losses
 from .checkpoint_io import load_checkpoint_file
 from .config import TrainingConfig
 from .trainer_runtime import (
@@ -218,6 +218,10 @@ class GEPOTrainer:
         _load_transformers_gepo()
 
         self.config = config
+        # GEPO objective: group-expectation importance coefficient, PPO clip.
+        self._objective = objectives.OBJECTIVES["gepo"].with_(
+            clip_low=float(config.clip_eps), clip_high=float(config.clip_eps)
+        )
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
@@ -388,17 +392,24 @@ class GEPOTrainer:
         sampler_seq_log_probs: torch.Tensor,
         advantages: torch.Tensor,
     ) -> torch.Tensor:
-        """GEPO objective for one prompt group (clipped surrogate on group coefficients)."""
-        gepo_coefs = self.compute_gepo_coefficient_static(
-            learner_seq_log_probs, sampler_seq_log_probs
+        """GEPO objective for one prompt group via ``objectives.policy_loss``.
+
+        Each sequence is one "token" carrying its summed log-prob; the whole
+        call is one group, so the group-expectation denominator spans it.
+        """
+        logp_cur = learner_seq_log_probs.unsqueeze(-1)
+        group_ids = torch.zeros(
+            logp_cur.shape[0], dtype=torch.long, device=logp_cur.device
         )
-        # Shared PPO-style clipped surrogate (already a loss).
-        return rl_losses.clipped_surrogate(
-            gepo_coefs,
-            advantages,
-            clip_low=self.config.clip_eps,
-            clip_high=self.config.clip_eps,
-        ).mean()
+        result = objectives.policy_loss(
+            logp_cur=logp_cur,
+            mask=torch.ones_like(logp_cur),
+            advantages=advantages,
+            objective=self._objective,
+            logp_old=sampler_seq_log_probs.detach(),
+            group_ids=group_ids,
+        )
+        return result.loss
 
     def compute_group_advantages(
         self,
