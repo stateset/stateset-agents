@@ -3,60 +3,70 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from typer.testing import CliRunner
 
 from stateset_agents.cli import app
 
-runner = CliRunner()
+# CI sets FORCE_COLOR=1 and a narrow terminal, so rich wraps flags across
+# lines and escape sequences; ask for plain wide output and strip the rest.
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_ENV = {"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb", "FORCE_COLOR": "0"}
+runner = CliRunner(env=_ENV)
+
+
+def _invoke(args: list[str]) -> tuple[int, str]:
+    result = runner.invoke(app, args)
+    plain = " ".join(_ANSI.sub("", result.output).split())
+    return result.exit_code, plain
 
 
 def test_train_help_mentions_objective():
-    result = runner.invoke(app, ["train", "--help"])
-    assert result.exit_code == 0
-    assert "--objective" in result.output
-    assert "--list-objectives" in result.output
+    code, out = _invoke(["train", "--help"])
+    assert code == 0, out
+    assert "--objective" in out
+    assert "--list-objectives" in out
 
 
 def test_train_list_objectives_prints_every_preset():
     from stateset_agents.training.objectives import OBJECTIVES
 
-    result = runner.invoke(app, ["train", "--list-objectives"])
-    assert result.exit_code == 0, result.output
+    code, out = _invoke(["train", "--list-objectives"])
+    assert code == 0, out
     for name in OBJECTIVES:
-        assert name in result.output
+        assert name in out
 
 
 def test_train_rejects_unknown_objective():
-    result = runner.invoke(app, ["train", "--objective", "bogus", "--dry-run"])
-    assert result.exit_code == 2
-    assert "bogus" in result.output and "grpo" in result.output
+    code, out = _invoke(["train", "--objective", "bogus", "--dry-run"])
+    assert code == 2
+    assert "bogus" in out and "grpo" in out
 
 
 def test_train_dry_run_reports_selected_objective():
-    result = runner.invoke(app, ["train", "--objective", "cispo", "--dry-run"])
-    assert result.exit_code == 0, result.output
-    assert "cispo" in result.output
+    code, out = _invoke(["train", "--objective", "cispo", "--dry-run"])
+    assert code == 0, out
+    assert "cispo" in out
 
 
 def test_model_command_writes_objective_into_config(tmp_path):
     pytest.importorskip("transformers")
-    out = tmp_path / "cfg.json"
-    result = runner.invoke(
-        app,
-        ["qwen3-5-0-8b", "--objective", "cispo", "--write-config", str(out)],
+    out_path = tmp_path / "cfg.json"
+    code, out = _invoke(
+        ["qwen3-5-0-8b", "--objective", "cispo", "--write-config", str(out_path)]
     )
-    assert result.exit_code == 0, result.output
-    payload = json.loads(out.read_text())
+    assert code == 0, out
+    payload = json.loads(out_path.read_text())
     assert payload["objective"] == "cispo"
 
 
 def test_model_command_rejects_unknown_objective():
     pytest.importorskip("transformers")
-    result = runner.invoke(app, ["qwen3-5-0-8b", "--objective", "bogus"])
-    assert result.exit_code == 2
-    assert "bogus" in result.output
+    code, out = _invoke(["qwen3-5-0-8b", "--objective", "bogus"])
+    assert code == 2
+    assert "bogus" in out
 
 
 def test_model_command_forwards_objective_to_gspo_config():

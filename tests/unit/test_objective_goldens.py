@@ -41,7 +41,15 @@ def _assert_same(got, want, path="", atol=1e-6):
         assert got == pytest.approx(want, abs=atol), path
 
 
+# The real-model golden runs a tiny GPT-2 end to end; float accumulation
+# order differs slightly across torch versions and CPUs, so it gets a looser
+# (still regression-catching) tolerance than the pure-tensor goldens.
+_ATOL = {"grpo_enhanced": 1e-4}
+
+
 @pytest.mark.parametrize("name", sorted(capture.CAPTURES))
 def test_trainer_reproduces_golden(name):
     torch.use_deterministic_algorithms(True)
-    _assert_same(capture.CAPTURES[name](), GOLDENS[name], name)
+    _assert_same(
+        capture.CAPTURES[name](), GOLDENS[name], name, atol=_ATOL.get(name, 1e-6)
+    )

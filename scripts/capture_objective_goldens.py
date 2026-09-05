@@ -44,6 +44,26 @@ def tiny_model(vocab: int = 200):
     )
 
 
+def deterministic_weights(model, seed: int = 0):
+    """Overwrite every parameter with a version-independent pattern.
+
+    ``torch.manual_seed`` + module init is NOT stable across torch/transformers
+    versions or platforms (CI reproduced a 1.6% grad-norm drift), so the
+    real-model golden fills weights from a closed-form sequence instead:
+    LayerNorm scales sit near 1, everything else is a small cosine wave.
+    """
+    with torch.no_grad():
+        for i, (name, p) in enumerate(model.named_parameters()):
+            idx = torch.arange(p.numel(), dtype=torch.float64) + seed * 1000 + i
+            wave = torch.cos(idx * 0.37 + i * 0.11)
+            if name.endswith(("ln_1.weight", "ln_2.weight", "ln_f.weight")):
+                vals = 1.0 + 0.01 * wave
+            else:
+                vals = 0.02 * wave
+            p.copy_(vals.to(p.dtype).view_as(p))
+    return model
+
+
 def tensors(seed: int, n: int = 4, t: int = 10):
     g = torch.Generator().manual_seed(seed)
     cur = (-torch.rand(n, t, generator=g) * 3).requires_grad_(True)
@@ -273,11 +293,8 @@ def golden_grpo_enhanced() -> dict:
             t.log_probs = lp_sum
         return t
 
-    model = tiny_model()
-    ref = tiny_model()
-    with torch.no_grad():
-        for p in ref.parameters():
-            p.add_(0.01)
+    model = deterministic_weights(tiny_model(), seed=0)
+    ref = deterministic_weights(tiny_model(), seed=1)
     agent = SimpleNamespace(tokenizer=_Tok(), model=model)
     cfg = SimpleNamespace(
         max_prompt_length=32,
