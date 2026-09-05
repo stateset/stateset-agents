@@ -105,7 +105,9 @@ def test_old_logprobs_snapshot_matches_current_before_any_update():
     groups = [_group()]
     old = lc.compute_token_old_logprobs(groups, _config(), agent)
     assert isinstance(old, list) and len(old) == 1
-    out = lc.compute_grpo_loss(groups, _config(), agent, 0.0, 0, lambda m, n: None, old_logprobs=old)
+    out = lc.compute_grpo_loss(
+        groups, _config(), agent, 0.0, 0, lambda m, n: None, old_logprobs=old
+    )
     assert out["path"] == "token"
     assert out["ratio_mean"] == pytest.approx(1.0, abs=1e-5)
     assert out["clip_fraction"] == 0.0
@@ -118,10 +120,14 @@ def test_ratio_departs_from_one_after_an_optimizer_step():
     cfg = _config()
     old = lc.compute_token_old_logprobs(groups, cfg, agent)
     opt = torch.optim.SGD(model.parameters(), lr=0.5)
-    out = lc.compute_grpo_loss(groups, cfg, agent, 0.0, 0, lambda m, n: None, old_logprobs=old)
+    out = lc.compute_grpo_loss(
+        groups, cfg, agent, 0.0, 0, lambda m, n: None, old_logprobs=old
+    )
     out["total_loss"].backward()
     opt.step()
-    again = lc.compute_grpo_loss(groups, cfg, agent, 0.0, 0, lambda m, n: None, old_logprobs=old)
+    again = lc.compute_grpo_loss(
+        groups, cfg, agent, 0.0, 0, lambda m, n: None, old_logprobs=old
+    )
     assert again["ratio_mean"] != pytest.approx(1.0, abs=1e-4)
 
 
@@ -188,7 +194,11 @@ async def test_single_inner_update_keeps_grad_accumulation_semantics():
     trainer.optimizer.step = spy
     m1 = await trainer.training_step([_group()])
     m2 = await trainer.training_step([_group()])
-    assert len(steps) == 1 and m1["optimizer_step"] is False and m2["optimizer_step"] is True
+    assert (
+        len(steps) == 1
+        and m1["optimizer_step"] is False
+        and m2["optimizer_step"] is True
+    )
 
 
 @pytest.mark.asyncio

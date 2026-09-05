@@ -206,6 +206,35 @@ def _forward_token_rows(
     return torch.cat(lp_chunks), torch.cat(mask_chunks), entropy
 
 
+def compute_token_old_logprobs(
+    trajectory_groups: list[Any], config: Any, agent: Any
+) -> list[Any] | None:
+    """Freeze the old policy's per-token log-probs for every group (one no-grad
+    chunked forward on the stored token ids), for multiple inner updates.
+
+    Returns one detached ``[rows, width-1]`` tensor per non-empty group, or
+    ``None`` when any group lacks token metadata (the sequence fallback has no
+    per-token old log-probs; inner updates are then not applied).
+    """
+    torch = require_torch()
+    groups = [g for g in trajectory_groups if getattr(g, "trajectories", None)]
+    rows = [_token_rows_for_group(g) for g in groups]
+    if not groups or any(r is None for r in rows):
+        return None
+    device = _resolve_model_device(agent, torch)
+    chunk = int(getattr(config, "generation_batch_size", 0) or 0) or max(
+        len(r) for r in rows if r
+    )
+    snapshots = []
+    for group_rows in rows:
+        assert group_rows is not None
+        lp, _, _ = _forward_token_rows(
+            agent.model, group_rows, device, chunk, grad=False
+        )
+        snapshots.append(lp.detach())
+    return snapshots
+
+
 def _compute_token_path_loss(
     trajectory_groups: list[Any],
     rows_per_group: list[list[tuple[list[int], list[int], int]]],
@@ -214,8 +243,14 @@ def _compute_token_path_loss(
     *,
     beta: float = 0.0,
     reference_model: Any | None = None,
+    old_logprobs: list[Any] | None = None,
 ) -> dict[str, Any]:
-    """Batched per-token GRPO over stored token ids for every group."""
+    """Batched per-token GRPO over stored token ids for every group.
+
+    ``old_logprobs`` (from :func:`compute_token_old_logprobs`) makes the
+    ratio off-policy for later inner updates; ``None`` means on-policy
+    (``logp_old = logp_cur.detach()``).
+    """
     torch = require_torch()
     device = _resolve_model_device(agent, torch)
     objective = _token_objective(config)
@@ -227,8 +262,16 @@ def _compute_token_path_loss(
         max(rows_per_group, key=len)
     )
 
+    if old_logprobs is not None and len(old_logprobs) != len(rows_per_group):
+        raise ValueError(
+            f"old_logprobs has {len(old_logprobs)} entries for "
+            f"{len(rows_per_group)} groups; snapshot and loss must see the same groups"
+        )
     losses, kls, ents, adv_log, n_rows = [], [], [], [], 0
-    for group, rows in zip(trajectory_groups, rows_per_group, strict=True):
+    ratio_means, clip_fracs = [], []
+    for gi, (group, rows) in enumerate(
+        zip(trajectory_groups, rows_per_group, strict=True)
+    ):
         rewards = torch.tensor(
             [float(t.total_reward) for t in group.trajectories],
             dtype=torch.float32,
@@ -256,12 +299,15 @@ def _compute_token_path_loss(
             mask=mask,
             advantages=row_adv,
             objective=objective.with_(entropy_coef=entropy_coef),
+            logp_old=None if old_logprobs is None else old_logprobs[gi],
             logp_ref=logp_ref,
             entropy=entropy,
         )
         losses.append(result.loss)
         kls.append(result.metrics["kl"])
         ents.append(result.metrics["entropy"])
+        ratio_means.append(result.metrics["ratio_mean"])
+        clip_fracs.append(result.metrics["clip_fraction"])
         n_rows += len(rows)
 
     total = (
@@ -280,6 +326,9 @@ def _compute_token_path_loss(
         "num_rows": n_rows,
         "path": "token",
         "objective": objective.name,
+        "ratio_mean": float(np.mean(ratio_means)) if ratio_means else 1.0,
+        "clip_fraction": float(np.mean(clip_fracs)) if clip_fracs else 0.0,
+        "off_policy": old_logprobs is not None,
     }
 
 
@@ -305,9 +354,13 @@ def compute_grpo_loss(
     global_reward_mean: float,
     global_reward_count: int,
     update_global_stats: Callable[[float, int], None],
+    old_logprobs: list[Any] | None = None,
 ) -> dict[str, Any]:
     """
     Compute GRPO loss from trajectory groups with configurable baseline and normalization.
+
+    ``old_logprobs`` (see :func:`compute_token_old_logprobs`) is honoured on the
+    batched token path only, for multiple inner updates per rollout batch.
 
     Args:
         trajectory_groups: List of TrajectoryGroup objects
@@ -320,7 +373,9 @@ def compute_grpo_loss(
     Returns:
         Dictionary containing loss tensors and metrics
     """
-    token_result = _try_token_path(trajectory_groups, config, agent)
+    token_result = _try_token_path(
+        trajectory_groups, config, agent, old_logprobs=old_logprobs
+    )
     if token_result is not None:
         return token_result
 
@@ -611,6 +666,7 @@ def compute_enhanced_grpo_loss(
     config: Any,
     agent: Any,
     reference_model: Any | None = None,
+    old_logprobs: list[Any] | None = None,
 ) -> dict[str, Any]:
     """
     Enhanced GRPO loss computation with KL penalty and proper advantages.
@@ -626,7 +682,12 @@ def compute_enhanced_grpo_loss(
         Dictionary containing loss tensors and metrics
     """
     token_result = _try_token_path(
-        trajectory_groups, config, agent, beta=beta, reference_model=reference_model
+        trajectory_groups,
+        config,
+        agent,
+        beta=beta,
+        reference_model=reference_model,
+        old_logprobs=old_logprobs,
     )
     if token_result is not None:
         return token_result

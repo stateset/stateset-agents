@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   token metadata, falling back to the sequence-level path otherwise
   (`docs/OBJECTIVES.md`). Previously the GRPO trainers recorded no log-probs
   and therefore trained as unclipped REINFORCE on re-tokenised text.
+- `TrainingConfig.num_gradient_updates` (default 1) on the GRPO trainers'
+  token path: PPO/DAPO-style inner updates against the frozen old-policy
+  log-probs (`loss_computation.compute_token_old_logprobs`), so the trust
+  region engages from the second update; metrics report `inner_updates`,
+  `ratio_mean`, `ratio_mean_last`, and `clip_fraction`. Reviewed additive v1
+  API contract change (one appended keyword parameter).
 
 ## [0.49.0] - 2026-09-05 — Declarative policy objectives
 

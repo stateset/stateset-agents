@@ -31,7 +31,11 @@ from .callbacks import (
     notify_training_start,
 )
 from .continual_learning import ContinualLearningManager
-from .loss_computation import compute_enhanced_grpo_loss, compute_grpo_loss
+from .loss_computation import (
+    compute_enhanced_grpo_loss,
+    compute_grpo_loss,
+    compute_token_old_logprobs,
+)
 from .single_turn_checkpointing import (
     load_checkpoint_artifacts,
     resolve_checkpoint_path,
@@ -567,7 +571,51 @@ class SingleTurnGRPOTrainer:
                 update_applied = False
 
                 # Backprop/update
-                if self.optimizer is not None and policy_loss is not None:
+                inner = max(
+                    1, int(getattr(self.config, "num_gradient_updates", 1) or 1)
+                )
+                if (
+                    inner > 1
+                    and self.optimizer is not None
+                    and policy_loss is not None
+                    and loss_dict.get("path") == "token"
+                ):
+                    # PPO/DAPO-style mini-epochs against the frozen old policy:
+                    # the first (on-policy) update is the loss just computed.
+                    old_logprobs = compute_token_old_logprobs(
+                        training_groups, self.config, self.agent
+                    )
+                    for step_idx in range(inner):
+                        if step_idx > 0:
+                            with autocast_ctx:
+                                loss_dict = (
+                                    compute_enhanced_grpo_loss(
+                                        trajectory_groups=training_groups,
+                                        beta=base_beta,
+                                        config=self.config,
+                                        agent=self.agent,
+                                        reference_model=self.reference_model,
+                                        old_logprobs=old_logprobs,
+                                    )
+                                    if use_enhanced
+                                    else compute_grpo_loss(
+                                        trajectory_groups=training_groups,
+                                        config=self.config,
+                                        agent=self.agent,
+                                        global_reward_mean=self._global_reward_mean,
+                                        global_reward_count=self._global_reward_count,
+                                        update_global_stats=self._update_global_stats,
+                                        old_logprobs=old_logprobs,
+                                    )
+                                )
+                            policy_loss = loss_dict["total_loss"]
+                        if self.scaler is not None and use_amp:
+                            self.scaler.scale(policy_loss).backward()
+                        else:
+                            policy_loss.backward()
+                        self._apply_optimizer_step(torch, use_amp, max_grad_norm)
+                    update_applied = True
+                elif self.optimizer is not None and policy_loss is not None:
                     scaled_loss = policy_loss / grad_accum_steps
                     if self.scaler is not None and use_amp:
                         self.scaler.scale(scaled_loss).backward()

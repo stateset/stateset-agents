@@ -179,6 +179,15 @@ included. With `beta > 0` and a reference model the enhanced path adds
 `k3_token` KL from one no-grad reference forward on the same batch;
 `entropy_coef` uses the differentiable entropy of the same logits.
 
+`num_gradient_updates` (default 1) turns one rollout batch into that many
+optimizer steps: the old policy's per-token log-probs are frozen once
+(`compute_token_old_logprobs`, a no-grad forward on the stored ids) and each
+update re-evaluates the clipped objective against them, so ratios move away
+from 1 and the trust region engages exactly as in PPO and DAPO. Each inner
+update is a full optimizer step; gradient accumulation applies to the
+single-update default only. Groups on the sequence fallback ignore the
+setting (a warning is logged once).
+
 Groups with any trajectory lacking token metadata (text-only agents, stub
 backends, legacy transcripts) take the **sequence fallback**: per-trajectory
 forward passes, sequence-level ratio clipped at `seq_clip_ratio`, and the
