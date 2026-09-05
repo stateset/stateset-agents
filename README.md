@@ -300,7 +300,14 @@ coverage, live hardware attempts, and successful inference by provider.
   fail-closed validator runs in CI and publish readiness; independent
   third-party security review remains explicitly pending.
 
-**v0.49.0 (latest release; publication triggered by tag):**
+**v0.50.0 (latest release; publication triggered by tag):**
+
+- Per-token GRPO: `MultiTurnAgent.generate_turn` returns the assistant turn with the exact prompt token ids, sampled response ids, and the model's log-probs of those ids; both GRPO trainers request turns and train on one padded forward pass per group with per-token ratios, any token-level objective preset, k3 KL, and entropy on the same logits (sequence-level fallback preserved). Previously the GRPO trainers recorded no log-probs and trained as unclipped REINFORCE on re-tokenised text.
+- `TrainingConfig.num_gradient_updates`: PPO/DAPO-style inner updates against frozen old-policy log-probs on the GRPO token path, so the trust region engages from the second update; metrics report `inner_updates`, `ratio_mean`, `ratio_mean_last`, `clip_fraction`.
+- One `StarterSpec` per packaged model family (`training/starter_factory.py`): the twelve starters shrink from ~5,000 to ~2,000 lines with every public name, default, and validation rule unchanged, and a contract test enforces the per-family surface.
+- `benchmarks/runpod_shootout.py`: a budget-bounded, self-destructing RunPod launcher for `benchmarks/shootout.py`, with the v2 48-step three-seed Qwen2.5-0.5B GSM8K protocol comparing StateSet's TRL-backed GRPO, native GSPO, and direct TRL.
+
+**v0.49.0:**
 
 - One declarative `PolicyObjective` library (`stateset_agents.training.objectives`) with eleven presets — GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO — verified by explicit-loop references, Hypothesis property tests, and a numeric pin against TRL 1.12 (`docs/OBJECTIVES.md`).
 - Every native trainer evaluates its objective through the library; golden regression pins prove the migration changed no numerics except the documented PPO KL fix (k3 estimator, clamped ratios).
@@ -1877,7 +1884,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.49.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.50.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

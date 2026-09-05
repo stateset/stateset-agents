@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-09-05 — Per-token GRPO and starter specs
+
 ### Changed
 
 - The twelve packaged model-family starters (`training/*_starter.py`) are
