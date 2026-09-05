@@ -21,7 +21,7 @@ from typing import Any, cast
 import numpy as np
 import torch
 
-from . import rl_losses
+from . import objectives, rl_losses
 from .dapo_config import DAPOConfig
 from .trainer_runtime import (
     SharedModelManager,
@@ -310,6 +310,17 @@ class DAPOTrainer:
         self._logprob_dtype = rl_losses.resolve_logprob_dtype(
             getattr(config, "logprob_dtype", None)
         )
+        # The DAPO objective (Clip-Higher, token- or sequence-level
+        # aggregation) as one declarative PolicyObjective.
+        self._objective = objectives.resolve_objective(
+            config,
+            "dapo",
+            max_completion_length=int(config.max_completion_length),
+            supported_ratios=("token", "sequence", "sequence_token"),
+            clip_low=float(config.clip_eps_low),
+            clip_high=float(config.clip_eps_high),
+            aggregate="token_mean" if config.use_token_level_loss else "seq_mean",
+        )
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
@@ -480,11 +491,37 @@ class DAPOTrainer:
         return rl_losses.safe_exp_ratio(current_log_probs - old_log_probs)
 
     def compute_group_advantages(self, rewards: torch.Tensor) -> torch.Tensor:
-        """Group-relative advantages for one group of rewards [group_size].
+        """Advantages for one group of rewards [group_size] using the
+        configured objective's estimator (group-normalised by default).
 
         Groups of size 1 (or constant rewards) yield zeros rather than NaN.
         """
-        return rl_losses.group_advantages(rewards)
+        group_ids = torch.zeros(
+            rewards.numel(), dtype=torch.long, device=rewards.device
+        )
+        objective = getattr(self, "_objective", None) or objectives.OBJECTIVES["dapo"]
+        return objectives.compute_advantages(rewards, group_ids, objective)
+
+    def compute_dapo_loss_from_log_probs(
+        self,
+        current_log_probs: torch.Tensor,
+        old_log_probs: torch.Tensor,
+        advantages: torch.Tensor,
+        response_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, dict[str, float]]:
+        """DAPO objective from per-token log-probs via ``objectives.policy_loss``.
+
+        ``advantages`` is one value per sequence ``[G]`` (broadcast over
+        tokens) or per token ``[G, T]``.
+        """
+        result = objectives.policy_loss(
+            logp_cur=current_log_probs,
+            mask=response_mask,
+            advantages=advantages,
+            objective=self._objective,
+            logp_old=old_log_probs,
+        )
+        return result.loss, result.metrics
 
     def compute_dapo_loss(
         self,
@@ -497,25 +534,14 @@ class DAPOTrainer:
 
         L = -(1/sum(|o_i|)) * sum_i sum_t min(r_t * A, clip(r_t, 1-eps_low, 1+eps_high) * A)
 
-        Key differences from PPO:
-        - Asymmetric clipping (eps_low != eps_high)
-        - Normalize by total token count, not sample count
+        Ratio-based entry point kept for callers holding ratios; ``train_step``
+        uses :meth:`compute_dapo_loss_from_log_probs`. Both evaluate the same
+        :class:`~stateset_agents.training.objectives.PolicyObjective`.
         """
-        # clipped_surrogate is already a loss (negated), so no extra sign flip.
-        surrogate_loss = rl_losses.clipped_surrogate(
-            importance_ratios,
-            advantages,
-            clip_low=self.config.clip_eps_low,
-            clip_high=self.config.clip_eps_high,
+        per_token = objectives.surrogate(
+            self._objective, importance_ratios, advantages, importance_ratios
         )
-        # "token": one mean over every response token in the batch (DAPO's
-        # token-level normalization). "seq": per-sequence mean, then mean over
-        # sequences (standard sample-level normalization).
-        return rl_losses.masked_mean(
-            surrogate_loss,
-            response_mask,
-            mode="token" if self.config.use_token_level_loss else "seq",
-        )
+        return objectives.aggregate(self._objective, per_token, response_mask)
 
     async def generate_group_responses(
         self,
@@ -776,19 +802,11 @@ class DAPOTrainer:
                     batch_input_ids, batch_attention_mask, batch_response_mask
                 )
 
-                # Compute importance ratios
-                importance_ratios = self.compute_importance_ratio(
-                    current_token_log_probs, old_token_log_probs
-                )
-
-                # Expand advantages to token level
-                # advantages: [batch_size] -> [batch_size, seq_len]
-                token_advantages = advantages.unsqueeze(1).expand_as(importance_ratios)
-
-                # Compute DAPO loss
-                loss = self.compute_dapo_loss(
-                    importance_ratios,
-                    token_advantages,
+                # Clip-Higher surrogate + aggregation through the objective.
+                loss, _objective_metrics = self.compute_dapo_loss_from_log_probs(
+                    current_token_log_probs,
+                    old_token_log_probs,
+                    advantages,
                     batch_response_mask[:, 1:],  # Shift for next-token prediction
                 )
 

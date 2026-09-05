@@ -28,7 +28,7 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - **Environments** for conversational and task‑oriented episodes.
 - **Trajectories** and value/advantage utilities tailored to dialogue.
 - Composable **reward functions** (heuristic, domain, multi‑objective, neural, LLM‑judge, and a proof‑backed [StateSet NSR verifier](docs/NSR_INTEGRATION.md) for RLVR‑style verifiable rewards).
-- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF.
+- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF; all trainers evaluate one declarative [`PolicyObjective`](docs/OBJECTIVES.md) (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO) verified against loop references, Hypothesis invariants, and TRL 1.12.
 - **Offline RL algorithms** for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
 - **Sim‑to‑Real transfer** for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
 - **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).
@@ -300,7 +300,13 @@ coverage, live hardware attempts, and successful inference by provider.
   fail-closed validator runs in CI and publish readiness; independent
   third-party security review remains explicitly pending.
 
-**v0.48.0 (latest release; publication triggered by tag):**
+**v0.49.0 (latest release; publication triggered by tag):**
+
+- One declarative `PolicyObjective` library (`stateset_agents.training.objectives`) with eleven presets — GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO — verified by explicit-loop references, Hypothesis property tests, and a numeric pin against TRL 1.12 (`docs/OBJECTIVES.md`).
+- Every native trainer evaluates its objective through the library; golden regression pins prove the migration changed no numerics except the documented PPO KL fix (k3 estimator, clamped ratios).
+- Select any preset from `TrainingConfig.objective` / `objective_overrides`, `stateset-agents train --objective` / `--list-objectives`, and `--objective` on every per-model starter command.
+
+**v0.48.0:**
 
 - **Publication-grade flagship evidence pipeline.** A strict, shell-free runner
   validates immutable 7–9B GSPO manifests, executes exactly three measured
@@ -1871,7 +1877,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.48.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.49.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

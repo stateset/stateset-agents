@@ -3978,6 +3978,16 @@
               "default": null,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "resume_from_checkpoint"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "objective"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "objective_overrides"
             }
           ]
         }

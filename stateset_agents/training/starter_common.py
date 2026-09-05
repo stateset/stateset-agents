@@ -415,6 +415,12 @@ def build_gspo_overrides(config: Any) -> dict[str, Any]:
     if hasattr(config, "use_vllm"):
         overrides["use_vllm"] = config.use_vllm
         overrides["use_reference_model"] = config.use_reference_model
+    # Policy objective selection (docs/OBJECTIVES.md); absent or None keeps
+    # the native GSPO objective.
+    for key in ("objective", "objective_overrides"):
+        value = getattr(config, key, None)
+        if value is not None:
+            overrides[key] = value
     return overrides
 
 

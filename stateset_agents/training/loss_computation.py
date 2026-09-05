@@ -16,7 +16,8 @@ from typing import Any
 import numpy as np
 
 from ..exceptions import LOSS_EXCEPTIONS
-from . import rl_losses
+from . import rl_losses  # noqa: F401  (re-exported; tests spy on it)
+from . import objectives
 from .trainer_utils import get_amp, get_functional, get_torch, require_torch
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,54 @@ def _resolve_model_device(agent: Any, torch_mod: Any) -> Any:
     if device is None:
         device = torch_mod.device("cpu")
     return device
+
+
+def _grpo_objective(config: Any) -> Any:
+    """GRPO trainers score a trajectory as summed log-probs, so the ratio is
+    sequence-level and clipped at ``seq_clip_ratio`` (GSPO scale)."""
+    seq_clip = float(getattr(config, "seq_clip_ratio", 3e-4))
+    return objectives.resolve_objective(
+        config,
+        "gspo",
+        max_completion_length=int(getattr(config, "max_completion_length", 0) or 0)
+        or None,
+        supported_ratios=("sequence", "sequence_token"),
+        name="grpo_sequence",
+        clip_low=seq_clip,
+        clip_high=seq_clip,
+        kl="none",
+    )
+
+
+def _clipped_trajectory_loss(
+    nll: Any, token_count: int, advantage: Any, old_log_prob: Any, objective: Any
+) -> Any:
+    """Clipped sequence-ratio loss for one trajectory via ``objectives.policy_loss``.
+
+    ``nll`` is the model's mean per-token NLL (differentiable); ``old_log_prob``
+    the rollout-time summed log-prob. The trajectory is presented as
+    ``token_count`` identical tokens so the sequence ratio normalises by the
+    true length: ``exp((-nll * T - old) / T)``, exactly the previous
+    ``compute_ppo_ratio`` quantity, and ``seq_mean`` over identical tokens is
+    the row value.
+    """
+    torch = require_torch()
+    count = max(int(token_count), 1)
+    logp_cur = (-nll).reshape(1, 1).expand(1, count)
+    mask = torch.ones(1, count, dtype=logp_cur.dtype, device=logp_cur.device)
+    adv = (
+        advantage.reshape(1)
+        if torch.is_tensor(advantage)
+        else torch.tensor([float(advantage)], device=logp_cur.device)
+    )
+    result = objectives.policy_loss(
+        logp_cur=logp_cur,
+        mask=mask,
+        advantages=adv.to(logp_cur.dtype),
+        objective=objective,
+        logp_old=old_log_prob.reshape(1).to(logp_cur.dtype),
+    )
+    return result.loss
 
 
 def compute_grpo_loss(
@@ -97,8 +146,15 @@ def compute_grpo_loss(
                 rewards, min=-float(reward_clip), max=float(reward_clip)
             )
 
-        # Select baseline
-        if baseline_type == "group_median":
+        # Select baseline. A configured objective preset owns the estimator.
+        if getattr(config, "objective", None) is not None:
+            baseline = rewards - objectives.compute_advantages(
+                rewards,
+                torch.zeros_like(rewards, dtype=torch.long),
+                _grpo_objective(config).with_(advantage_eps=1e-8),
+            )
+            normalize_adv = False  # the preset already normalised (or not)
+        elif baseline_type == "group_median":
             baseline = rewards.median()
         elif baseline_type == "global_mean":
             # Update running global mean baseline
@@ -109,14 +165,13 @@ def compute_grpo_loss(
                 global_reward_mean, dtype=torch.float32, device=device
             )
         elif baseline_type == "leave_one_out":
-            # Leave-one-out baseline: for trajectory i, baseline = mean
-            # of all OTHER trajectories.  Lower variance than group mean.
-            n = rewards.numel()
-            if n > 1:
-                total = rewards.sum()
-                baseline = (total - rewards) / (n - 1)
-            else:
-                baseline = rewards.mean()
+            # RLOO baseline: r_i minus the mean of the other rewards. For a
+            # single sample the library returns advantage 0, i.e. baseline r.
+            baseline = rewards - objectives.compute_advantages(
+                rewards,
+                torch.zeros_like(rewards, dtype=torch.long),
+                objectives.OBJECTIVES["rloo"],
+            )
         else:  # group_mean (default)
             baseline = rewards.mean()
 
@@ -254,7 +309,7 @@ def _compute_group_policy_loss(
     # `seq_clip_ratio`: the ratio here is a per-token-mean sequence ratio, so it
     # needs a GSPO-scale bound (+/-0.2 would never trigger).
     clip_ratio = getattr(config, "clip_ratio", getattr(config, "clip_epsilon", 0.2))
-    seq_clip = getattr(config, "seq_clip_ratio", 3e-4)
+    objective = _grpo_objective(config)
 
     for traj_idx, (trajectory, advantage) in enumerate(
         zip(group.trajectories, advantages, strict=False)
@@ -293,23 +348,10 @@ def _compute_group_policy_loss(
                     elif isinstance(log_probs, (int, float)):
                         old_log_prob = torch.tensor(float(log_probs), device=device)
 
-                new_log_prob = None
-                if token_count > 0:
-                    # outputs.loss is the mean per-token NLL; recover the
-                    # summed log prob so the ratio helper can length-normalize
-                    # consistently against `old_log_prob` (also a raw sum).
-                    new_log_prob = -(outputs.loss * token_count)
-
                 # Optional: PPO-style clipping when old log probs are available.
-                if (
-                    clip_ratio > 0
-                    and old_log_prob is not None
-                    and new_log_prob is not None
-                    and token_count > 0
-                ):
-                    ratio = compute_ppo_ratio(new_log_prob, old_log_prob, token_count)
-                    policy_loss = rl_losses.clipped_surrogate(
-                        ratio, advantage, clip_low=seq_clip, clip_high=seq_clip
+                if clip_ratio > 0 and old_log_prob is not None and token_count > 0:
+                    policy_loss = _clipped_trajectory_loss(
+                        outputs.loss, token_count, advantage, old_log_prob, objective
                     )
                 elif clip_ratio > 0:
                     global _warned_missing_log_probs
@@ -389,6 +431,7 @@ def compute_enhanced_grpo_loss(
     all_losses = []
     all_advantages = []
     all_kl_divs = []
+    objective = _grpo_objective(config)
 
     for group in trajectory_groups:
         if not group.trajectories:
@@ -405,7 +448,8 @@ def compute_enhanced_grpo_loss(
         baseline = rewards.mean()
         advantages = rewards - baseline
 
-        # Normalize advantages within group
+        # Historical unbiased-std normalisation; the `grpo` preset in
+        # objectives.py uses correction=0 (see docs/OBJECTIVES.md).
         if len(advantages) > 1 and advantages.std() > 0:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
@@ -458,12 +502,9 @@ def compute_enhanced_grpo_loss(
                 if torch.is_tensor(labels):
                     token_count = int(labels.ne(-100).sum().item())
 
-                seq_clip = getattr(config, "seq_clip_ratio", 3e-4)
                 if clip_ratio > 0 and old_log_prob is not None and token_count > 0:
-                    new_log_prob = -(nll * token_count)
-                    ratio = compute_ppo_ratio(new_log_prob, old_log_prob, token_count)
-                    policy_loss = rl_losses.clipped_surrogate(
-                        ratio, advantage, clip_low=seq_clip, clip_high=seq_clip
+                    policy_loss = _clipped_trajectory_loss(
+                        nll, token_count, advantage, old_log_prob, objective
                     )
 
                 all_losses.append(policy_loss)

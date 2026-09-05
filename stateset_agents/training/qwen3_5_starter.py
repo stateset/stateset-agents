@@ -154,6 +154,10 @@ class Qwen35Config(_common.StarterConfigMixin):
     generations_per_iteration: int = 32
     clip_range_left: float = 3e-4
     clip_range_right: float = 4e-4
+    # Policy objective preset + field overrides (docs/OBJECTIVES.md); None
+    # keeps the native GSPO objective.
+    objective: str | None = None
+    objective_overrides: dict[str, Any] | None = None
 
     output_dir: str = QWEN35_08B_DEFAULT_OUTPUT_DIR
     save_steps_every: int = 5

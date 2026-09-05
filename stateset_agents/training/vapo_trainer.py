@@ -28,7 +28,7 @@ import torch.nn.functional as F
 
 from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
-from . import rl_losses
+from . import objectives, rl_losses
 from .checkpoint_io import load_checkpoint_file
 from .trainer_runtime import (
     SharedModelManager,
@@ -396,6 +396,19 @@ class VAPOTrainer:
         self._logprob_dtype = rl_losses.resolve_logprob_dtype(
             getattr(config, "logprob_dtype", None)
         )
+        # Policy half of VAPO: Clip-Higher surrogate on external (GAE)
+        # per-token advantages; value and positive-LM losses stay local.
+        self._objective = objectives.resolve_objective(
+            config,
+            "ppo",
+            max_completion_length=int(config.max_completion_length),
+            supported_ratios=("token", "sequence", "sequence_token"),
+            name="vapo",
+            clip_low=float(config.clip_eps_low),
+            clip_high=float(config.clip_eps_high),
+            aggregate="token_mean" if config.use_token_level_loss else "seq_mean",
+            kl="none",
+        )
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
@@ -748,24 +761,16 @@ class VAPOTrainer:
         2. Value loss (decoupled GAE: value target from critic-lambda GAE)
         3. Positive example LM loss
         """
-        # Importance ratios. Clamped before exp (see
-        # rl_losses.safe_exp_ratio): a single wildly off-policy token would
-        # otherwise overflow to inf and make the whole loss non-finite.
-        ratio = rl_losses.safe_exp_ratio(current_log_probs - old_log_probs.detach())
-
-        # Clip-Higher (asymmetric); clipped_surrogate is already a loss, so no
-        # extra sign flip here.
-        surrogate_loss = rl_losses.clipped_surrogate(
-            ratio,
-            policy_advantages,
-            clip_low=self.config.clip_eps_low,
-            clip_high=self.config.clip_eps_high,
+        # Clip-Higher surrogate and token-/sequence-level aggregation via the
+        # shared objective (ratios are clamped before exp inside it).
+        policy_result = objectives.policy_loss(
+            logp_cur=current_log_probs,
+            mask=response_mask,
+            advantages=policy_advantages,
+            objective=self._objective,
+            logp_old=old_log_probs,
         )
-        policy_loss = rl_losses.masked_mean(
-            surrogate_loss,
-            response_mask,
-            mode="token" if self.config.use_token_level_loss else "seq",
-        )
+        policy_loss = policy_result.loss
 
         # Decoupled GAE: value target is built from the critic-lambda
         # advantages, not the policy-lambda advantages used above.

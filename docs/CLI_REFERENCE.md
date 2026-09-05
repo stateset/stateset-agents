@@ -37,6 +37,8 @@ stateset-agents train
 stateset-agents train --stub
 stateset-agents train --config ./stateset_agents.yaml --episodes 10 --profile balanced
 stateset-agents train --stub --dry-run
+stateset-agents train --list-objectives
+stateset-agents train --objective rloo --no-dry-run
 ```
 
 #### Options
@@ -47,6 +49,8 @@ stateset-agents train --stub --dry-run
 - `--dry-run / --no-dry-run`: Validate configuration and print guidance.
 - `--stub`: Run a fast stub flow with no external model downloads.
 - `--profile [balanced|speed|quality]`: Training profile.
+- `--objective NAME`: Policy objective preset (`grpo`, `dr_grpo`, `bnpo`, `dapo`, `gspo`, `gspo_token`, `gepo`, `rloo`, `reinforce_pp_baseline`, `cispo`, `ppo`). Defaults to the trainer's native objective; see [OBJECTIVES.md](OBJECTIVES.md).
+- `--list-objectives`: Describe every objective preset and exit.
 
 ### `stateset-agents train-remote`
 
@@ -280,7 +284,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.48.0-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.49.0-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`

@@ -138,14 +138,13 @@ async def test_old_log_probs_captured_at_collection(dapo_trainer_factory, monkey
         "old_token_log_probs": old,
     }
     seen_ratios = []
-    orig_ratio = trainer.compute_importance_ratio
+    orig_loss = trainer.compute_dapo_loss_from_log_probs
 
-    def spy(cur, old_):
-        r = orig_ratio(cur, old_)
-        seen_ratios.append(r.detach().clone())
-        return r
+    def spy(cur, old_, adv, mask):
+        seen_ratios.append(trainer.compute_importance_ratio(cur, old_).detach())
+        return orig_loss(cur, old_, adv, mask)
 
-    monkeypatch.setattr(trainer, "compute_importance_ratio", spy)
+    monkeypatch.setattr(trainer, "compute_dapo_loss_from_log_probs", spy)
 
     async def fake_collect(prompts, n):
         return [sample], 0.0
@@ -219,3 +218,44 @@ def test_token_counts_exact_with_bf16_logprobs():
     assert logp.dtype == torch.bfloat16
     assert shifted_mask.dtype == torch.float32
     assert float(shifted_mask.sum()) == 300.0
+
+
+def test_loss_from_log_probs_routes_through_policy_objective(
+    dapo_trainer_factory, monkeypatch
+):
+    from stateset_agents.training import objectives
+
+    trainer = dapo_trainer_factory(tiny_model())
+    seen = {}
+    real = objectives.policy_loss
+
+    def spy(**kw):
+        seen["objective"] = kw["objective"]
+        return real(**kw)
+
+    monkeypatch.setattr(objectives, "policy_loss", spy)
+    ids, am, rm = make_batch()
+    with torch.no_grad():
+        old, _ = trainer.compute_token_log_probs(ids, am, rm)
+    cur, _ = trainer.compute_token_log_probs(ids, am, rm)
+    loss, metrics = trainer.compute_dapo_loss_from_log_probs(
+        cur, old, torch.tensor([1.0, -1.0]), rm[:, 1:]
+    )
+    assert seen["objective"].name == "dapo"
+    assert seen["objective"].clip_high == trainer.config.clip_eps_high
+    assert torch.isfinite(loss) and "clip_fraction" in metrics
+
+
+def test_ratio_and_log_prob_entry_points_agree(dapo_trainer_factory):
+    trainer = dapo_trainer_factory(tiny_model())
+    ids, am, rm = make_batch()
+    with torch.no_grad():
+        old, _ = trainer.compute_token_log_probs(ids, am, rm)
+    cur, _ = trainer.compute_token_log_probs(ids, am, rm)
+    adv = torch.tensor([1.0, -1.0])
+    via_lp, _ = trainer.compute_dapo_loss_from_log_probs(cur, old, adv, rm[:, 1:])
+    ratios = trainer.compute_importance_ratio(cur, old)
+    via_ratio = trainer.compute_dapo_loss(
+        ratios, adv.unsqueeze(1).expand_as(ratios), rm[:, 1:]
+    )
+    torch.testing.assert_close(via_lp, via_ratio)

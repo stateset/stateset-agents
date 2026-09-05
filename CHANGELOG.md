@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-09-05 — Declarative policy objectives
+
+### Added
+
+- `stateset_agents.training.objectives`: a declarative, frozen
+  `PolicyObjective` (advantage × ratio × clip × aggregation × KL) with eleven
+  presets (`grpo`, `dr_grpo`, `bnpo`, `dapo`, `gspo`, `gspo_token`, `gepo`,
+  `rloo`, `reinforce_pp_baseline`, `cispo`, `ppo`) and the pure functions
+  `compute_advantages` and `policy_loss`, exported lazily from
+  `stateset_agents.training`. Verified three ways: explicit-loop references,
+  Hypothesis property tests, and a numeric pin against TRL 1.12's GRPO loss
+  (`docs/OBJECTIVES.md`).
+- Golden regression pins for every native trainer's objective
+  (`scripts/capture_objective_goldens.py`, `tests/unit/test_objective_goldens.py`).
+- Objective selection: `TrainingConfig.objective` (a preset name) and
+  `objective_overrides` are honoured by DAPO, VAPO, GSPO, GSPO-token, GEPO,
+  PPO, and the GRPO trainers via `objectives.resolve_objective`, including the
+  preset's advantage estimator; incompatible presets are rejected at
+  construction with the compatible names. `stateset-agents train --objective`
+  / `--list-objectives`, `--objective` on every per-model starter command, and
+  matching `objective` fields on the starter configs.
+  Reviewed additive change to the stable v1 API contract: `TrainingConfig`
+  gains the two keyword parameters `objective` and `objective_overrides`
+  (appended, defaults `None`; `contracts/public_api_v1.json` regenerated).
+
+### Changed
+
+- DAPO, VAPO, GSPO, GSPO-token, GEPO, PPO, and GRPO (plain and enhanced)
+  trainers evaluate their objective through `objectives.policy_loss`.
+  Numerics are unchanged except as listed below; `DAPOTrainer` gains
+  `compute_dapo_loss_from_log_probs`, and `GSPOTrainer`, `GSPOTokenTrainer`,
+  and `GEPOTrainer` expose `compute_gspo_loss`, `compute_gspo_token_loss`,
+  and `compute_gepo_loss`.
+- GSPO-token reports the clipped-surrogate value as `policy_loss` (the same
+  quantity GSPO reports) instead of the log-prob-weighted sum; gradients are
+  unchanged and pinned.
+
+### Fixed
+
+- PPO's KL penalty uses the k3 estimator (the previous `log π − log π_ref`
+  mean had a zero-expectation gradient and never pulled the policy toward the
+  reference) and clamps the log-ratio before exponentiating. On the golden
+  fixture the PPO `kl` moved from −0.0320 to +0.0060; the policy loss is
+  unchanged.
+
 ## [0.48.0] - 2026-09-01 — Flagship evidence pipeline
 
 ### Added
