@@ -382,6 +382,24 @@ class GEPOTrainer:
             learner_seq_log_probs, sampler_seq_log_probs
         )
 
+    def compute_gepo_loss(
+        self,
+        learner_seq_log_probs: torch.Tensor,
+        sampler_seq_log_probs: torch.Tensor,
+        advantages: torch.Tensor,
+    ) -> torch.Tensor:
+        """GEPO objective for one prompt group (clipped surrogate on group coefficients)."""
+        gepo_coefs = self.compute_gepo_coefficient_static(
+            learner_seq_log_probs, sampler_seq_log_probs
+        )
+        # Shared PPO-style clipped surrogate (already a loss).
+        return rl_losses.clipped_surrogate(
+            gepo_coefs,
+            advantages,
+            clip_low=self.config.clip_eps,
+            clip_high=self.config.clip_eps,
+        ).mean()
+
     def compute_group_advantages(
         self,
         rewards: torch.Tensor,
@@ -567,18 +585,18 @@ class GEPOTrainer:
                     rollout["response_start_idx"],
                 )
 
-                gepo_coefs = self.compute_gepo_coefficient(
-                    learner_seq_log_probs, rollout["sampler_seq_log_probs"]
-                )
-                all_gepo_coefs.extend(gepo_coefs.detach().tolist())
-
-                # Shared PPO-style clipped surrogate (already a loss).
-                policy_loss = rl_losses.clipped_surrogate(
-                    gepo_coefs,
+                with torch.no_grad():
+                    all_gepo_coefs.extend(
+                        self.compute_gepo_coefficient(
+                            learner_seq_log_probs.detach(),
+                            rollout["sampler_seq_log_probs"],
+                        ).tolist()
+                    )
+                policy_loss = self.compute_gepo_loss(
+                    learner_seq_log_probs,
+                    rollout["sampler_seq_log_probs"],
                     rollout["advantages"],
-                    clip_low=self.config.clip_eps,
-                    clip_high=self.config.clip_eps,
-                ).mean()
+                )
 
                 accumulated_loss = accumulated_loss + policy_loss
 

@@ -88,6 +88,57 @@ class GSPOTokenTrainer(GSPOTrainer):
 
         return detached_seq_ratio
 
+    def compute_gspo_token_loss(
+        self,
+        token_log_probs_list: list[torch.Tensor],
+        sequence_lengths: torch.Tensor,
+        importance_ratios: torch.Tensor,
+        advantages: torch.Tensor,
+        current_log_probs: torch.Tensor,
+        ref_log_probs: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """GSPO-token objective for one prompt group.
+
+        ``importance_ratios`` are the detached sequence ratios; gradients flow
+        through ``token_log_probs_list`` only.
+        """
+        device = importance_ratios.device
+        loss = torch.tensor(0.0, device=device)
+        lo = 1 - self.config.clip_range_left
+        hi = 1 + self.config.clip_range_right
+        for i, token_log_probs in enumerate(token_log_probs_list):
+            seq_ratio = importance_ratios[i]  # already detached
+            adv = advantages[i].detach()
+
+            # GSPO-token: the gradient flows through the token log probs,
+            # weighted by the stop-grad sequence ratio. Gate the sample to
+            # zero when the clipped branch of min(r*A, clip(r)*A) is
+            # active -- clamp has no gradient there, so a sample outside
+            # the trust region on the side its advantage pushes must
+            # contribute nothing.
+            in_region = (seq_ratio >= lo) & (seq_ratio <= hi)
+            push_out = ((adv > 0) & (seq_ratio > hi)) | ((adv < 0) & (seq_ratio < lo))
+            gate = in_region | ~push_out
+
+            # Select rather than multiply: a gated-out sequence whose ratio
+            # overflowed to +inf would give `0 * inf == nan`.
+            gated_ratio = torch.where(gate, seq_ratio, torch.zeros_like(seq_ratio))
+
+            # Normalized by the actual response length (not the padded width).
+            token_loss = (
+                -(gated_ratio * adv * token_log_probs).sum() / sequence_lengths[i]
+            )
+            loss = loss + token_loss / len(token_log_probs_list)
+
+        if self.config.beta > 0 and ref_log_probs is not None:
+            # k3 on the length-normalised sequence log-probs (one value per
+            # response): non-negative, with the correct gradient.
+            kl_div = rl_losses.k3_kl(
+                current_log_probs / sequence_lengths, ref_log_probs / sequence_lengths
+            )
+            loss = loss + self.config.beta * kl_div
+        return loss
+
     async def train_step_token_level(
         self, queries: list[str], num_groups: int = 1
     ) -> dict[str, float]:
@@ -239,59 +290,24 @@ class GSPOTokenTrainer(GSPOTrainer):
             # Compute policy loss using GSPO-token objective
             # For each response, we compute token-level weighted loss
 
-            loss = torch.tensor(0.0, device=model_device)
-            lo = 1 - self.config.clip_range_left
-            hi = 1 + self.config.clip_range_right
-            for i, token_log_probs in enumerate(token_log_probs_list):
-                seq_ratio = importance_ratios[i]  # already detached
-                adv = advantages[i].detach()
-
-                # GSPO-token: the gradient flows through the token log probs,
-                # weighted by the stop-grad sequence ratio. Gate the sample to
-                # zero when the clipped branch of min(r*A, clip(r)*A) is
-                # active — clamp has no gradient there, so a sample outside
-                # the trust region on the side its advantage pushes must
-                # contribute nothing.
-                in_region = (seq_ratio >= lo) & (seq_ratio <= hi)
-                push_out = ((adv > 0) & (seq_ratio > hi)) | (
-                    (adv < 0) & (seq_ratio < lo)
-                )
-                gate = in_region | ~push_out
-
-                # Select rather than multiply: a gated-out sequence whose
-                # ratio overflowed to +inf would give `0 * inf == nan` and
-                # poison the whole batch's loss and gradients.
-                gated_ratio = torch.where(gate, seq_ratio, torch.zeros_like(seq_ratio))
-
-                # Normalized by the actual response length (not the full
-                # padded sequence width, which would dilute the loss for
-                # short responses in a padded batch).
-                token_loss = (
-                    -(gated_ratio * adv * token_log_probs).sum() / sequence_lengths[i]
-                )
-
-                loss += token_loss / len(responses)
-
-            # Add KL penalty if specified
+            ref_log_probs = None
             if self.config.beta > 0 and self.ref_model is not None:
                 ref_log_prob_values: list[float] = []
                 for response in responses:
-                    ref_log_prob = await self._compute_ref_log_prob(query, response)
-                    ref_log_prob_values.append(ref_log_prob)
-
+                    ref_log_prob_values.append(
+                        await self._compute_ref_log_prob(query, response)
+                    )
                 ref_log_probs = torch.tensor(
                     ref_log_prob_values, dtype=torch.float32, device=model_device
                 )
-
-                # k3 on the length-normalised sequence log-probs (one value
-                # per response): non-negative, with the correct gradient.
-                kl_div = rl_losses.k3_kl(
-                    current_log_probs / sequence_lengths,
-                    ref_log_probs / sequence_lengths,
-                )
-                kl_penalty = self.config.beta * kl_div
-
-                loss += kl_penalty
+            loss = self.compute_gspo_token_loss(
+                token_log_probs_list,
+                sequence_lengths,
+                importance_ratios,
+                advantages,
+                current_log_probs,
+                ref_log_probs,
+            )
 
             total_loss += loss
 

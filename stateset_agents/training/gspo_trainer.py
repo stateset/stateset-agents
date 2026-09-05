@@ -451,6 +451,33 @@ class GSPOTrainer:
 
         return advantages, stats
 
+    def compute_gspo_loss(
+        self,
+        importance_ratios: torch.Tensor,
+        advantages: torch.Tensor,
+        current_log_probs: torch.Tensor,
+        sequence_lengths: torch.Tensor,
+        ref_log_probs: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """GSPO objective for one prompt group (clipped surrogate + optional k3 KL)."""
+        # J_GSPO = E[1/G * sum min(s_i(theta) * A_i, clip(s_i(theta)) * A_i)]
+        policy_loss = rl_losses.clipped_surrogate(
+            importance_ratios,
+            advantages,
+            clip_low=self.config.clip_range_left,
+            clip_high=self.config.clip_range_right,
+        ).mean()
+        if self.config.beta > 0 and ref_log_probs is not None:
+            # k3 on the length-normalised sequence log-probs (one value per
+            # response): non-negative, and its gradient's expectation is the
+            # true KL gradient.
+            kl_div = rl_losses.k3_kl(
+                current_log_probs / sequence_lengths,
+                ref_log_probs / sequence_lengths,
+            )
+            return policy_loss + self.config.beta * kl_div
+        return policy_loss
+
     def _compute_group_sequence_log_probs(
         self, prompt: str, responses: list[str]
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -645,34 +672,18 @@ class GSPOTrainer:
             total_clipped += num_clipped
             total_samples += len(responses)
 
-            # Compute policy loss using GSPO objective
-            # J_GSPO = E[1/G * Σ min(s_i(θ) * Â_i, clip(s_i(θ)) * Â_i)]
-            policy_loss = rl_losses.clipped_surrogate(
-                importance_ratios,
-                advantages,
-                clip_low=self.config.clip_range_left,
-                clip_high=self.config.clip_range_right,
-            ).mean()
-
-            # Add KL penalty if specified
+            ref_log_probs = None
             if self.config.beta > 0 and self.ref_model is not None:
-                # Compute KL divergence with reference model (batched for efficiency)
                 ref_log_probs = self._compute_batch_ref_log_probs(prompt, responses)
                 if model_device is not None:
                     ref_log_probs = ref_log_probs.to(model_device)
-
-                # k3 on the length-normalised sequence log-probs (one value
-                # per response): non-negative, and its gradient's expectation
-                # is the true KL gradient.
-                kl_div = rl_losses.k3_kl(
-                    current_log_probs / sequence_lengths,
-                    ref_log_probs / sequence_lengths,
-                )
-                kl_penalty = self.config.beta * kl_div
-
-                total_loss_item = policy_loss + kl_penalty
-            else:
-                total_loss_item = policy_loss
+            total_loss_item = self.compute_gspo_loss(
+                importance_ratios,
+                advantages,
+                current_log_probs,
+                sequence_lengths,
+                ref_log_probs,
+            )
 
             # Accumulate loss
             total_loss += total_loss_item
