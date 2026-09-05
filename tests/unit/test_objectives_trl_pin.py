@@ -9,6 +9,8 @@ module skip loudly rather than silently pass.
 from __future__ import annotations
 
 import importlib
+import importlib.machinery
+import os
 import sys
 from collections import defaultdict
 from types import SimpleNamespace
@@ -21,17 +23,30 @@ torch = pytest.importorskip("torch")
 from stateset_agents.training import objectives as O  # noqa: E402
 
 
+def _is_real_module(mod) -> bool:
+    """True only for a module actually loaded from a file on disk."""
+    if isinstance(mod, MagicMock):
+        return False
+    spec = getattr(mod, "__spec__", None)
+    if not isinstance(spec, importlib.machinery.ModuleSpec):
+        return False
+    origin = spec.origin
+    if origin in (None, "namespace", "built-in", "frozen"):
+        return bool(spec.submodule_search_locations)
+    return os.path.exists(origin)
+
+
 def _import_real_trl():
     """Import the real ``trl`` even when another test module has leaked
-    ``MagicMock`` stand-ins for ``trl``/``peft``/``vllm`` into ``sys.modules``
-    (``tests/unit/test_trl_grpo_trainer.py`` does so at import time and never
-    restores them). The mocks are put back afterwards so that module still
+    stand-ins for ``trl``/``peft``/``vllm`` into ``sys.modules`` (mocks or bare
+    ``ModuleType`` stubs; ``tests/unit/test_trl_grpo_trainer.py`` and others do
+    so at import time and never restore them). The mocks are put back afterwards so that module still
     sees them; the real classes bound here keep working regardless.
     """
     leaked = {
         name: mod
         for name, mod in list(sys.modules.items())
-        if name.split(".")[0] in ("trl", "peft", "vllm") and isinstance(mod, MagicMock)
+        if name.split(".")[0] in ("trl", "peft", "vllm") and not _is_real_module(mod)
     }
     for name in leaked:
         del sys.modules[name]
