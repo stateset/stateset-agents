@@ -8,6 +8,7 @@ agents on single-turn interactions (one prompt, one response).
 from __future__ import annotations
 
 import contextlib
+import inspect
 import logging
 import math
 from copy import deepcopy
@@ -64,6 +65,16 @@ SINGLE_TRAINER_EXCEPTIONS = (
     KeyError,
     OSError,
 )
+
+
+def _usable_generate_turn(agent: Any):
+    """Return ``agent.generate_turn`` only when it is a real coroutine function.
+
+    Mock agents in tests expose arbitrary attributes, so ``callable`` alone
+    is not enough; the caller also checks the result is a ConversationTurn.
+    """
+    fn = getattr(agent, "generate_turn", None)
+    return fn if fn is not None and inspect.iscoroutinefunction(fn) else None
 
 
 class SingleTurnGRPOTrainer:
@@ -356,14 +367,17 @@ class SingleTurnGRPOTrainer:
         best_response = ""
         best_reward = float("-inf")
 
-        generate_turn = getattr(self.agent, "generate_turn", None)
+        generate_turn = _usable_generate_turn(self.agent)
         for gen_idx in range(num_generations):
-            if callable(generate_turn):
+            assistant_turn = None
+            if generate_turn is not None:
                 # Keeps the generated token ids / log-probs on the turn so the
                 # batched per-token GRPO path can be used.
-                assistant_turn = await generate_turn(prompt)
-                response = str(assistant_turn.content)
-            else:
+                candidate = await generate_turn(prompt)
+                if isinstance(candidate, ConversationTurn):
+                    assistant_turn = candidate
+                    response = str(candidate.content)
+            if assistant_turn is None:
                 response = await self.agent.generate_response(prompt)
                 assistant_turn = ConversationTurn(
                     role="assistant", content=str(response)

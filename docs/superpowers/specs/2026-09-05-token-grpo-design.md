@@ -57,3 +57,18 @@ Off-policy correction with `sampler_log_probs` (multiple inner updates),
 vLLM generation capture, and `core/multiturn_agent.py`'s backend-based
 agent (it returns turns without token metadata and therefore uses the
 fallback).
+
+## Addendum: inner updates (same day)
+
+`TrainingConfig.num_gradient_updates` (default 1, the name DAPO/VAPO/GEPO
+already use) applies to the GRPO trainers' token path. With a value above 1,
+`training_step` first freezes the old policy's per-token log-probs for every
+group (`loss_computation.compute_token_old_logprobs`: one no-grad chunked
+forward on the stored ids), then runs that many optimizer steps, each
+recomputing the current log-probs and evaluating the objective with
+`logp_old` set to the snapshot, so ratios move away from 1 and the trust
+region engages exactly as in PPO/DAPO. Each inner update is a full optimizer
+step (gradient accumulation applies only to the default single update, whose
+behaviour is unchanged). The metrics report `inner_updates`, `ratio_mean`
+per update and `ratio_mean_last`, and `clip_fraction`. Groups on the
+sequence fallback ignore the setting (a warning is logged once).

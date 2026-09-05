@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import math
 from typing import Any, TypeAlias
@@ -347,10 +348,14 @@ class MultiTurnGRPOTrainer:
         # token ids and log-probs, which unlocks the batched per-token GRPO
         # path (docs/OBJECTIVES.md). run_episode accepts either return type.
         generate_turn = getattr(self.agent, "generate_turn", None)
+        if generate_turn is not None and not inspect.iscoroutinefunction(generate_turn):
+            generate_turn = None  # mock agents expose arbitrary attributes
 
         async def agent_fn(history, context):
-            if callable(generate_turn):
-                return await generate_turn(history, context)
+            if generate_turn is not None:
+                turn = await generate_turn(history, context)
+                if isinstance(turn, core_trajectory.ConversationTurn):
+                    return turn
             return await self.agent.generate_response(history, context)
 
         for scenario in scenarios:
