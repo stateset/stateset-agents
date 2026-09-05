@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import math
 from typing import Any, TypeAlias
@@ -30,6 +31,7 @@ from .loss_computation import (
     _compute_group_policy_loss,
     compute_enhanced_grpo_loss,
     compute_grpo_loss,
+    compute_token_old_logprobs,
 )
 from .multi_turn_checkpointing import (
     load_multi_turn_checkpoint,
@@ -343,6 +345,19 @@ class MultiTurnGRPOTrainer:
             num_generations or getattr(self.config, "num_generations", 16) or 16
         )
         trajectory_groups: list[TrajectoryGroup] = []
+        # Prefer generate_turn: it returns the assistant turn with the generated
+        # token ids and log-probs, which unlocks the batched per-token GRPO
+        # path (docs/OBJECTIVES.md). run_episode accepts either return type.
+        generate_turn = getattr(self.agent, "generate_turn", None)
+        if generate_turn is not None and not inspect.iscoroutinefunction(generate_turn):
+            generate_turn = None  # mock agents expose arbitrary attributes
+
+        async def agent_fn(history, context):
+            if generate_turn is not None:
+                turn = await generate_turn(history, context)
+                if isinstance(turn, core_trajectory.ConversationTurn):
+                    return turn
+            return await self.agent.generate_response(history, context)
 
         for scenario in scenarios:
             # Generate multiple trajectories for the same scenario
@@ -355,10 +370,6 @@ class MultiTurnGRPOTrainer:
                         reset_result = reset_fn()
                         if asyncio.iscoroutine(reset_result):
                             await reset_result
-
-                    # Create agent function wrapper
-                    async def agent_fn(history, context):
-                        return await self.agent.generate_response(history, context)
 
                     # Generate trajectory
                     trajectory = await self.environment.run_episode(agent_fn, scenario)
@@ -405,7 +416,9 @@ class MultiTurnGRPOTrainer:
         return normalized_result
 
     def compute_grpo_loss(
-        self, trajectory_groups: list[TrajectoryGroup]
+        self,
+        trajectory_groups: list[TrajectoryGroup],
+        old_logprobs: list[Any] | None = None,
     ) -> dict[str, Any]:
         """Compute GRPO loss from trajectory groups"""
         loss_dict: dict[str, Any] = compute_grpo_loss(
@@ -415,6 +428,7 @@ class MultiTurnGRPOTrainer:
             global_reward_mean=self._global_reward_mean,
             global_reward_count=self._global_reward_count,
             update_global_stats=self._update_global_stats,
+            old_logprobs=old_logprobs,
         )
         return loss_dict
 
@@ -431,7 +445,10 @@ class MultiTurnGRPOTrainer:
         return loss
 
     def compute_enhanced_grpo_loss(
-        self, trajectory_groups: list[TrajectoryGroup], beta: float = 0.0
+        self,
+        trajectory_groups: list[TrajectoryGroup],
+        beta: float = 0.0,
+        old_logprobs: list[Any] | None = None,
     ) -> dict[str, Any]:
         """Enhanced GRPO loss computation with KL penalty"""
         loss_dict: dict[str, Any] = compute_enhanced_grpo_loss(
@@ -440,6 +457,7 @@ class MultiTurnGRPOTrainer:
             config=self.config,
             agent=self.agent,
             reference_model=self.reference_model,
+            old_logprobs=old_logprobs,
         )
         return loss_dict
 
@@ -570,6 +588,28 @@ class MultiTurnGRPOTrainer:
             else contextlib.nullcontext()
         )
 
+        inner = max(1, int(getattr(self.config, "num_gradient_updates", 1) or 1))
+        if inner > 1:
+            old_logprobs = compute_token_old_logprobs(
+                trajectory_groups, self.config, self.agent
+            )
+            if old_logprobs is None:
+                self._warn_inner_updates_unavailable()
+            else:
+                return self._inner_update_steps(
+                    trajectory_groups,
+                    inner,
+                    old_logprobs,
+                    use_enhanced=use_enhanced,
+                    beta=base_beta,
+                    autocast_ctx_factory=lambda: (
+                        amp.autocast(device_type=device_type, enabled=use_amp)
+                        if amp is not None
+                        else contextlib.nullcontext()
+                    ),
+                    torch=torch,
+                )
+
         with autocast_ctx:
             if use_enhanced:
                 loss_dict = self.compute_enhanced_grpo_loss(
@@ -612,9 +652,72 @@ class MultiTurnGRPOTrainer:
             "global_step": self.global_step,
             "optimizer_step": optimizer_step,
             "grad_accum_step": self._grad_accum_step,
+            "inner_updates": 1,
         }
 
         return metrics
+
+    def _warn_inner_updates_unavailable(self) -> None:
+        if getattr(self, "_inner_updates_warned", False):
+            return
+        self._inner_updates_warned = True
+        logger.warning(
+            "num_gradient_updates > 1 needs per-token rollouts (agent.generate_turn); "
+            "these trajectories carry no token metadata, so a single on-policy "
+            "update is applied."
+        )
+
+    def _inner_update_steps(
+        self,
+        trajectory_groups: list[TrajectoryGroup],
+        inner: int,
+        old_logprobs: list[Any],
+        *,
+        use_enhanced: bool,
+        beta: float,
+        autocast_ctx_factory: Any,
+        torch: Any,
+    ) -> dict[str, Any]:
+        """PPO/DAPO-style mini-epochs: ``inner`` full optimizer steps against
+        the frozen old-policy log-probs of this rollout batch."""
+        ratio_means: list[float] = []
+        loss_dict: dict[str, Any] = {}
+        for _ in range(inner):
+            with autocast_ctx_factory():
+                if use_enhanced:
+                    loss_dict = self.compute_enhanced_grpo_loss(
+                        trajectory_groups, beta=beta, old_logprobs=old_logprobs
+                    )
+                else:
+                    loss_dict = self.compute_grpo_loss(
+                        trajectory_groups, old_logprobs=old_logprobs
+                    )
+                loss = loss_dict["total_loss"]
+                ewc_penalty = None
+                if self.continual_manager is not None:
+                    ewc_penalty = self.continual_manager.compute_ewc_penalty(self.agent)
+                if ewc_penalty is not None:
+                    loss = loss + ewc_penalty
+                    loss_dict["ewc_penalty"] = ewc_penalty
+            if self.scaler is not None:
+                self.scaler.scale(loss).backward()
+            else:
+                loss.backward()
+            self._apply_optimizer_step(torch)
+            ratio_means.append(float(loss_dict.get("ratio_mean", 1.0)))
+
+        optimizer = self.optimizer
+        return {
+            **{k: v.item() if torch.is_tensor(v) else v for k, v in loss_dict.items()},
+            "learning_rate": (
+                optimizer.param_groups[0]["lr"] if optimizer is not None else 0.0
+            ),
+            "global_step": self.global_step,
+            "optimizer_step": True,
+            "grad_accum_step": self._grad_accum_step,
+            "inner_updates": inner,
+            "ratio_mean_last": ratio_means[-1] if ratio_means else 1.0,
+        }
 
     async def evaluate(
         self, eval_scenarios: list[dict[str, Any]], num_eval_episodes: int = 10

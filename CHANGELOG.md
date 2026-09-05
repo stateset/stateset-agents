@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-09-05 — Per-token GRPO and starter specs
+
+### Changed
+
+- The twelve packaged model-family starters (`training/*_starter.py`) are
+  now built from one `StarterSpec` each by `training/starter_factory.py`
+  instead of ~400 hand-written lines apiece (5,067 → ~2,000 lines). Every
+  public constant, function, config dataclass (name, field order, defaults),
+  and family-specific validation rule is unchanged; a contract test
+  (`tests/unit/test_starter_factory.py`) pins the per-family surface, and
+  adding a starter is now a spec plus its validation rules.
+
+### Added
+
+- Per-token GRPO: `MultiTurnAgent.generate_turn` returns the assistant turn
+  with the exact prompt token ids, sampled response ids, and the model's
+  log-probs of those ids; both GRPO trainers request turns; and
+  `compute_grpo_loss` / `compute_enhanced_grpo_loss` take a batched token
+  path (one padded forward per group, per-token ratios, any token-level
+  objective preset, k3 KL and entropy on the same logits) when a group carries
+  token metadata, falling back to the sequence-level path otherwise
+  (`docs/OBJECTIVES.md`). Previously the GRPO trainers recorded no log-probs
+  and therefore trained as unclipped REINFORCE on re-tokenised text.
+- `TrainingConfig.num_gradient_updates` (default 1) on the GRPO trainers'
+  token path: PPO/DAPO-style inner updates against the frozen old-policy
+  log-probs (`loss_computation.compute_token_old_logprobs`), so the trust
+  region engages from the second update; metrics report `inner_updates`,
+  `ratio_mean`, `ratio_mean_last`, and `clip_fraction`. Reviewed additive v1
+  API contract change (one appended keyword parameter).
+
 ## [0.49.0] - 2026-09-05 — Declarative policy objectives
 
 ### Added

@@ -8,6 +8,7 @@ agents on single-turn interactions (one prompt, one response).
 from __future__ import annotations
 
 import contextlib
+import inspect
 import logging
 import math
 from copy import deepcopy
@@ -30,7 +31,11 @@ from .callbacks import (
     notify_training_start,
 )
 from .continual_learning import ContinualLearningManager
-from .loss_computation import compute_enhanced_grpo_loss, compute_grpo_loss
+from .loss_computation import (
+    compute_enhanced_grpo_loss,
+    compute_grpo_loss,
+    compute_token_old_logprobs,
+)
 from .single_turn_checkpointing import (
     load_checkpoint_artifacts,
     resolve_checkpoint_path,
@@ -64,6 +69,16 @@ SINGLE_TRAINER_EXCEPTIONS = (
     KeyError,
     OSError,
 )
+
+
+def _usable_generate_turn(agent: Any):
+    """Return ``agent.generate_turn`` only when it is a real coroutine function.
+
+    Mock agents in tests expose arbitrary attributes, so ``callable`` alone
+    is not enough; the caller also checks the result is a ConversationTurn.
+    """
+    fn = getattr(agent, "generate_turn", None)
+    return fn if fn is not None and inspect.iscoroutinefunction(fn) else None
 
 
 class SingleTurnGRPOTrainer:
@@ -356,11 +371,24 @@ class SingleTurnGRPOTrainer:
         best_response = ""
         best_reward = float("-inf")
 
+        generate_turn = _usable_generate_turn(self.agent)
         for gen_idx in range(num_generations):
-            response = await self.agent.generate_response(prompt)
+            assistant_turn = None
+            if generate_turn is not None:
+                # Keeps the generated token ids / log-probs on the turn so the
+                # batched per-token GRPO path can be used.
+                candidate = await generate_turn(prompt)
+                if isinstance(candidate, ConversationTurn):
+                    assistant_turn = candidate
+                    response = str(candidate.content)
+            if assistant_turn is None:
+                response = await self.agent.generate_response(prompt)
+                assistant_turn = ConversationTurn(
+                    role="assistant", content=str(response)
+                )
             turns = [
                 ConversationTurn(role="user", content=str(prompt)),
-                ConversationTurn(role="assistant", content=str(response)),
+                assistant_turn,
             ]
             reward = await self._compute_reward_for_turns(turns, context)
 
@@ -543,7 +571,51 @@ class SingleTurnGRPOTrainer:
                 update_applied = False
 
                 # Backprop/update
-                if self.optimizer is not None and policy_loss is not None:
+                inner = max(
+                    1, int(getattr(self.config, "num_gradient_updates", 1) or 1)
+                )
+                if (
+                    inner > 1
+                    and self.optimizer is not None
+                    and policy_loss is not None
+                    and loss_dict.get("path") == "token"
+                ):
+                    # PPO/DAPO-style mini-epochs against the frozen old policy:
+                    # the first (on-policy) update is the loss just computed.
+                    old_logprobs = compute_token_old_logprobs(
+                        training_groups, self.config, self.agent
+                    )
+                    for step_idx in range(inner):
+                        if step_idx > 0:
+                            with autocast_ctx:
+                                loss_dict = (
+                                    compute_enhanced_grpo_loss(
+                                        trajectory_groups=training_groups,
+                                        beta=base_beta,
+                                        config=self.config,
+                                        agent=self.agent,
+                                        reference_model=self.reference_model,
+                                        old_logprobs=old_logprobs,
+                                    )
+                                    if use_enhanced
+                                    else compute_grpo_loss(
+                                        trajectory_groups=training_groups,
+                                        config=self.config,
+                                        agent=self.agent,
+                                        global_reward_mean=self._global_reward_mean,
+                                        global_reward_count=self._global_reward_count,
+                                        update_global_stats=self._update_global_stats,
+                                        old_logprobs=old_logprobs,
+                                    )
+                                )
+                            policy_loss = loss_dict["total_loss"]
+                        if self.scaler is not None and use_amp:
+                            self.scaler.scale(policy_loss).backward()
+                        else:
+                            policy_loss.backward()
+                        self._apply_optimizer_step(torch, use_amp, max_grad_norm)
+                    update_applied = True
+                elif self.optimizer is not None and policy_loss is not None:
                     scaled_loss = policy_loss / grad_accum_steps
                     if self.scaler is not None and use_amp:
                         self.scaler.scale(scaled_loss).backward()

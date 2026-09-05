@@ -9,276 +9,40 @@ starter assumes:
 * QLoRA-only fine-tuning on the routed/dense projection matrices
 * vLLM-backed generation during training
 * Multi-node serving topology (or single 8x H200/B200 host for the FP8 variant)
+
+Built from a :class:`StarterSpec`; see ``starter_factory``.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
-from stateset_agents.core.agent import AgentConfig
-from stateset_agents.training import starter_common as _common
-from stateset_agents.training.config import TrainingConfig, get_config_for_task
+from stateset_agents.training import starter_common as _common  # noqa: F401
+from stateset_agents.training.config import (  # noqa: F401  (patched by tests)
+    TrainingConfig,
+    get_config_for_task,
+)
+from stateset_agents.training.starter_factory import (
+    StarterSpec,
+    build_starter,
+    starter_all,
+)
 
 logger = logging.getLogger(__name__)
 
-_FAMILY_LABEL = "GLM"
-_DISPLAY_NAME = "GLM 5.2"
-
 GLM5_2_BASE_MODEL = "zai-org/GLM-5.2"
-GLM5_2_FP8_MODEL = "your-org/GLM-5.2-FP8"
-GLM5_2_SUPPORTED_VARIANTS = [
-    GLM5_2_BASE_MODEL,
-    GLM5_2_FP8_MODEL,
-]
 GLM5_2_TASK_CHOICES = [
     "customer_service",
     "technical_support",
     "sales",
     "conversational",
 ]
-GLM5_2_STARTER_PROFILE_CHOICES = [
-    "balanced",
-    "memory",
-    "quality",
-]
-GLM5_2_STARTER_PROFILE_DESCRIPTIONS = {
-    "balanced": "First GLM 5.2 run with QLoRA defaults, 4-bit quantization, and a moderate context budget.",
-    "memory": "Lower-memory GLM 5.2 run with smaller groups and shorter context for tighter multi-node clusters.",
-    "quality": "Heavier GLM 5.2 run with larger context and rollout sizes when you have B200/H200 headroom.",
-}
-GLM5_2_DEFAULT_OUTPUT_DIR = "./outputs/glm5_2_gspo"
-# GLM 5.2 uses DeepSeek V3-style MLA attention plus standard SwiGLU FFN.
-# These projection names match the ``glm_moe_dsa`` architecture.
-GLM5_2_LORA_TARGET_MODULES = [
-    "q_a_proj",
-    "q_b_proj",
-    "kv_a_proj_with_mqa",
-    "kv_b_proj",
-    "o_proj",
-    "gate_proj",
-    "up_proj",
-    "down_proj",
-]
-GLM5_2_CONFIG_SUFFIXES = {".json", ".js", ".yaml", ".yml"}
-
-_PROFILE_OVERRIDES: dict[str, dict[str, Any]] = {
-    "balanced": {},
-    "memory": {
-        "use_4bit": True,
-        "per_device_train_batch_size": 1,
-        "gradient_accumulation_steps": 32,
-        "num_generations": 2,
-        "num_outer_iterations": 10,
-        "generations_per_iteration": 8,
-        "max_new_tokens": 1024,
-        "max_prompt_length": 4096,
-        "max_completion_length": 1024,
-    },
-    "quality": {
-        "use_4bit": True,
-        "per_device_train_batch_size": 1,
-        "gradient_accumulation_steps": 32,
-        "num_generations": 8,
-        "num_outer_iterations": 30,
-        "generations_per_iteration": 16,
-        "max_new_tokens": 2048,
-        "max_prompt_length": 16384,
-        "max_completion_length": 2048,
-        "learning_rate": 1.5e-6,
-    },
-}
+GLM5_2_STARTER_PROFILE_CHOICES = ["balanced", "memory", "quality"]
+GLM5_2_FP8_MODEL = "your-org/GLM-5.2-FP8"
 
 
-def get_glm5_2_system_prompt(task: str = "customer_service") -> str:
-    """Return a task-specific system prompt for GLM 5.2."""
-    return _common.select_system_prompt(
-        task,
-        base_intro=(
-            "You are GLM, a helpful AI assistant built from the GLM 5.2 reasoning "
-            "checkpoint by Zhipu AI."
-        ),
-        conversational=_common.CONVERSATIONAL_GROUNDED,
-    )
-
-
-def get_glm5_2_profile_overrides(starter_profile: str = "balanced") -> dict[str, Any]:
-    """Return preset overrides for a GLM 5.2 starter profile."""
-    return _common.select_profile_overrides(
-        starter_profile,
-        profiles=_PROFILE_OVERRIDES,
-        choices=GLM5_2_STARTER_PROFILE_CHOICES,
-        family_label=_FAMILY_LABEL,
-    )
-
-
-def get_glm5_2_profile_description(starter_profile: str = "balanced") -> str:
-    """Return the human-readable description for a starter profile."""
-    return _common.select_profile_description(
-        starter_profile,
-        descriptions=GLM5_2_STARTER_PROFILE_DESCRIPTIONS,
-        choices=GLM5_2_STARTER_PROFILE_CHOICES,
-        family_label=_FAMILY_LABEL,
-    )
-
-
-def summarize_glm5_2_config(config: Glm52Config) -> dict[str, Any]:
-    """Summarize the most relevant first-run properties for a resolved config."""
-    return _common.summarize_config(config)
-
-
-def describe_glm5_2_starter_profiles(
-    task: str = "customer_service",
-    model_name: str = GLM5_2_BASE_MODEL,
-) -> dict[str, Any]:
-    """Return a serializable description of all built-in starter profiles."""
-    return _common.describe_starter_profiles(
-        task=task,
-        model_name=model_name,
-        choices=GLM5_2_STARTER_PROFILE_CHOICES,
-        get_config=get_glm5_2_config,
-        get_description=get_glm5_2_profile_description,
-        summarize=summarize_glm5_2_config,
-    )
-
-
-def get_glm5_2_serving_recommendations(
-    *,
-    use_fp8: bool = False,
-    enable_auto_tool_choice: bool = True,
-    tensor_parallel_size: int | None = None,
-    pipeline_parallel_size: int | None = None,
-    max_model_len: int | None = None,
-) -> dict[str, Any]:
-    """Return the recommended vLLM settings for GLM 5.2 serving."""
-    return _common.glm_serving_recommendations(
-        use_fp8=use_fp8,
-        enable_auto_tool_choice=enable_auto_tool_choice,
-        tensor_parallel_size=tensor_parallel_size,
-        pipeline_parallel_size=pipeline_parallel_size,
-        max_model_len=max_model_len,
-    )
-
-
-@dataclass
-class Glm52Config(_common.StarterConfigMixin):
-    """Lightweight configuration container for GLM 5.2 post-training."""
-
-    model_name: str = GLM5_2_BASE_MODEL
-    task: str = "customer_service"
-    starter_profile: str = "balanced"
-    system_prompt: str | None = None
-
-    use_lora: bool = True
-    lora_r: int | None = 64
-    lora_alpha: int | None = 128
-    lora_dropout: float = 0.05
-    lora_target_modules: list[str] = field(
-        default_factory=lambda: list(GLM5_2_LORA_TARGET_MODULES)
-    )
-
-    use_4bit: bool = True
-    use_8bit: bool = False
-    bf16: bool = True
-    gradient_checkpointing: bool = True
-
-    max_new_tokens: int = 1536
-    max_prompt_length: int = 8192
-    max_completion_length: int = 1536
-    temperature: float = 1.0
-    top_p: float = 0.95
-
-    per_device_train_batch_size: int = 1
-    gradient_accumulation_steps: int = 16
-    num_generations: int = 4
-    learning_rate: float = 2e-6
-    num_iterations: int = 1
-    num_outer_iterations: int = 20
-    generations_per_iteration: int = 12
-    clip_range_left: float = 1.5e-4
-    clip_range_right: float = 2.5e-4
-    # Policy objective preset + field overrides (docs/OBJECTIVES.md); None
-    # keeps the native GSPO objective.
-    objective: str | None = None
-    objective_overrides: dict[str, Any] | None = None
-
-    use_vllm: bool = True
-    use_reference_model: bool = True
-    output_dir: str = GLM5_2_DEFAULT_OUTPUT_DIR
-    save_steps_every: int = 5
-
-    use_wandb: bool = False
-    report_to: str = "none"
-    wandb_project: str | None = None
-    wandb_entity: str | None = None
-    wandb_tags: list[str] = field(default_factory=list)
-
-    trust_remote_code: bool = True
-    attn_implementation: str | None = "sdpa"
-    device_map: str | None = "auto"
-
-    _system_prompt = staticmethod(get_glm5_2_system_prompt)
-    _wandb_base_tags = ("glm5.2", "754b", "moe", "gspo")
-    _wandb_project_default = "glm5_2-gspo"
-
-    def validate(self) -> list[str]:
-        return validate_glm5_2_config(self)
-
-
-def get_glm5_2_config(
-    model_name: str = GLM5_2_BASE_MODEL,
-    task: str = "customer_service",
-    starter_profile: str = "balanced",
-    use_lora: bool | None = None,
-    use_4bit: bool | None = None,
-    use_8bit: bool | None = None,
-    use_wandb: bool | None = None,
-    wandb_project: str | None = None,
-    output_dir: str | None = None,
-    **overrides: Any,
-) -> Glm52Config:
-    """Create a tuned first-run GLM 5.2 configuration."""
-    return _common.resolve_starter_config(
-        Glm52Config,
-        get_glm5_2_profile_overrides,
-        _DISPLAY_NAME,
-        logger,
-        model_name=model_name,
-        task=task,
-        starter_profile=starter_profile,
-        use_lora=use_lora,
-        use_4bit=use_4bit,
-        use_8bit=use_8bit,
-        use_wandb=use_wandb,
-        wandb_project=wandb_project,
-        output_dir=output_dir,
-        **overrides,
-    )
-
-
-def create_glm5_2_agent_config(config: Glm52Config) -> AgentConfig:
-    """Create the matching AgentConfig for GLM 5.2."""
-    return _common.create_agent_config(config)
-
-
-def get_glm5_2_gspo_overrides(config: Glm52Config) -> dict[str, Any]:
-    """Return the GSPO override payload for GLM 5.2."""
-    return _common.build_gspo_overrides(config)
-
-
-def get_glm5_2_gspo_config(
-    config: Glm52Config,
-    base_config: TrainingConfig | None = None,
-):
-    """Create the GSPOConfig used for GLM 5.2 post-training."""
-    return _common.build_gspo_config(
-        config, base_config, get_config_for_task, get_glm5_2_gspo_overrides
-    )
-
-
-def validate_glm5_2_config(config: Glm52Config) -> list[str]:
+def validate_glm5_2_config(config: Any) -> list[str]:
     """Validate a GLM 5.2 first-run configuration."""
     warnings: list[str] = []
 
@@ -335,122 +99,108 @@ def validate_glm5_2_config(config: Glm52Config) -> list[str]:
     return warnings
 
 
-def create_glm5_2_preview(
-    config: Glm52Config,
-    warnings: list[str] | None = None,
+def get_glm5_2_serving_recommendations(
+    *,
+    use_fp8: bool = False,
+    enable_auto_tool_choice: bool = True,
+    tensor_parallel_size: int | None = None,
+    pipeline_parallel_size: int | None = None,
+    max_model_len: int | None = None,
 ) -> dict[str, Any]:
-    """Build a serializable preview payload for dry-runs."""
-    return _common.create_preview(
-        config,
-        warnings,
-        agent_config_fn=create_glm5_2_agent_config,
-        summarize_fn=summarize_glm5_2_config,
-        gspo_overrides_fn=get_glm5_2_gspo_overrides,
+    """Return the recommended vLLM settings for GLM 5.2 serving."""
+    return _common.glm_serving_recommendations(
+        use_fp8=use_fp8,
+        enable_auto_tool_choice=enable_auto_tool_choice,
+        tensor_parallel_size=tensor_parallel_size,
+        pipeline_parallel_size=pipeline_parallel_size,
+        max_model_len=max_model_len,
     )
 
 
-def load_glm5_2_config_file(path: str | Path) -> Glm52Config:
-    """Load a GLM 5.2 starter config from JSON or YAML."""
-    return _common.load_config_file(
-        path,
-        config_cls=Glm52Config,
-        suffixes=GLM5_2_CONFIG_SUFFIXES,
-        family_label=_FAMILY_LABEL,
-        display_name=_DISPLAY_NAME,
-        logger=logger,
-    )
+SPEC = StarterSpec(
+    family_label="GLM",
+    display_name="GLM 5.2",
+    symbol_prefix="GLM5_2",
+    fn_infix="glm5_2",
+    run_suffix="glm5_2",
+    config_class_name="Glm52Config",
+    base_model=GLM5_2_BASE_MODEL,
+    post_trained_model=None,
+    supported_variants=["zai-org/GLM-5.2", "your-org/GLM-5.2-FP8"],
+    task_choices=GLM5_2_TASK_CHOICES,
+    profile_choices=GLM5_2_STARTER_PROFILE_CHOICES,
+    default_output_dir="./outputs/glm5_2_gspo",
+    lora_target_modules=[
+        "q_a_proj",
+        "q_b_proj",
+        "kv_a_proj_with_mqa",
+        "kv_b_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ],
+    profile_descriptions={
+        "balanced": "First GLM 5.2 run with QLoRA defaults, 4-bit quantization, and a moderate context budget.",
+        "memory": "Lower-memory GLM 5.2 run with smaller groups and shorter context for tighter multi-node clusters.",
+        "quality": "Heavier GLM 5.2 run with larger context and rollout sizes when you have B200/H200 headroom.",
+    },
+    profile_overrides={
+        "balanced": {},
+        "memory": {
+            "use_4bit": True,
+            "per_device_train_batch_size": 1,
+            "gradient_accumulation_steps": 32,
+            "num_generations": 2,
+            "num_outer_iterations": 10,
+            "generations_per_iteration": 8,
+            "max_new_tokens": 1024,
+            "max_prompt_length": 4096,
+            "max_completion_length": 1024,
+        },
+        "quality": {
+            "use_4bit": True,
+            "per_device_train_batch_size": 1,
+            "gradient_accumulation_steps": 32,
+            "num_generations": 8,
+            "num_outer_iterations": 30,
+            "generations_per_iteration": 16,
+            "max_new_tokens": 2048,
+            "max_prompt_length": 16384,
+            "max_completion_length": 2048,
+            "learning_rate": 1.5e-06,
+        },
+    },
+    system_prompt_intro="You are GLM, a helpful AI assistant built from the GLM 5.2 reasoning checkpoint by Zhipu AI.",
+    config_defaults={
+        "lora_r": 64,
+        "lora_alpha": 128,
+        "use_4bit": True,
+        "max_new_tokens": 1536,
+        "max_prompt_length": 8192,
+        "max_completion_length": 1536,
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 16,
+        "num_generations": 4,
+        "learning_rate": 2e-06,
+        "num_outer_iterations": 20,
+        "generations_per_iteration": 12,
+        "clip_range_left": 0.00015,
+        "clip_range_right": 0.00025,
+    },
+    extra_fields=(("use_vllm", "bool", True), ("use_reference_model", "bool", True)),
+    wandb_base_tags=("glm5.2", "754b", "moe", "gspo"),
+    wandb_project_default="glm5_2-gspo",
+    validate=validate_glm5_2_config,
+    module=__name__,
+)
 
+_SYMBOLS = build_starter(SPEC, logger)
+globals().update(_SYMBOLS)
 
-def write_glm5_2_config_file(
-    config: Glm52Config,
-    path: str | Path,
-    include_preview: bool = False,
-) -> Path:
-    """Write a GLM 5.2 starter config to JSON or YAML."""
-    return _common.write_config_file(
-        config,
-        path,
-        include_preview,
-        preview_fn=create_glm5_2_preview,
-        suffixes=GLM5_2_CONFIG_SUFFIXES,
-        family_label=_FAMILY_LABEL,
-        display_name=_DISPLAY_NAME,
-        logger=logger,
-    )
-
-
-async def run_glm5_2_config(
-    config: Glm52Config,
-    dry_run: bool = False,
-) -> Any:
-    """Run or preview a GLM 5.2 GSPO job from a resolved config object."""
-    return await _common.run_starter_config(
-        config,
-        dry_run,
-        preview_fn=create_glm5_2_preview,
-        gspo_config_fn=get_glm5_2_gspo_config,
-        agent_config_fn=create_glm5_2_agent_config,
-        display_name=_DISPLAY_NAME,
-        logger=logger,
-    )
-
-
-async def finetune_glm5_2(
-    model_name: str = GLM5_2_BASE_MODEL,
-    task: str = "customer_service",
-    starter_profile: str = "balanced",
-    use_lora: bool | None = None,
-    use_4bit: bool | None = None,
-    use_8bit: bool | None = None,
-    output_dir: str | None = None,
-    num_outer_iterations: int | None = None,
-    use_wandb: bool | None = None,
-    wandb_project: str | None = None,
-    dry_run: bool = False,
-) -> Any:
-    """Run or preview a first GSPO post-training job for GLM 5.2."""
-    return await _common.finetune_starter(
-        get_config_fn=get_glm5_2_config,
-        run_fn=run_glm5_2_config,
-        model_name=model_name,
-        task=task,
-        starter_profile=starter_profile,
-        use_lora=use_lora,
-        use_4bit=use_4bit,
-        use_8bit=use_8bit,
-        output_dir=output_dir,
-        num_outer_iterations=num_outer_iterations,
-        use_wandb=use_wandb,
-        wandb_project=wandb_project,
-        dry_run=dry_run,
-    )
-
-
-__all__ = [
-    "GLM5_2_BASE_MODEL",
-    "GLM5_2_CONFIG_SUFFIXES",
-    "GLM5_2_DEFAULT_OUTPUT_DIR",
+__all__ = starter_all(_SYMBOLS) + [
     "GLM5_2_FP8_MODEL",
-    "GLM5_2_LORA_TARGET_MODULES",
-    "GLM5_2_STARTER_PROFILE_CHOICES",
-    "GLM5_2_STARTER_PROFILE_DESCRIPTIONS",
-    "GLM5_2_SUPPORTED_VARIANTS",
-    "GLM5_2_TASK_CHOICES",
-    "Glm52Config",
-    "create_glm5_2_agent_config",
-    "create_glm5_2_preview",
-    "describe_glm5_2_starter_profiles",
-    "finetune_glm5_2",
-    "get_glm5_2_config",
-    "get_glm5_2_gspo_config",
-    "get_glm5_2_gspo_overrides",
-    "get_glm5_2_profile_description",
-    "get_glm5_2_profile_overrides",
     "get_glm5_2_serving_recommendations",
-    "get_glm5_2_system_prompt",
-    "load_glm5_2_config_file",
-    "run_glm5_2_config",
-    "summarize_glm5_2_config",
-    "validate_glm5_2_config",
-    "write_glm5_2_config_file",
 ]

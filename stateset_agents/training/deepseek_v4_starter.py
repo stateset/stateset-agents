@@ -16,257 +16,40 @@ The MLA attention does not use llama-style ``q_proj``/``k_proj``/``v_proj``
 modules; the LoRA targets below use the checkpoint's actual MLA projection
 names (``wq_a``/``wq_b``/``wkv``/``wo_a``/``wo_b``), verified against the
 model's safetensors weight map.
+
+Built from a :class:`StarterSpec`; see ``starter_factory``.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
-from stateset_agents.core.agent import AgentConfig
-from stateset_agents.training import starter_common as _common
-from stateset_agents.training.config import TrainingConfig, get_config_for_task
+from stateset_agents.training import starter_common as _common  # noqa: F401
+from stateset_agents.training.config import (  # noqa: F401  (patched by tests)
+    TrainingConfig,
+    get_config_for_task,
+)
+from stateset_agents.training.starter_factory import (
+    StarterSpec,
+    build_starter,
+    starter_all,
+)
 
 logger = logging.getLogger(__name__)
 
-_FAMILY_LABEL = "DeepSeek V4"
-_DISPLAY_NAME = "DeepSeek V4 Flash"
-
 DEEPSEEK_V4_BASE_MODEL = "deepseek-ai/DeepSeek-V4-Flash"
-DEEPSEEK_V4_FLASH_BASE_MODEL = "deepseek-ai/DeepSeek-V4-Flash-Base"
-DEEPSEEK_V4_SUPPORTED_VARIANTS = [
-    DEEPSEEK_V4_BASE_MODEL,
-    DEEPSEEK_V4_FLASH_BASE_MODEL,
-]
 DEEPSEEK_V4_TASK_CHOICES = [
     "customer_service",
     "technical_support",
     "sales",
     "conversational",
 ]
-DEEPSEEK_V4_STARTER_PROFILE_CHOICES = [
-    "balanced",
-    "memory",
-    "quality",
-]
-DEEPSEEK_V4_STARTER_PROFILE_DESCRIPTIONS = {
-    "balanced": "First DeepSeek V4 Flash run with QLoRA defaults, 4-bit quantization, and a moderate context budget.",
-    "memory": "Lower-memory DeepSeek V4 Flash run with smaller groups and shorter context for tighter multi-node clusters.",
-    "quality": "Heavier DeepSeek V4 Flash run with larger context and rollout sizes when you have B200/H200 headroom.",
-}
-DEEPSEEK_V4_DEFAULT_OUTPUT_DIR = "./outputs/deepseek_v4_gspo"
-# DeepSeek V4 Flash uses MLA attention with low-rank q/kv/o projections.
-# These module names are taken from the checkpoint's safetensors weight map
-# (layers.<n>.attn.{wq_a,wq_b,wkv,wo_a,wo_b}); llama-style q_proj/k_proj/
-# v_proj modules do NOT exist in this architecture. The 256-expert routed
-# MLPs are impractical LoRA targets and are deliberately excluded.
-DEEPSEEK_V4_LORA_TARGET_MODULES = [
-    "wq_a",
-    "wq_b",
-    "wkv",
-    "wo_a",
-    "wo_b",
-]
-DEEPSEEK_V4_CONFIG_SUFFIXES = {".json", ".js", ".yaml", ".yml"}
-
-_PROFILE_OVERRIDES: dict[str, dict[str, Any]] = {
-    "balanced": {},
-    "memory": {
-        "use_4bit": True,
-        "per_device_train_batch_size": 1,
-        "gradient_accumulation_steps": 32,
-        "num_generations": 2,
-        "num_outer_iterations": 10,
-        "generations_per_iteration": 8,
-        "max_new_tokens": 1024,
-        "max_prompt_length": 4096,
-        "max_completion_length": 1024,
-    },
-    "quality": {
-        "use_4bit": True,
-        "per_device_train_batch_size": 1,
-        "gradient_accumulation_steps": 32,
-        "num_generations": 8,
-        "num_outer_iterations": 30,
-        "generations_per_iteration": 16,
-        "max_new_tokens": 2048,
-        "max_prompt_length": 16384,
-        "max_completion_length": 2048,
-        "learning_rate": 1.5e-6,
-    },
-}
+DEEPSEEK_V4_STARTER_PROFILE_CHOICES = ["balanced", "memory", "quality"]
+DEEPSEEK_V4_FLASH_BASE_MODEL = "deepseek-ai/DeepSeek-V4-Flash-Base"
 
 
-def get_deepseek_v4_system_prompt(task: str = "customer_service") -> str:
-    """Return a task-specific system prompt for DeepSeek V4 Flash."""
-    return _common.select_system_prompt(
-        task,
-        base_intro="You are DeepSeek, an AI assistant created by DeepSeek.",
-        conversational=_common.CONVERSATIONAL_GROUNDED,
-    )
-
-
-def get_deepseek_v4_profile_overrides(
-    starter_profile: str = "balanced",
-) -> dict[str, Any]:
-    """Return preset overrides for a DeepSeek V4 Flash starter profile."""
-    return _common.select_profile_overrides(
-        starter_profile,
-        profiles=_PROFILE_OVERRIDES,
-        choices=DEEPSEEK_V4_STARTER_PROFILE_CHOICES,
-        family_label=_FAMILY_LABEL,
-    )
-
-
-def get_deepseek_v4_profile_description(starter_profile: str = "balanced") -> str:
-    """Return the human-readable description for a starter profile."""
-    return _common.select_profile_description(
-        starter_profile,
-        descriptions=DEEPSEEK_V4_STARTER_PROFILE_DESCRIPTIONS,
-        choices=DEEPSEEK_V4_STARTER_PROFILE_CHOICES,
-        family_label=_FAMILY_LABEL,
-    )
-
-
-def summarize_deepseek_v4_config(config: DeepseekV4Config) -> dict[str, Any]:
-    """Summarize the most relevant first-run properties for a resolved config."""
-    return _common.summarize_config(config)
-
-
-def describe_deepseek_v4_starter_profiles(
-    task: str = "customer_service",
-    model_name: str = DEEPSEEK_V4_BASE_MODEL,
-) -> dict[str, Any]:
-    """Return a serializable description of all built-in starter profiles."""
-    return _common.describe_starter_profiles(
-        task=task,
-        model_name=model_name,
-        choices=DEEPSEEK_V4_STARTER_PROFILE_CHOICES,
-        get_config=get_deepseek_v4_config,
-        get_description=get_deepseek_v4_profile_description,
-        summarize=summarize_deepseek_v4_config,
-    )
-
-
-@dataclass
-class DeepseekV4Config(_common.StarterConfigMixin):
-    """Lightweight configuration container for DeepSeek V4 Flash post-training."""
-
-    model_name: str = DEEPSEEK_V4_BASE_MODEL
-    task: str = "customer_service"
-    starter_profile: str = "balanced"
-    system_prompt: str | None = None
-
-    use_lora: bool = True
-    lora_r: int | None = 64
-    lora_alpha: int | None = 128
-    lora_dropout: float = 0.05
-    lora_target_modules: list[str] = field(
-        default_factory=lambda: list(DEEPSEEK_V4_LORA_TARGET_MODULES)
-    )
-
-    use_4bit: bool = True
-    use_8bit: bool = False
-    bf16: bool = True
-    gradient_checkpointing: bool = True
-
-    max_new_tokens: int = 1536
-    max_prompt_length: int = 8192
-    max_completion_length: int = 1536
-    temperature: float = 1.0
-    top_p: float = 0.95
-
-    per_device_train_batch_size: int = 1
-    gradient_accumulation_steps: int = 16
-    num_generations: int = 4
-    learning_rate: float = 2e-6
-    num_iterations: int = 1
-    num_outer_iterations: int = 20
-    generations_per_iteration: int = 12
-    clip_range_left: float = 1.5e-4
-    clip_range_right: float = 2.5e-4
-    # Policy objective preset + field overrides (docs/OBJECTIVES.md); None
-    # keeps the native GSPO objective.
-    objective: str | None = None
-    objective_overrides: dict[str, Any] | None = None
-
-    use_vllm: bool = True
-    use_reference_model: bool = True
-    output_dir: str = DEEPSEEK_V4_DEFAULT_OUTPUT_DIR
-    save_steps_every: int = 5
-
-    use_wandb: bool = False
-    report_to: str = "none"
-    wandb_project: str | None = None
-    wandb_entity: str | None = None
-    wandb_tags: list[str] = field(default_factory=list)
-
-    trust_remote_code: bool = True
-    attn_implementation: str | None = "sdpa"
-    device_map: str | None = "auto"
-
-    _system_prompt = staticmethod(get_deepseek_v4_system_prompt)
-    _wandb_base_tags = ("deepseek-v4", "moe", "gspo")
-    _wandb_project_default = "deepseek_v4-gspo"
-
-    def validate(self) -> list[str]:
-        return validate_deepseek_v4_config(self)
-
-
-def get_deepseek_v4_config(
-    model_name: str = DEEPSEEK_V4_BASE_MODEL,
-    task: str = "customer_service",
-    starter_profile: str = "balanced",
-    use_lora: bool | None = None,
-    use_4bit: bool | None = None,
-    use_8bit: bool | None = None,
-    use_wandb: bool | None = None,
-    wandb_project: str | None = None,
-    output_dir: str | None = None,
-    **overrides: Any,
-) -> DeepseekV4Config:
-    """Create a tuned first-run DeepSeek V4 Flash configuration."""
-    return _common.resolve_starter_config(
-        DeepseekV4Config,
-        get_deepseek_v4_profile_overrides,
-        _DISPLAY_NAME,
-        logger,
-        model_name=model_name,
-        task=task,
-        starter_profile=starter_profile,
-        use_lora=use_lora,
-        use_4bit=use_4bit,
-        use_8bit=use_8bit,
-        use_wandb=use_wandb,
-        wandb_project=wandb_project,
-        output_dir=output_dir,
-        **overrides,
-    )
-
-
-def create_deepseek_v4_agent_config(config: DeepseekV4Config) -> AgentConfig:
-    """Create the matching AgentConfig for DeepSeek V4 Flash."""
-    return _common.create_agent_config(config)
-
-
-def get_deepseek_v4_gspo_overrides(config: DeepseekV4Config) -> dict[str, Any]:
-    """Return the GSPO override payload for DeepSeek V4 Flash."""
-    return _common.build_gspo_overrides(config)
-
-
-def get_deepseek_v4_gspo_config(
-    config: DeepseekV4Config,
-    base_config: TrainingConfig | None = None,
-):
-    """Create the GSPOConfig used for DeepSeek V4 Flash post-training."""
-    return _common.build_gspo_config(
-        config, base_config, get_config_for_task, get_deepseek_v4_gspo_overrides
-    )
-
-
-def validate_deepseek_v4_config(config: DeepseekV4Config) -> list[str]:
+def validate_deepseek_v4_config(config: Any) -> list[str]:
     """Validate a DeepSeek V4 Flash first-run configuration."""
     warnings: list[str] = []
 
@@ -323,121 +106,81 @@ def validate_deepseek_v4_config(config: DeepseekV4Config) -> list[str]:
     return warnings
 
 
-def create_deepseek_v4_preview(
-    config: DeepseekV4Config,
-    warnings: list[str] | None = None,
-) -> dict[str, Any]:
-    """Build a serializable preview payload for dry-runs."""
-    return _common.create_preview(
-        config,
-        warnings,
-        agent_config_fn=create_deepseek_v4_agent_config,
-        summarize_fn=summarize_deepseek_v4_config,
-        gspo_overrides_fn=get_deepseek_v4_gspo_overrides,
-    )
+SPEC = StarterSpec(
+    family_label="DeepSeek V4",
+    display_name="DeepSeek V4 Flash",
+    symbol_prefix="DEEPSEEK_V4",
+    fn_infix="deepseek_v4",
+    run_suffix="deepseek_v4",
+    config_class_name="DeepseekV4Config",
+    base_model=DEEPSEEK_V4_BASE_MODEL,
+    post_trained_model=None,
+    supported_variants=[
+        "deepseek-ai/DeepSeek-V4-Flash",
+        "deepseek-ai/DeepSeek-V4-Flash-Base",
+    ],
+    task_choices=DEEPSEEK_V4_TASK_CHOICES,
+    profile_choices=DEEPSEEK_V4_STARTER_PROFILE_CHOICES,
+    default_output_dir="./outputs/deepseek_v4_gspo",
+    lora_target_modules=["wq_a", "wq_b", "wkv", "wo_a", "wo_b"],
+    profile_descriptions={
+        "balanced": "First DeepSeek V4 Flash run with QLoRA defaults, 4-bit quantization, and a moderate context budget.",
+        "memory": "Lower-memory DeepSeek V4 Flash run with smaller groups and shorter context for tighter multi-node clusters.",
+        "quality": "Heavier DeepSeek V4 Flash run with larger context and rollout sizes when you have B200/H200 headroom.",
+    },
+    profile_overrides={
+        "balanced": {},
+        "memory": {
+            "use_4bit": True,
+            "per_device_train_batch_size": 1,
+            "gradient_accumulation_steps": 32,
+            "num_generations": 2,
+            "num_outer_iterations": 10,
+            "generations_per_iteration": 8,
+            "max_new_tokens": 1024,
+            "max_prompt_length": 4096,
+            "max_completion_length": 1024,
+        },
+        "quality": {
+            "use_4bit": True,
+            "per_device_train_batch_size": 1,
+            "gradient_accumulation_steps": 32,
+            "num_generations": 8,
+            "num_outer_iterations": 30,
+            "generations_per_iteration": 16,
+            "max_new_tokens": 2048,
+            "max_prompt_length": 16384,
+            "max_completion_length": 2048,
+            "learning_rate": 1.5e-06,
+        },
+    },
+    system_prompt_intro="You are DeepSeek, an AI assistant created by DeepSeek.",
+    config_defaults={
+        "lora_r": 64,
+        "lora_alpha": 128,
+        "use_4bit": True,
+        "max_new_tokens": 1536,
+        "max_prompt_length": 8192,
+        "max_completion_length": 1536,
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 16,
+        "num_generations": 4,
+        "learning_rate": 2e-06,
+        "num_outer_iterations": 20,
+        "generations_per_iteration": 12,
+        "clip_range_left": 0.00015,
+        "clip_range_right": 0.00025,
+    },
+    extra_fields=(("use_vllm", "bool", True), ("use_reference_model", "bool", True)),
+    wandb_base_tags=("deepseek-v4", "moe", "gspo"),
+    wandb_project_default="deepseek_v4-gspo",
+    validate=validate_deepseek_v4_config,
+    module=__name__,
+)
 
+_SYMBOLS = build_starter(SPEC, logger)
+globals().update(_SYMBOLS)
 
-def load_deepseek_v4_config_file(path: str | Path) -> DeepseekV4Config:
-    """Load a DeepSeek V4 Flash starter config from JSON or YAML."""
-    return _common.load_config_file(
-        path,
-        config_cls=DeepseekV4Config,
-        suffixes=DEEPSEEK_V4_CONFIG_SUFFIXES,
-        family_label=_FAMILY_LABEL,
-        display_name=_DISPLAY_NAME,
-        logger=logger,
-    )
-
-
-def write_deepseek_v4_config_file(
-    config: DeepseekV4Config,
-    path: str | Path,
-    include_preview: bool = False,
-) -> Path:
-    """Write a DeepSeek V4 Flash starter config to JSON or YAML."""
-    return _common.write_config_file(
-        config,
-        path,
-        include_preview,
-        preview_fn=create_deepseek_v4_preview,
-        suffixes=DEEPSEEK_V4_CONFIG_SUFFIXES,
-        family_label=_FAMILY_LABEL,
-        display_name=_DISPLAY_NAME,
-        logger=logger,
-    )
-
-
-async def run_deepseek_v4_config(
-    config: DeepseekV4Config,
-    dry_run: bool = False,
-) -> Any:
-    """Run or preview a DeepSeek V4 Flash GSPO job from a resolved config object."""
-    return await _common.run_starter_config(
-        config,
-        dry_run,
-        preview_fn=create_deepseek_v4_preview,
-        gspo_config_fn=get_deepseek_v4_gspo_config,
-        agent_config_fn=create_deepseek_v4_agent_config,
-        display_name=_DISPLAY_NAME,
-        logger=logger,
-    )
-
-
-async def finetune_deepseek_v4(
-    model_name: str = DEEPSEEK_V4_BASE_MODEL,
-    task: str = "customer_service",
-    starter_profile: str = "balanced",
-    use_lora: bool | None = None,
-    use_4bit: bool | None = None,
-    use_8bit: bool | None = None,
-    output_dir: str | None = None,
-    num_outer_iterations: int | None = None,
-    use_wandb: bool | None = None,
-    wandb_project: str | None = None,
-    dry_run: bool = False,
-) -> Any:
-    """Run or preview a first GSPO post-training job for DeepSeek V4 Flash."""
-    return await _common.finetune_starter(
-        get_config_fn=get_deepseek_v4_config,
-        run_fn=run_deepseek_v4_config,
-        model_name=model_name,
-        task=task,
-        starter_profile=starter_profile,
-        use_lora=use_lora,
-        use_4bit=use_4bit,
-        use_8bit=use_8bit,
-        output_dir=output_dir,
-        num_outer_iterations=num_outer_iterations,
-        use_wandb=use_wandb,
-        wandb_project=wandb_project,
-        dry_run=dry_run,
-    )
-
-
-__all__ = [
-    "DEEPSEEK_V4_BASE_MODEL",
-    "DEEPSEEK_V4_CONFIG_SUFFIXES",
-    "DEEPSEEK_V4_DEFAULT_OUTPUT_DIR",
-    "DEEPSEEK_V4_FLASH_BASE_MODEL",
-    "DEEPSEEK_V4_LORA_TARGET_MODULES",
-    "DEEPSEEK_V4_STARTER_PROFILE_CHOICES",
-    "DEEPSEEK_V4_STARTER_PROFILE_DESCRIPTIONS",
-    "DEEPSEEK_V4_SUPPORTED_VARIANTS",
-    "DEEPSEEK_V4_TASK_CHOICES",
-    "DeepseekV4Config",
-    "create_deepseek_v4_agent_config",
-    "create_deepseek_v4_preview",
-    "describe_deepseek_v4_starter_profiles",
-    "finetune_deepseek_v4",
-    "get_deepseek_v4_config",
-    "get_deepseek_v4_gspo_config",
-    "get_deepseek_v4_gspo_overrides",
-    "get_deepseek_v4_profile_description",
-    "get_deepseek_v4_profile_overrides",
-    "get_deepseek_v4_system_prompt",
-    "load_deepseek_v4_config_file",
-    "run_deepseek_v4_config",
-    "summarize_deepseek_v4_config",
-    "validate_deepseek_v4_config",
-    "write_deepseek_v4_config_file",
-]
+__all__ = starter_all(_SYMBOLS) + ["DEEPSEEK_V4_FLASH_BASE_MODEL"]
