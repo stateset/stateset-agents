@@ -153,7 +153,13 @@ def golden_gspo_token() -> dict:
     out = {}
     for beta in (0.0, 0.05):
         tr = _gspo_trainer(GSPOTokenTrainer, beta)
-        cur_tok, old_tok, ref_tok, mask, adv = tensors(4)
+        cur_tok, old_tok, ref_tok, _, adv = tensors(4)
+        # Trainer convention: each gathered row runs prompt (zeros) then the
+        # response through the END of the row (no trailing padding), so give
+        # row 0 a longer prompt instead of trailing pad positions.
+        mask = torch.ones_like(cur_tok)
+        mask[:, :3] = 0
+        mask[0, :5] = 0
         lengths = mask.sum(-1).clamp(min=1.0)
         # Leaf BEFORE masking, as in the trainer (gather_token_logprobs masks
         # the gathered rows), so prompt/pad positions carry no gradient.
