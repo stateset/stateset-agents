@@ -35,7 +35,7 @@ from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction as MultiObjectiveReward,
 )
 
-from . import rl_losses
+from . import objectives, rl_losses
 from .gspo_config import GSPOConfig
 from .gspo_generation import (
     VLLM_AVAILABLE,
@@ -347,6 +347,13 @@ class GSPOTrainer:
         self.environment = environment
         self.reward_model = reward_model
         self.ref_model = ref_model
+        # The GSPO objective (length-normalised sequence ratio, asymmetric
+        # clip, k3 KL on sequence log-probs) as one declarative PolicyObjective.
+        self._objective = objectives.OBJECTIVES["gspo"].with_(
+            clip_low=float(config.clip_range_left),
+            clip_high=float(config.clip_range_right),
+            kl_coef=float(config.beta),
+        )
 
         # Optimizer
         params = list(self.model.parameters())
@@ -459,24 +466,33 @@ class GSPOTrainer:
         sequence_lengths: torch.Tensor,
         ref_log_probs: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """GSPO objective for one prompt group (clipped surrogate + optional k3 KL)."""
-        # J_GSPO = E[1/G * sum min(s_i(theta) * A_i, clip(s_i(theta)) * A_i)]
-        policy_loss = rl_losses.clipped_surrogate(
-            importance_ratios,
-            advantages,
-            clip_low=self.config.clip_range_left,
-            clip_high=self.config.clip_range_right,
-        ).mean()
+        """GSPO objective for one prompt group via ``objectives.policy_loss``.
+
+        The trainer scores sequences as summed log-probs plus lengths; the
+        objective consumes per-token rows, so each sequence is presented as a
+        single token carrying its length-normalised log-prob with a unit
+        mask. ``importance_ratios`` (already clamped by
+        ``compute_sequence_importance_ratio``) define the old log-prob the
+        objective recomputes the ratio from, so callers holding only ratios
+        keep working.
+        """
+        lengths = sequence_lengths.to(current_log_probs.dtype).clamp(min=1.0)
+        logp_cur = (current_log_probs / lengths).unsqueeze(-1)
+        log_old = logp_cur.detach() - torch.log(importance_ratios.detach()).unsqueeze(
+            -1
+        )
+        ref = None
         if self.config.beta > 0 and ref_log_probs is not None:
-            # k3 on the length-normalised sequence log-probs (one value per
-            # response): non-negative, and its gradient's expectation is the
-            # true KL gradient.
-            kl_div = rl_losses.k3_kl(
-                current_log_probs / sequence_lengths,
-                ref_log_probs / sequence_lengths,
-            )
-            return policy_loss + self.config.beta * kl_div
-        return policy_loss
+            ref = (ref_log_probs / lengths).unsqueeze(-1)
+        result = objectives.policy_loss(
+            logp_cur=logp_cur,
+            mask=torch.ones_like(logp_cur),
+            advantages=advantages,
+            objective=self._objective,
+            logp_old=log_old,
+            logp_ref=ref,
+        )
+        return result.loss
 
     def _compute_group_sequence_log_probs(
         self, prompt: str, responses: list[str]
