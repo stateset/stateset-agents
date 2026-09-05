@@ -356,11 +356,21 @@ class SingleTurnGRPOTrainer:
         best_response = ""
         best_reward = float("-inf")
 
+        generate_turn = getattr(self.agent, "generate_turn", None)
         for gen_idx in range(num_generations):
-            response = await self.agent.generate_response(prompt)
+            if callable(generate_turn):
+                # Keeps the generated token ids / log-probs on the turn so the
+                # batched per-token GRPO path can be used.
+                assistant_turn = await generate_turn(prompt)
+                response = str(assistant_turn.content)
+            else:
+                response = await self.agent.generate_response(prompt)
+                assistant_turn = ConversationTurn(
+                    role="assistant", content=str(response)
+                )
             turns = [
                 ConversationTurn(role="user", content=str(prompt)),
-                ConversationTurn(role="assistant", content=str(response)),
+                assistant_turn,
             ]
             reward = await self._compute_reward_for_turns(turns, context)
 

@@ -161,6 +161,30 @@ Rules, implemented by `objectives.resolve_objective`:
 - An unknown name warns in `TrainingConfig.validate()` and raises at trainer
   construction and on the CLI, listing the valid presets.
 
+## The GRPO trainers: per-token path and sequence fallback
+
+`MultiTurnGRPOTrainer` and `SingleTurnGRPOTrainer` ask the agent for a
+full assistant turn (`MultiTurnAgent.generate_turn`) whose metadata carries
+the exact prompt token ids, the sampled response ids, and the model's
+log-probs of those ids. When every trajectory in a group has that data, the
+loss takes the **token path**: one row per assistant turn, one padded
+forward pass per group in chunks of `generation_batch_size` rows, per-token
+log-probs from the stored ids (no re-tokenisation drift), advantages from
+the objective's estimator broadcast to each trajectory's rows, and
+`policy_loss` with `logp_old=None` (the trainers take one optimizer step per
+rollout batch, so this is exactly on-policy and equals the TRL convention).
+The native objective on this path is the `grpo` preset with `clip_ratio` as
+the symmetric trust region; `objective` selects any preset, token-level ones
+included. With `beta > 0` and a reference model the enhanced path adds
+`k3_token` KL from one no-grad reference forward on the same batch;
+`entropy_coef` uses the differentiable entropy of the same logits.
+
+Groups with any trajectory lacking token metadata (text-only agents, stub
+backends, legacy transcripts) take the **sequence fallback**: per-trajectory
+forward passes, sequence-level ratio clipped at `seq_clip_ratio`, and the
+REINFORCE branch when no old log-probs exist. The loss dict reports `path`
+(`token` or `sequence`), `objective`, and `num_rows`.
+
 ## Which preset
 
 | Situation | Start with |

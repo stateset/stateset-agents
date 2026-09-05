@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Per-token GRPO: `MultiTurnAgent.generate_turn` returns the assistant turn
+  with the exact prompt token ids, sampled response ids, and the model's
+  log-probs of those ids; both GRPO trainers request turns; and
+  `compute_grpo_loss` / `compute_enhanced_grpo_loss` take a batched token
+  path (one padded forward per group, per-token ratios, any token-level
+  objective preset, k3 KL and entropy on the same logits) when a group carries
+  token metadata, falling back to the sequence-level path otherwise
+  (`docs/OBJECTIVES.md`). Previously the GRPO trainers recorded no log-probs
+  and therefore trained as unclipped REINFORCE on re-tokenised text.
+
 ## [0.49.0] - 2026-09-05 — Declarative policy objectives
 
 ### Added

@@ -343,6 +343,15 @@ class MultiTurnGRPOTrainer:
             num_generations or getattr(self.config, "num_generations", 16) or 16
         )
         trajectory_groups: list[TrajectoryGroup] = []
+        # Prefer generate_turn: it returns the assistant turn with the generated
+        # token ids and log-probs, which unlocks the batched per-token GRPO
+        # path (docs/OBJECTIVES.md). run_episode accepts either return type.
+        generate_turn = getattr(self.agent, "generate_turn", None)
+
+        async def agent_fn(history, context):
+            if callable(generate_turn):
+                return await generate_turn(history, context)
+            return await self.agent.generate_response(history, context)
 
         for scenario in scenarios:
             # Generate multiple trajectories for the same scenario
@@ -355,10 +364,6 @@ class MultiTurnGRPOTrainer:
                         reset_result = reset_fn()
                         if asyncio.iscoroutine(reset_result):
                             await reset_result
-
-                    # Create agent function wrapper
-                    async def agent_fn(history, context):
-                        return await self.agent.generate_response(history, context)
 
                     # Generate trajectory
                     trajectory = await self.environment.run_episode(agent_fn, scenario)

@@ -615,6 +615,39 @@ class MultiTurnAgent(Agent):
     ) -> str:
         """Generate response for multi-turn conversation"""
 
+        prompt, messages = self._render_prompt(messages, context)
+        response = await self._generate_with_model(prompt, context)
+        return self._finalize_response(response, messages)
+
+    async def generate_turn(
+        self,
+        messages: str | list[dict[str, str]],
+        context: dict[str, Any] | None = None,
+    ) -> ConversationTurn:
+        """Generate an assistant turn that also carries what was generated.
+
+        Same pipeline as :meth:`generate_response`; the returned turn's
+        ``metadata`` additionally holds ``prompt_token_ids`` (the exact ids
+        fed to ``generate``), ``token_ids`` (the sampled response ids, before
+        text cleaning) and ``sampler_log_probs`` (the model's own log-probs of
+        those ids at temperature 1) when a real model produced the text. Stub
+        backends return a turn with text only.
+        """
+        prompt, messages = self._render_prompt(messages, context)
+        details = await self._generate_with_model_details(prompt, context)
+        content = self._finalize_response(str(details["response"]), messages)
+        metadata: dict[str, Any] = {"generated": True}
+        for key in ("prompt_token_ids", "token_ids", "sampler_log_probs"):
+            if details.get(key) is not None:
+                metadata[key] = details[key]
+        return ConversationTurn(role="assistant", content=content, metadata=metadata)
+
+    def _render_prompt(
+        self,
+        messages: str | list[dict[str, str]],
+        context: dict[str, Any] | None = None,
+    ) -> tuple[str, list[dict[str, str]]]:
+        """Normalise, window, and template the conversation into a prompt."""
         messages = self._normalize_messages(messages)
 
         # Apply memory window
@@ -649,8 +682,10 @@ class MultiTurnAgent(Agent):
         else:
             prompt = self._format_conversation(recent_messages)
 
-        # Generate response
-        response = await self._generate_with_model(prompt, context)
+        return prompt, messages
+
+    def _finalize_response(self, response: str, messages: list[dict[str, str]]) -> str:
+        """Strip reasoning traces, apply persona hints, record history."""
 
         # Handle Reasoning Traces (DeepSeek-R1 style)
         self._last_reasoning = None
@@ -746,10 +781,19 @@ class MultiTurnAgent(Agent):
     async def _generate_with_model(
         self, prompt: str, context: dict[str, Any] | None = None
     ) -> str:
-        """Generate response using the language model"""
+        """Generate response text using the language model."""
+        details = await self._generate_with_model_details(prompt, context)
+        return str(details["response"])
+
+    async def _generate_with_model_details(
+        self, prompt: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Generate with the language model and return the response text plus,
+        for real HF models, the exact prompt ids, the sampled response ids, and
+        the model's log-probs of those ids (temperature 1, no truncation)."""
 
         if self._is_stub_backend and isinstance(self.model, StubModel):
-            return str(self.model.generate(prompt, context))
+            return {"response": str(self.model.generate(prompt, context))}
 
         if (
             self.model is None
@@ -792,16 +836,33 @@ class MultiTurnAgent(Agent):
                 stopping_criteria=stopping_criteria,
                 return_dict_in_generate=True,
                 output_scores=True,
+                output_logits=True,
             )
 
-        # Decode response
-        response_tokens = outputs.sequences[0][inputs["input_ids"].shape[1] :]
+        prompt_len = int(inputs["input_ids"].shape[1])
+        sequences = outputs.sequences[0]
+        response_tokens = sequences[prompt_len:]
         response = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
 
-        # Clean up response
-        response = self._clean_response(response)
-
-        return response
+        details: dict[str, Any] = {"response": self._clean_response(response)}
+        raw_logits = getattr(outputs, "logits", None)
+        if raw_logits:
+            with torch.no_grad():
+                # Model log-probs of the sampled ids from the RAW logits (before
+                # temperature / top-p warping), so a training-time forward pass
+                # on the stored ids reproduces them.
+                stacked = torch.stack(list(raw_logits), dim=1)[0].float()
+                log_probs = torch.log_softmax(stacked, dim=-1)
+                n = min(int(response_tokens.shape[0]), int(log_probs.shape[0]))
+                picked = (
+                    log_probs[:n]
+                    .gather(-1, response_tokens[:n].unsqueeze(-1))
+                    .squeeze(-1)
+                )
+            details["prompt_token_ids"] = [int(t) for t in inputs["input_ids"][0]]
+            details["token_ids"] = [int(t) for t in response_tokens[:n]]
+            details["sampler_log_probs"] = [float(x) for x in picked]
+        return details
 
     def _clean_response(self, response: str) -> str:
         """Clean up generated response by removing artifacts and stop tokens.
