@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "harness_revision": "012984136e1bcb03497c4c7afe8a057505c3dc32",
+  "shootout_manifest": "benchmarks/shootout_manifest_v2.json",
+  "execution": {
+    "provider": "runpod",
+    "provider_tier": "SECURE",
+    "container_image": "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04",
+    "gpu_name": "NVIDIA A40",
+    "gpu_count": 1,
+    "container_disk_gb": 60,
+    "timeout_seconds": 18000,
+    "max_lifetime_seconds": 21600,
+    "max_cost_usd": 8.0
+  },
+  "extra_pip": ["trl==1.9.1"],
+  "prewarm_command": "python -c \"from transformers import AutoModelForCausalLM, AutoTokenizer; from datasets import load_dataset; AutoTokenizer.from_pretrained('Qwen/Qwen2.5-0.5B-Instruct', revision='7ae557604adf67be50417f59c2c2f167def9a775'); AutoModelForCausalLM.from_pretrained('Qwen/Qwen2.5-0.5B-Instruct', revision='7ae557604adf67be50417f59c2c2f167def9a775'); load_dataset('openai/gsm8k', 'main', revision='740312add88f781978c0658806c59bc2815b9866')\""
+}
