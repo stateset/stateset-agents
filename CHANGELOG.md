@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The twelve packaged model-family starters (`training/*_starter.py`) are
+  now built from one `StarterSpec` each by `training/starter_factory.py`
+  instead of ~400 hand-written lines apiece (5,067 → ~2,000 lines). Every
+  public constant, function, config dataclass (name, field order, defaults),
+  and family-specific validation rule is unchanged; a contract test
+  (`tests/unit/test_starter_factory.py`) pins the per-family surface, and
+  adding a starter is now a spec plus its validation rules.
+
 ### Added
 
 - Per-token GRPO: `MultiTurnAgent.generate_turn` returns the assistant turn
