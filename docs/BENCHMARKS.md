@@ -156,6 +156,37 @@ GRPO orchestration preserves upstream behavior without material overhead.
 - [Six per-seed evidence documents](../benchmark_results/framework_comparison/evidence/)
 - Harness commit: `4173eee7be7187c0583390953b8ad79b55fb954f`
 
+### One-command matched comparison on RunPod (v2 protocol)
+
+`benchmarks/runpod_shootout.py` runs `benchmarks/shootout.py` on exactly one
+RunPod GPU with the same fail-closed guarantees as the conformance launcher:
+a free public-catalog plan, an exact spend-ceiling confirmation, a local
+recovery lease, an in-pod self-destruct, an authoritative post-allocation
+price check, unconditional termination, and a cost-ledger entry.
+`benchmarks/shootout_manifest_v2.json` is the 48-step, three-seed
+Qwen2.5-0.5B GSM8K protocol comparing StateSet's TRL-backed GRPO, StateSet's
+native GSPO, and direct TRL; `benchmarks/runpod_shootout_manifest.json` pins
+the harness revision, container image, GPU, lifetime, and ceiling.
+
+```bash
+# free: validate both manifests and price the worst case
+python benchmarks/runpod_shootout.py benchmarks/runpod_shootout_manifest.json
+
+# paid: provision, run every seed x framework, download evidence, terminate
+RUNPOD_API_KEY=... python benchmarks/runpod_shootout.py \
+  benchmarks/runpod_shootout_manifest.json --execute \
+  --confirm-max-cost-usd 8.0 --output-dir benchmark_results/framework_comparison_v2/raw
+
+# validate and report
+python benchmarks/framework_comparison.py \
+  benchmark_results/framework_comparison_v2/raw/evidence \
+  --output-dir benchmark_results/framework_comparison_v2/report
+```
+
+The run is retained as evidence only once the report validator accepts every
+per-seed document; the launcher's `runpod-provider.json` records the pod,
+authoritative price, lifetime, and termination confirmation.
+
 ### Single-node DDP weak and strong scaling
 
 Three matched seeds on one RunPod host with eight identical NVIDIA RTX 5080
