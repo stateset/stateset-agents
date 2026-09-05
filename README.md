@@ -28,7 +28,7 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - **Environments** for conversational and task‑oriented episodes.
 - **Trajectories** and value/advantage utilities tailored to dialogue.
 - Composable **reward functions** (heuristic, domain, multi‑objective, neural, LLM‑judge, and a proof‑backed [StateSet NSR verifier](docs/NSR_INTEGRATION.md) for RLVR‑style verifiable rewards).
-- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF.
+- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF; all trainers evaluate one declarative [`PolicyObjective`](docs/OBJECTIVES.md) (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO) verified against loop references, Hypothesis invariants, and TRL 1.12.
 - **Offline RL algorithms** for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
 - **Sim‑to‑Real transfer** for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
 - **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).

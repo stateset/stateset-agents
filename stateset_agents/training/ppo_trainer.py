@@ -26,6 +26,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from . import objectives, rl_losses
 from .config import TrainingConfig
 
 # Configure logging
@@ -276,6 +277,11 @@ class PPOTrainer:
         _load_transformers_ppo()
 
         self.config = config
+        # PPO clipped surrogate as one declarative PolicyObjective; the KL
+        # penalty is added separately in train_step (adaptive coefficient).
+        self._objective = objectives.OBJECTIVES["ppo"].with_(
+            clip_low=float(config.clip_eps), clip_high=float(config.clip_eps), kl="none"
+        )
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
@@ -408,14 +414,15 @@ class PPOTrainer:
         reference_log_probs: torch.Tensor,
         mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Compute KL divergence between current and reference policy."""
-        kl = current_log_probs - reference_log_probs
+        """k3 estimate of KL(pi_cur || pi_ref) over response tokens.
 
-        if mask is not None:
-            kl = kl * mask
-            return kl.sum() / mask.sum().clamp(min=1)
-
-        return kl.mean()
+        Replaces the naive ``log pi - log pi_ref`` mean, whose gradient has
+        zero expectation and therefore never pulled the policy toward the
+        reference.
+        """
+        if mask is None:
+            return rl_losses.k3_kl(current_log_probs, reference_log_probs)
+        return rl_losses.k3_kl(current_log_probs, reference_log_probs, mask)
 
     def ppo_loss(
         self,
@@ -424,51 +431,25 @@ class PPOTrainer:
         advantages: torch.Tensor,
         mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """PPO clipped surrogate via ``objectives.policy_loss``.
+
+        Returns ``(loss, clip_fraction)``; the log-ratio is clamped before
+        exponentiating so a wildly off-policy token cannot make the loss
+        non-finite.
         """
-        Compute PPO clipped surrogate loss.
-
-        Args:
-            log_probs: Current policy log probs
-            old_log_probs: Old policy log probs (from rollout)
-            advantages: Computed advantages
-            mask: Token mask
-
-        Returns:
-            loss: PPO loss
-            clip_fraction: Fraction of clipped ratios
-        """
-        # Importance ratio
-        ratio = torch.exp(log_probs - old_log_probs)
-
-        # Clipped ratio
-        clipped_ratio = torch.clamp(
-            ratio,
-            1 - self.config.clip_eps,
-            1 + self.config.clip_eps,
+        if mask is None:
+            mask = torch.ones_like(log_probs)
+        result = objectives.policy_loss(
+            logp_cur=log_probs,
+            mask=mask,
+            advantages=advantages,
+            objective=self._objective,
+            logp_old=old_log_probs,
         )
-
-        # Surrogate losses
-        surr1 = ratio * advantages
-        surr2 = clipped_ratio * advantages
-
-        # Take minimum (pessimistic)
-        loss = -torch.min(surr1, surr2)
-
-        if mask is not None:
-            loss = loss * mask
-            loss = loss.sum() / mask.sum().clamp(min=1)
-        else:
-            loss = loss.mean()
-
-        # Clip fraction for logging
-        with torch.no_grad():
-            clip_fraction = ((ratio - 1.0).abs() > self.config.clip_eps).float()
-            if mask is not None:
-                clip_fraction = (clip_fraction * mask).sum() / mask.sum().clamp(min=1)
-            else:
-                clip_fraction = clip_fraction.mean()
-
-        return loss, clip_fraction
+        clip_fraction = torch.tensor(
+            result.metrics["clip_fraction"], device=log_probs.device
+        )
+        return result.loss, clip_fraction
 
     def value_loss(
         self,

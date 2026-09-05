@@ -132,6 +132,7 @@ stateset-agents/
 │   │   └── multi_agent_coordination.py
 │   │
 │   ├── training/                  # Trainers (~29K lines, 58 modules)
+│   │   ├── objectives.py          # Declarative PolicyObjective presets + policy_loss
 │   │   ├── rl_losses.py           # Shared loss primitives (all algorithms)
 │   │   ├── trl_grpo_trainer.py    # GRPO via Hugging Face TRL
 │   │   ├── gspo_trainer.py        # Sequence-level GSPO (852 LOC)
