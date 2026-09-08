@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `VLLMGenerator` finds the engine's in-process model through any vLLM
+  layout (breadth-first over the attribute names V0/V1 have used, recorded as
+  `engine_model_path`); `VLLMConfig.in_process_weight_sync` (default on)
+  keeps the V1 engine core in-process so `sync_weights` can reach it;
+  `VLLMGenerator.token_logprobs_for_ids` reports the engine's current
+  log-probs of given token ids. `benchmarks/vllm_rollout_check.py` proves the
+  loop live on a GPU: engine rollouts, real GRPO token-path steps with
+  sampler-corrected ratios, the engine-vs-policy gap before the step, after
+  it (stale), and after `sync_weights`, with a pass/fail verdict.
+
 - Engine rollouts stay on-policy: both GRPO trainers call
   `MultiTurnAgent.sync_rollout_backend()` after every optimizer step
   (`TrainingConfig.rollout_sync`), which pushes the policy's weights into the

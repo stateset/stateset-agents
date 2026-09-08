@@ -212,7 +212,14 @@ which pushes the policy's current weights into the engine through its
 `sync_weights(model)` hook. `VLLMGenerator.sync_weights` merges a PEFT
 adapter for the duration of the read, strips wrapper prefixes, and streams
 `(name, tensor)` pairs into the in-process engine's `load_weights`; an
-unfamiliar engine layout is adapted by setting `VLLMGenerator.weight_loader`.
+unfamiliar engine layout is adapted by setting `VLLMGenerator.weight_loader`
+(the engine model is found by a breadth-first search over the attribute names
+vLLM has used across V0/V1; `VLLMConfig.in_process_weight_sync` keeps the V1
+engine core in this process so there is a model object to reach).
+`benchmarks/vllm_rollout_check.py` is the live proof: it samples through the
+engine, takes real GRPO steps, and records the engine-vs-policy log-prob gap
+before the step, after it, and after the sync, with versions and hardware
+(`benchmark_results/vllm_rollout_check/`).
 Every turn records `rollout_backend_version` (successful syncs so far) and
 `rollout_backend_stale`. A backend without `sync_weights`, or a sync that
 raises, is reported once as stale rather than silently sampling from an old
