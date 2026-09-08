@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "harness_revision": "1ddbafddfa9fa075cf8acf6aabb03e7addb796e5",
+  "shootout_manifest": "benchmarks/shootout_manifest_v3.json",
+  "execution": {
+    "provider": "runpod",
+    "provider_tier": "SECURE",
+    "container_image": "runpod/pytorch:1.1.0-cu1290-torch271-ubuntu2204",
+    "gpu_name": "NVIDIA L40S",
+    "gpu_count": 1,
+    "container_disk_gb": 80,
+    "timeout_seconds": 39600,
+    "max_lifetime_seconds": 43200,
+    "max_cost_usd": 14.0
+  },
+  "extra_pip": [
+    "trl==1.9.1"
+  ],
+  "prewarm_command": "python -c \"from transformers import AutoModelForCausalLM, AutoTokenizer; from datasets import load_dataset; AutoTokenizer.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct', revision='989aa7980e4cf806f80c7fef2b1adb7bc71aa306'); AutoModelForCausalLM.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct', revision='989aa7980e4cf806f80c7fef2b1adb7bc71aa306'); load_dataset('openai/gsm8k', 'main', revision='740312add88f781978c0658806c59bc2815b9866')\"",
+  "shootout_manifest_hardware_note": "L40S: 48GB, ~2x A40 throughput; 6 runs x ~200 steps at 1.5B"
+}
