@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788910133619,
+  "lastUpdate": 1788910734361,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -128,6 +128,72 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.3335561343034405e-8",
             "extra": "mean: 420.71942400111055 nsec\nrounds: 58429"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "domsteil14@gmail.com",
+            "name": "Dom Steil",
+            "username": "domsteil"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8adeafe8aab5c67881d7641f538f4fc658628dba",
+          "message": "Merge pull request #74 from stateset/fix/gspo-shootout-wiring\n\nfix(gspo): train on the task prompts with the reward context; fail closed on zero learning signal",
+          "timestamp": "2026-09-08T16:36:04-07:00",
+          "tree_id": "1571bce244692a509ab769e1470fdcf8266562af",
+          "url": "https://github.com/stateset/stateset-agents/commit/8adeafe8aab5c67881d7641f538f4fc658628dba"
+        },
+        "date": 1788910732791,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5414.41476962764,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000039230398566952997",
+            "extra": "mean: 184.69216758375012 usec\nrounds: 1999"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6337.781797064624,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000023063957322188626",
+            "extra": "mean: 157.78391115692168 usec\nrounds: 1936"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4935.879635805391,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000021180266394160458",
+            "extra": "mean: 202.59813321740964 usec\nrounds: 3453"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 742.6476496573522,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003777816799754559",
+            "extra": "mean: 1.3465335821925604 msec\nrounds: 584"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 181.51036845852678,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006145545400039434",
+            "extra": "mean: 5.509327144738232 msec\nrounds: 152"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2190956.191050561,
+            "unit": "iter/sec",
+            "range": "stddev: 4.908253400431669e-8",
+            "extra": "mean: 456.4217231201236 nsec\nrounds: 106191"
           }
         ]
       }
