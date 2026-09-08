@@ -310,7 +310,14 @@ coverage, live hardware attempts, and successful inference by provider.
   fail-closed validator runs in CI and publish readiness; independent
   third-party security review remains explicitly pending.
 
-**v0.50.0 (latest release; publication triggered by tag):**
+**v0.51.0 (latest release; publication triggered by tag):**
+
+- Retained the validated 48-step, three-seed A40 comparison of StateSet's TRL-backed GRPO, native GSPO, and direct TRL 1.9.1 on Qwen2.5-0.5B / GSM8K (`benchmark_results/framework_comparison_v2/`): throughput parity within run-to-run noise and no learning-quality signal for any implementation at that scale, stated as such.
+- `benchmarks/runpod_shootout.py` runs the remote shootout detached and streams every finished evidence file back incrementally, so a dropped launcher session cannot lose completed runs; `framework_comparison.py` skips launcher records by `kind`.
+- `MultiTurnAgent.set_rollout_backend(engine)`: route generation through any engine exposing `generate_with_logprobs` (`VLLMGenerator` now does); turns carry the engine's exact token ids and per-token log-probs for the GRPO per-token path.
+- Import-time module stubs in the test suite are scoped to the file that installs them, removing cross-file leakage of fake `vllm`, `trl`, and `peft` modules.
+
+**v0.50.0:**
 
 - Per-token GRPO: `MultiTurnAgent.generate_turn` returns the assistant turn with the exact prompt token ids, sampled response ids, and the model's log-probs of those ids; both GRPO trainers request turns and train on one padded forward pass per group with per-token ratios, any token-level objective preset, k3 KL, and entropy on the same logits (sequence-level fallback preserved). Previously the GRPO trainers recorded no log-probs and trained as unclipped REINFORCE on re-tokenised text.
 - `TrainingConfig.num_gradient_updates`: PPO/DAPO-style inner updates against frozen old-policy log-probs on the GRPO token path, so the trust region engages from the second update; metrics report `inner_updates`, `ratio_mean`, `ratio_mean_last`, `clip_fraction`.
@@ -1925,7 +1932,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.50.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.51.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
