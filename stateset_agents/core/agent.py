@@ -839,12 +839,13 @@ class MultiTurnAgent(Agent):
                     e,
                 )
 
-        details: dict[str, Any]
         if self._is_stub_backend and isinstance(self.model, StubModel):
-            details = {"response": str(self.model.generate(prompt, context))}
+            stub_details: dict[str, Any] = {
+                "response": str(self.model.generate(prompt, context))
+            }
             if backend_error:
-                details["rollout_backend_error"] = backend_error
-            return details
+                stub_details["rollout_backend_error"] = backend_error
+            return stub_details
 
         if (
             self.model is None
@@ -895,7 +896,7 @@ class MultiTurnAgent(Agent):
         response_tokens = sequences[prompt_len:]
         response = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
 
-        details = {"response": self._clean_response(response)}
+        details: dict[str, Any] = {"response": self._clean_response(response)}
         if backend_error:
             details["rollout_backend_error"] = backend_error
         # Best-effort token capture for per-token RL. Never let it break
