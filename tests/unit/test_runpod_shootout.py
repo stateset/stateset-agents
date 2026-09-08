@@ -391,7 +391,10 @@ def test_resume_uploads_completed_evidence_and_reuses_the_output_dir(
     )
     (out / "trl-seed1337.json").write_text("{not json")  # ignored, not uploaded
     (out / "runpod-provider.json").write_text(json.dumps({"kind": "provider"}))
-    (out / "runs").mkdir()
+    (out / "runs" / "trl-seed42").mkdir(parents=True)
+    (out / "runs" / "trl-seed42" / "stdout.log").write_text("first pod log")
+    (out / "_accounting").mkdir()
+    (out / "_accounting" / "shootout-summary.json").write_text("{}")
     ssh = _UploadSsh()
     launcher.execute(
         manifest,
@@ -417,6 +420,16 @@ def test_resume_uploads_completed_evidence_and_reuses_the_output_dir(
     )
     assert mkdir_index < launch_index
     assert (out / "stateset-agents-seed1.json").exists()  # new evidence landed too
+    # the first pod's run logs and summary were moved aside, not clobbered
+    assert (out / "runs.before-resume-1" / "trl-seed42" / "stdout.log").read_text() == (
+        "first pod log"
+    )
+    assert (out / "_accounting.before-resume-1" / "shootout-summary.json").exists()
+    # the first pod's record is kept; this pod gets its own
+    first = json.loads((out / "runpod-provider.json").read_text())
+    second = json.loads((out / "runpod-provider-2.json").read_text())
+    assert first == {"kind": "provider"}
+    assert second["status"] == "completed" and second["pod_id"] == "pod-123"
 
 
 def test_existing_output_dir_still_refused_without_resume(tmp_path: Path) -> None:
