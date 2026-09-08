@@ -303,6 +303,13 @@ def test_vllm_generator_sync_weights_strips_wrapper_prefixes():
     assert names == "model.layers.0.q.weight"
     assert vllm_backend._engine_weight_name("module.lm_head.weight") == "lm_head.weight"
     assert vllm_backend._engine_weight_name("lm_head.weight") == "lm_head.weight"
+    # PEFT wraps each adapted Linear: <module>.base_layer.weight is the merged weight
+    assert (
+        vllm_backend._engine_weight_name(
+            "base_model.model.model.layers.0.self_attn.q_proj.base_layer.weight"
+        )
+        == "model.layers.0.self_attn.q_proj.weight"
+    )
 
 
 def test_vllm_generator_sync_weights_without_engine_is_loud():

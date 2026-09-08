@@ -240,7 +240,9 @@ _WRAPPER_PREFIXES = ("base_model.model.", "module.", "_orig_mod.")
 
 
 def _engine_weight_name(name: str) -> str:
-    """Strip PEFT / DDP / torch.compile wrapper prefixes from a parameter name."""
+    """Strip PEFT / DDP / torch.compile wrapper prefixes and PEFT's per-module
+    ``.base_layer`` indirection from a parameter name, so it matches the
+    engine's own naming (``model.layers.0.self_attn.q_proj.weight``)."""
     changed = True
     while changed:
         changed = False
@@ -248,7 +250,7 @@ def _engine_weight_name(name: str) -> str:
             if name.startswith(prefix):
                 name = name[len(prefix) :]
                 changed = True
-    return name
+    return name.replace(".base_layer.", ".")
 
 
 def _iter_policy_weights(model: Any) -> Iterator[tuple[str, Any]]:
