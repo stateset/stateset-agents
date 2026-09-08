@@ -96,6 +96,27 @@ def completion_text(completion: Any) -> str:
     raise TypeError(f"unsupported TRL completion shape: {type(completion).__name__}")
 
 
+def train_reward_stats(log_history: list[dict[str, Any]]) -> dict[str, float]:
+    """Per-step reward summary from TRL's ``log_history`` (same fields the
+    StateSet harness records, so the shootout validator can reject a run that
+    never received a learning signal)."""
+    rewards = [float(e["reward"]) for e in log_history if "reward" in e]
+    stds = [float(e["reward_std"]) for e in log_history if "reward_std" in e]
+    if not rewards:
+        return {}
+    if len(stds) != len(rewards):
+        stds = []
+    zero = sum(
+        1 for i, r in enumerate(rewards) if r == 0.0 and (not stds or stds[i] == 0.0)
+    )
+    return {
+        "train_reward_mean": sum(rewards) / len(rewards),
+        "train_reward_std_mean": (sum(stds) / len(stds)) if stds else 0.0,
+        "train_reward_zero_fraction": zero / len(rewards),
+        "train_reward_steps": float(len(rewards)),
+    }
+
+
 def main() -> int:
     """Train upstream TRL directly and emit a neutral measured result."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -264,6 +285,7 @@ def main() -> int:
             "peak_vram_mb": torch.cuda.max_memory_allocated(0) / (1024 * 1024),
             "eval_score_baseline": baseline,
             "eval_score_final": final_score,
+            **train_reward_stats(trainer.state.log_history),
         },
     }
     args.adapter_output.parent.mkdir(parents=True, exist_ok=True)

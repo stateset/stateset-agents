@@ -162,6 +162,13 @@ def validate_document(data: Mapping[str, Any], source: Path) -> RunEvidence:
         if field in {"samples_per_second", "wall_clock_seconds", "peak_vram_mb"}:
             if number <= 0:
                 raise EvidenceError(f"{source}: {field!r} must be greater than zero")
+    zero_fraction = metrics.get("train_reward_zero_fraction")
+    if isinstance(zero_fraction, (int, float)) and not isinstance(zero_fraction, bool):
+        if float(zero_fraction) >= 1.0:
+            raise EvidenceError(
+                f"{source}: training reward was identically zero at every step "
+                "(no learning signal); the run is not comparable"
+            )
 
     artifact_sha256 = data.get("artifact_sha256")
     if not isinstance(artifact_sha256, str) or len(artifact_sha256) != 64:

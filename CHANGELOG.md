@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Native GSPO trained on a placeholder prompt with a blind reward.**
+  `train_with_gspo` derived its queries from `scenario["context"]` (falling
+  back to the literal prompt "Hello"), used only the first
+  `generations_per_iteration` scenarios, and passed the reward no scenario
+  fields; GSM8K-shaped scenarios (`user_query`/`gold_answer`) therefore
+  trained on "Hello" with a reward that never saw the gold answer —
+  identically zero reward and loss at every step. Queries now come from the
+  real prompt field with the whole scenario as reward context, rotate
+  through every scenario, and a scenario without prompt text is an error.
+  The trainer reports `reward_std`, warns after five zero-signal iterations,
+  and the phase0 harness passes GSPO the same task prompts the TRL path uses.
+  The retained v2 native-GSPO rows and the first v3 native-GSPO run are
+  withdrawn (`benchmark_results/framework_comparison_v2/RETRACTION.md`).
+- Evidence is fail-closed on learning signal: adapters record
+  `train_reward_mean`, `train_reward_std_mean`, `train_reward_zero_fraction`
+  and `train_reward_steps` (StateSet trainers via the attached reward
+  history, TRL via `log_history`), and both `benchmarks/shootout.py` and
+  `benchmarks/framework_comparison.py` reject a run whose training reward was
+  identically zero at every step.
+
 ## [0.52.0] - 2026-09-08 — On-policy engine rollouts, proven live
 
 ### Added

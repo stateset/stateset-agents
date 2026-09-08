@@ -61,6 +61,15 @@ def _attach_trained_backend(agent: Agent, model: Any, tokenizer: Any) -> None:
     agent.generation_config = agent._build_generation_config()
 
 
+def reward_history_from_log(state: Any) -> dict[str, list[float]]:
+    """Per-step ``average_reward``/``reward_std`` from a TRL trainer state's
+    ``log_history`` (empty lists when the state carries no reward columns)."""
+    history = list(getattr(state, "log_history", None) or [])
+    rewards = [float(e["reward"]) for e in history if "reward" in e]
+    stds = [float(e["reward_std"]) for e in history if "reward_std" in e]
+    return {"average_reward": rewards, "reward_std": stds}
+
+
 async def train_with_trl_grpo(
     config: TRLGRPOConfig,
     agent: Agent,
@@ -152,6 +161,13 @@ async def train_with_trl_grpo(
     logger.info("Model saved to %s", final_model_path)
 
     _attach_trained_backend(agent, trainer.model, tokenizer)
+    setattr(  # noqa: B010 - private evidence hook, not part of the Agent API
+        agent,
+        "_training_metrics",
+        reward_history_from_log(
+            getattr(getattr(trainer, "trainer", None), "state", None)
+        ),
+    )
 
     if wandb_enabled:
         wb = wandb

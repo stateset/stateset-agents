@@ -227,3 +227,14 @@ def test_directory_discovery_skips_launcher_records(tmp_path):
     (tmp_path / "trl-seed42.json").write_text(_json.dumps({"framework": "trl"}))
     found = [p.name for p in framework_comparison.discover_inputs([tmp_path])]
     assert found == ["trl-seed42.json"]
+
+
+def test_rejects_evidence_whose_training_reward_was_identically_zero(
+    tmp_path: Path,
+) -> None:
+    data = _document("stateset-agents-gspo", 42)
+    data["metrics"]["train_reward_zero_fraction"] = 1.0
+    with pytest.raises(EvidenceError, match="no learning signal"):
+        framework_comparison.validate_document(data, tmp_path / "run.json")
+    data["metrics"]["train_reward_zero_fraction"] = 0.2
+    framework_comparison.validate_document(data, tmp_path / "run.json")

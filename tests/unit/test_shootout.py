@@ -420,3 +420,50 @@ def test_existing_evidence_fails_closed_on_a_corrupt_file(tmp_path: Path) -> Non
     with pytest.raises((ShootoutError, shootout.EvidenceError)):
         shootout.existing_evidence(tmp_path, implementation, 42)
     assert shootout.existing_evidence(tmp_path, implementation, 1337) is None
+
+
+def _adapter_raw(**metric_overrides: Any) -> dict[str, Any]:
+    metrics = {
+        "samples_processed": 10,
+        "peak_vram_mb": 100,
+        "eval_score_baseline": 0.2,
+        "eval_score_final": 0.3,
+    }
+    metrics.update(metric_overrides)
+    return {
+        "status": "completed",
+        "measured": True,
+        "artifact_path": "/tmp/x",
+        "config_sha256": "c" * 64,
+        "framework_version": "0.42.3",
+        "hardware": {"gpu": "NVIDIA H100", "gpu_count": 1, "cuda": "12.8"},
+        "metrics": metrics,
+    }
+
+
+def test_adapter_result_with_identically_zero_training_reward_is_rejected(tmp_path):
+    hardware = {"gpu": "NVIDIA H100", "gpu_count": 1}
+    ok = shootout.validate_adapter_result(
+        _adapter_raw(train_reward_mean=0.3, train_reward_zero_fraction=0.1),
+        hardware,
+        "c" * 64,
+        "0.42.3",
+        tmp_path / "a.json",
+    )
+    assert ok["metrics"]["train_reward_zero_fraction"] == 0.1
+    with pytest.raises(ShootoutError, match="no learning signal"):
+        shootout.validate_adapter_result(
+            _adapter_raw(train_reward_mean=0.0, train_reward_zero_fraction=1.0),
+            hardware,
+            "c" * 64,
+            "0.42.3",
+            tmp_path / "a.json",
+        )
+    with pytest.raises(ShootoutError, match="must be numeric"):
+        shootout.validate_adapter_result(
+            _adapter_raw(train_reward_zero_fraction="all"),
+            hardware,
+            "c" * 64,
+            "0.42.3",
+            tmp_path / "a.json",
+        )

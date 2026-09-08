@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -20,6 +21,74 @@ from .config import get_config_for_task
 from .gspo_config import GSPOConfig
 
 logger = logging.getLogger(__name__)
+
+
+#: Scenario keys that may hold the user-facing prompt text, in priority order.
+PROMPT_KEYS: tuple[str, ...] = ("prompt", "user_query", "query", "question", "context")
+ZERO_SIGNAL_WARN_AFTER = 5
+
+
+def queries_from_scenarios(
+    scenarios: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Turn environment scenarios into GSPO training queries.
+
+    The prompt is the first of :data:`PROMPT_KEYS` present; every other
+    scenario field (plus the contents of ``task``/``metadata`` mappings) is
+    passed to the reward as ``context`` so task rewards that need ground truth
+    (``gold_answer``, ``expected_tool``, ...) receive it. A scenario without
+    any prompt key is an error rather than a placeholder prompt.
+    """
+    queries: list[dict[str, Any]] = []
+    for index, scenario in enumerate(scenarios):
+        prompt_key = next(
+            (
+                k
+                for k in PROMPT_KEYS
+                if isinstance(scenario.get(k), str) and scenario[k]
+            ),
+            None,
+        )
+        if prompt_key is None:
+            raise ValueError(
+                f"scenario {index} has no prompt text under any of {PROMPT_KEYS}; "
+                "pass train_queries explicitly"
+            )
+        context: dict[str, Any] = {}
+        for nested in ("task", "metadata"):
+            value = scenario.get(nested)
+            if isinstance(value, Mapping):
+                context.update(value)
+        context.update(
+            {
+                k: v
+                for k, v in scenario.items()
+                if k != prompt_key and k not in ("task", "metadata")
+            }
+        )
+        context.setdefault("scenario_index", index)
+        queries.append({"prompt": str(scenario[prompt_key]), "context": context})
+    return queries
+
+
+def query_window(
+    queries: Sequence[Any], iteration: int, per_iteration: int
+) -> list[Any]:
+    """The rotating slice of ``queries`` trained on at ``iteration`` (wraps
+    around, so every query is visited before any repeats)."""
+    n = len(queries)
+    if n == 0:
+        return []
+    size = max(1, min(int(per_iteration), n))
+    start = (int(iteration) * size) % n
+    return [queries[(start + i) % n] for i in range(size)]
+
+
+def _reward_is_identically_zero(metrics: Mapping[str, Any]) -> bool:
+    return (
+        float(metrics.get("average_reward", 0.0)) == 0.0
+        and float(metrics.get("reward_std", 0.0)) == 0.0
+    )
 
 
 async def train_with_gspo(
@@ -100,22 +169,17 @@ async def train_with_gspo(
         agent.tokenizer = tokenizer
         agent.generation_config = agent._build_generation_config()
 
-    if not train_queries:
+    queries: list[Any] = list(train_queries) if train_queries else []
+    if not queries:
         logger.info("Generating training queries from environment scenarios...")
-        train_queries = []
-        for scenario in environment.scenarios[: config.generations_per_iteration]:
-            query = scenario.get("context", "Hello")
-            query_context = None
-            if "task" in scenario:
-                query_context = scenario.get("task")
-            elif "metadata" in scenario:
-                query_context = scenario.get("metadata")
-            if query_context is not None:
-                train_queries.append({"prompt": query, "context": query_context})
-            else:
-                train_queries.append(query)
+        queries = list(queries_from_scenarios(environment.scenarios))
 
-    logger.info("Training with %s queries", len(train_queries))
+    queries_per_iteration = max(1, int(config.generations_per_iteration))
+    logger.info(
+        "Training with %s queries (%s per iteration, rotating)",
+        len(queries),
+        min(queries_per_iteration, len(queries)),
+    )
 
     trainer = GSPOTrainer(
         config=config,
@@ -137,15 +201,27 @@ async def train_with_gspo(
 
     _callbacks = callbacks or []
     aborted = False
+    zero_signal_iterations = 0
 
     for iteration in range(config.num_outer_iterations):
         logger.info(
             "=== Iteration %s/%s ===", iteration + 1, config.num_outer_iterations
         )
 
-        metrics = await trainer.train_step(
-            queries=train_queries, num_groups=min(len(train_queries), 10)
+        window = query_window(queries, iteration, queries_per_iteration)
+        metrics = await trainer.train_step(queries=window, num_groups=len(window))
+        zero_signal_iterations = (
+            zero_signal_iterations + 1 if _reward_is_identically_zero(metrics) else 0
         )
+        if zero_signal_iterations == ZERO_SIGNAL_WARN_AFTER:
+            logger.warning(
+                "GSPO reward has been identically zero for %s consecutive "
+                "iterations: every group produces zero advantages and no learning "
+                "can happen. Check that the reward receives the scenario context it "
+                "needs (for example gold_answer) and that prompts are the real task "
+                "prompts.",
+                ZERO_SIGNAL_WARN_AFTER,
+            )
 
         logger.info("Metrics: %s", json.dumps(metrics, indent=2))
 
@@ -186,6 +262,7 @@ async def train_with_gspo(
         logger.info("GSPO training aborted early.")
     else:
         logger.info("GSPO training completed successfully.")
+    setattr(agent, "_training_metrics", dict(trainer.training_metrics))  # noqa: B010
     return agent
 
 
