@@ -10,11 +10,12 @@ Covers:
 """
 
 # Mock the external dependencies before importing
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import torch
+
+from tests import _module_stubs
 
 
 # Create mock modules with __spec__ attribute
@@ -22,10 +23,11 @@ class MockModule(MagicMock):
     __spec__ = MagicMock()
 
 
-sys.modules["trl"] = MockModule()
-sys.modules["trl.core"] = MockModule()
-sys.modules["peft"] = MockModule()
-sys.modules["vllm"] = MockModule()
+# Scoped to this file: tests/conftest.py hides these while other files run.
+_module_stubs.install_import_stub("trl", MockModule())
+_module_stubs.install_import_stub("trl.core", MockModule())
+_module_stubs.install_import_stub("peft", MockModule())
+_module_stubs.install_import_stub("vllm", MockModule())
 
 # These imports must come after the sys.modules stubs above.
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent  # noqa: E402

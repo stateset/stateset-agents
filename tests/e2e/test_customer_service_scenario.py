@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests import _module_stubs
+
 # Block vllm import to avoid torchvision issues
 if "vllm" not in sys.modules:
     _vllm_stub = type(sys)("vllm")  # type: ignore
@@ -24,7 +26,7 @@ if "vllm" not in sys.modules:
     # `from trl import GRPOTrainer` in stateset_agents.training.trl_grpo_trainer)
     # doesn't explode when this stub leaks into a later test's collection.
     _vllm_stub.__version__ = "0.24.0"
-    sys.modules["vllm"] = _vllm_stub
+    _module_stubs.install_import_stub("vllm", _vllm_stub)
 
 E2E_AVAILABLE = True
 try:

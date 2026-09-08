@@ -67,6 +67,9 @@ from stateset_agents.remote.runpod import (
 
 _REMOTE_SHOOTOUT_MANIFEST = "/workspace/shootout-manifest.json"
 _REMOTE_OUTPUT = "/workspace/shootout-output"
+_REMOTE_EXIT = "/workspace/shootout.exit"
+_REMOTE_LOG = "/workspace/shootout.log"
+DEFAULT_POLL_SECONDS = 120
 _ALLOWED_TIERS = frozenset({"SECURE", "COMMUNITY"})
 _REQUIRED_EXECUTION = (
     "provider",
@@ -214,6 +217,28 @@ def build_plan(
     }
 
 
+def _poll_until_exit(
+    ssh: Any, output_dir: Path, *, deadline_s: int, poll_s: float
+) -> int | None:
+    """Download evidence every ``poll_s`` seconds until the remote exit marker
+    appears (returning its code) or ``deadline_s`` elapses (returning None)."""
+    deadline = time.monotonic() + max(1, int(deadline_s))
+    while True:
+        try:
+            ssh.download_dir(_REMOTE_OUTPUT, output_dir)
+        except Exception as exc:  # transient scp failure: keep polling
+            print(f"evidence sync deferred: {exc}", file=sys.stderr)
+        code, text = ssh.run(f"cat {shlex.quote(_REMOTE_EXIT)} 2>/dev/null")
+        if code == 0 and text.strip():
+            try:
+                return int(text.strip().splitlines()[-1])
+            except ValueError:
+                return 1
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(max(0.0, min(float(poll_s), deadline - time.monotonic())))
+
+
 def _remaining(lifetime: int, started_at: float, stage: str) -> int:
     remaining = lifetime - max(1, math.ceil(time.time() - started_at))
     if remaining < 1:
@@ -231,8 +256,12 @@ def execute(
     public_key: str,
     lease_dir: Path = DEFAULT_RUNPOD_LEASE_DIR,
     ledger_path: Path | None = None,
+    poll_seconds: float = DEFAULT_POLL_SECONDS,
 ) -> Path:
-    """Provision exactly one pod, run the shootout, retrieve evidence, terminate."""
+    """Provision exactly one pod, run the shootout, retrieve evidence, terminate.
+
+    Evidence is downloaded incrementally while the remote run proceeds.
+    """
     if output_dir.exists():
         raise RunPodShootoutError(f"refusing to overwrite output: {output_dir}")
     execution = manifest["execution"]
@@ -320,18 +349,40 @@ def execute(
             f"--output-dir {shlex.quote(_REMOTE_OUTPUT)} "
             f"--timeout-seconds {int(execution['timeout_seconds'])} {required}"
         )
-        remote_code, output = ssh.run(run)
+        # Run the shootout detached on the pod and poll for its exit marker,
+        # pulling every finished evidence file back as it lands: a dead
+        # launcher (or a dropped SSH session) can no longer lose completed
+        # runs, and a relaunch only has to re-download what is missing.
+        _run_checked(
+            ssh,
+            f"rm -f {shlex.quote(_REMOTE_EXIT)} && "
+            f"(nohup bash -c {shlex.quote(run + f'; echo $? > {_REMOTE_EXIT}')} "
+            f"> {shlex.quote(_REMOTE_LOG)} 2>&1 < /dev/null &)",
+            "shootout launch",
+        )
         output_dir.mkdir(parents=True, exist_ok=False)
+        remote_code = _poll_until_exit(
+            ssh,
+            output_dir,
+            deadline_s=_remaining(lifetime, started_at, "shootout"),
+            poll_s=poll_seconds,
+        )
         try:
             ssh.download_dir(_REMOTE_OUTPUT, output_dir)
         except Exception as exc:
             raise RunPodShootoutError(
                 f"could not retrieve remote evidence: {exc}"
             ) from exc
+        if remote_code is None:
+            raise RunPodShootoutError(
+                "remote shootout did not finish within the pod lifetime; "
+                "partial evidence was downloaded"
+            )
         if remote_code != 0:
+            _, tail = ssh.run(f"tail -c 2000 {shlex.quote(_REMOTE_LOG)}")
             raise RunPodShootoutError(
                 f"remote shootout failed ({remote_code}); downloaded failure "
-                f"evidence: {output[-2000:]}"
+                f"evidence: {tail}"
             )
         status = "completed"
         return output_dir
@@ -404,6 +455,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--ssh-public-key", type=Path)
+    parser.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS)
     args = parser.parse_args(argv)
     try:
         manifest = load_launcher_manifest(args.manifest, args.root)
@@ -438,6 +490,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             api=RunPodApi(api_key),
             ssh=SshTransport(key_path=private_key),
             public_key=public_key,
+            poll_seconds=args.poll_seconds,
         )
     except (
         RunPodShootoutError,

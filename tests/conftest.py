@@ -237,6 +237,25 @@ def reset_torch_default_dtype():
 
 
 @pytest.fixture(autouse=True)
+def scope_import_stubs(request):
+    """Hide import-time module stubs owned by *other* test files.
+
+    See ``tests/_module_stubs.py``: a file that stubs ``vllm`` or ``trl`` at
+    import time registers the stub with its owner; while a test from any other
+    file runs, those stubs are removed from ``sys.modules`` (so the real
+    package, or a clean ImportError, is what that test sees) and restored
+    afterwards.
+    """
+    from tests import _module_stubs
+
+    hidden = _module_stubs.hide_foreign_stubs(Path(str(request.node.fspath)))
+    try:
+        yield
+    finally:
+        _module_stubs.restore_stubs(hidden)
+
+
+@pytest.fixture(autouse=True)
 def restore_stateset_agents_sys_modules():
     """Undo any `sys.modules` surgery a test performs on our own package tree.
 

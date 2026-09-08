@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "harness_revision": "012984136e1bcb03497c4c7afe8a057505c3dc32",
+  "harness_revision": "c52bbf175424c8d8c8372777424e1f9bf518544f",
   "shootout_manifest": "benchmarks/shootout_manifest_v2.json",
   "execution": {
     "provider": "runpod",

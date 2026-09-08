@@ -116,10 +116,16 @@ class _TerminationFailsApi(_Api):
 
 
 class _Ssh:
-    def __init__(self, exit_code: int = 0) -> None:
+    """Fake transport: the detached shootout "finishes" after ``polls_to_exit``
+    exit-marker checks, and each evidence download lands one more file."""
+
+    def __init__(self, exit_code: int = 0, polls_to_exit: int = 2) -> None:
         self.exit_code = exit_code
+        self.polls_to_exit = polls_to_exit
         self.commands: list[str] = []
         self.secrets: list[str] = []
+        self.downloads = 0
+        self.exit_checks = 0
 
     def wait_until_reachable(self, host: str, port: int, timeout: int) -> None:
         self.endpoint = (host, port, timeout)
@@ -132,12 +138,19 @@ class _Ssh:
 
     def run(self, command: str) -> tuple[int, str]:
         self.commands.append(command)
-        if "benchmarks/shootout.py" in command:
-            return self.exit_code, "shootout output"
+        if "cat " in command and "shootout.exit" in command:
+            self.exit_checks += 1
+            if self.exit_checks >= self.polls_to_exit:
+                return 0, f"{self.exit_code}\n"
+            return 1, ""
+        if "tail -c" in command:
+            return 0, "shootout output tail"
         return 0, "ok"
 
     def download_dir(self, remote: str, local: Path) -> list[Path]:
-        path = local / "shootout-summary.json"
+        self.downloads += 1
+        local.mkdir(parents=True, exist_ok=True)
+        path = local / f"stateset-agents-seed{self.downloads}.json"
         path.write_text("{}", encoding="utf-8")
         return [path]
 
@@ -206,8 +219,9 @@ def test_execute_runs_shootout_downloads_records_and_terminates(tmp_path: Path) 
         public_key="ssh-ed25519 AAAA",
         lease_dir=tmp_path / "leases",
         ledger_path=tmp_path / "ledger.jsonl",
+        poll_seconds=0,
     )
-    assert result == out and (out / "shootout-summary.json").exists()
+    assert result == out and (out / "stateset-agents-seed1.json").exists()
     joined = "\n".join(ssh.commands)
     assert f"checkout --detach {SHA}" in joined
     assert "pip install --quiet -e" in joined and "trl==1.9.1" in joined
@@ -216,6 +230,9 @@ def test_execute_runs_shootout_downloads_records_and_terminates(tmp_path: Path) 
     assert "--required-framework stateset-agents" in run_cmd
     assert "--required-framework trl" in run_cmd
     assert "--timeout-seconds 1800" in run_cmd
+    assert "nohup" in run_cmd and "shootout.exit" in run_cmd  # detached + marker
+    # evidence was pulled while the remote run was still going, then once more
+    assert ssh.downloads >= 3 and ssh.exit_checks == 2
     assert launcher._REMOTE_SHOOTOUT_MANIFEST in ssh.secrets
     assert api.terminated == ["pod-123"]
     record = json.loads((out / "runpod-provider.json").read_text())
@@ -243,6 +260,7 @@ def test_remote_failure_keeps_evidence_terminates_and_raises(tmp_path: Path) -> 
             public_key="k",
             lease_dir=tmp_path / "leases",
             ledger_path=tmp_path / "ledger.jsonl",
+            poll_seconds=0,
         )
     assert api.terminated == ["pod-123"]
     record = json.loads((out / "runpod-provider.json").read_text())
@@ -263,6 +281,7 @@ def test_price_drift_after_allocation_terminates_before_running(tmp_path: Path) 
             public_key="k",
             lease_dir=tmp_path / "leases",
             ledger_path=tmp_path / "ledger.jsonl",
+            poll_seconds=0,
         )
     assert api.terminated == ["pod-123"] and ssh.commands == []
 
@@ -280,5 +299,31 @@ def test_unconfirmed_termination_fails_closed_with_lease(tmp_path: Path) -> None
             public_key="k",
             lease_dir=tmp_path / "leases",
             ledger_path=tmp_path / "ledger.jsonl",
+            poll_seconds=0,
         )
     assert any((tmp_path / "leases").iterdir())
+
+
+def test_lifetime_exhaustion_keeps_partial_evidence_and_terminates(
+    tmp_path: Path,
+) -> None:
+    manifest = launcher.load_launcher_manifest(
+        _write_inputs(tmp_path, timeout_seconds=1, max_lifetime_seconds=2), tmp_path
+    )
+    plan = launcher.build_plan(manifest, _catalog())
+    api = _Api()
+    out = tmp_path / "evidence"
+    with pytest.raises(launcher.RunPodShootoutError, match="did not finish"):
+        launcher.execute(
+            manifest,
+            out,
+            plan,
+            api=api,
+            ssh=_Ssh(polls_to_exit=10_000_000),
+            public_key="k",
+            lease_dir=tmp_path / "leases",
+            ledger_path=tmp_path / "ledger.jsonl",
+            poll_seconds=0.05,
+        )
+    assert api.terminated == ["pod-123"]
+    assert any(out.glob("stateset-agents-seed*.json"))  # partial evidence retained
