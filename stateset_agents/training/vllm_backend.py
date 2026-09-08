@@ -35,6 +35,7 @@ Reference:
 
 import asyncio
 import logging
+import os
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any, Optional, cast
@@ -113,6 +114,11 @@ class VLLMConfig:
     # Trust remote code (for custom models)
     trust_remote_code: bool = True
 
+    # Keep the vLLM V1 engine core in this process (VLLM_ENABLE_V1_MULTIPROCESSING=0)
+    # so ``sync_weights`` can hand tensors straight to the engine's model after
+    # every optimizer step. Set False for a standalone/serving engine.
+    in_process_weight_sync: bool = True
+
     def to_vllm_kwargs(self) -> dict[str, Any]:
         """Convert to vLLM LLM constructor kwargs"""
         kwargs = {
@@ -190,33 +196,53 @@ class BatchGenerationResult:
     tokens_per_second: float
 
 
-# Attribute paths from an ``LLM`` to the in-process model whose
-# ``load_weights(iterable[(name, tensor)])`` hot-swaps weights (vLLM 0.4-0.10
-# V0 executor layouts). Newer layouts can be adapted via ``weight_loader``.
-_ENGINE_MODEL_PATHS: tuple[tuple[str, ...], ...] = (
-    ("llm_engine", "model_executor", "driver_worker", "model_runner", "model"),
-    (
-        "llm_engine",
-        "model_executor",
-        "driver_worker",
-        "worker",
-        "model_runner",
-        "model",
-    ),
-    (
-        "llm_engine",
-        "engine_core",
-        "model_executor",
-        "driver_worker",
-        "model_runner",
-        "model",
-    ),
+# Attribute names worth following from an ``LLM`` to reach the in-process
+# model whose ``load_weights(iterable[(name, tensor)])`` hot-swaps weights.
+# vLLM has moved this object several times (V0 ``driver_worker.model_runner``,
+# V1 ``driver_worker.worker.model_runner``, ``engine_core`` wrappers), so the
+# search follows these names breadth-first instead of pinning one path.
+_ENGINE_HOPS: tuple[str, ...] = (
+    "llm_engine",
+    "engine_core",
+    "model_executor",
+    "driver_worker",
+    "worker",
+    "model_runner",
+    "model",
 )
+_ENGINE_SEARCH_DEPTH = 8
+
+
+def _find_engine_model(engine: Any) -> Any | None:
+    """Breadth-first search along :data:`_ENGINE_HOPS` for the first object
+    exposing a callable ``load_weights``; ``None`` when nothing is reachable."""
+    frontier: list[tuple[Any, int]] = [(engine, 0)]
+    seen: set[int] = {id(engine)}
+    while frontier:
+        node, depth = frontier.pop(0)
+        if node is not engine and callable(getattr(node, "load_weights", None)):
+            return node
+        if depth >= _ENGINE_SEARCH_DEPTH:
+            continue
+        for hop in _ENGINE_HOPS:
+            try:
+                child = getattr(node, hop, None)
+            except Exception:  # noqa: BLE001 - lazy engine attributes may raise
+                child = None
+            if child is None or id(child) in seen:
+                continue
+            seen.add(id(child))
+            frontier.append((child, depth + 1))
+    return None
+
+
 _WRAPPER_PREFIXES = ("base_model.model.", "module.", "_orig_mod.")
 
 
 def _engine_weight_name(name: str) -> str:
-    """Strip PEFT / DDP / torch.compile wrapper prefixes from a parameter name."""
+    """Strip PEFT / DDP / torch.compile wrapper prefixes and PEFT's per-module
+    ``.base_layer`` indirection from a parameter name, so it matches the
+    engine's own naming (``model.layers.0.self_attn.q_proj.weight``)."""
     changed = True
     while changed:
         changed = False
@@ -224,7 +250,7 @@ def _engine_weight_name(name: str) -> str:
             if name.startswith(prefix):
                 name = name[len(prefix) :]
                 changed = True
-    return name
+    return name.replace(".base_layer.", ".")
 
 
 def _iter_policy_weights(model: Any) -> Iterator[tuple[str, Any]]:
@@ -295,6 +321,10 @@ class VLLMGenerator:
             logger.info(f"  Prefix caching: {self.config.enable_prefix_caching}")
 
             # Initialize vLLM engine
+            if self.config.in_process_weight_sync:
+                # vLLM reads this at engine construction; an out-of-process
+                # engine core has no model object for sync_weights to reach.
+                os.environ.setdefault("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
             vllm_kwargs = self.config.to_vllm_kwargs()
             self.engine = LLM(**vllm_kwargs)
             self.tokenizer = self.engine.get_tokenizer()
@@ -661,20 +691,44 @@ class VLLMGenerator:
         engine = getattr(self, "engine", None)
         if engine is None:
             raise RuntimeError("vLLM not initialized; cannot sync weights")
-        for path in _ENGINE_MODEL_PATHS:
-            target: Any = engine
-            for attr in path:
-                target = getattr(target, attr, None)
-                if target is None:
-                    break
-            load = getattr(target, "load_weights", None) if target is not None else None
-            if callable(load):
-                return cast(Callable[[Iterable[tuple[str, Any]]], Any], load)
+        target = _find_engine_model(engine)
+        if target is not None:
+            self.engine_model_path = type(target).__name__
+            return cast(Callable[[Iterable[tuple[str, Any]]], Any], target.load_weights)
         raise RuntimeError(
             "could not find the engine's load_weights entry point for this vLLM "
             "version; set VLLMGenerator.weight_loader to a callable taking an "
             "iterable of (name, tensor) pairs"
         )
+
+    def token_logprobs_for_ids(
+        self, prompt_token_ids: list[int], response_token_ids: list[int]
+    ) -> list[float]:
+        """The engine's current log-probs of ``response_token_ids`` given
+        ``prompt_token_ids`` (one prefill with ``prompt_logprobs``), so a
+        caller can measure how far the engine is from the training policy
+        before and after :meth:`sync_weights`.
+        """
+        if not self.is_available:
+            raise RuntimeError("vLLM not initialized")
+        engine = self.engine
+        if engine is None:
+            raise RuntimeError("vLLM engine not initialized")
+        ids = [int(t) for t in prompt_token_ids] + [int(t) for t in response_token_ids]
+        params = self.create_sampling_params(
+            max_tokens=1, temperature=1.0, top_p=1.0, top_k=-1, prompt_logprobs=0
+        )
+        output = engine.generate([{"prompt_token_ids": ids}], params)[0]
+        start = len(prompt_token_ids)
+        out: list[float] = []
+        for position, token_id in enumerate(response_token_ids, start=start):
+            entry = (output.prompt_logprobs or [None] * len(ids))[position]
+            if entry is None or int(token_id) not in entry:
+                raise RuntimeError(
+                    f"engine returned no log-prob for response token {position}"
+                )
+            out.append(float(entry[int(token_id)].logprob))
+        return out
 
     def get_lora_request(self, adapter_name: str) -> Any:
         """Get a registered LoRA request by name for use in generate() calls."""

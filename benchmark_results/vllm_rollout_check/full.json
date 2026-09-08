@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "kind": "vllm-rollout-sync-check",
+  "measured": true,
+  "timestamp": "2026-09-08T20:24:33.559799+00:00",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "peft": false,
+  "dtype": "bfloat16",
+  "versions": {
+    "vllm": "0.28.0",
+    "torch": "2.13.0+cu130",
+    "transformers": "5.16.1",
+    "stateset_agents": "0.51.0",
+    "python": "3.12.13"
+  },
+  "hardware": {
+    "gpu": "NVIDIA A40",
+    "gpu_count": 1
+  },
+  "engine_model_path": "Qwen2ForCausalLM",
+  "weight_sync_count": 1,
+  "rollout_backend_error": null,
+  "gaps_nats": {
+    "engine_vs_policy_before_step": {
+      "max_abs": 0.17183780670166016,
+      "mean_abs": 0.036640953295347806,
+      "tokens": 31.0
+    },
+    "engine_vs_policy_after_step_before_sync": {
+      "max_abs": 43.01461559534073,
+      "mean_abs": 19.4861813903882,
+      "tokens": 31.0
+    },
+    "engine_vs_policy_after_sync": {
+      "max_abs": 0.29140281677246094,
+      "mean_abs": 0.08385883800445064,
+      "tokens": 31.0
+    }
+  },
+  "optimizer": {
+    "kind": "adam",
+    "lr": 0.0005,
+    "steps": 3
+  },
+  "step_metrics": [
+    {
+      "total_loss": -0.014515727758407593,
+      "num_rows": 4,
+      "path": "token",
+      "ratio_mean": 0.9915237426757812,
+      "clip_fraction": 0.0,
+      "old_logprobs_source": "sampler"
+    },
+    {
+      "total_loss": 0.32407304644584656,
+      "num_rows": 4,
+      "path": "token",
+      "ratio_mean": 0.0967809408903122,
+      "clip_fraction": 1.0,
+      "old_logprobs_source": "sampler"
+    },
+    {
+      "total_loss": 0.3335253596305847,
+      "num_rows": 4,
+      "path": "token",
+      "ratio_mean": 0.012075223959982395,
+      "clip_fraction": 1.0,
+      "old_logprobs_source": "sampler"
+    }
+  ],
+  "verdict": {
+    "sync_succeeded": true,
+    "after_sync_within_tolerance": true,
+    "step_moved_policy_and_sync_moved_engine": true,
+    "post_sync_turn_from_engine": true,
+    "tolerance_max_abs": 0.5155134201049805,
+    "passed": true
+  },
+  "wall_clock_seconds": 162.46422039996833
+}

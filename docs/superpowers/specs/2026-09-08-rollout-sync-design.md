@@ -53,8 +53,16 @@ layout, missing/mismatched sampler log-probs handled, `"sampler"` equals
 on-policy when the engine is current, ratio equals `exp(shift)` for a stale
 engine with clipping engaged, fallback and snapshot precedence.
 
-## Not done
+## Live verification (2026-09-08)
 
-A live vLLM run exercising `load_weights` on a real engine (no vLLM in the
-local venv; needs a GPU pod). vLLM V1 engine-core layouts may need
-`weight_loader`; the error message says so.
+`benchmarks/vllm_rollout_check.py` on a RunPod A40 with vLLM 0.28.0 / torch
+2.13 / transformers 5.16: full-weight and LoRA syncs both pass
+(`benchmark_results/vllm_rollout_check/README.md`). Findings that changed the
+code: the V1 engine core must stay in-process
+(`VLLMConfig.in_process_weight_sync` → `VLLM_ENABLE_V1_MULTIPROCESSING=0`),
+the model object is found by a breadth-first search over engine attribute
+names rather than a fixed path (reached as `Qwen2ForCausalLM`), and a merged
+`PeftModel` names weights `<module>.base_layer.weight`, which the engine
+cannot map until the segment is stripped. The first LoRA attempt failed on
+exactly that and was reported as a stale backend with the error kept, which
+is the designed failure mode.

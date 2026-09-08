@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "kind": "vllm-rollout-sync-check",
+  "measured": true,
+  "timestamp": "2026-09-08T20:25:07.308699+00:00",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "peft": true,
+  "dtype": "bfloat16",
+  "versions": {
+    "vllm": "0.28.0",
+    "torch": "2.13.0+cu130",
+    "transformers": "5.16.1",
+    "stateset_agents": "0.51.0",
+    "python": "3.12.13"
+  },
+  "hardware": {
+    "gpu": "NVIDIA A40",
+    "gpu_count": 1
+  },
+  "engine_model_path": "Qwen2ForCausalLM",
+  "weight_sync_count": 0,
+  "rollout_backend_error": "AttributeError: QKVParallelLinear has no attribute `base_layer`",
+  "gaps_nats": {
+    "engine_vs_policy_before_step": {
+      "max_abs": 0.17183780670166016,
+      "mean_abs": 0.036640953295347806,
+      "tokens": 31.0
+    },
+    "engine_vs_policy_after_step_before_sync": {
+      "max_abs": 3.878854751586914,
+      "mean_abs": 0.617736974193723,
+      "tokens": 31.0
+    },
+    "engine_vs_policy_after_sync": {
+      "max_abs": 3.878854751586914,
+      "mean_abs": 0.617736974193723,
+      "tokens": 31.0
+    }
+  },
+  "optimizer": {
+    "kind": "adam",
+    "lr": 0.0005,
+    "steps": 3
+  },
+  "step_metrics": [
+    {
+      "total_loss": -0.014515727758407593,
+      "num_rows": 4,
+      "path": "token",
+      "ratio_mean": 0.9915237426757812,
+      "clip_fraction": 0.0,
+      "old_logprobs_source": "sampler"
+    },
+    {
+      "total_loss": -0.06924393773078918,
+      "num_rows": 4,
+      "path": "token",
+      "ratio_mean": 2.6530425548553467,
+      "clip_fraction": 0.25806451612903225,
+      "old_logprobs_source": "sampler"
+    },
+    {
+      "total_loss": -0.07541728019714355,
+      "num_rows": 4,
+      "path": "token",
+      "ratio_mean": 2.904367685317993,
+      "clip_fraction": 0.41935483870967744,
+      "old_logprobs_source": "sampler"
+    }
+  ],
+  "verdict": {
+    "sync_succeeded": false,
+    "after_sync_within_tolerance": false,
+    "step_moved_policy_and_sync_moved_engine": false,
+    "post_sync_turn_from_engine": false,
+    "tolerance_max_abs": 0.5155134201049805,
+    "passed": false
+  },
+  "wall_clock_seconds": 19.085314785130322
+}

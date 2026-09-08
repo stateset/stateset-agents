@@ -303,6 +303,13 @@ def test_vllm_generator_sync_weights_strips_wrapper_prefixes():
     assert names == "model.layers.0.q.weight"
     assert vllm_backend._engine_weight_name("module.lm_head.weight") == "lm_head.weight"
     assert vllm_backend._engine_weight_name("lm_head.weight") == "lm_head.weight"
+    # PEFT wraps each adapted Linear: <module>.base_layer.weight is the merged weight
+    assert (
+        vllm_backend._engine_weight_name(
+            "base_model.model.model.layers.0.self_attn.q_proj.base_layer.weight"
+        )
+        == "model.layers.0.self_attn.q_proj.weight"
+    )
 
 
 def test_vllm_generator_sync_weights_without_engine_is_loud():
@@ -334,6 +341,65 @@ def test_vllm_generator_resolves_engine_loader_from_known_paths():
     gen.weight_loader = None
     gen.sync_weights(_model())
     assert loaded == ["weight", "bias"]
+
+
+def test_vllm_generator_finds_the_model_through_v1_worker_nesting():
+    """vLLM V1 keeps the model under engine_core → ... → worker → model_runner."""
+    from stateset_agents.training import vllm_backend
+
+    loaded: list[str] = []
+    model = SimpleNamespace(load_weights=lambda ws: loaded.extend(n for n, _ in ws))
+    engine = SimpleNamespace(
+        llm_engine=SimpleNamespace(
+            engine_core=SimpleNamespace(
+                engine_core=SimpleNamespace(
+                    model_executor=SimpleNamespace(
+                        driver_worker=SimpleNamespace(
+                            worker=SimpleNamespace(
+                                model_runner=SimpleNamespace(model=model)
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+    gen = object.__new__(vllm_backend.VLLMGenerator)
+    gen.engine = engine
+    gen.weight_loader = None
+    gen.sync_weights(_model())
+    assert loaded == ["weight", "bias"]
+    assert gen.engine_model_path == "SimpleNamespace"
+
+
+def test_vllm_config_keeps_engine_core_in_process_for_weight_sync(monkeypatch):
+    from stateset_agents.training import vllm_backend
+
+    monkeypatch.delenv("VLLM_ENABLE_V1_MULTIPROCESSING", raising=False)
+    created: dict = {}
+
+    class _LLM:
+        def __init__(self, **kwargs):
+            created["env"] = dict(__import__("os").environ).get(
+                "VLLM_ENABLE_V1_MULTIPROCESSING"
+            )
+            created["kwargs"] = kwargs
+
+        def get_tokenizer(self):
+            return object()
+
+    monkeypatch.setattr(vllm_backend, "VLLM_AVAILABLE", True)
+    monkeypatch.setattr(vllm_backend, "LLM", _LLM)
+    gen = vllm_backend.VLLMGenerator(vllm_backend.VLLMConfig(model_name="m"))
+    assert __import__("asyncio").run(gen.initialize()) is True
+    assert created["env"] == "0"
+
+    monkeypatch.delenv("VLLM_ENABLE_V1_MULTIPROCESSING", raising=False)
+    gen = vllm_backend.VLLMGenerator(
+        vllm_backend.VLLMConfig(model_name="m", in_process_weight_sync=False)
+    )
+    assert __import__("asyncio").run(gen.initialize()) is True
+    assert created["env"] is None
 
 
 def test_vllm_generator_unknown_engine_layout_names_the_problem():
