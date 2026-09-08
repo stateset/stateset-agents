@@ -318,7 +318,14 @@ coverage, live hardware attempts, and successful inference by provider.
   fail-closed validator runs in CI and publish readiness; independent
   third-party security review remains explicitly pending.
 
-**v0.51.0 (latest release; publication triggered by tag):**
+**v0.52.0 (latest release; publication triggered by tag):**
+
+- Engine rollouts stay on-policy: both GRPO trainers push the policy's weights into the attached rollout backend after every optimizer step (`TrainingConfig.rollout_sync`); turns record the policy version that sampled them, and a backend that cannot take weights is reported once as stale instead of silently sampling from an old policy. `TrainingConfig.old_logprobs_source="sampler"` importance-corrects rollouts from a lagging or numerically different engine.
+- Proven live on vLLM 0.28 / NVIDIA A40 for full weights and a LoRA adapter (`benchmark_results/vllm_rollout_check/`): the engine-vs-policy log-prob gap of the sampled tokens returns to bf16 noise after `VLLMGenerator.sync_weights`. `VLLMGenerator` finds the engine model through any vLLM layout, keeps the V1 engine core in-process, and maps PEFT's `.base_layer` weight names.
+- Fixed: `from stateset_agents.training import train` returned the `train` submodule once anything had imported it (the API service and CLI do).
+- Paid comparison runs are observable while they run (live per-run logs, a status line per launcher poll) and resumable after a pod lifetime cut (`runpod_shootout.py --resume`); the v3 protocol (Qwen2.5-1.5B, 200 steps, 256-problem eval) and its L40S envelopes are in `benchmarks/`.
+
+**v0.51.0:**
 
 - Retained the validated 48-step, three-seed A40 comparison of StateSet's TRL-backed GRPO, native GSPO, and direct TRL 1.9.1 on Qwen2.5-0.5B / GSM8K (`benchmark_results/framework_comparison_v2/`): throughput parity within run-to-run noise and no learning-quality signal for any implementation at that scale, stated as such.
 - `benchmarks/runpod_shootout.py` runs the remote shootout detached and streams every finished evidence file back incrementally, so a dropped launcher session cannot lose completed runs; `framework_comparison.py` skips launcher records by `kind`.
@@ -1946,7 +1953,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.51.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.52.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
