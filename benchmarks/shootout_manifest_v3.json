@@ -53,7 +53,7 @@
   "implementations": [
     {
       "name": "stateset-agents-gspo",
-      "version": "0.50.0",
+      "version": "0.53.0",
       "command": [
         "python",
         "scripts/run_phase0_benchmark.py",
