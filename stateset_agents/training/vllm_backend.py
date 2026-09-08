@@ -378,6 +378,17 @@ class VLLMGenerator:
             None, lambda: self.generate_sync(prompts, sampling_params, **kwargs)
         )
 
+    async def generate_with_logprobs(
+        self, prompts: list[str], **kwargs: Any
+    ) -> list[GenerationResult]:
+        """Rollout-backend entry point (see ``MultiTurnAgent.set_rollout_backend``).
+
+        One result per prompt with exact prompt/response token ids and
+        per-token log-probs; ``kwargs`` (``temperature``, ``top_p``,
+        ``max_tokens``, ...) become the sampling parameters.
+        """
+        return await self.generate(list(prompts), None, **kwargs)
+
     async def generate_groups(
         self,
         prompts: list[str],

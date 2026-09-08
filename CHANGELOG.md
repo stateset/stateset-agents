@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `MultiTurnAgent.set_rollout_backend(engine)`: route generation through any
+  engine exposing `generate_with_logprobs` (e.g. `VLLMGenerator`); turns carry
+  the engine's exact token ids and per-token log-probs for the GRPO per-token
+  path, with fallback to native generation on engine failure.
+- `benchmarks/runpod_shootout.py` runs the remote shootout detached and
+  downloads every finished seed-and-framework evidence file incrementally, so
+  a dropped launcher session cannot lose completed runs.
+
+### Changed
+
+- Import-time module stubs in the test suite are scoped to the file that
+  installs them (`tests/_module_stubs.py` plus an autouse fixture), removing
+  cross-file leakage of fake `vllm`, `trl`, and `peft` modules.
+
 ## [0.50.0] - 2026-09-05 — Per-token GRPO and starter specs
 
 ### Changed

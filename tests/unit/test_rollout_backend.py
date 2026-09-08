@@ -108,3 +108,21 @@ async def test_backend_failure_falls_back_to_native_generation():
     turn = await agent.generate_turn("hi")
     assert turn.content == "ok"
     assert turn.metadata.get("rollout_backend_error", "").startswith("RuntimeError")
+
+
+@pytest.mark.asyncio
+async def test_vllm_generator_exposes_rollout_backend_entry_point(monkeypatch):
+    from stateset_agents.training import vllm_backend
+
+    gen = object.__new__(vllm_backend.VLLMGenerator)
+    seen = {}
+
+    async def fake_generate(prompts, sampling_params=None, **kwargs):
+        seen["prompts"], seen["kwargs"] = list(prompts), dict(kwargs)
+        return ["r" for _ in prompts]
+
+    monkeypatch.setattr(gen, "generate", fake_generate)
+    out = await gen.generate_with_logprobs(["a", "b"], temperature=0.2, max_tokens=9)
+    assert out == ["r", "r"]
+    assert seen["prompts"] == ["a", "b"]
+    assert seen["kwargs"] == {"temperature": 0.2, "max_tokens": 9}

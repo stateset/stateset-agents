@@ -194,6 +194,21 @@ forward passes, sequence-level ratio clipped at `seq_clip_ratio`, and the
 REINFORCE branch when no old log-probs exist. The loss dict reports `path`
 (`token` or `sequence`), `objective`, and `num_rows`.
 
+## Rollouts from an inference engine
+
+`MultiTurnAgent.set_rollout_backend(engine)` routes generation through any
+engine exposing `async generate_with_logprobs(prompts, **kwargs)` that
+returns objects shaped like `training.vllm_backend.GenerationResult`
+(`training.vllm_backend.VLLMGenerator` does). The turns it returns carry the
+engine's exact prompt and response token ids and per-token log-probs, so the
+GRPO trainers' per-token path trains on what the engine generated while
+rollouts stop being bottlenecked on sequential Hugging Face `generate`.
+Engine failures fall back to native generation and are recorded on the turn
+as `rollout_backend_error`. Refreshing the engine's weights after an
+optimizer step is the caller's responsibility; without it, later rollouts are
+sampled from a stale policy and `num_gradient_updates` inner updates apply
+their trust region against the snapshot taken at rollout time.
+
 ## Which preset
 
 | Situation | Start with |
