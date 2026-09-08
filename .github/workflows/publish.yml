@@ -211,10 +211,19 @@ jobs:
       run: |
         set -euo pipefail
         echo "Attempting npm publish with GitHub OIDC (trusted publishing)…"
+        package_name="$(node -p "require('./package.json').name")"
+        # Trusted publishing can only publish *new versions* of a package that
+        # already exists on the registry with this repository linked as its
+        # trusted publisher; it cannot create the package. Diagnose that
+        # precisely instead of a generic 404 from PUT.
+        if ! npm view "${package_name}" version >/dev/null 2>&1; then
+          echo "::error::${package_name} does not exist on registry.npmjs.org yet. Trusted publishing cannot create a package: publish the first version with an npm automation token (add the NPM_TOKEN repository secret, scoped to the @stateset org, and re-run this workflow), then link this repository as the package's trusted publisher on npmjs.com (package Settings → Publishing access) so later releases publish via OIDC without the token."
+          exit 1
+        fi
         # whoami is best-effort — it can fail before publish acquires an id-token.
         npm whoami || true
         if ! npm publish --access public; then
-          echo "::error::npm publish failed. If this repo/package is not configured for npm trusted publishing, set it up in your npm org (Settings → Access → Automation tokens), link this GitHub repository on the package, and re-run. Alternatively, add an NPM_TOKEN repository secret (automation token scoped to @stateset) to fall back to token mode."
+          echo "::error::npm publish failed for ${package_name}. The package exists, so link this GitHub repository (workflow publish.yml) as its trusted publisher on npmjs.com (package Settings → Publishing access) and re-run; or add an NPM_TOKEN repository secret (automation token scoped to @stateset) to fall back to token mode."
           exit 1
         fi
 
