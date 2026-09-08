@@ -229,6 +229,25 @@ def _provider_record_path(output_dir: Path) -> Path:
     return candidate
 
 
+def _archive_previous_pod_dirs(output_dir: Path) -> list[Path]:
+    """Move an earlier pod's ``runs/`` and ``_accounting/`` aside before a
+    resumed download replaces them (the incremental sync swaps whole
+    directories), so the first pod's logs, adapters, and summary survive."""
+    moved: list[Path] = []
+    for name in ("runs", "_accounting"):
+        source = output_dir / name
+        if not source.exists():
+            continue
+        n = 1
+        target = output_dir / f"{name}.before-resume-{n}"
+        while target.exists():
+            n += 1
+            target = output_dir / f"{name}.before-resume-{n}"
+        source.rename(target)
+        moved.append(target)
+    return moved
+
+
 def _resumable_evidence(output_dir: Path) -> list[Path]:
     """Measured evidence files in ``output_dir`` worth carrying into a resumed
     run (top-level ``<framework>-seed<N>.json`` documents with
@@ -327,6 +346,8 @@ def execute(
             "finish a matrix whose completed runs are already there)"
         )
     resumed = _resumable_evidence(output_dir) if resume else []
+    if resume:
+        _archive_previous_pod_dirs(output_dir)
     execution = manifest["execution"]
     shootout = manifest["_shootout"]
     pod_id = ""
