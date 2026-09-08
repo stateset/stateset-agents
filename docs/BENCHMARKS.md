@@ -376,6 +376,25 @@ per framework. Required-roster flags prevent a partial comparison from passing
 the full competitive gate.
 See the [`framework comparison schema`](../benchmark_results/framework_comparison/SCHEMA.md).
 
+To collect a shootout on rented hardware with the same fail-closed guarantees
+as the conformance launcher (free public-catalog plan, exact spend-ceiling
+confirmation, recovery lease, in-pod self-destruct, authoritative price recheck,
+unconditional termination, cost ledger), use
+[`benchmarks/runpod_shootout.py`](../benchmarks/runpod_shootout.py) with a
+launcher manifest such as
+[`benchmarks/runpod_shootout_manifest.json`](../benchmarks/runpod_shootout_manifest.json):
+
+```bash
+python benchmarks/runpod_shootout.py benchmarks/runpod_shootout_manifest.json           # plan only, no auth
+RUNPOD_API_KEY=... python benchmarks/runpod_shootout.py benchmarks/runpod_shootout_manifest.json \
+  --execute --confirm-max-cost-usd 8.0 --output-dir benchmark_results/framework_comparison_v2/raw
+```
+
+The remote shootout runs detached on the pod and the launcher downloads every
+finished seed-and-framework evidence file as it lands, so a dropped session
+cannot lose completed runs. Start the launcher itself detached from your shell
+(`setsid nohup ... &`) for multi-hour runs.
+
 Use [`benchmarks/shootout.py`](../benchmarks/shootout.py) and the ready-to-fill
 [`shootout manifest`](../benchmarks/shootout_manifest.example.json) to execute every
 framework/seed from one neutral manifest. It rotates run order, measures wall

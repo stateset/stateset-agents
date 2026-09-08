@@ -17,6 +17,8 @@ from unittest.mock import AsyncMock
 import numpy as np
 import pytest
 
+from tests import _module_stubs
+
 # Block vllm import to avoid torchvision issues
 if "vllm" not in sys.modules:
     _vllm_stub = type(sys)("vllm")  # type: ignore
@@ -25,7 +27,7 @@ if "vllm" not in sys.modules:
     # real __version__: trl (>=1.9) crashes with InvalidVersion('N/A') if
     # this stub is importable but lacks one.
     _vllm_stub.__version__ = "0.24.0"
-    sys.modules["vllm"] = _vllm_stub
+    _module_stubs.install_import_stub("vllm", _vllm_stub)
 
 # Try imports - skip tests if not available
 IMPORTS_AVAILABLE = True
