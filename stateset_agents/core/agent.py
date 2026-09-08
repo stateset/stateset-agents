@@ -542,6 +542,7 @@ class MultiTurnAgent(Agent):
         )
         self.memory_window = memory_window
         self.context_compression = context_compression
+        self._rollout_backend: Any | None = None
         self.turn_count = 0
         if planning_manager is None and getattr(config, "enable_planning", False):
             planning_kwargs = getattr(config, "planning_config", None) or {}
@@ -619,6 +620,20 @@ class MultiTurnAgent(Agent):
         response = await self._generate_with_model(prompt, context)
         return self._finalize_response(response, messages)
 
+    def set_rollout_backend(self, backend: Any | None) -> None:
+        """Attach (or detach with ``None``) a rollout engine for generation.
+
+        The backend must expose ``async generate_with_logprobs(prompts,
+        **kwargs) -> list[result]`` where each result carries ``response``,
+        ``prompt_token_ids``, ``response_token_ids`` and ``token_logprobs``
+        (the shape of ``training.vllm_backend.GenerationResult``). When set,
+        both ``generate_response`` and ``generate_turn`` sample from it and
+        the returned turns carry the engine's exact token ids, so the GRPO
+        trainers train on what the engine generated. Refreshing the engine's
+        weights after an optimizer step is the caller's responsibility.
+        """
+        self._rollout_backend = backend
+
     async def generate_turn(
         self,
         messages: str | list[dict[str, str]],
@@ -637,7 +652,13 @@ class MultiTurnAgent(Agent):
         details = await self._generate_with_model_details(prompt, context)
         content = self._finalize_response(str(details["response"]), messages)
         metadata: dict[str, Any] = {"generated": True}
-        for key in ("prompt_token_ids", "token_ids", "sampler_log_probs"):
+        for key in (
+            "prompt_token_ids",
+            "token_ids",
+            "sampler_log_probs",
+            "rollout_backend",
+            "rollout_backend_error",
+        ):
             if details.get(key) is not None:
                 metadata[key] = details[key]
         return ConversationTurn(role="assistant", content=content, metadata=metadata)
@@ -792,8 +813,37 @@ class MultiTurnAgent(Agent):
         for real HF models, the exact prompt ids, the sampled response ids, and
         the model's log-probs of those ids (temperature 1, no truncation)."""
 
+        backend_error: str | None = None
+        backend = getattr(self, "_rollout_backend", None)
+        if backend is not None:
+            try:
+                results = await backend.generate_with_logprobs(
+                    [prompt],
+                    temperature=float(self.config.temperature),
+                    top_p=float(self.config.top_p),
+                    max_tokens=int(self.config.max_new_tokens),
+                )
+                result = results[0]
+                return {
+                    "response": self._clean_response(str(result.response)),
+                    "prompt_token_ids": [int(t) for t in result.prompt_token_ids],
+                    "token_ids": [int(t) for t in result.response_token_ids],
+                    "sampler_log_probs": [float(x) for x in result.token_logprobs],
+                    "rollout_backend": type(backend).__name__,
+                }
+            except Exception as e:  # noqa: BLE001 - any engine failure falls back
+                backend_error = f"{type(e).__name__}: {e}"
+                logger.warning(
+                    "rollout backend %s failed, falling back to native generation: %s",
+                    type(backend).__name__,
+                    e,
+                )
+
         if self._is_stub_backend and isinstance(self.model, StubModel):
-            return {"response": str(self.model.generate(prompt, context))}
+            details = {"response": str(self.model.generate(prompt, context))}
+            if backend_error:
+                details["rollout_backend_error"] = backend_error
+            return details
 
         if (
             self.model is None
@@ -845,6 +895,8 @@ class MultiTurnAgent(Agent):
         response = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
 
         details: dict[str, Any] = {"response": self._clean_response(response)}
+        if backend_error:
+            details["rollout_backend_error"] = backend_error
         # Best-effort token capture for per-token RL. Never let it break
         # generation: mocked models, empty generations, and backends without
         # per-step logits simply return text only.
