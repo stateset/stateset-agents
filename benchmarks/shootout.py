@@ -370,6 +370,35 @@ def run_implementation(
     return destination
 
 
+def existing_evidence(
+    output_dir: Path, implementation: Mapping[str, Any], seed: int
+) -> Path | None:
+    """The validated evidence file a previous run left for this pair, or
+    ``None``. An unreadable or invalid file fails closed: delete it to rerun.
+    """
+    slug = str(implementation["name"]).lower().replace(" ", "-")
+    destination = output_dir / f"{slug}-seed{seed}.json"
+    if not destination.exists():
+        return None
+    try:
+        document = json.loads(destination.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ShootoutError(f"{destination}: existing evidence unreadable") from exc
+    if not isinstance(document, Mapping):
+        raise ShootoutError(f"{destination}: existing evidence must be an object")
+    validate_document(dict(document), destination)
+    if (
+        document.get("framework") != implementation["name"]
+        or int(document.get("seed", -1)) != int(seed)
+        or document.get("measured") is not True
+    ):
+        raise ShootoutError(
+            f"{destination}: existing evidence is not a measured "
+            f"{implementation['name']} seed {seed} run"
+        )
+    return destination
+
+
 def execution_order(
     implementations: Sequence[Mapping[str, Any]], seed_index: int
 ) -> list[Mapping[str, Any]]:
@@ -402,6 +431,7 @@ def write_run_summary(
 ) -> None:
     """Write an accounting record for every attempted framework/seed pair."""
     succeeded = sum(attempt["status"] == "completed" for attempt in attempts)
+    skipped = sum(attempt["status"] == "skipped" for attempt in attempts)
     payload = {
         "schema_version": 1,
         "kind": "framework-shootout-accounting",
@@ -409,7 +439,8 @@ def write_run_summary(
         "manifest": str(manifest),
         "attempted": len(attempts),
         "completed": succeeded,
-        "failed": len(attempts) - succeeded,
+        "skipped": skipped,
+        "failed": len(attempts) - succeeded - skipped,
         "attempts": list(attempts),
     }
     accounting_dir = output_dir / "_accounting"
@@ -466,6 +497,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         for index, seed in enumerate(seeds):
             for implementation in execution_order(manifest["implementations"], index):
                 framework = str(implementation["name"])
+                present = existing_evidence(args.output_dir, implementation, seed)
+                if present is not None:
+                    _progress(
+                        f"run skipped seed={seed} framework={framework} "
+                        f"(evidence present: {present.name})"
+                    )
+                    attempts.append(
+                        {
+                            "framework": framework,
+                            "seed": seed,
+                            "status": "skipped",
+                            "evidence": str(present),
+                        }
+                    )
+                    continue
                 run_started = time.monotonic()
                 _progress(f"run start seed={seed} framework={framework}")
                 try:
@@ -513,7 +559,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"shootout rejected: {exc}", file=sys.stderr)
         return 2
     failed = sum(attempt["status"] == "failed" for attempt in attempts)
-    completed = len(attempts) - failed
+    skipped = sum(attempt["status"] == "skipped" for attempt in attempts)
+    completed = len(attempts) - failed - skipped
     if failed:
         print(
             f"shootout completed {completed}/{len(attempts)} attempts; "
@@ -524,7 +571,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.preflight:
         print(f"preflight completed {completed} framework runs")
         return 0
-    print(f"wrote {completed} measured evidence documents")
+    print(
+        f"wrote {completed} measured evidence documents"
+        + (f" ({skipped} already present)" if skipped else "")
+    )
     return 0
 
 

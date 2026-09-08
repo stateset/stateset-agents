@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shootout unbuffered and prints a status line per poll (elapsed, evidence
   landed, runs started, newest run output), so a paid run is observable from
   the launcher log instead of only after it exits.
+- `benchmarks/runpod_shootout.py --resume` finishes a matrix cut short by
+  the pod lifetime: the completed evidence files in `--output-dir` are
+  uploaded first and `benchmarks/shootout.py` skips seed-and-framework pairs
+  whose validated evidence is already present (accounted as `skipped`), so
+  only the missing runs are paid for again.
 
 ### Fixed
 

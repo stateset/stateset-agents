@@ -187,6 +187,15 @@ The run is retained as evidence only once the report validator accepts every
 per-seed document; the launcher's `runpod-provider.json` records the pod,
 authoritative price, lifetime, and termination confirmation.
 
+While the matrix runs, the launcher prints one status line per poll (elapsed
+time, evidence files landed, runs started, and the newest run's last stdout
+line), and every finished seed-and-framework evidence file is downloaded as it
+lands; each run's `runs/<framework>-seed<N>/stdout.log` streams live. A matrix
+cut short by the pod lifetime is finished with `--resume` on the same
+`--output-dir`: the completed evidence files are uploaded first and the remote
+shootout skips those pairs (`_accounting/shootout-summary.json` records them
+as `skipped`), so only the missing runs are paid for again.
+
 ### 48-step three-framework comparison (v2 protocol)
 
 A second three-seed RunPod shootout on one NVIDIA A40 (CUDA 12.8) ran the
