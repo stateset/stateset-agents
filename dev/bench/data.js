@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788911527313,
+  "lastUpdate": 1788911601176,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -322,6 +322,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.893617259474536e-8",
             "extra": "mean: 457.38618471905585 nsec\nrounds: 104189"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "committer": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "id": "b0267c2969e1bd2d3ffad6e4ae4d433dd8fe2a8b",
+          "message": "chore(release): v0.53.0 — GSPO trains on the task, and evidence fails closed on zero signal",
+          "timestamp": "2026-09-08T23:49:04Z",
+          "url": "https://github.com/stateset/stateset-agents/pull/76/commits/b0267c2969e1bd2d3ffad6e4ae4d433dd8fe2a8b"
+        },
+        "date": 1788911599701,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5939.173313234884,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000017001800700630045",
+            "extra": "mean: 168.37360138516163 usec\nrounds: 2022"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6336.33721569444,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001691335900538581",
+            "extra": "mean: 157.81988331099322 usec\nrounds: 2151"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 4955.228350057396,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018148007092789592",
+            "extra": "mean: 201.80704689187877 usec\nrounds: 3604"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 736.677792476185,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00008078209167086084",
+            "extra": "mean: 1.3574455619718273 msec\nrounds: 589"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 181.2736229298965,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005306564885687577",
+            "extra": "mean: 5.516522392155904 msec\nrounds: 153"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2220525.6223094813,
+            "unit": "iter/sec",
+            "range": "stddev: 5.0273843978219673e-8",
+            "extra": "mean: 450.3438239816117 nsec\nrounds: 91912"
           }
         ]
       }
