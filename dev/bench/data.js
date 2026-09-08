@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788893640259,
+  "lastUpdate": 1788893651935,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -66,6 +66,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.9414418604196975e-8",
             "extra": "mean: 440.9608101491549 nsec\nrounds: 110461"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "committer": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "id": "8e273b38598e87376df31b040baeaf8043fce01a",
+          "message": "feat(training): keep engine rollouts on-policy; fix train() export shadowing",
+          "timestamp": "2026-09-08T18:19:17Z",
+          "url": "https://github.com/stateset/stateset-agents/pull/69/commits/8e273b38598e87376df31b040baeaf8043fce01a"
+        },
+        "date": 1788893650369,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 5783.976757007549,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000028190878221000557",
+            "extra": "mean: 172.89142782056564 usec\nrounds: 2092"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 6545.283796078054,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018900049923447655",
+            "extra": "mean: 152.78176335137704 usec\nrounds: 2172"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 5097.582720501229,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015646291352648996",
+            "extra": "mean: 196.17141198675307 usec\nrounds: 3704"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 752.416632021282,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000023844856790370992",
+            "extra": "mean: 1.3290508973912674 msec\nrounds: 575"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 180.09886308821717,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001417967699746801",
+            "extra": "mean: 5.552505900662868 msec\nrounds: 151"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2210782.1076481133,
+            "unit": "iter/sec",
+            "range": "stddev: 5.1988499010788194e-8",
+            "extra": "mean: 452.3286110108 nsec\nrounds: 106293"
           }
         ]
       }
