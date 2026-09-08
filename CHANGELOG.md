@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Engine rollouts stay on-policy: both GRPO trainers call
+  `MultiTurnAgent.sync_rollout_backend()` after every optimizer step
+  (`TrainingConfig.rollout_sync`), which pushes the policy's weights into the
+  attached rollout backend's `sync_weights(model)` hook.
+  `VLLMGenerator.sync_weights` merges a PEFT adapter for the read, strips
+  wrapper prefixes, and streams weights into the engine's `load_weights`
+  (`weight_loader` adapts unfamiliar engine layouts). Turns record
+  `rollout_backend_version` and `rollout_backend_stale`; a backend that cannot
+  take weights is reported once as stale instead of silently sampling from an
+  old policy.
+- `TrainingConfig.old_logprobs_source="sampler"` makes the GRPO token path use
+  the log-probs recorded at sampling time as the old policy, so the importance
+  ratio corrects for a stale or numerically different rollout engine; the loss
+  dict reports `old_logprobs_source` (`recompute`, `sampler`, `snapshot`).
+
+### Changed
+
+- `benchmarks/shootout.py` streams each run's stdout/stderr into its run
+  directory while the run is in progress and prints a flushed, timestamped
+  line per run start/finish; `benchmarks/runpod_shootout.py` runs the remote
+  shootout unbuffered and prints a status line per poll (elapsed, evidence
+  landed, runs started, newest run output), so a paid run is observable from
+  the launcher log instead of only after it exits.
+- `benchmarks/runpod_shootout.py --resume` finishes a matrix cut short by
+  the pod lifetime: the completed evidence files in `--output-dir` are
+  uploaded first and `benchmarks/shootout.py` skips seed-and-framework pairs
+  whose validated evidence is already present (accounted as `skipped`), so
+  only the missing runs are paid for again.
+
+### Fixed
+
+- `from stateset_agents.training import train` returned the
+  `stateset_agents.training.train` *module* once anything had imported that
+  submodule (the API service and CLI do), failing with "'module' object is not
+  callable". The package now keeps the public `train()` export when importlib
+  binds the submodule; the module stays reachable by its dotted path.
+
 ## [0.51.0] - 2026-09-08 — Evidence-safe benchmarking and engine rollouts
 
 ### Added

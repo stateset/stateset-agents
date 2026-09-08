@@ -217,17 +217,60 @@ def build_plan(
     }
 
 
+def _resumable_evidence(output_dir: Path) -> list[Path]:
+    """Measured evidence files in ``output_dir`` worth carrying into a resumed
+    run (top-level ``<framework>-seed<N>.json`` documents with
+    ``measured: true``); anything else there is left alone."""
+    found: list[Path] = []
+    for path in sorted(output_dir.glob("*-seed*.json")):
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            isinstance(document, Mapping)
+            and document.get("measured") is True
+            and "framework" in document
+            and "seed" in document
+        ):
+            found.append(path)
+    return found
+
+
+def _print_progress(output_dir: Path, elapsed_s: float) -> None:
+    """One flushed status line per poll: elapsed time, evidence files landed,
+    runs started, and the newest line of the newest run's stdout."""
+    evidence = sorted(p.name for p in output_dir.glob("*.json") if p.is_file())
+    runs = sorted(p for p in (output_dir / "runs").glob("*") if p.is_dir())
+    latest = ""
+    if runs:
+        newest = max(runs, key=lambda p: p.stat().st_mtime)
+        log = newest / "stdout.log"
+        if log.is_file():
+            lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+            if lines:
+                latest = f" | {newest.name}: {lines[-1][-160:]}"
+    stamp = datetime.now(timezone.utc).strftime("%H:%M:%SZ")
+    print(
+        f"{stamp} poll elapsed={elapsed_s:.0f}s evidence={len(evidence)} "
+        f"runs_started={len(runs)}{latest}",
+        flush=True,
+    )
+
+
 def _poll_until_exit(
     ssh: Any, output_dir: Path, *, deadline_s: int, poll_s: float
 ) -> int | None:
     """Download evidence every ``poll_s`` seconds until the remote exit marker
     appears (returning its code) or ``deadline_s`` elapses (returning None)."""
     deadline = time.monotonic() + max(1, int(deadline_s))
+    started = time.monotonic()
     while True:
         try:
             ssh.download_dir(_REMOTE_OUTPUT, output_dir)
         except Exception as exc:  # transient scp failure: keep polling
-            print(f"evidence sync deferred: {exc}", file=sys.stderr)
+            print(f"evidence sync deferred: {exc}", file=sys.stderr, flush=True)
+        _print_progress(output_dir, time.monotonic() - started)
         code, text = ssh.run(f"cat {shlex.quote(_REMOTE_EXIT)} 2>/dev/null")
         if code == 0 and text.strip():
             try:
@@ -257,13 +300,21 @@ def execute(
     lease_dir: Path = DEFAULT_RUNPOD_LEASE_DIR,
     ledger_path: Path | None = None,
     poll_seconds: float = DEFAULT_POLL_SECONDS,
+    resume: bool = False,
 ) -> Path:
     """Provision exactly one pod, run the shootout, retrieve evidence, terminate.
 
-    Evidence is downloaded incrementally while the remote run proceeds.
+    Evidence is downloaded incrementally while the remote run proceeds. With
+    ``resume`` the measured evidence files already in ``output_dir`` (from a
+    run cut short by the pod lifetime) are uploaded first and the remote
+    shootout skips those seed-and-framework pairs.
     """
-    if output_dir.exists():
-        raise RunPodShootoutError(f"refusing to overwrite output: {output_dir}")
+    if output_dir.exists() and not resume:
+        raise RunPodShootoutError(
+            f"refusing to overwrite output: {output_dir} (pass --resume to "
+            "finish a matrix whose completed runs are already there)"
+        )
+    resumed = _resumable_evidence(output_dir) if resume else []
     execution = manifest["execution"]
     shootout = manifest["_shootout"]
     pod_id = ""
@@ -344,7 +395,7 @@ def execute(
             for i in shootout["implementations"]
         )
         run = (
-            f"cd {repo} && python benchmarks/shootout.py "
+            f"cd {repo} && python -u benchmarks/shootout.py "
             f"{shlex.quote(_REMOTE_SHOOTOUT_MANIFEST)} --root {repo} "
             f"--output-dir {shlex.quote(_REMOTE_OUTPUT)} "
             f"--timeout-seconds {int(execution['timeout_seconds'])} {required}"
@@ -353,6 +404,15 @@ def execute(
         # pulling every finished evidence file back as it lands: a dead
         # launcher (or a dropped SSH session) can no longer lose completed
         # runs, and a relaunch only has to re-download what is missing.
+        if resumed:
+            _run_checked(ssh, f"mkdir -p {shlex.quote(_REMOTE_OUTPUT)}", "resume dir")
+            for path in resumed:
+                ssh.upload(path, f"{_REMOTE_OUTPUT}/{path.name}")
+            print(
+                f"resuming: {len(resumed)} completed run(s) uploaded, "
+                "the remote shootout skips them",
+                flush=True,
+            )
         _run_checked(
             ssh,
             f"rm -f {shlex.quote(_REMOTE_EXIT)} && "
@@ -360,7 +420,7 @@ def execute(
             f"> {shlex.quote(_REMOTE_LOG)} 2>&1 < /dev/null &)",
             "shootout launch",
         )
-        output_dir.mkdir(parents=True, exist_ok=False)
+        output_dir.mkdir(parents=True, exist_ok=resume)
         remote_code = _poll_until_exit(
             ssh,
             output_dir,
@@ -456,6 +516,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--ssh-public-key", type=Path)
     parser.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="reuse an existing --output-dir: upload its completed evidence "
+        "and run only the missing seed/framework pairs",
+    )
     args = parser.parse_args(argv)
     try:
         manifest = load_launcher_manifest(args.manifest, args.root)
@@ -491,6 +557,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ssh=SshTransport(key_path=private_key),
             public_key=public_key,
             poll_seconds=args.poll_seconds,
+            resume=bool(args.resume),
         )
     except (
         RunPodShootoutError,

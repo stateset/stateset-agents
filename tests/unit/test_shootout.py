@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -287,3 +288,135 @@ def test_accounting_is_not_an_evidence_candidate(tmp_path: Path) -> None:
     )
     assert list(tmp_path.glob("*.json")) == []
     assert (tmp_path / "_accounting" / "shootout-summary.json").is_file()
+
+
+def test_run_logs_stream_live_and_timeouts_kill_the_child(tmp_path: Path) -> None:
+    """stdout.log is written while the run is in progress (not only at exit),
+    and a run that exceeds the timeout is killed and recorded as such."""
+    root = tmp_path / "root"
+    root.mkdir()
+    output = tmp_path / "output"
+    marker = tmp_path / "started"
+    child = (
+        "import pathlib,sys,time; print('step 1', flush=True); "
+        f"pathlib.Path({str(marker)!r}).write_text('x'); time.sleep(30)"
+    )
+    implementation = {
+        "name": "stateset-agents",
+        "version": "0.42.3",
+        "command": [sys.executable, "-c", child],
+    }
+    started = time.monotonic()
+    with pytest.raises(ShootoutError, match="timed out"):
+        shootout.run_implementation(
+            _manifest(), implementation, 42, output, root, timeout_seconds=2
+        )
+    assert time.monotonic() - started < 20  # killed, not left to sleep out
+    run_dir = output / "runs" / "stateset-agents-seed42"
+    assert marker.exists()
+    assert (run_dir / "stdout.log").read_text(encoding="utf-8").startswith("step 1")
+    failure = json.loads((run_dir / "failure.json").read_text(encoding="utf-8"))
+    assert failure["kind"] == "timeout"
+
+
+def test_main_prints_flushed_progress_per_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(_manifest()), encoding="utf-8")
+    output = tmp_path / "evidence"
+
+    def fake_run(manifest, implementation, seed, output_dir, root, timeout_seconds):
+        if seed == 42 and implementation["name"] == "trl":
+            raise ShootoutError("boom")
+        return output_dir / f"{implementation['name']}-seed{seed}.json"
+
+    monkeypatch.setattr(shootout, "run_implementation", fake_run)
+    shootout.main(
+        [str(manifest_path), "--output-dir", str(output), "--root", str(tmp_path)]
+    )
+    out = capsys.readouterr().out
+    assert out.count("run start seed=") == 6
+    assert out.count("run done seed=") == 5
+    assert "run failed seed=42 framework=trl elapsed=0s: boom" in out
+
+
+def test_main_skips_pairs_whose_evidence_is_already_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """A resumed matrix reruns only the missing seed/framework pairs."""
+    root = tmp_path / "root"
+    root.mkdir()
+    output = tmp_path / "evidence"
+    adapter_code = (
+        "import json,pathlib,sys; out=pathlib.Path(sys.argv[1]); "
+        "artifact=pathlib.Path(sys.argv[2]); (artifact/'weights').write_bytes(b'x'); "
+        "out.write_text(json.dumps({'status':'completed','measured':True,"
+        "'artifact_path':str(artifact),'hardware':{'gpu':'NVIDIA H100',"
+        "'gpu_count':1,'cuda':'12.8'},'metrics':{'samples_processed':10,"
+        "'peak_vram_mb':100,'eval_score_baseline':0.2,'eval_score_final':0.3},"
+        "'config_sha256':sys.argv[3],'framework_version':'0.42.3'}))"
+    )
+    implementation = {
+        "name": "stateset-agents",
+        "version": "0.42.3",
+        "command": [
+            sys.executable,
+            "-c",
+            adapter_code,
+            "{adapter_output}",
+            "{artifact_dir}",
+            shootout.canonical_digest(_manifest()["config"]),
+            # protocol placeholders the manifest loader insists on
+            "{seed}",
+            "{model}",
+            "{model_revision}",
+            "{dataset_revision}",
+            "{task}",
+            "{config_json}",
+        ],
+    }
+    manifest = _manifest(
+        implementations=[implementation, _manifest()["implementations"][1]]
+    )
+    monkeypatch.setattr(shootout, "git_commit", lambda _root: "c" * 40)
+    # a real earlier run left validated evidence for (stateset-agents, 42)
+    shootout.run_implementation(
+        manifest, implementation, 42, output, root, timeout_seconds=10
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    calls: list[tuple[str, int]] = []
+
+    def fake_run(manifest, implementation, seed, output_dir, root, timeout_seconds):
+        calls.append((implementation["name"], seed))
+        return output_dir / f"{implementation['name']}-seed{seed}.json"
+
+    monkeypatch.setattr(shootout, "run_implementation", fake_run)
+    assert (
+        shootout.main(
+            [str(manifest_path), "--output-dir", str(output), "--root", str(root)]
+        )
+        == 0
+    )
+    assert ("stateset-agents", 42) not in calls and len(calls) == 5
+    out = capsys.readouterr().out
+    assert "run skipped seed=42 framework=stateset-agents" in out
+    assert "wrote 5 measured evidence documents (1 already present)" in out
+    summary = json.loads((output / "_accounting" / "shootout-summary.json").read_text())
+    assert summary["attempted"] == 6
+    assert summary["completed"] == 5 and summary["skipped"] == 1
+    assert summary["failed"] == 0
+    assert summary["attempts"][0]["status"] == "skipped"
+
+
+def test_existing_evidence_fails_closed_on_a_corrupt_file(tmp_path: Path) -> None:
+    implementation = _manifest()["implementations"][0]
+    path = tmp_path / "stateset-agents-seed42.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ShootoutError, match="unreadable"):
+        shootout.existing_evidence(tmp_path, implementation, 42)
+    path.write_text(json.dumps({"measured": True}), encoding="utf-8")
+    with pytest.raises((ShootoutError, shootout.EvidenceError)):
+        shootout.existing_evidence(tmp_path, implementation, 42)
+    assert shootout.existing_evidence(tmp_path, implementation, 1337) is None

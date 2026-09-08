@@ -543,6 +543,10 @@ class MultiTurnAgent(Agent):
         self.memory_window = memory_window
         self.context_compression = context_compression
         self._rollout_backend: Any | None = None
+        self._rollout_backend_version: int = 0
+        self._rollout_backend_stale: bool = False
+        self._rollout_backend_error: str | None = None
+        self._rollout_sync_warned: bool = False
         self.turn_count = 0
         if planning_manager is None and getattr(config, "enable_planning", False):
             planning_kwargs = getattr(config, "planning_config", None) or {}
@@ -629,10 +633,76 @@ class MultiTurnAgent(Agent):
         (the shape of ``training.vllm_backend.GenerationResult``). When set,
         both ``generate_response`` and ``generate_turn`` sample from it and
         the returned turns carry the engine's exact token ids, so the GRPO
-        trainers train on what the engine generated. Refreshing the engine's
-        weights after an optimizer step is the caller's responsibility.
+        trainers train on what the engine generated. The trainers call
+        :meth:`sync_rollout_backend` after every optimizer step; an engine
+        that also exposes ``sync_weights(model)`` (``VLLMGenerator`` does)
+        then keeps serving the current policy. Attaching resets the policy
+        version counter and staleness state.
         """
         self._rollout_backend = backend
+        self._rollout_backend_version = 0
+        self._rollout_backend_stale = False
+        self._rollout_backend_error = None
+        self._rollout_sync_warned = False
+
+    @property
+    def rollout_backend_version(self) -> int:
+        """How many successful weight syncs the attached backend has taken."""
+        return int(getattr(self, "_rollout_backend_version", 0))
+
+    @property
+    def rollout_backend_stale(self) -> bool:
+        """True once a sync was needed but could not be applied, until one succeeds."""
+        return bool(getattr(self, "_rollout_backend_stale", False))
+
+    @property
+    def rollout_backend_error(self) -> str | None:
+        """The last weight-sync failure (``"ExcType: message"``), or ``None``."""
+        return getattr(self, "_rollout_backend_error", None)
+
+    def sync_rollout_backend(self) -> bool:
+        """Push the current policy weights into the attached rollout backend.
+
+        Returns True when the backend now serves the current policy (or no
+        backend is attached). Returns False, marks the backend stale, and
+        records the reason when the backend has no ``sync_weights`` or the
+        sync raised; rollouts sampled while stale carry
+        ``rollout_backend_stale=True`` so a trainer using
+        ``old_logprobs_source="sampler"`` can still importance-correct them.
+        """
+        backend = getattr(self, "_rollout_backend", None)
+        if backend is None:
+            return True
+        sync = getattr(backend, "sync_weights", None)
+        if not callable(sync):
+            self._rollout_backend_stale = True
+            self._rollout_backend_error = (
+                f"{type(backend).__name__} has no sync_weights(model)"
+            )
+            if not self._rollout_sync_warned:
+                self._rollout_sync_warned = True
+                logger.warning(
+                    "rollout backend %s exposes no sync_weights(model); its "
+                    "rollouts will lag the policy after each optimizer step "
+                    "(set old_logprobs_source='sampler' to importance-correct them)",
+                    type(backend).__name__,
+                )
+            return False
+        try:
+            sync(self.model)
+        except Exception as e:  # noqa: BLE001 - engine failures must not kill training
+            self._rollout_backend_stale = True
+            self._rollout_backend_error = f"{type(e).__name__}: {e}"
+            logger.warning(
+                "rollout backend %s weight sync failed; rollouts are stale: %s",
+                type(backend).__name__,
+                e,
+            )
+            return False
+        self._rollout_backend_version += 1
+        self._rollout_backend_stale = False
+        self._rollout_backend_error = None
+        return True
 
     async def generate_turn(
         self,
@@ -657,6 +727,8 @@ class MultiTurnAgent(Agent):
             "token_ids",
             "sampler_log_probs",
             "rollout_backend",
+            "rollout_backend_version",
+            "rollout_backend_stale",
             "rollout_backend_error",
         ):
             if details.get(key) is not None:
@@ -830,6 +902,8 @@ class MultiTurnAgent(Agent):
                     "token_ids": [int(t) for t in result.response_token_ids],
                     "sampler_log_probs": [float(x) for x in result.token_logprobs],
                     "rollout_backend": type(backend).__name__,
+                    "rollout_backend_version": self.rollout_backend_version,
+                    "rollout_backend_stale": self.rollout_backend_stale,
                 }
             except Exception as e:  # noqa: BLE001 - any engine failure falls back
                 backend_error = f"{type(e).__name__}: {e}"

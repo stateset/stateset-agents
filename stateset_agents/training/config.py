@@ -188,6 +188,18 @@ class TrainingConfig:
     # above 1 the old policy's per-token log-probs are frozen once and each
     # update re-evaluates the clipped objective against them.
     num_gradient_updates: int = 1
+    # Push the policy's weights into the agent's attached rollout backend
+    # (``MultiTurnAgent.set_rollout_backend``) after every optimizer step so
+    # engine rollouts stay on-policy. Disable for a deliberately asynchronous
+    # engine and pair it with ``old_logprobs_source="sampler"``.
+    rollout_sync: bool = True
+    # Old-policy log-probs on the GRPO token path: ``"recompute"`` treats each
+    # rollout batch as exactly on-policy (ratio 1 at the first update);
+    # ``"sampler"`` uses the log-probs recorded at sampling time
+    # (``sampler_log_probs``), so the importance ratio corrects for a stale or
+    # numerically different rollout engine (TRL's vLLM importance-sampling
+    # correction). Falls back to ``"recompute"`` when rollouts carry none.
+    old_logprobs_source: str = "recompute"
 
     def __post_init__(self):
         # Map compatibility aliases
@@ -338,6 +350,11 @@ class TrainingConfig:
 
         if int(self.num_gradient_updates) < 1:
             warnings.append("num_gradient_updates must be >= 1")
+        if self.old_logprobs_source not in ("recompute", "sampler"):
+            warnings.append(
+                "old_logprobs_source must be 'recompute' or 'sampler', got "
+                f"{self.old_logprobs_source!r}"
+            )
 
         # Continual learning checks
         valid_strategies = {

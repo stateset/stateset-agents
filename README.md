@@ -1472,6 +1472,12 @@ trained_agent = await train(
 )
 ```
 
+Rollouts can come from an inference engine instead of Hugging Face
+`generate`: `agent.set_rollout_backend(VLLMGenerator(...))`. The trainers
+push the policy's weights into the engine after every optimizer step
+(`rollout_sync`), and `old_logprobs_source="sampler"` importance-corrects
+rollouts from an engine that lags the policy (`docs/OBJECTIVES.md`).
+
 `stateset-agents train --list-objectives` prints every preset with its
 advantage estimator, ratio level, clip, aggregation, and KL estimator.
 

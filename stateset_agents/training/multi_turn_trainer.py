@@ -273,6 +273,20 @@ class MultiTurnGRPOTrainer:
         steps = int(getattr(self.config, "gradient_accumulation_steps", 1) or 1)
         return max(1, steps)
 
+    def _sync_rollout_backend(self) -> None:
+        """Keep an attached rollout engine on-policy after an optimizer step.
+
+        ``self.last_rollout_sync`` is True/False for the sync outcome and
+        ``None`` when nothing was attempted (``config.rollout_sync`` off or the
+        agent has no ``sync_rollout_backend``).
+        """
+        self.last_rollout_sync = None
+        if not bool(getattr(self.config, "rollout_sync", True)):
+            return
+        sync = getattr(self.agent, "sync_rollout_backend", None)
+        if callable(sync):
+            self.last_rollout_sync = bool(sync())
+
     def _apply_optimizer_step(self, torch) -> None:
         if self.optimizer is None:
             return
@@ -292,6 +306,8 @@ class MultiTurnGRPOTrainer:
 
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
+
+        self._sync_rollout_backend()
 
         self.optimizer.zero_grad()
         self.global_step += 1

@@ -35,8 +35,9 @@ Reference:
 
 import asyncio
 import logging
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import torch
 
@@ -189,6 +190,72 @@ class BatchGenerationResult:
     tokens_per_second: float
 
 
+# Attribute paths from an ``LLM`` to the in-process model whose
+# ``load_weights(iterable[(name, tensor)])`` hot-swaps weights (vLLM 0.4-0.10
+# V0 executor layouts). Newer layouts can be adapted via ``weight_loader``.
+_ENGINE_MODEL_PATHS: tuple[tuple[str, ...], ...] = (
+    ("llm_engine", "model_executor", "driver_worker", "model_runner", "model"),
+    (
+        "llm_engine",
+        "model_executor",
+        "driver_worker",
+        "worker",
+        "model_runner",
+        "model",
+    ),
+    (
+        "llm_engine",
+        "engine_core",
+        "model_executor",
+        "driver_worker",
+        "model_runner",
+        "model",
+    ),
+)
+_WRAPPER_PREFIXES = ("base_model.model.", "module.", "_orig_mod.")
+
+
+def _engine_weight_name(name: str) -> str:
+    """Strip PEFT / DDP / torch.compile wrapper prefixes from a parameter name."""
+    changed = True
+    while changed:
+        changed = False
+        for prefix in _WRAPPER_PREFIXES:
+            if name.startswith(prefix):
+                name = name[len(prefix) :]
+                changed = True
+    return name
+
+
+def _iter_policy_weights(model: Any) -> Iterator[tuple[str, Any]]:
+    """Yield ``(engine_name, detached tensor)`` for every parameter of ``model``.
+
+    PEFT models (``peft_config`` + ``merge_adapter``) are merged while their
+    base model's parameters are read and unmerged afterwards; LoRA-specific
+    parameters are skipped since the merged base weights already carry them.
+    """
+    is_peft = hasattr(model, "peft_config") and callable(
+        getattr(model, "merge_adapter", None)
+    )
+    if is_peft:
+        model.merge_adapter()
+        try:
+            base = (
+                model.get_base_model()
+                if callable(getattr(model, "get_base_model", None))
+                else model
+            )
+            for name, param in base.named_parameters():
+                if "lora_" in name:
+                    continue
+                yield _engine_weight_name(name), param.detach()
+        finally:
+            model.unmerge_adapter()
+        return
+    for name, param in model.named_parameters():
+        yield _engine_weight_name(name), param.detach()
+
+
 class VLLMGenerator:
     """
     High-performance text generation using vLLM.
@@ -203,6 +270,11 @@ class VLLMGenerator:
         self.tokenizer: Any | None = None
         self._lora_adapters: dict[str, Any] = {}
         self._initialized = False
+        # Optional override: ``weight_loader(iter[(name, tensor)])`` pushes
+        # weights into the engine. ``None`` resolves the engine's own
+        # ``load_weights`` at sync time (see ``sync_weights``).
+        self.weight_loader: Callable[[Iterable[tuple[str, Any]]], Any] | None = None
+        self.weight_sync_count = 0
 
     async def initialize(self) -> bool:
         """
@@ -567,6 +639,42 @@ class VLLMGenerator:
         except VLLM_EXCEPTIONS as exc:
             logger.error("Failed to register LoRA adapter '%s': %s", adapter_name, exc)
             return False
+
+    def sync_weights(self, model: Any) -> None:
+        """Push ``model``'s current weights into the running engine.
+
+        This is the hook ``MultiTurnAgent.sync_rollout_backend`` calls after
+        every optimizer step. A PEFT model is merged for the duration of the
+        read and unmerged afterwards, so the engine serves base+adapter while
+        training keeps the adapter separate. Wrapper prefixes (``module.``,
+        ``base_model.model.``) are stripped so names match the engine's.
+
+        Raises ``RuntimeError`` when no engine is initialised or when the
+        engine's weight-loading entry point cannot be found; set
+        ``weight_loader`` to adapt an unfamiliar engine layout.
+        """
+        loader = self.weight_loader or self._resolve_weight_loader()
+        loader(_iter_policy_weights(model))
+        self.weight_sync_count = int(getattr(self, "weight_sync_count", 0)) + 1
+
+    def _resolve_weight_loader(self) -> Callable[[Iterable[tuple[str, Any]]], Any]:
+        engine = getattr(self, "engine", None)
+        if engine is None:
+            raise RuntimeError("vLLM not initialized; cannot sync weights")
+        for path in _ENGINE_MODEL_PATHS:
+            target: Any = engine
+            for attr in path:
+                target = getattr(target, attr, None)
+                if target is None:
+                    break
+            load = getattr(target, "load_weights", None) if target is not None else None
+            if callable(load):
+                return cast(Callable[[Iterable[tuple[str, Any]]], Any], load)
+        raise RuntimeError(
+            "could not find the engine's load_weights entry point for this vLLM "
+            "version; set VLLMGenerator.weight_loader to a callable taking an "
+            "iterable of (name, tensor) pairs"
+        )
 
     def get_lora_request(self, adapter_name: str) -> Any:
         """Get a registered LoRA request by name for use in generate() calls."""

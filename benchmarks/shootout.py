@@ -265,44 +265,55 @@ def run_implementation(
     }
     command = _format_command(implementation["command"], values)
     started = time.monotonic()
-    try:
-        completed = subprocess.run(
+    # The child's stdout/stderr stream straight into the run directory so a
+    # run in progress is observable (and downloadable) while it trains,
+    # instead of surfacing only once it exits.
+    with (
+        (run_dir / "stdout.log").open("w", encoding="utf-8") as stdout_log,
+        (run_dir / "stderr.log").open("w", encoding="utf-8") as stderr_log,
+    ):
+        process = subprocess.Popen(
             command,
             cwd=root,
-            capture_output=True,
+            stdout=stdout_log,
+            stderr=stderr_log,
             text=True,
-            check=False,
-            timeout=timeout_seconds,
             env=os.environ.copy(),
         )
-        elapsed = time.monotonic() - started
-    except subprocess.TimeoutExpired as exc:
-        elapsed = time.monotonic() - started
-        (run_dir / "failure.json").write_text(
-            json.dumps(
-                {"kind": "timeout", "elapsed_seconds": elapsed, "command": command},
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        raise ShootoutError(f"{implementation['name']} seed {seed} timed out") from exc
-    (run_dir / "stdout.log").write_text(completed.stdout, encoding="utf-8")
-    (run_dir / "stderr.log").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
+        try:
+            returncode = process.wait(timeout=timeout_seconds)
+            elapsed = time.monotonic() - started
+        except subprocess.TimeoutExpired as exc:
+            elapsed = time.monotonic() - started
+            process.kill()
+            process.wait()
+            (run_dir / "failure.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "timeout",
+                        "elapsed_seconds": elapsed,
+                        "command": command,
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            raise ShootoutError(
+                f"{implementation['name']} seed {seed} timed out"
+            ) from exc
+    if returncode != 0:
         (run_dir / "failure.json").write_text(
             json.dumps(
                 {
                     "kind": "exit",
-                    "returncode": completed.returncode,
+                    "returncode": returncode,
                     "command": command,
                 },
                 indent=2,
             ),
             encoding="utf-8",
         )
-        raise ShootoutError(
-            f"{implementation['name']} seed {seed} exited {completed.returncode}"
-        )
+        raise ShootoutError(f"{implementation['name']} seed {seed} exited {returncode}")
     if not adapter_output.exists():
         raise ShootoutError(
             f"{implementation['name']} seed {seed} wrote no adapter result"
@@ -359,6 +370,35 @@ def run_implementation(
     return destination
 
 
+def existing_evidence(
+    output_dir: Path, implementation: Mapping[str, Any], seed: int
+) -> Path | None:
+    """The validated evidence file a previous run left for this pair, or
+    ``None``. An unreadable or invalid file fails closed: delete it to rerun.
+    """
+    slug = str(implementation["name"]).lower().replace(" ", "-")
+    destination = output_dir / f"{slug}-seed{seed}.json"
+    if not destination.exists():
+        return None
+    try:
+        document = json.loads(destination.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ShootoutError(f"{destination}: existing evidence unreadable") from exc
+    if not isinstance(document, Mapping):
+        raise ShootoutError(f"{destination}: existing evidence must be an object")
+    validate_document(dict(document), destination)
+    if (
+        document.get("framework") != implementation["name"]
+        or int(document.get("seed", -1)) != int(seed)
+        or document.get("measured") is not True
+    ):
+        raise ShootoutError(
+            f"{destination}: existing evidence is not a measured "
+            f"{implementation['name']} seed {seed} run"
+        )
+    return destination
+
+
 def execution_order(
     implementations: Sequence[Mapping[str, Any]], seed_index: int
 ) -> list[Mapping[str, Any]]:
@@ -391,6 +431,7 @@ def write_run_summary(
 ) -> None:
     """Write an accounting record for every attempted framework/seed pair."""
     succeeded = sum(attempt["status"] == "completed" for attempt in attempts)
+    skipped = sum(attempt["status"] == "skipped" for attempt in attempts)
     payload = {
         "schema_version": 1,
         "kind": "framework-shootout-accounting",
@@ -398,13 +439,21 @@ def write_run_summary(
         "manifest": str(manifest),
         "attempted": len(attempts),
         "completed": succeeded,
-        "failed": len(attempts) - succeeded,
+        "skipped": skipped,
+        "failed": len(attempts) - succeeded - skipped,
         "attempts": list(attempts),
     }
     accounting_dir = output_dir / "_accounting"
     accounting_dir.mkdir(parents=True, exist_ok=True)
     destination = accounting_dir / "shootout-summary.json"
     destination.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _progress(message: str) -> None:
+    """One flushed, timestamped progress line (readable through a redirected
+    log while the shootout runs detached on a pod)."""
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"{stamp} {message}", flush=True)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -448,6 +497,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         for index, seed in enumerate(seeds):
             for implementation in execution_order(manifest["implementations"], index):
                 framework = str(implementation["name"])
+                present = existing_evidence(args.output_dir, implementation, seed)
+                if present is not None:
+                    _progress(
+                        f"run skipped seed={seed} framework={framework} "
+                        f"(evidence present: {present.name})"
+                    )
+                    attempts.append(
+                        {
+                            "framework": framework,
+                            "seed": seed,
+                            "status": "skipped",
+                            "evidence": str(present),
+                        }
+                    )
+                    continue
+                run_started = time.monotonic()
+                _progress(f"run start seed={seed} framework={framework}")
                 try:
                     evidence = run_implementation(
                         manifest,
@@ -458,6 +524,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         args.timeout_seconds,
                     )
                 except (ShootoutError, EvidenceError) as exc:
+                    _progress(
+                        f"run failed seed={seed} framework={framework} "
+                        f"elapsed={time.monotonic() - run_started:.0f}s: {exc}"
+                    )
                     attempts.append(
                         {
                             "framework": framework,
@@ -467,6 +537,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         }
                     )
                     continue
+                _progress(
+                    f"run done seed={seed} framework={framework} "
+                    f"elapsed={time.monotonic() - run_started:.0f}s"
+                )
                 attempts.append(
                     {
                         "framework": framework,
@@ -485,7 +559,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"shootout rejected: {exc}", file=sys.stderr)
         return 2
     failed = sum(attempt["status"] == "failed" for attempt in attempts)
-    completed = len(attempts) - failed
+    skipped = sum(attempt["status"] == "skipped" for attempt in attempts)
+    completed = len(attempts) - failed - skipped
     if failed:
         print(
             f"shootout completed {completed}/{len(attempts)} attempts; "
@@ -496,7 +571,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.preflight:
         print(f"preflight completed {completed} framework runs")
         return 0
-    print(f"wrote {completed} measured evidence documents")
+    print(
+        f"wrote {completed} measured evidence documents"
+        + (f" ({skipped} already present)" if skipped else "")
+    )
     return 0
 
 

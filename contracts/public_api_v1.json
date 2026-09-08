@@ -3993,6 +3993,16 @@
               "default": 1,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "num_gradient_updates"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "rollout_sync"
+            },
+            {
+              "default": "recompute",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "old_logprobs_source"
             }
           ]
         }
