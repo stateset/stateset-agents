@@ -204,10 +204,33 @@ engine's exact prompt and response token ids and per-token log-probs, so the
 GRPO trainers' per-token path trains on what the engine generated while
 rollouts stop being bottlenecked on sequential Hugging Face `generate`.
 Engine failures fall back to native generation and are recorded on the turn
-as `rollout_backend_error`. Refreshing the engine's weights after an
-optimizer step is the caller's responsibility; without it, later rollouts are
-sampled from a stale policy and `num_gradient_updates` inner updates apply
-their trust region against the snapshot taken at rollout time.
+as `rollout_backend_error`.
+
+**Staying on-policy.** After every optimizer step both GRPO trainers call
+`agent.sync_rollout_backend()` (`TrainingConfig.rollout_sync`, default on),
+which pushes the policy's current weights into the engine through its
+`sync_weights(model)` hook. `VLLMGenerator.sync_weights` merges a PEFT
+adapter for the duration of the read, strips wrapper prefixes, and streams
+`(name, tensor)` pairs into the in-process engine's `load_weights`; an
+unfamiliar engine layout is adapted by setting `VLLMGenerator.weight_loader`.
+Every turn records `rollout_backend_version` (successful syncs so far) and
+`rollout_backend_stale`. A backend without `sync_weights`, or a sync that
+raises, is reported once as stale rather than silently sampling from an old
+policy; `agent.rollout_backend_error` keeps the reason and the trainers expose
+the last outcome as `last_rollout_sync`.
+
+**Correcting for a stale engine.** `TrainingConfig.old_logprobs_source`
+chooses the old policy on the token path. `"recompute"` (default) treats
+each rollout batch as exactly on-policy. `"sampler"` uses the log-probs the
+engine reported at sampling time as `logp_old`, so the importance ratio
+`exp(logp_cur - logp_sampler)` corrects for an engine that lags the policy or
+differs numerically (TRL's vLLM importance-sampling correction); the loss
+dict reports `old_logprobs_source` (`recompute`, `sampler`, or `snapshot`
+when `num_gradient_updates` froze its own old log-probs, which takes
+precedence). Rollouts without sampler log-probs fall back to `"recompute"`.
+Use `"sampler"` with `rollout_sync=False` for a deliberately asynchronous
+engine, and note that the engine's log-probs must be of the raw model
+distribution (temperature 1, no top-p) to match the training forward pass.
 
 ## Which preset
 

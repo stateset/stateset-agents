@@ -5,6 +5,7 @@ no token data."""
 
 from __future__ import annotations
 
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -269,3 +270,104 @@ def test_leave_one_out_baseline_on_token_path():
     torch.testing.assert_close(
         out["total_loss"].detach(), want.detach(), atol=1e-5, rtol=1e-5
     )
+
+
+# --- sampler log-probs as the old policy (engine rollouts) ---------------------------
+
+
+def _group_with_sampler_logprobs(model, rewards=(1.0, 0.0, 0.5), shift=0.0):
+    """A group whose ``sampler_log_probs`` are the model's own log-probs of the
+    stored tokens (plus ``shift``), as an engine serving these weights would
+    report them."""
+    group = _group(rewards)
+    rows = lc._token_rows_for_group(group)
+    lp, mask, _ = lc._forward_token_rows(
+        model, rows, torch.device("cpu"), 8, grad=False
+    )
+    for (_p, r, ti), row_lp, row_mask in zip(rows, lp, mask, strict=True):
+        vals = row_lp[row_mask.bool()].tolist()
+        assert len(vals) == len(r)
+        turn = [t for t in group.trajectories[ti].turns if t.role == "assistant"][0]
+        turn.metadata["sampler_log_probs"] = [float(v) + shift for v in vals]
+    return group
+
+
+def test_sampler_old_logprobs_tensor_aligns_with_the_forward_layout():
+    model = _tiny_model()
+    group = _group_with_sampler_logprobs(model)
+    rows = lc._token_rows_for_group(group)
+    sampler = lc.sampler_old_logprobs([group], torch.device("cpu"))
+    assert sampler is not None and len(sampler) == 1
+    lp, mask, _ = lc._forward_token_rows(
+        model, rows, torch.device("cpu"), 8, grad=False
+    )
+    assert sampler[0].shape == lp.shape
+    assert torch.allclose(sampler[0] * mask, lp, atol=1e-5)
+
+
+def test_sampler_old_logprobs_are_none_when_any_row_lacks_them():
+    group = _group()
+    first = [t for t in group.trajectories[0].turns if t.role == "assistant"][0]
+    del first.metadata["sampler_log_probs"]
+    assert lc.sampler_old_logprobs([group], torch.device("cpu")) is None
+
+
+def test_sampler_old_logprobs_reject_length_mismatch():
+    group = _group()
+    first = [t for t in group.trajectories[0].turns if t.role == "assistant"][0]
+    first.metadata["sampler_log_probs"] = [-1.0]
+    with pytest.raises(ValueError, match="sampler_log_probs"):
+        lc.sampler_old_logprobs([group], torch.device("cpu"))
+
+
+def test_sampler_source_matches_on_policy_when_engine_is_current():
+    model = _tiny_model()
+    agent = _agent(model)
+    group = _group_with_sampler_logprobs(model)
+    on_policy = _run([group], _config(), agent)
+    corrected = _run([group], _config(old_logprobs_source="sampler"), agent)
+    assert corrected["off_policy"] is True
+    assert corrected["old_logprobs_source"] == "sampler"
+    assert on_policy["old_logprobs_source"] == "recompute"
+    assert corrected["ratio_mean"] == pytest.approx(1.0, abs=1e-4)
+    assert corrected["total_loss"].item() == pytest.approx(
+        on_policy["total_loss"].item(), abs=1e-5
+    )
+
+
+def test_sampler_source_corrects_for_a_stale_engine():
+    model = _tiny_model()
+    agent = _agent(model)
+    # the engine sampled from a policy whose log-probs sit 0.5 nats lower
+    group = _group_with_sampler_logprobs(model, shift=-0.5)
+    corrected = _run([group], _config(old_logprobs_source="sampler"), agent)
+    # ratio = exp(logp_cur - logp_sampler) = exp(0.5) on every token
+    assert corrected["ratio_mean"] == pytest.approx(math.exp(0.5), rel=1e-3)
+    assert corrected["clip_fraction"] > 0.0  # far outside the 0.2 trust region
+    ignored = _run([group], _config(), agent)
+    assert ignored["ratio_mean"] == pytest.approx(1.0)
+
+
+def test_sampler_source_falls_back_to_recompute_without_sampler_logprobs():
+    model = _tiny_model()
+    agent = _agent(model)
+    group = _group()
+    first = [t for t in group.trajectories[0].turns if t.role == "assistant"][0]
+    del first.metadata["sampler_log_probs"]
+    out = _run([group], _config(old_logprobs_source="sampler"), agent)
+    assert out["path"] == "token"
+    assert out["old_logprobs_source"] == "recompute"
+    assert out["off_policy"] is False
+
+
+def test_explicit_inner_update_snapshot_wins_over_sampler_source():
+    model = _tiny_model()
+    agent = _agent(model)
+    group = _group_with_sampler_logprobs(model, shift=-0.5)
+    cfg = _config(old_logprobs_source="sampler")
+    old = lc.compute_token_old_logprobs([group], cfg, agent)
+    out = lc.compute_grpo_loss(
+        [group], cfg, agent, 0.0, 0, lambda m, n: None, old_logprobs=old
+    )
+    assert out["old_logprobs_source"] == "snapshot"
+    assert out["ratio_mean"] == pytest.approx(1.0, abs=1e-4)

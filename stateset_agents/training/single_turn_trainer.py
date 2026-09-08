@@ -288,6 +288,17 @@ class SingleTurnGRPOTrainer:
 
         self.optimizer.zero_grad(set_to_none=True)
         self.global_step += 1
+        self._sync_rollout_backend()
+
+    def _sync_rollout_backend(self) -> None:
+        """Keep an attached rollout engine on-policy after an optimizer step
+        (see ``MultiTurnGRPOTrainer._sync_rollout_backend``)."""
+        self.last_rollout_sync = None
+        if not bool(getattr(self.config, "rollout_sync", True)):
+            return
+        sync = getattr(self.agent, "sync_rollout_backend", None)
+        if callable(sync):
+            self.last_rollout_sync = bool(sync())
 
     def _setup_scheduler(self, num_training_steps: int) -> None:
         """Set up learning rate scheduler."""

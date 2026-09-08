@@ -235,6 +235,61 @@ def compute_token_old_logprobs(
     return snapshots
 
 
+def sampler_old_logprobs(trajectory_groups: list[Any], device: Any) -> list[Any] | None:
+    """The log-probs recorded at sampling time (``sampler_log_probs`` on each
+    assistant turn), laid out like :func:`_forward_token_rows` output: one
+    ``[rows, width-1]`` tensor per non-empty group with response token ``k``
+    of a row at column ``len(prompt) - 1 + k`` and zeros elsewhere.
+
+    Returns ``None`` when any row lacks sampler log-probs; raises when a row's
+    log-probs disagree in length with its token ids (corrupt metadata, never
+    silently misaligned).
+    """
+    torch = require_torch()
+    groups = [g for g in trajectory_groups if getattr(g, "trajectories", None)]
+    out: list[Any] = []
+    for group in groups:
+        rows = _token_rows_for_group(group)
+        if rows is None:
+            return None
+        per_row: list[list[float]] = []
+        for turn in _assistant_turns(group):
+            md = turn.get("metadata") if isinstance(turn, dict) else turn.metadata
+            lp = (md or {}).get("sampler_log_probs")
+            if lp is None:
+                return None
+            per_row.append([float(x) for x in lp])
+        if len(per_row) != len(rows):
+            return None
+        width = max(len(p) + len(r) for p, r, _ in rows)
+        tensor = torch.zeros(len(rows), width - 1, dtype=torch.float32, device=device)
+        for i, ((p, r, _), lp) in enumerate(zip(rows, per_row, strict=True)):
+            if len(lp) != len(r):
+                raise ValueError(
+                    f"sampler_log_probs has {len(lp)} entries for {len(r)} response "
+                    "tokens; rollout metadata is corrupt"
+                )
+            start = len(p) - 1
+            tensor[i, start : start + len(r)] = torch.tensor(lp, dtype=torch.float32)
+        out.append(tensor)
+    return out or None
+
+
+def _assistant_turns(group: Any) -> list[Any]:
+    """Assistant turns of ``group`` in :func:`_token_rows_for_group` row order."""
+    turns: list[Any] = []
+    for trajectory in getattr(group, "trajectories", []):
+        for turn in getattr(trajectory, "turns", []):
+            role = (
+                turn.get("role")
+                if isinstance(turn, dict)
+                else getattr(turn, "role", None)
+            )
+            if role == "assistant":
+                turns.append(turn)
+    return turns
+
+
 def _compute_token_path_loss(
     trajectory_groups: list[Any],
     rows_per_group: list[list[tuple[list[int], list[int], int]]],
@@ -267,6 +322,13 @@ def _compute_token_path_loss(
             f"old_logprobs has {len(old_logprobs)} entries for "
             f"{len(rows_per_group)} groups; snapshot and loss must see the same groups"
         )
+    old_source = "snapshot" if old_logprobs is not None else "recompute"
+    if old_logprobs is None and (
+        str(getattr(config, "old_logprobs_source", "recompute")) == "sampler"
+    ):
+        old_logprobs = sampler_old_logprobs(trajectory_groups, device)
+        if old_logprobs is not None:
+            old_source = "sampler"
     losses, kls, ents, adv_log, n_rows = [], [], [], [], 0
     ratio_means, clip_fracs = [], []
     for gi, (group, rows) in enumerate(
@@ -329,6 +391,7 @@ def _compute_token_path_loss(
         "ratio_mean": float(np.mean(ratio_means)) if ratio_means else 1.0,
         "clip_fraction": float(np.mean(clip_fracs)) if clip_fracs else 0.0,
         "off_policy": old_logprobs is not None,
+        "old_logprobs_source": old_source,
     }
 
 
