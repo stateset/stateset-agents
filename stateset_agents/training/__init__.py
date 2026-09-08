@@ -32,6 +32,7 @@ Training engines:
 import importlib
 import importlib.util
 import logging
+import sys
 from types import ModuleType
 from typing import Any
 
@@ -146,3 +147,30 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = list(PUBLIC_NAMES)
+
+
+# ``stateset_agents.training.train`` is both the public ``train()`` entry point
+# (lazily exported from ``.train``) and the submodule that defines it. When the
+# submodule is imported (``from stateset_agents.training.train import train``,
+# which the API service and CLI do), importlib binds the *module* onto this
+# package as ``train``, and every later ``from stateset_agents.training import
+# train`` would receive the module instead of the function ("'module' object is
+# not callable"). Names that are both a public export and a submodule keep the
+# export: importlib's binding is redirected to ``_<name>_module`` and normal
+# lookup falls through to ``__getattr__`` above.
+_SHADOWED_SUBMODULES = frozenset(
+    name
+    for name in _OPTIONAL_EXPORTS
+    if _OPTIONAL_EXPORTS[name][0] == f"{__name__}.{name}"
+)
+
+
+class _TrainingPackage(ModuleType):
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in _SHADOWED_SUBMODULES and isinstance(value, ModuleType):
+            super().__setattr__(f"_{name}_module", value)
+            return
+        super().__setattr__(name, value)
+
+
+sys.modules[__name__].__class__ = _TrainingPackage
