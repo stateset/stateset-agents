@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The same placeholder-prompt query derivation fixed for GSPO in `0.53.0`
+  also lived in `train_with_gspo_token` and in the auto-research loop's DAPO
+  and VAPO paths (`scenario.get("context", "Hello")`, first few scenarios
+  only, no scenario fields for the reward). All three now use
+  `queries_from_scenarios` (real prompt field, whole scenario as reward
+  context, rotation through every scenario); the token trainer accepts
+  `{"prompt", "context"}` queries and forwards the context to the reward.
+
 ## [0.53.0] - 2026-09-08 — GSPO trains on the task, and evidence fails closed on zero signal
 
 ### Added

@@ -136,7 +136,7 @@ class GSPOTokenTrainer(GSPOTrainer):
         return result.loss
 
     async def train_step_token_level(
-        self, queries: list[str], num_groups: int = 1
+        self, queries: list[str | dict[str, Any]], num_groups: int = 1
     ) -> dict[str, float]:
         """
         Execute one GSPO-token training step with token-level advantages.
@@ -161,7 +161,17 @@ class GSPOTokenTrainer(GSPOTrainer):
         all_rewards = []
         all_importance_ratios = []
 
-        for query in queries[:num_groups]:
+        for raw_query in queries[:num_groups]:
+            # A query is a prompt string or {"prompt": ..., "context": {...}};
+            # the context (gold answers, expected tools, ...) reaches the reward.
+            query_context: dict[str, Any] = {}
+            if isinstance(raw_query, dict):
+                query = str(raw_query.get("prompt", ""))
+                raw_context = raw_query.get("context")
+                if isinstance(raw_context, dict):
+                    query_context = dict(raw_context)
+            else:
+                query = str(raw_query)
             # Generate group of responses for this query
             group_responses = await self.generator.generate_group_responses(
                 query, self.config.num_generations
@@ -184,7 +194,7 @@ class GSPOTokenTrainer(GSPOTrainer):
                 )
                 reward_info = await self.reward_model.compute_turn_reward(
                     turn=turn,
-                    context={"user_query": query},
+                    context={"user_query": query, **query_context},
                 )
                 rewards.append(reward_info.total_reward)
 
@@ -400,14 +410,18 @@ async def train_with_gspo_token(
     agent.tokenizer = tokenizer
 
     # Generate training queries if not provided
-    if not train_queries:
-        logger.info("Generating training queries from environment scenarios...")
-        train_queries = []
-        for scenario in environment.scenarios[: config.generations_per_iteration]:
-            query = scenario.get("context", "Hello")
-            train_queries.append(query)
+    from .gspo_entrypoints import queries_from_scenarios, query_window
 
-    logger.info(f"Training with {len(train_queries)} queries")
+    queries: list[Any] = list(train_queries) if train_queries else []
+    if not queries:
+        logger.info("Generating training queries from environment scenarios...")
+        queries = list(queries_from_scenarios(environment.scenarios))
+    queries_per_iteration = max(1, int(config.generations_per_iteration))
+    logger.info(
+        "Training with %s queries (%s per iteration, rotating)",
+        len(queries),
+        min(queries_per_iteration, len(queries)),
+    )
 
     # Create GSPO-token trainer
     trainer = GSPOTokenTrainer(
@@ -425,8 +439,9 @@ async def train_with_gspo_token(
         logger.info(f"=== Iteration {iteration + 1}/{config.num_outer_iterations} ===")
 
         # Train step with token-level advantages
+        window = query_window(queries, iteration, queries_per_iteration)
         metrics = await trainer.train_step_token_level(
-            queries=train_queries, num_groups=min(len(train_queries), 10)
+            queries=window, num_groups=len(window)
         )
 
         # Log metrics
