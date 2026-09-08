@@ -343,8 +343,10 @@ mlruns/
 *.orig
 *.rej
 
-# Streamed shootout run artifacts (adapters/checkpoints); evidence + report are retained
+# Streamed shootout run artifacts (adapters/checkpoints) and the launcher's raw mirror;
+# the validated copies under evidence/ + report/ are what gets retained
 benchmark_results/**/raw/runs/
+benchmark_results/framework_comparison_v*/raw/
 
 # Retained v2 framework comparison evidence (raw run artifacts stay ignored)
 !benchmark_results/framework_comparison_v2/
