@@ -417,6 +417,11 @@ def test_resume_uploads_completed_evidence_and_reuses_the_output_dir(
     )
     assert mkdir_index < launch_index
     assert (out / "stateset-agents-seed1.json").exists()  # new evidence landed too
+    # the first pod's record is kept; this pod gets its own
+    first = json.loads((out / "runpod-provider.json").read_text())
+    second = json.loads((out / "runpod-provider-2.json").read_text())
+    assert first == {"kind": "provider"}
+    assert second["status"] == "completed" and second["pod_id"] == "pod-123"
 
 
 def test_existing_output_dir_still_refused_without_resume(tmp_path: Path) -> None:

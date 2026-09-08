@@ -217,6 +217,18 @@ def build_plan(
     }
 
 
+def _provider_record_path(output_dir: Path) -> Path:
+    """``runpod-provider.json``, or ``runpod-provider-<n>.json`` when earlier
+    pods already recorded into this output dir (a resumed matrix keeps one
+    record per pod so every dollar and termination stays accounted for)."""
+    candidate = output_dir / "runpod-provider.json"
+    n = 1
+    while candidate.exists():
+        n += 1
+        candidate = output_dir / f"runpod-provider-{n}.json"
+    return candidate
+
+
 def _resumable_evidence(output_dir: Path) -> list[Path]:
     """Measured evidence files in ``output_dir`` worth carrying into a resumed
     run (top-level ``<framework>-seed<N>.json`` documents with
@@ -496,9 +508,9 @@ def execute(
                 "cleanup_lease_retained": bool(lease and lease.exists()),
             }
             try:
-                write_json_once(output_dir / "runpod-provider.json", report)
-            except (ConformanceError, OSError):
-                pass
+                write_json_once(_provider_record_path(output_dir), report)
+            except (ConformanceError, OSError) as exc:
+                print(f"provider record not written: {exc}", file=sys.stderr)
         if status == "cleanup-pending":
             raise RunPodShootoutError(
                 f"evidence was retrieved, but termination of pod {pod_id} was not "
