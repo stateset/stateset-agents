@@ -265,44 +265,55 @@ def run_implementation(
     }
     command = _format_command(implementation["command"], values)
     started = time.monotonic()
-    try:
-        completed = subprocess.run(
+    # The child's stdout/stderr stream straight into the run directory so a
+    # run in progress is observable (and downloadable) while it trains,
+    # instead of surfacing only once it exits.
+    with (
+        (run_dir / "stdout.log").open("w", encoding="utf-8") as stdout_log,
+        (run_dir / "stderr.log").open("w", encoding="utf-8") as stderr_log,
+    ):
+        process = subprocess.Popen(
             command,
             cwd=root,
-            capture_output=True,
+            stdout=stdout_log,
+            stderr=stderr_log,
             text=True,
-            check=False,
-            timeout=timeout_seconds,
             env=os.environ.copy(),
         )
-        elapsed = time.monotonic() - started
-    except subprocess.TimeoutExpired as exc:
-        elapsed = time.monotonic() - started
-        (run_dir / "failure.json").write_text(
-            json.dumps(
-                {"kind": "timeout", "elapsed_seconds": elapsed, "command": command},
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        raise ShootoutError(f"{implementation['name']} seed {seed} timed out") from exc
-    (run_dir / "stdout.log").write_text(completed.stdout, encoding="utf-8")
-    (run_dir / "stderr.log").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
+        try:
+            returncode = process.wait(timeout=timeout_seconds)
+            elapsed = time.monotonic() - started
+        except subprocess.TimeoutExpired as exc:
+            elapsed = time.monotonic() - started
+            process.kill()
+            process.wait()
+            (run_dir / "failure.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "timeout",
+                        "elapsed_seconds": elapsed,
+                        "command": command,
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            raise ShootoutError(
+                f"{implementation['name']} seed {seed} timed out"
+            ) from exc
+    if returncode != 0:
         (run_dir / "failure.json").write_text(
             json.dumps(
                 {
                     "kind": "exit",
-                    "returncode": completed.returncode,
+                    "returncode": returncode,
                     "command": command,
                 },
                 indent=2,
             ),
             encoding="utf-8",
         )
-        raise ShootoutError(
-            f"{implementation['name']} seed {seed} exited {completed.returncode}"
-        )
+        raise ShootoutError(f"{implementation['name']} seed {seed} exited {returncode}")
     if not adapter_output.exists():
         raise ShootoutError(
             f"{implementation['name']} seed {seed} wrote no adapter result"
@@ -407,6 +418,13 @@ def write_run_summary(
     destination.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _progress(message: str) -> None:
+    """One flushed, timestamped progress line (readable through a redirected
+    log while the shootout runs detached on a pod)."""
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"{stamp} {message}", flush=True)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run a measured framework shootout manifest"
@@ -448,6 +466,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         for index, seed in enumerate(seeds):
             for implementation in execution_order(manifest["implementations"], index):
                 framework = str(implementation["name"])
+                run_started = time.monotonic()
+                _progress(f"run start seed={seed} framework={framework}")
                 try:
                     evidence = run_implementation(
                         manifest,
@@ -458,6 +478,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         args.timeout_seconds,
                     )
                 except (ShootoutError, EvidenceError) as exc:
+                    _progress(
+                        f"run failed seed={seed} framework={framework} "
+                        f"elapsed={time.monotonic() - run_started:.0f}s: {exc}"
+                    )
                     attempts.append(
                         {
                             "framework": framework,
@@ -467,6 +491,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         }
                     )
                     continue
+                _progress(
+                    f"run done seed={seed} framework={framework} "
+                    f"elapsed={time.monotonic() - run_started:.0f}s"
+                )
                 attempts.append(
                     {
                         "framework": framework,

@@ -217,17 +217,40 @@ def build_plan(
     }
 
 
+def _print_progress(output_dir: Path, elapsed_s: float) -> None:
+    """One flushed status line per poll: elapsed time, evidence files landed,
+    runs started, and the newest line of the newest run's stdout."""
+    evidence = sorted(p.name for p in output_dir.glob("*.json") if p.is_file())
+    runs = sorted(p for p in (output_dir / "runs").glob("*") if p.is_dir())
+    latest = ""
+    if runs:
+        newest = max(runs, key=lambda p: p.stat().st_mtime)
+        log = newest / "stdout.log"
+        if log.is_file():
+            lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+            if lines:
+                latest = f" | {newest.name}: {lines[-1][-160:]}"
+    stamp = datetime.now(timezone.utc).strftime("%H:%M:%SZ")
+    print(
+        f"{stamp} poll elapsed={elapsed_s:.0f}s evidence={len(evidence)} "
+        f"runs_started={len(runs)}{latest}",
+        flush=True,
+    )
+
+
 def _poll_until_exit(
     ssh: Any, output_dir: Path, *, deadline_s: int, poll_s: float
 ) -> int | None:
     """Download evidence every ``poll_s`` seconds until the remote exit marker
     appears (returning its code) or ``deadline_s`` elapses (returning None)."""
     deadline = time.monotonic() + max(1, int(deadline_s))
+    started = time.monotonic()
     while True:
         try:
             ssh.download_dir(_REMOTE_OUTPUT, output_dir)
         except Exception as exc:  # transient scp failure: keep polling
-            print(f"evidence sync deferred: {exc}", file=sys.stderr)
+            print(f"evidence sync deferred: {exc}", file=sys.stderr, flush=True)
+        _print_progress(output_dir, time.monotonic() - started)
         code, text = ssh.run(f"cat {shlex.quote(_REMOTE_EXIT)} 2>/dev/null")
         if code == 0 and text.strip():
             try:
@@ -344,7 +367,7 @@ def execute(
             for i in shootout["implementations"]
         )
         run = (
-            f"cd {repo} && python benchmarks/shootout.py "
+            f"cd {repo} && python -u benchmarks/shootout.py "
             f"{shlex.quote(_REMOTE_SHOOTOUT_MANIFEST)} --root {repo} "
             f"--output-dir {shlex.quote(_REMOTE_OUTPUT)} "
             f"--timeout-seconds {int(execution['timeout_seconds'])} {required}"

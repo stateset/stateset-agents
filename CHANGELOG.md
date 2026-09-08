@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ratio corrects for a stale or numerically different rollout engine; the loss
   dict reports `old_logprobs_source` (`recompute`, `sampler`, `snapshot`).
 
+### Changed
+
+- `benchmarks/shootout.py` streams each run's stdout/stderr into its run
+  directory while the run is in progress and prints a flushed, timestamped
+  line per run start/finish; `benchmarks/runpod_shootout.py` runs the remote
+  shootout unbuffered and prints a status line per poll (elapsed, evidence
+  landed, runs started, newest run output), so a paid run is observable from
+  the launcher log instead of only after it exits.
+
 ### Fixed
 
 - `from stateset_agents.training import train` returned the

@@ -327,3 +327,44 @@ def test_lifetime_exhaustion_keeps_partial_evidence_and_terminates(
         )
     assert api.terminated == ["pod-123"]
     assert any(out.glob("stateset-agents-seed*.json"))  # partial evidence retained
+
+
+def test_poll_prints_a_progress_line_per_poll_with_newest_run_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    class _StreamingSsh(_Ssh):
+        def download_dir(self, remote: str, local: Path) -> list[Path]:
+            paths = super().download_dir(remote, local)
+            run = local / "runs" / "trl-seed42"
+            run.mkdir(parents=True, exist_ok=True)
+            (run / "stdout.log").write_text(
+                f"step {self.downloads}/200 loss=0.5\n", encoding="utf-8"
+            )
+            return paths
+
+    ssh = _StreamingSsh(polls_to_exit=3)
+    code = launcher._poll_until_exit(ssh, tmp_path, deadline_s=60, poll_s=0.01)
+    assert code == 0
+    lines = [
+        ln for ln in capsys.readouterr().out.splitlines() if " poll elapsed=" in ln
+    ]
+    assert len(lines) == 3
+    assert "evidence=3 runs_started=1 | trl-seed42: step 3/200 loss=0.5" in lines[-1]
+
+
+def test_remote_shootout_runs_unbuffered_for_live_logs(tmp_path: Path) -> None:
+    manifest = launcher.load_launcher_manifest(_write_inputs(tmp_path), tmp_path)
+    ssh = _Ssh()
+    launcher.execute(
+        manifest,
+        tmp_path / "evidence",
+        launcher.build_plan(manifest, _catalog()),
+        api=_Api(),
+        ssh=ssh,
+        public_key="ssh-ed25519 AAAA",
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_seconds=0,
+    )
+    launch = next(c for c in ssh.commands if "shootout.py" in c and "nohup" in c)
+    assert "python -u benchmarks/shootout.py" in launch
