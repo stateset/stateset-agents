@@ -232,6 +232,20 @@ def validate_adapter_result(
             raise ShootoutError(f"{source}: metrics.{field} must be numeric")
     if float(metrics["samples_processed"]) <= 0 or float(metrics["peak_vram_mb"]) <= 0:
         raise ShootoutError(f"{source}: samples_processed and peak_vram_mb must be > 0")
+    zero_fraction = metrics.get("train_reward_zero_fraction")
+    if zero_fraction is not None:
+        if isinstance(zero_fraction, bool) or not isinstance(
+            zero_fraction, (int, float)
+        ):
+            raise ShootoutError(
+                f"{source}: metrics.train_reward_zero_fraction must be numeric"
+            )
+        if float(zero_fraction) >= 1.0:
+            raise ShootoutError(
+                f"{source}: training reward was identically zero at every step, so "
+                "the policy received no learning signal; this run cannot be "
+                "compared (reward wiring is broken)"
+            )
     return dict(raw)
 
 
@@ -361,6 +375,17 @@ def run_implementation(
             "peak_vram_mb": float(adapter["metrics"]["peak_vram_mb"]),
             "eval_score_baseline": float(adapter["metrics"]["eval_score_baseline"]),
             "eval_score_final": float(adapter["metrics"]["eval_score_final"]),
+            **{
+                key: float(adapter["metrics"][key])
+                for key in (
+                    "train_reward_mean",
+                    "train_reward_std_mean",
+                    "train_reward_zero_fraction",
+                    "train_reward_steps",
+                )
+                if isinstance(adapter["metrics"].get(key), (int, float))
+                and not isinstance(adapter["metrics"].get(key), bool)
+            },
         },
         "artifact_sha256": hash_artifact(artifact_path),
     }

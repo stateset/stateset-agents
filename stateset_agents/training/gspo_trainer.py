@@ -397,6 +397,7 @@ class GSPOTrainer:
             "policy_loss": [],
             "clipping_fraction": [],
             "average_reward": [],
+            "reward_std": [],
             "sequence_importance_ratio": [],
         }
 
@@ -744,6 +745,7 @@ class GSPOTrainer:
             "policy_loss": total_loss.item(),
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
+            "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
             "sequence_importance_ratio": avg_importance_ratio,
             "learning_rate": self.scheduler.get_last_lr()[0],
         }

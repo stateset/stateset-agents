@@ -440,3 +440,19 @@ class TestEndToEndRunner:
         )
         assert result.returncode == 0, result.stderr
         assert "task=customer_support" in (result.stdout + result.stderr)
+
+
+def test_train_reward_stats_summarises_history_and_flags_zero_signal():
+    stats = runner.train_reward_stats(
+        {"average_reward": [0.0, 0.25, 0.5, 0.0], "reward_std": [0.0, 0.4, 0.3, 0.2]}
+    )
+    assert stats["train_reward_mean"] == pytest.approx(0.1875)
+    assert stats["train_reward_std_mean"] == pytest.approx(0.225)
+    assert stats["train_reward_zero_fraction"] == pytest.approx(0.25)  # only step 0
+    assert stats["train_reward_steps"] == 4.0
+    dead = runner.train_reward_stats(
+        {"average_reward": [0.0] * 5, "reward_std": [0.0] * 5}
+    )
+    assert dead["train_reward_zero_fraction"] == 1.0
+    assert runner.train_reward_stats(None) is None
+    assert runner.train_reward_stats({"average_reward": []}) is None

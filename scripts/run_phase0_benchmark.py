@@ -35,6 +35,7 @@ import logging
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -454,6 +455,30 @@ def _prompt_reward(
     return reward
 
 
+def train_reward_stats(history: Mapping[str, Any] | None) -> dict[str, float] | None:
+    """Summarise a trainer's per-step reward history into the evidence fields
+    ``train_reward_mean``, ``train_reward_std_mean`` and
+    ``train_reward_zero_fraction`` (fraction of steps whose group rewards were
+    identically zero). ``None`` when no reward history is available."""
+    if not history:
+        return None
+    rewards = [float(x) for x in (history.get("average_reward") or [])]
+    if not rewards:
+        return None
+    stds = [float(x) for x in (history.get("reward_std") or [])]
+    if len(stds) != len(rewards):
+        stds = []
+    zero_steps = sum(
+        1 for i, r in enumerate(rewards) if r == 0.0 and (not stds or stds[i] == 0.0)
+    )
+    return {
+        "train_reward_mean": sum(rewards) / len(rewards),
+        "train_reward_std_mean": (sum(stds) / len(stds)) if stds else 0.0,
+        "train_reward_zero_fraction": zero_steps / len(rewards),
+        "train_reward_steps": float(len(rewards)),
+    }
+
+
 def _attach_phase0_metadata(
     agent: Any, metrics: dict[str, list[float]], algorithm_config: dict[str, Any]
 ) -> Any:
@@ -462,6 +487,8 @@ def _attach_phase0_metadata(
     if samples:
         agent._phase0_samples_processed = int(samples[-1])
     agent._phase0_algorithm_config = algorithm_config
+    if getattr(agent, "_training_metrics", None) is None:
+        agent._training_metrics = dict(metrics)
     if getattr(agent, "generation_config", None) is None and callable(
         getattr(agent, "_build_generation_config", None)
     ):
@@ -528,7 +555,7 @@ def train_with_trainer(
         from stateset_agents.core.agent_config import AgentConfig
         from stateset_agents.core.tool_agent import ToolAgent
 
-        env, reward_fn, _ = _build_env_reward(adapter, train_examples)
+        env, reward_fn, scenarios = _build_env_reward(adapter, train_examples)
 
         # ToolAgent for tool_calling so the model sees tool descriptions.
         if adapter.name == "tool_calling":
@@ -600,12 +627,27 @@ def train_with_trainer(
                 seed=seed,
                 use_vllm=use_vllm,
             )
+            # The same task prompts the TRL path trains on, each carrying its
+            # scenario (gold_answer, expected_tool, ...) as reward context. Left
+            # to derive queries from the environment, earlier harness revisions
+            # trained native GSPO on a placeholder prompt with a reward that
+            # never saw the ground truth (identically zero, no learning).
+            gspo_queries = [
+                {
+                    "prompt": adapter.format_prompt(example),
+                    "context": {**dict(scenario), "scenario_index": index},
+                }
+                for index, (example, scenario) in enumerate(
+                    zip(train_examples, scenarios, strict=True)
+                )
+            ]
             trained = asyncio.run(
                 train_with_gspo(
                     config=cfg,
                     agent=trainer_agent,
                     environment=env,
                     reward_model=reward_fn,
+                    train_queries=gspo_queries,
                 )
             )
             trained._phase0_algorithm_config = algorithm_config
@@ -747,10 +789,9 @@ def train_with_trainer(
                     train_prompts=train_prompts,
                     config=cfg,
                     output_dir=output_dir,
-                    verifier_fn=lambda prompt, response: reward_callable(
-                        prompt, response
-                    )
-                    > 0.5,
+                    verifier_fn=lambda prompt, response: (
+                        reward_callable(prompt, response) > 0.5
+                    ),
                 )
             )
             # Wrap model+tokenizer into an Agent for the re-eval step.
@@ -821,10 +862,9 @@ def train_with_trainer(
                     train_prompts=train_prompts,
                     config=cfg,
                     output_dir=output_dir,
-                    verifier_fn=lambda prompt, response: reward_callable(
-                        prompt, response
-                    )
-                    > 0.5,
+                    verifier_fn=lambda prompt, response: (
+                        reward_callable(prompt, response) > 0.5
+                    ),
                 )
             )
             trainer_agent.model = model
@@ -1291,6 +1331,18 @@ def main() -> int:
                         args.model, adapter, eval_examples, trained_agent=trained_agent
                     )
                 result["metrics"]["post_eval_seconds"] = time.time() - t0
+                reward_stats = train_reward_stats(
+                    getattr(trained_agent, "_training_metrics", None)
+                )
+                if reward_stats is not None:
+                    result["metrics"].update(reward_stats)
+                    if reward_stats["train_reward_zero_fraction"] >= 1.0:
+                        logger.error(
+                            "Training reward was identically zero at every step: "
+                            "the policy received no learning signal (reward "
+                            "wiring is broken). The result is recorded but must "
+                            "not be read as a learning measurement."
+                        )
                 result["metrics"]["eval_pass_at_1"] = post["pass_at_1"]
                 result["metrics"]["eval_parse_rate"] = post["parse_rate"]
                 baseline = result["metrics"].get("eval_pass_at_1_baseline")
@@ -1359,6 +1411,7 @@ def main() -> int:
                                     "eval_pass_at_1_baseline"
                                 ],
                                 "eval_score_final": post["pass_at_1"],
+                                **(reward_stats or {}),
                             },
                         }
                         args.adapter_output.parent.mkdir(parents=True, exist_ok=True)

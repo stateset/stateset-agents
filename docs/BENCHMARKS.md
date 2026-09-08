@@ -210,17 +210,36 @@ direct TRL 1.9.1. All nine runs are measured and validated
 | Implementation | pass@1 before → after (mean ± std, n=3) | samples/s | wall time | peak VRAM |
 |---|---|---|---|---|
 | `stateset-agents` (TRL-backed GRPO) | 0.172 → 0.167 ± 0.024 | 0.530 | 1506 s | 3450 MiB |
-| `stateset-agents-gspo` (native GSPO) | 0.172 → 0.172 ± 0.000 | 0.492 | 1595 s | 2693 MiB |
+| `stateset-agents-gspo` (native GSPO) — **withdrawn, see below** | 0.172 → 0.172 ± 0.000 | 0.492 | 1595 s | 2693 MiB |
 | `trl` (direct) | 0.172 → 0.172 ± 0.016 | 0.566 | 1387 s | 3450 MiB |
 
-What this establishes: throughput parity within the run-to-run band
-(StateSet's TRL-backed path is 7% slower than direct TRL, native GSPO 13%
-slower with 22% less peak memory), and **no learning-quality signal for any
-implementation** at this scale — one evaluation problem is 1.6 points and
-every final score sits inside the seed spread. It does not support a
-quality claim in either direction; a protocol that can is larger (a 1.5B+
-model, hundreds of steps, a 256+ problem evaluation) and is the next
-evidence gate. Provider record: pod lifetime 4.4 h, $2.18 at $0.49/h,
+**Withdrawn row (2026-09-08).** The native-GSPO runs in this matrix (and the
+first 1.5B run of the v3 protocol) did not train on the task. At harness
+revisions up to `1ddbafd`, `train_with_gspo` derived its prompts from
+`scenario["context"]`, which GSM8K scenarios do not carry, so the trainer
+sampled the placeholder prompt "Hello" for the first four scenarios only, and
+the reward never received `gold_answer`: reward and loss were identically
+zero at every step (`training_metrics.json` in the retained run artifacts;
+`average_reward` 0.0 × 48, `policy_loss` 0.0 × 48). The identical
+before/after scores with zero seed variance are that bug, not a result, and
+the throughput and memory figures for that row were measured on a
+seven-token prompt and are not comparable either. The TRL-backed GRPO rows
+are unaffected (their retained trainer state logs non-zero reward at every
+logged step, mean 0.16–0.19); the direct TRL rows share those prompts and
+that reward function, though the adapter at that revision did not retain
+TRL's log history. The fix (task prompts with full scenario
+context, rotating through every prompt, a fail-closed check that rejects any
+run whose training reward was identically zero) is in `0.53.0`; the native
+GSPO rows are re-measured under the v3 protocol.
+
+What the remaining rows establish: throughput parity within the
+run-to-run band (StateSet's TRL-backed path is 7% slower than direct TRL),
+and **no learning-quality signal for either implementation** at this
+scale — one evaluation problem is 1.6 points and every final score sits
+inside the seed spread. It does not support a quality claim in either
+direction; a protocol that can is larger (a 1.5B+ model, hundreds of steps,
+a 256+ problem evaluation) and is the next evidence gate. Provider record:
+pod lifetime 4.4 h, $2.18 at $0.49/h,
 termination confirmed, run through
 [`benchmarks/runpod_shootout.py`](../benchmarks/runpod_shootout.py) with
 evidence streamed incrementally.

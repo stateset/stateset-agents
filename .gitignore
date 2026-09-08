@@ -357,6 +357,7 @@ benchmark_results/framework_comparison_v*/raw/
 !benchmark_results/framework_comparison_v2/accounting/
 !benchmark_results/framework_comparison_v2/accounting/*.json
 !benchmark_results/framework_comparison_v2/runpod-provider.json
+!benchmark_results/framework_comparison_v2/RETRACTION.md
 
 # Retained live vLLM rollout weight-sync check (records, provider proof, log tails)
 !benchmark_results/vllm_rollout_check/

@@ -95,10 +95,13 @@ serving, and provider claims.
 - **Measured comparisons:** two retained three-seed A40 shootouts against
   direct TRL at 0.5B (a four-step and a 48-step protocol) establish
   throughput parity within run-to-run noise (StateSet's TRL-backed GRPO 7%
-  slower, native GSPO 13% slower with 22% less peak memory) and **no
-  learning-quality signal for any implementation at that scale**
-  (see [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)). No quality superiority is
-  claimed; a larger protocol is the next evidence gate.
+  slower than direct TRL) and **no learning-quality signal for either
+  implementation at that scale** (see
+  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)). The native-GSPO rows of those
+  matrices are **withdrawn**: a harness bug trained them on a placeholder
+  prompt with a reward that never saw the ground truth (identically zero at
+  every step), fixed in `0.53.0` with a fail-closed check, and being
+  re-measured under the 1.5B v3 protocol. No quality superiority is claimed.
 - **Current Python release:** `stateset-agents==0.51.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
