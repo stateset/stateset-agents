@@ -117,7 +117,6 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             torch_dtype="bfloat16",
             temperature=1.0,
             top_p=1.0,
-            top_k=0,
             repetition_penalty=1.0,
             max_new_tokens=args.max_tokens,
             use_peft=bool(args.peft),
