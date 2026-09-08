@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -287,3 +288,54 @@ def test_accounting_is_not_an_evidence_candidate(tmp_path: Path) -> None:
     )
     assert list(tmp_path.glob("*.json")) == []
     assert (tmp_path / "_accounting" / "shootout-summary.json").is_file()
+
+
+def test_run_logs_stream_live_and_timeouts_kill_the_child(tmp_path: Path) -> None:
+    """stdout.log is written while the run is in progress (not only at exit),
+    and a run that exceeds the timeout is killed and recorded as such."""
+    root = tmp_path / "root"
+    root.mkdir()
+    output = tmp_path / "output"
+    marker = tmp_path / "started"
+    child = (
+        "import pathlib,sys,time; print('step 1', flush=True); "
+        f"pathlib.Path({str(marker)!r}).write_text('x'); time.sleep(30)"
+    )
+    implementation = {
+        "name": "stateset-agents",
+        "version": "0.42.3",
+        "command": [sys.executable, "-c", child],
+    }
+    started = time.monotonic()
+    with pytest.raises(ShootoutError, match="timed out"):
+        shootout.run_implementation(
+            _manifest(), implementation, 42, output, root, timeout_seconds=2
+        )
+    assert time.monotonic() - started < 20  # killed, not left to sleep out
+    run_dir = output / "runs" / "stateset-agents-seed42"
+    assert marker.exists()
+    assert (run_dir / "stdout.log").read_text(encoding="utf-8").startswith("step 1")
+    failure = json.loads((run_dir / "failure.json").read_text(encoding="utf-8"))
+    assert failure["kind"] == "timeout"
+
+
+def test_main_prints_flushed_progress_per_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(_manifest()), encoding="utf-8")
+    output = tmp_path / "evidence"
+
+    def fake_run(manifest, implementation, seed, output_dir, root, timeout_seconds):
+        if seed == 42 and implementation["name"] == "trl":
+            raise ShootoutError("boom")
+        return output_dir / f"{implementation['name']}-seed{seed}.json"
+
+    monkeypatch.setattr(shootout, "run_implementation", fake_run)
+    shootout.main(
+        [str(manifest_path), "--output-dir", str(output), "--root", str(tmp_path)]
+    )
+    out = capsys.readouterr().out
+    assert out.count("run start seed=") == 6
+    assert out.count("run done seed=") == 5
+    assert "run failed seed=42 framework=trl elapsed=0s: boom" in out
