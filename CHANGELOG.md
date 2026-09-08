@@ -47,6 +47,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uploaded first and `benchmarks/shootout.py` skips seed-and-framework pairs
   whose validated evidence is already present (accounted as `skipped`), so
   only the missing runs are paid for again.
+- `benchmarks/shootout_manifest_v3.json` and its L40S launcher envelopes: the
+  200-step Qwen2.5-1.5B-Instruct GSM8K protocol (800 prompts, 256-problem
+  eval, three seeds, native GSPO vs direct TRL 1.9.1) and the resume envelope
+  pinned to a harness that keeps `framework_version` matched across seeds.
+  Each pod records its own `runpod-provider[-n].json`, and a resumed download
+  moves the earlier pod's `runs/` and `_accounting/` aside instead of
+  replacing them.
+- The `npm-publish` job now says exactly why `@stateset/agents` cannot be
+  published by trusted publishing (the package does not exist on the
+  registry yet; the first version needs an npm automation token) instead of a
+  generic 404.
 
 ### Fixed
 
