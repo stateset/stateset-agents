@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `MultiTurnAgent.generate_turns(messages, n)`: sample a whole group in one
+  batched generate (HF `num_return_sequences`, or one batch of `n` prompts to
+  a rollout backend), every turn carrying the same exact token ids and
+  sampler log-probs as `generate_turn`. Native GSPO's HF path now generates
+  its group this way and takes the rollout-time sequence log-prob from the
+  sampler instead of a second forward pass per response.
+
 ### Fixed
 
 - **Native GSPO trained on a placeholder prompt with a blind reward.**
@@ -22,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the phase0 harness passes GSPO the same task prompts the TRL path uses.
   The retained v2 native-GSPO rows and the first v3 native-GSPO run are
   withdrawn (`benchmark_results/framework_comparison_v2/RETRACTION.md`).
+- **Native GSPO gated ~90% of on-policy samples to zero gradient.** The
+  old-policy log-prob came from a separate unbatched forward per response;
+  its numerical gap to the batched current pass (~4e-3 nats per token) exceeds
+  GSPO's clip band (3e-4 / 4e-4), so the trust-region gate zeroed most
+  samples even when the reward was correct (v3 seed 42: clipping fraction
+  0.93 with ratio 1.004). With `rescore_old_log_probs` (default) the old
+  log-probs are now the current forward pass, detached (the TRL convention:
+  a fresh rollout batch is exactly on-policy), and the generator's gap is
+  reported as `generation_log_prob_gap`; `rescore_old_log_probs=False` keeps
+  using the generator's numbers (importance correction against a lagging
+  engine).
 - Evidence is fail-closed on learning signal: adapters record
   `train_reward_mean`, `train_reward_std_mean`, `train_reward_zero_fraction`
   and `train_reward_steps` (StateSet trainers via the attached reward

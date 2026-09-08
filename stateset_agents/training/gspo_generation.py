@@ -4,6 +4,7 @@ Trajectory generation helpers for GSPO training.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any
 
@@ -319,7 +320,7 @@ class GSPOTrajectoryGenerator:
         the resulting old-policy log prob as an approximation that is exact
         only for stateless, system-prompt-only agents.
         """
-        responses = []
+        responses: list[tuple[str, float]] = []
 
         tokenizer = getattr(self.agent, "tokenizer", None)
         agent_config = getattr(self.agent, "config", None)
@@ -329,8 +330,34 @@ class GSPOTrajectoryGenerator:
         if getattr(self.agent, "memory_window", 0):
             self._warn_post_processing_divergence_once()
 
+        messages = [{"role": "user", "content": prompt}]
+        generate_turns = getattr(self.agent, "generate_turns", None)
+        if inspect.iscoroutinefunction(generate_turns):
+            # One batched generate for the whole group; the sampler's own
+            # per-token log-probs give the rollout-time sequence log-prob
+            # without a second forward pass.
+            turns = await generate_turns(messages, num_responses)
+            for turn in turns:
+                content = str(getattr(turn, "content", ""))
+                sampler = (getattr(turn, "metadata", None) or {}).get(
+                    "sampler_log_probs"
+                )
+                if sampler:
+                    responses.append((content, float(sum(float(x) for x in sampler))))
+                else:
+                    responses.append(
+                        (
+                            content,
+                            await self._compute_sequence_log_prob(
+                                rendered_prompt, content
+                            ),
+                        )
+                    )
+            if len(responses) == num_responses:
+                return responses
+            responses = []
+
         for _ in range(num_responses):
-            messages = [{"role": "user", "content": prompt}]
             response = await self.agent.generate_response(messages)
             log_prob = await self._compute_sequence_log_prob(rendered_prompt, response)
             responses.append((response, log_prob))
