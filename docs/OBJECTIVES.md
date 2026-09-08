@@ -194,6 +194,18 @@ forward passes, sequence-level ratio clipped at `seq_clip_ratio`, and the
 REINFORCE branch when no old log-probs exist. The loss dict reports `path`
 (`token` or `sequence`), `objective`, and `num_rows`.
 
+## Group sampling in one call
+
+`MultiTurnAgent.generate_turns(messages, n)` samples the whole group of a
+group-relative objective in one batched generate (HF `num_return_sequences`,
+or a batch of `n` prompts to the attached engine); each turn carries the same
+exact token ids and sampler log-probs as `generate_turn`. Native GSPO uses it
+for its HF path and, on a fresh rollout batch, takes its old-policy log-probs
+from the current forward pass detached (`rescore_old_log_probs`, default),
+so the sequence ratio is exactly 1 and the narrow GSPO band gates only
+genuine drift; the gap between the sampler's log-probs and that pass is
+reported as `generation_log_prob_gap`.
+
 ## Rollouts from an inference engine
 
 `MultiTurnAgent.set_rollout_backend(engine)` routes generation through any

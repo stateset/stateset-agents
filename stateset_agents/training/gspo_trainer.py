@@ -399,6 +399,7 @@ class GSPOTrainer:
             "average_reward": [],
             "reward_std": [],
             "sequence_importance_ratio": [],
+            "generation_log_prob_gap": [],
         }
 
     def compute_sequence_importance_ratio(
@@ -616,6 +617,7 @@ class GSPOTrainer:
         total_samples = 0
         all_rewards = []
         all_importance_ratios = []
+        all_generation_gaps: list[float] = []
 
         processed_groups = 0
         for query in queries[:num_groups]:
@@ -681,7 +683,26 @@ class GSPOTrainer:
                 current_log_probs,
                 sequence_lengths,
             ) = self._compute_group_sequence_log_probs(prompt, responses)
-            old_log_probs = old_log_probs.to(current_log_probs.device)
+            generation_log_probs = old_log_probs.to(current_log_probs.device)
+            if bool(getattr(self.config, "rescore_old_log_probs", True)):
+                # A fresh rollout batch is exactly on-policy: the old policy's
+                # log-probs are this same forward pass, detached (the TRL
+                # convention), so the ratio is 1 and GSPO's narrow clip band
+                # gates only genuine drift. The generator's own log-probs (a
+                # separate unbatched forward, dropout, or an engine's numerics)
+                # differ by more than the band and used to gate ~90% of
+                # on-policy samples to zero gradient.
+                old_log_probs = current_log_probs.detach()
+            else:
+                old_log_probs = generation_log_probs
+            all_generation_gaps.extend(
+                (
+                    (generation_log_probs - old_log_probs.detach()).abs()
+                    / sequence_lengths
+                )
+                .cpu()
+                .tolist()
+            )
 
             # Compute sequence importance ratios
             importance_ratios = self.compute_sequence_importance_ratio(
@@ -746,6 +767,9 @@ class GSPOTrainer:
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
+            "generation_log_prob_gap": (
+                float(np.mean(all_generation_gaps)) if all_generation_gaps else 0.0
+            ),
             "sequence_importance_ratio": avg_importance_ratio,
             "learning_rate": self.scheduler.get_last_lr()[0],
         }

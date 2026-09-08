@@ -515,6 +515,18 @@ class Agent:
         )
 
 
+#: Generation details copied onto an assistant turn's metadata when present.
+_TURN_METADATA_KEYS: tuple[str, ...] = (
+    "prompt_token_ids",
+    "token_ids",
+    "sampler_log_probs",
+    "rollout_backend",
+    "rollout_backend_version",
+    "rollout_backend_stale",
+    "rollout_backend_error",
+)
+
+
 class MultiTurnAgent(Agent):
     """
     Agent designed for multi-turn conversations
@@ -722,18 +734,176 @@ class MultiTurnAgent(Agent):
         details = await self._generate_with_model_details(prompt, context)
         content = self._finalize_response(str(details["response"]), messages)
         metadata: dict[str, Any] = {"generated": True}
-        for key in (
-            "prompt_token_ids",
-            "token_ids",
-            "sampler_log_probs",
-            "rollout_backend",
-            "rollout_backend_version",
-            "rollout_backend_stale",
-            "rollout_backend_error",
-        ):
+        for key in _TURN_METADATA_KEYS:
             if details.get(key) is not None:
                 metadata[key] = details[key]
         return ConversationTurn(role="assistant", content=content, metadata=metadata)
+
+    async def generate_turns(
+        self,
+        messages: str | list[dict[str, str]],
+        n: int,
+        context: dict[str, Any] | None = None,
+    ) -> list[ConversationTurn]:
+        """Sample ``n`` assistant turns for the same conversation in one call.
+
+        A real HF model generates them as one batch (``num_return_sequences``),
+        a rollout backend receives ``n`` copies of the prompt, and a stub backend
+        samples sequentially. Every turn carries the same token metadata as
+        :meth:`generate_turn`, so a group-relative trainer gets its whole
+        group from one forward-generate instead of ``n`` sequential ones.
+        """
+        n = int(n)
+        if n <= 0:
+            return []
+        prompt, messages = self._render_prompt(messages, context)
+        batch = await self._generate_with_model_details_batch(prompt, n, context)
+        turns: list[ConversationTurn] = []
+        for details in batch:
+            content = self._finalize_response(str(details["response"]), messages)
+            metadata: dict[str, Any] = {"generated": True}
+            for key in _TURN_METADATA_KEYS:
+                if details.get(key) is not None:
+                    metadata[key] = details[key]
+            turns.append(
+                ConversationTurn(role="assistant", content=content, metadata=metadata)
+            )
+        return turns
+
+    async def _generate_with_model_details_batch(
+        self, prompt: str, n: int, context: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        """``n`` samples of :meth:`_generate_with_model_details` in one batch
+        where the backend allows it (HF ``num_return_sequences``, engine batch
+        of ``n`` prompts); sequential otherwise."""
+        backend = getattr(self, "_rollout_backend", None)
+        if backend is not None:
+            try:
+                results = await backend.generate_with_logprobs(
+                    [prompt] * n,
+                    temperature=float(self.config.temperature),
+                    top_p=float(self.config.top_p),
+                    max_tokens=int(self.config.max_new_tokens),
+                )
+                return [
+                    {
+                        "response": self._clean_response(str(r.response)),
+                        "prompt_token_ids": [int(t) for t in r.prompt_token_ids],
+                        "token_ids": [int(t) for t in r.response_token_ids],
+                        "sampler_log_probs": [float(x) for x in r.token_logprobs],
+                        "rollout_backend": type(backend).__name__,
+                        "rollout_backend_version": self.rollout_backend_version,
+                        "rollout_backend_stale": self.rollout_backend_stale,
+                    }
+                    for r in results
+                ]
+            except Exception as e:  # noqa: BLE001 - engine failure falls back
+                logger.warning(
+                    "rollout backend %s failed for a batch of %d, falling back to "
+                    "native generation: %s",
+                    type(backend).__name__,
+                    n,
+                    e,
+                )
+        if (
+            (self._is_stub_backend and isinstance(self.model, StubModel))
+            or self.model is None
+            or self.tokenizer is None
+            or self.generation_config is None
+            or not callable(getattr(self.model, "generate", None))
+        ):
+            return [
+                await self._generate_with_model_details(prompt, context)
+                for _ in range(n)
+            ]
+
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self._effective_max_input_length(),
+        )
+        model_device = None
+        if hasattr(self.model, "parameters"):
+            try:
+                model_device = next(self.model.parameters()).device
+            except StopIteration:
+                model_device = None
+        if model_device and hasattr(inputs, "to"):
+            inputs = inputs.to(model_device)
+        try:
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    generation_config=self.generation_config,
+                    stopping_criteria=self._build_stopping_criteria(),
+                    return_dict_in_generate=True,
+                    output_scores=True,
+                    output_logits=True,
+                    num_return_sequences=n,
+                )
+            sequences = outputs.sequences
+            if not torch.is_tensor(sequences) or int(sequences.shape[0]) != n:
+                raise ValueError("batched generate returned an unexpected shape")
+        except (RuntimeError, TypeError, ValueError, AttributeError) as e:
+            logger.debug(
+                "batched generation unavailable (%s); sampling sequentially", e
+            )
+            return [
+                await self._generate_with_model_details(prompt, context)
+                for _ in range(n)
+            ]
+
+        prompt_len = int(inputs["input_ids"].shape[1])
+        prompt_ids = [int(t) for t in inputs["input_ids"][0]]
+        raw_logits = getattr(outputs, "logits", None)
+        steps = (
+            [t for t in raw_logits if torch.is_tensor(t)]
+            if isinstance(raw_logits, (tuple, list))
+            else []
+        )
+        pad_id = getattr(self.tokenizer, "pad_token_id", None)
+        eos_id = getattr(self.tokenizer, "eos_token_id", None)
+        batch: list[dict[str, Any]] = []
+        for row in range(n):
+            response_tokens = sequences[row, prompt_len:]
+            # Rows that finished early are padded to the longest row: keep
+            # everything through the first EOS and drop the padding after it.
+            length = int(response_tokens.shape[0])
+            if length and eos_id is not None:
+                hits = (response_tokens == int(eos_id)).nonzero()
+                if hits.numel():
+                    length = int(hits[0].item()) + 1
+            if pad_id is not None and pad_id != eos_id:
+                while length and int(response_tokens[length - 1]) == int(pad_id):
+                    length -= 1
+            response_tokens = response_tokens[:length]
+            text = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
+            details: dict[str, Any] = {"response": self._clean_response(text)}
+            try:
+                if steps and length:
+                    with torch.no_grad():
+                        stacked = torch.stack(steps, dim=1)[row].float()
+                        log_probs = torch.log_softmax(stacked, dim=-1)
+                        k = min(length, int(log_probs.shape[0]))
+                        picked = (
+                            log_probs[:k]
+                            .gather(-1, response_tokens[:k].unsqueeze(-1))
+                            .squeeze(-1)
+                        )
+                    details["prompt_token_ids"] = list(prompt_ids)
+                    details["token_ids"] = [int(t) for t in response_tokens[:k]]
+                    details["sampler_log_probs"] = [float(x) for x in picked]
+            except (
+                RuntimeError,
+                TypeError,
+                ValueError,
+                AttributeError,
+                IndexError,
+            ) as e:
+                logger.debug("token capture skipped for row %d: %s", row, e)
+            batch.append(details)
+        return batch
 
     def _render_prompt(
         self,
