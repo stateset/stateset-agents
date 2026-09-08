@@ -84,12 +84,13 @@ behind individual training, serving, and provider claims.
   exact generated token ids with per-token ratios, KL, entropy, and optional
   PPO-style inner updates; before `v0.50.0` they recorded no log-probs and
   trained as unclipped REINFORCE on re-tokenised text.
-- **Measured comparisons:** the retained three-seed A40 result establishes
-  parity with direct TRL at 0.5B on a four-step protocol. A 48-step
-  three-seed comparison (`benchmarks/shootout_manifest_v2.json`, run through
-  the budget-bounded [`benchmarks/runpod_shootout.py`](benchmarks/runpod_shootout.py))
-  is the next evidence gate; no learning-quality superiority is claimed until
-  its validated report is retained.
+- **Measured comparisons:** two retained three-seed A40 shootouts against
+  direct TRL at 0.5B (a four-step and a 48-step protocol) establish
+  throughput parity within run-to-run noise (StateSet's TRL-backed GRPO 7%
+  slower, native GSPO 13% slower with 22% less peak memory) and **no
+  learning-quality signal for any implementation at that scale**
+  (see [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)). No quality superiority is
+  claimed; a larger protocol is the next evidence gate.
 - **Current Python release:** `stateset-agents==0.50.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`

@@ -1,0 +1,150 @@
+{
+  "comparison": {
+    "algorithm": "grpo",
+    "algorithm_revision": "deepseekmath-grpo-v1",
+    "cache_policy": "prewarmed-model-and-dataset-v1",
+    "dataset_revision": "740312add88f781978c0658806c59bc2815b9866",
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "protocol": "stateset-trl-grpo-shootout-v2",
+    "task": "gsm8k"
+  },
+  "evidence_sha256": "b7d2741e6a725d2516f06deb2533e4625f1830d5e25280ad70260358d16cd164",
+  "frameworks": {
+    "stateset-agents": {
+      "eval_score_baseline": {
+        "mean": 0.171875,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.16666666666666666,
+        "n": 3,
+        "std": 0.023867581744561668
+      },
+      "evidence": [
+        "stateset-agents-seed1337.json",
+        "stateset-agents-seed2026.json",
+        "stateset-agents-seed42.json"
+      ],
+      "improvement": {
+        "mean": -0.005208333333333333,
+        "n": 3,
+        "std": 0.023867581744561668
+      },
+      "peak_vram_mb": {
+        "mean": 3450.4580078125,
+        "n": 3,
+        "std": 3.235534607521942
+      },
+      "samples_per_second": {
+        "mean": 0.5297636756057682,
+        "n": 3,
+        "std": 0.13251111271131547
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "0.50.0",
+      "wall_clock_seconds": {
+        "mean": 1506.1086913223069,
+        "n": 3,
+        "std": 339.6199163182505
+      }
+    },
+    "stateset-agents-gspo": {
+      "eval_score_baseline": {
+        "mean": 0.171875,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.171875,
+        "n": 3,
+        "std": 0.0
+      },
+      "evidence": [
+        "stateset-agents-gspo-seed1337.json",
+        "stateset-agents-gspo-seed2026.json",
+        "stateset-agents-gspo-seed42.json"
+      ],
+      "improvement": {
+        "mean": 0.0,
+        "n": 3,
+        "std": 0.0
+      },
+      "peak_vram_mb": {
+        "mean": 2692.6149088541665,
+        "n": 3,
+        "std": 181.64974249442562
+      },
+      "samples_per_second": {
+        "mean": 0.49249379360494183,
+        "n": 3,
+        "std": 0.08859350644073359
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "0.50.0",
+      "wall_clock_seconds": {
+        "mean": 1595.4218116104603,
+        "n": 3,
+        "std": 301.6188107523954
+      }
+    },
+    "trl": {
+      "eval_score_baseline": {
+        "mean": 0.171875,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.171875,
+        "n": 3,
+        "std": 0.015625
+      },
+      "evidence": [
+        "trl-seed1337.json",
+        "trl-seed2026.json",
+        "trl-seed42.json"
+      ],
+      "improvement": {
+        "mean": 0.0,
+        "n": 3,
+        "std": 0.015625
+      },
+      "peak_vram_mb": {
+        "mean": 3450.3955078125,
+        "n": 3,
+        "std": 3.3417134009793044
+      },
+      "samples_per_second": {
+        "mean": 0.5663483520732792,
+        "n": 3,
+        "std": 0.1092061381827096
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "1.9.1",
+      "wall_clock_seconds": {
+        "mean": 1387.3199211657047,
+        "n": 3,
+        "std": 243.50162473701312
+      }
+    }
+  },
+  "hardware": {
+    "cuda": "12.8",
+    "gpu": "NVIDIA A40",
+    "gpu_count": 1
+  },
+  "schema_version": 1
+}

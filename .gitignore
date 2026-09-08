@@ -342,3 +342,16 @@ mlruns/
 *.bak
 *.orig
 *.rej
+
+# Streamed shootout run artifacts (adapters/checkpoints); evidence + report are retained
+benchmark_results/**/raw/runs/
+
+# Retained v2 framework comparison evidence (raw run artifacts stay ignored)
+!benchmark_results/framework_comparison_v2/
+!benchmark_results/framework_comparison_v2/evidence/
+!benchmark_results/framework_comparison_v2/evidence/*.json
+!benchmark_results/framework_comparison_v2/report/
+!benchmark_results/framework_comparison_v2/report/*
+!benchmark_results/framework_comparison_v2/accounting/
+!benchmark_results/framework_comparison_v2/accounting/*.json
+!benchmark_results/framework_comparison_v2/runpod-provider.json

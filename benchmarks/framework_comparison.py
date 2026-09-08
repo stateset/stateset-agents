@@ -174,12 +174,38 @@ def validate_document(data: Mapping[str, Any], source: Path) -> RunEvidence:
     return RunEvidence(source=source, data=data)
 
 
+# Launcher-owned records that may sit next to evidence files; they are not
+# runs and are skipped when a directory is given.
+_NON_EVIDENCE_KINDS = (
+    "stateset-runpod-shootout-provider-record",
+    "stateset-runpod-conformance-provider-record",
+    "framework-shootout-accounting",
+)
+
+
+def _is_launcher_record(path: Path) -> bool:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(raw, dict) and raw.get("kind") in _NON_EVIDENCE_KINDS
+
+
 def discover_inputs(inputs: Sequence[Path]) -> list[Path]:
-    """Resolve files and directories into a deterministic JSON file list."""
+    """Resolve files and directories into a deterministic JSON file list.
+
+    Directories contribute their top-level ``*.json`` files minus launcher
+    records (provider/accounting documents identified by ``kind``); files
+    named explicitly are always included.
+    """
     paths: list[Path] = []
     for candidate in inputs:
         if candidate.is_dir():
-            paths.extend(sorted(candidate.glob("*.json")))
+            paths.extend(
+                p
+                for p in sorted(candidate.glob("*.json"))
+                if not _is_launcher_record(p)
+            )
         elif candidate.is_file():
             paths.append(candidate)
         else:
