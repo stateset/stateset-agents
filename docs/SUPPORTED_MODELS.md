@@ -113,30 +113,46 @@ See `TESTING.md` for the full stub-backend fixture catalog.
 
 ## Adding a new first-class starter
 
-The `stateset_agents/training/*_starter.py` modules are thin definition layers
-over the shared machinery in `stateset_agents/training/starter_common.py`. A
-starter module supplies only its family-specific pieces — constants
-(`<FAMILY>_BASE_MODEL`, `<FAMILY>_SUPPORTED_VARIANTS`, profile choices and
-descriptions, LoRA target modules, output dir), a `_PROFILE_OVERRIDES` table, a
-`@dataclass` config (subclassing `starter_common.StarterConfigMixin`, with
-family defaults, `_system_prompt`/`_wandb_base_tags`/`_wandb_project_default`
-class attributes), and a family-specific `validate_<family>_config` — then
-binds the public API as named wrapper functions that delegate to
-`starter_common` (`select_system_prompt`, `select_profile_overrides`,
-`resolve_starter_config`, `build_gspo_overrides`, `create_preview`,
-`load_config_file`/`write_config_file`, `run_starter_config`,
-`finetune_starter`). Keep the module-level `get_config_for_task` import in the
-starter module so test patch targets keep working, and keep wrappers as real
-`def`s with full signatures and docstrings (not `functools.partial`).
+Every `stateset_agents/training/*_starter.py` module is built from one
+`StarterSpec` by `stateset_agents/training/starter_factory.py`. A family
+module contains exactly three things:
+
+1. its constants (`<FAMILY>_BASE_MODEL`, optional `<FAMILY>_POST_TRAINED_MODEL`,
+   `<FAMILY>_TASK_CHOICES`, `<FAMILY>_STARTER_PROFILE_CHOICES`) and any extra
+   family-only constants or helpers (for example GLM's serving
+   recommendations);
+2. a hand-written `validate_<family>_config(config) -> list[str]` holding the
+   family's warning rules (learning-rate bounds, batch limits, model-name
+   checks, required quantization, and so on);
+3. a `SPEC = StarterSpec(...)` carrying the data that varies between families
+   (labels, symbol prefix and function infix, base model and variants, LoRA
+   targets, profile descriptions and overrides, the system-prompt intro, the
+   config defaults that differ from the shared ones, optional extra config
+   fields such as `use_vllm`, W&B tags, and agent-config kwargs), followed by
+   `globals().update(build_starter(SPEC, logger))` and
+   `__all__ = starter_all(_SYMBOLS)`.
+
+`build_starter` generates the public contract every family shares: the
+constants above plus `<FAMILY>_SUPPORTED_VARIANTS`,
+`<FAMILY>_STARTER_PROFILE_DESCRIPTIONS`, `<FAMILY>_DEFAULT_OUTPUT_DIR`,
+`<FAMILY>_LORA_TARGET_MODULES`, `<FAMILY>_CONFIG_SUFFIXES`; the config
+dataclass (a `StarterConfigMixin` subclass with the canonical field order);
+`get_<family>_system_prompt`, `get_<family>_profile_overrides`,
+`get_<family>_profile_description`, `summarize_<family>_config`,
+`describe_<family>_starter_profiles`, `get_<family>_config`,
+`create_<family>_agent_config`, `get_<family>_gspo_overrides`,
+`get_<family>_gspo_config`, `create_<family>_preview`,
+`load_<family>_config_file`, `write_<family>_config_file`,
+`run_<run_suffix>_config`, and `finetune_<run_suffix>`. Keep the module-level
+`get_config_for_task` import (tests patch it on the family module).
+`tests/unit/test_starter_factory.py` enforces this contract for every family
+registered in `core/model_presets.py`.
 
 To propose a new first-class starter:
 
-1. Create `stateset_agents/training/<family>_starter.py` following the thin
-   pattern above (copy an existing starter, e.g. `kimi_k3_starter.py`),
-   exporting `<FAMILY>_BASE_MODEL`, `<FAMILY>_SUPPORTED_VARIANTS`, profile
-   catalog, `get_<family>_config`, `create_<family>_preview`,
-   `run_<family>_config`, `write_<family>_config_file`,
-   `load_<family>_config_file`.
+1. Create `stateset_agents/training/<family>_starter.py` with its constants,
+   `validate_<family>_config`, and a `StarterSpec` (copy an existing spec,
+   e.g. `kimi_k3_starter.py`); the factory generates the rest.
 2. Wire it into `stateset_agents/training/__init__.py` lazy-import map.
 3. Add a `@app.command("<family>-short-name")` in `stateset_agents/cli.py`.
 4. Ship `examples/finetune_<family>_gspo.py` + `docs/<family>_starter.rst`.

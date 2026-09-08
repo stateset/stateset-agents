@@ -10,9 +10,9 @@ This module provides exhaustive tests for all API components including:
 - Integration tests
 """
 
-import asyncio
 import os
 import time
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -202,17 +202,32 @@ class TestDistributedCache:
         assert await cache.exists("key1") is False
 
     @pytest.mark.asyncio
-    async def test_memory_cache_expiration(self):
-        """Test memory cache TTL expiration."""
-        from stateset_agents.api.distributed_cache import CacheConfig, MemoryCache
+    async def test_memory_cache_expiration(self, monkeypatch):
+        """Test memory cache TTL expiration.
 
-        config = CacheConfig(default_ttl_seconds=0.05)
-        cache = MemoryCache(config)
+        Drives the module's wall clock instead of sleeping: a 50 ms TTL with
+        a 60 ms sleep is flaky on Windows' ~16 ms timer resolution.
+        """
+        from stateset_agents.api import distributed_cache as dc
 
-        await cache.set("expiring", "value", ttl=0.05)
+        clock = {"now": 1_000_000.0}
+        monkeypatch.setattr(
+            dc,
+            "time",
+            SimpleNamespace(
+                time=lambda: clock["now"],
+                monotonic=dc.time.monotonic,
+                sleep=dc.time.sleep,
+            ),
+        )
+        config = dc.CacheConfig(default_ttl_seconds=5)
+        cache = dc.MemoryCache(config)
+
+        await cache.set("expiring", "value", ttl=5)
+        clock["now"] += 4.9
         assert await cache.get("expiring") == "value"
 
-        await asyncio.sleep(0.06)
+        clock["now"] += 0.2  # now past the 5 s TTL
         assert await cache.get("expiring") is None
 
     @pytest.mark.asyncio

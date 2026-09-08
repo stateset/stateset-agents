@@ -183,6 +183,11 @@ class TrainingConfig:
     # ``{"clip_high": 0.3, "is_cap": 3.0}``. See docs/OBJECTIVES.md.
     objective: str | None = None
     objective_overrides: dict[str, Any] | None = None
+    # Inner optimizer updates per rollout batch on the GRPO trainers' token
+    # path (PPO/DAPO-style mini-epochs). 1 keeps the on-policy single update;
+    # above 1 the old policy's per-token log-probs are frozen once and each
+    # update re-evaluates the clipped objective against them.
+    num_gradient_updates: int = 1
 
     def __post_init__(self):
         # Map compatibility aliases
@@ -330,6 +335,9 @@ class TrainingConfig:
                     f"objective '{self.objective}' is not a known preset; "
                     f"expected one of: {', '.join(sorted(OBJECTIVES))}"
                 )
+
+        if int(self.num_gradient_updates) < 1:
+            warnings.append("num_gradient_updates must be >= 1")
 
         # Continual learning checks
         valid_strategies = {

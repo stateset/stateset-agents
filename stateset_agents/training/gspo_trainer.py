@@ -324,6 +324,10 @@ class GSPOModelManager(SharedModelManager):
 
 
 class GSPOTrainer:
+    #: Preset evaluated when ``config.objective`` is unset; the token variant
+    #: overrides this instead of reassigning ``_objective`` after ``__init__``.
+    _native_objective = "gspo"
+
     """
     Group Sequence Policy Optimization trainer
 
@@ -351,7 +355,7 @@ class GSPOTrainer:
         # clip, k3 KL on sequence log-probs) as one declarative PolicyObjective.
         self._objective = objectives.resolve_objective(
             config,
-            "gspo",
+            self._native_objective,
             kl_coef=float(config.beta),
             max_completion_length=int(config.max_completion_length),
             supported_ratios=("sequence", "sequence_token"),

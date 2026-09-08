@@ -3988,6 +3988,11 @@
               "default": null,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "objective_overrides"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "num_gradient_updates"
             }
           ]
         }

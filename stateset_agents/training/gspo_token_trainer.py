@@ -41,6 +41,8 @@ class GSPOTokenTrainer(GSPOTrainer):
     - This ensures clipping is still sequence-level while advantages can be token-level
     """
 
+    _native_objective = "gspo_token"
+
     def __init__(
         self,
         config: GSPOConfig,
@@ -57,16 +59,6 @@ class GSPOTokenTrainer(GSPOTrainer):
 
         # Override config flag
         self.config.use_gspo_token = True
-        # GSPO-token: stop-gradient sequence ratio, gradient through tokens.
-        self._objective = objectives.resolve_objective(
-            config,
-            "gspo_token",
-            kl_coef=float(config.beta),
-            max_completion_length=int(config.max_completion_length),
-            supported_ratios=("sequence", "sequence_token"),
-            clip_low=float(config.clip_range_left),
-            clip_high=float(config.clip_range_right),
-        )
 
     def compute_token_importance_ratio(
         self,
