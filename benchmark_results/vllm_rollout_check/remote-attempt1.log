@@ -1,0 +1,90 @@
+ 0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]WARNING 09-08 20:25:07 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _topk_log_softmax_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 77.29it/s, est. speed input: 3756.86 toks/s, output: 77.67 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 74.56it/s, est. speed input: 3756.86 toks/s, output: 77.67 toks/s]
+
+Rendering prompts:   0%|          | 0/1 [00:00<?, ?it/s]
+Rendering prompts: 100%|██████████| 1/1 [00:00<00:00, 2847.46it/s]
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 109.12it/s, est. speed input: 4887.95 toks/s, output: 109.95 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 103.01it/s, est. speed input: 4887.95 toks/s, output: 109.95 toks/s]
+
+Rendering prompts:   0%|          | 0/1 [00:00<?, ?it/s]
+Rendering prompts: 100%|██████████| 1/1 [00:00<00:00, 3401.71it/s]
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 122.45it/s, est. speed input: 4815.79 toks/s, output: 123.00 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 118.10it/s, est. speed input: 4815.79 toks/s, output: 123.00 toks/s]
+
+Rendering prompts:   0%|          | 0/1 [00:00<?, ?it/s]
+Rendering prompts: 100%|██████████| 1/1 [00:00<00:00, 3945.72it/s]
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 108.43it/s, est. speed input: 6795.41 toks/s, output: 109.16 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 106.08it/s, est. speed input: 6795.41 toks/s, output: 109.16 toks/s]
+rollout backend VLLMGenerator weight sync failed; rollouts are stale: QKVParallelLinear has no attribute `base_layer`
+
+Rendering prompts:   0%|          | 0/1 [00:00<?, ?it/s]
+Rendering prompts: 100%|██████████| 1/1 [00:00<00:00, 1716.16it/s]
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 110.67it/s, est. speed input: 5343.20 toks/s, output: 111.00 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 107.51it/s, est. speed input: 5343.20 toks/s, output: 111.00 toks/s]
+
+Rendering prompts:   0%|          | 0/1 [00:00<?, ?it/s]
+Rendering prompts: 100%|██████████| 1/1 [00:00<00:00, 4068.19it/s]
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 128.62it/s, est. speed input: 5709.71 toks/s, output: 129.24 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 123.60it/s, est. speed input: 5709.71 toks/s, output: 129.24 toks/s]
+
+Rendering prompts:   0%|          | 0/1 [00:00<?, ?it/s]
+Rendering prompts: 100%|██████████| 1/1 [00:00<00:00, 4128.25it/s]
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 132.11it/s, est. speed input: 5198.56 toks/s, output: 132.73 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 127.27it/s, est. speed input: 5198.56 toks/s, output: 132.73 toks/s]
+
+Rendering prompts:   0%|          | 0/1 [00:00<?, ?it/s]
+Rendering prompts: 100%|██████████| 1/1 [00:00<00:00, 4194.30it/s]
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 126.70it/s, est. speed input: 7924.87 toks/s, output: 127.29 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 122.29it/s, est. speed input: 7924.87 toks/s, output: 127.29 toks/s]
+
+Rendering prompts:   0%|          | 0/1 [00:00<?, ?it/s]
+Rendering prompts: 100%|██████████| 1/1 [00:00<00:00, 1201.81it/s]
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 39.39it/s, est. speed input: 1784.81 toks/s, output: 118.56 toks/s]
+Processed prompts: 100%|██████████| 1/1 [00:00<00:00, 38.63it/s, est. speed input: 1784.81 toks/s, output: 118.56 toks/s]
+{
+  "verdict": {
+    "sync_succeeded": false,
+    "after_sync_within_tolerance": false,
+    "step_moved_policy_and_sync_moved_engine": false,
+    "post_sync_turn_from_engine": false,
+    "tolerance_max_abs": 0.5155134201049805,
+    "passed": false
+  },
+  "gaps_nats": {
+    "engine_vs_policy_before_step": {
+      "max_abs": 0.17183780670166016,
+      "mean_abs": 0.036640953295347806,
+      "tokens": 31.0
+    },
+    "engine_vs_policy_after_step_before_sync": {
+      "max_abs": 3.878854751586914,
+      "mean_abs": 0.617736974193723,
+      "tokens": 31.0
+    },
+    "engine_vs_policy_after_sync": {
+      "max_abs": 3.878854751586914,
+      "mean_abs": 0.617736974193723,
+      "tokens": 31.0
+    }
+  }
+}
+[rank0]:[W908 20:25:10.447848889 ProcessGroupNCCL.cpp:1624] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+peft=1

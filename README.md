@@ -68,14 +68,15 @@ measurable.
 
 ### Current verification status
 
-The `v0.50.0` release tree completed its local full suite on **2026-09-05**
-with **5,424 passed and 18 skipped**, plus clean Ruff, Black, isort, mypy,
-stable-API-contract, release-governance, repository-hygiene, and pre-commit
-gates; its release pull request runs the same 17 remote checks (Linux Python
-3.10–3.13, Windows 3.10/3.13, CodeQL, dependency and secret scanning,
-package-readiness, docs, Helm, Node client) that the `v0.49.0` release
-passed. See the retained [proof ledger](docs/PROOFS.md) for the evidence
-behind individual training, serving, and provider claims.
+The `v0.51.0` release tree completed its local full suite on **2026-09-08**
+with **5,508 passed and 19 skipped** (unit, integration, and API suites under
+xdist), plus clean Ruff, Black, isort, mypy, stable-API-contract,
+release-governance, repository-hygiene, and pre-commit gates; its release pull
+request passed the same 14 required remote checks (Linux Python 3.10–3.13,
+Windows 3.10/3.13, CodeQL, dependency and secret scanning, package-readiness,
+docs, Helm, security) as `v0.50.0`. See the retained
+[proof ledger](docs/PROOFS.md) for the evidence behind individual training,
+serving, and provider claims.
 
 - **RL objectives:** every native trainer evaluates one declarative
   [`PolicyObjective`](docs/OBJECTIVES.md); the eleven presets are verified by
@@ -84,6 +85,13 @@ behind individual training, serving, and provider claims.
   exact generated token ids with per-token ratios, KL, entropy, and optional
   PPO-style inner updates; before `v0.50.0` they recorded no log-probs and
   trained as unclipped REINFORCE on re-tokenised text.
+- **Engine rollouts stay on-policy:** `MultiTurnAgent.set_rollout_backend`
+  samples through vLLM, the trainers push the policy's weights into the engine
+  after every optimizer step, and `old_logprobs_source="sampler"` importance-
+  corrects rollouts from a lagging engine. Proven live on vLLM 0.28 / A40 for
+  full weights and a LoRA adapter: the engine-vs-policy log-prob gap of the
+  sampled tokens returns to bf16 noise after the sync (retained in
+  [`benchmark_results/vllm_rollout_check/`](benchmark_results/vllm_rollout_check/README.md)).
 - **Measured comparisons:** two retained three-seed A40 shootouts against
   direct TRL at 0.5B (a four-step and a 48-step protocol) establish
   throughput parity within run-to-run noise (StateSet's TRL-backed GRPO 7%
@@ -91,7 +99,7 @@ behind individual training, serving, and provider claims.
   learning-quality signal for any implementation at that scale**
   (see [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)). No quality superiority is
   claimed; a larger protocol is the next evidence gate.
-- **Current Python release:** `stateset-agents==0.50.0`, published from the
+- **Current Python release:** `stateset-agents==0.51.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/); its first npm registry

@@ -218,8 +218,14 @@ vLLM has used across V0/V1; `VLLMConfig.in_process_weight_sync` keeps the V1
 engine core in this process so there is a model object to reach).
 `benchmarks/vllm_rollout_check.py` is the live proof: it samples through the
 engine, takes real GRPO steps, and records the engine-vs-policy log-prob gap
-before the step, after it, and after the sync, with versions and hardware
-(`benchmark_results/vllm_rollout_check/`).
+before the step, after it, and after the sync, with versions and hardware.
+Retained on vLLM 0.28 / NVIDIA A40 / Qwen2.5-0.5B-Instruct
+(`benchmark_results/vllm_rollout_check/`): full weights 0.17 → 43.0 → 0.29
+nats (max over the sampled tokens; the large middle number is three Adam
+steps at lr 5e-4 on all weights), LoRA r=8 0.17 → 3.88 → 0.10 nats, one
+sync each, and the first LoRA attempt caught a real bug (PEFT's
+`.base_layer` names) that the stale-reporting path surfaced instead of
+hiding.
 Every turn records `rollout_backend_version` (successful syncs so far) and
 `rollout_backend_stale`. A backend without `sync_weights`, or a sync that
 raises, is reported once as stale rather than silently sampling from an old

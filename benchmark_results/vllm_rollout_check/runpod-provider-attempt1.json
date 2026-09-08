@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-runpod-vllm-check-provider-record",
+  "pod_id": "e7aq6pqpaz8eh8",
+  "gpu": "NVIDIA A40",
+  "container_image": "runpod/pytorch:1.1.0-cu1290-torch271-ubuntu2204",
+  "harness_revision": "e5a7bbbf37f0a821e567a690a7f8d4df63bcd203",
+  "cost_per_hr_usd": 0.49,
+  "pod_lifetime_seconds": 797.6,
+  "estimated_cost_usd": 0.1086,
+  "status": "completed",
+  "termination_confirmed": true
+}
