@@ -339,3 +339,84 @@ def test_main_prints_flushed_progress_per_run(
     assert out.count("run start seed=") == 6
     assert out.count("run done seed=") == 5
     assert "run failed seed=42 framework=trl elapsed=0s: boom" in out
+
+
+def test_main_skips_pairs_whose_evidence_is_already_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """A resumed matrix reruns only the missing seed/framework pairs."""
+    root = tmp_path / "root"
+    root.mkdir()
+    output = tmp_path / "evidence"
+    adapter_code = (
+        "import json,pathlib,sys; out=pathlib.Path(sys.argv[1]); "
+        "artifact=pathlib.Path(sys.argv[2]); (artifact/'weights').write_bytes(b'x'); "
+        "out.write_text(json.dumps({'status':'completed','measured':True,"
+        "'artifact_path':str(artifact),'hardware':{'gpu':'NVIDIA H100',"
+        "'gpu_count':1,'cuda':'12.8'},'metrics':{'samples_processed':10,"
+        "'peak_vram_mb':100,'eval_score_baseline':0.2,'eval_score_final':0.3},"
+        "'config_sha256':sys.argv[3],'framework_version':'0.42.3'}))"
+    )
+    implementation = {
+        "name": "stateset-agents",
+        "version": "0.42.3",
+        "command": [
+            sys.executable,
+            "-c",
+            adapter_code,
+            "{adapter_output}",
+            "{artifact_dir}",
+            shootout.canonical_digest(_manifest()["config"]),
+            # protocol placeholders the manifest loader insists on
+            "{seed}",
+            "{model}",
+            "{model_revision}",
+            "{dataset_revision}",
+            "{task}",
+            "{config_json}",
+        ],
+    }
+    manifest = _manifest(
+        implementations=[implementation, _manifest()["implementations"][1]]
+    )
+    monkeypatch.setattr(shootout, "git_commit", lambda _root: "c" * 40)
+    # a real earlier run left validated evidence for (stateset-agents, 42)
+    shootout.run_implementation(
+        manifest, implementation, 42, output, root, timeout_seconds=10
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    calls: list[tuple[str, int]] = []
+
+    def fake_run(manifest, implementation, seed, output_dir, root, timeout_seconds):
+        calls.append((implementation["name"], seed))
+        return output_dir / f"{implementation['name']}-seed{seed}.json"
+
+    monkeypatch.setattr(shootout, "run_implementation", fake_run)
+    assert (
+        shootout.main(
+            [str(manifest_path), "--output-dir", str(output), "--root", str(root)]
+        )
+        == 0
+    )
+    assert ("stateset-agents", 42) not in calls and len(calls) == 5
+    out = capsys.readouterr().out
+    assert "run skipped seed=42 framework=stateset-agents" in out
+    assert "wrote 5 measured evidence documents (1 already present)" in out
+    summary = json.loads((output / "_accounting" / "shootout-summary.json").read_text())
+    assert summary["attempted"] == 6
+    assert summary["completed"] == 5 and summary["skipped"] == 1
+    assert summary["failed"] == 0
+    assert summary["attempts"][0]["status"] == "skipped"
+
+
+def test_existing_evidence_fails_closed_on_a_corrupt_file(tmp_path: Path) -> None:
+    implementation = _manifest()["implementations"][0]
+    path = tmp_path / "stateset-agents-seed42.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ShootoutError, match="unreadable"):
+        shootout.existing_evidence(tmp_path, implementation, 42)
+    path.write_text(json.dumps({"measured": True}), encoding="utf-8")
+    with pytest.raises((ShootoutError, shootout.EvidenceError)):
+        shootout.existing_evidence(tmp_path, implementation, 42)
+    assert shootout.existing_evidence(tmp_path, implementation, 1337) is None

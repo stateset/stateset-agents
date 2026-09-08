@@ -368,3 +368,99 @@ def test_remote_shootout_runs_unbuffered_for_live_logs(tmp_path: Path) -> None:
     )
     launch = next(c for c in ssh.commands if "shootout.py" in c and "nohup" in c)
     assert "python -u benchmarks/shootout.py" in launch
+
+
+class _UploadSsh(_Ssh):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.uploads: list[tuple[str, str]] = []
+
+    def upload(self, local: Path, remote: str) -> None:
+        self.uploads.append((local.name, remote))
+
+
+def test_resume_uploads_completed_evidence_and_reuses_the_output_dir(
+    tmp_path: Path,
+) -> None:
+    manifest = launcher.load_launcher_manifest(_write_inputs(tmp_path), tmp_path)
+    plan = launcher.build_plan(manifest, _catalog())
+    out = tmp_path / "evidence"
+    out.mkdir()
+    (out / "trl-seed42.json").write_text(
+        json.dumps({"measured": True, "framework": "trl", "seed": 42})
+    )
+    (out / "trl-seed1337.json").write_text("{not json")  # ignored, not uploaded
+    (out / "runpod-provider.json").write_text(json.dumps({"kind": "provider"}))
+    (out / "runs").mkdir()
+    ssh = _UploadSsh()
+    launcher.execute(
+        manifest,
+        out,
+        plan,
+        api=_Api(),
+        ssh=ssh,
+        public_key="ssh-ed25519 AAAA",
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_seconds=0,
+        resume=True,
+    )
+    evidence_uploads = [u for u in ssh.uploads if u[0].endswith(".json")]
+    assert evidence_uploads == [
+        ("trl-seed42.json", f"{launcher._REMOTE_OUTPUT}/trl-seed42.json")
+    ]
+    mkdir_index = next(
+        i for i, c in enumerate(ssh.commands) if c.startswith("mkdir -p ")
+    )
+    launch_index = next(
+        i for i, c in enumerate(ssh.commands) if "nohup" in c and "shootout.py" in c
+    )
+    assert mkdir_index < launch_index
+    assert (out / "stateset-agents-seed1.json").exists()  # new evidence landed too
+
+
+def test_existing_output_dir_still_refused_without_resume(tmp_path: Path) -> None:
+    manifest = launcher.load_launcher_manifest(_write_inputs(tmp_path), tmp_path)
+    out = tmp_path / "evidence"
+    out.mkdir()
+    with pytest.raises(launcher.RunPodShootoutError, match="--resume"):
+        launcher.execute(
+            manifest,
+            out,
+            launcher.build_plan(manifest, _catalog()),
+            api=_Api(),
+            ssh=_Ssh(),
+            public_key="ssh-ed25519 AAAA",
+            lease_dir=tmp_path / "leases",
+            ledger_path=tmp_path / "ledger.jsonl",
+        )
+
+
+def test_cli_accepts_resume_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(launcher, "fetch_catalog", lambda: _catalog())
+    monkeypatch.setattr(launcher, "RunPodApi", lambda key: _Api())
+    monkeypatch.setattr(launcher, "SshTransport", lambda key_path=None: _Ssh())
+    monkeypatch.setattr(
+        launcher, "_public_key", lambda path: ("ssh-ed25519 AAAA", None)
+    )
+    monkeypatch.setattr(
+        launcher, "execute", lambda *a, **kw: seen.update(kw) or (tmp_path / "x")
+    )
+    monkeypatch.setenv("RUNPOD_API_KEY", "k")
+    code = launcher.main(
+        [
+            str(_write_inputs(tmp_path)),
+            "--root",
+            str(tmp_path),
+            "--execute",
+            "--confirm-max-cost-usd",
+            "1.0",
+            "--output-dir",
+            str(tmp_path / "evidence"),
+            "--resume",
+        ]
+    )
+    assert code == 0 and seen["resume"] is True
