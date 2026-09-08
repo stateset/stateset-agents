@@ -187,6 +187,40 @@ The run is retained as evidence only once the report validator accepts every
 per-seed document; the launcher's `runpod-provider.json` records the pod,
 authoritative price, lifetime, and termination confirmation.
 
+### 48-step three-framework comparison (v2 protocol)
+
+A second three-seed RunPod shootout on one NVIDIA A40 (CUDA 12.8) ran the
+`stateset-trl-grpo-shootout-v2` protocol: the same pinned
+Qwen2.5-0.5B-Instruct and GSM8K revisions, 48 training steps over 192
+prompts with 4 generations each, and a 64-problem held-out evaluation, for
+three implementations: StateSet's TRL-backed GRPO orchestration (`stateset-agents`
+0.50.0), StateSet's native GSPO trainer (`stateset-agents-gspo` 0.50.0), and
+direct TRL 1.9.1. All nine runs are measured and validated
+(`benchmark_results/framework_comparison_v2/`, evidence digest in the report).
+
+| Implementation | pass@1 before → after (mean ± std, n=3) | samples/s | wall time | peak VRAM |
+|---|---|---|---|---|
+| `stateset-agents` (TRL-backed GRPO) | 0.172 → 0.167 ± 0.024 | 0.530 | 1506 s | 3450 MiB |
+| `stateset-agents-gspo` (native GSPO) | 0.172 → 0.172 ± 0.000 | 0.492 | 1595 s | 2693 MiB |
+| `trl` (direct) | 0.172 → 0.172 ± 0.016 | 0.566 | 1387 s | 3450 MiB |
+
+What this establishes: throughput parity within the run-to-run band
+(StateSet's TRL-backed path is 7% slower than direct TRL, native GSPO 13%
+slower with 22% less peak memory), and **no learning-quality signal for any
+implementation** at this scale — one evaluation problem is 1.6 points and
+every final score sits inside the seed spread. It does not support a
+quality claim in either direction; a protocol that can is larger (a 1.5B+
+model, hundreds of steps, a 256+ problem evaluation) and is the next
+evidence gate. Provider record: pod lifetime 4.4 h, $2.18 at $0.49/h,
+termination confirmed, run through
+[`benchmarks/runpod_shootout.py`](../benchmarks/runpod_shootout.py) with
+evidence streamed incrementally.
+
+- [Validated report](../benchmark_results/framework_comparison_v2/report/comparison.md)
+- [Nine per-seed evidence documents](../benchmark_results/framework_comparison_v2/evidence/)
+- [Provider record](../benchmark_results/framework_comparison_v2/runpod-provider.json) and [accounting](../benchmark_results/framework_comparison_v2/accounting/shootout-summary.json)
+- Harness commit: `c52bbf175424c8d8c8372777424e1f9bf518544f` (v0.50.0)
+
 ### Single-node DDP weak and strong scaling
 
 Three matched seeds on one RunPod host with eight identical NVIDIA RTX 5080

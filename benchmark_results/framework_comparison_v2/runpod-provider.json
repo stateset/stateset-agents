@@ -1,0 +1,18 @@
+{
+  "authoritative_pod_cost_per_hr_usd": 0.49,
+  "catalog_total_cost_per_hr_usd": 0.49,
+  "cleanup_lease_retained": false,
+  "container_image": "runpod/pytorch:1.1.0-cu1290-torch271-ubuntu2204",
+  "estimated_cost_usd": 2.1757,
+  "harness_revision": "c52bbf175424c8d8c8372777424e1f9bf518544f",
+  "kind": "stateset-runpod-shootout-provider-record",
+  "manifest_sha256": "6b447e0b559e9d9b1a5125eb73cfc7f6e41727c61fd7b86a8c5358ff369177bf",
+  "pod_id": "ocdt9wdpuhuo86",
+  "pod_lifetime_seconds": 15984.521,
+  "recorded_at": "2026-09-08T17:01:45.671496+00:00",
+  "remote_exit_code": 0,
+  "schema_version": 1,
+  "shootout_manifest_sha256": "27f53635e4ecd650b49b24d5be4fb6c3a145e0be4e6a50429669ea93d29f5a8b",
+  "status": "completed",
+  "termination_confirmed": true
+}

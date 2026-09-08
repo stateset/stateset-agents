@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "kind": "framework-shootout-accounting",
+  "mode": "measured",
+  "manifest": "/workspace/shootout-manifest.json",
+  "attempted": 9,
+  "completed": 9,
+  "failed": 0,
+  "attempts": [
+    {
+      "framework": "stateset-agents",
+      "seed": 42,
+      "status": "completed",
+      "evidence": "/workspace/shootout-output/stateset-agents-seed42.json"
+    },
+    {
+      "framework": "stateset-agents-gspo",
+      "seed": 42,
+      "status": "completed",
+      "evidence": "/workspace/shootout-output/stateset-agents-gspo-seed42.json"
+    },
+    {
+      "framework": "trl",
+      "seed": 42,
+      "status": "completed",
+      "evidence": "/workspace/shootout-output/trl-seed42.json"
+    },
+    {
+      "framework": "stateset-agents-gspo",
+      "seed": 1337,
+      "status": "completed",
+      "evidence": "/workspace/shootout-output/stateset-agents-gspo-seed1337.json"
+    },
+    {
+      "framework": "trl",
+      "seed": 1337,
+      "status": "completed",
+      "evidence": "/workspace/shootout-output/trl-seed1337.json"
+    },
+    {
+      "framework": "stateset-agents",
+      "seed": 1337,
+      "status": "completed",
+      "evidence": "/workspace/shootout-output/stateset-agents-seed1337.json"
+    },
+    {
+      "framework": "trl",
+      "seed": 2026,
+      "status": "completed",
+      "evidence": "/workspace/shootout-output/trl-seed2026.json"
+    },
+    {
+      "framework": "stateset-agents",
+      "seed": 2026,
+      "status": "completed",
+      "evidence": "/workspace/shootout-output/stateset-agents-seed2026.json"
+    },
+    {
+      "framework": "stateset-agents-gspo",
+      "seed": 2026,
+      "status": "completed",
+      "evidence": "/workspace/shootout-output/stateset-agents-gspo-seed2026.json"
+    }
+  ]
+}

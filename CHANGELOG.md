@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   downloads every finished seed-and-framework evidence file incrementally, so
   a dropped launcher session cannot lose completed runs.
 
+- Retained the validated 48-step three-seed A40 comparison of StateSet's
+  TRL-backed GRPO, native GSPO, and direct TRL (`benchmark_results/framework_comparison_v2/`):
+  throughput parity, no learning-quality signal at 0.5B/48 steps.
+- `benchmarks/framework_comparison.py` skips launcher provider and accounting
+  records (by `kind`) when validating an evidence directory.
+
 ### Changed
 
 - Import-time module stubs in the test suite are scoped to the file that

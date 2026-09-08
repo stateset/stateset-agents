@@ -209,3 +209,21 @@ def test_cli_fails_closed_on_bad_input(tmp_path: Path) -> None:
     path = tmp_path / "bad.json"
     path.write_text("{}", encoding="utf-8")
     assert framework_comparison.main([str(path), "--validate-only"]) == 2
+
+
+def test_directory_discovery_skips_launcher_records(tmp_path):
+    """A RunPod provider record or accounting summary beside the evidence must
+    not be mistaken for a run (it lacks ``measured`` and would fail closed)."""
+    import json as _json
+
+    (tmp_path / "runpod-provider.json").write_text(
+        _json.dumps(
+            {"kind": "stateset-runpod-shootout-provider-record", "status": "completed"}
+        )
+    )
+    (tmp_path / "accounting.json").write_text(
+        _json.dumps({"kind": "framework-shootout-accounting", "attempted": 1})
+    )
+    (tmp_path / "trl-seed42.json").write_text(_json.dumps({"framework": "trl"}))
+    found = [p.name for p in framework_comparison.discover_inputs([tmp_path])]
+    assert found == ["trl-seed42.json"]
