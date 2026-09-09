@@ -9,7 +9,7 @@ import logging
 import os
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from stateset_agents.core.agent import Agent, AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
@@ -265,9 +265,9 @@ async def train_with_gspo(
             for cb in _callbacks
             if getattr(cb, "should_abort", False)
         ]
-        agent._training_aborted = (
+        cast(Any, agent)._training_aborted = (
             "; ".join(r for r in reasons if r) or "aborted"
-        )  # noqa: B010
+        )
     else:
         logger.info("GSPO training completed successfully.")
     setattr(agent, "_training_metrics", dict(trainer.training_metrics))  # noqa: B010
