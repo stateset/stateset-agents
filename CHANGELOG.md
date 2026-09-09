@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-09-08 — Rollouts sample in inference mode
+
 ### Fixed
 
 - **Rollouts were sampled in train mode.** Trainers put the policy in

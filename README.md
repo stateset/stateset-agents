@@ -321,7 +321,13 @@ coverage, live hardware attempts, and successful inference by provider.
   fail-closed validator runs in CI and publish readiness; independent
   third-party security review remains explicitly pending.
 
-**v0.53.0 (latest release; publication triggered by tag):**
+**v0.54.0 (latest release; publication triggered by tag):**
+
+- Rollouts are always sampled in inference mode: `MultiTurnAgent` wraps every `generate` in `core.generation_mode.inference_mode` (eval mode with the KV cache, the trainer's mode restored afterwards). Sampling in train mode with LoRA dropout and gradient checkpointing active produced garbage rollouts on a real 1.5B model, which is why every retained native-GSPO run had zero reward even after the prompt-wiring and log-prob fixes in 0.53.0.
+- `training.callbacks.ZeroSignalGuard` aborts a run whose reward stays identically zero for five consecutive steps; the phase0 harness arms it for native GSPO so a mis-wired run fails within minutes instead of burning hours of GPU.
+- The remaining placeholder-prompt query derivation in `train_with_gspo_token` and the auto-research DAPO/VAPO paths now goes through `queries_from_scenarios` as well.
+
+**v0.53.0:**
 
 - Native GSPO trained on a placeholder prompt with a blind reward: `train_with_gspo` derived queries from `scenario["context"]` (fallback "Hello"), only from the first few scenarios, and passed the reward no scenario fields, so every retained native-GSPO shootout run had identically zero reward and loss. Queries now come from the real prompt field with the whole scenario as reward context and rotate through every scenario; the phase0 harness passes GSPO the same task prompts the TRL path uses. The v2 native-GSPO rows are withdrawn (`benchmark_results/framework_comparison_v2/RETRACTION.md`).
 - Native GSPO gated ~90% of on-policy samples: the old log-prob came from a separate unbatched forward whose numerical gap to the batched current pass exceeds GSPO's clip band. The old log-probs are now the current pass detached (exactly on-policy, the TRL convention) with the gap reported as `generation_log_prob_gap`.
@@ -1963,7 +1969,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.53.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.54.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
