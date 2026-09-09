@@ -641,6 +641,11 @@ def train_with_trainer(
                     zip(train_examples, scenarios, strict=True)
                 )
             ]
+            from stateset_agents.training.callbacks import ZeroSignalGuard
+
+            # Fail closed within minutes if the run never sees a non-zero
+            # reward (mis-wired prompts, reward context, or rollout text).
+            zero_signal_guard = ZeroSignalGuard(max_zero_steps=5)
             trained = asyncio.run(
                 train_with_gspo(
                     config=cfg,
@@ -648,8 +653,15 @@ def train_with_trainer(
                     environment=env,
                     reward_model=reward_fn,
                     train_queries=gspo_queries,
+                    callbacks=[zero_signal_guard],
                 )
             )
+            if zero_signal_guard.should_abort:
+                return (
+                    None,
+                    time.time() - t0,
+                    f"aborted: {zero_signal_guard.abort_reason}",
+                )
             trained._phase0_algorithm_config = algorithm_config
             trained._phase0_samples_processed = (
                 algorithm_config["max_steps"]

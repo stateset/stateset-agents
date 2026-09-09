@@ -194,6 +194,17 @@ forward passes, sequence-level ratio clipped at `seq_clip_ratio`, and the
 REINFORCE branch when no old log-probs exist. The loss dict reports `path`
 (`token` or `sequence`), `objective`, and `num_rows`.
 
+## Rollouts are sampled in inference mode
+
+Every `MultiTurnAgent` generation runs inside
+`stateset_agents.core.generation_mode.inference_mode`: the model is put in
+eval mode with the KV cache enabled for the duration of `generate`, and the
+trainer's `train()` state is restored afterwards. Sampling in train mode with
+LoRA dropout and gradient checkpointing active produced garbage rollouts on a
+real 1.5B model (and therefore zero reward), which is how the earlier
+native-GSPO comparison rows went wrong; the guard makes that impossible for
+any trainer that samples through the agent.
+
 ## Group sampling in one call
 
 `MultiTurnAgent.generate_turns(messages, n)` samples the whole group of a

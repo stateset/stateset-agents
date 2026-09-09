@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Rollouts were sampled in train mode.** Trainers put the policy in
+  `train()` for the loss and backward pass, and agent-based generation
+  (native GSPO, the GRPO trainers) then sampled in that state; with LoRA and
+  gradient checkpointing active a PEFT model emits garbage (observed live on
+  Qwen2.5-1.5B: 34-character non-answers against correct 700-character
+  solutions from the same weights in eval mode), so every retained
+  native-GSPO rollout was garbage and its reward zero even after the prompt
+  and log-prob fixes. `MultiTurnAgent` now wraps every `generate` in
+  `core.generation_mode.inference_mode` (eval mode with the KV cache, the
+  trainer's mode restored afterwards); DAPO, VAPO and GEPO already generated
+  in eval mode.
+- `training.callbacks.ZeroSignalGuard` aborts a run whose reward is
+  identically zero for five consecutive steps, and the phase0 harness arms it
+  for native GSPO so a mis-wired run fails within minutes (recorded as
+  `train_failed` with the reason) instead of burning hours of GPU.
+
+### Fixed
+
 - The same placeholder-prompt query derivation fixed for GSPO in `0.53.0`
   also lived in `train_with_gspo_token` and in the auto-research loop's DAPO
   and VAPO paths (`scenario.get("context", "Hello")`, first few scenarios
