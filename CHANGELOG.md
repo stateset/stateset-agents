@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-09-08 — GSPO trains on the task, and evidence fails closed on zero signal
+
 ### Added
 
 - `MultiTurnAgent.generate_turns(messages, n)`: sample a whole group in one

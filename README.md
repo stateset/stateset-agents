@@ -321,7 +321,14 @@ coverage, live hardware attempts, and successful inference by provider.
   fail-closed validator runs in CI and publish readiness; independent
   third-party security review remains explicitly pending.
 
-**v0.52.0 (latest release; publication triggered by tag):**
+**v0.53.0 (latest release; publication triggered by tag):**
+
+- Native GSPO trained on a placeholder prompt with a blind reward: `train_with_gspo` derived queries from `scenario["context"]` (fallback "Hello"), only from the first few scenarios, and passed the reward no scenario fields, so every retained native-GSPO shootout run had identically zero reward and loss. Queries now come from the real prompt field with the whole scenario as reward context and rotate through every scenario; the phase0 harness passes GSPO the same task prompts the TRL path uses. The v2 native-GSPO rows are withdrawn (`benchmark_results/framework_comparison_v2/RETRACTION.md`).
+- Native GSPO gated ~90% of on-policy samples: the old log-prob came from a separate unbatched forward whose numerical gap to the batched current pass exceeds GSPO's clip band. The old log-probs are now the current pass detached (exactly on-policy, the TRL convention) with the gap reported as `generation_log_prob_gap`.
+- `MultiTurnAgent.generate_turns(messages, n)` samples a whole group in one batched generate with exact token ids and sampler log-probs; native GSPO's HF path uses it instead of sequential generation plus rescoring.
+- Evidence is fail-closed on learning signal: adapters record `train_reward_{mean,std_mean,zero_fraction,steps}` and both `benchmarks/shootout.py` and `benchmarks/framework_comparison.py` reject a run whose training reward was identically zero at every step.
+
+**v0.52.0:**
 
 - Engine rollouts stay on-policy: both GRPO trainers push the policy's weights into the attached rollout backend after every optimizer step (`TrainingConfig.rollout_sync`); turns record the policy version that sampled them, and a backend that cannot take weights is reported once as stale instead of silently sampling from an old policy. `TrainingConfig.old_logprobs_source="sampler"` importance-corrects rollouts from a lagging or numerically different engine.
 - Proven live on vLLM 0.28 / NVIDIA A40 for full weights and a LoRA adapter (`benchmark_results/vllm_rollout_check/`): the engine-vs-policy log-prob gap of the sampled tokens returns to bf16 noise after `VLLMGenerator.sync_weights`. `VLLMGenerator` finds the engine model through any vLLM layout, keeps the V1 engine core in-process, and maps PEFT's `.base_layer` weight names.
@@ -1956,7 +1963,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.52.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.53.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
