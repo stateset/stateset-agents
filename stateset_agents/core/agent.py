@@ -13,6 +13,8 @@ from collections.abc import AsyncIterator, Callable
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
 
+from stateset_agents.core.generation_mode import inference_mode
+
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
 from .trajectory import ConversationTurn
@@ -832,7 +834,7 @@ class MultiTurnAgent(Agent):
         if model_device and hasattr(inputs, "to"):
             inputs = inputs.to(model_device)
         try:
-            with torch.no_grad():
+            with inference_mode(self.model), torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
                     generation_config=self.generation_config,
@@ -1124,8 +1126,9 @@ class MultiTurnAgent(Agent):
         # Setup stopping criteria
         stopping_criteria = self._build_stopping_criteria()
 
-        # Generate
-        with torch.no_grad():
+        # Generate (always in inference mode: a trainer may have left the
+        # model in train(), which corrupts sampling with LoRA/checkpointing)
+        with inference_mode(self.model), torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
                 generation_config=self.generation_config,
