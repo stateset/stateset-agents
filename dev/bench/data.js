@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788912230979,
+  "lastUpdate": 1788912357347,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -128,6 +128,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.816600217801088e-8",
             "extra": "mean: 443.2842841706342 nsec\nrounds: 105731"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "committer": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "id": "999506de3e2c03a6bfc9a2f20a293563d4b47a3d",
+          "message": "fix: route GSPO-token and auto-research DAPO/VAPO queries through the scenario helper",
+          "timestamp": "2026-09-09T00:01:44Z",
+          "url": "https://github.com/stateset/stateset-agents/pull/77/commits/999506de3e2c03a6bfc9a2f20a293563d4b47a3d"
+        },
+        "date": 1788912354854,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8619.461570128095,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001409774361625366",
+            "extra": "mean: 116.016527466824 usec\nrounds: 1875"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9367.561241071811,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013410571616575286",
+            "extra": "mean: 106.75137042238141 usec\nrounds: 2130"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6700.228197055528,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016093079041311653",
+            "extra": "mean: 149.24864804447384 usec\nrounds: 3401"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 821.1669214780734,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000021865462926005134",
+            "extra": "mean: 1.2177792040137625 msec\nrounds: 598"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 178.2944885544249,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003621161467933462",
+            "extra": "mean: 5.608698328859151 msec\nrounds: 149"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2155513.7119188206,
+            "unit": "iter/sec",
+            "range": "stddev: 5.170602992506803e-8",
+            "extra": "mean: 463.9265315133663 nsec\nrounds: 103264"
           }
         ]
       }
