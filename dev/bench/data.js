@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788912357347,
+  "lastUpdate": 1788913041811,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -190,6 +190,72 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.170602992506803e-8",
             "extra": "mean: 463.9265315133663 nsec\nrounds: 103264"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "domsteil14@gmail.com",
+            "name": "Dom Steil",
+            "username": "domsteil"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "78cafaeddd0dea85dcf339bfee775864bcb19f8d",
+          "message": "Merge pull request #77 from stateset/fix/query-wiring-everywhere\n\nfix: route GSPO-token and auto-research DAPO/VAPO queries through the scenario helper",
+          "timestamp": "2026-09-08T17:14:24-07:00",
+          "tree_id": "e3d401902b6934f088628bdd8ba3ad6a4c6eebfe",
+          "url": "https://github.com/stateset/stateset-agents/commit/78cafaeddd0dea85dcf339bfee775864bcb19f8d"
+        },
+        "date": 1788913040133,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 11503.496609460364,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000010152898708730897",
+            "extra": "mean: 86.93009038465833 usec\nrounds: 2080"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 12177.64846322174,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008919612173457262",
+            "extra": "mean: 82.11766032006464 usec\nrounds: 2311"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8980.155308267977,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000010749321379759",
+            "extra": "mean: 111.35664870732313 usec\nrounds: 3675"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1065.6371674393372,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000020308226040858045",
+            "extra": "mean: 938.4057074538237 usec\nrounds: 711"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 268.0750389914694,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000046265330673791014",
+            "extra": "mean: 3.7302988139519457 msec\nrounds: 215"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2909789.888859253,
+            "unit": "iter/sec",
+            "range": "stddev: 3.704561071073902e-8",
+            "extra": "mean: 343.6674255514846 nsec\nrounds: 140865"
           }
         ]
       }
