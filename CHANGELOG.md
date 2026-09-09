@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `core.generation_mode.inference_mode` (eval mode with the KV cache, the
   trainer's mode restored afterwards); DAPO, VAPO and GEPO already generated
   in eval mode.
+- `training.callbacks.ZeroSignalGuard` aborts a run whose reward is
+  identically zero for five consecutive steps, and the phase0 harness arms it
+  for native GSPO so a mis-wired run fails within minutes (recorded as
+  `train_failed` with the reason) instead of burning hours of GPU.
 
 ### Fixed
 

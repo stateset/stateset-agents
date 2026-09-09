@@ -208,3 +208,39 @@ async def notify_checkpoint_saved(
                 )
                 continue
         await _dispatch_callable(callback, CHECKPOINT_SAVED_EVENT, payload)
+
+
+class ZeroSignalGuard:
+    """Abort a run whose reward is identically zero for ``max_zero_steps``
+    consecutive steps.
+
+    A group-relative objective gets no gradient from a batch whose rewards
+    are all equal, so a run that never sees a non-zero reward is not
+    training; it is burning GPU time on a mis-wired prompt, reward context,
+    or generation path. Trainers that honour ``should_abort`` (native GSPO)
+    stop within minutes instead of hours, and the reason is kept for the
+    evidence record.
+    """
+
+    def __init__(self, max_zero_steps: int = 5) -> None:
+        self.max_zero_steps = max(1, int(max_zero_steps))
+        self.zero_steps = 0
+        self.should_abort = False
+        self.abort_reason: str | None = None
+
+    def on_step_end(self, step: int, metrics: dict[str, Any]) -> None:
+        mean = float(
+            metrics.get("average_reward", metrics.get("mean_reward", 0.0)) or 0.0
+        )
+        std = float(metrics.get("reward_std", 0.0) or 0.0)
+        if mean == 0.0 and std == 0.0:
+            self.zero_steps += 1
+        else:
+            self.zero_steps = 0
+        if self.zero_steps >= self.max_zero_steps and not self.should_abort:
+            self.should_abort = True
+            self.abort_reason = (
+                f"reward identically zero for {self.zero_steps} consecutive steps "
+                f"(through step {step}): no learning signal; check prompts, reward "
+                "context and rollout text"
+            )

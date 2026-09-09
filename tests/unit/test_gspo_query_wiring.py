@@ -299,3 +299,75 @@ def test_experiment_loop_scenario_prompts_carry_reward_context():
     assert contexts["What is 2+2?"]["scenario_index"] == 0
     assert "plain prompt" not in contexts
     assert contexts["Customer needs help"]["user_responses"] == ["x"]
+
+
+def test_zero_signal_guard_trips_after_consecutive_zero_reward_steps():
+    from stateset_agents.training.callbacks import ZeroSignalGuard
+
+    guard = ZeroSignalGuard(max_zero_steps=3)
+    for step in range(2):
+        guard.on_step_end(step, {"average_reward": 0.0, "reward_std": 0.0})
+    assert guard.should_abort is False
+    guard.on_step_end(2, {"average_reward": 0.25, "reward_std": 0.4})  # signal resets
+    assert guard.zero_steps == 0
+    for step in range(3, 6):
+        guard.on_step_end(step, {"average_reward": 0.0, "reward_std": 0.0})
+    assert guard.should_abort is True
+    assert "3 consecutive steps" in (guard.abort_reason or "")
+    # all-equal non-zero rewards are not "zero signal" for this guard
+    fresh = ZeroSignalGuard(max_zero_steps=1)
+    fresh.on_step_end(0, {"average_reward": 1.0, "reward_std": 0.0})
+    assert fresh.should_abort is False
+
+
+@pytest.mark.asyncio
+async def test_train_with_gspo_aborts_on_zero_signal_guard(monkeypatch, tmp_path):
+    from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+    from stateset_agents.core.environment import ConversationEnvironment
+    from stateset_agents.training.callbacks import ZeroSignalGuard
+    from stateset_agents.training.gspo_config import GSPOConfig
+
+    steps: list[int] = []
+
+    class _ZeroTrainer:
+        def __init__(self, **kwargs):
+            self.training_metrics = {"average_reward": [], "reward_std": []}
+            self.generator = SimpleNamespace()
+
+        async def train_step(self, queries, num_groups=1):
+            steps.append(len(steps))
+            self.training_metrics["average_reward"].append(0.0)
+            self.training_metrics["reward_std"].append(0.0)
+            return {"average_reward": 0.0, "reward_std": 0.0}
+
+        def save_model(self, path):
+            return None
+
+    import stateset_agents.training.gspo_trainer as trainer_mod
+
+    monkeypatch.setattr(trainer_mod, "GSPOTrainer", _ZeroTrainer)
+    env = ConversationEnvironment(
+        scenarios=[{"user_query": "Q", "gold_answer": 1.0}], max_turns=1
+    )
+    agent = MultiTurnAgent(
+        AgentConfig(model_name="stub://x", use_stub_model=True, stub_responses=["x"])
+    )
+    await agent.initialize()
+    cfg = GSPOConfig(
+        model_name="stub://x",
+        output_dir=str(tmp_path),
+        report_to="none",
+        num_outer_iterations=50,
+        save_steps=1000,
+    )
+    guard = ZeroSignalGuard(max_zero_steps=4)
+    trained = await ep.train_with_gspo(
+        config=cfg,
+        agent=agent,
+        environment=env,
+        reward_model=_RecordingReward(),
+        callbacks=[guard],
+    )
+    assert guard.should_abort is True
+    assert len(steps) == 4  # stopped right after the guard tripped, not 50
+    assert "no learning signal" in trained._training_aborted
