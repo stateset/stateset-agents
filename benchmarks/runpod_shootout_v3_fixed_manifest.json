@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "harness_revision": "b0267c2969e1bd2d3ffad6e4ae4d433dd8fe2a8b",
+  "harness_revision": "fc3a1ebec03dac4b626fbb46f6c6d52611ce76ba",
   "shootout_manifest": "benchmarks/shootout_manifest_v3.json",
   "execution": {
     "provider": "runpod",
@@ -17,5 +17,5 @@
     "trl==1.9.1"
   ],
   "prewarm_command": "python -c \"from transformers import AutoModelForCausalLM, AutoTokenizer; from datasets import load_dataset; AutoTokenizer.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct', revision='989aa7980e4cf806f80c7fef2b1adb7bc71aa306'); AutoModelForCausalLM.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct', revision='989aa7980e4cf806f80c7fef2b1adb7bc71aa306'); load_dataset('openai/gsm8k', 'main', revision='740312add88f781978c0658806c59bc2815b9866')\"",
-  "shootout_manifest_hardware_note": "L40S re-measurement of the v3 matrix on harness 0.53.0 (GSPO trains on the task prompts with exact on-policy old log-probs, batched group sampling); run with --resume so the two valid TRL 1.9.1 runs from the first pod are kept and only native GSPO x3 + TRL seed 2026 run; 13 h timeout, 14 h lifetime"
+  "shootout_manifest_hardware_note": "L40S re-measurement of the v3 matrix on harness 0.54.0 (GSPO trains on the task prompts, samples rollouts in inference mode with batched groups, exact on-policy old log-probs, ZeroSignalGuard); run with --resume so the two valid TRL 1.9.1 runs from the first pod are kept and only native GSPO x3 + TRL seed 2026 run; 13 h timeout, 14 h lifetime"
 }
