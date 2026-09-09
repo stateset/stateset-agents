@@ -223,3 +223,79 @@ async def test_train_with_gspo_warns_when_reward_is_identically_zero(
         )
     warnings = [r for r in caplog.records if "identically zero" in r.getMessage()]
     assert len(warnings) == 1
+
+
+@pytest.mark.asyncio
+async def test_train_with_gspo_token_derives_queries_and_rotates(monkeypatch, tmp_path):
+    from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+    from stateset_agents.core.environment import ConversationEnvironment
+    from stateset_agents.training import gspo_token_trainer as tok
+    from stateset_agents.training.gspo_config import GSPOConfig
+
+    seen: list[list[Any]] = []
+
+    class _FakeTokenTrainer:
+        def __init__(self, **kwargs):
+            self.training_metrics = {"average_reward": []}
+
+        async def train_step_token_level(self, queries, num_groups=1):
+            seen.append(list(queries))
+            return {"average_reward": 1.0}
+
+        def save_model(self, path):
+            return None
+
+    class _FakeManager:
+        ref_model = None
+
+        def __init__(self, config):
+            pass
+
+        def load_model_and_tokenizer(self):
+            return object(), object()
+
+    import stateset_agents.training.gspo_trainer as gspo_trainer_mod
+
+    monkeypatch.setattr(tok, "GSPOTokenTrainer", _FakeTokenTrainer)
+    monkeypatch.setattr(gspo_trainer_mod, "GSPOModelManager", _FakeManager)
+    scenarios = [{"user_query": f"Q{i}", "gold_answer": float(i)} for i in range(5)]
+    env = ConversationEnvironment(scenarios=scenarios, max_turns=1)
+    agent = MultiTurnAgent(
+        AgentConfig(model_name="stub://x", use_stub_model=True, stub_responses=["x"])
+    )
+    await agent.initialize()
+    cfg = GSPOConfig(
+        model_name="stub://x",
+        output_dir=str(tmp_path),
+        report_to="none",
+        num_outer_iterations=2,
+        generations_per_iteration=3,
+        save_steps=100,
+    )
+    await tok.train_with_gspo_token(
+        config=cfg, agent=agent, environment=env, reward_model=_RecordingReward()
+    )
+    assert [[q["prompt"] for q in qs] for qs in seen] == [
+        ["Q0", "Q1", "Q2"],
+        ["Q3", "Q4", "Q0"],
+    ]
+    assert seen[0][0]["context"]["gold_answer"] == 0.0
+
+
+def test_experiment_loop_scenario_prompts_carry_reward_context():
+    from stateset_agents.training.auto_research.experiment_loop import AutoResearchLoop
+
+    loop = object.__new__(AutoResearchLoop)
+    loop.environment = SimpleNamespace(
+        scenarios=[
+            {"user_query": "What is 2+2?", "gold_answer": 4.0},
+            "plain prompt",
+            {"context": "Customer needs help", "user_responses": ["x"]},
+        ]
+    )
+    prompts, contexts = loop._scenario_prompts_and_contexts()
+    assert prompts == ["What is 2+2?", "plain prompt", "Customer needs help"]
+    assert contexts["What is 2+2?"]["gold_answer"] == 4.0
+    assert contexts["What is 2+2?"]["scenario_index"] == 0
+    assert "plain prompt" not in contexts
+    assert contexts["Customer needs help"]["user_responses"] == ["x"]

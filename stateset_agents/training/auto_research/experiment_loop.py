@@ -650,15 +650,32 @@ class AutoResearchLoop:
             timeout=self.config.time_budget,
         )
 
+    def _scenario_prompts_and_contexts(
+        self,
+    ) -> tuple[list[str], dict[str, dict[str, Any]]]:
+        """Task prompts for the prompt-list trainers (DAPO, VAPO) and, per
+        prompt, the scenario fields the reward needs (gold answers, expected
+        tools, ...). Plain-string scenarios are prompts with no context."""
+        from stateset_agents.training.gspo_entrypoints import queries_from_scenarios
+
+        prompts: list[str] = []
+        contexts: dict[str, dict[str, Any]] = {}
+        for index, scenario in enumerate(self.environment.scenarios):
+            if isinstance(scenario, dict):
+                (query,) = queries_from_scenarios([scenario])
+                prompt = query["prompt"]
+                contexts[prompt] = {**query["context"], "scenario_index": index}
+            else:
+                prompt = str(scenario)
+            prompts.append(prompt)
+        return prompts, contexts
+
     async def _train_dapo(self, base_config: Any, params: dict[str, Any]) -> None:
         from stateset_agents.training.dapo_entrypoints import train_with_dapo
 
         # DAPO entrypoint expects (model_name, reward_fn, train_prompts)
         model_name = base_config.model_name
-        train_prompts = [
-            s.get("context", "Hello") if isinstance(s, dict) else str(s)
-            for s in self.environment.scenarios
-        ]
+        train_prompts, contexts = self._scenario_prompts_and_contexts()
 
         # Wrap reward_fn to match DAPO's expected (prompt, response) -> float
         reward_model = self.reward_fn
@@ -667,7 +684,9 @@ class AutoResearchLoop:
             from stateset_agents.core.trajectory import ConversationTurn
 
             turn = ConversationTurn(role="assistant", content=response)
-            result = reward_model.compute_reward([turn], {"user_query": prompt})
+            result = reward_model.compute_reward(
+                [turn], {"user_query": prompt, **contexts.get(prompt, {})}
+            )
             if asyncio.iscoroutine(result):
                 result = await result
             if hasattr(result, "score"):
@@ -688,10 +707,7 @@ class AutoResearchLoop:
 
         # VAPO entrypoint expects (model_name, reward_fn, train_prompts)
         model_name = base_config.model_name
-        train_prompts = [
-            s.get("context", "Hello") if isinstance(s, dict) else str(s)
-            for s in self.environment.scenarios
-        ]
+        train_prompts, contexts = self._scenario_prompts_and_contexts()
 
         reward_model = self.reward_fn
 
@@ -699,7 +715,9 @@ class AutoResearchLoop:
             from stateset_agents.core.trajectory import ConversationTurn
 
             turn = ConversationTurn(role="assistant", content=response)
-            result = reward_model.compute_reward([turn], {"user_query": prompt})
+            result = reward_model.compute_reward(
+                [turn], {"user_query": prompt, **contexts.get(prompt, {})}
+            )
             if asyncio.iscoroutine(result):
                 result = await result
             if hasattr(result, "score"):
