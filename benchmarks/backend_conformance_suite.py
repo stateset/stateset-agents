@@ -19,6 +19,7 @@ MATCHED_EXPERIMENT_FIELDS = (
     "algorithm",
     "model",
     "model_revision",
+    "dataset_content_sha256",
     "seed",
     "task",
 )
@@ -90,6 +91,11 @@ def _experiment_value(evidence: Mapping[str, Any], field: str) -> Any:
     experiment = evidence["manifest"]["experiment"]
     if field == "task":
         return experiment.get("task", "conformance")
+    if field == "dataset_content_sha256" and field not in experiment:
+        raise ConformanceSuiteError(
+            f"{evidence['backend']}: complete roster evidence requires "
+            "experiment.dataset_content_sha256"
+        )
     return experiment[field]
 
 

@@ -68,13 +68,13 @@ measurable.
 
 ### Current verification status
 
-The `v0.51.0` release tree completed its local full suite on **2026-09-08**
-with **5,508 passed and 19 skipped** (unit, integration, and API suites under
-xdist), plus clean Ruff, Black, isort, mypy, stable-API-contract,
-release-governance, repository-hygiene, and pre-commit gates; its release pull
-request passed the same 14 required remote checks (Linux Python 3.10–3.13,
-Windows 3.10/3.13, CodeQL, dependency and secret scanning, package-readiness,
-docs, Helm, security) as `v0.50.0`. See the retained
+The `v0.54.0` release tree completed its Linux Python 3.10 suite on
+**2026-09-09** with **5,496 passed, 18 skipped, and 63.68% coverage**, while
+its release pull request passed the complete Linux Python 3.10–3.13 and
+Windows Python 3.10/3.13 matrices plus CodeQL, dependency and secret scanning,
+package-readiness, docs, Helm, npm-client, benchmark, and security gates. The
+tag-built wheel and source distribution passed isolated-install and attestation
+checks and are live on PyPI. See the retained
 [proof ledger](docs/PROOFS.md) for the evidence behind individual training,
 serving, and provider claims.
 
@@ -100,14 +100,38 @@ serving, and provider claims.
   [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)). The native-GSPO rows of those
   matrices are **withdrawn**: a harness bug trained them on a placeholder
   prompt with a reward that never saw the ground truth (identically zero at
-  every step), fixed in `0.53.0` with a fail-closed check, and being
-  re-measured under the 1.5B v3 protocol. No quality superiority is claimed.
-- **Current Python release:** `stateset-agents==0.51.0`, published from the
+  every step). Versions `0.53.0` and `0.54.0` fixed the prompt/reward wiring,
+  on-policy reference log-probs, batched sampling, inference-mode generation,
+  and zero-signal detection. The legacy 1.5B v3 matrix remains incomplete:
+  two direct-TRL seeds are retained, but no corrected native-GSPO seed is yet
+  publishable. Unreleased resume hardening now binds evidence to the exact
+  manifest and harness, so the corrected protocol will rerun every pair in a
+  fresh matrix rather than mix those legacy rows. No quality superiority is
+  claimed.
+- **Auditable rented-compute cost:** schema-v2 comparison rows are bound to one
+  exact shootout manifest. The publication gate can require every RunPod pod
+  lifecycle record, verify its post-allocation rate, observed lifetime,
+  manifest/harness identity, unique pod ID, and confirmed termination, and
+  report the total provider-derived estimate alongside quality and throughput.
+- **One fail-closed A+ decision:** `benchmarks/a_plus_gate.py` revalidates the
+  competitive, strong multi-node scaling, recovery, 12-hour soak, five-provider,
+  standard-agent, 7–9B flagship, and publish-readiness bundles together and
+  requires every harness result to match one immutable release commit.
+- **Source-bound provider canaries:** schema-v2 River, RunPod, Fireworks,
+  CoreWeave, and Nebius reports now carry the exact clean harness commit and
+  framework version. Historical schema-v1 or unrelated fresh canaries cannot
+  satisfy the A+ gate.
+- **Current Python release:** `stateset-agents==0.54.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
-  package is tested and release-wired in [`npm/`](npm/); its first npm registry
-  publication remains pending.
-- **Live providers:** RunPod and River have retained end-to-end evidence.
+  package is tested and release-wired in [`npm/`](npm/). Its first registry
+  publication remains pending because npm trusted publishing cannot create a
+  new package; an `@stateset`-scoped automation token must bootstrap version
+  one before subsequent releases can use OIDC.
+- **Live providers:** RunPod and River passed the `v0.54.0` tag canaries and
+  have retained end-to-end evidence. Fireworks failed closed without
+  `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`, creating no billable
+  resources. Container publication likewise remains owner-config blocked.
   CoreWeave CKS/Dedicated Inference and Nebius Serverless AI are fully
   integrated and unit-pinned; their live certification remains open alongside
   Fireworks lifecycle and Modal transport. None are promoted automatically.
@@ -123,8 +147,11 @@ serving, and provider claims.
   SWE-bench Verified runner now executes paired base-versus-trained matrices,
   drives multi-stage official suite commands without a shell, verifies clean
   pinned upstream checkouts and fresh confined artifacts, derives scores from
-  identical ordered per-task records, binds both policy revisions and the
-  trained artifact digest, retains raw results and failures, and rejects
+  identical ordered per-task records, proves that each evaluator receives its
+  immutable model revision (or verifies it from a local checkpoint marker),
+  binds both policy revisions and the trained artifact digest, retains raw
+  results and failures in portable bundles, re-hashes those retained bytes at
+  publication time, and rejects
   publication unless every suite clears the three-seed significance and
   cost-accounting gate. The suites still require measured execution; an
   implemented runner is not a benchmark result.
@@ -133,6 +160,45 @@ serving, and provider claims.
   measures wall time outside provider adapters, hashes retained artifacts,
   accounts for failures, and invokes the strict publication gate. Live
   execution and the 12-hour soak remain pending.
+
+### What makes this an A+ framework
+
+StateSet is currently a strong beta with an A−-level engineering foundation;
+an A+ claim requires measured outcomes, not more algorithm names. The shortest
+credible path is:
+
+1. Finish the corrected, equal-compute 1.5B native-GSPO versus direct-TRL
+   v4 matrix (its checked-in six-pair dry run passes), then run the immutable
+   7–9B three-seed flagship and require a
+   positive paired 95% confidence bound on held-out quality.
+2. Run the same experiment contract through verl, NeMo RL, and OpenRLHF and
+   report throughput, peak memory, total provider cost, and quality together.
+3. Retain a multi-node training run, the complete fault matrix, and a 12-hour
+   soak proving no lost or duplicate updates and bounded policy staleness.
+4. Execute the official τ³-bench, BFCL V4, and SWE-bench Verified pipelines on
+   base and trained policies rather than treating implemented adapters as
+   benchmark results.
+5. Close npm, container, Fireworks, Modal, CoreWeave, and Nebius live evidence,
+   then obtain an independent reproduction and security review.
+
+The multi-node scaling path is now executable rather than aspirational:
+`benchmark-scaling-multi-node-run` accepts a shell-free provider launcher,
+binds every run to the clean harness commit, gathers hashed physical-node IDs
+from the distributed ranks, verifies ranks per node, and re-hashes each saved
+policy. Live provider execution remains the evidence still to collect.
+The repository also includes a concrete budget-bounded RunPod adapter with
+private-DNS rendezvous, distinct-machine attestation, per-node watchdogs,
+unconditional cleanup, and retained per-pod cost records. Standard RunPod Pod
+networking is only 100 Mbps, so the adapter is documented as a
+functional/negative-evidence path rather than a shortcut to a passing claim.
+For the publication path, a provider-neutral Kubernetes adapter now supports
+CoreWeave CKS and Nebius clusters using digest-pinned images, Indexed-Job DNS,
+hard node anti-affinity, an enforced RDMA/fabric resource, immutable commit
+checkout, rank-zero artifact retrieval, and unconditional resource cleanup.
+
+The acceptance gates and exact evidence still missing are tracked in
+[`docs/ROADMAP.md`](docs/ROADMAP.md). Until they pass, StateSet claims a
+well-tested trace-to-policy control plane—not general RL-framework leadership.
 
 ---
 
@@ -307,19 +373,55 @@ coverage, live hardware attempts, and successful inference by provider.
 
 **Current development head (unreleased):**
 
-- **Publication-grade flagship collection.** The 7–9B multi-turn customer
-  support benchmark now runs from one immutable manifest, measures each seed
-  externally, retains failures and policy hashes, binds provider billing, and
-  requires a positive paired 95% confidence bound before publication. The live
-  three-seed GPU execution remains pending.
-- **Machine-enforced maturity and security governance.** Every canonical
-  product domain now carries a Stable, Beta, or Experimental designation tied
-  to existing tests, documentation, evidence, limitations, graduation
-  criteria, ownership, and—where stable—the public API contract. A versioned
-  security-response contract defines reporting channels, acknowledgement and
-  remediation targets, coordinated disclosure, and safe harbor. The same
-  fail-closed validator runs in CI and publish readiness; independent
-  third-party security review remains explicitly pending.
+- **Evidence-first README refresh.** Release, installation, provider, and
+  benchmark status now match `v0.54.0`; the incomplete corrected v3 comparison
+  and the remaining A+ gates are stated explicitly.
+- **Release-version drift prevention.** README install commands and the
+  current-release declaration are guarded against package-version drift and
+  updated automatically by the release script.
+- **Optional-runtime isolation.** `stateset-agents version --json` reads
+  dependency metadata without importing CUDA runtimes, and an incompatible
+  installed vLLM now preserves the Hugging Face fallback instead of breaking
+  CLI output or package import.
+- **Exact benchmark resume identity.** Measured shootout files now carry the
+  complete manifest digest, and both local and RunPod resume paths require the
+  same manifest, implementation version, seed, and harness commit. Corrected
+  experiments cannot silently reuse stale evidence. New evidence also carries
+  a portable raw-artifact path that is re-hashed before reporting or resume.
+- **Corrected v4 comparison contract.** The pinned 1.5B native-GSPO versus
+  direct-TRL manifest validates and enumerates all six rotated pairs without
+  provisioning hardware; measured execution still requires an explicitly
+  confirmed RunPod spend ceiling.
+- **Fail-closed flagship evidence.** A measured flagship run now rejects
+  template placeholders and stale StateSet versions before execution, while
+  judge-derived scores are bound to the declared judge model, immutable
+  revision, and rubric digest.
+- **Exact scale/recovery provenance.** Local scaling and fault-injection
+  matrices now require a clean checkout and refuse a claimed harness revision
+  that differs from the code actually executing.
+- **Source-bound scaling images.** A dedicated BuildKit path refuses mutable
+  base images, labels the exact commit and package version, requests maximal
+  provenance plus an SBOM, then reads SLSA/SPDX/label/manifest evidence back
+  from the registry. The A+ gate verifies it and requires every provider
+  lifecycle record to use that exact digest.
+- **Provider-exported scaling cost.** Kubernetes lifecycle evidence now carries
+  exact Job start/finish timestamps. The A+ gate requires a raw-export-bound
+  CoreWeave/Nebius billing allocation for every Job, prevents line-item reuse,
+  and reports total cost plus cost per measured optimizer step.
+- **Artifact-backed release readiness.** Readiness now installs the newly built
+  wheel offline into a clean virtual environment outside the checkout, reusing
+  the dependency set that passed the preceding gates, and emits portable schema-v2
+  evidence for both distributions, coverage XML, and Bandit/Safety reports.
+  The A+ gate re-hashes and parses those files instead of trusting a bare
+  `status: passed` marker.
+- **Cross-format backend identity.** A NeMo RL/OpenRLHF/verl conformance roster
+  must bind the same canonical dataset-content digest even when the physical
+  JSONL and Parquet artifacts necessarily have different byte hashes.
+- **Official-suite execution safety.** Measured τ³-bench, BFCL, and
+  SWE-bench collection now rejects template commands, zero revisions, stale
+  package versions, unbound evaluator model revisions, and dirty harness
+  checkouts before invoking an evaluator. Every model-consuming stage is bound,
+  and standalone execution verifies the checkout's exact suite revision.
 
 **v0.54.0 (latest release; publication triggered by tag):**
 
@@ -339,7 +441,7 @@ coverage, live hardware attempts, and successful inference by provider.
 - Engine rollouts stay on-policy: both GRPO trainers push the policy's weights into the attached rollout backend after every optimizer step (`TrainingConfig.rollout_sync`); turns record the policy version that sampled them, and a backend that cannot take weights is reported once as stale instead of silently sampling from an old policy. `TrainingConfig.old_logprobs_source="sampler"` importance-corrects rollouts from a lagging or numerically different engine.
 - Proven live on vLLM 0.28 / NVIDIA A40 for full weights and a LoRA adapter (`benchmark_results/vllm_rollout_check/`): the engine-vs-policy log-prob gap of the sampled tokens returns to bf16 noise after `VLLMGenerator.sync_weights`. `VLLMGenerator` finds the engine model through any vLLM layout, keeps the V1 engine core in-process, and maps PEFT's `.base_layer` weight names.
 - Fixed: `from stateset_agents.training import train` returned the `train` submodule once anything had imported it (the API service and CLI do).
-- Paid comparison runs are observable while they run (live per-run logs, a status line per launcher poll) and resumable after a pod lifetime cut (`runpod_shootout.py --resume`); the v3 protocol (Qwen2.5-1.5B, 200 steps, 256-problem eval) and its L40S envelopes are in `benchmarks/`.
+- Paid comparison runs are observable while they run (live per-run logs, a status line per launcher poll) and resumable after a pod lifetime cut (`runpod_shootout.py --resume`); resume now accepts only exact-manifest and exact-harness evidence. The legacy v3 protocol (Qwen2.5-1.5B, 200 steps, 256-problem eval) and its L40S envelopes are retained in `benchmarks/`; the corrected matrix must use a fresh protocol and rerun every pair.
 
 **v0.51.0:**
 
@@ -1174,8 +1276,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.47.2" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.47.2"
+pip install "stateset-agents==0.54.0" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.54.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub

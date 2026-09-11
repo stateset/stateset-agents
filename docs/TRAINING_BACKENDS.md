@@ -146,8 +146,21 @@ without preserving the worker's absolute filesystem layout. Once all engines
 have run, `benchmarks/backend_conformance_suite.py` fails closed unless exactly
 one artifact-valid NeMo RL, OpenRLHF, and verl record shares the same harness,
 StateSet version, provider/GPU/time/cost envelope, algorithm, model revision,
-seed, and task. The suite report
+seed, task, and canonical dataset-content digest. The physical
+`dataset_sha256` remains backend-specific because verl consumes Parquet while
+NeMo RL and OpenRLHF consume JSON/JSONL; `dataset_content_sha256` identifies
+the same ordered logical examples across those encodings. The suite report
 hashes the exact evidence documents; it does not claim benchmark parity.
+
+Generate and cross-check that digest before launching any pod:
+
+```bash
+python benchmarks/dataset_content.py data/train.jsonl data/train.parquet
+```
+
+The command exits non-zero unless every input decodes to the same ordered list
+of canonical JSON records. The worker rechecks the declared content digest
+before inspecting the GPU or invoking the backend.
 
 ## OpenRLHF adapter
 

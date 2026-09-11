@@ -1,6 +1,6 @@
-.PHONY: help install install-dev install-all install-locked lock lock-check dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene api-compatibility release-governance clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-loop benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish benchmark-flagship-contract benchmark-flagship-run flagship-benchmark flagship-benchmark-all benchmark-distributed-async-contract benchmark-distributed-async-run benchmark-distributed-async-gate benchmark-agent-quality-contract benchmark-agent-quality-run benchmark-agent-quality-gate release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
+.PHONY: help install install-dev install-all install-locked lock lock-check dev-setup test test-cov test-unit test-integration test-slow lint lint-fix format check-types check-types-script repo-hygiene api-compatibility release-governance clean docs docs-build docs-clean docs-api docs-serve build test-package publish-test publish release release-patch release-minor release-major require-release-branch quick-publish benchmark benchmark-loop benchmark-smoke benchmark-phase0 benchmark-phase0-all benchmark-aggregate benchmark-aggregate-strict benchmark-plot benchmark-publish benchmark-flagship-contract benchmark-flagship-run benchmark-scaling-image-plan benchmark-scaling-image-push benchmark-scaling-multi-node-contract benchmark-scaling-multi-node-run flagship-benchmark flagship-benchmark-all benchmark-distributed-async-contract benchmark-distributed-async-run benchmark-distributed-async-gate benchmark-agent-quality-contract benchmark-agent-quality-run benchmark-agent-quality-gate benchmark-a-plus-gate release-whitepaper-v1 release-whitepaper-v1-strict serve-trained starter-test smoke example-tests getting-started-smoke release-prep demo grade-transcript grade-batch grade-batch-summary prepare-sft sft-from-curated full-loop changelog-check new-version demo-curation demo-full-loop demo-all smoke-cli smoke-fast health dev-test ci security-scan security-scan-strict publish-readiness docker-build docker-run docker-build-gateway docker-run-gateway docker-build-trainer docker-dev docker-test docker-build-all docker-up docker-down pre-commit-install pre-commit-run
 
-PYTHON_BIN := $(shell command -v python3 >/dev/null 2>&1 && echo python3 || command -v python)
+PYTHON_BIN ?= $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; elif command -v python3 >/dev/null 2>&1; then echo python3; else command -v python; fi)
 PACKAGE_VERSION := $(shell $(PYTHON_BIN) -c "import stateset_agents; print(stateset_agents.__version__)")
 SPHINX_DOCS_ENV := API_REQUIRE_AUTH=false INFERENCE_BACKEND=stub
 
@@ -322,6 +322,19 @@ benchmark-flagship-run: ## Execute the strict three-seed flagship matrix (MANIFE
 	$(PYTHON_BIN) benchmarks/run_flagship_matrix.py $(MANIFEST) \
 		--output-dir $(OUTPUT_DIR) $(EXTRA_ARGS)
 
+benchmark-scaling-multi-node-contract: ## Validate the physical multi-node scaling launcher without provisioning
+	$(PYTHON_BIN) benchmarks/run_scaling_matrix.py \
+		--launcher-manifest $(if $(MANIFEST),$(MANIFEST),benchmarks/scaling_launcher_manifest.example.json) \
+		--validate-launcher
+
+benchmark-scaling-multi-node-run: ## Execute strong scaling through a provider launcher (MANIFEST and OUTPUT_DIR required)
+	@test -n "$(MANIFEST)" || { echo "Usage: make $@ MANIFEST=path OUTPUT_DIR=path [EXTRA_ARGS='...']" >&2; exit 2; }
+	@test -n "$(OUTPUT_DIR)" || { echo "Usage: make $@ MANIFEST=path OUTPUT_DIR=path [EXTRA_ARGS='...']" >&2; exit 2; }
+	$(PYTHON_BIN) benchmarks/run_scaling_matrix.py \
+		--launcher-manifest $(MANIFEST) \
+		--config-json '{"scaling_mode":"strong"}' \
+		--output-dir $(OUTPUT_DIR) $(EXTRA_ARGS)
+
 benchmark-distributed-async-contract: ## Validate the multi-node async collection contract without provisioning
 	$(PYTHON_BIN) benchmarks/run_distributed_async_matrix.py \
 		benchmarks/distributed_async_manifest.example.json \
@@ -355,6 +368,46 @@ benchmark-agent-quality-gate: ## Validate Tau3/BFCL V4/SWE evidence (INPUTS requ
 	$(PYTHON_BIN) benchmarks/agent_quality_evidence.py $(INPUTS) $(if $(OUTPUT),--output $(OUTPUT),)
 	@echo "Whitepaper-ready artifacts in benchmark_results/whitepaper_v1/"
 	@ls benchmark_results/whitepaper_v1/ 2>/dev/null || true
+
+benchmark-scaling-image-plan: ## Validate and print an immutable scaling-image plan
+	@test -n "$(BASE_IMAGE)" || { echo "BASE_IMAGE=digest-pinned-image is required" >&2; exit 2; }
+	@test -n "$(IMAGE)" || { echo "IMAGE=registry/name:tag is required" >&2; exit 2; }
+	$(PYTHON_BIN) scripts/build_scaling_image.py --base-image $(BASE_IMAGE) --image $(IMAGE)
+
+benchmark-scaling-image-push: ## Build/push scaling image with provenance and SBOM (explicit confirmation required)
+	@test -n "$(BASE_IMAGE)" || { echo "BASE_IMAGE=digest-pinned-image is required" >&2; exit 2; }
+	@test -n "$(IMAGE)" || { echo "IMAGE=registry/name:tag is required" >&2; exit 2; }
+	@test -n "$(CONFIRM_PUSH)" || { echo "CONFIRM_PUSH must exactly equal IMAGE" >&2; exit 2; }
+	$(PYTHON_BIN) scripts/build_scaling_image.py --base-image $(BASE_IMAGE) \
+		--image $(IMAGE) --execute --confirm-push $(CONFIRM_PUSH) \
+		$(if $(OUTPUT),--output $(OUTPUT),)
+
+benchmark-a-plus-gate: ## Require every A+ evidence and release gate
+	@test -n "$(FRAMEWORK_EVIDENCE)" || { echo "FRAMEWORK_EVIDENCE is required" >&2; exit 2; }
+	@test -n "$(SCALING_EVIDENCE)" || { echo "SCALING_EVIDENCE is required" >&2; exit 2; }
+	@test -n "$(SCALING_PROVIDER_EVIDENCE)" || { echo "SCALING_PROVIDER_EVIDENCE is required" >&2; exit 2; }
+	@test -n "$(SCALING_IMAGE_ATTESTATION)" || { echo "SCALING_IMAGE_ATTESTATION is required" >&2; exit 2; }
+	@test -n "$(RELIABILITY_EVIDENCE)" || { echo "RELIABILITY_EVIDENCE is required" >&2; exit 2; }
+	@test -n "$(DISTRIBUTED_ASYNC_EVIDENCE)" || { echo "DISTRIBUTED_ASYNC_EVIDENCE is required" >&2; exit 2; }
+	@test -n "$(PROVIDER_EVIDENCE)" || { echo "PROVIDER_EVIDENCE is required" >&2; exit 2; }
+	@test -n "$(AGENT_QUALITY_EVIDENCE)" || { echo "AGENT_QUALITY_EVIDENCE is required" >&2; exit 2; }
+	@test -n "$(FLAGSHIP_MANIFEST)" || { echo "FLAGSHIP_MANIFEST is required" >&2; exit 2; }
+	@test -n "$(FLAGSHIP_EVIDENCE)" || { echo "FLAGSHIP_EVIDENCE is required" >&2; exit 2; }
+	@test -n "$(RELEASE_READINESS)" || { echo "RELEASE_READINESS is required" >&2; exit 2; }
+	$(PYTHON_BIN) benchmarks/a_plus_gate.py \
+		--framework-evidence $(FRAMEWORK_EVIDENCE) \
+		--scaling-evidence $(SCALING_EVIDENCE) \
+		--scaling-provider-evidence $(SCALING_PROVIDER_EVIDENCE) \
+		--scaling-image-attestation $(SCALING_IMAGE_ATTESTATION) \
+		$(if $(SCALING_BILLING_EVIDENCE),--scaling-billing-evidence $(SCALING_BILLING_EVIDENCE),) \
+		--reliability-evidence $(RELIABILITY_EVIDENCE) \
+		--distributed-async-evidence $(DISTRIBUTED_ASYNC_EVIDENCE) \
+		--provider-evidence $(PROVIDER_EVIDENCE) \
+		--agent-quality-evidence $(AGENT_QUALITY_EVIDENCE) \
+		--flagship-manifest $(FLAGSHIP_MANIFEST) \
+		--flagship-evidence $(FLAGSHIP_EVIDENCE) \
+		--release-readiness $(RELEASE_READINESS) \
+		$(if $(OUTPUT),--output $(OUTPUT),)
 
 release-whitepaper-v1: ## One-shot v1.0 whitepaper release packaging (aggregate + plot + §11.7 + manifest)
 	python scripts/release_v1_whitepaper.py

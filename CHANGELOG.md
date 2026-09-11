@@ -7,6 +7,150 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Made schema-v2 release evidence fail closed on retained security contents:
+  the A+ gate now rejects Bandit execution errors and medium-or-higher findings,
+  plus any known Safety vulnerability, after verifying report hashes.
+- Added direct wheel/sdist structure and metadata validation to the A+ release
+  gate, including unsafe member, duplicate member, project identity, version,
+  packaged-module, wheel metadata/record, and source build-metadata checks
+  without archive extraction.
+- Upgraded provider-canary evidence to schema v2 with exact framework version,
+  clean-checkout status, and Git commit identity; the A+ gate now rejects
+  legacy, dirty, or cross-commit provider reports while retaining schema-v1
+  readability for historical diagnostics.
+- Made provider publication evidence semantic: the validator now requires the
+  adapter-specific health, inventory, authorization, authentication, and
+  zero-leftover observations instead of trusting a generic passed status.
+- Hardened provider evidence file boundaries and result schemas against
+  symlinks, invalid UTF-8/JSON, negative or non-integer durations, invalid
+  statuses, malformed cleanup/error fields, and duplicate provider identities.
+
+### Changed
+
+- Added a dedicated distributed-scaling image build path that requires an
+  immutable CUDA/PyTorch base, labels the exact source revision and package
+  version, requests maximal BuildKit provenance and an SBOM, and records the
+  pushed registry digest in a machine-readable attestation. It reads the
+  registry's SLSA, SPDX, image-label, and manifest views back after the push;
+  the A+ gate verifies them and binds every Kubernetes or RunPod scaling
+  lifecycle record to that digest.
+- Added raw provider billing attribution for Kubernetes scaling. Each Job now
+  records an exact UTC lifecycle; the A+ gate requires an exactly matched
+  CoreWeave/Nebius billing envelope, re-hashes its retained export, verifies
+  billing-window and line-item arithmetic, rejects duplicated allocations, and
+  reports matrix cost per measured optimizer step.
+- Upgrade publish-readiness summaries to portable schema v2 evidence. The gate
+  installs the built wheel into a fresh offline virtual environment rather
+  than importing the source checkout, and retains SHA-256/size identities for
+  the wheel, source archive, coverage XML, Bandit report, and Safety report.
+  The A+ gate re-hashes those artifacts, checks the package version and complete
+  readiness roster, parses security JSON, and enforces the repository coverage
+  threshold from the retained XML.
+- Refreshed the README and evidence docs against the `v0.54.0` release,
+  including the
+  corrected-but-incomplete 1.5B comparison, current provider/publication
+  blockers, and the measured gates required before an A+ leadership claim.
+- Extended release automation and regression coverage so README stable-install
+  commands and its current Python release declaration cannot lag the package
+  version again.
+
+### Fixed
+
+- Made the flagship publication runner reject placeholder or stale-version
+  manifests before measured execution, and cryptographically bound reported
+  judge scores to the declared judge model, revision, and rubric revision.
+- Made local scaling and fault-recovery collectors derive provenance from a
+  clean checkout and reject caller-supplied harness commits that do not equal
+  the code actually executing.
+- Require every external-backend conformance record in a roster to declare the
+  same canonical dataset-content digest, while retaining independent physical
+  file hashes for JSONL/Parquet transport integrity.
+- Make measured τ³-bench/BFCL/SWE collection reject template commands, zero
+  model/suite/artifact revisions, stale StateSet versions, and dirty harness
+  checkouts before invoking an official evaluator, and require explicit proof
+  that the evaluator receives the pinned model revision or loads a checkpoint
+  carrying an exact local revision marker. The standalone official pipeline
+  now independently enforces immutable model and suite revisions, verifies the
+  upstream checkout's exact commit, and rejects partially bound multi-command
+  pipelines.
+- Make the agent-quality publication gate resolve portable retained-artifact
+  paths inside their evidence bundle and re-hash every raw file, rejecting
+  missing, tampered, symlinked, or escaping artifacts. This is emitted as
+  evidence schema v3; older rows cannot silently satisfy the stronger gate.
+- Bound resumed framework-shootout evidence to the exact manifest digest,
+  implementation version, and harness commit. Stale runs that merely share a
+  framework name and seed can no longer enter a corrected matrix, and the
+  RunPod launcher uploads only exact-match evidence during resume.
+- Emit framework-comparison evidence schema v2 with portable raw-artifact
+  paths and verification-time re-hashing. Legacy schema-v1 rows remain
+  readable for historical reports but cannot mix with or resume into v2 runs;
+  RunPod resume now restores each verified raw run directory as well as JSON.
+  The reporting CLI requires re-verifiable schema v2 by default and exposes a
+  named opt-in only for reproducing historical schema-v1 reports.
+- Add the corrected `stateset-trl-gspo-shootout-v4` 1.5B, three-seed manifest;
+  its non-billable dry run validates the exact six-pair rotated matrix. Both
+  sides now declare sequence-level importance ratios, 3e-4/4e-4 GSPO clipping,
+  group reward normalization, and sequence-mean aggregation; the TRL adapter
+  fails before model loading if TRL is not exactly 1.12.0 or cannot express
+  those objective-critical fields.
+- Bind schema-v2 framework comparisons to the exact shootout-manifest digest.
+  The publication CLI can now require and total every RunPod lifecycle record,
+  rejecting mismatched manifests or harnesses, duplicate pods, inconsistent
+  rate-times-lifetime arithmetic, and unconfirmed cleanup before cost appears
+  in the machine-readable and Markdown reports.
+- Made `stateset-agents version --json` inspect optional dependency metadata
+  without importing accelerator runtimes, preventing vLLM/CUDA initialization
+  logs from corrupting machine-readable output.
+- Treat an installed but locally unusable vLLM build as an unavailable optional
+  backend during import, preserving the Hugging Face fallback instead of
+  crashing on driver, operator-registration, or platform initialization errors.
+- Replace GPT-2 Hub downloads in tiny GSPO/GEPO tests with an in-memory,
+  character-stable tokenizer, making those tests independent of network and
+  user cache state. Correct the cross-trainer invariant so GEPO is checked
+  against its actual probability-weighted on-policy coefficient rather than an
+  inapplicable likelihood-ratio-equals-one assumption.
+- Align the executable distributed-scaling publication gate with the A+
+  leadership scorecard: the default minimum is now 70% rather than 50%, and
+  generated JSON/Markdown reports record the exact enforced threshold and
+  monotonic-throughput policy.
+- Upgrade flagship benchmark output to portable schema-v2 evidence with
+  independent `--validate-existing` revalidation. Retained policy artifacts
+  are re-hashed and must remain inside the evidence bundle without symlinks;
+  the matrix also rejects mixed harnesses, manifests, and reused artifact
+  paths.
+- Expand the provider publication gate from the legacy River/RunPod/Fireworks
+  trio to include CoreWeave and Nebius by default. Historical three-provider
+  reports remain inspectable only with an explicit reduced roster and cannot
+  satisfy the current A+ provider gate. Publication also rejects canaries older
+  than 30 days or materially future-dated.
+- Add one top-level, fail-closed A+ publication gate. It revalidates every raw
+  domain bundle, requires native StateSet GSPO plus TRL/verl/NeMo RL/OpenRLHF,
+  enforces throughput within 10% of the fastest, 70% strong scaling across at
+  least two nodes, zero-loss recovery, the 12-hour soak, five fresh provider
+  canaries, agent-quality and flagship results, and publish readiness all bound
+  to one immutable commit.
+- Add a shell-free physical multi-node strong-scaling launcher contract and
+  protocol-v4 evidence. Distributed ranks now contribute hashed DMI node IDs and
+  ranks-per-node, each row retains a re-verifiable policy artifact, and both
+  the collector and A+ gate reject declared/observed topology drift, legacy
+  scaling protocols, or single-node evidence.
+- Extend the RunPod REST adapter with official global-networking and
+  datacenter-pinning fields even when no network volume is attached, enabling
+  deterministic private pod-to-pod rendezvous for distributed collectors.
+- Add a concrete, budget-bounded RunPod multi-node scaling adapter with
+  private-DNS torchrun rendezvous, distinct-machine attestation, authoritative
+  aggregate price checks, per-pod recovery leases/watchdogs, unconditional
+  partial-cluster cleanup, and retained pod-level lifetime/cost records.
+- Add a provider-neutral high-bandwidth Kubernetes scaling adapter for
+  CoreWeave CKS and Nebius clusters. It uses an anti-affined Indexed Job and
+  headless-Service DNS, requires a digest-pinned image and schedulable fabric
+  resource, attests scheduled nodes and Pods, retrieves rank-zero evidence,
+  and unconditionally deletes both Kubernetes resources.
+- Bind the top-level A+ scaling decision to an exact lifecycle record for
+  every topology/seed row. The gate now verifies commit/config/output identity,
+  Kubernetes image/fabric/node/Pod cleanup attestations, or RunPod
+  machine/termination and rate-times-lifetime cost arithmetic.
+
 ## [0.54.0] - 2026-09-08 — Rollouts sample in inference mode
 
 ### Fixed

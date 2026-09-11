@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+
+# Deliberately has no default: publication builds must supply an immutable
+# CUDA-enabled PyTorch base such as registry/repository@sha256:<64 hex>.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG SOURCE_COMMIT
+ARG PACKAGE_VERSION
+
+LABEL org.opencontainers.image.source="https://github.com/stateset/stateset-agents" \
+      org.opencontainers.image.revision="${SOURCE_COMMIT}" \
+      org.opencontainers.image.version="${PACKAGE_VERSION}" \
+      ai.stateset.image.purpose="distributed-scaling-evidence"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/stateset-agents
+
+WORKDIR /opt/stateset-agents
+
+# git is required because the remote launchers independently clone and check
+# out the attested harness commit before execution. The image supplies the
+# CUDA/PyTorch runtime and a matching, smoke-tested copy of StateSet Agents.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates git && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml setup.py README.md ./
+COPY stateset_agents/ ./stateset_agents/
+RUN python -m pip install --no-cache-dir --no-deps . && \
+    python -c "import stateset_agents, torch; assert stateset_agents.__version__ == '${PACKAGE_VERSION}'; assert torch.cuda.is_available() or torch.version.cuda"
+
+RUN groupadd --gid 10001 stateset && \
+    useradd --uid 10001 --gid 10001 --create-home stateset && \
+    mkdir -p /workspace && chown 10001:10001 /workspace
+
+USER 10001:10001
+WORKDIR /workspace
+CMD ["python", "-c", "import stateset_agents, torch; print(stateset_agents.__version__, torch.__version__)"]

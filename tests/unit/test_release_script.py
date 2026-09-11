@@ -46,6 +46,8 @@ Intro text.
 
 README_FIXTURE = """# StateSet Agents
 
+- **Current Python release:** `stateset-agents==0.25.0`, published from a tag.
+
 ## What's new
 
 **v0.25.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**
@@ -61,6 +63,8 @@ README_FIXTURE = """# StateSet Agents
 
 ```bash
 pip install stateset-agents          # latest release (v0.23.0)
+pip install "stateset-agents==0.25.0" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.25.0"
 ```
 
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed (latest release `v0.23.0`).
@@ -215,6 +219,9 @@ def test_readme_rewrite_promotes_and_demotes():
     assert "- Old latest bullet one." in out  # old block content preserved
     assert "# latest release (v0.26.0)" in out
     assert "latest release `v0.26.0`" in out
+    assert "**Current Python release:** `stateset-agents==0.26.0`" in out
+    assert 'pip install "stateset-agents==0.26.0" # current stable release' in out
+    assert "stateset-agents.git@v0.26.0" in out
     assert "v0.23.0" not in out
 
 

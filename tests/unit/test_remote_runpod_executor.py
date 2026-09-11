@@ -677,6 +677,40 @@ class TestGpuCount:
         )
         assert captured["json"]["gpuCount"] == 1
 
+    def test_real_api_sends_global_networking_and_datacenter_without_volume(
+        self, monkeypatch
+    ):
+        from stateset_agents.remote.runpod import RunPodApi
+
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"id": "p"}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            captured["json"] = json
+            return FakeResponse()
+
+        import requests
+
+        monkeypatch.setattr(requests, "post", fake_post)
+        RunPodApi("key").create_pod(
+            name="multi-node",
+            image="img",
+            gpu_type_id="g",
+            ports=["22/tcp"],
+            env={},
+            cloud_type="SECURE",
+            global_networking=True,
+            data_center_id="US-TX-3",
+        )
+        assert captured["json"]["globalNetworking"] is True
+        assert captured["json"]["dataCenterIds"] == ["US-TX-3"]
+
     def test_real_api_sends_direct_image_command_fields(self, monkeypatch):
         from stateset_agents.remote.runpod import RunPodApi
 

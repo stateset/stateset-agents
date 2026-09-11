@@ -692,7 +692,7 @@ class TestGSPOKLPenaltyEstimator:
                     n_embd=32,
                     n_layer=2,
                     n_head=2,
-                    vocab_size=50257,
+                    vocab_size=256,
                     n_positions=64,
                     resid_pdrop=0.0,
                     embd_pdrop=0.0,
@@ -700,8 +700,9 @@ class TestGSPOKLPenaltyEstimator:
                 )
             )
 
-        tokenizer = transformers.GPT2Tokenizer.from_pretrained("gpt2")
-        tokenizer.pad_token = tokenizer.eos_token
+        from tests._tiny_tokenizer import tiny_tokenizer
+
+        tokenizer = tiny_tokenizer()
 
         model = _tiny(0)
         ref_model = _tiny(ref_seed)

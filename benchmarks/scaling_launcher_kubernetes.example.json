@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-scaling-launcher-manifest",
+  "topologies": {
+    "1": {"node_count": 1, "nproc_per_node": 1},
+    "2": {"node_count": 1, "nproc_per_node": 2},
+    "4": {"node_count": 1, "nproc_per_node": 4},
+    "8": {"node_count": 2, "nproc_per_node": 4}
+  },
+  "command": [
+    "python", "benchmarks/kubernetes_scaling_launcher.py",
+    "--gpu-count", "{gpu_count}",
+    "--node-count", "{node_count}",
+    "--nproc-per-node", "{nproc_per_node}",
+    "--seed", "{seed}",
+    "--harness-commit", "{harness_commit}",
+    "--config-json", "{config_json}",
+    "--command-label", "{command_label}",
+    "--output", "{output}",
+    "--workload", "{workload}",
+    "--provider", "coreweave",
+    "--context", "REPLACE_WITH_KUBECONFIG_CONTEXT",
+    "--namespace", "stateset-benchmarks",
+    "--image", "REPLACE_WITH_IMAGE@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "--fabric", "REPLACE_WITH_PROVIDER_FABRIC",
+    "--fabric-resource", "rdma/ib",
+    "--fabric-resource-count", "1",
+    "--node-selector-key", "gpu.nvidia.com/class",
+    "--node-selector-value", "H100",
+    "--timeout-seconds", "1800",
+    "--execute"
+  ]
+}

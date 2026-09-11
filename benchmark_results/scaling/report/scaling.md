@@ -3,7 +3,7 @@
 Workload digest: `e6e9a653604b1503776687dd431c2df65e55dda83e06a9f08f1520d49a55fd78`
 GPU: NVIDIA GeForce RTX 5080
 Scaling mode: weak
-Default publication gate: monotonic throughput and at least 50% efficiency
+Publication gate: enforced; at least 70% efficiency; monotonic throughput required
 
 | GPUs | Seeds | Samples/s | Speedup | Scaling efficiency | Wall clock (s) | Peak VRAM/GPU (MiB) |
 |---:|---:|---:|---:|---:|---:|---:|

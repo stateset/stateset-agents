@@ -18,8 +18,17 @@ from benchmarks.adapters.official_suite_pipeline import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _pin_upstream_revision(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "benchmarks.adapters.official_suite_pipeline._repository_revision",
+        lambda _: "a" * 40,
+    )
+
+
 def _evaluation_config(**overrides: Any) -> dict[str, Any]:
     pipeline: dict[str, Any] = {
+        "model_revision_binding": "command-argument",
         "command_timeout_seconds": 30,
         "results_path": "official/results.json",
         "commands": [
@@ -27,6 +36,8 @@ def _evaluation_config(**overrides: Any) -> dict[str, Any]:
                 "suite-runner",
                 "--model",
                 "{model}",
+                "--model-revision",
+                "{model_revision}",
                 "--seed",
                 "{seed}",
                 "--results",
@@ -94,6 +105,78 @@ def test_pipeline_requires_shell_free_model_binding(tmp_path: Path) -> None:
         load_pipeline_config(config, "tau3-bench", tmp_path)
 
 
+def test_pipeline_requires_explicit_model_revision_binding(tmp_path: Path) -> None:
+    config = _evaluation_config()
+    del config["official_suite_pipelines"]["tau3-bench"]["model_revision_binding"]
+    with pytest.raises(OfficialPipelineError, match="model_revision_binding"):
+        load_pipeline_config(config, "tau3-bench", tmp_path)
+
+    config = _evaluation_config(commands=[["suite-runner", "--model", "{model}"]])
+    with pytest.raises(OfficialPipelineError, match=r"requires \{model_revision\}"):
+        load_pipeline_config(config, "tau3-bench", tmp_path)
+
+    config = _evaluation_config(
+        commands=[
+            ["suite-runner", "--model", "{model}", "{model_revision}"],
+            ["second-evaluator", "--model", "{model}"],
+        ]
+    )
+    with pytest.raises(OfficialPipelineError, match=r"command\(s\) 2 requires"):
+        load_pipeline_config(config, "tau3-bench", tmp_path)
+
+
+def test_local_marker_binding_requires_exact_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _evaluation_config(
+        model_revision_binding="local-marker",
+        commands=[["suite-runner", "--model", "{model}"]],
+    )
+    args = _args(tmp_path, config)
+    model = tmp_path / "model"
+    model.mkdir()
+    args.model = str(model)
+    monkeypatch.setattr(
+        "benchmarks.adapters.official_suite_pipeline._repository_is_clean",
+        lambda _: True,
+    )
+
+    with pytest.raises(OfficialPipelineError, match="stateset-model-revision"):
+        execute_pipeline(args)
+
+    (model / ".stateset-model-revision").write_text("wrong\n", encoding="utf-8")
+    with pytest.raises(OfficialPipelineError, match="does not match"):
+        execute_pipeline(args)
+
+
+def test_standalone_pipeline_rejects_mutable_revisions(tmp_path: Path) -> None:
+    args = _args(tmp_path, _evaluation_config())
+    args.model_revision = "main"
+    with pytest.raises(OfficialPipelineError, match="model_revision"):
+        execute_pipeline(args)
+
+    args.model_revision = "b" * 40
+    args.suite_revision = "0" * 40
+    with pytest.raises(OfficialPipelineError, match="suite_revision"):
+        execute_pipeline(args)
+
+
+def test_standalone_pipeline_rejects_wrong_upstream_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _args(tmp_path, _evaluation_config())
+    monkeypatch.setattr(
+        "benchmarks.adapters.official_suite_pipeline._repository_is_clean",
+        lambda _: True,
+    )
+    monkeypatch.setattr(
+        "benchmarks.adapters.official_suite_pipeline._repository_revision",
+        lambda _: "c" * 40,
+    )
+    with pytest.raises(OfficialPipelineError, match="revision mismatch"):
+        execute_pipeline(args)
+
+
 def test_pipeline_executes_and_normalizes_fresh_tau3_artifact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -142,6 +225,8 @@ def test_pipeline_executes_and_normalizes_fresh_tau3_artifact(
         (artifact_dir / "execution-manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["model_revision"] == "b" * 40
+    assert manifest["model_revision_binding"] == "command-argument"
+    assert "b" * 40 in manifest["commands"][0]
     assert manifest["suite_revision"] == "a" * 40
     assert (artifact_dir / "command-01.stdout.log").read_text() == "official stdout"
 
@@ -152,16 +237,23 @@ def test_pipeline_executes_and_normalizes_bfcl_artifacts(
     config = {
         "official_suite_pipelines": {
             "bfcl-v4": {
+                "model_revision_binding": "command-argument",
                 "results_path": "official/results",
                 "scores_path": "official/scores",
                 "cost_records_path": "official/costs.jsonl",
                 "commands": [
-                    ["bfcl-generate", "{model}", "{official_results}"],
+                    [
+                        "bfcl-generate",
+                        "{model}",
+                        "{official_results}",
+                        "{model_revision}",
+                    ],
                     [
                         "bfcl-evaluate",
                         "{model}",
                         "{official_scores}",
                         "{cost_records}",
+                        "{model_revision}",
                     ],
                 ],
             }
@@ -216,6 +308,7 @@ def test_pipeline_executes_and_normalizes_swe_bench_artifacts(
     config = {
         "official_suite_pipelines": {
             "swe-bench-verified": {
+                "model_revision_binding": "command-argument",
                 "results_path": "official/report",
                 "cost_records_path": "official/costs.jsonl",
                 "commands": [
@@ -224,6 +317,7 @@ def test_pipeline_executes_and_normalizes_swe_bench_artifacts(
                         "{model}",
                         "{official_results}",
                         "{cost_records}",
+                        "{model_revision}",
                     ]
                 ],
             }

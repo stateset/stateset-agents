@@ -16,7 +16,9 @@ from benchmarks.run_agent_quality_matrix import (
     load_manifest,
     run_suite,
     validate_adapter_result,
+    validate_execution_ready,
 )
+from stateset_agents import __version__ as PACKAGE_VERSION
 
 
 def _command() -> list[str]:
@@ -117,10 +119,11 @@ def test_manifest_validates_embedded_official_pipeline_contract(
     manifest = _manifest()
     manifest["evaluation_config"]["official_suite_pipelines"] = {
         suite: {
+            "model_revision_binding": "command-argument",
             "results_path": "../escaped.json" if suite == "tau3-bench" else "result",
             "scores_path": "score",
             "cost_records_path": "costs.jsonl",
-            "commands": [["runner", "{model}"]],
+            "commands": [["runner", "{model}", "{model_revision}"]],
         }
         for suite in ("tau3-bench", "bfcl-v4", "swe-bench-verified")
     }
@@ -128,6 +131,28 @@ def test_manifest_validates_embedded_official_pipeline_contract(
     path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(AgentQualityRunnerError, match="pipeline is invalid"):
         load_manifest(path)
+
+
+def test_measured_execution_rejects_templates_zero_revisions_and_stale_versions(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest()
+    manifest["framework_version"] = PACKAGE_VERSION
+    validate_execution_ready(manifest, PACKAGE_VERSION)
+
+    manifest["baseline_policy"]["model"] = "REPLACE_WITH_MODEL"
+    with pytest.raises(AgentQualityRunnerError, match="template placeholders"):
+        validate_execution_ready(manifest, PACKAGE_VERSION)
+
+    manifest = _manifest()
+    manifest["framework_version"] = PACKAGE_VERSION
+    manifest["suites"][0]["revision"] = "0" * 40
+    with pytest.raises(AgentQualityRunnerError, match="template zero revision"):
+        validate_execution_ready(manifest, PACKAGE_VERSION)
+
+    manifest = _manifest()
+    with pytest.raises(AgentQualityRunnerError, match="installed StateSet version"):
+        validate_execution_ready(manifest, PACKAGE_VERSION)
 
 
 def test_adapter_rejects_unpaired_or_drifted_results(tmp_path: Path) -> None:
@@ -196,7 +221,8 @@ def test_run_suite_emits_v2_evidence_and_hashes_retained_artifact(
     )
     evidence = json.loads(destination.read_text(encoding="utf-8"))
     validate_run(evidence, destination)
-    assert evidence["schema_version"] == 2
+    assert evidence["schema_version"] == 3
+    assert evidence["artifact_path"].startswith("../runs/")
     assert evidence["training_artifact_sha256"] == "c" * 64
     assert evidence["evaluation_seconds"] > 0
     assert evidence["cost_per_successful_episode_usd"] == pytest.approx(0.1)

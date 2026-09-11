@@ -4,6 +4,33 @@ This page records what was actually exercised for the current release line.
 Registration, authentication, hardware allocation, training, inference, and
 publication are separate claims.
 
+## v0.54.0 release evidence
+
+Tagged release commit: `fc3a1ebec03dac4b626fbb46f6c6d52611ce76ba`.
+Protected-master merge: `5ee45381e7911f163b2433f058343f668f4b14bf`.
+Release PR: [#79](https://github.com/stateset/stateset-agents/pull/79).
+Publish workflow: [34300969723](https://github.com/stateset/stateset-agents/actions/runs/34300969723).
+Provider canaries: [34300969794](https://github.com/stateset/stateset-agents/actions/runs/34300969794).
+
+| Surface | Result | Evidence |
+|---|---|---|
+| Pull-request matrices | Passed | Linux Python 3.10–3.13, Windows Python 3.10/3.13, benchmark, docs, Helm, npm client, publish readiness, CodeQL, dependency review, secrets detection, and security all passed |
+| Python suite and coverage | Passed | Python 3.10 completed with 5,496 passed, 18 skipped, and 63.68% coverage; the other supported Python and Windows jobs also passed |
+| Python distribution | Passed | `stateset-agents==0.54.0` is live on PyPI with wheel and source distribution after build, Twine, isolated-wheel, readiness, and attestation gates passed |
+| GitHub Release and docs | Passed | Verified distributions were attached to the public GitHub Release and documentation deployed |
+| npm distribution | Failed closed | The package built and tested, but `@stateset/agents` does not yet exist on npm; trusted publishing cannot create its first version, so an `@stateset`-scoped automation token must bootstrap it |
+| Container distribution | Skipped | Docker Hub credentials were absent, so image build, push, SBOM, and provenance steps did not execute |
+| River and RunPod canaries | Passed | Both authenticated non-billable probes completed successfully |
+| Fireworks canary | Failed closed | `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID` were absent; the retained report records the missing inputs and no billable resources were created |
+| Corrected framework comparison | Ready, not measured | The checked-in v4 manifest validates and enumerates all six rotated StateSet-native-GSPO/direct-TRL pairs with matched sequence-level GSPO objective settings; no paid run or post-`0.54.0` publishable result is present yet |
+
+The release fixes a live-observed rollout correctness failure by sampling in
+inference mode and aborting sustained zero-signal training. It proves package
+quality and those regression guards; it does not establish native-GSPO quality
+parity, the 7–9B flagship result, external-backend parity, multi-node/soak
+reliability, standard agent-suite leadership, or the outstanding provider and
+distribution claims.
+
 ## v0.47.2 release evidence
 
 Tagged release commit: `eaa453e7471c5288871772972c22ca0e97da9a81`.

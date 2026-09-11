@@ -24,6 +24,52 @@ class AgentQualityEvidenceError(ValueError):
     """Raised when agent benchmark evidence is incomplete or inconsistent."""
 
 
+def hash_artifact(path: Path) -> str:
+    """Hash a retained file or directory tree without following symlinks."""
+    if not path.exists() or path.is_symlink():
+        raise AgentQualityEvidenceError(f"artifact is missing or unsafe: {path}")
+    digest = hashlib.sha256()
+    if path.is_file():
+        digest.update(path.read_bytes())
+        return digest.hexdigest()
+    entries = sorted(path.rglob("*"))
+    if any(item.is_symlink() for item in entries):
+        raise AgentQualityEvidenceError(f"artifact tree contains a symlink: {path}")
+    files = [item for item in entries if item.is_file()]
+    if not files:
+        raise AgentQualityEvidenceError(f"artifact directory is empty: {path}")
+    for item in files:
+        relative = item.relative_to(path).as_posix().encode()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        with item.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_retained_artifact(data: Mapping[str, Any], source: Path) -> Path:
+    """Resolve and verify the portable artifact referenced by one evidence row."""
+    raw_path = data.get("artifact_path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise AgentQualityEvidenceError(f"{source}: artifact_path must be non-empty")
+    candidate = Path(raw_path)
+    if candidate.is_absolute():
+        raise AgentQualityEvidenceError(f"{source}: artifact_path must be relative")
+    bundle_root = source.resolve().parent.parent
+    artifact = (source.resolve().parent / candidate).resolve()
+    if not artifact.is_relative_to(bundle_root):
+        raise AgentQualityEvidenceError(
+            f"{source}: artifact_path escapes the evidence bundle"
+        )
+    actual = hash_artifact(artifact)
+    if actual != data.get("artifact_sha256"):
+        raise AgentQualityEvidenceError(
+            f"{source}: retained artifact digest does not match artifact_sha256"
+        )
+    return artifact
+
+
 def _string(data: Mapping[str, Any], key: str, source: Path) -> str:
     value = data.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -64,13 +110,13 @@ def _digest(data: Mapping[str, Any], key: str, source: Path, length: int) -> str
 def validate_run(data: Mapping[str, Any], source: Path) -> dict[str, Any]:
     """Validate one paired base-versus-trained held-out evaluation."""
     if (
-        data.get("schema_version") != 2
+        data.get("schema_version") != 3
         or data.get("kind") != "stateset-agent-quality-evidence"
         or data.get("status") != "completed"
         or data.get("measured") is not True
     ):
         raise AgentQualityEvidenceError(
-            f"{source}: completed measured schema_version=2 evidence is required"
+            f"{source}: completed measured schema_version=3 evidence is required"
         )
     suite = _string(data, "suite", source)
     if suite not in REQUIRED_SUITES:
@@ -84,6 +130,7 @@ def validate_run(data: Mapping[str, Any], source: Path) -> dict[str, Any]:
         "split",
         "timestamp",
         "cost_source",
+        "artifact_path",
     ):
         _string(data, key, source)
     if data["cost_source"] not in COST_SOURCES:
@@ -158,7 +205,9 @@ def load_runs(inputs: Sequence[Path]) -> list[dict[str, Any]]:
             raise AgentQualityEvidenceError(f"{path}: invalid JSON") from exc
         if not isinstance(raw, Mapping):
             raise AgentQualityEvidenceError(f"{path}: evidence must be an object")
-        runs.append(validate_run(raw, path))
+        run = validate_run(raw, path)
+        verify_retained_artifact(run, path)
+        runs.append(run)
     return runs
 
 
@@ -259,7 +308,7 @@ def summarize(runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             ),
         }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "kind": "stateset-agent-quality-matrix",
         "passed": True,
         "protocol": runs[0]["protocol"],

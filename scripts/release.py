@@ -186,6 +186,36 @@ def rewrite_readme(readme_text: str, current: str, new: str, notes: str | None) 
         f"latest release `v{new}`",
         readme_text,
     )
+
+    # Keep the copy-paste installation commands and verification summary on
+    # the release version as well. These used to lag for several releases
+    # because only the What's-new heading was part of the automated rewrite.
+    release_surfaces = [
+        (
+            r"(?m)^(- \*\*Current Python release:\*\* `stateset-agents==)"
+            r"\d+\.\d+\.\d+(`,)",
+            rf"\g<1>{new}\g<2>",
+            "current Python release declaration",
+        ),
+        (
+            r'(?m)^(pip install "stateset-agents==)\d+\.\d+\.\d+'
+            r'(" # current stable release)$',
+            rf"\g<1>{new}\g<2>",
+            "stable PyPI install command",
+        ),
+        (
+            r'(?m)^(pip install "stateset-agents @ git\+https://github\.com/'
+            r'stateset/stateset-agents\.git@v)\d+\.\d+\.\d+("$)',
+            rf"\g<1>{new}\g<2>",
+            "stable Git tag install command",
+        ),
+    ]
+    for pattern, replacement, label in release_surfaces:
+        readme_text, count = re.subn(pattern, replacement, readme_text)
+        if count != 1:
+            raise ReleaseError(
+                f"README.md {label} matched {count} times (expected exactly 1)"
+            )
     return readme_text
 
 

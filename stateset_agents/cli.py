@@ -1,4 +1,5 @@
 import importlib
+import importlib.metadata
 import json
 import os
 import sys
@@ -328,9 +329,12 @@ def version(
     # Probe key optional deps without failing the call.
     def _safe_version(modname: str) -> str | None:
         try:
-            mod = importlib.import_module(modname)
-            return getattr(mod, "__version__", None) or "installed"
-        except CLI_IMPORT_EXCEPTIONS:
+            # Reading distribution metadata is side-effect free. Importing an
+            # optional accelerator merely to print its version can initialize
+            # CUDA, emit logs into JSON output, or fail on a host where the
+            # installed wheel does not match the local driver.
+            return importlib.metadata.version(modname)
+        except importlib.metadata.PackageNotFoundError:
             return None
 
     deps = {
