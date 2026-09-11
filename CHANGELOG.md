@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-09-11 — Evidence-backed A+ release gates
+
 - Made schema-v2 release evidence fail closed on retained security contents:
   the A+ gate now rejects Bandit execution errors and medium-or-higher findings,
   plus any known Safety vulnerability, after verifying report hashes.
