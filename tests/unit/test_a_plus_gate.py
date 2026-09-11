@@ -178,6 +178,23 @@ def test_release_security_reports_are_revalidated_fail_closed() -> None:
             {"errors": ["parse failed"], "results": []},
             {"scanned_packages": [], "vulnerabilities": []},
         )
+
+
+def test_coverage_line_rate_rejects_xml_preamble_injection(tmp_path: Path) -> None:
+    valid = tmp_path / "valid.xml"
+    valid.write_text(
+        '<?xml version="1.0" ?>\n<coverage line-rate="0.6312"></coverage>',
+        encoding="utf-8",
+    )
+    assert gate._coverage_line_rate(valid) == pytest.approx(0.6312)
+
+    unsafe = tmp_path / "unsafe.xml"
+    unsafe.write_text(
+        '<!DOCTYPE coverage [<!ENTITY x "boom">]><coverage line-rate="1"/>',
+        encoding="utf-8",
+    )
+    with pytest.raises(gate.APlusGateError, match="direct coverage root"):
+        gate._coverage_line_rate(unsafe)
     with pytest.raises(gate.APlusGateError, match="security findings"):
         gate.validate_security_report_payloads(
             {

@@ -18,7 +18,6 @@ import stat
 import subprocess
 import sys
 import tarfile
-import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
@@ -147,6 +146,26 @@ def validate_security_report_payloads(bandit: Any, safety: Any) -> dict[str, int
 def _archive_member_is_safe(name: str) -> bool:
     member = PurePosixPath(name)
     return bool(name) and not member.is_absolute() and ".." not in member.parts
+
+
+def _coverage_line_rate(path: Path) -> float:
+    """Read Cobertura's root line-rate without invoking an XML entity parser."""
+    try:
+        if path.stat().st_size > 16 * 1024 * 1024:
+            raise APlusGateError("coverage report exceeds the 16 MiB safety limit")
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise APlusGateError("coverage report is not readable UTF-8") from exc
+    root = re.match(r"\s*(?:<\?xml[^>]*\?>\s*)?<coverage\b(?P<attributes>[^>]*)>", text)
+    if root is None:
+        raise APlusGateError("coverage report has no direct coverage root")
+    line_rate = re.search(
+        r"(?:^|\s)line-rate\s*=\s*(['\"])(?P<value>[0-9]+(?:\.[0-9]+)?)\1",
+        root.group("attributes"),
+    )
+    if line_rate is None:
+        raise APlusGateError("coverage report root has no numeric line-rate")
+    return float(line_rate.group("value"))
 
 
 def _validate_distribution_archives(
@@ -365,11 +384,9 @@ def validate_release_readiness(
     if coverage_path.name != "coverage.xml":
         raise APlusGateError(f"{path}: coverage report identity is invalid")
     try:
-        measured_coverage = (
-            float(ET.parse(coverage_path).getroot().attrib["line-rate"]) * 100
-        )
+        measured_coverage = _coverage_line_rate(coverage_path) * 100
         declared_coverage = float(raw.get("coverage_percent", -1.0))
-    except (ET.ParseError, KeyError, TypeError, ValueError) as exc:
+    except (TypeError, ValueError) as exc:
         raise APlusGateError(f"{path}: coverage report is invalid") from exc
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     threshold_match = re.search(
